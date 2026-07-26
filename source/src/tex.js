@@ -176,11 +176,13 @@ export function texShopfront() {
 
 // dark polished granite with narrow vertical window slots (Ngee Ann City)
 export function texGranite() {
+  // Ngee Ann City is clad in "African Red" polished granite, which reads far
+  // redder than the brown-grey I first used.
   const S = 256, [c, x] = cvs(S);
-  x.fillStyle = '#6d5c4b'; x.fillRect(0, 0, S, S);
+  x.fillStyle = '#7d4f42'; x.fillRect(0, 0, S, S);
   for (let i = 0; i < 4200; i++) {
-    const v = rand(-22, 20);
-    x.fillStyle = `rgba(${125 + v},${107 + v},${88 + v},${rand(0.15, 0.5)})`;
+    const v = rand(-20, 22);
+    x.fillStyle = `rgba(${142 + v},${94 + v},${78 + v},${rand(0.15, 0.5)})`;
     x.fillRect(rand(0, S), rand(0, S), rand(1, 2.4), rand(1, 2.4));
   }
   const bays = 9, bw = S / bays;
@@ -193,7 +195,7 @@ export function texGranite() {
     x.fillStyle = g; x.fillRect(i * bw + bw * 0.30, 0, bw * 0.40, S);
   }
   for (let f = 0; f < 8; f++) {
-    x.fillStyle = 'rgba(92,78,63,0.9)';
+    x.fillStyle = 'rgba(104,68,58,0.9)';
     x.fillRect(0, f * (S / 8) - 2, S, 4);
   }
   return finish(c, [1, 1]);

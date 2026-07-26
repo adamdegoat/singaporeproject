@@ -51,6 +51,18 @@ function crown(api, ob, u, v, w, d, y0, mat) {
   slab(api, ob, u, v, w * 0.55, d * 0.55, y0 + 1.2, 3.0, mat);
 }
 
+// direction from the building centroid toward the nearest point on Orchard Road
+function streetward(api, ob) {
+  if (!api.axis) return { nx: 0, nz: 1, dist: 30 };
+  let bx = 0, bz = 0, bd = Infinity;
+  for (const [x, z] of api.axis.p) {
+    const d = (x - ob.cx) ** 2 + (z - ob.cz) ** 2;
+    if (d < bd) { bd = d; bx = x; bz = z; }
+  }
+  const dx = bx - ob.cx, dz = bz - ob.cz, L = Math.hypot(dx, dz) || 1;
+  return { nx: dx / L, nz: dz / L, dist: L };
+}
+
 /* ---------------- recipes ---------------- */
 // Each recipe: (api, b) => void. api gives extrude/materials/world.
 
@@ -71,6 +83,32 @@ function ngeeAnnCity(api, b) {
     }
     crown(api, ob, u, ob.midV, tw, tw, 138.6, stone);
   }
+
+  // The civic forecourt: a raised granite plaza fronting Orchard Road that
+  // holds 4,000 people and is where every event on this street happens. It is
+  // as recognisable as the towers.
+  const sw = streetward(api, ob);
+  const px = ob.cx + sw.nx * (ob.halfShort + 17);
+  const pz = ob.cz + sw.nz * (ob.halfShort + 17);
+  const ang = Math.atan2(sw.nx, sw.nz);
+  const plaza = new THREE.Mesh(new THREE.BoxGeometry(62, 0.5, 34), api.mat.paving);
+  plaza.position.set(px, 0.25, pz);
+  plaza.rotation.y = ang;
+  plaza.receiveShadow = true; api.world.add(plaza);
+  // three shallow steps down to the pavement on the street edge
+  for (let k = 0; k < 3; k++) {
+    const st = new THREE.Mesh(new THREE.BoxGeometry(62, 0.18, 1.1), api.mat.paleStone);
+    st.position.set(px + sw.nx * (17 + k * 1.1), 0.42 - k * 0.16, pz + sw.nz * (17 + k * 1.1));
+    st.rotation.y = ang;
+    st.receiveShadow = true; st.castShadow = true; api.world.add(st);
+  }
+  // low granite planter walls flanking it
+  for (const sgn of [-1, 1]) {
+    const w = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.85, 30), granite);
+    w.position.set(px - sw.nz * sgn * 29, 0.68, pz + sw.nx * sgn * 29);
+    w.rotation.y = ang;
+    w.castShadow = true; w.receiveShadow = true; api.world.add(w);
+  }
 }
 
 function ionOrchard(api, b) {
@@ -84,6 +122,42 @@ function ionOrchard(api, b) {
   const tw = Math.min(30, ob.halfShort * 0.75);
   slab(api, ob, ob.midU - ob.halfLong * 0.12, ob.midV, tw, tw * 0.78, 35.4, 176, glass);
   crown(api, ob, ob.midU - ob.halfLong * 0.12, ob.midV, tw, tw * 0.78, 211, stone);
+
+  // The free-form canopy: a curved glass-and-metal shell wrapping the podium
+  // frontage, carried on two 'tree columns'. Approximated as an open cylinder
+  // section, which reads as the same sweep from the street.
+  const sw = streetward(api, ob);
+  const ang = Math.atan2(sw.nx, sw.nz);
+  const fx = ob.cx + sw.nx * (ob.halfShort + 4);
+  const fz = ob.cz + sw.nz * (ob.halfShort + 4);
+  const shellMat = new THREE.MeshStandardMaterial({
+    color: 0xb9c4c9, roughness: 0.28, metalness: 0.45, side: THREE.DoubleSide,
+  });
+  const shell = new THREE.Mesh(
+    new THREE.CylinderGeometry(17, 17, Math.min(74, ob.halfLong * 1.9), 22, 1, true,
+      Math.PI * 0.06, Math.PI * 0.62),
+    shellMat);
+  shell.rotation.z = Math.PI / 2;
+  shell.rotation.y = ang;
+  shell.position.set(fx, 20.5, fz);
+  shell.castShadow = true;
+  api.world.add(shell);
+  for (const sgn of [-1, 1]) {
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 1.9, 20, 10), shellMat);
+    col.position.set(fx - sw.nz * sgn * 17, 10, fz + sw.nx * sgn * 17);
+    col.castShadow = true; api.world.add(col);
+  }
+  // the LED media wall, one of the largest in Asia and the thing people photograph
+  const media = new THREE.Mesh(
+    new THREE.PlaneGeometry(Math.min(58, ob.halfLong * 1.5), 13),
+    new THREE.MeshStandardMaterial({
+      color: 0x11161c, roughness: 0.25,
+      emissive: 0x2f6fa8, emissiveIntensity: 0.85,
+    }));
+  media.position.set(ob.cx + sw.nx * (ob.halfShort + 0.4), 12.5,
+                     ob.cz + sw.nz * (ob.halfShort + 0.4));
+  media.rotation.y = ang;
+  api.world.add(media);
 }
 
 function tangPlaza(api, b) {

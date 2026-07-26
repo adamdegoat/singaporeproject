@@ -50,7 +50,7 @@ export const MAT = {
 
 // materials the landmark recipes draw on
 const LMAT = {
-  granite: new THREE.MeshStandardMaterial({ map: texGranite(), roughness: 0.42, metalness: 0.1 }),
+  granite: new THREE.MeshStandardMaterial({ map: texGranite(), roughness: 0.30, metalness: 0.12 }),
   towerGlass: new THREE.MeshStandardMaterial({ map: texTowerGlass(), roughness: 0.22, metalness: 0.16 }),
   paleStone: new THREE.MeshStandardMaterial({ map: texConcrete(0xc4bdae, 0.35), roughness: 0.78 }),
   warmStone: new THREE.MeshStandardMaterial({ map: texConcrete(0xb2a48f, 0.5), roughness: 0.85 }),
@@ -111,7 +111,10 @@ function grow(pts, f) {
 
 export function buildBuildings(world, data) {
   const stats = { count: 0, tall: 0, bespoke: 0 };
-  const api = { world, extrude, grow, mat: { ...LMAT, trim: MAT.trim, conc: MAT.conc } };
+  const api = {
+    world, extrude, grow, axis: data.axis || null,
+    mat: { ...LMAT, trim: MAT.trim, conc: MAT.conc, paving: MAT.paving, metal: MAT.metal },
+  };
   for (const b of data.buildings) {
     const pts = b.p;
     if (pts.length < 3) continue;
