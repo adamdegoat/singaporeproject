@@ -5,6 +5,7 @@ import { buildVespa, buildRider, newState, step, RIDE } from './vespa.js';
 import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
 import { buildMarkings, dressSideStreets } from './markings.js';
+import { buildSgDetail } from './sgdetail.js';
 import { Crowd, Traffic } from './actors.js';
 import { buildFurniture } from './street.js';
 import { buildSignage, Wayfinder } from './wayfind.js';
@@ -230,6 +231,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   const marks = (!P.has('nomarks') && axis) ? buildMarkings(world, axis) : 0;
   const side = (!P.has('noside') && axis)
     ? dressSideStreets(world, data, axis, blocked, TreeField) : {};
+  const sg = (!P.has('nosg') && axis) ? buildSgDetail(world, axis, data, blocked) : {};
   if (axis) wayfinder = new Wayfinder(data, axis);
   window.__axis = axis;
   const people = crowdSys ? crowdSys.people.length : 0;
@@ -246,7 +248,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
     const nx = -dz / L, nz = dx / L;
     S = newState(p0[0] + nx * -3.4, p0[1] + nz * -3.4, Math.atan2(dx, dz));
   }
-  stats = { marks, ...side, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
+  stats = { marks, ...side, ...sg, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
   ready = true;
   window.__ready = true;
   window.__stats = stats;
@@ -434,7 +436,7 @@ function loop(now) {
     sun.target.updateMatrixWorld();
 
     clock += dt;
-    if (crowdSys) crowdSys.update(clock, dt);
+    if (crowdSys) crowdSys.update(clock, dt, S.x, S.z);
     if (trafficSys) trafficSys.update(clock, dt);
     if (wayfinder) wayfinder.update(S, dt);
 

@@ -1,0 +1,219 @@
+// The details that make a street read as Singapore rather than generic Asia:
+// an ERP gantry, an overhead pedestrian bridge, a planted central median,
+// banner-hung lamp posts, a taxi stand, and building signage.
+//
+// No brand marks anywhere: signage is colour and form only.
+import * as THREE from '../lib/three.module.js';
+import { R, rand, pick, chance } from './tex.js';
+import { MAT } from './city.js';
+
+const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d,
+                   0xcf6b3a, 0x2b2f33, 0xa8324f, 0x3d6f8f];
+const BANNER_COLS = [0xb23a2e, 0x2f6b8f, 0xd0a03a, 0x357a55, 0x8a3f70];
+
+function yawMesh(geo, mat, x, y, z, ang) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x, y, z);
+  m.rotation.y = ang;
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+
+/* ---------------- ERP gantry ---------------- */
+// Two portal legs, a deep beam, the antenna heads and the camera box. Nothing
+// else on a Singapore road looks like this.
+function erpGantry(world, px, pz, ang, width) {
+  const g = new THREE.Group();
+  const steel = MAT.metal, dark = MAT.darkMetal;
+  const half = width / 2 + 1.2;
+
+  for (const sgn of [-1, 1]) {
+    g.add(yawMesh(new THREE.CylinderGeometry(0.22, 0.28, 7.4, 10), steel, sgn * half, 3.7, 0, 0));
+    g.add(yawMesh(new THREE.BoxGeometry(1.2, 0.35, 1.2), MAT.conc, sgn * half, 0.18, 0, 0));
+  }
+  // main beam plus a lower service beam
+  g.add(yawMesh(new THREE.BoxGeometry(width + 2.8, 0.85, 0.55), steel, 0, 7.2, 0, 0));
+  g.add(yawMesh(new THREE.BoxGeometry(width + 2.8, 0.28, 0.32), steel, 0, 6.4, 0, 0));
+  // antenna heads over each lane, angled down at the traffic
+  const lanes = Math.max(3, Math.round(width / 3.4));
+  for (let i = 0; i < lanes; i++) {
+    const lx = -width / 2 + (i + 0.5) * (width / lanes);
+    const head = yawMesh(new THREE.BoxGeometry(0.62, 0.3, 0.85), dark, lx, 6.75, 0.5, 0);
+    head.rotation.x = 0.42;
+    g.add(head);
+  }
+  // camera housings and the amber warning panel
+  for (const sgn of [-1, 1]) {
+    g.add(yawMesh(new THREE.BoxGeometry(0.4, 0.4, 0.75), dark, sgn * (half - 1.4), 6.9, -0.5, 0));
+  }
+  const panel = yawMesh(new THREE.BoxGeometry(2.4, 0.9, 0.12),
+    new THREE.MeshStandardMaterial({ color: 0x1c1f22, emissive: 0xc98a1e, emissiveIntensity: 0.55 }),
+    0, 8.1, 0.1, 0);
+  g.add(panel);
+
+  g.position.set(px, 0, pz);
+  g.rotation.y = ang;
+  world.add(g);
+}
+
+/* ---------------- overhead pedestrian bridge ---------------- */
+function pedBridge(world, px, pz, ang, width) {
+  const g = new THREE.Group();
+  const steel = MAT.metal, deck = MAT.conc;
+  const span = width + 14;
+  g.add(yawMesh(new THREE.BoxGeometry(span, 0.42, 2.6), deck, 0, 6.0, 0, 0));
+  g.add(yawMesh(new THREE.BoxGeometry(span, 0.16, 3.0), MAT.trim, 0, 8.6, 0, 0));   // roof
+  // parapets and roof posts
+  for (const sgn of [-1, 1]) {
+    g.add(yawMesh(new THREE.BoxGeometry(span, 1.05, 0.1), steel, 0, 6.75, sgn * 1.3, 0));
+    for (let i = 0; i <= 10; i++) {
+      const x = -span / 2 + (i / 10) * span;
+      g.add(yawMesh(new THREE.CylinderGeometry(0.055, 0.055, 2.4, 6), steel, x, 7.4, sgn * 1.3, 0));
+    }
+  }
+  // stair towers at each end
+  for (const sgn of [-1, 1]) {
+    const sx = sgn * (span / 2 - 1.0);
+    g.add(yawMesh(new THREE.BoxGeometry(2.6, 6.0, 2.8), deck, sx, 3.0, sgn * 3.2, 0));
+    for (let s = 0; s < 12; s++) {
+      g.add(yawMesh(new THREE.BoxGeometry(2.2, 0.16, 0.34), deck,
+        sx, 0.5 + s * 0.46, sgn * (1.9 + s * 0.2), 0));
+    }
+  }
+  g.position.set(px, 0, pz);
+  g.rotation.y = ang;
+  world.add(g);
+}
+
+/* ---------------- main placement pass ---------------- */
+export function buildSgDetail(world, axis, data, isBlocked) {
+  const pts = axis.p, half = axis.w / 2;
+  const stats = { erp: 0, bridges: 0, banners: 0, medianPlants: 0, roofSigns: 0, banners2: 0 };
+
+  const bannerT = [], medianKerb = [], medianShrub = [], medianPalm = [];
+  let acc = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+    const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
+    if (len < 0.5) continue;
+    const ux = dx / len, uz = dz / len, nx = -uz, nz = ux;
+    const ang = Math.atan2(ux, uz);
+
+    for (let t = 0; t < len; t += 1, acc++) {
+      const px = x1 + ux * t, pz = z1 + uz * t;
+
+      // planted central median — Orchard's road is not one flat expanse
+      if (acc % 3 === 0) medianKerb.push([px, 0.14, pz, ang]);
+      if (acc % 7 === 0) medianShrub.push([px + nx * rand(-0.45, 0.45), 0.72, pz + nz * rand(-0.45, 0.45), ang]);
+      if (acc % 46 === 0) medianPalm.push([px, 0, pz, ang]);
+
+      // banners on the lamp columns
+      if (acc % 34 === 8) {
+        for (const sgn of [-1, 1]) {
+          const bx = px + nx * (half + 0.4) * sgn, bz = pz + nz * (half + 0.4) * sgn;
+          if (!isBlocked(bx, bz)) bannerT.push([bx + nx * 0.28 * sgn, 5.4, bz + nz * 0.28 * sgn, ang]);
+        }
+      }
+
+      // one ERP gantry and two pedestrian bridges along the stretch
+      if (acc === 300) { erpGantry(world, px, pz, ang, axis.w); stats.erp++; }
+      if (acc === 700) { erpGantry(world, px, pz, ang, axis.w); stats.erp++; }
+      if (acc === 470 || acc === 940) { pedBridge(world, px, pz, ang, axis.w); stats.bridges++; }
+    }
+  }
+
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  const p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1);
+  const cc = new THREE.Color();
+  const emit = (geo, mat, list, fn, colFn) => {
+    if (!list.length) return;
+    const im = new THREE.InstancedMesh(geo, mat, list.length);
+    list.forEach((r, i) => {
+      fn(r); m.compose(p, q, s); im.setMatrixAt(i, m);
+      if (colFn) im.setColorAt(i, colFn());
+    });
+    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    im.castShadow = true; im.receiveShadow = true;
+    world.add(im);
+  };
+  const yaw = (r) => { p.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
+
+  emit(new THREE.BoxGeometry(2.1, 0.34, 3.0), MAT.kerb, medianKerb, yaw);
+  emit(new THREE.SphereGeometry(0.66, 7, 5),
+    new THREE.MeshLambertMaterial({ color: 0x3f5c33 }), medianShrub, (r) => {
+      p.set(r[0], 0.72, r[2]); q.identity(); s.set(1, 0.78, 1);
+    });
+  s.set(1, 1, 1);
+  stats.medianPlants = medianShrub.length;
+
+  // slim median palms: trunk plus a fan of fronds
+  emit(new THREE.CylinderGeometry(0.14, 0.2, 6.4, 7), MAT.trunk, medianPalm, (r) => {
+    p.set(r[0], 3.2, r[2]); q.identity();
+  });
+  const frond = [];
+  for (const [x, , z] of medianPalm) {
+    for (let k = 0; k < 7; k++) frond.push([x, 6.3, z, (k / 7) * Math.PI * 2]);
+  }
+  emit(new THREE.PlaneGeometry(3.2, 0.8), MAT.leaf, frond, (r) => {
+    p.set(r[0] + Math.sin(r[3]) * 1.4, r[1] - 0.35, r[2] + Math.cos(r[3]) * 1.4);
+    e.set(-0.95, r[3] + Math.PI / 2, 0, 'YXZ'); q.setFromEuler(e);
+  });
+
+  // lamp-post banners, alternating colours
+  emit(new THREE.BoxGeometry(0.06, 1.6, 0.62),
+    new THREE.MeshStandardMaterial({ roughness: 0.8, side: THREE.DoubleSide }),
+    bannerT, yaw, () => cc.setHex(pick(BANNER_COLS)));
+  stats.banners = bannerT.length;
+
+  /* ---------------- building signage ---------------- */
+  // Rooftop sign boxes on the taller blocks and vertical banner signs down the
+  // corners of the mid-rise ones. Colour and form only, no lettering.
+  const roofSign = [], vertSign = [];
+  for (const b of data.buildings) {
+    if (b.a < 700) continue;
+    let cx = 0, cz = 0;
+    for (const q2 of b.p) { cx += q2[0]; cz += q2[1]; }
+    cx /= b.p.length; cz /= b.p.length;
+
+    // longest street-facing edge
+    let bi = 0, bl = 0;
+    for (let i = 0; i < b.p.length; i++) {
+      const a = b.p[i], c = b.p[(i + 1) % b.p.length];
+      const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+      if (L > bl) { bl = L; bi = i; }
+    }
+    const a = b.p[bi], c = b.p[(bi + 1) % b.p.length];
+    const mx = (a[0] + c[0]) / 2, mz = (a[1] + c[1]) / 2;
+    const ang = Math.atan2(c[0] - a[0], c[1] - a[1]);
+    const oX = mx - cx, oZ = mz - cz, oL = Math.hypot(oX, oZ) || 1;
+
+    if (b.h > 34 && chance(0.55)) {
+      roofSign.push([mx + (oX / oL) * 0.6, b.h + 2.2, mz + (oZ / oL) * 0.6, ang + Math.PI / 2,
+        Math.min(16, bl * 0.4)]);
+    }
+    if (b.h > 14 && bl > 12 && chance(0.7)) {
+      vertSign.push([mx + (oX / oL) * 1.1, 9.5, mz + (oZ / oL) * 1.1, ang + Math.PI / 2]);
+    }
+  }
+  // rooftop boxes vary in width, so scale per instance
+  if (roofSign.length) {
+    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 3.2, 0.5),
+      new THREE.MeshStandardMaterial({ roughness: 0.6 }), roofSign.length);
+    roofSign.forEach((r, i) => {
+      p.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+      s.set(r[4], 1, 1);
+      m.compose(p, q, s); im.setMatrixAt(i, m);
+      im.setColorAt(i, cc.setHex(pick(SIGN_COLS)));
+    });
+    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    im.castShadow = true; world.add(im);
+    s.set(1, 1, 1);
+  }
+  emit(new THREE.BoxGeometry(0.9, 7.5, 0.35),
+    new THREE.MeshStandardMaterial({ roughness: 0.55 }),
+    vertSign, yaw, () => cc.setHex(pick(SIGN_COLS)));
+  stats.roofSigns = roofSign.length;
+  stats.banners2 = vertSign.length;
+
+  return stats;
+}

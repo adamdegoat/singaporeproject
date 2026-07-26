@@ -126,9 +126,9 @@ export class Crowd {
     return n;
   }
 
-  update(time, dt) {
+  update(time, dt, playerX = 1e9, playerZ = 1e9) {
     const { _m: m, _q: q, _e: e, _p: p, _s: s, _tmp: tmp } = this;
-    const hidden = new THREE.Matrix4().makeTranslation(0, -9999, 0);
+    const hidden = this._hidden || (this._hidden = new THREE.Matrix4().makeTranslation(0, -9999, 0));
 
     for (let i = 0; i < this.people.length; i++) {
       const pr = this.people[i];
@@ -136,7 +136,20 @@ export class Crowd {
       this.path.at(pr.s, tmp);
       const [cx, cz, ux, uz] = tmp;
       const nx = -uz, nz = ux;
-      const x = cx + nx * pr.off, z = cz + nz * pr.off;
+      // sidestep the player instead of walking through them
+      const baseX = cx + nx * pr.off, baseZ = cz + nz * pr.off;
+      const ddx = baseX - playerX, ddz = baseZ - playerZ;
+      const near = Math.hypot(ddx, ddz);
+      if (near < 2.6) {
+        const push = (2.6 - near) / 2.6;
+        pr.dodge = (pr.dodge || 0) + (push * 1.5 - (pr.dodge || 0)) * Math.min(1, dt * 5);
+      } else if (pr.dodge) {
+        pr.dodge += (0 - pr.dodge) * Math.min(1, dt * 2.2);
+        if (Math.abs(pr.dodge) < 0.01) pr.dodge = 0;
+      }
+      const dodgeSign = pr.off >= 0 ? 1 : -1;
+      const x = baseX + nx * (pr.dodge || 0) * dodgeSign;
+      const z = baseZ + nz * (pr.dodge || 0) * dodgeSign;
 
       // a pedestrian standing inside a building is worse than a missing one
       if (this.isBlocked(x, z)) {
