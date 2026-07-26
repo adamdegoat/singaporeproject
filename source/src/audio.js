@@ -18,8 +18,16 @@ export class Sound {
     if (!C) return;
     const ctx = new C();
     this.ctx = ctx;
-    // Safari and Chrome can hand back a suspended context even inside a gesture
+    // iOS needs more than resume(): the context only truly unlocks once a
+    // buffer has actually been played from inside the gesture.
     if (ctx.state === 'suspended') ctx.resume();
+    try {
+      const silent = ctx.createBuffer(1, 1, ctx.sampleRate);
+      const src = ctx.createBufferSource();
+      src.buffer = silent;
+      src.connect(ctx.destination);
+      src.start(0);
+    } catch (e) { /* nothing to do; the graph below still gets built */ }
 
     this.master = ctx.createGain();
     this.master.gain.value = 0.0;
@@ -100,6 +108,16 @@ export class Sound {
     // ease in so it never starts with a click
     this.master.gain.setTargetAtTime(this.muted ? 0 : 0.55, ctx.currentTime, 0.4);
     this.ready = true;
+
+    // Safari can re-suspend when the page is backgrounded or a call comes in
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+    });
+  }
+
+  // call from any later gesture: cheap if already running
+  poke() {
+    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
   }
 
   setMuted(m) {

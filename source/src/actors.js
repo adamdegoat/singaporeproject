@@ -84,6 +84,11 @@ export class Crowd {
     this.legL = mk(new THREE.CapsuleGeometry(0.058, 0.44, 3, 7), lam());
     this.legR = mk(new THREE.CapsuleGeometry(0.058, 0.44, 3, 7), lam());
     this.bag = mk(new THREE.BoxGeometry(0.22, 0.26, 0.10), lam());
+    this.shoeL = mk(new THREE.BoxGeometry(0.11, 0.07, 0.25), lam(0x2b2723));
+    this.shoeR = mk(new THREE.BoxGeometry(0.11, 0.07, 0.25), lam(0x2b2723));
+    this.handL = mk(new THREE.SphereGeometry(0.052, 7, 6), lam());
+    this.handR = mk(new THREE.SphereGeometry(0.052, 7, 6), lam());
+    this.neck = mk(new THREE.CylinderGeometry(0.052, 0.06, 0.1, 7), lam());
 
     const cTop = new THREE.Color(), cBot = new THREE.Color();
     const cSkin = new THREE.Color(), cHair = new THREE.Color();
@@ -110,9 +115,11 @@ export class Crowd {
       this.head.setColorAt(i, cSkin);
       this.hair.setColorAt(i, cHair);
       this.bag.setColorAt(i, cBot);
+      this.handL.setColorAt(i, cSkin); this.handR.setColorAt(i, cSkin);
+      this.neck.setColorAt(i, cSkin);
     }
     for (const m of [this.torso, this.armL, this.armR, this.hips, this.legL,
-      this.legR, this.head, this.hair, this.bag]) {
+      this.legR, this.head, this.hair, this.bag, this.handL, this.handR, this.neck]) {
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
     }
 
@@ -154,7 +161,8 @@ export class Crowd {
       // a pedestrian standing inside a building is worse than a missing one
       if (this.isBlocked(x, z)) {
         for (const part of [this.head, this.hair, this.torso, this.hips,
-          this.armL, this.armR, this.legL, this.legR, this.bag]) {
+          this.armL, this.armR, this.legL, this.legR, this.bag,
+          this.shoeL, this.shoeR, this.handL, this.handR, this.neck]) {
           part.setMatrixAt(i, hidden);
         }
         continue;
@@ -176,6 +184,7 @@ export class Crowd {
         part.setMatrixAt(i, m);
       };
 
+      put(this.neck, 0, 1.47, 0.005);
       put(this.head, 0, 1.615, 0.01);
       put(this.hair, 0, 1.635, 0.005);
       put(this.torso, 0, 1.22, 0);
@@ -184,11 +193,17 @@ export class Crowd {
       put(this.armR, 0.19, 1.20, 0, -walk * 0.62);
       put(this.legL, -0.085, 0.52, 0, -walk * 0.72);
       put(this.legR, 0.085, 0.52, 0, walk * 0.72);
+      // feet swing with the legs, hands with the arms
+      put(this.shoeL, -0.085, 0.06, 0.02 - walk * 0.30);
+      put(this.shoeR, 0.085, 0.06, 0.02 + walk * 0.30);
+      put(this.handL, -0.205, 0.99, walk * 0.27);
+      put(this.handR, 0.205, 0.99, -walk * 0.27);
       if (pr.hasBag) put(this.bag, pr.bagSide * 0.26, 1.02, -0.06);
       else this.bag.setMatrixAt(i, hidden);
     }
     for (const part of [this.head, this.hair, this.torso, this.hips,
-      this.armL, this.armR, this.legL, this.legR, this.bag]) {
+      this.armL, this.armR, this.legL, this.legR, this.bag,
+      this.shoeL, this.shoeR, this.handL, this.handR, this.neck]) {
       part.instanceMatrix.needsUpdate = true;
     }
   }
@@ -247,7 +262,6 @@ export class Traffic {
     }
     if (this.body.instanceColor) this.body.instanceColor.needsUpdate = true;
     if (this.roof.instanceColor) this.roof.instanceColor.needsUpdate = true;
-    if (this.busBody.instanceColor) this.busBody.instanceColor.needsUpdate = true;
     const BUS_LIVERY = [0x3f7d46, 0x3f7d46, 0xc4342f];   // LTA green, green, SBS red
     const bcol = new THREE.Color();
     for (let i = 0; i < b; i++) {
@@ -261,11 +275,30 @@ export class Traffic {
       });
     }
 
+    // flag AFTER the bus liveries have actually been written
+    if (this.busBody.instanceColor) this.busBody.instanceColor.needsUpdate = true;
+
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion();
     this._e = new THREE.Euler(); this._p = new THREE.Vector3();
     this._s = new THREE.Vector3(1, 1, 1); this._tmp = [0, 0, 0, 0];
     this.update(0, 0);
     return n + b;
+  }
+
+  // axis-aligned-ish blocker test: treat each vehicle as an oriented box
+  hits(px, pz, radius = 0.85) {
+    for (const it of this.items) {
+      if (!it.wx) continue;
+      const dx = px - it.wx, dz = pz - it.wz;
+      if (dx * dx + dz * dz > 60) continue;            // cheap reject
+      const c = Math.cos(-it.heading), sn = Math.sin(-it.heading);
+      const lx = dx * c - dz * sn;                      // into the vehicle frame
+      const lz = dx * sn + dz * c;
+      const halfW = (it.kind === 'bus' ? 1.35 : 0.95) + radius;
+      const halfL = (it.kind === 'bus' ? 6.0 : 2.25) + radius;
+      if (Math.abs(lx) < halfW && Math.abs(lz) < halfL) return it;
+    }
+    return null;
   }
 
   update(time, dt) {
@@ -277,6 +310,7 @@ export class Traffic {
       const nx = -uz, nz = ux;
       const x = cx + nx * it.lane, z = cz + nz * it.lane;
       const heading = Math.atan2(ux * it.dir, uz * it.dir);
+      it.wx = x; it.wz = z; it.heading = heading;       // for collision queries
       e.set(0, heading, 0); q.setFromEuler(e);
 
       if (it.kind === 'car') {

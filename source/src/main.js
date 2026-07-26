@@ -199,8 +199,8 @@ let crowdSys = null, trafficSys = null, wayfinder = null;
 let mode = 'ride';                 // 'ride' | 'walk'
 const sound = new Sound();
 // browsers will not start audio without a gesture
-for (const ev of ['touchstart', 'mousedown', 'keydown']) {
-  addEventListener(ev, () => sound.start(), { once: true, passive: true });
+for (const ev of ['touchstart', 'touchend', 'pointerdown', 'mousedown', 'keydown', 'click']) {
+  addEventListener(ev, () => { sound.start(); sound.poke(); }, { passive: true });
 }
 let camYaw = 0, camPitch = 0.16;   // free look, walk mode
 const walker = newWalker();
@@ -316,7 +316,13 @@ function toggleMode() {
   updateHelp();
 }
 
+const stickEl = document.getElementById('stick');
+const knobEl = document.getElementById('knob');
+const lookHintEl = document.getElementById('lookhint');
+
 function updateHelp() {
+  if (stickEl) stickEl.classList.toggle('on', mode === 'walk');
+  if (lookHintEl) lookHintEl.classList.toggle('on', mode === 'walk');
   const el = document.getElementById('help');
   if (!el) return;
   el.innerHTML = mode === 'ride'
@@ -409,10 +415,16 @@ function loop(now) {
       const mz = -inp.moveY * fz - inp.moveX * fx;
       const wx = walker.x, wz = walker.z;
       stepWalk(walker, dt, mx, mz, inp.run);
+      if (trafficSys && trafficSys.hits(walker.x, walker.z, 0.32)) {
+        walker.x = wx; walker.z = wz; walker.speed = 0;
+      }
       if (blocked(walker.x, walker.z)) {
         if (!blocked(walker.x, wz)) walker.z = wz;
         else if (!blocked(wx, walker.z)) walker.x = wx;
         else { walker.x = wx; walker.z = wz; }
+      }
+      if (knobEl) {
+        knobEl.style.transform = `translate(${input.stickDX.toFixed(1)}px, ${input.stickDY.toFixed(1)}px)`;
       }
       walkerRig.group.position.set(walker.x, 0, walker.z);
       walkerRig.group.rotation.y = walker.heading;
@@ -435,6 +447,12 @@ function loop(now) {
 
     const px = S.x, pz = S.z;
     step(S, dt, inp.throttle, inp.brake, inp.steer);
+    // you cannot ride through a bus
+    if (trafficSys && trafficSys.hits(S.x, S.z, 0.55)) {
+      S.x = px; S.z = pz;
+      S.speed *= -0.12;                 // a small bounce, then stopped
+      if (Math.abs(S.speed) < 0.4) S.speed = 0;
+    }
     if (blocked(S.x, S.z)) {
       // slide along the wall rather than dead-stopping: keep whichever single
       // axis of the attempted move is still free

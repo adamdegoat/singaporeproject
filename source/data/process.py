@@ -232,6 +232,51 @@ def main():
         axis = [[round(x, 1), round(z, 1)] for x, z in
                 (proj(la, lo) for la, lo in FALLBACK_ORCHARD)]
 
+    # ---- keep buildings out of the carriageway -------------------------------
+    # OSM footprints and OSM centrelines are surveyed separately, and our road
+    # widths are inferred from lane tags, so a building can end up sitting in
+    # the road. Push any vertex that falls inside a road corridor back out to
+    # the kerb line rather than letting geometry interpenetrate.
+    def seg_dist(px, pz, ax, az, bx, bz):
+        vx, vz = bx - ax, bz - az
+        L2 = vx * vx + vz * vz
+        if L2 < 1e-9:
+            return math.dist((px, pz), (ax, az)), ax, az
+        t = max(0.0, min(1.0, ((px - ax) * vx + (pz - az) * vz) / L2))
+        cx, cz = ax + vx * t, az + vz * t
+        return math.dist((px, pz), (cx, cz)), cx, cz
+
+    corridors = []
+    for r in roads:
+        if r["k"] in ("footway", "pedestrian"):
+            continue
+        clear = r["w"] / 2 + 1.2          # half the carriageway plus a kerb
+        for i in range(len(r["p"]) - 1):
+            corridors.append((r["p"][i], r["p"][i + 1], clear))
+    if axis:
+        aclear = 16.0 / 2 + 2.0
+        for i in range(len(axis) - 1):
+            corridors.append((axis[i], axis[i + 1], aclear))
+
+    moved_pts, moved_b = 0, 0
+    for b in buildings:
+        touched = False
+        for j, (px, pz) in enumerate(b["p"]):
+            for (a, c, clear) in corridors:
+                d, cx, cz = seg_dist(px, pz, a[0], a[1], c[0], c[1])
+                if d < clear:
+                    if d < 1e-6:
+                        continue
+                    # slide the vertex straight out to the corridor edge
+                    nx, nz = (px - cx) / d, (pz - cz) / d
+                    px, pz = cx + nx * clear, cz + nz * clear
+                    touched = True
+                    moved_pts += 1
+            b["p"][j] = [round(px, 1), round(pz, 1)]
+        if touched:
+            moved_b += 1
+    print(f"road clearance: nudged {moved_pts} vertices across {moved_b} buildings")
+
     buildings.sort(key=lambda b: -b["a"])
     out = {
         "origin": {"lat": LAT0, "lon": LON0},

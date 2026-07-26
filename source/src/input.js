@@ -12,7 +12,16 @@ export const input = {
   steer: 0, throttle: 0, brake: 0,
   moveX: 0, moveY: 0, run: false,
   toggleMode: false,
+  // for drawing the on-screen stick
+  stickActive: false, stickDX: 0, stickDY: 0,
 };
+
+// The walk stick is PINNED to a fixed spot so you can see where it is, rather
+// than appearing wherever your thumb happens to land.
+export const STICK = { x: 92, yFromBottom: 92, radius: 54 };
+function stickCentre() {
+  return { cx: STICK.x, cy: innerHeight - STICK.yFromBottom };
+}
 
 let mouseLookDX = 0, mouseLookDY = 0;
 
@@ -68,6 +77,7 @@ export function attachMouse(el) {
 
 export function readInput(mode) {
   let steer = 0, throttle = 0, brake = 0;
+  input.stickActive = false;
   let moveX = 0, moveY = 0;
   let lookDX = mouseLookDX, lookDY = mouseLookDY;
   mouseLookDX = 0; mouseLookDY = 0;
@@ -75,10 +85,14 @@ export function readInput(mode) {
   for (const rec of touches.values()) {
     if (rec.side === 'power') {
       if (mode === 'walk') {
-        // virtual stick: offset from wherever the thumb landed
-        const R = innerWidth * 0.09;
-        moveX = Math.max(-1, Math.min(1, (rec.x - rec.startX) / R));
-        moveY = Math.max(-1, Math.min(1, (rec.y - rec.startY) / R));
+        const { cx, cy } = stickCentre();
+        let dx = rec.x - cx, dy = rec.y - cy;
+        const d = Math.hypot(dx, dy) || 1;
+        const clamped = Math.min(d, STICK.radius);
+        dx = (dx / d) * clamped; dy = (dy / d) * clamped;
+        moveX = dx / STICK.radius;
+        moveY = dy / STICK.radius;
+        input.stickActive = true; input.stickDX = dx; input.stickDY = dy;
       } else if (rec.y < innerHeight * 0.62) throttle = 1;
       else brake = 1;
     } else if (mode === 'walk') {
@@ -89,6 +103,8 @@ export function readInput(mode) {
     }
     rec.px = rec.x; rec.py = rec.y;
   }
+
+  if (!input.stickActive) { input.stickDX = 0; input.stickDY = 0; }
 
   if (mode === 'walk') {
     if (keys.has('KeyA') || keys.has('ArrowLeft')) moveX = -1;

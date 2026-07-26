@@ -11,6 +11,35 @@ const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d,
                    0xcf6b3a, 0x2b2f33, 0xa8324f, 0x3d6f8f];
 const BANNER_COLS = [0xb23a2e, 0x2f6b8f, 0xd0a03a, 0x357a55, 0x8a3f70];
 
+// A signboard carrying the building's own name, drawn as text. This is
+// labelling in the sense a map labels a place: the name only, set in a neutral
+// typeface, with no logo, wordmark or brand styling reproduced.
+const signCache = new Map();
+function texNameSign(name, bg, fg) {
+  const key = name + bg + fg;
+  if (signCache.has(key)) return signCache.get(key);
+  const W = 512, H = 128;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.fillStyle = bg; x.fillRect(0, 0, W, H);
+  x.fillStyle = 'rgba(255,255,255,0.10)'; x.fillRect(0, 0, W, 5);
+  x.fillStyle = fg;
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  let size = 62;
+  const label = name.toUpperCase();
+  do {
+    x.font = `600 ${size}px ui-sans-serif, system-ui, -apple-system, Helvetica, Arial`;
+    size -= 3;
+  } while (x.measureText(label).width > W - 44 && size > 16);
+  x.fillText(label, W / 2, H / 2 + 3);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  signCache.set(key, t);
+  return t;
+}
+
 function yawMesh(geo, mat, x, y, z, ang) {
   const m = new THREE.Mesh(geo, mat);
   m.position.set(x, y, z);
@@ -186,6 +215,30 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     const mx = (a[0] + c[0]) / 2, mz = (a[1] + c[1]) / 2;
     const ang = Math.atan2(c[0] - a[0], c[1] - a[1]);
     const oX = mx - cx, oZ = mz - cz, oL = Math.hypot(oX, oZ) || 1;
+
+    // named buildings get their name on the fascia, which is what actually
+    // lets you tell where you are
+    if (b.n && bl > 14) {
+      const bgc = pick(SIGN_COLS);
+      const boardW = Math.min(26, bl * 0.55);
+      const board = new THREE.Mesh(
+        new THREE.PlaneGeometry(boardW, boardW * 0.25),
+        new THREE.MeshStandardMaterial({
+          map: texNameSign(b.n, '#' + bgc.toString(16).padStart(6, '0'), '#f4f1ea'),
+          roughness: 0.5, emissive: 0x151515, emissiveIntensity: 0.35,
+        }));
+      const sy = Math.min(b.h - 2.2, 7.4);
+      board.position.set(mx + (oX / oL) * 1.05, sy, mz + (oZ / oL) * 1.05);
+      board.rotation.y = ang + Math.PI / 2;
+      world.add(board);
+      const backer = new THREE.Mesh(
+        new THREE.BoxGeometry(boardW + 0.5, boardW * 0.25 + 0.5, 0.3), MAT.darkMetal);
+      backer.position.set(mx + (oX / oL) * 0.85, sy, mz + (oZ / oL) * 0.85);
+      backer.rotation.y = ang + Math.PI / 2;
+      backer.castShadow = true;
+      world.add(backer);
+      stats.nameSigns = (stats.nameSigns || 0) + 1;
+    }
 
     if (b.h > 34 && chance(0.55)) {
       roofSign.push([mx + (oX / oL) * 0.6, b.h + 2.2, mz + (oZ / oL) * 0.6, ang + Math.PI / 2,

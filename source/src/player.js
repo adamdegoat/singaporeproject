@@ -37,6 +37,7 @@ export function buildWalker() {
   const jeans = new THREE.MeshLambertMaterial({ color: 0x38414f });
   const skin = new THREE.MeshLambertMaterial({ color: 0x8a6a52 });
   const hair = new THREE.MeshLambertMaterial({ color: 0x241c16 });
+  const shoe = new THREE.MeshLambertMaterial({ color: 0x2b2723 });
 
   const part = (geo, mat, x, y, z) => {
     const m = new THREE.Mesh(geo, mat);
@@ -50,10 +51,15 @@ export function buildWalker() {
   const hips = part(new THREE.CapsuleGeometry(0.125, 0.10, 3, 8), jeans, 0, 0.95, 0);
   const head = part(new THREE.SphereGeometry(0.112, 14, 12), skin, 0, 1.62, 0);
   part(new THREE.SphereGeometry(0.119, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.6), hair, 0, 1.64, 0);
+  part(new THREE.CylinderGeometry(0.055, 0.062, 0.1, 8), skin, 0, 1.47, 0);   // neck
   const armL = part(new THREE.CapsuleGeometry(0.048, 0.42, 3, 8), shirt, -0.2, 1.22, 0);
   const armR = part(new THREE.CapsuleGeometry(0.048, 0.42, 3, 8), shirt, 0.2, 1.22, 0);
+  const handL = part(new THREE.SphereGeometry(0.055, 8, 7), skin, -0.205, 0.99, 0);
+  const handR = part(new THREE.SphereGeometry(0.055, 8, 7), skin, 0.205, 0.99, 0);
   const legL = part(new THREE.CapsuleGeometry(0.062, 0.46, 3, 8), jeans, -0.09, 0.53, 0);
   const legR = part(new THREE.CapsuleGeometry(0.062, 0.46, 3, 8), jeans, 0.09, 0.53, 0);
+  const shoeL = part(new THREE.BoxGeometry(0.115, 0.075, 0.26), shoe, -0.09, 0.06, 0.03);
+  const shoeR = part(new THREE.BoxGeometry(0.115, 0.075, 0.26), shoe, 0.09, 0.06, 0.03);
 
   return {
     group: g,
@@ -63,6 +69,10 @@ export function buildWalker() {
       armR.rotation.x = -sw * 0.7;
       legL.rotation.x = -sw * 0.8;
       legR.rotation.x = sw * 0.8;
+      handL.position.z = sw * 0.28;
+      handR.position.z = -sw * 0.28;
+      shoeL.position.z = 0.03 - sw * 0.32;
+      shoeR.position.z = 0.03 + sw * 0.32;
       const bob = speed > 0.1 ? Math.abs(Math.cos(phase * 2.4)) * 0.03 : 0;
       torso.position.y = 1.24 + bob;
       head.position.y = 1.62 + bob;

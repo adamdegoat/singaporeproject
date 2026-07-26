@@ -37,7 +37,19 @@
     font:600 12px/1 ui-sans-serif,system-ui,-apple-system,Helvetica,Arial;
     letter-spacing:.03em;color:#12161b;background:#ded3bd;border:0;
     padding:9px 15px;border-radius:20px;box-shadow:0 2px 8px rgba(0,0,0,.3)}
-  @media (orientation:portrait){ #rotate{display:grid} #help,#place,#map,#modebtn,#soundbtn{display:none} }
+  #stick{position:fixed;left:38px;bottom:38px;width:108px;height:108px;
+    border-radius:50%;border:2px solid rgba(232,221,198,.5);
+    background:rgba(12,16,20,.28);display:none;pointer-events:none}
+  #stick.on{display:block}
+  #knob{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;
+    border-radius:50%;background:rgba(232,221,198,.82);
+    box-shadow:0 2px 8px rgba(0,0,0,.35);transition:transform .04s linear}
+  #lookhint{position:fixed;right:0;top:0;bottom:0;width:50%;display:none;
+    pointer-events:none;align-items:center;justify-content:center;
+    font:600 12px/1.4 ui-sans-serif,system-ui,Helvetica,Arial;
+    color:rgba(240,235,222,.28);letter-spacing:.14em;text-transform:uppercase}
+  #lookhint.on{display:flex}
+  @media (orientation:portrait){ #rotate{display:grid} #help,#place,#map,#modebtn,#soundbtn,#stick,#lookhint{display:none} }
 </style>
 <canvas id="c"></canvas>
 <div id="rotate"><div><span>&#8635;</span>Turn your phone sideways<br><small style="opacity:.6">this rides in landscape</small></div></div>
@@ -51,6 +63,8 @@
   <b>drag right side</b> steer<br>
   <span style="opacity:.65">keys: A/D · W · S · E to get off</span>
 </div>
+<div id="stick"><div id="knob"></div></div>
+<div id="lookhint">drag to look</div>
 <button id="soundbtn" type="button">Sound on</button>
 <button id="modebtn" type="button">Get off</button>
 <script type="module" src="./app.js"></script>
