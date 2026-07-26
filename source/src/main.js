@@ -2,7 +2,9 @@ import * as THREE from '../lib/three.module.js';
 import { PAL, R, rand, pick, chance } from './tex.js';
 import { MAT, buildBuildings, buildRoads, TreeField, aoPatch } from './city.js';
 import { buildVespa, buildRider, newState, step, RIDE } from './vespa.js';
-import { TOUCH, input, attachTouch, readInput, touchDebug } from './input.js';
+import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
+import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
+import { buildMarkings, dressSideStreets } from './markings.js';
 import { Crowd, Traffic } from './actors.js';
 import { buildFurniture } from './street.js';
 import { buildSignage, Wayfinder } from './wayfind.js';
@@ -192,6 +194,12 @@ scene.add(bike);
 let S = newState(0, 0, 0);
 let ready = false, stats = {};
 let crowdSys = null, trafficSys = null, wayfinder = null;
+let mode = 'ride';                 // 'ride' | 'walk'
+let camYaw = 0, camPitch = 0.16;   // free look, walk mode
+const walker = newWalker();
+const walkerRig = buildWalker();
+walkerRig.group.visible = false;
+scene.add(walkerRig.group);
 let clock = 0;
 
 fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
@@ -219,6 +227,9 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
     ? buildFurniture(world, axis, blocked) : {};
   const signage = (!P.has('nosigns') && axis)
     ? buildSignage(world, axis, data, blocked) : {};
+  const marks = (!P.has('nomarks') && axis) ? buildMarkings(world, axis) : 0;
+  const side = (!P.has('noside') && axis)
+    ? dressSideStreets(world, data, axis, blocked, TreeField) : {};
   if (axis) wayfinder = new Wayfinder(data, axis);
   window.__axis = axis;
   const people = crowdSys ? crowdSys.people.length : 0;
@@ -235,13 +246,22 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
     const nx = -dz / L, nz = dx / L;
     S = newState(p0[0] + nx * -3.4, p0[1] + nz * -3.4, Math.atan2(dx, dz));
   }
-  stats = { buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
+  stats = { marks, ...side, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
   ready = true;
   window.__ready = true;
   window.__stats = stats;
 }).catch((e) => { hud.textContent = 'data load failed: ' + e.message; });
 
 if (TOUCH) attachTouch(canvas);
+attachMouse(canvas);
+{
+  const btn = document.getElementById('modebtn');
+  if (btn) {
+    const tap = (e) => { e.preventDefault(); e.stopPropagation(); toggleMode(); };
+    btn.addEventListener('click', tap);
+    btn.addEventListener('touchstart', tap, { passive: false });
+  }
+}
 
 /* ---------------- camera rigs ---------------- */
 const CAM = P.get('cam') || 'ride';
@@ -251,6 +271,52 @@ const topCam = new THREE.OrthographicCamera(-260, 260, 260, -260, 1, 2000);
 topCam.up.set(0, 0, -1);
 topCam.position.set(0, 900, 0);
 topCam.lookAt(0, 0, 0);
+
+function toggleMode() {
+  if (mode === 'ride') {
+    // step off to the left of the scooter, onto the kerb side
+    const nx = Math.cos(S.heading), nz = -Math.sin(S.heading);
+    let wx = S.x + nx * 1.2, wz = S.z + nz * 1.2;
+    if (blocked(wx, wz)) { wx = S.x - nx * 1.2; wz = S.z - nz * 1.2; }
+    walker.x = wx; walker.z = wz; walker.heading = S.heading; walker.speed = 0;
+    S.speed = 0; S.reversing = false;
+    camYaw = S.heading; camPitch = 0.16;
+    walkerRig.group.visible = true;
+    rider.visible = false;      // he is the one standing next to it now
+    mode = 'walk';
+  } else {
+    const d = Math.hypot(walker.x - S.x, walker.z - S.z);
+    if (d > 6) return;                       // must walk back to the scooter
+    walkerRig.group.visible = false;
+    rider.visible = true;
+    camInit = false;
+    mode = 'ride';
+  }
+  updateHelp();
+}
+
+function updateHelp() {
+  const el = document.getElementById('help');
+  if (!el) return;
+  el.innerHTML = mode === 'ride'
+    ? '<b>hold left side</b> throttle<br><b>hold lower left</b> brake<br>'
+      + '<b>hold brake stopped</b> reverse<br><b>drag right side</b> steer<br>'
+      + '<span style="opacity:.65">keys: A/D · W · S · E to get off</span>'
+    : '<b>drag left side</b> walk<br><b>drag right side</b> look around<br>'
+      + '<span style="opacity:.65">keys: WASD · shift to run · E to ride</span>';
+  const btn = document.getElementById('modebtn');
+  if (btn) btn.textContent = mode === 'ride' ? 'Get off' : 'Ride';
+}
+
+function walkCamera(dt) {
+  const dist = 3.6;
+  const cy = Math.cos(camPitch), sy = Math.sin(camPitch);
+  const px = walker.x - Math.sin(camYaw) * dist * cy;
+  const pz = walker.z - Math.cos(camYaw) * dist * cy;
+  camera.position.set(px, 1.62 + dist * sy, pz);
+  camera.lookAt(walker.x, 1.35, walker.z);
+  camera.fov = 62; camera.updateProjectionMatrix();
+}
 
 const camPos = new THREE.Vector3(), camAim = new THREE.Vector3();
 let camInit = false;
@@ -305,12 +371,46 @@ function loop(now) {
   if (document.hidden) { requestAnimationFrame(loop); return; }
 
   if (ready) {
-    const inp = readInput();
+    const inp = readInput(mode);
+    if (input.toggleMode) { input.toggleMode = false; toggleMode(); }
     if (window.__force) {   // vet harness drives without touching the screen
       inp.throttle = window.__force.throttle ?? inp.throttle;
       inp.brake = window.__force.brake ?? inp.brake;
       inp.steer = window.__force.steer ?? inp.steer;
     }
+
+    if (mode === 'walk') {
+      camYaw -= inp.lookDX * 0.0045;
+      camPitch = Math.max(-0.35, Math.min(0.95, camPitch + inp.lookDY * 0.0035));
+      // stick is relative to where the camera is pointing
+      const fx = Math.sin(camYaw), fz = Math.cos(camYaw);
+      const mx = -inp.moveY * fx + inp.moveX * fz;
+      const mz = -inp.moveY * fz - inp.moveX * fx;
+      const wx = walker.x, wz = walker.z;
+      stepWalk(walker, dt, mx, mz, inp.run);
+      if (blocked(walker.x, walker.z)) {
+        if (!blocked(walker.x, wz)) walker.z = wz;
+        else if (!blocked(wx, walker.z)) walker.x = wx;
+        else { walker.x = wx; walker.z = wz; }
+      }
+      walkerRig.group.position.set(walker.x, 0, walker.z);
+      walkerRig.group.rotation.y = walker.heading;
+      walkerRig.pose(walker.phase, walker.speed);
+      sun.position.set(walker.x + SUNDIR.x * 150, SUNDIR.y * 150, walker.z + SUNDIR.z * 150);
+      sun.target.position.set(walker.x, 0, walker.z);
+      sun.target.updateMatrixWorld();
+      clock += dt;
+      if (crowdSys) crowdSys.update(clock, dt);
+      if (trafficSys) trafficSys.update(clock, dt);
+      if (wayfinder) wayfinder.update(walker, dt);
+      walkCamera(dt);
+      renderer.render(scene, camera);
+      frames++;
+      if (now - t0 > 1000) reportHud(now);
+      requestAnimationFrame(loop);
+      return;
+    }
+
     const px = S.x, pz = S.z;
     step(S, dt, inp.throttle, inp.brake, inp.steer);
     if (blocked(S.x, S.z)) {
@@ -344,20 +444,25 @@ function loop(now) {
   renderer.render(scene, CAM === 'top' ? topCam : camera);
 
   frames++;
-  if (now - t0 > 1000) {
+  if (now - t0 > 1000) reportHud(now);
+  requestAnimationFrame(loop);
+}
+
+function reportHud(now) {
+  {
     fps = Math.round((frames * 1000) / (now - t0)); frames = 0; t0 = now;
     const dpr = renderer.getPixelRatio();
     const px = Math.round(canvas.clientWidth * dpr) + 'x' + Math.round(canvas.clientHeight * dpr);
     hud.textContent =
       `${fps} fps · ${px} @dpr${dpr} · ${(renderer.info.render.triangles / 1000) | 0}k tris · ` +
-      `${renderer.info.render.calls} draws · ${(S.speed * 3.6) | 0} km/h` +
+      `${renderer.info.render.calls} draws · ` +
+      (mode === 'walk' ? 'on foot' : `${Math.abs(S.speed * 3.6) | 0} km/h${S.reversing ? ' R' : ''}`) +
       (stats.buildings ? ` · ${stats.buildings} buildings` : '');
     window.__probe = {
       fps, tris: renderer.info.render.triangles, calls: renderer.info.render.calls,
-      px, dpr, kmh: +(S.speed * 3.6).toFixed(1), ...stats,
+      px, dpr, kmh: +(S.speed * 3.6).toFixed(1), mode, ...stats,
     };
   }
-  requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
@@ -367,6 +472,9 @@ window.__drive = (throttle, steer, seconds) => {
   setTimeout(() => { window.__force = null; }, seconds * 1000);
 };
 window.__inp = () => ({ TOUCH, steer: input.steer, throttle: input.throttle, brake: input.brake, touches: touchDebug(), fired: window.__touchFired || 0 });
+window.__mode = () => mode;
+window.__toggle = () => toggleMode();
+window.__walker = () => ({ x: +walker.x.toFixed(1), z: +walker.z.toFixed(1), sp: +walker.speed.toFixed(2) });
 window.__state = () => ({ x: +S.x.toFixed(1), z: +S.z.toFixed(1), kmh: +(S.speed * 3.6).toFixed(1) });
 window.__dbg = () => {
   const bb = new THREE.Box3().setFromObject(world);

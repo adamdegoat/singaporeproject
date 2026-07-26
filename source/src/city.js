@@ -302,7 +302,7 @@ export class TreeField {
     const branches = new THREE.InstancedMesh(
       new THREE.CylinderGeometry(0.07, 0.2, 1, 5), MAT.trunk, n * BRANCH);
     const blobs = new THREE.InstancedMesh(
-      new THREE.IcosahedronGeometry(1, 1), MAT.canopy, n * BLOBS);
+      new THREE.IcosahedronGeometry(1, 0), MAT.canopy, n * BLOBS);
     const cards = new THREE.InstancedMesh(
       new THREE.PlaneGeometry(1, 0.55), MAT.leaf, n * CARDS);
     trunks.castShadow = branches.castShadow = blobs.castShadow = cards.castShadow = true;

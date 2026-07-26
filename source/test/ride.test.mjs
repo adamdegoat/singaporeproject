@@ -107,4 +107,39 @@ t('leans into the turn on the correct side', () => {
   assert.ok(r.lean !== 0);
 });
 
+t('holding the brake at a standstill reverses', () => {
+  const s = newState();
+  run(s, 2.5, 0, 1, 0);
+  assert.ok(s.speed < -0.5, 'did not reverse: ' + s.speed.toFixed(2));
+  assert.ok(s.speed >= -RIDE.vReverse - 1e-6, 'reverse too fast: ' + s.speed.toFixed(2));
+});
+
+t('reverse is much slower than forward', () => {
+  const f = run(newState(), 20, 1, 0, 0);
+  const r = run(newState(), 20, 0, 1, 0);
+  assert.ok(Math.abs(r.speed) < f.speed * 0.35, `rev ${r.speed.toFixed(2)} vs fwd ${f.speed.toFixed(2)}`);
+});
+
+t('throttle cancels reverse and drives forward again', () => {
+  const s = newState();
+  run(s, 2.5, 0, 1, 0);
+  assert.ok(s.speed < 0);
+  run(s, 4, 1, 0, 0);
+  assert.ok(s.speed > 1, 'did not resume forward: ' + s.speed.toFixed(2));
+  assert.equal(s.reversing, false);
+});
+
+t('releasing the brake settles reverse back to a stop', () => {
+  const s = newState();
+  run(s, 2.5, 0, 1, 0);
+  run(s, 4, 0, 0, 0);
+  assert.equal(s.speed, 0);
+});
+
+t('top speed is a scooter pace, not a motorway one', () => {
+  const s = run(newState(), 40, 1, 0, 0);
+  const kmh = s.speed * 3.6;
+  assert.ok(kmh > 30 && kmh < 48, 'top speed ' + kmh.toFixed(1) + ' km/h');
+});
+
 console.log(`\n${pass} passed`);

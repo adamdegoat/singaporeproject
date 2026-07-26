@@ -11,8 +11,12 @@ heights are hand-corrected where the OSM tags are wrong.
 Nothing is downloaded at runtime beyond the code and a 120KB geometry file —
 every texture is drawn into a canvas at load.
 
-**Controls (landscape):** drag the left side to steer, hold the right side for
-throttle, hold the lower right to brake. Keyboard: A/D, W, S.
+**Riding (landscape):** hold the left side for throttle, hold the lower left to
+brake, keep holding the brake once stopped to reverse, drag the right side to
+steer. Keyboard: W, S, A/D.
+
+**On foot:** tap *Get off* (or press E) to dismount. Then drag the left side to
+walk and the right side to look around. Keyboard: WASD, shift to run.
 
 ## Source
 

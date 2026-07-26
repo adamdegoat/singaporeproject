@@ -1,8 +1,10 @@
 // Pure ride model. No three.js, no DOM — so it runs and is asserted in Node in
 // milliseconds instead of by driving a browser.
 export const RIDE = {
-  vMax: 15.5,          // m/s, ~56 km/h
-  accel: 6.2,
+  vMax: 11.6,          // m/s, ~42 km/h — a scooter pace, not a motorway one
+  vReverse: 2.4,       // walking-pace backwards
+  accel: 5.0,
+  reverseAccel: 2.6,
   brake: 11.0,
   coast: 1.35,
   drag: 0.016,
@@ -14,18 +16,34 @@ export const RIDE = {
 };
 
 export function newState(x = 0, z = 0, heading = 0) {
-  return { x, z, heading, speed: 0, lean: 0, yaw: 0, wheel: 0 };
+  return { x, z, heading, speed: 0, lean: 0, yaw: 0, wheel: 0, revHold: 0, reversing: false };
 }
 
 export function step(s, dt, throttle, brakeIn, steer) {
-  let a = throttle * RIDE.accel - brakeIn * RIDE.brake;
-  if (s.speed > 0.05) a -= RIDE.coast;
-  a -= RIDE.drag * s.speed * s.speed;
-  s.speed = Math.max(0, Math.min(RIDE.vMax, s.speed + a * dt));
-  // without a deadzone the coast term asymptotes and the scooter creeps forever
-  if (throttle === 0 && s.speed < 0.12) s.speed = 0;
+  // Reverse: keep holding the brake once you have stopped and it backs up.
+  // No extra control to learn, which matters when you only have two thumbs.
+  if (throttle > 0) { s.revHold = 0; s.reversing = false; }
+  else if (brakeIn > 0 && s.speed <= 0.03) s.revHold += dt;
+  else if (brakeIn === 0) { s.revHold = 0; if (s.speed >= -0.02) s.reversing = false; }
+  if (s.revHold > 0.35) s.reversing = true;
 
-  const authority = 1 / (1 + RIDE.steerFalloff * s.speed * s.speed);
+  let a;
+  if (s.reversing) {
+    a = -brakeIn * RIDE.reverseAccel;
+  } else {
+    a = throttle * RIDE.accel - brakeIn * RIDE.brake * (s.speed > 0 ? 1 : 0);
+  }
+  // rolling resistance and drag always oppose motion
+  if (Math.abs(s.speed) > 0.05) {
+    const dir = Math.sign(s.speed);
+    a -= dir * (RIDE.coast + RIDE.drag * s.speed * s.speed);
+  }
+  s.speed = Math.max(-RIDE.vReverse, Math.min(RIDE.vMax, s.speed + a * dt));
+  // without a deadzone the coast term asymptotes and the scooter creeps forever
+  if (!s.reversing && throttle === 0 && Math.abs(s.speed) < 0.12) s.speed = 0;
+  if (s.reversing && brakeIn === 0 && Math.abs(s.speed) < 0.12) { s.speed = 0; s.reversing = false; }
+
+  const authority = 1 / (1 + RIDE.steerFalloff * s.speed * s.speed);   // signed speed below
   const steerAngle = steer * RIDE.steerMax * authority;
   const yawRate = (s.speed / RIDE.wheelbase) * Math.tan(steerAngle);
   s.yaw = yawRate;

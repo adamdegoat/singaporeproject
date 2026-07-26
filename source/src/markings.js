@@ -1,0 +1,151 @@
+// Road markings and side-street dressing.
+//
+// Markings are what make tarmac read as a road rather than a grey plane, and
+// they are almost free: flat instanced quads a few centimetres above the
+// surface, all in two draw calls.
+import * as THREE from '../lib/three.module.js';
+import { R, rand, chance } from './tex.js';
+import { MAT } from './city.js';
+
+const WHITE = new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.86 });
+const YELLOW = new THREE.MeshStandardMaterial({ color: 0xd6ae44, roughness: 0.86 });
+
+function emitFlat(world, list, w, l, mat) {
+  if (!list.length) return 0;
+  const geo = new THREE.PlaneGeometry(w, l);
+  const im = new THREE.InstancedMesh(geo, mat, list.length);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  const p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1);
+  list.forEach((r, i) => {
+    p.set(r[0], r[1], r[2]);
+    e.set(-Math.PI / 2, r[3], 0, 'YXZ');
+    q.setFromEuler(e);
+    m.compose(p, q, s);
+    im.setMatrixAt(i, m);
+  });
+  im.receiveShadow = true;
+  world.add(im);
+  return list.length;
+}
+
+export function buildMarkings(world, axis) {
+  const pts = axis.p, half = axis.w / 2;
+  const dash = [], edge = [], yellowL = [], stopL = [], arrowShaft = [], arrowHead = [];
+
+  let acc = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+    const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
+    if (len < 0.5) continue;
+    const ux = dx / len, uz = dz / len, nx = -uz, nz = ux;
+    const ang = Math.atan2(ux, uz);
+
+    for (let t = 0; t < len; t += 1, acc++) {
+      const px = x1 + ux * t, pz = z1 + uz * t;
+
+      // dashed lane dividers: 3m mark, 6m gap, on both carriageways
+      if (acc % 9 < 3) {
+        for (const off of [-3.6, 3.6]) {
+          dash.push([px + nx * off, 0.075, pz + nz * off, ang]);
+        }
+      }
+      // solid white edge line just inside the kerb
+      if (acc % 2 === 0) {
+        for (const sgn of [-1, 1]) {
+          edge.push([px + nx * (half - 0.55) * sgn, 0.075, pz + nz * (half - 0.55) * sgn, ang]);
+        }
+      }
+      // double yellow along the kerb — no parking, and unmistakably local
+      if (acc % 2 === 0) {
+        for (const sgn of [-1, 1]) {
+          yellowL.push([px + nx * (half - 0.12) * sgn, 0.078, pz + nz * (half - 0.12) * sgn, ang]);
+          yellowL.push([px + nx * (half - 0.34) * sgn, 0.078, pz + nz * (half - 0.34) * sgn, ang]);
+        }
+      }
+      // stop line and a straight-ahead arrow before each crossing
+      if (acc % 190 === 24) {
+        for (const sgn of [-1, 1]) {
+          stopL.push([px + nx * (half * 0.5) * sgn, 0.08, pz + nz * (half * 0.5) * sgn, ang + Math.PI / 2]);
+        }
+      }
+      if (acc % 190 === 60 || acc % 190 === 140) {
+        for (const off of [-5.4, -1.9, 1.9, 5.4]) {
+          arrowShaft.push([px + nx * off, 0.08, pz + nz * off, ang]);
+          arrowHead.push([px + nx * off + ux * 1.9, 0.08, pz + nz * off + uz * 1.9, ang]);
+        }
+      }
+    }
+  }
+
+  let n = 0;
+  n += emitFlat(world, dash, 0.14, 1.0, WHITE);
+  n += emitFlat(world, edge, 0.12, 2.0, WHITE);
+  n += emitFlat(world, yellowL, 0.10, 2.0, YELLOW);
+  n += emitFlat(world, stopL, 0.42, half * 0.92, WHITE);
+  n += emitFlat(world, arrowShaft, 0.28, 3.2, WHITE);
+  n += emitFlat(world, arrowHead, 0.92, 0.9, WHITE);
+  return n;
+}
+
+/* ---------------- side streets ---------------- */
+// The back streets were bare tarmac. They get kerbs, lamps and a thinner tree
+// line so the world does not stop existing one block off Orchard.
+export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
+  const trees = new TreeField();
+  const kerb = [], lamp = [], lampArm = [];
+  let roads = 0;
+
+  for (const r of data.roads) {
+    if (!r.n || /orchard road/i.test(r.n)) continue;
+    if (r.k === 'footway' || r.k === 'pedestrian' || r.k === 'service') continue;
+    const pts = r.p, half = r.w / 2;
+    let total = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      total += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+    }
+    if (total < 45) continue;
+    roads++;
+
+    let acc = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+      const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
+      if (len < 0.5) continue;
+      const ux = dx / len, uz = dz / len, nx = -uz, nz = ux;
+      const ang = Math.atan2(ux, uz);
+      for (let t = 0; t < len; t += 4, acc += 4) {
+        const px = x1 + ux * t, pz = z1 + uz * t;
+        for (const sgn of [-1, 1]) {
+          const kx = px + nx * (half + 0.4) * sgn, kz = pz + nz * (half + 0.4) * sgn;
+          if (!isBlocked(kx, kz)) kerb.push([kx, 0.15, kz, ang]);
+          if (acc % 44 === 0) {
+            const tx = px + nx * (half + 2.8) * sgn, tz = pz + nz * (half + 2.8) * sgn;
+            if (!isBlocked(tx, tz)) trees.add(tx, tz, rand(0.6, 0.9));
+          }
+          if (acc % 96 === 0 && !isBlocked(kx, kz)) {
+            lamp.push([kx, 3.6, kz, ang]);
+            lampArm.push([kx - nx * 0.9 * sgn, 7.0, kz - nz * 0.9 * sgn, ang, sgn]);
+          }
+        }
+      }
+    }
+  }
+
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  const p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1);
+  const emit = (geo, mat, list, fn) => {
+    if (!list.length) return;
+    const im = new THREE.InstancedMesh(geo, mat, list.length);
+    list.forEach((r, i) => { fn(r); m.compose(p, q, s); im.setMatrixAt(i, m); });
+    im.castShadow = true; im.receiveShadow = true;
+    world.add(im);
+  };
+  const yaw = (r) => { p.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
+  emit(new THREE.BoxGeometry(0.38, 0.3, 4.0), MAT.kerb, kerb, yaw);
+  emit(new THREE.CylinderGeometry(0.09, 0.13, 7.2, 8), MAT.metal, lamp, yaw);
+  emit(new THREE.BoxGeometry(0.9, 0.16, 0.4), MAT.trim, lampArm, (r) => {
+    p.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+  });
+  const treeCount = trees.build(world);
+  return { sideRoads: roads, sideTrees: treeCount, sideKerbs: kerb.length };
+}

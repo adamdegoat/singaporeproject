@@ -26,7 +26,13 @@
     padding:7px 14px;border-radius:20px;pointer-events:none;white-space:nowrap}
   #map{position:fixed;left:calc(10px + env(safe-area-inset-left));top:10px;
     width:112px;height:112px;border-radius:6px;opacity:.92;pointer-events:none}
-  @media (orientation:portrait){ #rotate{display:grid} #help,#place,#map{display:none} }
+  #modebtn{position:fixed;right:calc(10px + env(safe-area-inset-right));
+    bottom:calc(12px + env(safe-area-inset-bottom));
+    font:600 13px/1 ui-sans-serif,system-ui,-apple-system,Helvetica,Arial;
+    letter-spacing:.03em;color:#12161b;background:#e8ddc6;border:0;
+    padding:12px 18px;border-radius:22px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+  #modebtn:active{background:#cfc4ad}
+  @media (orientation:portrait){ #rotate{display:grid} #help,#place,#map,#modebtn{display:none} }
 </style>
 <canvas id="c"></canvas>
 <div id="rotate"><div><span>&#8635;</span>Turn your phone sideways<br><small style="opacity:.6">this rides in landscape</small></div></div>
@@ -36,7 +42,9 @@
 <div id="help">
   <b>hold left side</b> throttle<br>
   <b>hold lower left</b> brake<br>
+  <b>hold brake stopped</b> reverse<br>
   <b>drag right side</b> steer<br>
-  <span style="opacity:.65">keys: A/D · W · S</span>
+  <span style="opacity:.65">keys: A/D · W · S · E to get off</span>
 </div>
+<button id="modebtn" type="button">Get off</button>
 <script type="module" src="./app.js"></script>

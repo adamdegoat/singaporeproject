@@ -210,9 +210,14 @@ export class Traffic {
     this.glaze = mk(new THREE.BoxGeometry(1.69, 0.38, 2.00), glass, n);
     this.wheel = mk(new THREE.CylinderGeometry(0.31, 0.31, 0.2, 10), dark, n * 4);
 
+    // Singapore liveries: the LTA green most of the fleet wears, and SBS red
     this.busBody = mk(new THREE.BoxGeometry(2.5, 2.5, 11.8),
-      new THREE.MeshStandardMaterial({ color: 0xc7c9cc, roughness: 0.5 }), b);
+      new THREE.MeshStandardMaterial({ roughness: 0.5 }), b);
+    this.busSkirt = mk(new THREE.BoxGeometry(2.54, 0.62, 11.7),
+      new THREE.MeshStandardMaterial({ color: 0xf0efe9, roughness: 0.6 }), b);
     this.busGlaze = mk(new THREE.BoxGeometry(2.54, 0.95, 10.4), glass, b);
+    this.busBlind = mk(new THREE.BoxGeometry(1.65, 0.42, 0.08),
+      new THREE.MeshStandardMaterial({ color: 0x1a1d20, emissive: 0xd8a23c, emissiveIntensity: 0.5 }), b);
     this.busWheel = mk(new THREE.CylinderGeometry(0.48, 0.48, 0.28, 10), dark, b * 4);
 
     const col = new THREE.Color();
@@ -229,8 +234,13 @@ export class Traffic {
     }
     if (this.body.instanceColor) this.body.instanceColor.needsUpdate = true;
     if (this.roof.instanceColor) this.roof.instanceColor.needsUpdate = true;
+    if (this.busBody.instanceColor) this.busBody.instanceColor.needsUpdate = true;
+    const BUS_LIVERY = [0x3f7d46, 0x3f7d46, 0xc4342f];   // LTA green, green, SBS red
+    const bcol = new THREE.Color();
     for (let i = 0; i < b; i++) {
       const dir = i % 2 === 0 ? 1 : -1;
+      bcol.setHex(BUS_LIVERY[i % BUS_LIVERY.length]);
+      this.busBody.setColorAt(i, bcol);
       this.items.push({
         kind: 'bus', i,
         s: avoidS + 140 + ((this.path.len - 200) / b) * i + rand(-15, 15),
@@ -273,7 +283,10 @@ export class Traffic {
         }
       } else {
         p.set(x, 1.55, z); m.compose(p, q, s); this.busBody.setMatrixAt(it.i, m);
+        p.set(x, 0.62, z); m.compose(p, q, s); this.busSkirt.setMatrixAt(it.i, m);
         p.set(x, 2.05, z); m.compose(p, q, s); this.busGlaze.setMatrixAt(it.i, m);
+        p.set(x + ux * 5.95 * it.dir, 2.42, z + uz * 5.95 * it.dir);
+        m.compose(p, q, s); this.busBlind.setMatrixAt(it.i, m);
         for (let w = 0; w < 4; w++) {
           const along = (w < 2 ? 3.6 : -3.6) * it.dir;
           const across = (w % 2 ? 1.2 : -1.2);
@@ -287,7 +300,7 @@ export class Traffic {
       }
     }
     for (const part of [this.body, this.roof, this.glaze, this.wheel,
-      this.busBody, this.busGlaze, this.busWheel]) {
+      this.busBody, this.busSkirt, this.busGlaze, this.busBlind, this.busWheel]) {
       part.instanceMatrix.needsUpdate = true;
     }
   }
