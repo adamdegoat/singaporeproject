@@ -1,0 +1,256 @@
+#!/usr/bin/env python3
+"""Turn raw Overpass JSON for the ION / Ngee Ann stretch into a compact scene file.
+
+Coordinates are projected to local metres about a centre point:
+  +x = east, +z = south, y = up (three.js convention).
+OSM heights are unreliable here (Hilton is tagged 2 levels but 90m), so the
+landmarks that carry recognition get hand-set heights and the rest fall back to
+floor count, then to a per-type default.
+"""
+import json, math, os, re
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+LAT0, LON0 = 1.30370, 103.83350          # outside Wisma Atria, mid-stretch
+M_PER_DEG_LAT = 110574.0
+M_PER_DEG_LON = 111320.0 * math.cos(math.radians(LAT0))
+
+# Hand-set heights in metres for the buildings that carry the recognition.
+# Approximate, from published storey counts; exact enough for silhouette.
+LANDMARKS = {
+    "ion orchard":            {"h": 42,  "tower": 218, "key": True},
+    "the orchard residences": {"h": 218, "key": True},
+    "ngee ann city":          {"h": 139, "podium": 32, "key": True},
+    "takashimaya":            {"h": 32,  "key": True},
+    "wisma atria":            {"h": 80,  "key": True},
+    "tang plaza":             {"h": 150, "key": True},
+    "tangs":                  {"h": 26,  "key": True},
+    "singapore marriott":     {"h": 150, "key": True},
+    "shaw house":             {"h": 90},
+    "shaw centre":            {"h": 90},
+    "lucky plaza":            {"h": 85},
+    "far east plaza":         {"h": 70},
+    "paragon":                {"h": 72},
+    "orchard towers":         {"h": 60},
+    "palais renaissance":     {"h": 55},
+    "hilton singapore orchard": {"h": 150},
+    "grand hyatt":            {"h": 60},
+    "forum":                  {"h": 40},
+    "orchard central":        {"h": 62},
+    "cathay cineleisure":     {"h": 38},
+    "scape":                  {"h": 24},
+    "mandarin gallery":       {"h": 40},
+    "delfi orchard":          {"h": 45},
+    "royal thai embassy":     {"h": 12},
+    "istana":                 {"h": 16},
+    "313somerset":            {"h": 42},
+    "313 somerset":           {"h": 42},
+    "wheelock place":         {"h": 92,  "key": True},
+    "tripleone somerset":     {"h": 110, "key": True},
+    "cairnhill nine":         {"h": 130, "key": True},
+    "orchard gateway":        {"h": 45},
+    "midpoint orchard":       {"h": 45},
+    "concorde hotel":         {"h": 70},
+    "york hotel":             {"h": 60},
+    "goodwood park":          {"h": 18},
+    "orchard parade":         {"h": 55},
+    "liat towers":            {"h": 40},
+    "the heeren":             {"h": 60},
+    "somerset":               {"h": 40},
+}
+TYPE_DEFAULT = {
+    "retail": 22, "commercial": 30, "hotel": 55, "apartments": 45,
+    "residential": 40, "office": 45, "civic": 18, "house": 9,
+    "roof": 5, "yes": 20, "school": 14, "church": 16, "parking": 12,
+}
+ROAD_WIDTH = {
+    "trunk": 17.5, "primary": 15.0, "secondary": 12.0, "tertiary": 10.0,
+    "residential": 8.0, "unclassified": 8.0, "service": 6.0,
+    "living_street": 7.0, "pedestrian": 7.0, "footway": 3.4,
+}
+
+
+def proj(lat, lon):
+    return ((lon - LON0) * M_PER_DEG_LON, (LAT0 - lat) * M_PER_DEG_LAT)
+
+
+def norm(s):
+    return re.sub(r"[^a-z0-9 ]", "", (s or "").lower()).strip()
+
+
+def height_for(tags):
+    name = norm(tags.get("name"))
+    for key, spec in LANDMARKS.items():
+        if key and key in name:
+            return spec["h"], spec.get("key", False)
+    h = tags.get("height")
+    if h:
+        try:
+            return float(str(h).replace("m", "").strip()), False
+        except ValueError:
+            pass
+    lv = tags.get("building:levels")
+    if lv:
+        try:
+            return max(3.5, float(lv) * 3.6), False
+        except ValueError:
+            pass
+    return TYPE_DEFAULT.get(tags.get("building", "yes"), 18), False
+
+
+def ring(geometry):
+    pts = [proj(p["lat"], p["lon"]) for p in geometry]
+    if len(pts) > 2 and abs(pts[0][0] - pts[-1][0]) < 1e-6 and abs(pts[0][1] - pts[-1][1]) < 1e-6:
+        pts = pts[:-1]
+    return pts
+
+
+def area(pts):
+    a = 0.0
+    for i in range(len(pts)):
+        x1, z1 = pts[i]
+        x2, z2 = pts[(i + 1) % len(pts)]
+        a += x1 * z2 - x2 * z1
+    return abs(a) / 2.0
+
+
+# If Overpass will not serve the road layer, fall back to a hand-traced Orchard
+# Road centreline so the build is never blocked. Approximate, and only used when
+# the real ways are missing.
+FALLBACK_ORCHARD = [
+    (1.30666, 103.82676), (1.30594, 103.82834), (1.30510, 103.82985),
+    (1.30437, 103.83124), (1.30380, 103.83259), (1.30322, 103.83401),
+    (1.30252, 103.83548), (1.30170, 103.83692), (1.30080, 103.83830),
+]
+
+
+def main():
+    raw = json.load(open(os.path.join(HERE, "raw.json")))
+    els = raw["elements"]
+    buildings, roads, trees = [], [], []
+
+    for e in els:
+        tags = e.get("tags", {})
+        if e["type"] == "node" and tags.get("natural") == "tree":
+            x, z = proj(e["lat"], e["lon"])
+            trees.append([round(x, 1), round(z, 1)])
+            continue
+        if e["type"] != "way" or "geometry" not in e:
+            continue
+
+        if "building" in tags:
+            pts = ring(e["geometry"])
+            if len(pts) < 3:
+                continue
+            a = area(pts)
+            if a < 45:                      # sheds, bin stores, map noise
+                continue
+            # spiky slivers triangulate badly and render as black shards
+            per = sum(math.dist(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts)))
+            if per > 0 and (4 * math.pi * a) / (per * per) < 0.03:
+                continue
+            h, key = height_for(tags)
+            b = {
+                "p": [[round(x, 1), round(z, 1)] for x, z in pts],
+                "h": round(h, 1),
+                "a": round(a),
+            }
+            if tags.get("name"):
+                b["n"] = tags["name"]
+            if key:
+                b["k"] = 1
+            buildings.append(b)
+
+        elif "highway" in tags:
+            kind = tags["highway"]
+            pts = [proj(p["lat"], p["lon"]) for p in e["geometry"]]
+            if len(pts) < 2:
+                continue
+            w = ROAD_WIDTH.get(kind, 6.0)
+            lanes = tags.get("lanes")
+            if lanes:
+                try:
+                    w = max(w, float(lanes) * 3.4)
+                except ValueError:
+                    pass
+            r = {
+                "p": [[round(x, 1), round(z, 1)] for x, z in pts],
+                "w": round(w, 1),
+                "k": kind,
+            }
+            if tags.get("name"):
+                r["n"] = tags["name"]
+            roads.append(r)
+
+    if not any(r.get("n", "").lower().startswith("orchard road") for r in roads):
+        print("  ! no Orchard Road way in data — using traced fallback centreline")
+        roads.append({
+            "p": [[round(x, 1), round(z, 1)] for x, z in
+                  (proj(la, lo) for la, lo in FALLBACK_ORCHARD)],
+            "w": 15.0, "k": "primary", "n": "Orchard Road",
+        })
+
+    # OSM splits Orchard Road into 28 short ways. Stitch them end-to-end into a
+    # single centreline so the street can be dressed and ridden as one axis.
+    def stitch(name_re, tol=32.0):
+        segs = [r["p"][:] for r in roads if re.search(name_re, r.get("n", ""), re.I)]
+        if not segs:
+            return None
+        segs.sort(key=lambda p: min(x * x + z * z for x, z in p))
+        chain = segs.pop(0)
+        changed = True
+        while changed and segs:
+            changed = False
+            head, tail = chain[0], chain[-1]
+            best, bd, mode = None, tol, None
+            for i, sg in enumerate(segs):
+                for (pt, m) in ((sg[0], "tail-start"), (sg[-1], "tail-end"),
+                                (sg[0], "head-start"), (sg[-1], "head-end")):
+                    anchor = tail if m.startswith("tail") else head
+                    d = math.dist(anchor, pt)
+                    if d < bd:
+                        bd, best, mode = d, i, m
+            if best is None:
+                break
+            sg = segs.pop(best)
+            if mode == "tail-start":
+                chain += sg[1:]
+            elif mode == "tail-end":
+                chain += list(reversed(sg))[1:]
+            elif mode == "head-start":
+                chain = list(reversed(sg))[:-1] + chain
+            else:
+                chain = sg[:-1] + chain
+            changed = True
+        return chain
+
+    axis = stitch(r"orchard road")
+    if axis and len(axis) > 3:
+        alen = sum(math.dist(axis[i], axis[i + 1]) for i in range(len(axis) - 1))
+        print(f"stitched Orchard Road axis: {len(axis)} pts, {alen:.0f} m")
+    else:
+        print("  ! could not stitch an axis, falling back")
+        axis = [[round(x, 1), round(z, 1)] for x, z in
+                (proj(la, lo) for la, lo in FALLBACK_ORCHARD)]
+
+    buildings.sort(key=lambda b: -b["a"])
+    out = {
+        "origin": {"lat": LAT0, "lon": LON0},
+        "buildings": buildings,
+        "roads": roads,
+        "trees": trees,
+        "axis": {"p": [[round(x, 1), round(z, 1)] for x, z in axis], "w": 16.0, "n": "Orchard Road"},
+    }
+    path = os.path.join(HERE, "orchard.json")
+    json.dump(out, open(path, "w"), separators=(",", ":"))
+
+    named = [b for b in buildings if "n" in b]
+    print(f"buildings {len(buildings)}  (named {len(named)}, landmarks {sum(1 for b in buildings if b.get('k'))})")
+    print(f"roads {len(roads)}   osm trees {len(trees)}")
+    print(f"wrote {path}  {os.path.getsize(path)/1024:.0f} KB")
+    print("\nlargest by footprint:")
+    for b in buildings[:12]:
+        print(f"  {b.get('n','(unnamed)')[:34]:36s} {b['a']:>7} m2   h={b['h']}")
+
+
+if __name__ == "__main__":
+    main()
