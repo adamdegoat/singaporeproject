@@ -178,6 +178,17 @@ function tangPlaza(api, b) {
   for (let f = 0; f < 30; f++) {
     slab(api, ob, u, ob.midV - tw * 0.36, tw * 0.9, 0.25, 22 + f * 3.9, 2.3, glass);
   }
+  // the "top knot": a finial spike above the pagoda roof
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(1.05, 10, 8), jade);
+  knob.position.set(ob.cx, 28.9, ob.cz); knob.castShadow = true; api.world.add(knob);
+  const spike = new THREE.Mesh(new THREE.ConeGeometry(0.42, 3.4, 8), jade);
+  spike.position.set(ob.cx, 31.0, ob.cz); spike.castShadow = true; api.world.add(spike);
+  // a second, smaller tier so it reads as a pagoda rather than a single pitch
+  const tier2 = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, l) * 0.40, 6.0, 4), jade);
+  tier2.position.set(ob.cx, 27.2, ob.cz);
+  tier2.rotation.y = -ob.ang + Math.PI / 4;
+  tier2.castShadow = true; api.world.add(tier2);
+
   const cap = new THREE.Mesh(new THREE.ConeGeometry(tw * 0.75, 7, 4), jade);
   cap.position.set(
     ob.cx + ob.ux * u - ob.uz * ob.midV,
@@ -192,10 +203,11 @@ function tangPlaza(api, b) {
 function paragon(api, b) {
   const ob = orientedBox(b.p);
   const stone = api.mat.paleStone, glass = api.mat.towerGlass;
-  api.world.add(api.extrude(b.p, 26, stone));
-  // strong horizontal banding is what this frontage reads as
+  // redeveloped in the late 1990s into a glass-covered building, so the podium
+  // is glazed with slim white mullion bands rather than clad in stone
+  api.world.add(api.extrude(b.p, 26, glass));
   for (let f = 0; f < 7; f++) {
-    api.world.add(api.extrude(api.grow(b.p, 1.012), 0.55, api.mat.trim, 4 + f * 3.4));
+    api.world.add(api.extrude(api.grow(b.p, 1.008), 0.32, api.mat.trim, 4 + f * 3.4));
   }
   const tw = Math.min(30, ob.halfShort * 0.95);
   slab(api, ob, ob.midU + ob.halfLong * 0.25, ob.midV, tw, tw * 0.8, 26, 44, glass);
@@ -204,7 +216,10 @@ function paragon(api, b) {
 
 function glassBoxPodiumTower(api, b) {
   const ob = orientedBox(b.p);
-  const glass = api.mat.towerGlass, stone = api.mat.paleStone;
+  let glass = api.mat.towerGlass;
+  const stone = api.mat.paleStone;
+  // Wisma Atria's frontage reads distinctly light blue against its neighbours
+  if (/wisma atria/i.test(b.n || '')) glass = api.mat.blueGlass;
   const podium = Math.min(30, b.h * 0.42);
   api.world.add(api.extrude(b.p, podium, glass));
   api.world.add(api.extrude(api.grow(b.p, 1.03), 1.0, stone, podium - 1.0));
@@ -229,12 +244,82 @@ function finnedSlab(api, b) {
   api.world.add(api.extrude(api.grow(b.p, 1.02), 1.1, api.mat.trim, b.h));
 }
 
+function wheelockPlace(api, b) {
+  const ob = orientedBox(b.p);
+  const glass = api.mat.towerGlass, stone = api.mat.paleStone;
+  api.world.add(api.extrude(b.p, 22, glass));
+  const tw = Math.min(26, ob.halfShort * 0.9);
+  slab(api, ob, ob.midU, ob.midV, tw, tw * 0.82, 22, 66, glass);
+  crown(api, ob, ob.midU, ob.midV, tw, tw * 0.82, 88, stone);
+
+  // Kisho Kurokawa's cone-shaped glass atrium over the entrance — the single
+  // thing that identifies this building from anywhere on the street
+  const sw = streetward(api, ob);
+  const cx = ob.cx + sw.nx * (ob.halfShort * 0.62);
+  const cz = ob.cz + sw.nz * (ob.halfShort * 0.62);
+  const coneMat = new THREE.MeshStandardMaterial({
+    color: 0x9fb6c6, roughness: 0.12, metalness: 0.25,
+    transparent: true, opacity: 0.72, side: THREE.DoubleSide,
+  });
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(11.5, 27, 18, 6, true), coneMat);
+  cone.position.set(cx, 13.5, cz);
+  cone.castShadow = true;
+  api.world.add(cone);
+  // ribs, so it reads as a glazed frame rather than a plain cone
+  for (let k = 0; k < 12; k++) {
+    const a = (k / 12) * Math.PI * 2;
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.22, 27.4, 0.22), api.mat.metal);
+    rib.position.set(cx + Math.cos(a) * 5.6, 13.6, cz + Math.sin(a) * 5.6);
+    rib.rotation.z = Math.cos(a) * 0.2;
+    rib.rotation.x = -Math.sin(a) * 0.2;
+    rib.castShadow = true;
+    api.world.add(rib);
+  }
+}
+
+// Singapore's first vertical mall: 12 glazed levels, a sculptural exterior with
+// carved-out verandahs, and landscaped roof decks
+function orchardCentral(api, b) {
+  const ob = orientedBox(b.p);
+  const glass = api.mat.towerGlass, stone = api.mat.paleStone;
+  api.world.add(api.extrude(b.p, b.h, glass));
+  // recessed pockets carved out of the facade
+  const sw = streetward(api, ob);
+  for (let k = 0; k < 5; k++) {
+    const y = 12 + k * 9.5;
+    if (y > b.h - 8) break;
+    const rec = new THREE.Mesh(
+      new THREE.BoxGeometry(Math.min(20, ob.halfLong * 0.9), 4.2, 3.4),
+      new THREE.MeshStandardMaterial({ color: 0x2c3339, roughness: 0.6 }));
+    rec.position.set(ob.cx + sw.nx * (ob.halfShort - 0.6), y, ob.cz + sw.nz * (ob.halfShort - 0.6));
+    rec.rotation.y = Math.atan2(sw.nx, sw.nz);
+    api.world.add(rec);
+    // the verandah slab that pokes out of each pocket
+    const sh = new THREE.Mesh(new THREE.BoxGeometry(Math.min(20, ob.halfLong * 0.9), 0.35, 4.6), stone);
+    sh.position.set(ob.cx + sw.nx * (ob.halfShort + 0.9), y - 2.0, ob.cz + sw.nz * (ob.halfShort + 0.9));
+    sh.rotation.y = Math.atan2(sw.nx, sw.nz);
+    sh.castShadow = true; api.world.add(sh);
+  }
+  // landscaped roof deck
+  api.world.add(api.extrude(api.grow(b.p, 1.02), 1.0, stone, b.h));
+  for (let k = 0; k < 7; k++) {
+    const bush = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 6),
+      new THREE.MeshLambertMaterial({ color: 0x3f5c33 }));
+    bush.position.set(ob.cx + rand(-ob.halfLong * 0.6, ob.halfLong * 0.6), b.h + 2.0,
+                      ob.cz + rand(-ob.halfShort * 0.6, ob.halfShort * 0.6));
+    bush.scale.y = 0.7; bush.castShadow = true;
+    api.world.add(bush);
+  }
+}
+
 export const RECIPES = [
   [/ngee ann city|takashimaya/i, ngeeAnnCity],
   [/ion orchard|orchard residences/i, ionOrchard],
   [/tang plaza|singapore marriott|^tangs/i, tangPlaza],
   [/paragon/i, paragon],
-  [/wisma atria|313|orchard central|orchard gateway|wheelock|shaw (house|centre)|mandarin gallery|the heeren/i, glassBoxPodiumTower],
+  [/wheelock/i, wheelockPlace],
+  [/orchard central/i, orchardCentral],
+  [/wisma atria|313|orchard gateway|shaw (house|centre)|mandarin gallery|the heeren/i, glassBoxPodiumTower],
   [/lucky plaza|far east plaza|orchard towers|midpoint|palais|delfi|orchard plaza|cairnhill|tripleone/i, finnedSlab],
 ];
 
