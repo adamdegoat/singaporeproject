@@ -140,7 +140,35 @@ export function buildFurniture(world, axis, isBlocked) {
     world.add(g);
   }
 
+  // covered walkway: continuous roof on slim columns, set at the shopfront line
+  const linkPost = [], linkRoof = [], linkBeam = [];
+  let acc2 = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+    const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
+    if (len < 0.5) continue;
+    const ux = dx / len, uz = dz / len, nx = -uz, nz = ux;
+    const ang = Math.atan2(ux, uz);
+    for (let t = 0; t < len; t += 1, acc2++) {
+      if (acc2 % 4 !== 0) continue;
+      const px = x1 + ux * t, pz = z1 + uz * t;
+      for (const sgn of [-1, 1]) {
+        const cxp = px + nx * (half + 9.0) * sgn, czp = pz + nz * (half + 9.0) * sgn;
+        // only where there is actually a frontage to walk along
+        if (!isBlocked(px + nx * (half + 13.5) * sgn, pz + nz * (half + 13.5) * sgn)) continue;
+        linkRoof.push([cxp, 3.35, czp, ang]);
+        linkBeam.push([cxp, 3.12, czp, ang]);
+        linkPost.push([cxp + nx * 1.5 * sgn, 1.6, czp + nz * 1.5 * sgn, ang]);
+        linkPost.push([cxp - nx * 1.5 * sgn, 1.6, czp - nz * 1.5 * sgn, ang]);
+      }
+    }
+  }
+  emit(new THREE.BoxGeometry(3.4, 0.13, 4.1), MAT.trim, linkRoof, yaw);
+  emit(new THREE.BoxGeometry(0.18, 0.22, 4.1), MAT.metal, linkBeam, yaw);
+  emit(new THREE.CylinderGeometry(0.075, 0.075, 3.2, 8), MAT.metal, linkPost, yaw);
+
   return {
+    linkway: linkRoof.length,
     rails: railT.length, shelters: shelterAt.length,
     lights: lightAt.length, signs: signT.length, planters: planterT.length,
   };

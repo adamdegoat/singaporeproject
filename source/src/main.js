@@ -20,7 +20,7 @@ renderer.shadowMap.enabled = !P.has('noshadow');
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0xd4cdb9, 0.0042);
+scene.fog = new THREE.FogExp2(0xc9c3b2, 0.0021);
 const camera = new THREE.PerspectiveCamera(58, 1, 0.3, 1400);
 
 /* ---------------- sky + light ---------------- */
@@ -220,6 +220,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   const signage = (!P.has('nosigns') && axis)
     ? buildSignage(world, axis, data, blocked) : {};
   if (axis) wayfinder = new Wayfinder(data, axis);
+  window.__axis = axis;
   const people = crowdSys ? crowdSys.people.length : 0;
 
   // start on Orchard Road facing along it
@@ -234,7 +235,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
     const nx = -dz / L, nz = dx / L;
     S = newState(p0[0] + nx * -3.4, p0[1] + nz * -3.4, Math.atan2(dx, dz));
   }
-  stats = { buildings: bs.count, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
+  stats = { buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
   ready = true;
   window.__ready = true;
   window.__stats = stats;
@@ -253,7 +254,17 @@ topCam.lookAt(0, 0, 0);
 
 const camPos = new THREE.Vector3(), camAim = new THREE.Vector3();
 let camInit = false;
+// vet-only free camera: ?spec=x,y,z,tx,ty,tz
+const SPEC = (P.get('spec') || '').split(',').map(Number);
+const SPEC_ON = SPEC.length === 6 && SPEC.every((n) => Number.isFinite(n));
+
 function driveCamera(dt) {
+  if (SPEC_ON) {
+    camera.position.set(SPEC[0], SPEC[1], SPEC[2]);
+    camera.lookAt(SPEC[3], SPEC[4], SPEC[5]);
+    camera.fov = 46; camera.updateProjectionMatrix();
+    return;
+  }
   const fwd = new THREE.Vector3(Math.sin(S.heading), 0, Math.cos(S.heading));
   const want = new THREE.Vector3(S.x, 0, S.z)
     .addScaledVector(fwd, -5.8).add(new THREE.Vector3(0, 3.05, 0));

@@ -174,6 +174,53 @@ export function texShopfront() {
   return finish(c, [1, 1]);
 }
 
+// dark polished granite with narrow vertical window slots (Ngee Ann City)
+export function texGranite() {
+  const S = 256, [c, x] = cvs(S);
+  x.fillStyle = '#6d5c4b'; x.fillRect(0, 0, S, S);
+  for (let i = 0; i < 4200; i++) {
+    const v = rand(-22, 20);
+    x.fillStyle = `rgba(${125 + v},${107 + v},${88 + v},${rand(0.15, 0.5)})`;
+    x.fillRect(rand(0, S), rand(0, S), rand(1, 2.4), rand(1, 2.4));
+  }
+  const bays = 9, bw = S / bays;
+  for (let i = 0; i < bays; i++) {
+    x.fillStyle = 'rgba(38,44,50,0.86)';
+    x.fillRect(i * bw + bw * 0.30, 0, bw * 0.40, S);
+    const g = x.createLinearGradient(i * bw, 0, i * bw + bw, 0);
+    g.addColorStop(0, 'rgba(198,214,226,0.16)');
+    g.addColorStop(1, 'rgba(198,214,226,0)');
+    x.fillStyle = g; x.fillRect(i * bw + bw * 0.30, 0, bw * 0.40, S);
+  }
+  for (let f = 0; f < 8; f++) {
+    x.fillStyle = 'rgba(92,78,63,0.9)';
+    x.fillRect(0, f * (S / 8) - 2, S, 4);
+  }
+  return finish(c, [1, 1]);
+}
+
+// smooth tower glazing, lighter and bluer than the podium curtain wall
+export function texTowerGlass() {
+  const S = 256, [c, x] = cvs(S);
+  x.fillStyle = '#8ea6b8'; x.fillRect(0, 0, S, S);
+  const floors = 12, fh = S / floors;
+  for (let f = 0; f < floors; f++) {
+    for (let p = 0; p < 10; p++) {
+      const v = rand(-24, 26);
+      x.fillStyle = `rgba(${132 + v},${154 + v},${172 + v},${rand(0.3, 0.8)})`;
+      x.fillRect(p * (S / 10) + 1, f * fh + 1, S / 10 - 2, fh * 0.72);
+    }
+    x.fillStyle = '#6b757e';
+    x.fillRect(0, f * fh + fh * 0.76, S, fh * 0.22);
+    const g = x.createLinearGradient(0, f * fh, 0, f * fh + fh * 0.72);
+    g.addColorStop(0, 'rgba(236,245,252,0.42)');
+    g.addColorStop(1, 'rgba(236,245,252,0.04)');
+    x.fillStyle = g; x.fillRect(0, f * fh + 1, S, fh * 0.70);
+  }
+  for (let p = 0; p <= 10; p++) { x.fillStyle = '#767f88'; x.fillRect(p * (S / 10) - 1, 0, 2, S); }
+  return finish(c, [1, 1]);
+}
+
 export function texLeaves() {
   const S = 128, [c, x] = cvs(S);
   x.clearRect(0, 0, S, S);

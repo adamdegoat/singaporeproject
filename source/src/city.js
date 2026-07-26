@@ -1,7 +1,8 @@
 // Build the street from real OSM geometry: extruded footprints, road ribbons,
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texLeaves, texAO } from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texTowerGlass, texLeaves, texAO } from './tex.js';
+import { recipeFor } from './landmarks.js';
 
 export const TEX = {
   asphalt: texAsphalt(),
@@ -45,6 +46,15 @@ export const MAT = {
     map: TEX.ao, transparent: true, blending: THREE.MultiplyBlending,
     premultipliedAlpha: true, depthWrite: false,
   }),
+};
+
+// materials the landmark recipes draw on
+const LMAT = {
+  granite: new THREE.MeshStandardMaterial({ map: texGranite(), roughness: 0.42, metalness: 0.1 }),
+  towerGlass: new THREE.MeshStandardMaterial({ map: texTowerGlass(), roughness: 0.22, metalness: 0.16 }),
+  paleStone: new THREE.MeshStandardMaterial({ map: texConcrete(0xc4bdae, 0.35), roughness: 0.78 }),
+  warmStone: new THREE.MeshStandardMaterial({ map: texConcrete(0xb2a48f, 0.5), roughness: 0.85 }),
+  jadeRoof: new THREE.MeshStandardMaterial({ color: 0x2f5f4a, roughness: 0.45, metalness: 0.2 }),
 };
 
 const up = new THREE.Vector3(0, 1, 0);
@@ -94,11 +104,26 @@ function extrude(pts, h, mat, y0 = 0) {
 }
 
 /* ---------------- buildings ---------------- */
+function grow(pts, f) {
+  const c = centroid(pts);
+  return pts.map(([x, z]) => [c[0] + (x - c[0]) * f, c[1] + (z - c[1]) * f]);
+}
+
 export function buildBuildings(world, data) {
-  const stats = { count: 0, tall: 0 };
+  const stats = { count: 0, tall: 0, bespoke: 0 };
+  const api = { world, extrude, grow, mat: { ...LMAT, trim: MAT.trim, conc: MAT.conc } };
   for (const b of data.buildings) {
     const pts = b.p;
     if (pts.length < 3) continue;
+
+    // the buildings people navigate by get their real arrangement, not a box
+    const recipe = recipeFor(b.n);
+    if (recipe) {
+      recipe(api, b);
+      addShopfront(world, b, perimeter(pts));
+      stats.count++; stats.bespoke++;
+      continue;
+    }
     const isGlass = b.a > 1400 || b.k;
     const wallTex = (isGlass ? pick(CURTAINS) : pick(STONE)).clone();
     wallTex.needsUpdate = true;
@@ -132,18 +157,7 @@ export function buildBuildings(world, data) {
       }
     }
 
-    // Ground floor is what you actually see from a scooter, so give the bigger
-    // footprints a glazed shopfront band and an awning line above it.
-    if (b.a > 600 && h > 7) {
-      const c2 = centroid(pts);
-      const grow = (f) => pts.map(([x, z]) => [c2[0] + (x - c2[0]) * f, c2[1] + (z - c2[1]) * f]);
-      const sf = pick(SHOPS).clone(); sf.needsUpdate = true;
-      sf.repeat.set(Math.max(2, per / 15), 1);
-      world.add(extrude(grow(1.012), 5.4, new THREE.MeshStandardMaterial({
-        map: sf, roughness: 0.32, metalness: 0.05,
-      })));
-      world.add(extrude(grow(1.055), 0.42, MAT.trim, 5.3));
-    }
+    addShopfront(world, b, per);
 
     // rooftop plant on the bigger flat roofs
     if (b.a > 900 && h > 12) {
@@ -158,6 +172,48 @@ export function buildBuildings(world, data) {
     stats.count++;
   }
   return stats;
+}
+
+// Ground floor is what you actually see from a scooter: glazed shopfront band,
+// an awning line above it, and a deeper canopy where the entrance would be.
+function addShopfront(world, b, per) {
+  if (b.a <= 600 || b.h <= 7) return;
+  const pts = b.p;
+  const sf = pick(SHOPS).clone(); sf.needsUpdate = true;
+  sf.repeat.set(Math.max(2, per / 15), 1);
+  world.add(extrude(grow(pts, 1.012), 5.4, new THREE.MeshStandardMaterial({
+    map: sf, roughness: 0.32, metalness: 0.05,
+  })));
+  world.add(extrude(grow(pts, 1.055), 0.42, MAT.trim, 5.3));
+  // entrance canopy: a deeper projection on the longest edge
+  let bi = 0, bl = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], c = pts[(i + 1) % pts.length];
+    const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+    if (L > bl) { bl = L; bi = i; }
+  }
+  if (bl > 16) {
+    const a = pts[bi], c = pts[(bi + 1) % pts.length];
+    const mx = (a[0] + c[0]) / 2, mz = (a[1] + c[1]) / 2;
+    const ang = Math.atan2(c[0] - a[0], c[1] - a[1]);
+    const cen = centroid(pts);
+    const outX = mx - cen[0], outZ = mz - cen[1];
+    const oL = Math.hypot(outX, outZ) || 1;
+    const cw = Math.min(18, bl * 0.34);
+    const can = new THREE.Mesh(new THREE.BoxGeometry(cw, 0.5, 4.4), MAT.trim);
+    can.position.set(mx + (outX / oL) * 1.9, 6.1, mz + (outZ / oL) * 1.9);
+    can.rotation.y = ang + Math.PI / 2;
+    can.castShadow = true; world.add(can);
+    for (const s2 of [-1, 1]) {
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 6.0, 8), MAT.metal);
+      col.position.set(
+        mx + (outX / oL) * 3.6 + Math.sin(ang) * s2 * cw * 0.42,
+        3.0,
+        mz + (outZ / oL) * 3.6 + Math.cos(ang) * s2 * cw * 0.42
+      );
+      col.castShadow = true; world.add(col);
+    }
+  }
 }
 
 /* ---------------- roads and pavements ---------------- */
