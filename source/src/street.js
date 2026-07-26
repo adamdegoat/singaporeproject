@@ -38,7 +38,7 @@ export function buildFurniture(world, axis, isBlocked) {
         // traffic light heads at intervals, facing oncoming traffic
         if (acc % 190 === 30) {
           const lx = px + nx * (half + 1.6) * sgn, lz = pz + nz * (half + 1.6) * sgn;
-          if (!isBlocked(lx, lz)) lightAt.push([lx, lz, ang, sgn]);
+          if (!isBlocked(lx, lz)) lightAt.push([lx, lz, ang, sgn, acc]);
         }
         // planters and bins
         if (acc % 46 === 12) {
@@ -118,8 +118,10 @@ export function buildFurniture(world, axis, isBlocked) {
     world.add(g);
   }
 
-  // traffic lights
-  for (const [lx, lz, ang, sgn] of lightAt) {
+  // traffic lights. Each junction shares one signal state, keyed by its
+  // distance along the street, so vehicles can look it up.
+  const signals = new Map();     // arclength -> {lenses:[red,amber,green], phase}
+  for (const [lx, lz, ang, sgn, atS] of lightAt) {
     const g = new THREE.Group();
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 5.4, 8), MAT.darkMetal);
     pole.position.y = 2.7; pole.castShadow = true; g.add(pole);
@@ -127,17 +129,22 @@ export function buildFurniture(world, axis, isBlocked) {
     arm.position.set(-1.5 * sgn, 5.2, 0); arm.rotation.z = Math.PI / 2; arm.castShadow = true; g.add(arm);
     const box = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.86, 0.3), MAT.darkMetal);
     box.position.set(-2.9 * sgn, 4.9, 0); box.castShadow = true; g.add(box);
+    const lenses = [];
     for (let k = 0; k < 3; k++) {
       const lens = new THREE.Mesh(new THREE.CircleGeometry(0.1, 10),
         new THREE.MeshStandardMaterial({
-          color: [0xd8402f, 0xd8a52f, 0x3fae5a][k],
-          emissive: k === 2 ? 0x2f8a46 : 0x000000, emissiveIntensity: 0.6,
+          color: [0x5a1f18, 0x5a441a, 0x1b3f27][k],
+          emissive: 0x000000, emissiveIntensity: 1.0,
         }));
       lens.position.set(-2.9 * sgn, 5.18 - k * 0.27, 0.16);
       g.add(lens);
+      lenses.push(lens);
     }
     g.position.set(lx, 0, lz); g.rotation.y = ang;
     world.add(g);
+
+    if (!signals.has(atS)) signals.set(atS, { s: atS, lenses: [], phase: signals.size * 5.5 });
+    signals.get(atS).lenses.push(lenses);
   }
 
   // covered walkway: continuous roof on slim columns, set at the shopfront line
@@ -167,7 +174,10 @@ export function buildFurniture(world, axis, isBlocked) {
   emit(new THREE.BoxGeometry(0.18, 0.22, 4.1), MAT.metal, linkBeam, yaw);
   emit(new THREE.CylinderGeometry(0.075, 0.075, 3.2, 8), MAT.metal, linkPost, yaw);
 
+  const signalList = [...signals.values()];
+
   return {
+    signals: signalList,
     linkway: linkRoof.length,
     rails: railT.length, shelters: shelterAt.length,
     lights: lightAt.length, signs: signT.length, planters: planterT.length,

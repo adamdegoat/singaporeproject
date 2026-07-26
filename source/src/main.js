@@ -6,6 +6,7 @@ import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from '.
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
 import { buildMarkings, dressSideStreets } from './markings.js';
 import { buildSgDetail } from './sgdetail.js';
+import { Signals } from './signals.js';
 import { Sound } from './audio.js';
 import { Crowd, Traffic } from './actors.js';
 import { buildFurniture } from './street.js';
@@ -195,7 +196,7 @@ scene.add(bike);
 
 let S = newState(0, 0, 0);
 let ready = false, stats = {};
-let crowdSys = null, trafficSys = null, wayfinder = null;
+let crowdSys = null, trafficSys = null, wayfinder = null, signals = null;
 let mode = 'ride';                 // 'ride' | 'walk'
 const sound = new Sound();
 // browsers will not start audio without a gesture
@@ -232,6 +233,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   }
   const furniture = (!P.has('nofurniture') && axis)
     ? buildFurniture(world, axis, blocked) : {};
+  signals = new Signals(furniture.signals || []);
   const signage = (!P.has('nosigns') && axis)
     ? buildSignage(world, axis, data, blocked) : {};
   const marks = (!P.has('nomarks') && axis) ? buildMarkings(world, axis) : 0;
@@ -254,7 +256,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
     const nx = -dz / L, nz = dx / L;
     S = newState(p0[0] + nx * -3.4, p0[1] + nz * -3.4, Math.atan2(dx, dz));
   }
-  stats = { marks, ...side, ...sg, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
+  stats = { marks, ...side, ...sg, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
   ready = true;
   window.__ready = true;
   window.__stats = stats;
@@ -434,7 +436,8 @@ function loop(now) {
       sun.target.updateMatrixWorld();
       clock += dt;
       if (crowdSys) crowdSys.update(clock, dt);
-      if (trafficSys) trafficSys.update(clock, dt);
+      if (signals) signals.update(clock);
+      if (trafficSys) trafficSys.update(clock, dt, signals);
       if (wayfinder) wayfinder.update(walker, dt);
       sound.update(0, 'walk', walker.speed, walker.phase);
       walkCamera(dt);
@@ -475,7 +478,8 @@ function loop(now) {
 
     clock += dt;
     if (crowdSys) crowdSys.update(clock, dt, S.x, S.z);
-    if (trafficSys) trafficSys.update(clock, dt);
+    if (signals) signals.update(clock);
+    if (trafficSys) trafficSys.update(clock, dt, signals);
     if (wayfinder) wayfinder.update(S, dt);
     sound.update(S.speed, 'ride', 0, 0);
 
@@ -514,6 +518,8 @@ window.__drive = (throttle, steer, seconds) => {
 };
 window.__inp = () => ({ TOUCH, steer: input.steer, throttle: input.throttle, brake: input.brake, touches: touchDebug(), fired: window.__touchFired || 0 });
 window.__snd = sound;
+window.__sig = () => (signals ? signals.list.map((g) => signals.stateAt(g, clock)) : []);
+window.__traffic = () => (trafficSys ? trafficSys.items.map((i) => +i.speed.toFixed(2)) : []);
 window.__mode = () => mode;
 window.__toggle = () => toggleMode();
 window.__walker = () => ({ x: +walker.x.toFixed(1), z: +walker.z.toFixed(1), sp: +walker.speed.toFixed(2) });

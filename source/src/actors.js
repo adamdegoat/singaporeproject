@@ -251,11 +251,12 @@ export class Traffic {
     const col = new THREE.Color();
     for (let i = 0; i < n; i++) {
       const dir = i % 2 === 0 ? 1 : -1;
+      const base = rand(7, 12);
       this.items.push({
         kind: 'car', i,
         s: avoidS + 55 + ((this.path.len - 110) / n) * i + rand(-6, 6),
         lane: dir * (1.9 + (i % 4 < 2 ? 0 : 3.4)),
-        dir, speed: rand(7, 12),
+        dir, speed: base, base,
       });
       col.setHex(pick(CAR_COLS));
       this.body.setColorAt(i, col); this.roof.setColorAt(i, col);
@@ -268,10 +269,11 @@ export class Traffic {
       const dir = i % 2 === 0 ? 1 : -1;
       bcol.setHex(BUS_LIVERY[i % BUS_LIVERY.length]);
       this.busBody.setColorAt(i, bcol);
+      const base = rand(6, 9);
       this.items.push({
         kind: 'bus', i,
         s: avoidS + 140 + ((this.path.len - 200) / b) * i + rand(-15, 15),
-        lane: dir * 5.4, dir, speed: rand(6, 9),
+        lane: dir * 5.4, dir, speed: base, base,
       });
     }
 
@@ -301,9 +303,27 @@ export class Traffic {
     return null;
   }
 
-  update(time, dt) {
+  update(time, dt, signals) {
     const { _m: m, _q: q, _e: e, _p: p, _s: s, _tmp: tmp } = this;
     for (const it of this.items) {
+      // slow for a red or amber signal ahead, and hold at the line
+      let want = it.base;
+      if (signals) {
+        const d = signals.nextStop(it.s, it.dir, time, 34);
+        if (d !== null) {
+          const STOP = 3.0;
+          want = d <= STOP ? 0 : it.base * Math.min(1, (d - STOP) / 22);
+        }
+      }
+      // and do not drive into the vehicle in front, in the same lane
+      for (const o of this.items) {
+        if (o === it || o.dir !== it.dir || Math.abs(o.lane - it.lane) > 1.6) continue;
+        const gap = (o.s - it.s) * it.dir;
+        const need = (it.kind === 'bus' || o.kind === 'bus') ? 15 : 9;
+        if (gap > 0 && gap < need) want = Math.min(want, it.base * Math.max(0, (gap - 4.5) / (need - 4.5)));
+      }
+      const rate = want < it.speed ? 7.0 : 2.2;      // brakes harder than it pulls away
+      it.speed += (want - it.speed) * Math.min(1, rate * dt);
       it.s += it.dir * it.speed * dt;
       this.path.at(it.s, tmp);
       const [cx, cz, ux, uz] = tmp;
