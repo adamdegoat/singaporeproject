@@ -29,9 +29,9 @@ export function step(s, dt, throttle, brakeIn, steer) {
   const steerAngle = steer * RIDE.steerMax * authority;
   const yawRate = (s.speed / RIDE.wheelbase) * Math.tan(steerAngle);
   s.yaw = yawRate;
-  s.heading += yawRate * dt;
+  s.heading -= yawRate * dt;
 
-  const target = Math.max(-RIDE.leanMax, Math.min(RIDE.leanMax, -yawRate * s.speed * 0.11));
+  const target = Math.max(-RIDE.leanMax, Math.min(RIDE.leanMax, yawRate * s.speed * 0.11));
   s.lean += (target - s.lean) * Math.min(1, RIDE.leanRate * dt);
 
   s.x += Math.sin(s.heading) * s.speed * dt;

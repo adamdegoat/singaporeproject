@@ -14,10 +14,11 @@ addEventListener('keydown', (e) => {
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 
-// steering wheel-style: one finger anywhere on the left half sets a relative axis
+// Left half is power (upper = throttle, lower = brake), right half steers by
+// relative drag. Swapped from the first build because it read backwards in hand.
 const touches = new Map();   // id -> {startX, x, side, y}
 
-function side(x) { return x < innerWidth * 0.5 ? 'steer' : 'power'; }
+function side(x) { return x < innerWidth * 0.5 ? 'power' : 'steer'; }
 
 export function attachTouch(el) {
   const start = (e) => {
@@ -54,8 +55,8 @@ export function readInput() {
       const dx = rec.x - rec.startX;
       steer = Math.max(-1, Math.min(1, dx / (innerWidth * 0.14)));
     } else {
-      // upper part of the right half is throttle, lower part is brake
-      if (rec.y < innerHeight * 0.58) throttle = 1; else brake = 1;
+      // upper part of the left half is throttle, lower part is brake
+      if (rec.y < innerHeight * 0.62) throttle = 1; else brake = 1;
     }
   }
 

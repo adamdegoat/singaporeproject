@@ -20,15 +20,23 @@
     background:#12161b;color:#e8e2d4;font:15px/1.6 ui-monospace,Menlo,monospace;
     padding:24px;z-index:50}
   #rotate span{display:block;font-size:34px;margin-bottom:14px}
-  @media (orientation:portrait){ #rotate{display:grid} #help{display:none} }
+  #place{position:fixed;left:50%;transform:translateX(-50%);top:10px;
+    font:600 13px/1.3 ui-sans-serif,system-ui,-apple-system,Helvetica,Arial;
+    letter-spacing:.04em;color:#f2ece0;background:rgba(10,14,18,.6);
+    padding:7px 14px;border-radius:20px;pointer-events:none;white-space:nowrap}
+  #map{position:fixed;left:calc(10px + env(safe-area-inset-left));top:10px;
+    width:112px;height:112px;border-radius:6px;opacity:.92;pointer-events:none}
+  @media (orientation:portrait){ #rotate{display:grid} #help,#place,#map{display:none} }
 </style>
 <canvas id="c"></canvas>
 <div id="rotate"><div><span>&#8635;</span>Turn your phone sideways<br><small style="opacity:.6">this rides in landscape</small></div></div>
+<div id="place">Orchard Road</div>
+<canvas id="map" width="224" height="224"></canvas>
 <div id="hud">loading Orchard…</div>
 <div id="help">
-  <b>drag left side</b> steer<br>
-  <b>hold right side</b> throttle<br>
-  <b>hold lower right</b> brake<br>
+  <b>hold left side</b> throttle<br>
+  <b>hold lower left</b> brake<br>
+  <b>drag right side</b> steer<br>
   <span style="opacity:.65">keys: A/D · W · S</span>
 </div>
 <script type="module" src="./src/main.js"></script>

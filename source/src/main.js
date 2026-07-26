@@ -5,6 +5,7 @@ import { buildVespa, buildRider, newState, step, RIDE } from './vespa.js';
 import { TOUCH, input, attachTouch, readInput, touchDebug } from './input.js';
 import { Crowd, Traffic } from './actors.js';
 import { buildFurniture } from './street.js';
+import { buildSignage, Wayfinder } from './wayfind.js';
 
 const P = new URLSearchParams(location.search);
 const hud = document.getElementById('hud');
@@ -190,7 +191,7 @@ scene.add(bike);
 
 let S = newState(0, 0, 0);
 let ready = false, stats = {};
-let crowdSys = null, trafficSys = null;
+let crowdSys = null, trafficSys = null, wayfinder = null;
 let clock = 0;
 
 fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
@@ -216,6 +217,9 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   }
   const furniture = (!P.has('nofurniture') && axis)
     ? buildFurniture(world, axis, blocked) : {};
+  const signage = (!P.has('nosigns') && axis)
+    ? buildSignage(world, axis, data, blocked) : {};
+  if (axis) wayfinder = new Wayfinder(data, axis);
   const people = crowdSys ? crowdSys.people.length : 0;
 
   // start on Orchard Road facing along it
@@ -230,7 +234,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
     const nx = -dz / L, nz = dx / L;
     S = newState(p0[0] + nx * -3.4, p0[1] + nz * -3.4, Math.atan2(dx, dz));
   }
-  stats = { buildings: bs.count, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture };
+  stats = { buildings: bs.count, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
   ready = true;
   window.__ready = true;
   window.__stats = stats;
@@ -321,6 +325,7 @@ function loop(now) {
     clock += dt;
     if (crowdSys) crowdSys.update(clock, dt);
     if (trafficSys) trafficSys.update(clock, dt);
+    if (wayfinder) wayfinder.update(S, dt);
 
     driveCamera(dt);
   }

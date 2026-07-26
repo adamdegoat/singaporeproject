@@ -82,4 +82,29 @@ t('a full-lock circle at cruise stays under 60m across', () => {
   assert.ok(r * 2 < 60, 'diameter ' + (r * 2).toFixed(1) + 'm');
 });
 
+t('positive steer turns to the rider RIGHT, not left', () => {
+  // rider-right for heading h is (-cos h, sin h) in this (+x east, +z south) frame
+  const s = run(newState(), 6, 1, 0, 0);
+  const h0 = s.heading, x0 = s.x, z0 = s.z;
+  run(s, 2.2, 1, 0, 1);                       // full right lock
+  const dx = s.x - x0, dz = s.z - z0;
+  const rightward = dx * -Math.cos(h0) + dz * Math.sin(h0);
+  assert.ok(rightward > 1, `steer=+1 moved ${rightward.toFixed(2)}m to the rider's right`);
+});
+
+t('negative steer mirrors it', () => {
+  const s = run(newState(), 6, 1, 0, 0);
+  const h0 = s.heading, x0 = s.x, z0 = s.z;
+  run(s, 2.2, 1, 0, -1);
+  const rightward = (s.x - x0) * -Math.cos(h0) + (s.z - z0) * Math.sin(h0);
+  assert.ok(rightward < -1, `steer=-1 moved ${rightward.toFixed(2)}m (should be negative)`);
+});
+
+t('leans into the turn on the correct side', () => {
+  const r = run(newState(), 6, 1, 0, 0); run(r, 1.5, 1, 0, 1);
+  const l = run(newState(), 6, 1, 0, 0); run(l, 1.5, 1, 0, -1);
+  assert.ok(Math.sign(r.lean) === -Math.sign(l.lean), 'lean does not mirror');
+  assert.ok(r.lean !== 0);
+});
+
 console.log(`\n${pass} passed`);
