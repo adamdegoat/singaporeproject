@@ -9,7 +9,9 @@ from the 28 fragments OSM splits it into, into one 1,192m centreline. Landmark
 heights are hand-corrected where the OSM tags are wrong.
 
 Nothing is downloaded at runtime beyond the code and a 120KB geometry file —
-every texture is drawn into a canvas at load.
+every texture is drawn into a canvas at load, and every sound is synthesised
+with Web Audio. The engine note is an oscillator whose frequency tracks your
+actual speed, so it never crossfades between clips.
 
 **Riding (landscape):** hold the left side for throttle, hold the lower left to
 brake, keep holding the brake once stopped to reverse, drag the right side to

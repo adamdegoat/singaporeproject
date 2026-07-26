@@ -6,6 +6,7 @@ import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from '.
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
 import { buildMarkings, dressSideStreets } from './markings.js';
 import { buildSgDetail } from './sgdetail.js';
+import { Sound } from './audio.js';
 import { Crowd, Traffic } from './actors.js';
 import { buildFurniture } from './street.js';
 import { buildSignage, Wayfinder } from './wayfind.js';
@@ -196,6 +197,11 @@ let S = newState(0, 0, 0);
 let ready = false, stats = {};
 let crowdSys = null, trafficSys = null, wayfinder = null;
 let mode = 'ride';                 // 'ride' | 'walk'
+const sound = new Sound();
+// browsers will not start audio without a gesture
+for (const ev of ['touchstart', 'mousedown', 'keydown']) {
+  addEventListener(ev, () => sound.start(), { once: true, passive: true });
+}
 let camYaw = 0, camPitch = 0.16;   // free look, walk mode
 const walker = newWalker();
 const walkerRig = buildWalker();
@@ -256,6 +262,19 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
 
 if (TOUCH) attachTouch(canvas);
 attachMouse(canvas);
+{
+  const sbtn = document.getElementById('soundbtn');
+  if (sbtn) {
+    const tap = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      sound.start();
+      sound.setMuted(!sound.muted);
+      sbtn.textContent = sound.muted ? 'Sound off' : 'Sound on';
+    };
+    sbtn.addEventListener('click', tap);
+    sbtn.addEventListener('touchstart', tap, { passive: false });
+  }
+}
 {
   const btn = document.getElementById('modebtn');
   if (btn) {
@@ -405,6 +424,7 @@ function loop(now) {
       if (crowdSys) crowdSys.update(clock, dt);
       if (trafficSys) trafficSys.update(clock, dt);
       if (wayfinder) wayfinder.update(walker, dt);
+      sound.update(0, 'walk', walker.speed, walker.phase);
       walkCamera(dt);
       renderer.render(scene, camera);
       frames++;
@@ -439,6 +459,7 @@ function loop(now) {
     if (crowdSys) crowdSys.update(clock, dt, S.x, S.z);
     if (trafficSys) trafficSys.update(clock, dt);
     if (wayfinder) wayfinder.update(S, dt);
+    sound.update(S.speed, 'ride', 0, 0);
 
     driveCamera(dt);
   }
@@ -474,6 +495,7 @@ window.__drive = (throttle, steer, seconds) => {
   setTimeout(() => { window.__force = null; }, seconds * 1000);
 };
 window.__inp = () => ({ TOUCH, steer: input.steer, throttle: input.throttle, brake: input.brake, touches: touchDebug(), fired: window.__touchFired || 0 });
+window.__snd = sound;
 window.__mode = () => mode;
 window.__toggle = () => toggleMode();
 window.__walker = () => ({ x: +walker.x.toFixed(1), z: +walker.z.toFixed(1), sp: +walker.speed.toFixed(2) });
