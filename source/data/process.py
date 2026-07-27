@@ -56,6 +56,24 @@ LANDMARKS = {
     "liat towers":            {"h": 40},
     "the heeren":             {"h": 60},
     "somerset":               {"h": 40},
+    # heights OSM had plainly wrong, or missing entirely
+    "four seasons":           {"h": 68},
+    "liat tower":             {"h": 45},
+    "far east shopping":      {"h": 75},
+    "international building": {"h": 58},
+    "grand hyatt":            {"h": 70},
+    "york hotel":             {"h": 68},
+    "royal plaza on scotts":  {"h": 70},
+    "voco orchard":           {"h": 80},
+    "pullman singapore":      {"h": 92},
+    "scotts square":          {"h": 150, "key": True},
+    "design orchard":         {"h": 14},
+    "pacific plaza":          {"h": 46},
+    "orchard building":       {"h": 45},
+    "forum the shopping":     {"h": 40},
+    "pan pacific":            {"h": 58},
+    "scotts 27":              {"h": 60},
+    "shaw tower":             {"h": 60},
 }
 TYPE_DEFAULT = {
     "retail": 22, "commercial": 30, "hotel": 55, "apartments": 45,
@@ -149,6 +167,10 @@ def main():
             if per > 0 and (4 * math.pi * a) / (per * per) < 0.03:
                 continue
             h, key = height_for(tags)
+            # a 3,000 m2 footprint is never 3.5m tall: that is a bad tag, not a
+            # single-storey building. Fall back to the type default.
+            if h < 8 and a > 600:
+                h = TYPE_DEFAULT.get(tags.get("building", "yes"), 24)
             b = {
                 "p": [[round(x, 1), round(z, 1)] for x, z in pts],
                 "h": round(h, 1),

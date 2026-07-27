@@ -1,7 +1,7 @@
 // Build the street from real OSM geometry: extruded footprints, road ribbons,
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texTowerGlass, texLeaves, texAO } from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texTowerGlass, texPunched, texBalcony, texLeaves, texAO } from './tex.js';
 import { recipeFor } from './landmarks.js';
 
 export const TEX = {
@@ -25,6 +25,22 @@ const STONE = [
   texConcrete(0xb3aa9a, 0.5), texConcrete(0x9c948a, 0.6),
   texConcrete(0xc2b5a0, 0.45), texConcrete(0x8d8a86, 0.7),
 ];
+// Facade families, so the 180-odd background buildings are not one material.
+// Chosen by a stable hash of the footprint, which keeps a building looking the
+// same between reloads.
+const PUNCHED = [texPunched(0xa8a091), texPunched(0xbdb3a0), texPunched(0x938c82)];
+const BALCONY = [texBalcony(0xc6bda9), texBalcony(0xada596)];
+function familyFor(b) {
+  let h = 0;
+  for (const [x, z] of b.p) h = (h * 31 + ((x * 7) | 0) + ((z * 13) | 0)) | 0;
+  h = Math.abs(h);
+  if (b.a > 1400 || b.k) return { pool: CURTAINS, rough: 0.34, metal: 0.08 };
+  const pickN = h % 100;
+  if (pickN < 34) return { pool: PUNCHED, rough: 0.86, metal: 0.0 };
+  if (pickN < 52) return { pool: BALCONY, rough: 0.8, metal: 0.0 };
+  if (pickN < 74) return { pool: STONE, rough: 0.88, metal: 0.0 };
+  return { pool: CURTAINS, rough: 0.36, metal: 0.06 };
+}
 
 export const MAT = {
   asphalt: new THREE.MeshStandardMaterial({ map: TEX.asphalt, roughness: 0.95 }),
@@ -130,13 +146,11 @@ export function buildBuildings(world, data) {
       stats.count++; stats.bespoke++;
       continue;
     }
-    const isGlass = b.a > 1400 || b.k;
-    const wallTex = (isGlass ? pick(CURTAINS) : pick(STONE)).clone();
+    const fam = familyFor(b);
+    const wallTex = pick(fam.pool).clone();
     wallTex.needsUpdate = true;
     const mat = new THREE.MeshStandardMaterial({
-      map: wallTex,
-      roughness: isGlass ? 0.34 : 0.88,
-      metalness: isGlass ? 0.08 : 0.0,
+      map: wallTex, roughness: fam.rough, metalness: fam.metal,
     });
     // repeat the wall texture by real size so storeys stay ~3.5m everywhere
     const per = perimeter(pts);

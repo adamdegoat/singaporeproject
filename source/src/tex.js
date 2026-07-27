@@ -223,6 +223,52 @@ export function texTowerGlass() {
   return finish(c, [1, 1]);
 }
 
+// 1970s-80s Orchard: punched window openings in a concrete frame, no curtain wall
+export function texPunched(base) {
+  const S = 256, [c, x] = cvs(S);
+  x.fillStyle = hex(base); x.fillRect(0, 0, S, S);
+  for (let i = 0; i < 3600; i++) {
+    const v = rand(-18, 16);
+    x.fillStyle = `rgba(${168 + v},${160 + v},${146 + v},${rand(0.12, 0.4)})`;
+    x.fillRect(rand(0, S), rand(0, S), rand(1, 2.2), rand(1, 2.2));
+  }
+  const cols = 7, rows = 8, cw = S / cols, rh = S / rows;
+  for (let r = 0; r < rows; r++) {
+    for (let cN = 0; cN < cols; cN++) {
+      const t = rand(0, 1);
+      x.fillStyle = t > 0.8 ? '#8d9aa2' : t > 0.45 ? '#4d565e' : '#39424a';
+      x.fillRect(cN * cw + cw * 0.22, r * rh + rh * 0.22, cw * 0.56, rh * 0.46);
+      // reveal shadow at the top of each opening
+      x.fillStyle = 'rgba(24,26,28,0.42)';
+      x.fillRect(cN * cw + cw * 0.22, r * rh + rh * 0.22, cw * 0.56, rh * 0.09);
+    }
+    // spandrel band
+    x.fillStyle = 'rgba(150,142,128,0.55)';
+    x.fillRect(0, r * rh + rh * 0.74, S, rh * 0.16);
+  }
+  grain(x, 2400, 18, S);
+  return finish(c, [1, 1]);
+}
+
+// balconied residential: recessed slots with a rail line
+export function texBalcony(base) {
+  const S = 256, [c, x] = cvs(S);
+  x.fillStyle = hex(base); x.fillRect(0, 0, S, S);
+  const rows = 9, rh = S / rows, cols = 5, cw = S / cols;
+  for (let r = 0; r < rows; r++) {
+    for (let cN = 0; cN < cols; cN++) {
+      x.fillStyle = 'rgba(46,52,58,0.72)';
+      x.fillRect(cN * cw + cw * 0.14, r * rh + rh * 0.16, cw * 0.72, rh * 0.5);
+      x.fillStyle = 'rgba(226,222,210,0.9)';
+      x.fillRect(cN * cw + cw * 0.14, r * rh + rh * 0.52, cw * 0.72, rh * 0.1);
+    }
+    x.fillStyle = 'rgba(206,200,186,0.85)';
+    x.fillRect(0, r * rh + rh * 0.66, S, rh * 0.2);
+  }
+  grain(x, 2000, 16, S);
+  return finish(c, [1, 1]);
+}
+
 export function texLeaves() {
   const S = 128, [c, x] = cvs(S);
   x.clearRect(0, 0, S, S);

@@ -234,12 +234,13 @@ function finnedSlab(api, b) {
   // older Orchard blocks: concrete frame, vertical fins, no curtain wall
   const ob = orientedBox(b.p);
   api.world.add(api.extrude(b.p, b.h, api.mat.warmStone));
-  const n = Math.max(6, Math.round(ob.halfLong * 2 / 4.2));
+  // fins on the street face only: the back of these blocks is never seen
+  const sw = streetward(api, ob);
+  const facing = (sw.nx * -Math.sin(ob.ang) + sw.nz * Math.cos(ob.ang)) >= 0 ? 1 : -1;
+  const n = Math.max(5, Math.round(ob.halfLong * 2 / 6.0));
   for (let i = 0; i <= n; i++) {
     const u = ob.midU - ob.halfLong + (i / n) * ob.halfLong * 2;
-    for (const s of [-1, 1]) {
-      slab(api, ob, u, ob.midV + s * (ob.halfShort + 0.2), 0.5, 0.9, 5, b.h - 6, api.mat.paleStone);
-    }
+    slab(api, ob, u, ob.midV + facing * (ob.halfShort + 0.2), 0.5, 0.9, 5, b.h - 6, api.mat.paleStone);
   }
   api.world.add(api.extrude(api.grow(b.p, 1.02), 1.1, api.mat.trim, b.h));
 }
@@ -312,6 +313,61 @@ function orchardCentral(api, b) {
   }
 }
 
+// Hotels read differently from malls: a slab tower of banded rooms sitting on a
+// low podium, with a porte-cochere over a set-down driveway at the entrance.
+// One recipe covers the eight hotels on this stretch.
+function hotel(api, b) {
+  const ob = orientedBox(b.p);
+  const stone = api.mat.paleStone, warm = api.mat.warmStone, glass = api.mat.towerGlass;
+  const podium = Math.min(14, b.h * 0.24);
+  api.world.add(api.extrude(b.p, podium, warm));
+  api.world.add(api.extrude(api.grow(b.p, 1.03), 0.9, stone, podium - 0.9));
+
+  // the room tower: narrow, long, set back from the podium edge
+  const tw = Math.min(20, ob.halfShort * 0.78);
+  const tl = Math.min(ob.halfLong * 1.5, 54);
+  const towerH = Math.max(12, b.h - podium);
+  slab(api, ob, ob.midU, ob.midV, tl, tw, podium, towerH, warm);
+
+  // banded balconies, the giveaway that it is rooms rather than offices
+  // every other floor is enough to read as banded, at a fraction of the cost
+  const floors = Math.max(4, Math.round(towerH / 3.3));
+  for (let f = 1; f < floors; f += 2) {
+    const y = podium + f * (towerH / floors);
+    if (y > podium + towerH - 2) break;
+    for (const sgn of [-1, 1]) {
+      slab(api, ob, ob.midU, ob.midV + sgn * (tw / 2 + 0.18), tl * 0.96, 0.42, y - 0.2, 0.28, stone);
+    }
+  }
+  // one continuous glazed band per face instead of one per floor
+  for (const sgn of [-1, 1]) {
+    slab(api, ob, ob.midU, ob.midV + sgn * (tw / 2 + 0.06), tl * 0.94, 0.1, podium + 1.2, towerH - 2.4, glass);
+  }
+  crown(api, ob, ob.midU, ob.midV, tl, tw, podium + towerH, stone);
+
+  // porte-cochere: a deep flat canopy on columns over the set-down
+  const sw = streetward(api, ob);
+  const ang = Math.atan2(sw.nx, sw.nz);
+  const px = ob.cx + sw.nx * (ob.halfShort + 7);
+  const pz = ob.cz + sw.nz * (ob.halfShort + 7);
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(22, 0.6, 13), stone);
+  canopy.position.set(px, 6.0, pz);
+  canopy.rotation.y = ang;
+  canopy.castShadow = true; api.world.add(canopy);
+  for (const ax of [-9, 9]) {
+    for (const az of [-5, 5]) {
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 6.0, 10), stone);
+      col.position.set(px - sw.nz * ax + sw.nx * az, 3.0, pz + sw.nx * ax + sw.nz * az);
+      col.castShadow = true; api.world.add(col);
+    }
+  }
+  // a driveway apron under it
+  const apron = new THREE.Mesh(new THREE.BoxGeometry(24, 0.12, 15), api.mat.paving);
+  apron.position.set(px, 0.2, pz);
+  apron.rotation.y = ang;
+  apron.receiveShadow = true; api.world.add(apron);
+}
+
 export const RECIPES = [
   [/ngee ann city|takashimaya/i, ngeeAnnCity],
   [/ion orchard|orchard residences/i, ionOrchard],
@@ -320,7 +376,8 @@ export const RECIPES = [
   [/wheelock/i, wheelockPlace],
   [/orchard central/i, orchardCentral],
   [/wisma atria|313|orchard gateway|shaw (house|centre)|mandarin gallery|the heeren/i, glassBoxPodiumTower],
-  [/lucky plaza|far east plaza|orchard towers|midpoint|palais|delfi|orchard plaza|cairnhill|tripleone/i, finnedSlab],
+  [/hotel|hyatt|hilton|marriott|four seasons|pullman|voco|royal plaza|pan pacific|regent|shangri|holiday inn|ibis|orchard rendezvous|concorde|mandarin orchard/i, hotel],
+  [/lucky plaza|far east plaza|orchard towers|midpoint|palais|delfi|orchard plaza|cairnhill|tripleone|far east shopping|international building|liat|pacific plaza|scotts square|orchard building|forum the shopping|268 orchard|scape|design orchard|cathay cineleisure/i, finnedSlab],
 ];
 
 export function recipeFor(name) {
