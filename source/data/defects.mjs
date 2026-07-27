@@ -408,6 +408,150 @@ const found = await page.evaluate(() => {
            bad ? [`${bad} of ${checked} extruded meshes face inward`] : []);
   }
 
+  /* D17  two carriageways drawn on top of each other. OSM maps a street as
+     several ways of different widths, and where one runs inside another both
+     ribbons are drawn: the wider one wins the depth test in patches and the
+     road speckles. */
+  {
+    const bad = [];
+    const carr = (data.roads || []).filter((r) => r.k !== 'footway' && r.k !== 'pedestrian');
+    const CELL = 30, grid = new Map();
+    for (const r of carr) {
+      for (const q of r.p) {
+        const k = Math.floor(q[0] / CELL) + ',' + Math.floor(q[1] / CELL);
+        if (!grid.has(k)) grid.set(k, new Set());
+        grid.get(k).add(r);
+      }
+    }
+    const seen = new Set();
+    let redundant = 0;
+    for (const r of carr) {
+      let inside = 0, n = 0;
+      for (const q of r.p) {
+        n++;
+        const near = grid.get(Math.floor(q[0] / CELL) + ',' + Math.floor(q[1] / CELL));
+        if (!near) continue;
+        for (const o of near) {
+          if (o === r || (o.w || 0) <= (r.w || 0)) continue;
+          // is this point inside the OTHER way's carriageway
+          for (let i = 0; i < o.p.length - 1; i++) {
+            const a = o.p[i], c = o.p[i + 1];
+            const dx = c[0] - a[0], dz = c[1] - a[1], l2 = dx * dx + dz * dz || 1;
+            const t = Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dz) / l2));
+            const d = Math.hypot(q[0] - (a[0] + dx * t), q[1] - (a[1] + dz * t));
+            if (d < (o.w || 6) / 2 - 1.5) { inside++; i = o.p.length; break; }
+          }
+        }
+      }
+      const key = `${r.n || '?'}|${Math.round(r.p[0][0])}`;
+      if (n >= 3 && inside / n > 0.85 && !seen.has(key)) {
+        seen.add(key);
+        redundant++;
+      }
+    }
+    // INFORMATION, not a defect. OSM maps a street as many overlapping ways of
+    // different widths — Grange Road alone is 48 ways at six widths — so narrow
+    // ones sit inside wide ones by design. The visible symptom would be
+    // speckling where two ribbons meet, and buildRoads already prevents that by
+    // giving each way a stable sub-centimetre height offset derived from its own
+    // geometry; P6 gates the result. What is left is redundant vertices on a
+    // layer that is a single draw call, which is not worth the risk of dropping
+    // ways the road index and the street naming depend on.
+    report('D17', `carriageways drawn inside wider ones (redundant, not a defect): ${redundant}`, []);
+  }
+
+  /* D18  buildings at implausible heights. Not a tag check — the tags were
+     cleaned already — but a check on what was BUILT, including everything the
+     recipes and the type defaults put there. */
+  {
+    const bad = [];
+    const box = new T.Box3();
+    let tallest = 0, tallestAt = null;
+    sc.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh) return;
+      if (o.geometry.type !== 'ExtrudeGeometry') return;
+      box.setFromObject(o);
+      const h = box.max.y - window.__terrain.at((box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2);
+      if (h > tallest) { tallest = h; tallestAt = [box.min.x | 0, box.min.z | 0]; }
+      // Guoco Tower is 290m and is the tallest thing in Singapore; nothing in
+      // these two districts comes close, so anything over 300 is a bug
+      if (h > 300) bad.push(`a mass ${h.toFixed(0)}m tall at ${box.min.x | 0},${box.min.z | 0}`);
+    });
+    report('D18', 'buildings taller than anything in Singapore', bad,
+      `tallest built mass is ${tallest.toFixed(0)}m at ${tallestAt}`);
+  }
+
+  /* D19  traffic signals standing where no two streets meet. A signal head in
+     the middle of a block is furniture nobody put there. */
+  {
+    const bad = [];
+    for (const sgp of data.signals || []) {
+      const [sx, sz] = sgp;
+      const names = new Set();
+      for (const r of data.roads || []) {
+        if (!r.n || r.k === 'footway' || r.k === 'pedestrian') continue;
+        for (const q of r.p) {
+          if (Math.hypot(q[0] - sx, q[1] - sz) < 45) { names.add(r.n); break; }
+        }
+      }
+      // A signal does not need a junction. Singapore signalises mid-block
+      // pedestrian crossings, and all three this first reported sit within 21m
+      // of a mapped crossing. The real question is whether a signal serves
+      // ANYTHING — a junction or a crossing — and one that serves neither is
+      // furniture nobody put there.
+      let servesCrossing = false;
+      for (const c of data.crossings || []) {
+        if (Math.hypot(c[0] - sx, c[1] - sz) < 45) { servesCrossing = true; break; }
+      }
+      if (names.size < 2 && !servesCrossing) {
+        bad.push(`a signal at ${sx | 0},${sz | 0} serves neither a junction nor a crossing`);
+      }
+    }
+    report('D19', 'traffic signals serving nothing', bad,
+      'two named streets, or a mapped crossing, within 45m');
+  }
+
+  /* D20  covered walkways with no posts reaching the ground. A canopy floating
+     on nothing is the classic tell of a roof placed by height rather than by
+     what holds it up. */
+  {
+    const bad = [];
+    const box = new T.Box3(), c3 = new T.Vector3();
+    const posts = [];
+    sc.traverse((o) => {
+      if (!o.isInstancedMesh) return;
+      const pr = o.geometry.parameters || {};
+      if (o.geometry.type !== 'CylinderGeometry') return;
+      if (Math.abs((pr.radiusTop || 0) - 0.07) > 0.02) return;
+      const m4 = new T.Matrix4(), v3 = new T.Vector3();
+      for (let i = 0; i < o.count; i++) {
+        o.getMatrixAt(i, m4); v3.setFromMatrixPosition(m4);
+        if (v3.y > -900) posts.push([v3.x, v3.z]);
+      }
+    });
+    sc.traverse((o) => {
+      if (!o.isInstancedMesh) return;
+      const pr = o.geometry.parameters || {};
+      // the walkway roof panel
+      if (o.geometry.type !== 'BoxGeometry') return;
+      if (!((pr.width || 0) > 2.4 && (pr.width || 0) < 4.2 && (pr.height || 0) < 0.35)) return;
+      const m4 = new T.Matrix4(), v3 = new T.Vector3();
+      let orphan = 0;
+      for (let i = 0; i < o.count; i++) {
+        o.getMatrixAt(i, m4); v3.setFromMatrixPosition(m4);
+        if (v3.y < -900) continue;
+        if (v3.y - window.__terrain.at(v3.x, v3.z) < 2) continue;
+        let near = false;
+        for (const [px, pz] of posts) {
+          if ((px - v3.x) ** 2 + (pz - v3.z) ** 2 < 10 * 10) { near = true; break; }
+        }
+        if (!near) orphan++;
+      }
+      if (orphan) bad.push(`${orphan} covered-walkway roof panels with no post within 10m`);
+    });
+    report('D20', 'covered walkway roofs with nothing holding them up', bad);
+  }
+
   return out;
 });
 
