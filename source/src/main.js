@@ -201,7 +201,8 @@ function dressStreet(data, axis) {
     const ox = x1 + vx * bt, oz = z1 + vz * bt;
     const ang2 = Math.atan2(ux2, uz2);
     for (let s2 = -3; s2 <= 3; s2++) {
-      zebraT.push([ox + ux2 * s2 * 1.3, 0.035, oz + uz2 * s2 * 1.3, ang2 + Math.PI / 2]);
+      // above the carriageway surface, which is drawn at 0.055
+      zebraT.push([ox + ux2 * s2 * 1.3, 0.075, oz + uz2 * s2 * 1.3, ang2 + Math.PI / 2]);
     }
     // arclength for the pedestrian-signal logic
     let arc = 0;
@@ -287,7 +288,6 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   // standing in the street, including the row you meet at the spawn point.
   ROADIX = buildRoadIndex(data, data.axis || null);
   window.__onRoad = (x, z, m, ex) => ROADIX.onRoad(x, z, m || 0, ex || null);
-  window.__placeOn = (name) => (x, z) => blocked(x, z) || ROADIX.onRoad(x, z, -0.4, name);
   window.__nearestStreet = (x, z) => ROADIX.nearestName(x, z);
   window.__pushClear = (x, z, m) => ROADIX.pushClear(x, z, m == null ? -0.6 : m);
 

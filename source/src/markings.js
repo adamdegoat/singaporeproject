@@ -9,6 +9,18 @@ import { MAT, groundAt } from './city.js';
 import { claim } from './roads.js';
 import { texStreetName } from './wayfind.js';
 
+// The carriageway surface is drawn at this height (see buildRoads in city.js).
+// Every marking is stacked above it: lowering them below the tarmac buries them,
+// which is what happened when they were separated for z-fighting and the road's
+// own height was forgotten. Each class is 6mm clear of the next so no two are
+// ever coplanar.
+const ROAD_Y = 0.055;
+const MARK = {
+  zebra: ROAD_Y + 0.020, dash: ROAD_Y + 0.026, yellow: ROAD_Y + 0.032,
+  edge: ROAD_Y + 0.038, stop: ROAD_Y + 0.044, arrow: ROAD_Y + 0.050,
+  arrowHead: ROAD_Y + 0.056,
+};
+
 const WHITE = new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.86 });
 const YELLOW = new THREE.MeshStandardMaterial({ color: 0xd6ae44, roughness: 0.86 });
 
@@ -68,37 +80,37 @@ export function buildMarkings(world, axis, data = {}) {
       if (acc % 9 < 3) {
         for (const off of dividers) {
           if (claim('dash', px + nx * off, pz + nz * off, 1.2))
-            dash.push([px + nx * off, 0.052, pz + nz * off, ang]);
+            dash.push([px + nx * off, MARK.dash, pz + nz * off, ang]);
         }
       }
       // solid white edge line just inside the kerb
       if (acc % 2 === 0) {
         for (const sgn of [-1, 1]) {
           if (claim('edge', px + nx * (half - 0.55) * sgn, pz + nz * (half - 0.55) * sgn, 1.2))
-            edge.push([px + nx * (half - 0.55) * sgn, 0.064, pz + nz * (half - 0.55) * sgn, ang]);
+            edge.push([px + nx * (half - 0.55) * sgn, MARK.edge, pz + nz * (half - 0.55) * sgn, ang]);
         }
       }
       // double yellow along the kerb — no parking, and unmistakably local
       if (acc % 2 === 0) {
         for (const sgn of [-1, 1]) {
           if (claim('yellow', px + nx * (half - 0.12) * sgn, pz + nz * (half - 0.12) * sgn, 1.2)) {
-            yellowL.push([px + nx * (half - 0.12) * sgn, 0.058, pz + nz * (half - 0.12) * sgn, ang]);
-            yellowL.push([px + nx * (half - 0.34) * sgn, 0.058, pz + nz * (half - 0.34) * sgn, ang]);
+            yellowL.push([px + nx * (half - 0.12) * sgn, MARK.yellow, pz + nz * (half - 0.12) * sgn, ang]);
+            yellowL.push([px + nx * (half - 0.34) * sgn, MARK.yellow, pz + nz * (half - 0.34) * sgn, ang]);
           }
         }
       }
       // stop line and a straight-ahead arrow before each crossing
       if (acc % 190 === 24) {
         for (const sgn of [-1, 1]) {
-          stopL.push([px + nx * (half * 0.5) * sgn, 0.070, pz + nz * (half * 0.5) * sgn, ang + Math.PI / 2]);
+          stopL.push([px + nx * (half * 0.5) * sgn, MARK.stop, pz + nz * (half * 0.5) * sgn, ang + Math.PI / 2]);
         }
       }
       if (acc % 190 === 60 || acc % 190 === 140) {
         const lanesMid = dividers.map((d, i) => d - laneW / 2)
           .concat([half - laneW / 2]);
         for (const off of lanesMid) {
-          arrowShaft.push([px + nx * off, 0.076, pz + nz * off, ang]);
-          arrowHead.push([px + nx * off + ux * 1.9, 0.082, pz + nz * off + uz * 1.9, ang]);
+          arrowShaft.push([px + nx * off, MARK.arrow, pz + nz * off, ang]);
+          arrowHead.push([px + nx * off + ux * 1.9, MARK.arrowHead, pz + nz * off + uz * 1.9, ang]);
         }
       }
     }
@@ -332,7 +344,7 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField) {
     const bars = Math.max(3, Math.round(hw * 1.6));
     for (let k = -bars; k <= bars; k += 2) {
       if (claim('zebra', ox + ux * k * 0.42, oz + uz * k * 0.42, 0.5))
-        zebra.push([ox + ux * k * 0.42, 0.046, oz + uz * k * 0.42, ang, hw * 2]);
+        zebra.push([ox + ux * k * 0.42, MARK.zebra, oz + uz * k * 0.42, ang, hw * 2]);
     }
     sideCrossings++;
   }

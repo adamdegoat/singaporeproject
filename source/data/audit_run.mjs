@@ -30,8 +30,7 @@ await browser.close();
 console.log('== world audit');
 for (const f of r.findings) {
   const gated = f.budget !== null;
-  // C4 and C7 are floors: more is better
-  const floor = f.id === 'C4' || f.id === 'C7';
+  const floor = (r.floors || []).includes(f.id);   // higher is better
   const ok = !gated || (floor ? f.count >= f.budget : f.count <= f.budget);
   console.log(`   ${gated ? (ok ? 'PASS' : 'FAIL') : ' -  '} ${f.id.padEnd(3)} `
     + `${String(f.count).padStart(5)}/${String(f.budget ?? '-').padStart(5)}  ${f.name}`);

@@ -546,34 +546,72 @@ function addShopfront(world, b, per, merger, clearance) {
 
 /* ---------------- roads and pavements ---------------- */
 // A road is a ribbon: for each segment emit a quad of the tagged width.
-// A road is a ribbon of quads, one per segment. Two things left holes in it:
-// a bend puts the two segments' corners in different places, and at a junction
-// each way stops at the node so nothing covers the middle. Both show as pale
-// gaps in the tarmac, which is what "the roads are not drawn properly" looks
-// like from the saddle. Every segment is now extended half a width past each of
-// its ends, so neighbours and crossing streets overlap instead of abutting.
+// A road is a ribbon along a polyline. Two things used to leave holes in it: at
+// a bend the two segments' corners land in different places, and at a junction
+// each way stops at the node so nothing covers the middle. Both read as pale
+// gaps in the tarmac from the saddle.
+//
+// Bends are closed by MITRING — each interior vertex uses the bisector of its
+// two segments, so the surface is continuous with no overlap. Overlapping it
+// instead (the obvious fix, and the one tried first) doubles the geometry at
+// every bend and the two coplanar copies then fight for the depth buffer.
+//
+// Junctions are covered by extending the two ENDS of a way past its node, where
+// overlapping a crossing road is unavoidable. Each road carries a deterministic
+// sub-centimetre height offset so those overlaps have a stable winner instead of
+// shimmering.
 function ribbon(pts, width, y) {
   const g = new THREE.BufferGeometry();
   const pos = [], uv = [];
-  let run = 0;
-  const H = (x, z) => TERRAIN.at(x, z) + y;      // the road lies on the ground
+  const H = (x, z) => TERRAIN.at(x, z) + y;
   const half = width / 2;
-  for (let i = 0; i < pts.length - 1; i++) {
-    let [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
-    const dx0 = x2 - x1, dz0 = z2 - z1;
-    const len0 = Math.hypot(dx0, dz0);
-    if (len0 < 0.01) continue;
-    // grow the segment along its own direction at both ends
-    const ex = (dx0 / len0) * half, ez = (dz0 / len0) * half;
-    x1 -= ex; z1 -= ez; x2 += ex; z2 += ez;
-    const dx = x2 - x1, dz = z2 - z1;
-    const len = Math.hypot(dx, dz);
+
+  // drop repeated points, then work out each vertex's offset direction
+  const p = [];
+  for (const q of pts) {
+    if (!p.length || Math.hypot(q[0] - p[p.length - 1][0], q[1] - p[p.length - 1][1]) > 0.01) {
+      p.push([q[0], q[1]]);
+    }
+  }
+  if (p.length < 2) return g;
+
+  const dir = [];
+  for (let i = 0; i < p.length - 1; i++) {
+    const dx = p[i + 1][0] - p[i][0], dz = p[i + 1][1] - p[i][1];
+    const L = Math.hypot(dx, dz) || 1;
+    dir.push([dx / L, dz / L]);
+  }
+  // push the two ends out past the node so junctions are covered
+  const EXT = half * 1.1;
+  p[0] = [p[0][0] - dir[0][0] * EXT, p[0][1] - dir[0][1] * EXT];
+  const dl = dir[dir.length - 1];
+  p[p.length - 1] = [p[p.length - 1][0] + dl[0] * EXT, p[p.length - 1][1] + dl[1] * EXT];
+
+  // per-vertex offset: segment normal at the ends, mitred bisector between
+  const off = [];
+  for (let i = 0; i < p.length; i++) {
+    const a = dir[Math.max(0, i - 1)], b = dir[Math.min(dir.length - 1, i)];
+    let mx = -(a[1] + b[1]), mz = a[0] + b[0];
+    const mL = Math.hypot(mx, mz);
+    if (mL < 1e-4) { mx = -b[1]; mz = b[0]; }            // doubled back on itself
+    else { mx /= mL; mz /= mL; }
+    // the mitre has to reach further than the normal on a bend, but a hairpin
+    // must not throw the corner out to infinity
+    const cosHalf = Math.max(0.35, Math.abs(mx * -b[1] + mz * b[0]));
+    const k = half / cosHalf;
+    off.push([mx * k, mz * k]);
+  }
+
+  let run = 0;
+  for (let i = 0; i < p.length - 1; i++) {
+    const [x1, z1] = p[i], [x2, z2] = p[i + 1];
+    const o1 = off[i], o2 = off[i + 1];
+    const len = Math.hypot(x2 - x1, z2 - z1);
     if (len < 0.01) continue;
-    const nx = (-dz / len) * half, nz = (dx / len) * half;
-    const a = [x1 - nx, H(x1 - nx, z1 - nz), z1 - nz];
-    const b = [x1 + nx, H(x1 + nx, z1 + nz), z1 + nz];
-    const c = [x2 + nx, H(x2 + nx, z2 + nz), z2 + nz];
-    const d = [x2 - nx, H(x2 - nx, z2 - nz), z2 - nz];
+    const a = [x1 - o1[0], H(x1 - o1[0], z1 - o1[1]), z1 - o1[1]];
+    const b = [x1 + o1[0], H(x1 + o1[0], z1 + o1[1]), z1 + o1[1]];
+    const c = [x2 + o2[0], H(x2 + o2[0], z2 + o2[1]), z2 + o2[1]];
+    const d = [x2 - o2[0], H(x2 - o2[0], z2 - o2[1]), z2 - o2[1]];
     pos.push(...a, ...b, ...c, ...a, ...c, ...d);
     const u0 = run / width, u1 = (run + len) / width;
     uv.push(0, u0, 1, u0, 1, u1, 0, u0, 1, u1, 0, u1);
@@ -584,6 +622,7 @@ function ribbon(pts, width, y) {
   g.computeVertexNormals();
   return g;
 }
+
 
 function polyLen(pts) {
   let d = 0;
@@ -597,7 +636,11 @@ export function buildRoads(world, data) {
   let mainAxis = null, bestLen = Infinity;
   for (const r of data.roads) {
     const isPath = r.k === 'footway' || r.k === 'pedestrian';
-    const y = isPath ? 0.02 : 0.055;
+    // Ways overlap where they meet, and two carriageways at exactly the same
+    // height speckle. A stable sub-centimetre offset per road, derived from its
+    // own geometry, gives every overlap a consistent winner.
+    const seed = Math.abs(Math.round(r.p[0][0] * 7 + r.p[0][1] * 13)) % 5;
+    const y = isPath ? 0.02 : 0.055 + seed * 0.0012;
     const g = ribbon(r.p, r.w, y);
     if (!g.attributes.position || g.attributes.position.count === 0) continue;
     (isPath ? paveGeos : roadGeos).push(g);

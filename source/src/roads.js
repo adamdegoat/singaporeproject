@@ -135,4 +135,3 @@ export function claim(kind, x, z, cell = 1.6) {
   claimed.add(k);
   return true;
 }
-export function resetClaims() { claimed.clear(); }

@@ -6,6 +6,11 @@
 // A check that is missing here is a check that does not exist. Where something
 // is exempted, the reason is written beside it: an exemption without a reason
 // is a defect being hidden.
+// Checks where a HIGHER number is better, so the budget is a floor rather than a
+// ceiling. Declared once: listing them by id at each comparison site is how C8
+// came to report 13% coverage as a pass against a 70% floor.
+const FLOORS = new Set(['C4', 'C7', 'C8']);
+
 window.__auditWorld = async function auditWorld() {
   const T = window.__THREE, sc = window.__scene;
   const data = await (await fetch('./data/orchard.json')).json();
@@ -118,7 +123,9 @@ window.__auditWorld = async function auditWorld() {
   const ROAD_OK = new Set([
     'BoxGeometry(2.1,0.34,3)',      // central median: it divides the road
     'CylinderGeometry(0.14,6.4)',   // palm planted in that median
-    'SphereGeometry(0.66)',         // tree canopy overhanging the kerb
+    'SphereGeometry(0.66)',         // shrub in the central median (measured: all
+                                    // 348 of them sit at 0.7m, so this is
+                                    // planting, not the canopy it was labelled)
     'IcosahedronGeometry(1)',       // canopy detail, same reason
     'CylinderGeometry(0.07,1)',     // tree branch inside that canopy
     'CylinderGeometry(0.07,2.4)',   // lamp arm, reaches over the carriageway
@@ -165,9 +172,34 @@ window.__auditWorld = async function auditWorld() {
 
   /* ================= P: placement ================= */
   {
+    // Being on the list is not enough. A lamp arm is exempt because it reaches
+    // over the road eight metres up; the same signature at knee height would be
+    // something you ride into, and the list must not excuse that. Only these may
+    // sit low: things that use roads, and planting in the median.
+    const LOW_OK = new Set([
+      'SphereGeometry(0.66)',         // median shrub
+      'BoxGeometry(2.1,0.34,3)',      // median kerb
+      'CylinderGeometry(0.14,6.4)',   // median palm
+      'CylinderGeometry(0.31,0.2)', 'CylinderGeometry(0.48,0.28)',   // wheels
+      'BoxGeometry(1.78,0.62,4.32)', 'BoxGeometry(1.64,0.5,2.1)',    // cars
+      'BoxGeometry(1.69,0.38,2)', 'BoxGeometry(2.5,2.5,11.8)',       // buses
+      'BoxGeometry(2.54,0.62,11.7)', 'BoxGeometry(2.54,0.95,10.4)',
+      'BoxGeometry(1.65,0.42,0.08)',  // bus blind
+      'CapsuleGeometry(0.4,0.04)', 'CapsuleGeometry(0.44,0.06)',     // pedestrians
+      'CapsuleGeometry(0.34,0.13)', 'CapsuleGeometry(0.1,0.12)',
+      'BoxGeometry(0.11,0.07,0.25)', 'BoxGeometry(0.22,0.26,0.1)',
+      'SphereGeometry(0.05)', 'SphereGeometry(0.1)', 'SphereGeometry(0.11)',
+      'CylinderGeometry(0.05,0.1)',
+    ]);
+    const OVERHEAD_MIN = 3.0;       // clear of a rider on a scooter
     const bad = {}, ex = [];
     for (const p of props) {
-      if (p.flat || ROAD_OK.has(p.sig)) continue;
+      if (p.flat) continue;
+      if (ROAD_OK.has(p.sig)) {
+        const up = terr ? p.y - terr.at(p.x, p.z) : 99;
+        if (LOW_OK.has(p.sig) || up >= OVERHEAD_MIN) continue;
+        // on the list, but low enough to hit: not excused
+      }
       const rd = roadAt(p.x, p.z, -0.5);
       if (!rd) continue;
       bad[p.sig] = (bad[p.sig] || 0) + 1;
@@ -239,9 +271,11 @@ window.__auditWorld = async function auditWorld() {
     const n = Object.values(bad).reduce((a, b) => a + b, 0);
     // P1b is new and inherited a backlog. The target is zero, but a check
     // introduced into an existing world cannot start by failing everything, so
-    // it runs as a RATCHET: the number may go down and never up. Lowering this
-    // baseline is progress; raising it is a regression and blocks the deploy.
-    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 286,
+    // it runs as a RATCHET: the number may go down and never up. The budget is
+    // the best figure reached so far — 286 when the check was written, 116 now.
+    // Leaving it at the original 286 would have quietly permitted a regression
+    // all the way back, which defeats the point of a ratchet.
+    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 116,
         Object.entries(bad).sort((a, b) => b[1] - a[1]).slice(0, 6)
           .map(([k, v2]) => `${v2}x ${k}`).join('  ') || 'none', ex);
   }
@@ -347,6 +381,27 @@ window.__auditWorld = async function auditWorld() {
     }
     add('P6', 'z-fighting flat surfaces', 'MAJOR', zf, 20,
         `${zf} coplanar pairs within 4mm`, ex);
+  }
+
+  {
+    // P7: a marking below the carriageway surface is buried. Lane dashes and
+    // zebra crossings were dropped to 0.046 and 0.052 while the tarmac is drawn
+    // at 0.055, so they were under the road and nothing else noticed: every
+    // other check was happy, and the street simply looked wrong.
+    const ROAD_Y = 0.055;
+    let sunk = 0; const ex = [];
+    for (const p of props) {
+      if (!p.flat || !terr) continue;
+      const above = p.y - terr.at(p.x, p.z);
+      if (above < 0.001) continue;              // not a road marking at all
+      if (above > 0.5) continue;                // signage, not paint
+      if (above < ROAD_Y + 0.004) {
+        sunk++;
+        if (ex.length < 6) ex.push(`marking ${(above * 1000) | 0}mm up, tarmac at ${ROAD_Y * 1000}mm`);
+      }
+    }
+    add('P7', 'road markings under the tarmac', 'BLOCKER', sunk, 0,
+        `${sunk} flat markings at or below the carriageway surface`, ex);
   }
 
   /* ================= C: coverage ================= */
@@ -460,6 +515,68 @@ window.__auditWorld = async function auditWorld() {
     const pct = Math.round((built / full) * 100);
     add('C7', 'main street length built', 'BLOCKER', pct, 85,
         `${Math.round(built)}m of ${Math.round(full)}m`, []);
+  }
+
+  {
+    // C8: how much of each real layer actually reaches the world. A2 only asks
+    // whether a layer is used at all, and that is far too weak: 48 bus stops
+    // were fetched and 6 got a shelter, 61 signals were fetched and 14 got a
+    // head. The data was there, the check said "every fetched layer is placed",
+    // and most of the street furniture simply was not built.
+    const m4b = new T.Matrix4(), vb = new T.Vector3();
+    const posOf = (test) => {
+      const out = [];
+      sc.traverse((o) => {
+        if (!o.isMesh) return;
+        const pr = o.geometry.parameters || {};
+        if (!test(o.geometry.type, pr)) return;
+        if (o.isInstancedMesh) {
+          for (let i = 0; i < o.count; i++) {
+            o.getMatrixAt(i, m4b);
+            vb.setFromMatrixPosition(m4b).applyMatrix4(o.matrixWorld);
+            out.push([vb.x, vb.z]);
+          }
+        } else {
+          o.updateWorldMatrix(true, false);
+          vb.setFromMatrixPosition(o.matrixWorld);
+          out.push([vb.x, vb.z]);
+        }
+      });
+      return out;
+    };
+    // signals are bare [x, z] pairs, bus stops are {p, n}: accept either shape
+    const at = (n) => (Array.isArray(n) ? n : n.p);
+    const served = (nodes, built, reach) => nodes.filter((n) => {
+      const q = at(n);
+      return q && built.some((b) => (b[0] - q[0]) ** 2 + (b[1] - q[1]) ** 2 < reach * reach);
+    }).length;
+
+    const shelters = posOf((t, pr) => t === 'BoxGeometry' && Math.abs((pr.width || 0) - 8.8) < 0.01);
+    const heads = posOf((t, pr) => t === 'BoxGeometry'
+      && Math.abs((pr.width || 0) - 0.32) < 0.01 && Math.abs((pr.height || 0) - 0.86) < 0.01);
+    const layers = [
+      ['bus stops', data.busstops || [], shelters, 16],
+      ['traffic signals', data.signals || [], heads, 22],
+    ];
+    const worst = [];
+    let lowest = 100;
+    for (const [name, nodes, built, reach] of layers) {
+      if (!nodes.length) continue;
+      const pct = Math.round((served(nodes, built, reach) / nodes.length) * 100);
+      lowest = Math.min(lowest, pct);
+      worst.push(`${name}: ${served(nodes, built, reach)} of ${nodes.length} built (${pct}%)`);
+    }
+    // Enters as a ratchet, like P1b: the check is new and found a real backlog,
+    // and a gate that fails on day one is a gate people learn to ignore.
+    //
+    // The baseline is 6%, not the 13% first measured, and the reason matters:
+    // fixing the shelter footprint test stopped shelters being built lying
+    // across the carriageway, and fewer of them now fit. That is correctness
+    // bought with coverage — P1b fell from 116 to 114 as C8 fell from 13 to 6.
+    // Both numbers have to come up together, which means the shelter needs to
+    // be narrower or the pavement wider, not a looser test.
+    add('C8', 'share of each real layer built (ratchet, target 70)', 'MAJOR', lowest, 6,
+        worst.join('; '), worst);
   }
 
   /* ================= S: semantics ================= */
@@ -737,11 +854,10 @@ window.__auditWorld = async function auditWorld() {
   /* ================= verdict ================= */
   const failed = findings.filter((f) => {
     if (f.budget === null) return false;
-    // C4 and C7 are floors, not ceilings: more is better
-    const FLOOR = f.id === 'C4' || f.id === 'C7';
-    return FLOOR ? f.count < f.budget : f.count > f.budget;
+    return FLOORS.has(f.id) ? f.count < f.budget : f.count > f.budget;
   });
   return {
+    floors: [...FLOORS],
     findings, failed: failed.map((f) => f.id),
     blockers: failed.filter((f) => f.severity === 'BLOCKER').length,
     majors: failed.filter((f) => f.severity === 'MAJOR').length,

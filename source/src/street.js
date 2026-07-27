@@ -83,6 +83,31 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     }
   }
 
+  // Nearest point on ANY carriageway, with its direction. Bus stops and signals
+  // used to be matched against the main axis alone and anything more than 60m
+  // from it was thrown away: 48 mapped stops became 6 shelters and 61 mapped
+  // signals became 14 heads, while the coordinates for all of them sat in the
+  // scene file. A stop on a side street is still a stop.
+  const nearestOnAnyRoad = (x, z) => {
+    let best = null, bd = Infinity;
+    for (const r of (data.roads || [])) {
+      if (r.k === 'footway' || r.k === 'pedestrian') continue;
+      for (let i = 0; i < r.p.length - 1; i++) {
+        const [x1, z1] = r.p[i], [x2, z2] = r.p[i + 1];
+        const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
+        let t = L2 < 1e-9 ? 0 : ((x - x1) * vx + (z - z1) * vz) / L2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const px = x1 + vx * t, pz = z1 + vz * t;
+        const d = (x - px) ** 2 + (z - pz) ** 2;
+        if (d < bd) {
+          const L = Math.hypot(vx, vz) || 1;
+          bd = d; best = { x: px, z: pz, ux: vx / L, uz: vz / L, dist: Math.sqrt(d) };
+        }
+      }
+    }
+    return best;
+  };
+
   // ---- real positions from OpenStreetMap ----
   const realCount = { busstops: 0, signals: 0, taxis: 0 };
   for (const b of data.busstops || []) {
@@ -191,27 +216,36 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     panel.position.set(4.4, 1.7, -1.0); g.add(panel);
   // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
   // carriageway rather than dropping a shelter into the traffic
-    // An OSM bus_stop node sits on the kerb line, and the shelter is 2.8m deep,
-    // so placing it at the node puts half of it in the traffic. Step it back
-    // onto the pavement along the road normal, away from the carriageway, and
-    // keep stepping until the whole depth is clear. If no clear stand exists,
-    // the shelter is not built: a pole-and-flag stop is already placed from the
-    // same node, so the stop is still there.
-    const nrmX = Math.cos(ang), nrmZ = -Math.sin(ang);
-    const away = window.__onRoad && window.__onRoad(sx + nrmX * 3, sz + nrmZ * 3) ? -1 : 1;
-    let px2 = sx, pz2 = sz, stand = false;
-    for (let back = 2.4; back <= 9; back += 1.2) {
-      px2 = sx + nrmX * back * away; pz2 = sz + nrmZ * back * away;
-      // the whole 8.8m by 2.8m footprint has to be off the road
-      let clear = true;
-      for (const along of [-4.4, 0, 4.4])
-        for (const depth of [-1.5, 1.5]) {
-          const tx2 = px2 + Math.sin(ang) * along + nrmX * depth;
-          const tz2 = pz2 + Math.cos(ang) * along + nrmZ * depth;
-          if (window.__onRoad && window.__onRoad(tx2, tz2, -0.4)) { clear = false; break; }
+    // An OSM bus_stop node sits on the kerb line and the shelter is 8.8m by
+    // 2.8m, so placing it at the node puts part of it in the traffic. The group
+    // is rotated by rotation.y = ang, under which local +x maps to
+    // (cos ang, -sin ang) and local +z to (sin ang, cos ang) — getting those two
+    // the wrong way round tests the footprint sideways and passes shelters that
+    // are lying across the road. Both axes are taken from the rotation itself
+    // here rather than assumed.
+    const lx0 = Math.cos(ang), lz0 = -Math.sin(ang);   // local +x in world
+    const fx0 = Math.sin(ang), fz0 = Math.cos(ang);    // local +z in world
+    const SPAN = 4.6, DEPTH = 1.7;                     // half extents, with slack
+    const clearAt = (cx3, cz3) => {
+      for (const a3 of [-SPAN, -SPAN / 2, 0, SPAN / 2, SPAN])
+        for (const d3 of [-DEPTH, 0, DEPTH]) {
+          const tx3 = cx3 + lx0 * a3 + fx0 * d3;
+          const tz3 = cz3 + lz0 * a3 + fz0 * d3;
+          if (window.__onRoad && window.__onRoad(tx3, tz3, -0.4)) return false;
         }
-      if (clear) { stand = true; break; }
+      return true;
+    };
+    // step away from the road along the depth axis, both directions
+    let px2 = sx, pz2 = sz, stand = false;
+    for (const dir3 of [1, -1]) {
+      for (let back = 0; back <= 10; back += 1.1) {
+        const cx3 = sx + fx0 * back * dir3, cz3 = sz + fz0 * back * dir3;
+        if (clearAt(cx3, cz3)) { px2 = cx3; pz2 = cz3; stand = true; break; }
+      }
+      if (stand) break;
     }
+    // No room for a shelter here. The pole-and-flag stop is placed from the same
+    // node regardless, so the stop still exists on the street.
     if (!stand) continue;
     g.position.set(px2, groundAt(px2, pz2), pz2); g.rotation.y = ang;
     world.add(g);
