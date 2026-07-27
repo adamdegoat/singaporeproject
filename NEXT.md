@@ -94,6 +94,55 @@ of them against the live site. Two lists of the same files, one updated.
 
 ## The defect hunt
 
+`SG_SCENE=world node data/defects.mjs` — 21 named classes, all at zero. It is
+NOT the gate; it is where the next gate comes from. Every finding ends one of
+three ways: fixed, promoted into `audit_world.js` with a budget, or the probe is
+deleted loudly for measuring the wrong thing.
+
+**Six of the twenty-one probes were wrong before they were right, and always the
+same way: they read the map data instead of the world built from it.** Crossings
+"not on a road" were nodes the builder correctly never draws. Bus stops "inside
+buildings" were map points, not the poles that get pushed clear of them. Bridges
+"spanning nothing" were ramps the builder already skips. MRT entrances "inside a
+mall" is where the escalator actually is. If a check reads `data.*` and the thing
+it judges is drawn, it is testing the input, not the output.
+
+One probe was deleted outright: it counted distinct geometry signatures per
+square metre and called six a heap, and every one it found was an ordinary
+pavement — a kerb, a railing (three signatures), a lamp, a canopy overhead and a
+pedestrian (six on their own). A probe that needs a magic number to stop crying
+wolf is not measuring anything.
+
+Real defects it found and that are now fixed:
+
+- **MRT entrance canopies built inside masonry.** 43 of 62. Most Orchard exits
+  genuinely sit inside a mall because that is where the escalator is; the door is
+  on the facade, so they are pushed out to it and skipped if there is nowhere.
+- **Overhead bridges over nothing.** A 37m footway bridge over a canal was
+  getting a deck and two stair towers. A bridge is only built where it spans a
+  carriageway, sampled along the deck rather than at its ends.
+- **Nine self-crossing footprints and four with no area.** A ring that crosses
+  itself extrudes into folded geometry and confuses every point-in-polygon test
+  built on it, including collision. Repaired greedily by dropping the vertex that
+  removes the most crossings; a footprint with no area is dropped.
+- **65 road points outside the merged heightfield.** Each district padded its
+  grid 90m past its OWN roads, and a road crossing the seam runs past both. The
+  merged grid now covers every road and the apron takes the nearest edge value,
+  so the ground runs out flat instead of dropping to sea level.
+- **Zebra bars up to 50 degrees off square.** A crossing used one angle for all
+  its bars, taken at the centre, while the bars spread four metres along a street
+  that bends — and junctions are exactly where crossings are. Each bar takes the
+  street's direction at its own position now.
+
+**And `P1b` and `T1` are deterministic.** Both skipped any mesh over 6,000
+vertices and took a fixed number of samples from the rest, so the answer depended
+on how the merger packed its tiles that run: the number moved 99 to 124 after
+dropping two zero-area footprints and half an hour went into looking for geometry
+that had not moved. Constant stride, nothing skipped. The numbers went up because
+more is looked at, and they no longer move unless the world does.
+
+
+
 `SG_SCENE=world node data/defects.mjs` is the exploratory pass: eleven classes
 nothing has a gate for. It is NOT the gate. Anything it finds is either a defect
 to fix and then promote into `audit_world.js` with a budget, or a probe that was
