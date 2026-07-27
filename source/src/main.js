@@ -295,6 +295,36 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   window.__pushClear = (x, z, m, limit) =>
     ROADIX.pushClear(x, z, m == null ? -0.6 : m, limit == null ? 7 : limit);
 
+  // Where you start, chosen BEFORE anything is built that depends on it.
+  //
+  // Two things were wrong here and both only showed up when the district moved.
+  // It picked the axis vertex nearest the WORLD ORIGIN, which worked purely
+  // because the old per-district origin sat in the middle of Orchard Road; with
+  // one origin for the island, (0,0) is seven kilometres away and the spawn
+  // jumped to whichever end of the street happened to face it. And it ran AFTER
+  // Traffic.build(), which is handed the spawn arclength so it can leave that
+  // stretch clear, so the traffic was avoiding a placeholder at (0,0).
+  //
+  // The midpoint of the street by arclength is a real place and does not care
+  // where the origin is.
+  if (data.axis && data.axis.p.length > 1) {
+    const P0 = data.axis.p;
+    let total = 0;
+    for (let i = 0; i < P0.length - 1; i++) {
+      total += Math.hypot(P0[i + 1][0] - P0[i][0], P0[i + 1][1] - P0[i][1]);
+    }
+    let acc = 0, best = 0;
+    for (let i = 0; i < P0.length - 1; i++) {
+      const seg = Math.hypot(P0[i + 1][0] - P0[i][0], P0[i + 1][1] - P0[i][1]);
+      if (acc + seg >= total / 2) { best = i; break; }
+      acc += seg;
+    }
+    const p0 = P0[best], p1 = P0[Math.min(best + 1, P0.length - 1)];
+    const dx = p1[0] - p0[0], dz = p1[1] - p0[1], L = Math.hypot(dx, dz) || 1;
+    const nx = -dz / L, nz = dx / L;
+    S = newState(p0[0] + nx * -3.4, p0[1] + nz * -3.4, Math.atan2(dx, dz));
+  }
+
   const bs = P.has('nobuild') ? { count: 0, tall: 0 } : buildBuildings(world, data);
   // one sweep over what the building pass just added, before any street
   // furniture exists, so the scope is exactly "buildings and landmarks"
@@ -358,18 +388,6 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   window.__roadList = data.roads.filter((r) => r.k !== 'footway' && r.k !== 'pedestrian');
   const people = crowdSys ? crowdSys.people.length : 0;
 
-  // start on Orchard Road facing along it
-  if (axis) {
-    let best = 0, bestD = Infinity;
-    for (let i = 0; i < axis.p.length - 1; i++) {
-      const d = axis.p[i][0] * axis.p[i][0] + axis.p[i][1] * axis.p[i][1];
-      if (d < bestD) { bestD = d; best = i; }
-    }
-    const p0 = axis.p[best], p1 = axis.p[Math.min(best + 1, axis.p.length - 1)];
-    const dx = p1[0] - p0[0], dz = p1[1] - p0[1], L = Math.hypot(dx, dz) || 1;
-    const nx = -dz / L, nz = dx / L;
-    S = newState(p0[0] + nx * -3.4, p0[1] + nz * -3.4, Math.atan2(dx, dz));
-  }
   buildEnvironment();
   stats = { surround, marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
   ready = true;

@@ -25,6 +25,43 @@ full 2,586m and every building visible from the road is the right height, shape
 and material; everything you cannot see is honest background; nothing moves in a
 way it could not.
 
+## One origin for the island
+
+`districts.json` holds `island_origin` (the SVY21 datum point, 1.366666,
+103.833333) and **every district projects from it**. Each district used to carry
+its own origin, so two districts built side by side would each be measured from a
+different zero and would not line up at the seam. Nothing caught it because only
+one district was ever built.
+
+Moving Orchard into that frame flushed out four bugs that had been invisible
+while the district happened to sit near (0,0):
+
+- **`build_grid` in terrain.py shadowed its row counter.** The inner loop over
+  nearby road samples used `j`, and so did the outer loop over grid rows, so
+  every cell after the first in a row was sampled at a z of `minz + (a point
+  index) x 35m`, found nothing, and was written as zero. Near the old origin a
+  wrong row index still landed on real ground often enough to look plausible.
+  Seven kilometres out it came back flat: the heightfield read 0.0m along the
+  whole street.
+- **`carry_terrain` in process.py** copied the old heightfield across a
+  reprocess without checking the origin. It compares them now and refuses.
+- **The spawn point** was the axis vertex nearest the WORLD ORIGIN, which worked
+  only because the old origin sat in the middle of Orchard. It is the midpoint of
+  the street by arclength now.
+- **Traffic was built before the spawn was set**, so it was avoiding a
+  placeholder at (0,0). Spawn is computed first now.
+- `build_district.py` wrote to `data/districts/<id>.json` while terrain.py treats
+  `data/<id>.json` as canonical, so the next district would have produced the
+  duplicate scene file terrain.py already hard-errors on. Both write canonical
+  now, and check.py hard-errors on a duplicate too.
+
+**P1b and T1 were re-baselined 97 to 99 and 7 to 8, and that is not a regression
+waved through.** The building geometry is identical, every count matches to the
+unit. The ground under it changed: correcting the heightfield moved the terrain
+under Scotts Road from 27.1m to 41.5m, so two pieces of structure that were
+always in a carriageway are now measured as such. Verified by running the same
+audit against the previous scene file, which still reports 97.
+
 ## Do this first
 
 1. **RESEARCH THE STREET BEFORE ASKING ABOUT IT.** The comparison sheet exists

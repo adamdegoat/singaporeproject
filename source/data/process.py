@@ -16,8 +16,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RAW_PATH = os.environ.get("SG_RAW") or os.path.join(HERE, "raw.json")
 OUT_PATH = os.environ.get("SG_OUT") or os.path.join(HERE, "orchard.json")
 AXIS_NAME = os.environ.get("SG_AXIS") or "orchard road"
-LAT0 = float(os.environ.get("SG_LAT0") or 1.30370)
-LON0 = float(os.environ.get("SG_LON0") or 103.83350)
+# Defaults are the ISLAND origin (SVY21 datum), not a point in Orchard, so a
+# bare run lands in the same frame every district uses.
+LAT0 = float(os.environ.get("SG_LAT0") or 1.366666)
+LON0 = float(os.environ.get("SG_LON0") or 103.833333)
 M_PER_DEG_LAT = 110574.0
 M_PER_DEG_LON = 111320.0 * math.cos(math.radians(LAT0))
 
@@ -199,6 +201,19 @@ def carry_terrain(out_path, scene):
         with open(out_path) as fh:
             old = json.load(fh)
     except Exception:
+        return False
+    # But ONLY if it is in the same coordinate frame. The grid stores x0/z0 in
+    # scene metres, so if the origin has moved the old grid describes ground
+    # that is now somewhere else entirely — and it would be carried over in
+    # silence, leaving the whole district's terrain offset by kilometres with
+    # every check still green. Two numbers that must be compared, so compare
+    # them.
+    o_old = old.get("origin") or {}
+    o_new = scene.get("origin") or {}
+    if abs(o_old.get("lat", 1e9) - o_new.get("lat", 0)) > 1e-9 \
+            or abs(o_old.get("lon", 1e9) - o_new.get("lon", 0)) > 1e-9:
+        print(f"  origin moved {o_old.get('lat')},{o_old.get('lon')} -> "
+              f"{o_new.get('lat')},{o_new.get('lon')}: heightfield NOT carried over")
         return False
     if old.get("terrain"):
         scene["terrain"] = old["terrain"]

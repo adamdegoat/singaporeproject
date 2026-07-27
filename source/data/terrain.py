@@ -152,22 +152,32 @@ def build_grid(pts, elev, pad=90.0):
     nx = int((maxx - minx) / CELL) + 1
     nz = int((maxz - minz) / CELL) + 1
     grid = []
-    for j in range(nz):
+    for row in range(nz):
         for i in range(nx):
-            gx, gz = minx + i * CELL, minz + j * CELL
+            gx, gz = minx + i * CELL, minz + row * CELL
             # inverse distance weighting over nearby road samples, found
             # through the hash rather than by scanning all of them
             num = den = 0.0
             cgx, cgz = int(gx // REACH), int(gz // REACH)
             for dx in (-1, 0, 1):
                 for dz in (-1, 0, 1):
-                    for j in shash.get((cgx + dx, cgz + dz), ()):
-                        px, pz = pts[j]
+                    # `k`, NOT `j`. The row counter used to be called j and so
+                    # did this point index, so the inner loop overwrote the row
+                    # the outer loop was on: every cell after the first in a row
+                    # was sampled at a z of minz + (a point index) * 35 metres,
+                    # tens of kilometres away, found nothing, and was written as
+                    # zero. It survived because the district happened to sit
+                    # near the origin, where a wrong row index still landed on
+                    # real ground often enough to look plausible. Moving the
+                    # origin seven kilometres exposed it: the heightfield came
+                    # back flat along the whole street.
+                    for k in shash.get((cgx + dx, cgz + dz), ()):
+                        px, pz = pts[k]
                         d2 = (gx - px) ** 2 + (gz - pz) ** 2
                         if d2 > REACH * REACH:
                             continue
                         w = 1.0 / (d2 + 25.0)
-                        num += elev[j] * w; den += w
+                        num += elev[k] * w; den += w
             grid.append(round(num / den, 2) if den else 0.0)
     # one smoothing pass, so buildings never sit on a step
     sm = list(grid)
@@ -191,7 +201,7 @@ def main():
     path = scene_path(a.id)
     data = json.load(open(path))
 
-    lat0, lon0 = d["origin"]
+    lat0, lon0 = REG["island_origin"]
     m_lat = 110574.0
     m_lon = 111320.0 * math.cos(math.radians(lat0))
 

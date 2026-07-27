@@ -1,14 +1,15 @@
 {
   "_readme": "The world, one district at a time. Add an entry, run build_district.py <id>, then check.py <id>. Bboxes are OSM order: south,west,north,east. Keep them under ~1.2km on the long side or Overpass times out.",
+  "_origin_note": "ONE origin for the whole island, and every district projects from it. Each district used to carry its own, which meant two districts built side by side were each measured from a different zero and would not line up at the seam. Nothing caught it because only one district was ever built. This is the SVY21 datum origin, the point Singapore's own national survey grid is measured from. Coordinates run to tens of thousands of metres across the island; float32 still resolves under 2mm at 30km, and depth precision depends on y, which stays under 200m.",
+  "island_origin": [
+    1.366666,
+    103.833333
+  ],
   "districts": [
     {
       "id": "orchard",
       "name": "Orchard Road",
       "bbox": "1.2965,103.8265,1.3085,103.8505",
-      "origin": [
-        1.3025,
-        103.8385
-      ],
       "axis": "orchard road",
       "status": "live",
       "notes": "The full 2,586m of Orchard Road, Tanglin junction through to Dhoby Ghaut. The earlier box covered only the middle 1,119m (43%)."
@@ -17,10 +18,6 @@
       "id": "somerset",
       "name": "Somerset / Dhoby Ghaut",
       "bbox": "1.2960,103.8370,1.3020,103.8470",
-      "origin": [
-        1.299,
-        103.842
-      ],
       "axis": "orchard road",
       "status": "merged into orchard",
       "notes": "Continues Orchard east: 313, Orchard Gateway, The Cathay, Plaza Singapura."
@@ -29,10 +26,6 @@
       "id": "tanglin",
       "name": "Tanglin",
       "bbox": "1.3040,103.8180,1.3110,103.8300",
-      "origin": [
-        1.3075,
-        103.824
-      ],
       "axis": "orchard road",
       "status": "merged into orchard",
       "notes": "Continues Orchard west: Tanglin Mall, Forum, St Regis, the Botanic Gardens edge."
@@ -41,10 +34,6 @@
       "id": "bugis",
       "name": "Bugis / Rochor",
       "bbox": "1.2960,103.8520,1.3030,103.8620",
-      "origin": [
-        1.2995,
-        103.857
-      ],
       "axis": "victoria street",
       "status": "planned",
       "notes": "Shophouse-heavy, so the shophouse recipe should carry most of it."
@@ -53,10 +42,6 @@
       "id": "chinatown",
       "name": "Chinatown / Telok Ayer",
       "bbox": "1.2790,103.8410,1.2860,103.8500",
-      "origin": [
-        1.2825,
-        103.8455
-      ],
       "axis": "south bridge road",
       "status": "planned",
       "notes": "Densest shophouse fabric in the city; good test of the terrace variants."
@@ -65,10 +50,6 @@
       "id": "marinabay",
       "name": "Marina Bay",
       "bbox": "1.2780,103.8520,1.2860,103.8640",
-      "origin": [
-        1.282,
-        103.858
-      ],
       "axis": "bayfront avenue",
       "status": "planned",
       "notes": "Towers and water. Needs a water surface, which nothing else has yet."

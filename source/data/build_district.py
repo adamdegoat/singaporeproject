@@ -14,7 +14,11 @@ import argparse, json, math, os, re, subprocess, sys, time, urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 REG = json.load(open(os.path.join(HERE, "districts.json")))
 RAW_DIR = os.path.join(HERE, "raw")
-OUT_DIR = os.path.join(HERE, "districts")
+# The canonical scene path is data/<id>.json, the same one terrain.py and the
+# app use. This wrote to data/districts/<id>.json, so building any new
+# district would have produced a SECOND scene file for it, which is the exact
+# duplicate terrain.py already hard-errors on.
+OUT_DIR = HERE
 
 MIRRORS = [
     "https://overpass.kumi.systems/api/interpreter",
@@ -124,8 +128,8 @@ def process(d, raw_path):
     env = dict(os.environ)
     env["SG_RAW"] = raw_path
     env["SG_OUT"] = out_path
-    env["SG_LAT0"] = str(d["origin"][0])
-    env["SG_LON0"] = str(d["origin"][1])
+    env["SG_LAT0"] = str(REG["island_origin"][0])
+    env["SG_LON0"] = str(REG["island_origin"][1])
     env["SG_AXIS"] = d.get("axis", "")
     r = subprocess.run([sys.executable, os.path.join(HERE, "process.py")],
                        env=env, capture_output=True, text=True)

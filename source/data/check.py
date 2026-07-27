@@ -15,12 +15,20 @@ OUT_DIR = os.path.join(HERE, "districts")
 
 
 def load(did):
-    path = os.path.join(OUT_DIR, f"{did}.json")
+    """The one scene file for a district: data/<id>.json.
+
+    This used to try data/districts/<id>.json first and quietly fall back, which
+    is the same silent preference that once let terrain.py load a stale copy and
+    write it back over a fresh reprocess. A leftover duplicate is a hard error
+    here too, for the same reason.
+    """
+    canonical = os.path.join(HERE, f"{did}.json")
+    legacy = os.path.join(OUT_DIR, f"{did}.json")
+    if os.path.exists(canonical) and os.path.exists(legacy):
+        sys.exit(f"two scene files for '{did}':\n  {canonical}\n  {legacy}\n"
+                 f"Delete the one in districts/ - one file per district.")
+    path = canonical if os.path.exists(canonical) else legacy
     if not os.path.exists(path):
-        # fall back to the pre-registry location for orchard
-        alt = os.path.join(HERE, f"{did}.json")
-        if os.path.exists(alt):
-            return json.load(open(alt)), alt
         sys.exit(f"no scene for '{did}'. Run: python3 build_district.py {did}")
     return json.load(open(path)), path
 

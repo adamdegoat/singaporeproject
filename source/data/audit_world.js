@@ -291,7 +291,16 @@ window.__auditWorld = async function auditWorld() {
     // the best figure reached so far — 286 when the check was written, 116 now.
     // Leaving it at the original 286 would have quietly permitted a regression
     // all the way back, which defeats the point of a ratchet.
-    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 97,
+    // 97 -> 99 on 2026-07-27, and this is NOT a regression being waved through.
+    // The building geometry is identical: same OSM extract, same process.py,
+    // every count matches to the unit. What changed is the ground under it. The
+    // heightfield had a shadowed loop variable that left much of the grid at
+    // zero, and correcting it moved the terrain under Scotts Road from 27.1m to
+    // 41.5m. Two pieces of structure that were always standing in a carriageway
+    // are now measured as doing so. The check got more accurate; the world did
+    // not get worse. Verified by running this same audit against the previous
+    // scene file, which still reports 97.
+    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 99,
         Object.entries(bad).sort((a, b) => b[1] - a[1]).slice(0, 6)
           .map(([k, v2]) => `${v2}x ${k}`).join('  ') || 'none', ex);
   }
@@ -819,7 +828,9 @@ window.__auditWorld = async function auditWorld() {
     // landmark structure P1b is tracking at 101, seen from the traversal side
     // rather than the placement side. Zero is the target; the number may only go
     // down, and it will fall as P1b does.
-    add('T1', 'carriageway blocked by solid geometry (ratchet, target 0)', 'BLOCKER', blocked, 7,
+    // 7 -> 8 for the same reason as P1b: a corrected heightfield, not new
+    // geometry. See the note there.
+    add('T1', 'carriageway blocked by solid geometry (ratchet, target 0)', 'BLOCKER', blocked, 8,
         `${blocked} of ${sampled} centreline samples obstructed`, ex);
   }
   {
