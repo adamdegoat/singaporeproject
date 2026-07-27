@@ -712,14 +712,14 @@ function rafflesCity(api, b) {
   }
 }
 
-// The National Library. T.R. Hamzah & Ken Yeang: TWO 16-storey blocks split by
-// a full-height atrium, the larger regular one holding the collections and
-// sitting over an open civic plaza, the second one curved.
+// The National Library. T.R. Hamzah & Ken Yeang: two 16-storey blocks split by a
+// full-height atrium, the larger regular one over an open civic plaza, the
+// second one curved.
 //
-// Built by SPLITTING THE FOOTPRINT, not by sizing boxes off the oriented box. A
-// box sized from halfLong and halfShort filled the whole plan as one featureless
-// 83-metre slab with no atrium visible at all, which is the same mistake the
-// church roof made: the bounding frame is not the building.
+// The first attempt was one flat grey ninety-metre slab, and the reason is worth
+// keeping: at that scale a subtle concrete texture reads as nothing at all. What
+// makes a tall building legible is HORIZONTAL ARTICULATION — floor bands, a
+// visible split, a setback — not the material on its walls.
 function nationalLibrary(api, b) {
   const ob = orientedBox(b.p);
   const cx0 = ob.cx, cz0 = ob.cz;
@@ -728,90 +728,113 @@ function nationalLibrary(api, b) {
   const h = Math.max(58, b.h);
   const nx = -ob.uz, nz = ob.ux;
 
-  // the plaza the blocks stand over, open at ground level
   api.merge(api.extrudeGeo(b.p, 7), stone, cx0, cz0);
   api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 0.9, 6.4), api.mat.trim, cx0, cz0);
 
-  // split the real footprint into two halves either side of the atrium
+  // the two halves, split wide enough that the atrium is visible from the street
+  const GAP = Math.max(4, ob.halfShort * 0.22);
   const side = (sgn) => b.p.map(([x, z]) => {
-    const d = (x - cx0) * nx + (z - cz0) * nz;      // distance across the plan
-    const keep = sgn > 0 ? Math.max(d, ob.halfShort * 0.14)
-                         : Math.min(d, -ob.halfShort * 0.14);
+    const d = (x - cx0) * nx + (z - cz0) * nz;
+    const keep = sgn > 0 ? Math.max(d, GAP) : Math.min(d, -GAP);
     return [x + nx * (keep - d), z + nz * (keep - d)];
   });
 
-  // the larger, regular block: full height, straight
-  api.merge(api.extrudeGeo(side(1), h - 7, 7), stone, cx0, cz0);
-  // and the curved one: shorter, stepped back in three bands so the plan bows
-  const curved = side(-1);
-  for (const [f, y, t] of [[1.0, 7, 0.42], [0.92, 7 + (h - 7) * 0.42, 0.34], [0.8, 7 + (h - 7) * 0.76, 0.24]]) {
-    api.merge(api.extrudeGeo(api.grow(curved, f), (h - 7) * t, y), glass, cx0, cz0);
+  const big = side(1), curved = side(-1);
+  api.merge(api.extrudeGeo(big, h - 7, 7), glass, cx0, cz0);
+  // FLOOR BANDS. Sixteen storeys of them, projecting past the wall, which is the
+  // single thing that stops a tall block reading as a blank slab.
+  const storeys = 16;
+  for (let i = 1; i <= storeys; i++) {
+    const y = 7 + ((h - 7) / storeys) * i;
+    if (y > h - 1) break;
+    api.merge(api.extrudeGeo(api.grow(big, 1.02), 0.55, y - 0.55), stone, cx0, cz0);
   }
-  // the atrium roof spanning the gap between them
-  const roof = new THREE.BoxGeometry(ob.halfLong * 1.7, 0.5, ob.halfShort * 0.34);
+  // the curved block: stepped back three times so its plan bows away
+  for (const [f, y, t] of [[1.0, 7, 0.40], [0.9, 7 + (h - 7) * 0.40, 0.32], [0.76, 7 + (h - 7) * 0.72, 0.26]]) {
+    const ring = api.grow(curved, f);
+    api.merge(api.extrudeGeo(ring, (h - 7) * t, y), stone, cx0, cz0);
+    api.merge(api.extrudeGeo(api.grow(ring, 1.03), 0.7, y + (h - 7) * t - 0.7), api.mat.trim, cx0, cz0);
+  }
+  // and the atrium roof bridging the gap
+  const roof = new THREE.BoxGeometry(ob.halfLong * 1.6, 0.6, GAP * 2 * 0.9);
   roof.rotateY(-ob.ang);
-  roof.translate(cx0, g0 + h * 0.72, cz0);
+  roof.translate(cx0, g0 + h * 0.74, cz0);
   api.merge(roof, glass, cx0, cz0);
 }
 
-// South Beach. Foster + Partners: the identity is the CANOPY, ribbons of steel
-// and aluminium louvres flexing above the public route and dipping at the edges,
-// with the tower facades continuing the same arc.
+// South Beach. Foster + Partners: the identity is the CANOPY — ribbons of steel
+// and aluminium louvres flexing above the public route and dipping at the edges.
+//
+// First attempt made nine 45cm ribs, which at street scale is a handful of white
+// sticks. A canopy has to read as a canopy: a continuous arched surface with the
+// louvre lines ON it, not a few bars floating in the air.
 function southBeach(api, b) {
   const ob = orientedBox(b.p);
   const cx0 = ob.cx, cz0 = ob.cz;
   const g0 = api.groundAt(cx0, cz0);
   const glass = api.mat.towerGlass;
-  const louvre = new THREE.MeshStandardMaterial({ color: 0xb4aea3, roughness: 0.38, metalness: 0.6 });
-  api.merge(api.extrudeGeo(b.p, Math.max(12, b.h * 0.22)), api.mat.paleStone, cx0, cz0);
-  const tall = Math.max(90, b.h);
-  const tw = Math.min(ob.halfShort * 0.5, 17);
-  slab(api, ob, ob.midU - ob.halfLong * 0.4, ob.midV, tw, tw * 0.8,
-       Math.max(12, b.h * 0.22), tall, glass);
+  const louvre = new THREE.MeshStandardMaterial({
+    color: 0xc2bcb1, roughness: 0.35, metalness: 0.55, side: THREE.DoubleSide,
+  });
+  const podium = Math.max(10, b.h * 0.7);
+  api.merge(api.extrudeGeo(b.p, podium), api.mat.paleStone, cx0, cz0);
 
-  // the canopy: ribbons running the long way, arched and dipping at the ends
-  const nx = -ob.uz, nz = ob.ux;
+  // The canopy, built from the FOOTPRINT so it cannot overhang the neighbours.
+  // Sized off the oriented box the ribbons ran out over the adjoining plots and
+  // the road, which is the third time that box has been mistaken for the site.
+  // Each ribbon is a thin slab on a shrunk ring of the real plan, stepping up
+  // toward the middle so the whole thing arches the way the real canopy does.
   const RIB = 9;
   for (let i = 0; i < RIB; i++) {
-    const t = i / (RIB - 1) - 0.5;
-    const off = t * ob.halfShort * 1.7;
-    const px = cx0 + nx * off, pz = cz0 + nz * off;
-    const rise = 16 + Math.cos(t * Math.PI) * 7;
-    const rib = new THREE.BoxGeometry(ob.halfLong * 2 * 0.9, 0.45, 1.5);
-    rib.rotateY(-ob.ang);
-    rib.rotateZ(0);
-    rib.translate(px, g0 + rise, pz);
-    api.merge(rib, louvre, cx0, cz0);
+    const f = 1.0 - i * 0.085;                  // successively smaller rings
+    const rise = podium + 6 + i * 1.35;         // and successively higher
+    api.merge(api.extrudeGeo(api.grow(b.p, f), 0.45, rise), louvre, cx0, cz0);
   }
+
+  // No towers. The first version put two 70m slabs here because South Beach has
+  // towers, but this footprint is the AVENUE — the map gives it a height of ten
+  // metres and an area of 20,000 square metres. Inventing towers on a podium
+  // footprint is making the map say something it does not say, and they read as
+  // two thin poles anyway. The towers are separate footprints and get whatever
+  // their own height earns them.
 }
 
 // Bugis+. WOHA with realities:united: a "crystal mesh" facade wrapping the
-// convex side of the building, with lit billboards on the flatter faces.
+// convex side, with lit billboards on the flatter faces.
+//
+// First attempt used a 55%-opaque dark material and 28 bars, which read as dark
+// panels. A mesh is bright, fine and dense, and it has to be in front of a lit
+// wall for the lattice to show at all.
 function crystalMesh(api, b) {
   const ob = orientedBox(b.p);
   const cx0 = ob.cx, cz0 = ob.cz;
-  const g0 = api.groundAt(cx0, cz0);
   const h = Math.max(20, b.h);
-  api.merge(api.extrudeGeo(b.p, h), api.mat.towerGlass, cx0, cz0);
+  // a bright backing wall, so the lattice reads against something
+  api.merge(api.extrudeGeo(b.p, h), api.mat.blueGlass, cx0, cz0);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.01), 0.8, h - 0.8), api.mat.trim, cx0, cz0);
   const mesh = new THREE.MeshStandardMaterial({
-    color: 0xcfd7dd, roughness: 0.24, metalness: 0.5,
-    transparent: true, opacity: 0.55, side: THREE.DoubleSide,
+    color: 0xe8ecef, roughness: 0.3, metalness: 0.45,
+    emissive: 0x6e7d88, emissiveIntensity: 0.25,
   });
-  // a diagonal lattice over the street face, which is the whole point of it
   const sw = streetward(api, ob);
-  const N = 14;
+  const N = 30;
   for (let i = 0; i < N; i++) {
-    const t = (i / (N - 1) - 0.5) * ob.halfLong * 1.8;
-    const px = cx0 + ob.ux * t + sw.nx * (ob.halfShort + 0.5);
-    const pz = cz0 + ob.uz * t + sw.nz * (ob.halfShort + 0.5);
+    const t = (i / (N - 1) - 0.5) * ob.halfLong * 1.9;
+    const px = cx0 + ob.ux * t + sw.nx * (ob.halfShort + 0.7);
+    const pz = cz0 + ob.uz * t + sw.nz * (ob.halfShort + 0.7);
     if (onCarriageway(px, pz, -0.3)) continue;
-    for (const lean of [0.32, -0.32]) {
-      const bar = new THREE.BoxGeometry(0.34, h * 1.06, 0.34);
+    for (const lean of [0.30, -0.30]) {
+      const bar = new THREE.BoxGeometry(0.22, h * 1.12, 0.22);
       bar.rotateZ(lean);
       bar.rotateY(-ob.ang);
       bar.translate(px, api.groundAt(px, pz) + h / 2, pz);
       api.merge(bar, mesh, cx0, cz0);
     }
+  }
+  // horizontal courses, so it is a mesh and not a picket fence
+  for (let k = 1; k <= 5; k++) {
+    const y = (h / 6) * k;
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.04), 0.18, y), mesh, cx0, cz0);
   }
 }
 
@@ -830,9 +853,9 @@ export const RECIPES = [
   // treatment. One that does not is a regression, and shipping it because the
   // work is done is how a world gets worse one landmark at a time. They stay
   // here, unreferenced, until they are better than what they replace.
-  // [/national library/i, nationalLibrary],
-  // [/south beach/i, southBeach],
-  // [/bugis\+|bugis junction|bugis street/i, crystalMesh],
+  [/national library/i, nationalLibrary],
+  [/south beach/i, southBeach],
+  [/bugis\+|bugis junction|bugis street/i, crystalMesh],
 
   // the Civic District.
   //

@@ -137,13 +137,26 @@ Museum** and **National Gallery** (rotunda, dome, Corinthian colonnade), and
 **churches** (white walls, stepped roof, tower and spire), which covers St
 Andrew's, CHIJMES and five more in Orchard.
 
-**THE RULE, learned by nearly breaking it:** a recipe exists to make a building
-more recognisable than the generic facade family. One that does not is a
-regression. `nationalLibrary`, `southBeach` and `crystalMesh` are written, work,
-and are DELIBERATELY NOT WIRED UP, because each looked worse than what it
-replaced: the library came out as one flat grey 90m slab where the family would
-at least have given it a punched facade. Shipping a recipe because the work is
-done is how a world gets worse one landmark at a time.
+Then the three that were held back were fixed and shipped: the **National
+Library** (two blocks split by a visible atrium, sixteen projecting floor bands),
+**South Beach** (Foster's canopy as stepped ribbons) and **Bugis+** (WOHA's
+crystal mesh as a diagonal lattice over a lit wall).
+
+**THE RULE, and it held:** a recipe exists to make a building more recognisable
+than the generic facade family, and one that does not is a regression. All three
+of those were built, judged WORSE than the generic, and left unwired until they
+were fixed. Judge by rendering the same building both ways and looking at them
+side by side; judging a recipe on its own tells you nothing.
+
+What made each of them work in the end:
+- **Horizontal articulation, not material.** The library was a flat grey slab
+  because at ninety metres a subtle concrete texture reads as nothing. Sixteen
+  projecting floor bands fixed it; the material never mattered.
+- **A mesh needs something behind it.** The Bugis+ lattice was invisible against
+  a dark wall and reads clearly against a bright one.
+- **Do not invent what the map does not say.** South Beach first got two 70m
+  towers because the real complex has towers — but this footprint is the AVENUE,
+  ten metres tall over 20,000 square metres. The towers are their own footprints.
 
 Mistakes worth not repeating, all of them the same shape:
 
