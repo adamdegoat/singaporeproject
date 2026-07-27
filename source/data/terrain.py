@@ -82,8 +82,23 @@ def road_samples(data):
     return pts
 
 
+USED_SOURCE = [None]
+
+
 def fetch_elev(latlons, source_idx=0):
-    """Batched elevation lookup, falling back to the second source."""
+    """Batched elevation lookup, falling back to the second source.
+
+    On a failure this restarts the WHOLE district on the next source rather than
+    splicing two datasets together, which is right. What it cannot do on its own
+    is keep NEIGHBOURING districts on the same one, and they disagree: Orchard
+    came back from open-elevation and Bras Basah, after a fallback, from
+    opentopodata, and where the two districts overlap their ground heights differ
+    by a median of 3.5m and up to 16.6m. Loaded side by side that is a cliff
+    along the seam.
+
+    So the source is recorded in the scene, and can be pinned with --source, to
+    build a neighbour on the same dataset as the district it joins.
+    """
     out = []
     name, tmpl = SOURCES[source_idx]
     B = 90
@@ -96,6 +111,7 @@ def fetch_elev(latlons, source_idx=0):
                 with urllib.request.urlopen(url, timeout=90) as r:
                     res = json.load(r)["results"]
                 out.extend(float(x["elevation"]) for x in res)
+                USED_SOURCE[0] = name
                 print(f"    {name}: {len(out)}/{len(latlons)}", flush=True)
                 break
             except Exception as e:
@@ -196,6 +212,8 @@ def build_grid(pts, elev, pad=90.0):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("id", nargs="?", default="orchard")
+    ap.add_argument("--source", help="pin an elevation source by name, so a "
+                                     "district matches the one it joins")
     a = ap.parse_args()
     d = district(a.id)
     path = scene_path(a.id)
@@ -210,7 +228,13 @@ def main():
     print(f"   {len(pts)} road samples at {SAMPLE_EVERY:.0f}m spacing")
 
     latlons = [(lat0 - z / m_lat, lon0 + x / m_lon) for x, z in pts]
-    elev = fetch_elev(latlons)
+    start = 0
+    if a.source:
+        names = [n for n, _ in SOURCES]
+        if a.source not in names:
+            sys.exit(f"   unknown source '{a.source}'. Known: {', '.join(names)}")
+        start = names.index(a.source)
+    elev = fetch_elev(latlons, start)
     if len(elev) != len(pts):
         sys.exit(f"   got {len(elev)} elevations for {len(pts)} points")
 
@@ -226,6 +250,7 @@ def main():
     base = min(grid["h"])
     grid["h"] = [round(v - base, 2) for v in grid["h"]]
     grid["base"] = round(base, 2)
+    grid["src"] = USED_SOURCE[0]      # which dataset this district's ground came from
     data["terrain"] = grid
     json.dump(data, open(path, "w"), separators=(",", ":"))
     # deliberately no second write: one file, one source of truth

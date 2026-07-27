@@ -669,7 +669,14 @@ export class Traffic {
         for (let w = 0; w < 4; w++) {
           const along = (w < 2 ? 1.4 : -1.4) * it.dir;
           const across = (w % 2 ? 0.86 : -0.86);
-          p.set(x + ux * along + nx * across, gy + 0.31, z + uz * along + nz * across);
+          // Ground height under THIS WHEEL, not under the middle of the car.
+          // A wheel sits up to 1.4m fore and aft of the body centre and a bus
+          // wheel 3.6m, and Orchard Road falls 46 metres over its length, so on
+          // any grade the downhill wheels were buried and the uphill ones
+          // hovered. Same rule the bike needed: the height a thing is drawn at
+          // and the height the ground is under it are different numbers.
+          const wx2 = x + ux * along + nx * across, wz2 = z + uz * along + nz * across;
+          p.set(wx2, surfaceAt(wx2, wz2) + 0.31, wz2);
           e.set(0, heading, Math.PI / 2, 'YXZ');
           this._q2 = this._q2 || new THREE.Quaternion();
           this._q2.setFromEuler(e);
@@ -686,7 +693,8 @@ export class Traffic {
         for (let w = 0; w < 4; w++) {
           const along = (w < 2 ? 3.6 : -3.6) * it.dir;
           const across = (w % 2 ? 1.2 : -1.2);
-          p.set(x + ux * along + nx * across, gyb + 0.48, z + uz * along + nz * across);
+          const wx2 = x + ux * along + nx * across, wz2 = z + uz * along + nz * across;
+          p.set(wx2, surfaceAt(wx2, wz2) + 0.48, wz2);
           e.set(0, heading, Math.PI / 2, 'YXZ');
           this._q2 = this._q2 || new THREE.Quaternion();
           this._q2.setFromEuler(e);

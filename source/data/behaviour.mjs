@@ -104,6 +104,66 @@ const motion = await page.evaluate(async ([VISIBLE]) => {
   return { worst, seen, ex };
 }, [VISIBLE]);
 
+/* ---------- B4 and B5: the two the user found by riding ---------- */
+//
+// Both existed for the whole project and all 34 checks were green. Neither was
+// found by a check; both were found by a person looking out of the window.
+// That is the argument for writing the check the moment a defect is understood,
+// not the argument for looking harder next time.
+const rider = await page.evaluate(() => {
+  const T = window.__THREE, sc = window.__scene;
+
+  // B4: every wheel against the ground UNDER THAT WHEEL. They were all placed
+  // at the ground under the middle of the vehicle, and a bus wheel is 3.6m from
+  // the middle, so on Orchard Road's grades the downhill ones were buried.
+  const m = new T.Matrix4(), v = new T.Vector3();
+  let worstWheel = 0, wheels = 0;
+  sc.traverse((o) => {
+    if (!o.isInstancedMesh || o.geometry.type !== 'CylinderGeometry') return;
+    const r = o.geometry.parameters.radiusTop;
+    if (Math.abs(r - 0.31) > 0.01 && Math.abs(r - 0.48) > 0.01) return;
+    for (let i = 0; i < o.count; i++) {
+      o.getMatrixAt(i, m); v.setFromMatrixPosition(m);
+      if (v.y < -900) continue;
+      wheels++;
+      const off = Math.abs(v.y - (window.__surfaceAt(v.x, v.z) + r));
+      if (off > worstWheel) worstWheel = off;
+    }
+  });
+
+  // B5: every mapped building must be solid. The interior point is SCANNED, not
+  // taken as the average of the corners, which for an L-shaped plan lands
+  // outside the building and quietly tests nothing.
+  const inPoly = (poly, x, z) => {
+    let hit = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i][0], zi = poly[i][1], xj = poly[j][0], zj = poly[j][1];
+      if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
+    }
+    return hit;
+  };
+  let tested = 0, porous = 0; const ex = [];
+  for (const bl of window.__data.buildings) {
+    let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
+    for (const q of bl.p) {
+      if (q[0] < mnx) mnx = q[0]; if (q[0] > mxx) mxx = q[0];
+      if (q[1] < mnz) mnz = q[1]; if (q[1] > mxz) mxz = q[1];
+    }
+    let px = null, pz = null;
+    for (let a2 = 1; a2 < 8 && px === null; a2++) for (let c2 = 1; c2 < 8; c2++) {
+      const x = mnx + (mxx - mnx) * a2 / 8, z = mnz + (mnz === mxz ? 0 : (mxz - mnz) * c2 / 8);
+      if (inPoly(bl.p, x, z)) { px = x; pz = z; break; }
+    }
+    if (px === null) continue;
+    tested++;
+    if (!window.__blocked(px, pz)) {
+      porous++;
+      if (ex.length < 5) ex.push(bl.n || `(unnamed) at ${px | 0},${pz | 0}`);
+    }
+  }
+  return { wheels, worstWheel, tested, porous, ex };
+});
+
 /* ---------- B3: walk every path, look for discontinuities ---------- */
 
 const frames = await page.evaluate(([JUMP_MAX]) => {
@@ -150,5 +210,10 @@ line('B3', 'path frame continuity', frames.bad.length, 0, 'paths',
 if (frames.bad.length) {
   for (const b of frames.bad.slice(0, 6)) console.log(`        path ${b.path} jumps ${b.d}m at s=${b.s}`);
 }
-console.log(fails ? `   FAIL  ${fails} behaviour checks over budget` : '   PASS  3 behaviour checks');
+line('B4', 'wheel off the ground under it', rider.worstWheel, 0.05, 'm',
+  `${rider.wheels} wheel samples`);
+line('B5', 'mapped buildings you can walk into', rider.porous, 0, 'blds',
+  `${rider.tested} buildings tested at a scanned interior point`
+  + (rider.ex.length ? `; ${rider.ex.join(', ')}` : ''));
+console.log(fails ? `   FAIL  ${fails} behaviour checks over budget` : '   PASS  5 behaviour checks');
 process.exit(fails ? 1 : 0);

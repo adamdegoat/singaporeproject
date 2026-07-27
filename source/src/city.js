@@ -751,7 +751,12 @@ export class TreeField {
       // double-decker at 4.3m would take off. Real street trees are pruned up
       // for precisely this reason, so lift the whole crown rather than shrink
       // it, and grow the tree by the same amount so the dome keeps its depth.
-      const LIFT = 5.2;
+      // 6.0, not 5.2. The branches jitter up to 0.4m BELOW the crown base, so a
+      // 5.2m lift put the lowest limb at exactly 4.8m, sitting precisely on the
+      // clearance the audit requires rather than clearing it. Any change in the
+      // ground under a tree then tipped it over, and one did. Size the lift so
+      // the lowest branch clears, not so the crown base does.
+      const LIFT = 6.0;
       if (crownBase < LIFT) { h += LIFT - crownBase; crownBase = LIFT; }
       const crownTop = h;
       const domeDepth = crownTop - crownBase;

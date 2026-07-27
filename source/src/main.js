@@ -4,6 +4,7 @@ import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, ground
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
+import { Solid } from './solid.js';
 import { buildVespa, buildRider, newState, step, RIDE } from './vespa.js';
 import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
@@ -132,7 +133,13 @@ let ROADIX = null;
 function place(x, z) {
   return blocked(x, z) || (ROADIX ? ROADIX.onRoad(x, z, -0.4) : false);
 }
+// Footprints from the map, PLUS every wall actually drawn. The footprint list
+// alone missed 11.5% of the solid geometry standing at rider height, because
+// podiums, canopies, colonnades and the covered walkway are placed by recipe
+// and never had a footprint. See solid.js.
+let SOLID = null;
 function blocked(x, z) {
+  if (SOLID && SOLID.at(x, z)) return true;
   const list = colGrid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));
   if (!list) return false;
   for (const poly of list) if (inPoly(poly, x, z)) return true;
@@ -290,6 +297,10 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   window.__onRoad = (x, z, m, ex) => ROADIX.onRoad(x, z, m || 0, ex || null);
   window.__nearestStreet = (x, z) => ROADIX.nearestName(x, z);
   window.__surfaceAt = (x, z) => surfaceAt(x, z);
+  // the solidity test the ride and the walker actually use, so a check can ask
+  // the same question they do rather than a lookalike
+  window.__blocked = (x, z) => blocked(x, z);
+  window.__data = data;
   // the limit must be passed through: dropping it capped every search at the
   // default 7m, and a stop node on the centreline of a 16m road needs further
   window.__pushClear = (x, z, m, limit) =>
@@ -393,6 +404,18 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   ready = true;
   // one pass over the finished district: share identical materials, then batch
   // small static meshes per 110m tile. See consolidate.js.
+  // Solidity is rasterised from the finished district and BEFORE the meshes are
+  // batched: after batching, one mesh spans a 110m tile and its geometry no
+  // longer says where its walls are.
+  if (!P.has('nosolid')) {
+    const t0 = performance.now();
+    SOLID = new Solid();
+    const st = SOLID.build(world, (x, z) => terrain.at(x, z));
+    stats.solidCells = st.cells; stats.solidWalls = st.walls;
+    stats.solidMs = Math.round(performance.now() - t0);
+    window.__solid = (x, z) => SOLID.at(x, z);
+  }
+
   const RAW = P.has('raw');       // audit mode: leave objects unbatched
   const dedupe = RAW ? { before: 0, after: 0 } : dedupeMaterials(world);
   const cons = RAW ? { removed: 0, merged: 0 } : consolidate(world);
