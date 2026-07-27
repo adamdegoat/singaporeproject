@@ -32,6 +32,15 @@ export function stepWalk(w, dt, moveX, moveZ, running) {
 }
 
 export function buildWalker() {
+  // A figure reads as a person when its limbs HINGE. The previous one rotated a
+  // whole capsule about its own centre, so an arm swung like a propeller from
+  // the middle of the upper arm and a leg had no knee at all — which is exactly
+  // what makes a figure look like a stick. Everything here pivots at the joint:
+  // shoulder, elbow, hip, knee and ankle are nested groups, and the limb hangs
+  // downward from each one.
+  //
+  // This is the player, so there is one of it and detail is affordable. The
+  // crowd is 460 instanced figures and deliberately stays simple.
   const g = new THREE.Group();
   const shirt = new THREE.MeshLambertMaterial({ color: 0xc9553f });
   const jeans = new THREE.MeshLambertMaterial({ color: 0x38414f });
@@ -39,44 +48,108 @@ export function buildWalker() {
   const hair = new THREE.MeshLambertMaterial({ color: 0x241c16 });
   const shoe = new THREE.MeshLambertMaterial({ color: 0x2b2723 });
 
-  const part = (geo, mat, x, y, z) => {
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, y, z);
+  // a limb segment hanging from a pivot: the group sits at the joint, the mesh
+  // is offset half its length below, so rotating the group swings it correctly
+  const segment = (parent, len, rTop, rBot, mat, y0) => {
+    const pivot = new THREE.Group();
+    pivot.position.y = y0;
+    const m = new THREE.Mesh(
+      new THREE.CylinderGeometry(rTop, rBot, len, 12, 1, false), mat);
+    m.position.y = -len / 2;
     m.castShadow = true;
-    g.add(m);
+    pivot.add(m);
+    parent.add(pivot);
+    return pivot;
+  };
+  const blob = (parent, r, mat, x, y, z, squashY = 1) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 12), mat);
+    m.position.set(x, y, z);
+    m.scale.y = squashY;
+    m.castShadow = true;
+    parent.add(m);
     return m;
   };
 
-  const torso = part(new THREE.CapsuleGeometry(0.135, 0.36, 4, 10), shirt, 0, 1.24, 0);
-  const hips = part(new THREE.CapsuleGeometry(0.125, 0.10, 3, 8), jeans, 0, 0.95, 0);
-  const head = part(new THREE.SphereGeometry(0.112, 14, 12), skin, 0, 1.62, 0);
-  part(new THREE.SphereGeometry(0.119, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.6), hair, 0, 1.64, 0);
-  part(new THREE.CylinderGeometry(0.055, 0.062, 0.1, 8), skin, 0, 1.47, 0);   // neck
-  const armL = part(new THREE.CapsuleGeometry(0.048, 0.42, 3, 8), shirt, -0.2, 1.22, 0);
-  const armR = part(new THREE.CapsuleGeometry(0.048, 0.42, 3, 8), shirt, 0.2, 1.22, 0);
-  const handL = part(new THREE.SphereGeometry(0.055, 8, 7), skin, -0.205, 0.99, 0);
-  const handR = part(new THREE.SphereGeometry(0.055, 8, 7), skin, 0.205, 0.99, 0);
-  const legL = part(new THREE.CapsuleGeometry(0.062, 0.46, 3, 8), jeans, -0.09, 0.53, 0);
-  const legR = part(new THREE.CapsuleGeometry(0.062, 0.46, 3, 8), jeans, 0.09, 0.53, 0);
-  const shoeL = part(new THREE.BoxGeometry(0.115, 0.075, 0.26), shoe, -0.09, 0.06, 0.03);
-  const shoeR = part(new THREE.BoxGeometry(0.115, 0.075, 0.26), shoe, 0.09, 0.06, 0.03);
+  /* ---- body ---- */
+  const body = new THREE.Group();
+  g.add(body);
+
+  // torso tapers: wider at the chest than the waist, which the single capsule
+  // could not do and which is most of the silhouette
+  const chest = new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.125, 0.40, 16), shirt);
+  chest.position.y = 1.26; chest.castShadow = true; body.add(chest);
+  blob(body, 0.155, shirt, 0, 1.45, 0, 0.62);            // shoulder mass
+  blob(body, 0.128, jeans, 0, 1.01, 0, 0.78);            // hips
+  const pelvis = new THREE.Mesh(new THREE.CylinderGeometry(0.125, 0.115, 0.16, 14), jeans);
+  pelvis.position.y = 1.0; pelvis.castShadow = true; body.add(pelvis);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.06, 0.11, 10), skin);
+  neck.position.y = 1.50; neck.castShadow = true; body.add(neck);
+
+  /* ---- head ---- */
+  const headPivot = new THREE.Group();
+  headPivot.position.y = 1.56;
+  body.add(headPivot);
+  const head = blob(headPivot, 0.108, skin, 0, 0.07, 0, 1.06);
+  // hair with a shape rather than a bare hemisphere: a cap plus a back mass
+  blob(headPivot, 0.113, hair, 0, 0.085, -0.006, 0.92);
+  blob(headPivot, 0.082, hair, 0, 0.055, -0.055, 0.8);
+  blob(headPivot, 0.03, skin, -0.104, 0.06, 0, 1.1);     // ears
+  blob(headPivot, 0.03, skin, 0.104, 0.06, 0, 1.1);
+
+  /* ---- arms: shoulder then elbow ---- */
+  const arm = (side) => {
+    const sh = segment(body, 0.26, 0.052, 0.045, shirt, 1.42);
+    sh.position.x = side * 0.185;
+    blob(sh, 0.058, shirt, 0, 0, 0);                     // deltoid
+    const el = segment(sh, 0.25, 0.044, 0.038, skin, -0.26);
+    blob(el, 0.045, skin, 0, -0.25, 0);                  // hand
+    return { sh, el };
+  };
+  const armL = arm(-1), armR = arm(1);
+
+  /* ---- legs: hip, knee, then a foot ---- */
+  const leg = (side) => {
+    const hip = segment(body, 0.45, 0.072, 0.058, jeans, 0.98);
+    hip.position.x = side * 0.085;
+    const kn = segment(hip, 0.44, 0.056, 0.045, jeans, -0.45);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.07, 0.25), shoe);
+    foot.position.set(0, -0.47, 0.05);
+    foot.castShadow = true;
+    kn.add(foot);
+    return { hip, kn, foot };
+  };
+  const legL = leg(-1), legR = leg(1);
 
   return {
     group: g,
     pose(phase, speed) {
-      const sw = speed > 0.1 ? Math.sin(phase * 2.4) : 0;
-      armL.rotation.x = sw * 0.7;
-      armR.rotation.x = -sw * 0.7;
-      legL.rotation.x = -sw * 0.8;
-      legR.rotation.x = sw * 0.8;
-      handL.position.z = sw * 0.28;
-      handR.position.z = -sw * 0.28;
-      shoeL.position.z = 0.03 - sw * 0.32;
-      shoeR.position.z = 0.03 + sw * 0.32;
-      const bob = speed > 0.1 ? Math.abs(Math.cos(phase * 2.4)) * 0.03 : 0;
-      torso.position.y = 1.24 + bob;
-      head.position.y = 1.62 + bob;
-      hips.position.y = 0.95 + bob;
+      const moving = speed > 0.1;
+      const t = phase * 2.4;
+      const sw = moving ? Math.sin(t) : 0;
+
+      // shoulders swing, elbows trail and always bend the same way
+      armL.sh.rotation.x = sw * 0.62;
+      armR.sh.rotation.x = -sw * 0.62;
+      armL.el.rotation.x = -0.25 - Math.max(0, sw) * 0.55;
+      armR.el.rotation.x = -0.25 - Math.max(0, -sw) * 0.55;
+
+      // hips swing; the knee bends on the back half of the stride, which is
+      // what actually sells a walk
+      legL.hip.rotation.x = -sw * 0.72;
+      legR.hip.rotation.x = sw * 0.72;
+      legL.kn.rotation.x = Math.max(0, sw) * 0.95;
+      legR.kn.rotation.x = Math.max(0, -sw) * 0.95;
+      // toes stay flat to the ground instead of pointing wherever the shin goes
+      legL.foot.rotation.x = -legL.hip.rotation.x - legL.kn.rotation.x;
+      legR.foot.rotation.x = -legR.hip.rotation.x - legR.kn.rotation.x;
+
+      // the whole body rises and falls, and leans a little into the walk
+      const bob = moving ? Math.abs(Math.cos(t)) * 0.028 : 0;
+      body.position.y = bob;
+      body.rotation.z = moving ? Math.sin(t) * 0.022 : 0;
+      body.rotation.x = moving ? 0.045 : 0;
+      headPivot.rotation.y = moving ? Math.sin(t * 0.5) * 0.06 : 0;
+      void head;
     },
   };
 }
