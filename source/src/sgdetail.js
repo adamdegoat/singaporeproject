@@ -443,7 +443,11 @@ export function buildSgDetail(world, axis, data, isBlocked) {
         Math.min(16, bl * 0.4)]);
     }
     if (b.h > 14 && bl > 12 && chance(0.7)) {
-      vertSign.push([mx + (oX / oL) * 1.1, 9.5, mz + (oZ / oL) * 1.1, ang + Math.PI / 2]);
+      const vx2 = mx + (oX / oL) * 1.1, vz2 = mz + (oZ / oL) * 1.1;
+      // a banner hanging over the carriageway is something you ride into
+      if (!isBlocked(vx2, vz2)) {
+        vertSign.push([vx2, 9.5, vz2, ang + Math.PI / 2]);
+      }
     }
   }
   // rooftop boxes vary in width, so scale per instance

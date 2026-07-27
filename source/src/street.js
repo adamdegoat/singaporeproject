@@ -32,6 +32,9 @@ function nearestOnAxis(pts, x, z) {
 }
 
 export function buildFurniture(world, axis, isBlocked, data = {}) {
+  // isBlocked already covers buildings AND carriageways; onRoad asks about the
+  // carriageway alone, for things that are allowed to sit against a building
+  const onRoad = (x, z, m) => (window.__onRoad ? window.__onRoad(x, z, m) : false);
   const pts = axis.p, half = axis.w / 2;
   const railT = [], postT = [], shelterAt = [], lightAt = [], signT = [], planterT = [], binT = [];
   const crossingS = [], taxiAt = [];
@@ -69,9 +72,11 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
         // fascia sign boxes above the shopfront line, facing the street
         if (acc % 26 === 8) {
           const gx = px + nx * (half + 12.5) * sgn, gz = pz + nz * (half + 12.5) * sgn;
-          if (isBlocked(gx, gz) && claim('fascia', gx, gz, 4)) {
-            signT.push([px + nx * (half + 11.4) * sgn, rand(6.2, 7.6),
-                        pz + nz * (half + 11.4) * sgn, ang, sgn]);
+          // the sign hangs 1.1m in front of the facade, so that is the point
+          // that has to be clear of the road, not the facade itself
+          const fx = px + nx * (half + 11.4) * sgn, fz = pz + nz * (half + 11.4) * sgn;
+          if (isBlocked(gx, gz) && !onRoad(fx, fz, -0.5) && claim('fascia', gx, gz, 4)) {
+            signT.push([fx, rand(6.2, 7.6), fz, ang, sgn]);
           }
         }
       }
@@ -278,6 +283,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
         // roofed walkway on posts standing in a live carriageway is something
         // you ride into, so those segments are simply not built.
         if (isBlocked(cxp, czp)) continue;
+        if (!claim('covered', cxp, czp, 3.0)) continue;   // OSM ways overlap
         linkRoof.push([cxp, 3.35, czp, ang]);
         linkBeam.push([cxp, 3.12, czp, ang]);
         for (const sgn of [1, -1]) {

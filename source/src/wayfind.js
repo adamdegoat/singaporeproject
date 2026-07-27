@@ -42,7 +42,7 @@ function texDirection(lines) {
 }
 
 // street name plate: white ground, black text, the small blue cap SG uses
-function texStreetName(name) {
+export function texStreetName(name) {
   return signCanvas(512, 128, (x, w, h) => {
     x.fillStyle = '#f4f4f1'; x.fillRect(0, 0, w, h);
     x.fillStyle = '#20477e'; x.fillRect(0, 0, w, 22);
@@ -63,10 +63,33 @@ export function buildSignage(world, axis, data, isBlocked) {
   const pts = axis.p, half = axis.w / 2;
   const placed = { gantries: 0, plates: 0 };
 
-  // named cross streets, so the gantry text is real
-  const crossNames = [...new Set(
-    data.roads.map((r) => r.n).filter((n) => n && !/orchard road/i.test(n))
-  )];
+  // Every signpost records what it says and where it stands, so the audit can
+  // check the words against the map rather than only the geometry.
+  const said = (window.__signage = window.__signage || []);
+
+  // The cross streets, kept as geometry rather than as a list of names. A
+  // gantry used to pick two names at random out of this list: it looked
+  // perfect and pointed at streets that were nowhere near the junction.
+  const crossWays = data.roads.filter(
+    (r) => r.n && !/orchard road/i.test(r.n)
+        && r.k !== 'footway' && r.k !== 'pedestrian');
+
+  // nearest named street on each side of a point, out to `reach`
+  const crossAt = (px, pz, nx, nz, reach = 90) => {
+    let left = null, right = null, dl = Infinity, dr = Infinity;
+    for (const r of crossWays) {
+      for (const q of r.p) {
+        const dx = q[0] - px, dz = q[1] - pz;
+        const d2 = dx * dx + dz * dz;
+        if (d2 > reach * reach) continue;
+        // which side of the main street it lies on
+        const side = dx * nx + dz * nz;
+        if (side > 0) { if (d2 < dr) { dr = d2; right = r.n; } }
+        else { if (d2 < dl) { dl = d2; left = r.n; } }
+      }
+    }
+    return { left, right };
+  };
 
   let acc = 0;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -80,7 +103,11 @@ export function buildSignage(world, axis, data, isBlocked) {
       const px = x1 + ux * t, pz = z1 + uz * t;
 
       // overhead directional gantry every ~230m
-      if (acc % 230 === 90) {
+      const crossHere = (acc % 230 === 90)
+        ? crossAt(px, pz, nx, nz) : null;
+      // A sign with nothing true to say is not built. Inventing a destination
+      // is worse than leaving the junction unsigned.
+      if (crossHere && (crossHere.left || crossHere.right)) {
         const g = new THREE.Group();
         const post = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 7.2, 8), MAT.darkMetal);
         post.position.set(nx * (half + 1.0), 3.6, nz * (half + 1.0));
@@ -89,14 +116,14 @@ export function buildSignage(world, axis, data, isBlocked) {
         arm.position.set(nx * (half * 0.45), 7.0, nz * (half * 0.45));
         arm.rotation.y = ang; arm.castShadow = true; g.add(arm);
 
-        const a = pick(crossNames) || 'Scotts Road';
-        const b = pick(crossNames) || 'Paterson Road';
+        const rows = [];
+        if (crossHere.left) rows.push({ text: crossHere.left.slice(0, 16), dir: 'left' });
+        if (crossHere.right) rows.push({ text: crossHere.right.slice(0, 16), dir: 'right' });
+        said.push({ kind: 'gantry', x: px, z: pz,
+                    text: rows.map((r2) => r2.text).join(' | ') });
         const face = new THREE.Mesh(
           new THREE.PlaneGeometry(4.6, 1.72),
-          new THREE.MeshBasicMaterial({ map: texDirection([
-            { text: a.slice(0, 16), dir: 'left' },
-            { text: b.slice(0, 16), dir: 'right' },
-          ]) })
+          new THREE.MeshBasicMaterial({ map: texDirection(rows) })
         );
         face.position.set(nx * (half * 0.42), 5.9, nz * (half * 0.42));
         face.rotation.y = ang + Math.PI;
@@ -117,14 +144,19 @@ export function buildSignage(world, axis, data, isBlocked) {
         for (const sgn of [-1, 1]) {
           const sx = px + nx * (half + 2.4) * sgn, sz = pz + nz * (half + 2.4) * sgn;
           if (isBlocked(sx, sz)) continue;
+          // near a junction the pole can end up closer to the cross street than
+          // to the one it names, which makes the plate a lie
+          const own = axis.n || 'Orchard Road';
+          if (window.__nearestStreet && window.__nearestStreet(sx, sz) !== own) continue;
           const g = new THREE.Group();
           const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 6), MAT.metal);
           pole.position.y = 1.3; pole.castShadow = true; g.add(pole);
           const plate = new THREE.Mesh(
             new THREE.PlaneGeometry(1.5, 0.38),
-            new THREE.MeshBasicMaterial({ map: texStreetName('Orchard Road'), side: THREE.DoubleSide })
+            new THREE.MeshBasicMaterial({ map: texStreetName(axis.n || 'Orchard Road'), side: THREE.DoubleSide })
           );
           plate.position.y = 2.5; g.add(plate);
+          said.push({ kind: 'plate', x: sx, z: sz, text: axis.n || 'Orchard Road' });
           g.position.set(sx, groundAt(sx, sz), sz);
           g.rotation.y = ang + Math.PI / 2;
           world.add(g);

@@ -278,7 +278,9 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   const axis = data.axis || fallbackAxis;
 
   ROADIX = buildRoadIndex(data, axis);
-  window.__onRoad = (x, z, m) => ROADIX.onRoad(x, z, m || 0);
+  window.__onRoad = (x, z, m, ex) => ROADIX.onRoad(x, z, m || 0, ex || null);
+  window.__placeOn = (name) => (x, z) => blocked(x, z) || ROADIX.onRoad(x, z, -0.4, name);
+  window.__nearestStreet = (x, z) => ROADIX.nearestName(x, z);
 
   // the ground itself, from the heightfield
   const groundMat = new THREE.MeshStandardMaterial({ color: 0x9a9384, roughness: 0.95 });
@@ -656,6 +658,25 @@ requestAnimationFrame(loop);
 window.__drive = (throttle, steer, seconds) => {
   window.__force = { throttle, steer, brake: 0 };
   setTimeout(() => { window.__force = null; }, seconds * 1000);
+};
+// Put the ride at a point, facing a heading. The coverage sweep uses this to
+// visit every street in the district without reloading the world 300 times.
+window.__teleport = (x, z, heading) => {
+  S = newState(x, z, heading == null ? S.heading : heading);
+  S.speed = 0;
+  if (crowdSys) crowdSys.update(clock, 0, S.x, S.z, signals);
+  // Traffic is NOT rebuilt here: Traffic.build() creates a fresh set of
+  // instanced meshes and adds them to the world, so calling it once per stop
+  // leaked a whole fleet each time. Sixty stops into a sweep the scene was
+  // carrying sixty fleets, and the coverage run blamed the district for 1,618
+  // draw calls that the harness had added itself.
+  // The camera normally eases toward the ride. Left to ease across the whole
+  // district it spends a second in transit above the rooftops, and anything
+  // measured during that flight is the view from 800m away, not the view from
+  // the street: distinct places all reported an identical 1,537 draw calls.
+  camInit = false;
+  driveCamera(1.0);
+  return { x: S.x, z: S.z, heading: S.heading };
 };
 window.__inp = () => ({ TOUCH, steer: input.steer, throttle: input.throttle, brake: input.brake, touches: touchDebug(), fired: window.__touchFired || 0 });
 window.__snd = sound;

@@ -14,8 +14,8 @@ export function buildRoadIndex(data, axis) {
   const grid = new Map();
   let segs = 0;
 
-  const add = (x1, z1, x2, z2, half) => {
-    const seg = [x1, z1, x2, z2, half];
+  const add = (x1, z1, x2, z2, half, name) => {
+    const seg = [x1, z1, x2, z2, half, name];
     segs++;
     // stamp the segment into every cell its swept width can touch
     const minx = Math.min(x1, x2) - half, maxx = Math.max(x1, x2) + half;
@@ -34,22 +34,27 @@ export function buildRoadIndex(data, axis) {
     if (r.k === 'footway' || r.k === 'pedestrian' || r.k === 'steps') continue;
     const half = (r.w || 6) / 2;
     for (let i = 0; i < r.p.length - 1; i++) {
-      add(r.p[i][0], r.p[i][1], r.p[i + 1][0], r.p[i + 1][1], half);
+      add(r.p[i][0], r.p[i][1], r.p[i + 1][0], r.p[i + 1][1], half, r.n || null);
     }
   }
   // the stitched main axis is wider than the fragments it was built from
   if (axis) {
     const half = axis.w / 2;
     for (let i = 0; i < axis.p.length - 1; i++) {
-      add(axis.p[i][0], axis.p[i][1], axis.p[i + 1][0], axis.p[i + 1][1], half);
+      add(axis.p[i][0], axis.p[i][1], axis.p[i + 1][0], axis.p[i + 1][1], half, axis.n || 'Orchard Road');
     }
   }
 
   // is this point inside any carriageway, allowing a margin outside the kerb?
-  const onRoad = (x, z, margin = 0) => {
+  // `except` names a street whose own carriageway is ignored. Mount Sophia is
+  // mapped as ten ways of three different widths running alongside each other,
+  // so the kerb line of the narrow one falls inside the wide one and every
+  // kerb on the street was refused, leaving it bare.
+  const onRoad = (x, z, margin = 0, except = null) => {
     const list = grid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));
     if (!list) return false;
-    for (const [x1, z1, x2, z2, half] of list) {
+    for (const [x1, z1, x2, z2, half, nm] of list) {
+      if (except && nm === except) continue;
       const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
       let t = L2 < 1e-9 ? 0 : ((x - x1) * vx + (z - z1) * vz) / L2;
       t = t < 0 ? 0 : t > 1 ? 1 : t;
@@ -60,7 +65,29 @@ export function buildRoadIndex(data, axis) {
     return false;
   };
 
-  return { onRoad, segments: segs };
+  // which named street is nearest to a point. Used so a name plate is never
+  // planted where a different street is closer than the one it names.
+  const nearestName = (x, z, reach = 60) => {
+    let best = Infinity, name = null;
+    const span = Math.ceil(reach / CELL);
+    const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
+    for (let dx = -span; dx <= span; dx++)
+      for (let dz = -span; dz <= span; dz++) {
+        const list = grid.get((cx + dx) + ',' + (cz + dz));
+        if (!list) continue;
+        for (const [x1, z1, x2, z2, , nm] of list) {
+          if (!nm || nm === '(unnamed)') continue;
+          const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
+          let t = L2 < 1e-9 ? 0 : ((x - x1) * vx + (z - z1) * vz) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const d = (x - (x1 + vx * t)) ** 2 + (z - (z1 + vz * t)) ** 2;
+          if (d < best) { best = d; name = nm; }
+        }
+      }
+    return name;
+  };
+
+  return { onRoad, nearestName, segments: segs };
 }
 
 // One prop per spot. OSM splits streets into fragments that overlap at every

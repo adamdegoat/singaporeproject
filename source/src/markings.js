@@ -7,6 +7,7 @@ import * as THREE from '../lib/three.module.js';
 import { R, rand, chance } from './tex.js';
 import { MAT, groundAt } from './city.js';
 import { claim } from './roads.js';
+import { texStreetName } from './wayfind.js';
 
 const WHITE = new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.86 });
 const YELLOW = new THREE.MeshStandardMaterial({ color: 0xd6ae44, roughness: 0.86 });
@@ -66,34 +67,38 @@ export function buildMarkings(world, axis, data = {}) {
       // dashed lane dividers: 3m mark, 6m gap, at the real lane positions
       if (acc % 9 < 3) {
         for (const off of dividers) {
-          dash.push([px + nx * off, 0.075, pz + nz * off, ang]);
+          if (claim('dash', px + nx * off, pz + nz * off, 1.2))
+            dash.push([px + nx * off, 0.052, pz + nz * off, ang]);
         }
       }
       // solid white edge line just inside the kerb
       if (acc % 2 === 0) {
         for (const sgn of [-1, 1]) {
-          edge.push([px + nx * (half - 0.55) * sgn, 0.075, pz + nz * (half - 0.55) * sgn, ang]);
+          if (claim('edge', px + nx * (half - 0.55) * sgn, pz + nz * (half - 0.55) * sgn, 1.2))
+            edge.push([px + nx * (half - 0.55) * sgn, 0.064, pz + nz * (half - 0.55) * sgn, ang]);
         }
       }
       // double yellow along the kerb — no parking, and unmistakably local
       if (acc % 2 === 0) {
         for (const sgn of [-1, 1]) {
-          yellowL.push([px + nx * (half - 0.12) * sgn, 0.078, pz + nz * (half - 0.12) * sgn, ang]);
-          yellowL.push([px + nx * (half - 0.34) * sgn, 0.078, pz + nz * (half - 0.34) * sgn, ang]);
+          if (claim('yellow', px + nx * (half - 0.12) * sgn, pz + nz * (half - 0.12) * sgn, 1.2)) {
+            yellowL.push([px + nx * (half - 0.12) * sgn, 0.058, pz + nz * (half - 0.12) * sgn, ang]);
+            yellowL.push([px + nx * (half - 0.34) * sgn, 0.058, pz + nz * (half - 0.34) * sgn, ang]);
+          }
         }
       }
       // stop line and a straight-ahead arrow before each crossing
       if (acc % 190 === 24) {
         for (const sgn of [-1, 1]) {
-          stopL.push([px + nx * (half * 0.5) * sgn, 0.08, pz + nz * (half * 0.5) * sgn, ang + Math.PI / 2]);
+          stopL.push([px + nx * (half * 0.5) * sgn, 0.070, pz + nz * (half * 0.5) * sgn, ang + Math.PI / 2]);
         }
       }
       if (acc % 190 === 60 || acc % 190 === 140) {
         const lanesMid = dividers.map((d, i) => d - laneW / 2)
           .concat([half - laneW / 2]);
         for (const off of lanesMid) {
-          arrowShaft.push([px + nx * off, 0.08, pz + nz * off, ang]);
-          arrowHead.push([px + nx * off + ux * 1.9, 0.08, pz + nz * off + uz * 1.9, ang]);
+          arrowShaft.push([px + nx * off, 0.076, pz + nz * off, ang]);
+          arrowHead.push([px + nx * off + ux * 1.9, 0.082, pz + nz * off + uz * 1.9, ang]);
         }
       }
     }
@@ -132,10 +137,14 @@ export function selectSideStreets(data, axis, reach = 230) {
   // junction and tag change: Orchard Boulevard is 21 fragments, none of them
   // 45m long, so testing each one on its own threw away the entire 1,376m
   // street and left it bare.
+  // service ways are included when they carry a name. OSM tags Cuppage Road,
+  // Canning Rise and Edinburgh Road as service, and they are real streets with
+  // frontages on them; an UNNAMED service way is a car park aisle or a loading
+  // bay and stays out.
   const byName = new Map();
   for (const r of data.roads) {
     if (!r.n || /orchard road/i.test(r.n)) continue;
-    if (r.k === 'footway' || r.k === 'pedestrian' || r.k === 'service') continue;
+    if (r.k === 'footway' || r.k === 'pedestrian') continue;
     let len = 0;
     for (let i = 0; i < r.p.length - 1; i++) {
       len += Math.hypot(r.p[i + 1][0] - r.p[i][0], r.p[i + 1][1] - r.p[i][1]);
@@ -147,21 +156,24 @@ export function selectSideStreets(data, axis, reach = 230) {
   const out = [];
   for (const [, e] of byName) {
     if (e.len < 45) continue;
+    // A long way can have its midpoint outside the radius while most of it is
+    // inside. Judge on any point, which is also how the audit judges it: the
+    // builder and the check must not disagree about what the world contains.
     for (const r of e.ways) {
-      const mid = r.p[Math.floor(r.p.length / 2)];
-      if (!near(mid[0], mid[1])) continue;
+      if (!r.p.some((q) => near(q[0], q[1]))) continue;
       out.push(r);
     }
   }
   return out;
 }
 
-export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
+export function dressSideStreets(world, data, axis, blockedIn, TreeField) {
   const trees = new TreeField();
   const kerb = [], lamp = [], lampArm = [];
   let roads = 0, skipped = 0;
   const segs = [];          // every dressed road segment, for matching crossings
   let sideCrossings = 0, sidewalkReal = 0, sidewalkNone = 0;
+  const plated = new Set();
 
   // Dress what can be seen from the route. The full district holds 46.8km of
   // side street, which produced 23,000 kerbs and 2,100 trees — most of it
@@ -180,10 +192,25 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
     return false;
   };
 
-  const chosen = selectSideStreets(data, axis, REACH);
+  let chosen = selectSideStreets(data, axis, REACH);
+  // Drop ways that lie inside another carriageway. Mount Sophia is mapped as
+  // ten ways of three widths, some running inside the others; dressing the
+  // inner one puts its kerb line in the middle of the outer one, and every
+  // kerb is then correctly refused, leaving the street with nothing on it.
+  const onRoadRaw = window.__onRoad || (() => false);
+  chosen = chosen.filter((r) => {
+    let inside = 0, n = 0;
+    for (const q of r.p) {
+      n++;
+      // is this centreline point inside some OTHER street's carriageway
+      if (onRoadRaw(q[0], q[1], -(r.w || 6) / 2 - 0.5, r.n)) inside++;
+    }
+    return n === 0 || inside / n < 0.7;
+  });
   skipped = data.roads.length - chosen.length;
   for (const r of chosen) {
     const pts = r.p, half = r.w / 2;
+    const isBlocked = blockedIn;
     for (let i = 0; i < pts.length - 1; i++) segs.push([pts[i], pts[i + 1], half]);
 
     // OSM records which side of a street actually has a pavement. In this
@@ -201,6 +228,49 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
     if (doRight) sides.push(1);
 
     roads++;
+
+    // C2: a street with no name plate is a street you cannot identify. One
+    // plate per named street, at its first clear kerbside spot, reading the
+    // name OSM records for it.
+    if (!plated.has(r.n)) {
+      // walk along the street looking for a clear kerbside spot. One attempt at
+      // the very first metre failed on 12 streets, which is how a street ends
+      // up with no name on it anywhere.
+      const spots = [];
+      for (const along of [16, 34, 58, 90, 130]) {
+        let acc2 = 0;
+        for (let i = 0; i < pts.length - 1; i++) {
+          const ax = pts[i + 1][0] - pts[i][0], az = pts[i + 1][1] - pts[i][1];
+          const L = Math.hypot(ax, az) || 1;
+          if (acc2 + L < along) { acc2 += L; continue; }
+          const t2 = (along - acc2) / L;
+          spots.push([pts[i][0] + ax * t2, pts[i][1] + az * t2, ax / L, az / L]);
+          break;
+        }
+      }
+      outer:
+      for (const [bx0, bz0, u0x, u0z] of spots)
+      for (const sgn of [1, -1]) {
+        const sx = bx0 + -u0z * (half + 2.2) * sgn;
+        const sz = bz0 + u0x * (half + 2.2) * sgn;
+        if (isBlocked(sx, sz)) continue;
+        if (window.__nearestStreet && window.__nearestStreet(sx, sz) !== r.n) continue;
+        const g = new THREE.Group();
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 6), MAT.metal);
+        pole.position.y = 1.3; g.add(pole);
+        const plate = new THREE.Mesh(
+          new THREE.PlaneGeometry(1.5, 0.38),
+          new THREE.MeshBasicMaterial({ map: texStreetName(r.n), side: THREE.DoubleSide }));
+        plate.position.y = 2.5; g.add(plate);
+        g.position.set(sx, groundAt(sx, sz), sz);
+        g.rotation.y = Math.atan2(u0x, u0z) + Math.PI / 2;
+        world.add(g);
+        (window.__signage = window.__signage || [])
+          .push({ kind: 'plate', x: sx, z: sz, text: r.n });
+        plated.add(r.n);
+        break outer;
+      }
+    }
     if (sw) sidewalkReal++;
     if (!doLeft && !doRight) sidewalkNone++;
 
@@ -214,8 +284,15 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
       for (let t = 0; t < len; t += 4, acc += 4) {
         const px = x1 + ux * t, pz = z1 + uz * t;
         for (const sgn of sides) {
-          const kx = px + nx * (half + 0.4) * sgn, kz = pz + nz * (half + 0.4) * sgn;
-          if (!isBlocked(kx, kz) && claim('kerb', kx, kz)) kerb.push([kx, 0.15, kz, ang]);
+          // Where two OSM ways of the same street run side by side, the kerb
+          // line of one falls inside the other and every kerb is refused,
+          // leaving the street bare. Step outward before giving up.
+          let kx = 0, kz = 0, ok = false;
+          for (const out2 of [0.4, 1.4, 2.6]) {
+            kx = px + nx * (half + out2) * sgn; kz = pz + nz * (half + out2) * sgn;
+            if (!isBlocked(kx, kz)) { ok = true; break; }
+          }
+          if (ok && claim('kerb', kx, kz)) kerb.push([kx, 0.15, kz, ang]);
           if (acc % 44 === 0) {
             const tx = px + nx * (half + 2.8) * sgn, tz = pz + nz * (half + 2.8) * sgn;
             if (!isBlocked(tx, tz) && claim('tree', tx, tz, 3.0)) trees.add(tx, tz, rand(0.6, 0.9));
@@ -254,7 +331,8 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
     const ang = Math.atan2(ux, uz) + Math.PI / 2;
     const bars = Math.max(3, Math.round(hw * 1.6));
     for (let k = -bars; k <= bars; k += 2) {
-      zebra.push([ox + ux * k * 0.42, 0.035, oz + uz * k * 0.42, ang, hw * 2]);
+      if (claim('zebra', ox + ux * k * 0.42, oz + uz * k * 0.42, 0.5))
+        zebra.push([ox + ux * k * 0.42, 0.046, oz + uz * k * 0.42, ang, hw * 2]);
     }
     sideCrossings++;
   }
@@ -290,5 +368,7 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
   });
   const treeCount = trees.build(world);
   return { sideRoads: roads, sideSkipped: skipped, sideTrees: treeCount,
-           sideKerbs: kerb.length, sideCrossings, sidewalkReal, sidewalkNone };
+           sideKerbs: kerb.length, sideCrossings, sidewalkReal, sidewalkNone,
+           sidePlates: plated.size,
+           sideNames: [...new Set(chosen.map((r) => r.n))] };
 }
