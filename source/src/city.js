@@ -1,8 +1,8 @@
 // Build the street from real OSM geometry: extruded footprints, road ribbons,
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texTowerGlass, texPunched, texBalcony, texLeaves, texAO } from './tex.js';
-import { recipeFor } from './landmarks.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO } from './tex.js';
+import { recipeFor, shophouse } from './landmarks.js';
 
 export const TEX = {
   asphalt: texAsphalt(),
@@ -64,6 +64,9 @@ export const MAT = {
   }),
 };
 
+const SHOPHOUSE_COLS = [0xd8cbb4, 0xbfd2c4, 0xd9c39a, 0xc9d3dd, 0xd6b6a8, 0xe0d6bd, 0xb9c9bd];
+const shopHouseMats = new Map();
+
 // materials the landmark recipes draw on
 const LMAT = {
   granite: new THREE.MeshStandardMaterial({ map: texGranite(), roughness: 0.30, metalness: 0.12 }),
@@ -74,6 +77,20 @@ const LMAT = {
   paleStone: new THREE.MeshStandardMaterial({ map: texConcrete(0xc4bdae, 0.35), roughness: 0.78 }),
   warmStone: new THREE.MeshStandardMaterial({ map: texConcrete(0xb2a48f, 0.5), roughness: 0.85 }),
   jadeRoof: new THREE.MeshStandardMaterial({ color: 0x2f5f4a, roughness: 0.45, metalness: 0.2 }),
+  clayTile: new THREE.MeshStandardMaterial({ color: 0x9c5a44, roughness: 0.82 }),
+  // one shared material per shophouse colour, keyed off the footprint so a
+  // given house keeps its colour between reloads
+  shophouse(b) {
+    let h = 0;
+    for (const [x, z] of b.p) h = (h * 31 + ((x * 5) | 0) + ((z * 11) | 0)) | 0;
+    const col = SHOPHOUSE_COLS[Math.abs(h) % SHOPHOUSE_COLS.length];
+    if (!shopHouseMats.has(col)) {
+      shopHouseMats.set(col, new THREE.MeshStandardMaterial({
+        map: texShophouse(col), roughness: 0.88,
+      }));
+    }
+    return shopHouseMats.get(col);
+  },
 };
 
 const up = new THREE.Vector3(0, 1, 0);
@@ -220,11 +237,20 @@ export function buildBuildings(world, data) {
   const merger = new Merger();
   const api = {
     world, extrude, grow, axis: data.axis || null,
+    extrudeGeo, scaleUV,
+    merge: (geo, mat, x, z) => merger.add(geo, mat, x, z),
     mat: { ...LMAT, trim: MAT.trim, conc: MAT.conc, paving: MAT.paving, metal: MAT.metal },
   };
   for (const b of data.buildings) {
     const pts = b.p;
     if (pts.length < 3) continue;
+
+    // small and low with no name: a shophouse, which is what fills the lanes
+    if (!b.k && b.a < 520 && b.h <= 20 && b.p.length <= 12) {
+      shophouse(api, b);
+      stats.count++; stats.shophouses = (stats.shophouses || 0) + 1;
+      continue;
+    }
 
     // the buildings people navigate by get their real arrangement, not a box
     const recipe = recipeFor(b.n);

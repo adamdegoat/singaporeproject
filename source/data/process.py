@@ -171,6 +171,14 @@ def main():
             # single-storey building. Fall back to the type default.
             if h < 8 and a > 600:
                 h = TYPE_DEFAULT.get(tags.get("building", "yes"), 24)
+            # and a 150 m2 footprint with no tags is a shophouse or a small
+            # block, not a 20m tower. Untagged small footprints were producing a
+            # forest of thin slivers through the back lanes.
+            untagged = not tags.get("height") and not tags.get("building:levels")
+            if untagged and not key and a < 230:
+                h = round(3.6 * (2 + (int(abs(a)) % 3)), 1)      # 2-4 storeys
+            elif untagged and not key and a < 520:
+                h = round(3.6 * (3 + (int(abs(a)) % 3)), 1)      # 3-5 storeys
             b = {
                 "p": [[round(x, 1), round(z, 1)] for x, z in pts],
                 "h": round(h, 1),

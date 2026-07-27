@@ -368,6 +368,52 @@ function hotel(api, b) {
   apron.receiveShadow = true; api.world.add(apron);
 }
 
+// A shophouse: party walls, a five-foot-way colonnade at the ground floor, tall
+// shuttered upper storeys and a pitched clay roof. 140-odd of these are what
+// actually fills the back lanes.
+export function shophouse(api, b) {
+  const ob = orientedBox(b.p);
+  const wall = api.mat.shophouse(b);
+  const trim = api.mat.trim;
+  const tile = api.mat.clayTile;
+  const groundH = 4.2;
+  const upper = Math.max(3.4, b.h - groundH);
+  const cx0 = ob.cx, cz0 = ob.cz;
+
+  // the mass, set back at the ground floor to leave a covered walkway.
+  // Everything here shares a material, so it all goes through the merger:
+  // 139 shophouses as loose meshes cost 850 draw calls on their own.
+  const sw = streetward(api, ob);
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.86), groundH), api.mat.warmStone, cx0, cz0);
+  api.merge(api.scaleUV(api.extrudeGeo(b.p, upper, groundH),
+    Math.max(1, ob.halfLong / 4), Math.max(1, upper / 11)), wall, cx0, cz0);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 0.34, groundH - 0.34), trim, cx0, cz0);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.04), 0.5, b.h), trim, cx0, cz0);
+
+  // colonnade: columns on the street edge carrying the upper floors
+  const ang = Math.atan2(sw.nx, sw.nz);
+  const span = ob.halfLong * 2;
+  const n = Math.max(2, Math.round(span / 3.6));
+  for (let i = 0; i <= n; i++) {
+    const u = ob.midU - ob.halfLong + (i / n) * span;
+    const cx = ob.cx + ob.ux * u - ob.uz * (ob.midV + sw.dist * 0);
+    const cz = ob.cz + ob.uz * u + ob.ux * (ob.midV);
+    const g = new THREE.BoxGeometry(0.34, groundH, 0.34);
+    g.translate(cx + sw.nx * (ob.halfShort * 0.94), groundH / 2,
+                cz + sw.nz * (ob.halfShort * 0.94));
+    api.merge(g, trim, cx0, cz0);
+  }
+
+  // pitched clay roof along the long axis. A shallow pitch: the first attempt
+  // used the full half-depth as the radius and the roof was taller than a storey.
+  const rad = Math.min(3.4, ob.halfShort * 0.62);
+  const rg = new THREE.CylinderGeometry(rad, rad, span * 1.02, 3, 1, false);
+  rg.rotateZ(Math.PI / 2);
+  rg.rotateY(-ob.ang);
+  rg.translate(ob.cx, b.h + rad * 0.30, ob.cz);
+  api.merge(rg, tile, cx0, cz0);
+}
+
 export const RECIPES = [
   [/ngee ann city|takashimaya/i, ngeeAnnCity],
   [/ion orchard|orchard residences/i, ionOrchard],

@@ -269,6 +269,38 @@ export function texBalcony(base) {
   return finish(c, [1, 1]);
 }
 
+// Shophouse frontage: painted plaster, tall shuttered windows, a moulded band
+export function texShophouse(base) {
+  const S = 256, [c, x] = cvs(S);
+  x.fillStyle = hex(base); x.fillRect(0, 0, S, S);
+  for (let i = 0; i < 2600; i++) {
+    const v = rand(-14, 12);
+    x.fillStyle = `rgba(${210 + v},${204 + v},${190 + v},${rand(0.08, 0.3)})`;
+    x.fillRect(rand(0, S), rand(0, S), rand(1, 2.4), rand(1, 2.4));
+  }
+  const floors = 3, fh = S / floors, bays = 3, bw = S / bays;
+  for (let f = 0; f < floors; f++) {
+    for (let bN = 0; bN < bays; bN++) {
+      // tall window opening with timber shutters either side
+      x.fillStyle = '#3b4148';
+      x.fillRect(bN * bw + bw * 0.3, f * fh + fh * 0.18, bw * 0.4, fh * 0.5);
+      x.fillStyle = 'rgba(86,104,74,0.92)';
+      x.fillRect(bN * bw + bw * 0.19, f * fh + fh * 0.18, bw * 0.1, fh * 0.5);
+      x.fillRect(bN * bw + bw * 0.71, f * fh + fh * 0.18, bw * 0.1, fh * 0.5);
+      // lintel
+      x.fillStyle = 'rgba(246,242,232,0.85)';
+      x.fillRect(bN * bw + bw * 0.16, f * fh + fh * 0.12, bw * 0.68, fh * 0.06);
+    }
+    // moulded string course between floors
+    x.fillStyle = 'rgba(248,244,234,0.8)';
+    x.fillRect(0, f * fh + fh * 0.78, S, fh * 0.09);
+    x.fillStyle = 'rgba(150,142,128,0.35)';
+    x.fillRect(0, f * fh + fh * 0.87, S, fh * 0.03);
+  }
+  grain(x, 1500, 14, S);
+  return finish(c, [1, 1]);
+}
+
 export function texLeaves() {
   const S = 128, [c, x] = cvs(S);
   x.clearRect(0, 0, S, S);
