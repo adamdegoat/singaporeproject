@@ -147,6 +147,50 @@ function blocked(x, z) {
 }
 
 /* ---------------- street dressing, all instanced ---------------- */
+// Two main streets must not dress the same tarmac.
+//
+// Orchard Road ends at Dhoby Ghaut and Bras Basah Road begins there, and the
+// districts are fetched with overlapping boxes, so both axes cover that stretch.
+// Dressed independently they laid two sets of kerbs, two sets of lane markings
+// and two sets of name plates over each other: 330 duplicated props, 42
+// z-fighting surfaces, and 13 plates naming the wrong street because the ones
+// from Orchard's pass landed on Bras Basah Road.
+//
+// So each axis after the first is clipped where it runs close to one already
+// dressed. Clipping the AXIS rather than filtering each placement means every
+// dressing system inherits the fix without knowing anything about districts.
+function trimAxes(list, near = 26) {
+  const kept = [];
+  const done = [];
+  for (const ax of list) {
+    if (!kept.length) { kept.push(ax); done.push(ax.p); continue; }
+    const near2 = near * near;
+    const clear = (x, z) => {
+      for (const pts of done) {
+        for (let i = 0; i < pts.length - 1; i++) {
+          const a = pts[i], b = pts[i + 1];
+          const dx = b[0] - a[0], dz = b[1] - a[1];
+          const l2 = dx * dx + dz * dz || 1;
+          const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / l2));
+          const qx = a[0] + dx * t, qz = a[1] + dz * t;
+          if ((x - qx) ** 2 + (z - qz) ** 2 < near2) return false;
+        }
+      }
+      return true;
+    };
+    // keep the longest unbroken run that is clear of everything already dressed
+    let best = [], run = [];
+    for (const p of ax.p) {
+      if (clear(p[0], p[1])) { run.push(p); }
+      else { if (run.length > best.length) best = run; run = []; }
+    }
+    if (run.length > best.length) best = run;
+    if (best.length > 3) kept.push({ ...ax, p: best });
+    done.push(ax.p);
+  }
+  return kept;
+}
+
 function dressStreet(data, axis) {
   if (!axis) return 0;
   const dataRef = data;
@@ -281,7 +325,13 @@ walkerRig.group.visible = false;
 scene.add(walkerRig.group);
 let clock = 0;
 
-fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
+// The region, merged from the districts by data/merge.py. ?scene=orchard still
+// loads a single district, which is what the per-district gates want.
+// Orchard is what ships. The merged region loads with ?scene=world and is not
+// the default yet: it fails seven checks that the single district passes, and
+// the whole point of having gates is not to publish past them. See NEXT.md.
+const SCENE = (P.get('scene') || 'orchard').replace(/[^a-z0-9_-]/gi, '');
+fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   terrain = new Terrain(data.terrain || null);
   setTerrain(terrain);
   window.__terrain = terrain;
@@ -356,8 +406,19 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   // the city beyond the fetched box, so the district does not end in a plain
   const surround = P.has('nosurround') ? 0 : buildSurround(world, data);
 
-  const treeCount = P.has('nofoliage') ? 0 : dressStreet(data, axis);
-  const sideStreets = axis ? selectSideStreets(data, axis) : [];
+  // EVERY district's main street gets dressed, not just the first one.
+  //
+  // All of the dressing — kerbs, crossings, trees, markings, furniture, signage
+  // — is placed by walking an axis, and a merged region has one axis per
+  // district. Dressing only the primary left Bras Basah as bare roads and bare
+  // buildings: correct geometry, no street. The actors (crowd, traffic, the
+  // ride, the wayfinder) stay on the primary axis; those are a bigger change
+  // and the visible difference is almost all dressing.
+  const axes = trimAxes((data.axes && data.axes.length ? data.axes : [axis]).filter(Boolean));
+  let treeCount = 0;
+  if (!P.has('nofoliage')) for (const ax of axes) treeCount += dressStreet(data, ax);
+  const sideStreets = [];
+  for (const ax of axes) sideStreets.push(...selectSideStreets(data, ax));
   if (!P.has('nopeople') && axis) {
     // spread over the whole dressed network, not just the main street. Only the
     // few dozen in view are ever drawn, so a bigger population is nearly free.
@@ -385,15 +446,31 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
     trafficSys.build(world, trafficSys.path.nearestS(S.x, S.z));
     window.__trafficPositions = () => (trafficSys.items || []).map(() => 1);
   }
-  const furniture = (!P.has('nofurniture') && axis)
-    ? buildFurniture(world, axis, place, data) : {};
+  const furniture = {};
+  let marks = 0; const side = {}; const sg = {}; const signage = {};
+  for (const ax of axes) {
+    if (!P.has('nofurniture')) {
+      const f = buildFurniture(world, ax, place, data);
+      for (const k of Object.keys(f)) {
+        if (Array.isArray(f[k])) furniture[k] = (furniture[k] || []).concat(f[k]);
+        else furniture[k] = (furniture[k] || 0) + f[k];
+      }
+    }
+    if (!P.has('nosigns')) {
+      const g = buildSignage(world, ax, data, place);
+      for (const k of Object.keys(g)) signage[k] = (signage[k] || 0) + g[k];
+    }
+    if (!P.has('nomarks')) marks += buildMarkings(world, ax, data);
+    if (!P.has('noside')) {
+      const t = dressSideStreets(world, data, ax, place, TreeField);
+      for (const k of Object.keys(t)) side[k] = (side[k] || 0) + t[k];
+    }
+    if (!P.has('nosg')) {
+      const q = buildSgDetail(world, ax, data, place);
+      for (const k of Object.keys(q)) sg[k] = (sg[k] || 0) + q[k];
+    }
+  }
   signals = new Signals(furniture.signals || []);
-  const signage = (!P.has('nosigns') && axis)
-    ? buildSignage(world, axis, data, place) : {};
-  const marks = (!P.has('nomarks') && axis) ? buildMarkings(world, axis, data) : 0;
-  const side = (!P.has('noside') && axis)
-    ? dressSideStreets(world, data, axis, place, TreeField) : {};
-  const sg = (!P.has('nosg') && axis) ? buildSgDetail(world, axis, data, place) : {};
   if (axis) wayfinder = new Wayfinder(data, axis);
   window.__axis = axis;
   window.__roadList = data.roads.filter((r) => r.k !== 'footway' && r.k !== 'pedestrian');

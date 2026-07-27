@@ -648,7 +648,13 @@ export class Traffic {
         if (past) {
           const far = (it.wx === undefined)
             || ((it.wx - playerX) ** 2 + (it.wz - playerZ) ** 2) > 190 * 190;
-          if (far) it.s = it.dir > 0 ? EDGE : L - EDGE;
+          // Spread them on re-entry. Sending every recycled vehicle to exactly
+          // s = EDGE stacked them one inside another at the top of the street,
+          // which the audit correctly reported as duplicated props: four cars
+          // at the same coordinate. A deterministic per-vehicle offset keeps
+          // the fleet apart without needing to look at where the others are.
+          const spread = EDGE + ((it.i * 53) % 260);
+          if (far) it.s = it.dir > 0 ? spread : L - spread;
           else { it.s = it.dir > 0 ? L - EDGE : EDGE; it.speed = 0; }
         }
       }

@@ -62,6 +62,47 @@ under Scotts Road from 27.1m to 41.5m, so two pieces of structure that were
 always in a carriageway are now measured as such. Verified by running the same
 audit against the previous scene file, which still reports 97.
 
+## The region: built, rideable, NOT shipped
+
+`python3 merge.py world orchard brasbasah` builds `data/world.json`, and
+`?scene=world` loads it. You can ride from Orchard into Bras Basah: 1,932
+buildings, 4,392 roads, 42-60fps, 4.3s to load, and both streets are dressed.
+
+**It is not the default scene, because it fails seven checks that Orchard
+passes.** Publishing past a gate is the one thing the standard exists to
+prevent. Open, in the order worth attacking:
+
+- `S3` 160 shop signs on the wrong building, `S2` 13 name plates on the wrong
+  street, `S1` 4 direction signs naming the wrong street. Signage names streets
+  and buildings that OSM returned as whole ways crossing the fetch box, so the
+  nearest way carrying that name can be hundreds of metres outside the region.
+- `P4` 340 duplicated props and `P6` 35 z-fighting surfaces. Both concentrated
+  where the districts overlap; the two axes meet end to end at Dhoby Ghaut and
+  do NOT overlap (measured: closest approach 0m, extents adjacent), so this is
+  overlapping FEATURE data, not overlapping dressing.
+- `P1b` 126 against a 99 budget, `P3` 3 props off the ground.
+
+Things already settled and worth not re-deriving:
+
+- Every district projects from `island_origin`. Verified: 52 buildings appear in
+  both districts and 49 are identical to the millimetre.
+- `merge.py` dedupes across the seam ONLY. Comparing within a district deleted
+  301 real buildings, because a terrace of shophouses sits under 8m apart with
+  near-identical footprints and each ate its neighbour. Verified afterwards by
+  confirming every source building still has a match in the output.
+- The heightfields are blended across the overlap weighted by how far inside
+  each grid a point sits, because a grid edge has road samples on one side only
+  and drifts by 12m there against 0.39m well inside.
+- Both districts must use the SAME elevation dataset. Orchard came back from
+  open-elevation and Bras Basah from opentopodata, and they disagreed by a
+  median of 3.5m. `terrain.py <id> --source <name>` pins it; the source is
+  recorded in the scene and merge.py warns if they differ.
+- `process.py` used to hardcode the axis name to "Orchard Road" and its width to
+  16.0m for EVERY district. Bras Basah Road would have had street plates reading
+  ORCHARD ROAD, and axisSpec would have looked up Orchard's lane count to decide
+  how to drive it. Both come from the real ways now, which also corrected
+  Orchard's own carriageway from 16.0m to its true 18.2m.
+
 ## Do this first
 
 1. **RESEARCH THE STREET BEFORE ASKING ABOUT IT.** The comparison sheet exists

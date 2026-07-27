@@ -438,6 +438,21 @@ def main():
             "w": 15.0, "k": "primary", "n": "Orchard Road",
         })
 
+    # The axis's own name and width, from the ways it was stitched from.
+    #
+    # Both used to be hardcoded to "Orchard Road" and 16.0m. With one district
+    # that is invisible; the moment a second district was built, its main street
+    # was labelled Orchard Road in the scene file, so its street name plates
+    # would have read ORCHARD ROAD and axisSpec would have looked up Orchard's
+    # lane count and one-way flag to decide how to draw and drive it.
+    _axis_ways = [r for r in roads if AXIS_NAME in (r.get("n", "") or "").lower()]
+    _names = {}
+    for r in _axis_ways:
+        _names[r["n"]] = _names.get(r["n"], 0) + 1
+    axis_name = max(_names, key=_names.get) if _names else AXIS_NAME.title()
+    _ws = sorted(r.get("w", 0) for r in _axis_ways if r.get("w"))
+    axis_width = _ws[len(_ws) // 2] if _ws else 16.0
+
     # OSM splits Orchard Road into 28 short ways. Stitch them end-to-end into a
     # single centreline so the street can be dressed and ridden as one axis.
     def stitch(name_re, tol=32.0):
@@ -633,7 +648,8 @@ def main():
         "covered": covered,
         "shops": shops,
         "axisFullLength": round(axis_full, 1),
-        "axis": {"p": [[round(x, 1), round(z, 1)] for x, z in axis], "w": 16.0, "n": "Orchard Road"},
+        "axis": {"p": [[round(x, 1), round(z, 1)] for x, z in axis],
+                 "w": axis_width, "n": axis_name},
     }
     path = OUT_PATH
     kept = carry_terrain(path, out)
