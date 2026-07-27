@@ -1,7 +1,7 @@
 // Build the street from real OSM geometry: extruded footprints, road ribbons,
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO } from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, rng } from './tex.js';
 import { recipeFor, shophouse } from './landmarks.js';
 
 export const TEX = {
@@ -753,4 +753,97 @@ export function aoPatch(world, x, z, size) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size), MAT.ao);
   m.rotation.x = -Math.PI / 2; m.position.set(x, TERRAIN.at(x, z) + 0.17, z);
   world.add(m);
+}
+
+// The city beyond the district.
+//
+// Orchard Road sits in the middle of a dense city, but the world stops at the
+// edge of the fetched bounding box: ride far enough and you are on an empty
+// plain with a road running to the horizon. That reads as a bug even though
+// every building inside the box is correct.
+//
+// This fills the surround with plain massing out to the far plane — no detail,
+// no windows, one instanced mesh, and nothing inside the built area where the
+// real buildings are. It is explicitly NOT a claim about what stands there: it
+// is a horizon, the same way a matte painting is, and it is deliberately grey
+// and featureless so it never reads as surveyed geometry.
+export function buildSurround(world, data, reach = 470) {
+  const built = [];
+  for (const b of data.buildings) {
+    let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
+    for (const p of b.p) {
+      if (p[0] < mnx) mnx = p[0]; if (p[0] > mxx) mxx = p[0];
+      if (p[1] < mnz) mnz = p[1]; if (p[1] > mxz) mxz = p[1];
+    }
+    built.push([mnx, mnz, mxx, mxz]);
+  }
+  // The extent of the real district. Measured from the ROADS as well as the
+  // buildings: the road network runs about 500m further out than the last
+  // building, and sizing the surround to the buildings alone left the far tips
+  // of the network standing on bare ground, which is the defect this is for.
+  let dx0 = 1e9, dz0 = 1e9, dx1 = -1e9, dz1 = -1e9;
+  for (const [a, b, c, d] of built) {
+    if (a < dx0) dx0 = a; if (b < dz0) dz0 = b;
+    if (c > dx1) dx1 = c; if (d > dz1) dz1 = d;
+  }
+  for (const r of (data.roads || [])) {
+    for (const p2 of r.p) {
+      if (p2[0] < dx0) dx0 = p2[0]; if (p2[0] > dx1) dx1 = p2[0];
+      if (p2[1] < dz0) dz0 = p2[1]; if (p2[1] > dz1) dz1 = p2[1];
+    }
+  }
+
+  const rnd = rng(20260727);
+  const put = [];
+  const CELL = 78;
+  for (let x = dx0 - reach; x < dx1 + reach; x += CELL) {
+    for (let z = dz0 - reach; z < dz1 + reach; z += CELL) {
+      // Keep out of the BUILT core, where the real buildings are. The area
+      // between the last building and the end of the road network is fair game:
+      // that is real city in life, and empty ground here.
+      let inCore = false;
+      for (const [a, b, c, d] of built) {
+        if (x > a - 70 && x < c + 70 && z > b - 70 && z < d + 70) { inCore = true; break; }
+      }
+      if (inCore) continue;
+      if (rnd() > 0.72) continue;                       // not a solid carpet
+      const jx = x + (rnd() - 0.5) * CELL * 0.6;
+      const jz = z + (rnd() - 0.5) * CELL * 0.6;
+      // taller nearer the middle of town, lower out at the fringes
+      const away = Math.hypot(jx - (dx0 + dx1) / 2, jz - (dz0 + dz1) / 2);
+      const fade = Math.max(0.25, 1 - away / (reach * 2.2));
+      const bw = 22 + rnd() * 26, bd = 20 + rnd() * 24;
+      // Never near a road. This is a horizon, and standing next to one shows it
+      // for what it is: a featureless grey slab — anything you can ride up to
+      // should be real geometry. Tested at the JITTERED position and against the
+      // block's own footprint: testing the grid point left 48m-wide blocks
+      // straddling carriageways 20m away.
+      const keepOut = 40 + Math.max(bw, bd) / 2;
+      if (window.__onRoad && window.__onRoad(jx, jz, keepOut)) continue;
+      put.push([jx, jz, 16 + rnd() * 62 * fade, bw, bd, rnd() * Math.PI]);
+    }
+  }
+  if (!put.length) return 0;
+
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  const mat = new THREE.MeshLambertMaterial({ color: 0xa9a69c });
+  const im = new THREE.InstancedMesh(geo, mat, put.length);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  const p = new THREE.Vector3(), s = new THREE.Vector3();
+  const cc = new THREE.Color();
+  put.forEach(([x, z, h, w, d, yaw], i) => {
+    p.set(x, TERRAIN.at(x, z) + h / 2, z);
+    e.set(0, yaw, 0); q.setFromEuler(e);
+    s.set(w, h, d);
+    m.compose(p, q, s);
+    im.setMatrixAt(i, m);
+    // a narrow spread of greys, so it reads as haze-flattened distance
+    const t = 0.86 + rnd() * 0.2;
+    im.setColorAt(i, cc.setRGB(0.66 * t, 0.65 * t, 0.61 * t));
+  });
+  if (im.instanceColor) im.instanceColor.needsUpdate = true;
+  im.castShadow = false;              // never in the shadow map: it is scenery
+  im.receiveShadow = false;
+  world.add(im);
+  return put.length;
 }
