@@ -132,6 +132,19 @@ let ROADIX = null;
 function place(x, z) {
   return blocked(x, z) || (ROADIX ? ROADIX.onRoad(x, z, -0.4) : false);
 }
+// How high the surface you are standing ON is, which is not the same as the
+// terrain height. The carriageway is drawn at terrain + 0.055 (plus up to 5mm of
+// per-road offset so overlapping ways do not speckle), and footways at
+// terrain + 0.02. Placing the ride at the raw terrain height put its wheels up
+// to 6cm under the tarmac, which is why it looked like it was sinking into the
+// road.
+const SURFACE_ROAD = 0.061;      // clears the highest per-road offset
+const SURFACE_PATH = 0.024;
+function surfaceAt(x, z) {
+  const g = terrain.at(x, z);
+  if (ROADIX && ROADIX.onRoad(x, z, 0.4)) return g + SURFACE_ROAD;
+  return g + SURFACE_PATH;
+}
 function blocked(x, z) {
   const list = colGrid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));
   if (!list) return false;
@@ -289,6 +302,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   ROADIX = buildRoadIndex(data, data.axis || null);
   window.__onRoad = (x, z, m, ex) => ROADIX.onRoad(x, z, m || 0, ex || null);
   window.__nearestStreet = (x, z) => ROADIX.nearestName(x, z);
+  window.__surfaceAt = (x, z) => surfaceAt(x, z);
   // the limit must be passed through: dropping it capped every search at the
   // default 7m, and a stop node on the centreline of a 16m road needs further
   window.__pushClear = (x, z, m, limit) =>
@@ -589,7 +603,7 @@ function loop(now) {
       if (knobEl) {
         knobEl.style.transform = `translate(${input.stickDX.toFixed(1)}px, ${input.stickDY.toFixed(1)}px)`;
       }
-      walkerRig.group.position.set(walker.x, terrain.at(walker.x, walker.z), walker.z);
+      walkerRig.group.position.set(walker.x, surfaceAt(walker.x, walker.z), walker.z);
       walkerRig.group.rotation.y = walker.heading;
       walkerRig.pose(walker.phase, walker.speed);
       const wgy = terrain.at(walker.x, walker.z);
@@ -628,7 +642,7 @@ function loop(now) {
     }
 
     const gy = terrain.at(S.x, S.z);
-    bike.position.set(S.x, gy, S.z);
+    bike.position.set(S.x, surfaceAt(S.x, S.z), S.z);
     bike.rotation.y = S.heading;
     // pitch into the slope, so a climb reads as a climb
     const fwdX = Math.sin(S.heading), fwdZ = Math.cos(S.heading);

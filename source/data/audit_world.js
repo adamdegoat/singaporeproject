@@ -671,6 +671,33 @@ window.__auditWorld = async function auditWorld() {
         `${mrt.length - noLetter} of ${mrt.length} carry a letter in OSM`, []);
   }
 
+  {
+    // T5: the ride has to stand ON the road, not in it. The bike was placed at
+    // the raw terrain height while the tarmac is drawn 5.5cm above it, so its
+    // wheels were buried the whole way down the street and every other check was
+    // perfectly happy: nothing compared the surface you stand on with the
+    // surface that is drawn.
+    let sunk = 0, tested = 0; const ex = [];
+    const ROAD_TOP = 0.055;
+    if (window.__surfaceAt) {
+      for (let i = 0; i < axis.p.length - 1; i++) {
+        const [x1, z1] = axis.p[i], [x2, z2] = axis.p[i + 1];
+        const dx = x2 - x1, dz = z2 - z1, L = Math.hypot(dx, dz) || 1;
+        for (let t = 0; t < L; t += 15) {
+          const x = x1 + (dx / L) * t, z = z1 + (dz / L) * t;
+          tested++;
+          const stand = window.__surfaceAt(x, z) - terr.at(x, z);
+          if (stand < ROAD_TOP) {
+            sunk++;
+            if (ex.length < 5) ex.push(`ride stands ${(stand * 1000) | 0}mm up, tarmac at ${ROAD_TOP * 1000}mm`);
+          }
+        }
+      }
+    }
+    add('T5', 'ride sitting below the road surface', 'BLOCKER', sunk, 0,
+        `${sunk} of ${tested} points along the main street`, ex);
+  }
+
   /* ================= T: traversal ================= */
   {
     const solid = props.filter((p) => !p.flat && !ROAD_OK.has(p.sig));
