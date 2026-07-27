@@ -1,29 +1,49 @@
 # Start here
 
-Read this, then `STANDARD.md`, then work. Everything below is current as of
-2026-07-27 and is deployed and hash-verified live.
+Read this, then `STANDARD.md`, then work. Current as of 2026-07-28, deployed and
+hash-verified live.
 
 ## Where it stands
 
-Live: https://adamdegoat.github.io/singaporeproject/ — the full 2,586m of Orchard
-Road. **31 checks pass, no blockers, nothing over budget.** 41–58fps at 844x390
-dpr 2, 4s to load, 1,565 buildings.
+Live: https://adamdegoat.github.io/singaporeproject/ — **two districts**, Orchard
+Road and Bras Basah, merged into one region you can ride between. 1,918
+buildings, 4,392 roads, 43fps at 844x390 dpr2, ~4s to load.
 
-Done: layout, road widths from lane tags, terrain covering every road, 500
-crossings, 47 bus stops, 61 signals, 43 MRT exits with real exit letters, 992
-named shopfronts, 460 pedestrians across 68 streets, the distant-city surround,
-and 87 buildings with designed massing.
+Everything green:
 
-**How much is left, in real numbers.** Only **68 buildings front Orchard Road**
-(a corner within 45m of the centreline); 47 are named, 43 are 20m or taller.
-Eight have a researched design. Everything else — the other ~1,500 — sits behind
-those and cannot be seen from the street, so a guessed height there is fine
-permanently. The remaining job is about **60 frontages**, not 917 buildings.
+| gate | what it covers | state |
+|---|---|---|
+| `node data/audit_run.mjs` | 32 snapshot checks, per scene | pass, both scenes |
+| `node data/behaviour.mjs` | 5 checks on how things MOVE | pass, both scenes |
+| `SG_SCENE=world node data/defects.mjs` | 21 exploratory classes | 0 findings |
+| `node test/ride.test.mjs` | the ride model, no browser | 18 pass |
+| `python3 data/check.py <id>` | the data gate, per district | pass, both |
 
-**The finish line, written down so "done" means something:** you can ride the
-full 2,586m and every building visible from the road is the right height, shape
-and material; everything you cannot see is honest background; nothing moves in a
-way it could not.
+Start the dev server first (`node server.cjs`), and run `bash data/tidy.sh` after
+any batch — every gate drives a headless browser rendering at 60fps and one that
+outlives its script holds two CPU cores indefinitely.
+
+Done and from real data: layout, road widths from lane tags, one-way traffic,
+terrain under every road, 671 crossings, bus stops, signals, MRT exits with their
+real exit letters, 1,642 named shopfronts, the Angsana avenue, 460 pedestrians,
+collision built from the drawn geometry, and about two dozen buildings with a
+researched design.
+
+**What is NOT done**, in the order worth doing:
+
+1. **Shopfronts.** 1,642 real shop names sit on blank ground-floor walls with no
+   window, no light, no display. At street level this is the biggest gap left,
+   and the data is already in the scene file.
+2. **Density.** 460 pedestrians and 21 vehicles over 2.6km. The systems are
+   correct; there are simply not enough of them for a Saturday on Orchard.
+3. **Heights.** 917 of 1,557 are still a type default. Most sit behind something
+   and never matter; the ones visible from the road do.
+4. **More districts.** The pipeline is proven and the seam holds. Little India is
+   directly connected. But the app loads the whole region at once, so streaming
+   has to come before the world gets much bigger.
+
+Everything above the line is correctness. Everything below it is making it look
+more like Singapore. They are different jobs.
 
 ## One origin for the island
 
