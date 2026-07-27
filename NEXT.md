@@ -275,6 +275,12 @@ looking for anything cleverer.
    appeared as blockers. That direction is safe. The dangerous direction is a
    NEW shape that no rule mentions, which is exempt by omission.
 
+## Leave nothing running
+
+`bash data/tidy.sh` after any batch of checks. Every gate here drives a headless
+browser rendering a 60fps WebGL page, which holds two CPU cores, and a browser
+that outlives its script keeps doing it. Left overnight it cooks the laptop.
+
 ## Commands
 
 ```
@@ -282,7 +288,9 @@ node server.cjs                  # dev server on :8933
 node data/vantage.mjs [ids...]   # comparison sheet, 14 matched-angle frames
 node data/sheet.mjs > sheet.html # standalone page of them, lat/lon per frame
 node data/audit_run.mjs          # the 31 snapshot checks; needs the server
-node data/behaviour.mjs         # B1-B3: how things MOVE; needs the server
+node data/behaviour.mjs         # B1-B5: how things MOVE; needs the server
+SG_SCENE=world node data/defects.mjs   # the exploratory hunt, 15 classes
+bash data/tidy.sh               # kill stray browsers; ALWAYS after a batch
 node data/sweep.mjs --shots      # 220 stops, contact sheet in shots/sweep/
 node test/ride.test.mjs          # ride model, no browser
 python3 data/check.py orchard    # data gate

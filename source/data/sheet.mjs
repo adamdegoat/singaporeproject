@@ -11,7 +11,7 @@ import { readFileSync } from 'fs';
 
 const OUT = 'shots/compare';
 const shots = JSON.parse(readFileSync(`${OUT}/shots.json`, 'utf8'));
-const scene = JSON.parse(readFileSync('data/orchard.json', 'utf8'));
+const scene = JSON.parse(readFileSync(`data/${process.env.SG_SCENE || 'world'}.json`, 'utf8'));
 
 // The inverse of process.py's projection. Same constants, or the pins land in
 // the wrong street.

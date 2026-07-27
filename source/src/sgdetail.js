@@ -260,7 +260,29 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     const L = Math.hypot(vx, vz) || 1;
     const ang = Math.atan2(vx / L, vz / L);
     const label = (m.n || 'MRT').replace(/\s*(MRT|Station|Exit).*$/i, '') || 'MRT';
-    mrtEntrance(world, mx, mz, ang, label);
+
+    // Most Orchard exits are INSIDE a mall — Orchard Exit C is inside ION,
+    // Somerset Exit B inside 313, Dhoby Ghaut Exit E inside Plaza Singapura —
+    // and the map node sits where the escalator is, not where the door is.
+    // Drawing a glass street canopy there buries it in masonry: 43 of 62 were.
+    // The door is on the facade, so walk outward until the point is clear of
+    // buildings, and build nothing if there is nowhere clear, because an
+    // entrance that is not on a pavement is not an entrance.
+    let ex = mx, ez = mz;
+    if (isBlocked && isBlocked(ex, ez)) {
+      let ok = null;
+      for (let r = 2; r <= 26 && !ok; r += 2) {
+        for (let a2 = 0; a2 < 16; a2++) {
+          const th = (a2 / 16) * Math.PI * 2;
+          const tx = mx + Math.cos(th) * r, tz = mz + Math.sin(th) * r;
+          if (isBlocked(tx, tz)) continue;
+          ok = [tx, tz]; break;
+        }
+      }
+      if (!ok) continue;
+      [ex, ez] = ok;
+    }
+    mrtEntrance(world, ex, ez, ang, label);
     realMrt++;
   }
   window.__realMrt = realMrt;
@@ -279,6 +301,20 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     // stairs or kerb cuts, and building a bridge on them drops stair towers
     // into the carriageway
     if (straight < 22 || len > straight * 1.6) continue;
+    // and it must actually cross a carriageway. A 37m footway bridge over a
+    // canal is a bridge in the map's sense and not a pedestrian overpass, and
+    // building an overpass on it puts a deck and two stair towers over water.
+    // Sampled ALONG the span, because the deck crosses the road between its
+    // supports and its end points are on the pavement either side.
+    {
+      let spans = false;
+      const L2 = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      for (let t = 0; t <= L2 && !spans; t += 1.5) {
+        const x = a[0] + (b[0] - a[0]) * (t / L2), z = a[1] + (b[1] - a[1]) * (t / L2);
+        if (window.__onRoad && window.__onRoad(x, z, 0)) spans = true;
+      }
+      if (!spans) continue;
+    }
     const cx = (a[0] + b[0]) / 2, cz = (a[1] + b[1]) / 2;
     const ang = Math.atan2(b[0] - a[0], b[1] - a[1]);
     pedBridge(world, cx, cz, ang + Math.PI / 2, Math.max(16, straight - 14));

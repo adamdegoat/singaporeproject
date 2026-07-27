@@ -293,6 +293,121 @@ const found = await page.evaluate(() => {
     report('D12', 'spots on the pavement with no way out', stuck);
   }
 
+  /* D13  footprints that are not shapes: zero area, or a ring that crosses
+     itself, both of which extrude into folded geometry with inside-out faces */
+  {
+    const bad = [];
+    const cross = (a, b, c, d) => {
+      const s1 = (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0]);
+      const s2 = (b[0]-a[0])*(d[1]-a[1]) - (b[1]-a[1])*(d[0]-a[0]);
+      const s3 = (d[0]-c[0])*(a[1]-c[1]) - (d[1]-c[1])*(a[0]-c[0]);
+      const s4 = (d[0]-c[0])*(b[1]-c[1]) - (d[1]-c[1])*(b[0]-c[0]);
+      return (s1 > 0) !== (s2 > 0) && (s3 > 0) !== (s4 > 0);
+    };
+    for (const b of data.buildings) {
+      let a2 = 0;
+      for (let i = 0; i < b.p.length; i++) {
+        const q1 = b.p[i], q2 = b.p[(i + 1) % b.p.length];
+        a2 += q1[0] * q2[1] - q2[0] * q1[1];
+      }
+      if (Math.abs(a2) / 2 < 4) { bad.push(`"${b.n || '(unnamed)'}" has no area`); continue; }
+      if (b.p.length > 40) continue;                 // O(n^2), and long rings are traced curves
+      let self = false;
+      for (let i = 0; i < b.p.length && !self; i++) {
+        for (let j = i + 2; j < b.p.length; j++) {
+          if (i === 0 && j === b.p.length - 1) continue;
+          if (cross(b.p[i], b.p[(i + 1) % b.p.length], b.p[j], b.p[(j + 1) % b.p.length])) { self = true; break; }
+        }
+      }
+      if (self) bad.push(`"${b.n || '(unnamed)'}" has a ring that crosses itself`);
+    }
+    report('D13', 'footprints that are not valid shapes', bad);
+  }
+
+  /* D14  MRT entrances AS DRAWN. Testing the map node was wrong for the fifth
+     time today: most Orchard exits genuinely sit inside a mall, because that is
+     where the escalator is. What matters is where the canopy was built. */
+  {
+    const bad = [];
+    const box = new T.Box3(), c3 = new T.Vector3();
+    sc.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh) return;
+      const pr = o.geometry.parameters || {};
+      // the entrance canopy: a wide shallow arch
+      if (o.geometry.type !== 'CylinderGeometry') return;
+      if (!(pr.radiusTop > 1.6 && pr.radiusTop < 3.2 && (pr.openEnded || pr.thetaLength))) return;
+      box.setFromObject(o); box.getCenter(c3);
+      const b2 = buildingAt(c3.x, c3.z);
+      if (b2) bad.push(`an MRT canopy stands inside "${b2.n || '(unnamed)'}"`);
+    });
+    report('D14', 'MRT entrance canopies built inside a building', bad);
+  }
+
+  /* D15  bridges AS BUILT. The data list is not the built list: the builder
+     already skips anything under 22m or too twisty, so testing data/bridges
+     reported ramps and kerb cuts that were never built. Sixth time today a check
+     read the input instead of the output. */
+  {
+    const bad = [];
+    const box = new T.Box3(), c3 = new T.Vector3();
+    sc.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh) return;
+      const pr = o.geometry.parameters || {};
+      // the deck: a long thin box high off the ground
+      if (o.geometry.type !== 'BoxGeometry') return;
+      // the deck EXACTLY: pedBridge builds it 0.42 thick and 2.6 deep. The first
+      // version matched "long, thin, elevated", which is also every covered
+      // walkway roof, awning and sign gantry in the district: 238 findings, none
+      // of them bridges.
+      if (Math.abs((pr.height || 0) - 0.42) > 0.01) return;
+      if (Math.abs((pr.depth || 0) - 2.6) > 0.01) return;
+      box.setFromObject(o); box.getCenter(c3);
+      if ((c3.y - window.__terrain.at(c3.x, c3.z)) < 3) return;   // not elevated
+      let spans = false;
+      for (let d = -12; d <= 12 && !spans; d += 1.5) {
+        for (const [ux, uz] of [[1, 0], [0, 1]]) {
+          if (window.__onRoad(c3.x + ux * d, c3.z + uz * d, 0)) { spans = true; break; }
+        }
+      }
+      if (!spans) bad.push(`a bridge deck at ${c3.x | 0},${c3.z | 0} spans no carriageway`);
+    });
+    report('D15', 'built bridge decks spanning nothing', bad);
+  }
+
+  /* D16  geometry with inside-out faces. An extruded ring wound the wrong way
+     produces normals pointing into the solid, so the building is lit as if it
+     were a hole and looks black from outside. */
+  {
+    const T2 = window.__THREE;
+    const a3 = new T2.Vector3(), b3 = new T2.Vector3(), c3 = new T2.Vector3();
+    const ab3 = new T2.Vector3(), ac3 = new T2.Vector3(), n3 = new T2.Vector3();
+    const ctr = new T2.Vector3(), box = new T2.Box3();
+    let bad = 0, checked = 0;
+    sc.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh) return;
+      if (o.geometry.type !== 'ExtrudeGeometry') return;
+      const pos = o.geometry.attributes.position;
+      if (!pos || pos.count < 9) return;
+      box.setFromObject(o); box.getCenter(ctr);
+      let out = 0, tot = 0;
+      const step = Math.max(3, Math.floor(pos.count / 30) * 3);
+      for (let i = 0; i + 2 < pos.count; i += step) {
+        a3.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        b3.fromBufferAttribute(pos, i + 1).applyMatrix4(o.matrixWorld);
+        c3.fromBufferAttribute(pos, i + 2).applyMatrix4(o.matrixWorld);
+        ab3.subVectors(b3, a3); ac3.subVectors(c3, a3);
+        n3.crossVectors(ab3, ac3);
+        if (Math.abs(n3.y) > n3.length() * 0.8) continue;   // skip caps
+        // does the face point away from the mass's own centre
+        const away = (a3.x - ctr.x) * n3.x + (a3.z - ctr.z) * n3.z;
+        tot++; if (away < 0) out++;
+      }
+      if (tot >= 6) { checked++; if (out / tot > 0.7) bad++; }
+    });
+    report('D16', 'extruded masses with inside-out walls',
+           bad ? [`${bad} of ${checked} extruded meshes face inward`] : []);
+  }
+
   return out;
 });
 

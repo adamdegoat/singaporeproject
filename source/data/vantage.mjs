@@ -26,7 +26,11 @@ const W = 1600, H = 900;
 const EYE = 1.6;          // a standing photographer, not the rider's 1.4
 mkdirSync(OUT, { recursive: true });
 
-const data = JSON.parse(readFileSync('data/orchard.json', 'utf8'));
+// the region, which is what the site loads. Reading orchard.json here while the
+// page loaded world.json would place cameras from one district's centreline
+// against a two-district world.
+const SCENE = process.env.SG_SCENE || 'world';
+const data = JSON.parse(readFileSync(`data/${SCENE}.json`, 'utf8'));
 const AXIS = data.axis.p;
 const HALFW = data.axis.w / 2;
 
@@ -215,7 +219,7 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.log('  page error:', e.message));
-await page.goto('http://localhost:8933/index.html?dpr=1', { waitUntil: 'load' });
+await page.goto(`http://localhost:8933/index.html?dpr=1&scene=${SCENE}`, { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true', null, { timeout: 90000 });
 await page.evaluate(() => window.__ui(false));
 console.log('world ready:', JSON.stringify(await page.evaluate(() => window.__stats.buildings)) + ' buildings');

@@ -42,6 +42,13 @@ window.__auditWorld = async function auditWorld() {
   const OVERRIDE = {
     world: {
       // inherited from Bras Basah, which has had no cleanup pass at all
+      // T1 and P1b are now measured DETERMINISTICALLY: a constant vertex stride,
+      // and no mesh skipped for being large. Both used to skip anything over
+      // 6,000 vertices and take a fixed number of samples from the rest, so the
+      // answer depended on how the merger happened to pack its tiles that run.
+      // The numbers went up when that was fixed — 179 to 234 here — because more
+      // geometry is now actually looked at, not because anything moved.
+      //
       // T1 12 -> 13. Buildings are now seated on the LOWEST ground under their
       // footprint rather than the ground under their centroid, because on a
       // slope the centroid left the downhill end floating: Plaza Singapura sits
@@ -49,7 +56,7 @@ window.__auditWorld = async function auditWorld() {
       // mass reaches down into the band a rider occupies over a carriageway.
       // The world got more correct and the check can now see something that was
       // always there. Orchard is unaffected and still passes at 8.
-      P1b: 179, T1: 13,
+      P1b: 234, T1: 13,
       // proportional to a world with 1,932 buildings and 4,392 roads
       // P4 333 -> 360 and P1b 177 -> 179 on the day the Civic District landmarks
       // got real massing. Both are consequences of that, not new defects:
@@ -297,12 +304,25 @@ window.__auditWorld = async function auditWorld() {
     sc.traverse((o) => {
       if (!o.isMesh || o.isInstancedMesh) return;
       const pos = o.geometry.attributes.position;
-      if (!pos || pos.count > 6000) return;    // a merged tile is not one object
+      if (!pos) return;
       if (o === sky || o.material.fog === false) return;   // the sky dome
       if (o.geometry.type === 'PlaneGeometry'
           && o.geometry.parameters.width > 500) return;     // ground fallback plane
       let hit = null, worstX = 0, worstZ = 0, minY = 1e9, maxY = -1e9, n = 0;
-      const step = Math.max(1, Math.floor(pos.count / 80));
+      // DETERMINISTIC sampling.
+      //
+      // This skipped any mesh over 6,000 vertices and took a fixed 80 samples
+      // from the rest. Both make the result depend on things that have nothing
+      // to do with the defect: change the building count and the merger packs
+      // its tiles differently, so which meshes cross 6,000 changes and so does
+      // what is checked. The number moved from 99 to 124 after dropping two
+      // zero-area footprints, and half an hour was spent looking for geometry
+      // that had not moved.
+      //
+      // A constant stride depends only on the mesh itself, so the same world
+      // always gives the same answer and a change in the number means a change
+      // in the world.
+      const step = 3;
       for (let i = 0; i < pos.count; i += step) {
         v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
         if (v.y < minY) minY = v.y;
@@ -359,7 +379,7 @@ window.__auditWorld = async function auditWorld() {
     // are now measured as doing so. The check got more accurate; the world did
     // not get worse. Verified by running this same audit against the previous
     // scene file, which still reports 97.
-    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 99,
+    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 135,
         Object.entries(bad).sort((a, b) => b[1] - a[1]).slice(0, 6)
           .map(([k, v2]) => `${v2}x ${k}`).join('  ') || 'none', ex);
   }
@@ -894,7 +914,7 @@ window.__auditWorld = async function auditWorld() {
     sc.traverse((o) => {
       if (!o.isMesh || o.isInstancedMesh) return;
       const pos = o.geometry.attributes.position;
-      if (!pos || pos.count > 6000) return;
+      if (!pos) return;
       if (o === sky) return;
       // The same reasoning the prop pass uses. A vehicle is not an obstruction,
       // it is traffic; a handrail 32m long is an overhead bridge crossing the
@@ -907,7 +927,7 @@ window.__auditWorld = async function auditWorld() {
         && (gq.depth || 0) > 1.5 && (gq.depth || 0) < 12;
       if (carLike) return;                        // a vehicle on a road is traffic
       if (o.geometry.type === 'CylinderGeometry' && Math.abs((gq.radiusTop || 0) - 0.31) < 0.02) return;
-      const step = Math.max(1, Math.floor(pos.count / 40));
+      const step = 3;      // constant, for the same reason as P1b above
       for (let i = 0; i < pos.count; i += step) {
         vs.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
         const up = terr ? vs.y - terr.at(vs.x, vs.z) : 0;
@@ -947,7 +967,11 @@ window.__auditWorld = async function auditWorld() {
     // down, and it will fall as P1b does.
     // 7 -> 8 for the same reason as P1b: a corrected heightfield, not new
     // geometry. See the note there.
-    add('T1', 'carriageway blocked by solid geometry (ratchet, target 0)', 'BLOCKER', blocked, 8,
+    // 8 -> 12 when this stopped skipping meshes over 6,000 vertices and started
+    // using a constant stride. Same reason as P1b: more geometry is looked at,
+    // nothing moved. Both numbers are stable across repeated runs now, so a
+    // change in either means a change in the world.
+    add('T1', 'carriageway blocked by solid geometry (ratchet, target 0)', 'BLOCKER', blocked, 12,
         `${blocked} of ${sampled} centreline samples obstructed`, ex);
   }
   {

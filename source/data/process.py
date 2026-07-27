@@ -634,6 +634,97 @@ def main():
           f"across {again_b} buildings")
 
     buildings.sort(key=lambda b: -b["a"])
+    # Drop footprints with no area. A ring that encloses nothing extrudes into a
+    # zero-width sliver: invisible, but it still costs a draw and still answers
+    # point-in-polygon tests unpredictably.
+    def _ring_area(ring):
+        a2 = 0.0
+        for i in range(len(ring)):
+            q1, q2 = ring[i], ring[(i + 1) % len(ring)]
+            a2 += q1[0] * q2[1] - q2[0] * q1[1]
+        return abs(a2) / 2
+
+    _flat = [b for b in buildings if _ring_area(b["p"]) < 4]
+    if _flat:
+        print(f"  dropped {len(_flat)} footprints with no area")
+        _fset = {id(b) for b in _flat}
+        buildings = [b for b in buildings if id(b) not in _fset]
+
+    # Repair a footprint whose ring crosses itself.
+    #
+    # Ten of them, including Tang Plaza and Pullman Singapore Orchard. A
+    # self-intersecting ring extrudes into folded geometry with walls doubling
+    # back through each other, which shades wrong and confuses every
+    # point-in-polygon test built on it — including the collision grid and the
+    # "is this bus stop inside a building" check.
+    #
+    # Almost always it is one vertex out of order, so try dropping each vertex in
+    # turn and keep the first ring that comes out clean. If none does, leave it
+    # alone rather than mangle a real outline: a wrong repair is worse than a
+    # known defect.
+    def _segs_cross(a, b, c, d):
+        def side(p, q, r):
+            return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+        s1, s2 = side(a, b, c), side(a, b, d)
+        s3, s4 = side(c, d, a), side(c, d, b)
+        return (s1 > 0) != (s2 > 0) and (s3 > 0) != (s4 > 0)
+
+    def _self_crossing(ring):
+        n = len(ring)
+        if n > 60:
+            return False        # traced curves, and the test is quadratic
+        for i in range(n):
+            for j in range(i + 2, n):
+                if i == 0 and j == n - 1:
+                    continue
+                if _segs_cross(ring[i], ring[(i + 1) % n], ring[j], ring[(j + 1) % n]):
+                    return True
+        return False
+
+    # SG_NO_RING_REPAIR=1 rebuilds without this, so its effect can be measured
+    # rather than argued about.
+    def _crossings(ring):
+        n = len(ring)
+        c = 0
+        for i in range(n):
+            for j in range(i + 2, n):
+                if i == 0 and j == n - 1:
+                    continue
+                if _segs_cross(ring[i], ring[(i + 1) % n], ring[j], ring[(j + 1) % n]):
+                    c += 1
+        return c
+
+    _fixed = _left = 0
+    for _b in ([] if os.environ.get("SG_NO_RING_REPAIR") else buildings):
+        if not _self_crossing(_b["p"]):
+            continue
+        # Greedy: repeatedly drop the vertex whose removal removes the most
+        # crossings. One pass fixed eight of nine, and Capitol Singapore needed
+        # more than one vertex gone — a single-shot repair left it broken and
+        # the hunt kept reporting it.
+        _ring = list(_b["p"])
+        for _pass in range(6):
+            if not _self_crossing(_ring) or len(_ring) <= 4:
+                break
+            _base = _crossings(_ring)
+            _best, _bestC = None, _base
+            for _k in range(len(_ring)):
+                _cand = _ring[:_k] + _ring[_k + 1:]
+                _c = _crossings(_cand)
+                if _c < _bestC:
+                    _bestC, _best = _c, _cand
+            if _best is None:
+                break
+            _ring = _best
+        if not _self_crossing(_ring):
+            _b["p"] = _ring
+            _fixed += 1
+        else:
+            _left += 1
+    if _fixed or _left:
+        print(f"  self-crossing footprints: {_fixed} repaired by dropping one vertex"
+              + (f", {_left} left alone (no single-vertex fix)" if _left else ""))
+
     # Drop a footprint that is buried inside a taller one.
     #
     # OSM traces a mall, its annex and sometimes its own outline again as

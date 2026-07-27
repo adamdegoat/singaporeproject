@@ -869,6 +869,10 @@ export const RECIPES = [
   [/national museum/i, nationalMuseum],
   [/national gallery|(?<!grand park )(old )?city hall|supreme court/i, nationalGallery],
   [/cathedral|chijmes|st\.? ?andrew|church of|methodist church|saint joseph|presbyterian/i, gothicChurch],
+  // Old St Joseph's Institution is the Singapore Art Museum: a colonial school
+  // with a domed central block and two curved wings, which is the civic
+  // arrangement rather than the church one despite the name.
+  [/st\.? ?joseph's institution|singapore art museum/i, nationalMuseum],
 
   [/ngee ann city|takashimaya/i, ngeeAnnCity],
   [/ion orchard|orchard residences/i, ionOrchard],
