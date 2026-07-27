@@ -18,7 +18,7 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1100, height: 620 } });
 page.setDefaultTimeout(120000);
-await page.goto('http://localhost:8933/?dpr=1&raw=1', { waitUntil: 'load' });
+await page.goto(`http://localhost:8933/?dpr=1&raw=1&scene=${process.env.SG_SCENE || 'orchard'}`, { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true || window.__bootError', null, { timeout: 120000 });
 const bootErr = await page.evaluate(() => window.__bootError || null);
 if (bootErr) { console.error('boot failed: ' + String(bootErr).slice(0, 300)); await browser.close(); process.exit(2); }

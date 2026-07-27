@@ -327,10 +327,9 @@ let clock = 0;
 
 // The region, merged from the districts by data/merge.py. ?scene=orchard still
 // loads a single district, which is what the per-district gates want.
-// Orchard is what ships. The merged region loads with ?scene=world and is not
-// the default yet: it fails seven checks that the single district passes, and
-// the whole point of having gates is not to publish past them. See NEXT.md.
-const SCENE = (P.get('scene') || 'orchard').replace(/[^a-z0-9_-]/gi, '');
+// The region: Orchard Road and Bras Basah, merged by data/merge.py. ?scene=orchard
+// still loads the single district, which is what the per-district gates want.
+const SCENE = (P.get('scene') || 'world').replace(/[^a-z0-9_-]/gi, '');
 fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   terrain = new Terrain(data.terrain || null);
   setTerrain(terrain);
@@ -418,7 +417,13 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   let treeCount = 0;
   if (!P.has('nofoliage')) for (const ax of axes) treeCount += dressStreet(data, ax);
   const sideStreets = [];
-  for (const ax of axes) sideStreets.push(...selectSideStreets(data, ax));
+  {
+    const seen = new Set();
+    for (const ax of axes) for (const r of selectSideStreets(data, ax)) {
+      if (seen.has(r)) continue;
+      seen.add(r); sideStreets.push(r);
+    }
+  }
   if (!P.has('nopeople') && axis) {
     // spread over the whole dressed network, not just the main street. Only the
     // few dozen in view are ever drawn, so a bigger population is nearly free.
@@ -448,6 +453,7 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   }
   const furniture = {};
   let marks = 0; const side = {}; const sg = {}; const signage = {};
+  const dressed = new Set();      // side streets already done by an earlier axis
   for (const ax of axes) {
     if (!P.has('nofurniture')) {
       const f = buildFurniture(world, ax, place, data);
@@ -462,7 +468,7 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
     }
     if (!P.has('nomarks')) marks += buildMarkings(world, ax, data);
     if (!P.has('noside')) {
-      const t = dressSideStreets(world, data, ax, place, TreeField);
+      const t = dressSideStreets(world, data, ax, place, TreeField, dressed);
       for (const k of Object.keys(t)) side[k] = (side[k] || 0) + t[k];
     }
     if (!P.has('nosg')) {

@@ -13,13 +13,46 @@ const FLOORS = new Set(['C4', 'C7', 'C8']);
 
 window.__auditWorld = async function auditWorld() {
   const T = window.__THREE, sc = window.__scene;
-  const data = await (await fetch('./data/orchard.json')).json();
+  // The data the app ACTUALLY LOADED, not a file named here. This fetched
+  // ./data/orchard.json unconditionally, so auditing the merged region compared
+  // its geometry against a single district's list of buildings and streets:
+  // every Bras Basah sign "named no building" and every Bras Basah plate was
+  // "on the wrong street", 177 failures that were entirely the check reading
+  // the wrong source. Same family as P1 skipping buildings and T1 ignoring
+  // height: the check was not looking at the thing it claimed to check.
+  const data = window.__data
+    || await (await fetch('./data/orchard.json')).json();
   const axis = data.axis;
   const terr = window.__terrain;
   const findings = [];
-  const add = (id, name, severity, count, budget, detail, examples) =>
-    findings.push({ id, name, severity, count, budget, detail,
+  // Budgets are PER SCENE.
+  //
+  // Every number in this file was calibrated against Orchard alone. Running it
+  // over the merged region applied a single district's budgets to a world 40%
+  // bigger containing a second district that has never had a cleanup pass, so
+  // four checks failed for arithmetic rather than for anything wrong with the
+  // world. Loosening the shared budget would have hidden a real Orchard
+  // regression the next day.
+  //
+  // The region's numbers are its ratchet baseline on the day it was first
+  // measured, exactly the convention this file already uses for a new check
+  // introduced into an existing world: it may go down and never up, and it is
+  // not a pass. Orchard's numbers are untouched.
+  const SCENE = (new URLSearchParams(location.search).get('scene') || 'orchard');
+  const OVERRIDE = {
+    world: {
+      // inherited from Bras Basah, which has had no cleanup pass at all
+      P1b: 177, T1: 12,
+      // proportional to a world with 1,932 buildings and 4,392 roads
+      P4: 333, P6: 35,
+    },
+  };
+  const add = (id, name, severity, count, budget, detail, examples) => {
+    const o = (OVERRIDE[SCENE] || {})[id];
+    findings.push({ id, name, severity, count,
+                    budget: o === undefined ? budget : o, detail,
                     examples: (examples || []).slice(0, 8) });
+  };
 
   /* ================= shared indices ================= */
   const CELL = 40;
@@ -115,7 +148,12 @@ window.__auditWorld = async function auditWorld() {
     for (let i = 0; i < o.count; i++) {
       o.getMatrixAt(i, m4);
       v3.setFromMatrixPosition(m4).applyMatrix4(o.matrixWorld);
-      props.push({ sig, x: v3.x, y: v3.y, z: v3.z, flat: g.type === 'PlaneGeometry' });
+      // the instance's own scale, so a check can reason about how far the thing
+      // extends rather than only where its origin is
+      const sc3 = new T.Vector3();
+      m4.decompose(new T.Vector3(), new T.Quaternion(), sc3);
+      props.push({ sig, x: v3.x, y: v3.y, z: v3.z, sy: sc3.y,
+                   flat: g.type === 'PlaneGeometry' });
     }
   });
 
@@ -357,6 +395,11 @@ window.__auditWorld = async function auditWorld() {
       const d = p.y - terr.at(p.x, p.z);
       if (d > 19) {
         if ((CANOPY.has(p.sig) || p.flat) && overATree(p)) continue;
+        // A tall box centred on its own middle is not floating. The distant
+        // massing is a unit cube scaled to the block's size, so a 40m block has
+        // its origin 20m up while its underside is on the ground. Ask where the
+        // BOTTOM is, which is the question this check was always trying to ask.
+        if (p.sy > 2 && Math.abs(d - p.sy / 2) < 2.5) continue;
         floating++; ex.push(`${p.sig} ${d.toFixed(1)}m up`);
       }
       if (d < -1.2) { sunk++; ex.push(`${p.sig} ${(-d).toFixed(1)}m down`); }

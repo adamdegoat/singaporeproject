@@ -205,7 +205,13 @@ export function selectSideStreets(data, axis, reach = 230) {
   return out;
 }
 
-export function dressSideStreets(world, data, axis, blockedIn, TreeField) {
+// `done` is a Set of road objects already dressed by an earlier axis. A region
+// has one axis per district, and a side street within reach of BOTH was dressed
+// twice: two sets of kerbs and two sets of lamps in the same place, which is
+// where 245 of the region's 333 duplicated props and most of its z-fighting
+// came from. The set is shared across the calls rather than rebuilt per axis,
+// because the whole point is what a PREVIOUS axis already did.
+export function dressSideStreets(world, data, axis, blockedIn, TreeField, done = null) {
   const trees = new TreeField();
   const kerb = [], lamp = [], lampArm = [];
   let roads = 0, skipped = 0;
@@ -231,6 +237,13 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField) {
   };
 
   let chosen = selectSideStreets(data, axis, REACH);
+  // Never dress a street a previous axis already dressed. A region has one axis
+  // per district and their 230m catchments overlap, so the streets between them
+  // were being kerbed, lamped and treed twice over.
+  if (done) {
+    chosen = chosen.filter((r) => !done.has(r));
+    for (const r of chosen) done.add(r);
+  }
   // Drop ways that lie inside another carriageway. Mount Sophia is mapped as
   // ten ways of three widths, some running inside the others; dressing the
   // inner one puts its kerb line in the middle of the outer one, and every
