@@ -210,7 +210,29 @@ window.__auditWorld = async function auditWorld() {
       // Nothing under 40cm is something you ride into: those are aprons,
       // thresholds and paving trim that sit flush with the road on purpose.
       if (!hit || !n || maxY - minY < 0.4) return;
-      const key = `${o.geometry.type}|${pos.count}v|${(maxY - minY).toFixed(1)}m tall`;
+      // Structures that are SUPPOSED to be over a carriageway. A traffic signal
+      // that does not hang over the road is not a traffic signal, and a
+      // direction gantry spans it by definition. Same reasoning as P1's list.
+      const gp0 = o.geometry.parameters || {};
+      const dim = (a, b2) => Math.abs((a || 0) - b2) < 0.02;
+      const OVERHEAD =
+        (o.geometry.type === 'CylinderGeometry' && dim(gp0.radiusTop, 0.06))      // signal pole and arm
+        || (o.geometry.type === 'BoxGeometry' && dim(gp0.width, 0.32)
+            && dim(gp0.height, 0.86))                                            // signal head
+        || (o.geometry.type === 'CircleGeometry')                                 // signal lens
+        || (o.geometry.type === 'BoxGeometry' && dim(gp0.width, 4.6)
+            && dim(gp0.height, 1.72))                                            // gantry backer
+        || (o.geometry.type === 'PlaneGeometry' && dim(gp0.width, 4.6)
+            && dim(gp0.height, 1.72))                                            // gantry face
+        || (o.geometry.type === 'CylinderGeometry' && dim(gp0.radiusTop, 0.13))   // gantry post
+        || (o.geometry.type === 'BoxGeometry' && (gp0.width || 0) > 14
+            && (gp0.height || 0) < 5 && (gp0.depth || 0) > 2.5)                   // overhead bridge deck
+        || (o.geometry.type === 'CylinderGeometry' && (gp0.radiusTop || 0) > 10);  // ION's shell over its forecourt
+      if (OVERHEAD) return;
+      const gp = o.geometry.parameters || {};
+      const dims = [gp.radiusTop, gp.width, gp.height, gp.depth]
+        .filter((q) => q != null).map((q) => +q.toFixed(2)).join('x');
+      const key = `${o.geometry.type}(${dims})|${(maxY - minY).toFixed(1)}m tall`;
       bad[key] = (bad[key] || 0) + 1;
       if (ex.length < 8) ex.push(`${key} in "${hit}" at ${worstX | 0},${worstZ | 0}`);
     });
@@ -427,6 +449,19 @@ window.__auditWorld = async function auditWorld() {
           : layers.map((k) => `${k} ${data[k].length}`).join(', '), empty);
   }
 
+  {
+    // C7: how much of the real street is actually built. process.py records the
+    // full length of the named street it stitched the axis from, so this is
+    // measured against the real road rather than against our own output.
+    let built = 0;
+    for (let i = 0; i < axis.p.length - 1; i++)
+      built += Math.hypot(axis.p[i + 1][0] - axis.p[i][0], axis.p[i + 1][1] - axis.p[i][1]);
+    const full = data.axisFullLength || built;
+    const pct = Math.round((built / full) * 100);
+    add('C7', 'main street length built', 'BLOCKER', pct, 85,
+        `${Math.round(built)}m of ${Math.round(full)}m`, []);
+  }
+
   /* ================= S: semantics ================= */
   {
     const signs = (window.__signage || []).filter((s) => s.kind === 'gantry');
@@ -471,10 +506,49 @@ window.__auditWorld = async function auditWorld() {
         `${plates.length} plates checked`, wrong);
   }
   {
+    // S3: a name sign is fixed to a facade, so the nearest named building to it
+    // should be the building it names.
+    // A sign hangs on a facade, and on Orchard Road facades touch: Paragon and
+    // Paragon Medical share a wall, so "which named footprint has the nearest
+    // vertex" is not the question. The question is whether the sign is actually
+    // on the building it names.
+    const names = (window.__signage || []).filter((sg) => sg.kind === 'name');
+    const wrong = [];
+    for (const sg of names) {
+      const own = data.buildings.filter((b) => b.n === sg.text);
+      if (!own.length) { wrong.push(`sign "${sg.text}" names no building`); continue; }
+      // Distance to the PERIMETER, not to the nearest corner. A sign sits at the
+      // midpoint of the longest facade, and Ngee Ann City's longest facade is
+      // 74m, so its midpoint is 37m from either corner while being flat against
+      // the wall. Measuring to vertices called 172 correct signs wrong.
+      let d = Infinity;
+      for (const b of own)
+        for (let i = 0; i < b.p.length; i++) {
+          const q1 = b.p[i], q2 = b.p[(i + 1) % b.p.length];
+          const vx = q2[0] - q1[0], vz = q2[1] - q1[1], L2 = vx * vx + vz * vz;
+          let t = L2 < 1e-9 ? 0 : ((sg.x - q1[0]) * vx + (sg.z - q1[1]) * vz) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          d = Math.min(d, Math.hypot(sg.x - (q1[0] + vx * t), sg.z - (q1[1] + vz * t)));
+        }
+      if (d > 6) wrong.push(`sign "${sg.text}" is ${d.toFixed(0)}m from that building`);
+    }
+    add('S3', 'name signs on the wrong building', 'MAJOR', wrong.length, 5,
+        `${names.length} name signs checked`, wrong);
+  }
+  {
     const shops = data.shops || [];
     const orphan = shops.filter((sh) => !buildingAt(sh.p[0], sh.p[1])).length;
     add('S4', 'shop signs off their mapped building', 'MINOR', orphan, null,
         `${orphan} of ${shops.length} shop points fall outside any footprint`, []);
+  }
+
+  {
+    // S5: an MRT entrance without its exit letter is a generic box. OSM names
+    // them "Somerset (NSL) Exit B", so the letter is available and should show.
+    const mrt = (data.mrt || []).filter((m) => m.kind === 'subway_entrance');
+    const noLetter = mrt.filter((m) => !/\bExit\s+[A-Z0-9]/i.test(m.n || '')).length;
+    add('S5', 'MRT entrances without their exit letter', 'MINOR', noLetter, null,
+        `${mrt.length - noLetter} of ${mrt.length} carry a letter in OSM`, []);
   }
 
   /* ================= T: traversal ================= */
@@ -561,6 +635,32 @@ window.__auditWorld = async function auditWorld() {
         `${outside} road points outside the sampled heightfield`, ex);
   }
 
+  {
+    // T4: ride the axis and check the chase camera never ends up inside a
+    // building. The camera sits 5.8m behind and 3m above the rider, so on a
+    // tight bend beside a tower it can pass through a wall.
+    let inside = 0, tested = 0; const ex = [];
+    for (let i = 0; i < axis.p.length - 1; i++) {
+      const [x1, z1] = axis.p[i], [x2, z2] = axis.p[i + 1];
+      const dx = x2 - x1, dz = z2 - z1, L = Math.hypot(dx, dz) || 1;
+      const ux = dx / L, uz = dz / L;
+      for (let t = 0; t < L; t += 12) {
+        const rx = x1 + ux * t, rz = z1 + uz * t;
+        const cx2 = rx - ux * 5.8, cz2 = rz - uz * 5.8;   // where the camera sits
+        tested++;
+        const b = buildingAt(cx2, cz2);
+        // only a building tall enough to actually contain the camera at 3m up
+        if (b && b.h > 3.4) {
+          inside++;
+          if (ex.length < 6) ex.push(`camera inside "${b.n || '(unnamed)'}" at ${cx2 | 0},${cz2 | 0}`);
+        }
+      }
+    }
+    const pct = tested ? +((inside / tested) * 100).toFixed(1) : 0;
+    add('T4', 'chase camera inside a building', 'MAJOR', pct, 2,
+        `${inside} of ${tested} sampled camera positions`, ex);
+  }
+
   /* ================= V: presentation ================= */
   {
     let sky = null; const cam = window.__camera;
@@ -580,6 +680,21 @@ window.__auditWorld = async function auditWorld() {
     add('V1', 'sky always visible', 'BLOCKER', problems.length, 0,
         problems.length ? problems.join('; ')
           : 'dome follows the camera and sits inside the far plane', problems);
+  }
+  {
+    // V2: at the far plane the fog must have swallowed the world, or geometry
+    // pops in and out of existence at a hard line. FogExp2 transmittance is
+    // exp(-(d*density)^2); anything above a few percent is visible popping.
+    const fog = sc.fog;
+    const cam2 = window.__camera;
+    let leftover = 100;
+    if (fog && fog.density != null && cam2) {
+      const dd = fog.density * cam2.far;
+      leftover = +(Math.exp(-(dd * dd)) * 100).toFixed(1);
+    }
+    add('V2', 'world still visible at the far plane', 'MAJOR', leftover, 5,
+        fog ? `${leftover}% of an object still shows at ${cam2.far}m `
+              + `(fog density ${fog.density})` : 'no fog in the scene', []);
   }
   {
     const g = terr && terr.g;
@@ -622,7 +737,9 @@ window.__auditWorld = async function auditWorld() {
   /* ================= verdict ================= */
   const failed = findings.filter((f) => {
     if (f.budget === null) return false;
-    return f.id === 'C4' ? f.count < f.budget : f.count > f.budget;
+    // C4 and C7 are floors, not ceilings: more is better
+    const FLOOR = f.id === 'C4' || f.id === 'C7';
+    return FLOOR ? f.count < f.budget : f.count > f.budget;
   });
   return {
     findings, failed: failed.map((f) => f.id),

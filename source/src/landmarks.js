@@ -49,7 +49,7 @@ export function orientedBox(pts) {
 function slab(api, ob, u, v, w, d, y0, h, mat, yaw = 0) {
   const x0 = ob.cx + ob.ux * u - ob.uz * v;
   const z0 = ob.cz + ob.uz * u + ob.ux * v;
-  if (onCarriageway(x0, z0, -0.8)) return null;
+  if (onCarriageway(x0, z0, 0.3)) return null;
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
   const x = x0, z = z0;
   m.position.set(x, y0 + h / 2, z);

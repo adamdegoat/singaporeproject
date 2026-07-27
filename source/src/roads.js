@@ -87,7 +87,41 @@ export function buildRoadIndex(data, axis) {
     return name;
   };
 
-  return { onRoad, nearestName, segments: segs };
+  // Move a point out of any carriageway it is standing in, pushing away from
+  // the nearest road centreline. Bus stops, taxi ranks and MRT entrances come
+  // from real OSM coordinates that are often mapped on the kerb line or a
+  // little inside it: those are real things and should be nudged onto the
+  // pavement, not deleted. Returns the original point if it was already clear,
+  // or null if no clear spot is found within `limit`.
+  const pushClear = (x, z, margin = -0.6, limit = 7) => {
+    if (!onRoad(x, z, margin)) return [x, z];
+    // direction away from the nearest carriageway centre
+    let bx = x, bz = z, bd = Infinity;
+    const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dz = -1; dz <= 1; dz++) {
+        const list = grid.get((cx + dx) + ',' + (cz + dz));
+        if (!list) continue;
+        for (const [x1, z1, x2, z2] of list) {
+          const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
+          let t = L2 < 1e-9 ? 0 : ((x - x1) * vx + (z - z1) * vz) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const px = x1 + vx * t, pz = z1 + vz * t;
+          const d = (x - px) ** 2 + (z - pz) ** 2;
+          if (d < bd) { bd = d; bx = px; bz = pz; }
+        }
+      }
+    let ax = x - bx, az = z - bz;
+    const L = Math.hypot(ax, az);
+    if (L < 1e-6) { ax = 1; az = 0; } else { ax /= L; az /= L; }
+    for (let step = 0.8; step <= limit; step += 0.8) {
+      const nx2 = x + ax * step, nz2 = z + az * step;
+      if (!onRoad(nx2, nz2, margin)) return [nx2, nz2];
+    }
+    return null;
+  };
+
+  return { onRoad, nearestName, pushClear, segments: segs };
 }
 
 // One prop per spot. OSM splits streets into fragments that overlap at every

@@ -51,7 +51,10 @@ function erpGantry(world, px, pz, ang, width) {
     0, 8.1, 0.1, 0);
   g.add(panel);
 
-  g.position.set(px, groundAt(px, pz), pz);
+  // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
+  // carriageway rather than dropping a shelter into the traffic
+  const [px2, pz2] = (window.__pushClear ? window.__pushClear(px, pz) : null) || [px, pz];
+  g.position.set(px2, groundAt(px2, pz2), pz2);
   g.rotation.y = ang;
   world.add(g);
 }
@@ -80,7 +83,10 @@ function pedBridge(world, px, pz, ang, width) {
         sx, 0.5 + s * 0.46, sgn * (1.9 + s * 0.2), 0));
     }
   }
-  g.position.set(px, groundAt(px, pz), pz);
+  // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
+  // carriageway rather than dropping a shelter into the traffic
+  const [px2, pz2] = (window.__pushClear ? window.__pushClear(px, pz) : null) || [px, pz];
+  g.position.set(px2, groundAt(px2, pz2), pz2);
   g.rotation.y = ang;
   world.add(g);
 }
@@ -164,7 +170,10 @@ function mrtEntrance(world, px, pz, ang, label) {
     g.add(face);
   }
 
-  g.position.set(px, groundAt(px, pz), pz);
+  // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
+  // carriageway rather than dropping a shelter into the traffic
+  const [px2, pz2] = (window.__pushClear ? window.__pushClear(px, pz) : null) || [px, pz];
+  g.position.set(px2, groundAt(px2, pz2), pz2);
   g.rotation.y = ang;
   world.add(g);
 }
@@ -435,6 +444,8 @@ export function buildSgDetail(world, axis, data, isBlocked) {
       back.rotateY(rot);
       back.translate(mx + (oX / oL) * 0.85, sy, mz + (oZ / oL) * 0.85);
       signs.add(back, MAT.darkMetal, mx, mz);
+      (window.__signage = window.__signage || [])
+        .push({ kind: 'name', x: mx, z: mz, text: b.n });
       stats.nameSigns = (stats.nameSigns || 0) + 1;
     }
 

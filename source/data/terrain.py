@@ -32,9 +32,23 @@ def district(did):
 
 
 def scene_path(did):
-    for p in (os.path.join(HERE, "districts", f"{did}.json"), os.path.join(HERE, f"{did}.json")):
-        if os.path.exists(p):
-            return p
+    """The one scene file for a district.
+
+    There used to be two candidates, districts/<id>.json and <id>.json, tried in
+    that order. terrain.py then loaded whichever it found first and wrote the
+    result to BOTH, so a stale copy could be written over a fresh reprocess: a
+    run that had just dropped three underground footprints came back with them.
+    There is one file now, and a leftover duplicate is a hard error rather than a
+    silent preference.
+    """
+    canonical = os.path.join(HERE, f"{did}.json")
+    stale = os.path.join(HERE, "districts", f"{did}.json")
+    if os.path.exists(stale) and os.path.exists(canonical):
+        sys.exit(f"two scene files for '{did}': delete {stale}")
+    if os.path.exists(canonical):
+        return canonical
+    if os.path.exists(stale):
+        return stale
     sys.exit(f"no scene for '{did}'; run build_district.py first")
 
 
@@ -45,9 +59,16 @@ def road_samples(data):
              if r.get("k") not in ("footway", "pedestrian")]
     if data.get("axis"):
         lines.append(data["axis"]["p"])
+    # A 25m minimum per WAY throws away the short fragments OSM splits streets
+    # into, and the grid is then built from the bbox of what survived: 1,002m of
+    # roads at the west end of the district ended up outside the heightfield
+    # entirely, where height falls back to the clamped edge value and the ground
+    # goes flat. Short ways are sampled at their midpoint instead of dropped.
     for line in lines:
         total = sum(math.dist(line[i], line[i + 1]) for i in range(len(line) - 1))
         if total < 25:
+            mid = line[len(line) // 2]
+            pts.append((mid[0], mid[1]))
             continue
         s, acc, i = 0.0, 0.0, 0
         while s <= total and i < len(line) - 1:
@@ -88,13 +109,31 @@ def fetch_elev(latlons, source_idx=0):
     return out
 
 
+def _hash_points(pts, cell):
+    """Bucket sample indices by grid cell, so neighbour queries stop being a
+    scan over every sample. At 3,420 samples the naive form is 11.7 million
+    distance tests per pass and the two passes dominated the whole script."""
+    grid = {}
+    for i, (x, z) in enumerate(pts):
+        grid.setdefault((int(x // cell), int(z // cell)), []).append(i)
+    return grid
+
+
 def despike(pts, elev, radius=110.0, tol=4.5):
     """Replace any sample that sits far above its neighbours: that is a rooftop,
     not the road. Uses a local median, which ignores outliers by construction."""
+    grid = _hash_points(pts, radius)
     kept, fixed = [], 0
+    r2 = radius * radius
     for i, (x, z) in enumerate(pts):
-        near = [elev[j] for j, (x2, z2) in enumerate(pts)
-                if (x - x2) ** 2 + (z - z2) ** 2 < radius * radius]
+        gx, gz = int(x // radius), int(z // radius)
+        near = []
+        for dx in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                for j in grid.get((gx + dx, gz + dz), ()):
+                    x2, z2 = pts[j]
+                    if (x - x2) ** 2 + (z - z2) ** 2 < r2:
+                        near.append(elev[j])
         med = statistics.median(near) if near else elev[i]
         if elev[i] - med > tol:
             kept.append(med); fixed += 1
@@ -103,7 +142,11 @@ def despike(pts, elev, radius=110.0, tol=4.5):
     return kept, fixed
 
 
+REACH = 240.0     # how far a road sample influences a grid cell
+
+
 def build_grid(pts, elev, pad=90.0):
+    shash = _hash_points(pts, REACH)
     minx = min(p[0] for p in pts) - pad; maxx = max(p[0] for p in pts) + pad
     minz = min(p[1] for p in pts) - pad; maxz = max(p[1] for p in pts) + pad
     nx = int((maxx - minx) / CELL) + 1
@@ -112,14 +155,19 @@ def build_grid(pts, elev, pad=90.0):
     for j in range(nz):
         for i in range(nx):
             gx, gz = minx + i * CELL, minz + j * CELL
-            # inverse distance weighting over nearby road samples
+            # inverse distance weighting over nearby road samples, found
+            # through the hash rather than by scanning all of them
             num = den = 0.0
-            for (px, pz), e in zip(pts, elev):
-                d2 = (gx - px) ** 2 + (gz - pz) ** 2
-                if d2 > 240 * 240:
-                    continue
-                w = 1.0 / (d2 + 25.0)
-                num += e * w; den += w
+            cgx, cgz = int(gx // REACH), int(gz // REACH)
+            for dx in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    for j in shash.get((cgx + dx, cgz + dz), ()):
+                        px, pz = pts[j]
+                        d2 = (gx - px) ** 2 + (gz - pz) ** 2
+                        if d2 > REACH * REACH:
+                            continue
+                        w = 1.0 / (d2 + 25.0)
+                        num += elev[j] * w; den += w
             grid.append(round(num / den, 2) if den else 0.0)
     # one smoothing pass, so buildings never sit on a step
     sm = list(grid)
@@ -170,9 +218,7 @@ def main():
     grid["base"] = round(base, 2)
     data["terrain"] = grid
     json.dump(data, open(path, "w"), separators=(",", ":"))
-    alt = os.path.join(HERE, f"{a.id}.json")
-    if os.path.exists(alt) and alt != path:
-        json.dump(data, open(alt, "w"), separators=(",", ":"))
+    # deliberately no second write: one file, one source of truth
     print(f"   grid {grid['nx']}x{grid['nz']} @ {CELL:.0f}m, "
           f"rise 0-{max(grid['h']):.1f}m above base {base:.0f}m")
     print(f"   wrote {path} ({os.path.getsize(path)/1024:.0f} KB)")

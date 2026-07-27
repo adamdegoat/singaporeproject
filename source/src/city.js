@@ -320,9 +320,25 @@ function extrude(pts, h, mat, y0 = 0) {
 }
 
 /* ---------------- buildings ---------------- */
+// Scale a footprint about its centroid. Shopfront bands, trim courses and
+// awnings are all built from a grown ring, and a 5.5% growth on a 60m frontage
+// pushes the ring 1.65m past the wall. Where that lands in a carriageway the
+// result is a pale band lying across the road, which reads as the road itself
+// being drawn wrongly. Any vertex that ends up in a carriageway is pulled back
+// along its own outward direction until it is clear.
 function grow(pts, f) {
   const c = centroid(pts);
-  return pts.map(([x, z]) => [c[0] + (x - c[0]) * f, c[1] + (z - c[1]) * f]);
+  return pts.map(([x, z]) => {
+    const ox = x - c[0], oz = z - c[1];
+    let gx = c[0] + ox * f, gz = c[1] + oz * f;
+    if (!onCarriageway(gx, gz, 0.2)) return [gx, gz];
+    // walk back toward the original vertex, then just inside it if need be
+    for (let t = f; t >= 0.92; t -= 0.01) {
+      gx = c[0] + ox * t; gz = c[1] + oz * t;
+      if (!onCarriageway(gx, gz, 0.2)) return [gx, gz];
+    }
+    return [x, z];
+  });
 }
 
 export function buildBuildings(world, data) {
@@ -450,7 +466,11 @@ function addShopfront(world, b, per, merger, clearance) {
 
     // A lobby you can actually see into. Recess a lit volume behind glass doors
     // so the ground floor stops reading as a printed band.
-    if (b.a > 1200) {
+    // A recessed lobby only makes sense behind the facade. Where the building
+    // stands hard against the kerb the recess lands in the carriageway, and a
+    // glowing back wall then hangs in the traffic.
+    if (b.a > 1200 && !onCarriageway(mx - ux * 5.2, mz - uz * 5.2, 0)
+        && !onCarriageway(mx + ux * 0.35, mz + uz * 0.35, 0)) {
       const lw = Math.min(14, bl * 0.3);
       const back = new THREE.Mesh(new THREE.PlaneGeometry(lw, 4.4),
         new THREE.MeshStandardMaterial({
@@ -526,17 +546,30 @@ function addShopfront(world, b, per, merger, clearance) {
 
 /* ---------------- roads and pavements ---------------- */
 // A road is a ribbon: for each segment emit a quad of the tagged width.
+// A road is a ribbon of quads, one per segment. Two things left holes in it:
+// a bend puts the two segments' corners in different places, and at a junction
+// each way stops at the node so nothing covers the middle. Both show as pale
+// gaps in the tarmac, which is what "the roads are not drawn properly" looks
+// like from the saddle. Every segment is now extended half a width past each of
+// its ends, so neighbours and crossing streets overlap instead of abutting.
 function ribbon(pts, width, y) {
   const g = new THREE.BufferGeometry();
   const pos = [], uv = [];
   let run = 0;
   const H = (x, z) => TERRAIN.at(x, z) + y;      // the road lies on the ground
+  const half = width / 2;
   for (let i = 0; i < pts.length - 1; i++) {
-    const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+    let [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+    const dx0 = x2 - x1, dz0 = z2 - z1;
+    const len0 = Math.hypot(dx0, dz0);
+    if (len0 < 0.01) continue;
+    // grow the segment along its own direction at both ends
+    const ex = (dx0 / len0) * half, ez = (dz0 / len0) * half;
+    x1 -= ex; z1 -= ez; x2 += ex; z2 += ez;
     const dx = x2 - x1, dz = z2 - z1;
     const len = Math.hypot(dx, dz);
     if (len < 0.01) continue;
-    const nx = (-dz / len) * width / 2, nz = (dx / len) * width / 2;
+    const nx = (-dz / len) * half, nz = (dx / len) * half;
     const a = [x1 - nx, H(x1 - nx, z1 - nz), z1 - nz];
     const b = [x1 + nx, H(x1 + nx, z1 + nz), z1 + nz];
     const c = [x2 + nx, H(x2 + nx, z2 + nz), z2 + nz];

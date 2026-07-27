@@ -151,10 +151,41 @@ FALLBACK_ORCHARD = [
 ]
 
 
+def _neg_layer(tags):
+    try:
+        return float(tags.get("layer", 0)) < 0
+    except (TypeError, ValueError):
+        return False
+
+
+def carry_terrain(out_path, scene):
+    """Keep the heightfield across a reprocess.
+
+    terrain.py samples elevation from a free API along the road centrelines and
+    writes the grid into the scene file. Reprocessing rebuilds that file from
+    the raw OSM dump, which silently dropped the grid and flattened the whole
+    district. The centrelines have not changed, so the old grid is still valid:
+    carry it over rather than re-fetching 2,372 samples.
+    """
+    import os as _os
+    if not _os.path.exists(out_path):
+        return False
+    try:
+        with open(out_path) as fh:
+            old = json.load(fh)
+    except Exception:
+        return False
+    if old.get("terrain"):
+        scene["terrain"] = old["terrain"]
+        return True
+    return False
+
+
 def main():
     raw = json.load(open(RAW_PATH))
     els = raw["elements"]
     buildings, roads, trees = [], [], []
+    skipped_underground = 0
     # Real map positions, so street furniture stops being placed at intervals we
     # invented. This is what makes it the actual street rather than a plausible one.
     crossings, signals, busstops, mrt, taxis = [], [], [], [], []
@@ -239,6 +270,14 @@ def main():
         if e["type"] != "way" or "geometry" not in e:
             continue
 
+        # Underground structures are not buildings you can see. Dhoby Ghaut's
+        # concourse and Bencoolen station are mapped as building footprints with
+        # layer=-1, and extruding them put an 18m mass across the road with the
+        # chase camera travelling inside it.
+        if "building" in tags and (tags.get("location") == "underground"
+                                   or _neg_layer(tags)):
+            skipped_underground += 1
+            continue
         if "building" in tags:
             pts = ring(e["geometry"])
             if len(pts) < 3:
@@ -406,6 +445,34 @@ def main():
         for i in range(len(axis) - 1):
             corridors.append((axis[i], axis[i + 1], aclear))
 
+    # A spatial hash over the corridors. Testing every vertex against all 6,587
+    # of them is 300 million distance calculations and takes about twenty
+    # minutes; only the handful in neighbouring cells can possibly be close.
+    CGRID_CELL = 50.0
+    cgrid = {}
+    for seg in corridors:
+        (ax, az), (bx, bz), clear = seg
+        for gx in range(int((min(ax, bx) - clear) // CGRID_CELL),
+                        int((max(ax, bx) + clear) // CGRID_CELL) + 1):
+            for gz in range(int((min(az, bz) - clear) // CGRID_CELL),
+                            int((max(az, bz) + clear) // CGRID_CELL) + 1):
+                cgrid.setdefault((gx, gz), []).append(seg)
+
+    def corridors_near(px, pz):
+        return cgrid.get((int(px // CGRID_CELL), int(pz // CGRID_CELL)), ())
+
+    def clear_vertex(px, pz):
+        """Slide a vertex out of every corridor it is inside. Returns the point
+        and whether it moved."""
+        moved = False
+        for (a, c, clear) in corridors_near(px, pz):
+            d, cx, cz = seg_dist(px, pz, a[0], a[1], c[0], c[1])
+            if d < clear and d > 1e-6:
+                nx, nz = (px - cx) / d, (pz - cz) / d
+                px, pz = cx + nx * clear, cz + nz * clear
+                moved = True
+        return px, pz, moved
+
     def subdivide(ring, maxlen=4.0):
         out = []
         n = len(ring)
@@ -430,16 +497,10 @@ def main():
     for b in buildings:
         touched = False
         for j, (px, pz) in enumerate(b["p"]):
-            for (a, c, clear) in corridors:
-                d, cx, cz = seg_dist(px, pz, a[0], a[1], c[0], c[1])
-                if d < clear:
-                    if d < 1e-6:
-                        continue
-                    # slide the vertex straight out to the corridor edge
-                    nx, nz = (px - cx) / d, (pz - cz) / d
-                    px, pz = cx + nx * clear, cz + nz * clear
-                    touched = True
-                    moved_pts += 1
+            px, pz, moved = clear_vertex(px, pz)
+            if moved:
+                touched = True
+                moved_pts += 1
             b["p"][j] = [round(px, 1), round(pz, 1)]
         if touched:
             moved_b += 1
@@ -470,6 +531,24 @@ def main():
     print(f"  simplified rings: {before_pts} -> {after_pts} vertices "
           f"({100 - 100 * after_pts // max(before_pts, 1)}% smaller)")
 
+    # Simplification draws a straight line between the vertices it keeps, and
+    # that line can cut back through a corridor the clearance pass had just
+    # emptied. So clear again afterwards: the order clear-then-simplify quietly
+    # put building walls back into the carriageway on about thirty buildings.
+    again_pts, again_b = 0, 0
+    for b in buildings:
+        touched = False
+        for j, (px, pz) in enumerate(b["p"]):
+            px, pz, moved = clear_vertex(px, pz)
+            if moved:
+                touched = True
+                again_pts += 1
+            b["p"][j] = [round(px, 1), round(pz, 1)]
+        if touched:
+            again_b += 1
+    print(f"  re-cleared after simplify: {again_pts} vertices "
+          f"across {again_b} buildings")
+
     buildings.sort(key=lambda b: -b["a"])
     out = {
         "origin": {"lat": LAT0, "lon": LON0},
@@ -488,7 +567,12 @@ def main():
         "axis": {"p": [[round(x, 1), round(z, 1)] for x, z in axis], "w": 16.0, "n": "Orchard Road"},
     }
     path = OUT_PATH
+    kept = carry_terrain(path, out)
     json.dump(out, open(path, "w"), separators=(",", ":"))
+    if kept:
+        print("  carried the existing heightfield over")
+    else:
+        print("  NO HEIGHTFIELD: run terrain.py or the district will be flat")
 
     named = [b for b in buildings if "n" in b]
     hs_osm = sum(1 for b in buildings if b.get("hs") == "osm")
@@ -498,6 +582,7 @@ def main():
     sw_real = sum(1 for r in roads if r.get("sidewalk"))
     dual = sum(1 for r in roads if r.get("oneway") and r.get("k") in
                ("primary", "secondary", "trunk", "tertiary"))
+    print(f"  skipped {skipped_underground} underground footprints")
     print(f"  buildings {len(buildings)}  (named {len(named)}, landmarks {sum(1 for b in buildings if b.get('k'))})")
     print(f"  real heights: {hs_osm} from OSM tags + {hs_named} hand-entered "
           f"= {hs_osm + hs_named}/{len(buildings)}")

@@ -144,6 +144,14 @@ console.log(`   fps (indicative)  worst ${worst}  median ${median}  best ${fps[f
 console.log(`   worst draw calls  ${worstCalls}`);
 const heaviest = rows.slice().sort((a, b) => b.calls - a.calls).slice(0, 5);
 console.log(`   heaviest views    ${heaviest.map((r) => `${r.street} ${r.calls}d`).join(', ')}`);
+// The emptiest views are as interesting as the heaviest: a stop that draws
+// almost nothing is a stretch of the district with nothing built on it, and
+// that is what a bare street looks like from the saddle.
+const emptiest = rows.slice().sort((a, b) => a.calls - b.calls).slice(0, 5);
+console.log(`   emptiest views    ${emptiest.map((r) => `${r.street} ${r.calls}d`).join(', ')}`);
+console.log('   review these frames:');
+for (const r of emptiest)
+  console.log(`     ${String(rows.indexOf(r)).padStart(3)}  ${r.street.padEnd(24)} ${r.calls} draws`);
 console.log('   confirm fps here:');
 for (const r of heaviest)
   console.log(`     ${r.street.padEnd(26)} __teleport(${r.x.toFixed(0)}, ${r.z.toFixed(0)}, ${r.heading.toFixed(2)})`);

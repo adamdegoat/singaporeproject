@@ -189,7 +189,31 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     const panel = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.5, 0.1),
       new THREE.MeshStandardMaterial({ color: 0x27313a, roughness: 0.3 }));
     panel.position.set(4.4, 1.7, -1.0); g.add(panel);
-    g.position.set(sx, groundAt(sx, sz), sz); g.rotation.y = ang;
+  // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
+  // carriageway rather than dropping a shelter into the traffic
+    // An OSM bus_stop node sits on the kerb line, and the shelter is 2.8m deep,
+    // so placing it at the node puts half of it in the traffic. Step it back
+    // onto the pavement along the road normal, away from the carriageway, and
+    // keep stepping until the whole depth is clear. If no clear stand exists,
+    // the shelter is not built: a pole-and-flag stop is already placed from the
+    // same node, so the stop is still there.
+    const nrmX = Math.cos(ang), nrmZ = -Math.sin(ang);
+    const away = window.__onRoad && window.__onRoad(sx + nrmX * 3, sz + nrmZ * 3) ? -1 : 1;
+    let px2 = sx, pz2 = sz, stand = false;
+    for (let back = 2.4; back <= 9; back += 1.2) {
+      px2 = sx + nrmX * back * away; pz2 = sz + nrmZ * back * away;
+      // the whole 8.8m by 2.8m footprint has to be off the road
+      let clear = true;
+      for (const along of [-4.4, 0, 4.4])
+        for (const depth of [-1.5, 1.5]) {
+          const tx2 = px2 + Math.sin(ang) * along + nrmX * depth;
+          const tz2 = pz2 + Math.cos(ang) * along + nrmZ * depth;
+          if (window.__onRoad && window.__onRoad(tx2, tz2, -0.4)) { clear = false; break; }
+        }
+      if (clear) { stand = true; break; }
+    }
+    if (!stand) continue;
+    g.position.set(px2, groundAt(px2, pz2), pz2); g.rotation.y = ang;
     world.add(g);
   }
 
@@ -216,7 +240,10 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
       g.add(lens);
       lenses.push(lens);
     }
-    g.position.set(lx, groundAt(lx, lz), lz); g.rotation.y = ang;
+  // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
+  // carriageway rather than dropping a shelter into the traffic
+    const [lx2, lz2] = (window.__pushClear ? window.__pushClear(lx, lz) : null) || [lx, lz];
+    g.position.set(lx2, groundAt(lx2, lz2), lz2); g.rotation.y = ang;
     world.add(g);
 
     if (!signals.has(atS)) signals.set(atS, { s: atS, lenses: [], phase: signals.size * 5.5 });
@@ -260,7 +287,10 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     }
     cab.position.set(-2.6 * sgn, 0, 2.0);
     g.add(cab);
-    g.position.set(tx, groundAt(tx, tz), tz); g.rotation.y = ang;
+  // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
+  // carriageway rather than dropping a shelter into the traffic
+    const [tx2, tz2] = (window.__pushClear ? window.__pushClear(tx, tz) : null) || [tx, tz];
+    g.position.set(tx2, groundAt(tx2, tz2), tz2); g.rotation.y = ang;
     world.add(g);
   }
 

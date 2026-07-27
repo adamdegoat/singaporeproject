@@ -28,7 +28,11 @@ renderer.shadowMap.enabled = !P.has('noshadow');
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0xc9c3b2, 0.0021);
+// Density is set from the far plane, not by eye: FogExp2 leaves
+// exp(-(density*d)^2) of an object showing at distance d, and at 520m a density
+// of 0.0021 still showed 30% of it, so buildings popped out of nothing at a hard
+// line. 0.0038 leaves about 2%.
+scene.fog = new THREE.FogExp2(0xc9c3b2, 0.0038);
 const camera = new THREE.PerspectiveCamera(58, 1, 0.3, 520);
 
 /* ---------------- sky + light ---------------- */
@@ -285,6 +289,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   window.__onRoad = (x, z, m, ex) => ROADIX.onRoad(x, z, m || 0, ex || null);
   window.__placeOn = (name) => (x, z) => blocked(x, z) || ROADIX.onRoad(x, z, -0.4, name);
   window.__nearestStreet = (x, z) => ROADIX.nearestName(x, z);
+  window.__pushClear = (x, z, m) => ROADIX.pushClear(x, z, m == null ? -0.6 : m);
 
   const bs = P.has('nobuild') ? { count: 0, tall: 0 } : buildBuildings(world, data);
   const fallbackAxis = buildRoads(world, data);
