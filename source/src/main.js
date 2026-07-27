@@ -272,7 +272,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   signals = new Signals(furniture.signals || []);
   const signage = (!P.has('nosigns') && axis)
     ? buildSignage(world, axis, data, blocked) : {};
-  const marks = (!P.has('nomarks') && axis) ? buildMarkings(world, axis) : 0;
+  const marks = (!P.has('nomarks') && axis) ? buildMarkings(world, axis, data) : 0;
   const side = (!P.has('noside') && axis)
     ? dressSideStreets(world, data, axis, blocked, TreeField) : {};
   const sg = (!P.has('nosg') && axis) ? buildSgDetail(world, axis, data, blocked) : {};
@@ -294,7 +294,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
     S = newState(p0[0] + nx * -3.4, p0[1] + nz * -3.4, Math.atan2(dx, dz));
   }
   buildEnvironment();
-  stats = { marks, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
+  stats = { marks, laneCount: window.__laneCount, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
   ready = true;
   window.__ready = true;
   window.__stats = stats;

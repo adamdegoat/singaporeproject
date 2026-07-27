@@ -28,9 +28,28 @@ function emitFlat(world, list, w, l, mat) {
   return list.length;
 }
 
-export function buildMarkings(world, axis) {
+export function buildMarkings(world, axis, data = {}) {
   const pts = axis.p, half = axis.w / 2;
   const dash = [], edge = [], yellowL = [], stopL = [], arrowShaft = [], arrowHead = [];
+
+  // Lane count from the map, not from a number we picked. OSM tags lanes on
+  // just over half the roads here, so where it is tagged the dividers land
+  // where the real ones do.
+  let lanes = 0, tagged = 0;
+  for (const r of (data.roads || [])) {
+    if (!/orchard road/i.test(r.n || '') || !r.lanes) continue;
+    lanes += r.lanes; tagged++;
+  }
+  const laneCount = tagged ? Math.max(2, Math.round(lanes / tagged)) : 6;
+  // divider offsets: evenly split the carriageway by the real lane count
+  const laneW = (half * 2) / laneCount;
+  const dividers = [];
+  for (let i = 1; i < laneCount; i++) {
+    const off = -half + i * laneW;
+    if (Math.abs(off) < 1.6) continue;     // that one is the median, not a divider
+    dividers.push(off);
+  }
+  window.__laneCount = laneCount;
 
   let acc = 0;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -43,9 +62,9 @@ export function buildMarkings(world, axis) {
     for (let t = 0; t < len; t += 1, acc++) {
       const px = x1 + ux * t, pz = z1 + uz * t;
 
-      // dashed lane dividers: 3m mark, 6m gap, on both carriageways
+      // dashed lane dividers: 3m mark, 6m gap, at the real lane positions
       if (acc % 9 < 3) {
-        for (const off of [-3.6, 3.6]) {
+        for (const off of dividers) {
           dash.push([px + nx * off, 0.075, pz + nz * off, ang]);
         }
       }
@@ -69,7 +88,9 @@ export function buildMarkings(world, axis) {
         }
       }
       if (acc % 190 === 60 || acc % 190 === 140) {
-        for (const off of [-5.4, -1.9, 1.9, 5.4]) {
+        const lanesMid = dividers.map((d, i) => d - laneW / 2)
+          .concat([half - laneW / 2]);
+        for (const off of lanesMid) {
           arrowShaft.push([px + nx * off, 0.08, pz + nz * off, ang]);
           arrowHead.push([px + nx * off + ux * 1.9, 0.08, pz + nz * off + uz * 1.9, ang]);
         }

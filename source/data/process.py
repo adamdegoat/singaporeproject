@@ -103,23 +103,26 @@ def norm(s):
 
 
 def height_for(tags):
+    """Returns (height, is_landmark, source). Source is 'osm' when the figure
+    comes from a tag, 'named' when hand-entered, 'guess' when a type default."""
     name = norm(tags.get("name"))
     for key, spec in LANDMARKS.items():
         if key and key in name:
-            return spec["h"], spec.get("key", False)
+            return spec["h"], spec.get("key", False), "named"
     h = tags.get("height")
     if h:
         try:
-            return float(str(h).replace("m", "").strip()), False
+            return float(str(h).replace("m", "").strip()), False, "osm"
         except ValueError:
             pass
     lv = tags.get("building:levels")
     if lv:
         try:
-            return max(3.5, float(lv) * 3.6), False
+            # 3.4m per storey is closer for SG commercial than 3.6
+            return max(3.5, float(lv) * 3.4), False, "osm"
         except ValueError:
             pass
-    return TYPE_DEFAULT.get(tags.get("building", "yes"), 18), False
+    return TYPE_DEFAULT.get(tags.get("building", "yes"), 18), False, "guess"
 
 
 def ring(geometry):
@@ -247,7 +250,7 @@ def main():
             per = sum(math.dist(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts)))
             if per > 0 and (4 * math.pi * a) / (per * per) < 0.03:
                 continue
-            h, key = height_for(tags)
+            h, key, hsrc = height_for(tags)
             # a 3,000 m2 footprint is never 3.5m tall: that is a bad tag, not a
             # single-storey building. Fall back to the type default.
             if h < 8 and a > 600:
@@ -255,7 +258,7 @@ def main():
             # and a 150 m2 footprint with no tags is a shophouse or a small
             # block, not a 20m tower. Untagged small footprints were producing a
             # forest of thin slivers through the back lanes.
-            untagged = not tags.get("height") and not tags.get("building:levels")
+            untagged = hsrc == "guess"
             if untagged and not key and a < 230:
                 h = round(3.6 * (2 + (int(abs(a)) % 3)), 1)      # 2-4 storeys
             elif untagged and not key and a < 520:
@@ -269,6 +272,8 @@ def main():
                 b["n"] = tags["name"]
             if key:
                 b["k"] = 1
+            if hsrc != "guess":
+                b["hs"] = hsrc          # height provenance, for the accuracy ledger
             buildings.append(b)
 
         elif "highway" in tags:
@@ -288,6 +293,19 @@ def main():
                 "w": round(w, 1),
                 "k": kind,
             }
+            if lanes:
+                try:
+                    r["lanes"] = int(float(lanes))
+                except ValueError:
+                    pass
+            if tags.get("oneway") == "yes":
+                r["oneway"] = 1
+            for tk in ("turn:lanes", "turn:lanes:forward"):
+                if tags.get(tk):
+                    r["turns"] = tags[tk]
+                    break
+            if tags.get("sidewalk"):
+                r["sidewalk"] = tags["sidewalk"]
             if tags.get("name"):
                 r["n"] = tags["name"]
             roads.append(r)
@@ -428,7 +446,13 @@ def main():
     json.dump(out, open(path, "w"), separators=(",", ":"))
 
     named = [b for b in buildings if "n" in b]
+    hs_osm = sum(1 for b in buildings if b.get("hs") == "osm")
+    hs_named = sum(1 for b in buildings if b.get("hs") == "named")
+    lane_tagged = sum(1 for r in roads if "lanes" in r)
     print(f"  buildings {len(buildings)}  (named {len(named)}, landmarks {sum(1 for b in buildings if b.get('k'))})")
+    print(f"  real heights: {hs_osm} from OSM tags + {hs_named} hand-entered "
+          f"= {hs_osm + hs_named}/{len(buildings)}")
+    print(f"  roads with real lane counts: {lane_tagged}/{len(roads)}")
     print(f"  roads {len(roads)}   osm trees {len(trees)}")
     print(f"  real POIs: {len(crossings)} crossings, {len(signals)} signals, "
           f"{len(busstops)} bus stops, {len(mrt)} MRT, {len(taxis)} taxi ranks")
