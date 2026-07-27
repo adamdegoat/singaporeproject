@@ -252,8 +252,24 @@ function dressStreet(data, axis) {
     const ox = x1 + vx * bt, oz = z1 + vz * bt;
     const ang2 = Math.atan2(ux2, uz2);
     for (let s2 = -3; s2 <= 3; s2++) {
+      const bx = ox + ux2 * s2 * 1.3, bz = oz + uz2 * s2 * 1.3;
+      // Each bar takes the street's direction AT ITS OWN POSITION, not at the
+      // middle of the crossing. The bars spread nearly four metres along the
+      // road, and where a crossing sits on a bend — which is where junctions
+      // are — one shared angle left the outer bars up to fifty degrees off
+      // square. A zebra laid at an angle to the lane is not a zebra.
+      let ba = ang2;
+      let bd2 = Infinity;
+      for (let k = 0; k < pts.length - 1; k++) {
+        const [px1, pz1] = pts[k], [px2, pz2] = pts[k + 1];
+        const vx3 = px2 - px1, vz3 = pz2 - pz1, L3 = vx3 * vx3 + vz3 * vz3 || 1;
+        let t3 = ((bx - px1) * vx3 + (bz - pz1) * vz3) / L3;
+        t3 = Math.max(0, Math.min(1, t3));
+        const d3 = (bx - (px1 + vx3 * t3)) ** 2 + (bz - (pz1 + vz3 * t3)) ** 2;
+        if (d3 < bd2) { bd2 = d3; ba = Math.atan2(vx3, vz3); }
+      }
       // above the carriageway surface, which is drawn at 0.055
-      zebraT.push([ox + ux2 * s2 * 1.3, 0.075, oz + uz2 * s2 * 1.3, ang2 + Math.PI / 2]);
+      zebraT.push([bx, 0.075, bz, ba + Math.PI / 2]);
     }
     // arclength for the pedestrian-signal logic
     let arc = 0;
@@ -345,6 +361,38 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   ROADIX = buildRoadIndex(data, data.axis || null);
   window.__onRoad = (x, z, m, ex) => ROADIX.onRoad(x, z, m || 0, ex || null);
   window.__nearestStreet = (x, z) => ROADIX.nearestName(x, z);
+  // the direction of the carriageway under a point, so a check can ask whether
+  // something is laid ACROSS the road or along it
+  // every carriageway direction near a point, because at a junction a crossing
+  // over one street is parallel to the other and "the nearest road" is ambiguous
+  window.__roadDirsNear = (x, z, reach = 16) => {
+    const out = [];
+    for (const r of data.roads) {
+      if (r.k === 'footway' || r.k === 'pedestrian') continue;
+      for (let i = 0; i < r.p.length - 1; i++) {
+        const a = r.p[i], c = r.p[i + 1];
+        const dx = c[0] - a[0], dz = c[1] - a[1], l2 = dx * dx + dz * dz || 1;
+        const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / l2));
+        const d2 = (x - (a[0] + dx * t)) ** 2 + (z - (a[1] + dz * t)) ** 2;
+        if (d2 < reach * reach) { const L = Math.sqrt(l2); out.push([dx / L, dz / L]); break; }
+      }
+    }
+    return out;
+  };
+  window.__roadDirAt = (x, z) => {
+    let best = null, bd = Infinity;
+    for (const r of data.roads) {
+      if (r.k === 'footway' || r.k === 'pedestrian') continue;
+      for (let i = 0; i < r.p.length - 1; i++) {
+        const a = r.p[i], c = r.p[i + 1];
+        const dx = c[0] - a[0], dz = c[1] - a[1], l2 = dx * dx + dz * dz || 1;
+        const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / l2));
+        const d = (x - (a[0] + dx * t)) ** 2 + (z - (a[1] + dz * t)) ** 2;
+        if (d < bd) { bd = d; const L = Math.sqrt(l2); best = [dx / L, dz / L]; }
+      }
+    }
+    return best;
+  };
   window.__surfaceAt = (x, z) => surfaceAt(x, z);
   // the solidity test the ride and the walker actually use, so a check can ask
   // the same question they do rather than a lookalike

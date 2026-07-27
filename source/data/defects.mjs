@@ -552,6 +552,80 @@ const found = await page.evaluate(() => {
     report('D20', 'covered walkway roofs with nothing holding them up', bad);
   }
 
+  /* D21  zebra bars laid along the road instead of across it. A crossing is
+     perpendicular to the carriageway; one laid parallel is a ladder painted
+     down the lane. Nothing has ever checked an ORIENTATION. */
+  {
+    const bad = [];
+    const m4 = new T.Matrix4(), v3 = new T.Vector3(), q4 = new T.Quaternion();
+    const sc3 = new T.Vector3(), fwd = new T.Vector3();
+    sc.traverse((o) => {
+      if (!o.isInstancedMesh || o.geometry.type !== 'PlaneGeometry') return;
+      const pr = o.geometry.parameters || {};
+      if (!(Math.abs((pr.width || 0) - 0.62) < 0.2 && (pr.height || 0) > 2)) return;
+      for (let i = 0; i < o.count; i++) {
+        o.getMatrixAt(i, m4);
+        m4.decompose(v3, q4, sc3);
+        // the bar's long axis in world space
+        fwd.set(0, 1, 0).applyQuaternion(q4);
+        const barAng = Math.atan2(fwd.x, fwd.z);
+        // the road's direction here
+        // At a junction a crossing over one street is PARALLEL to the other,
+        // so "the nearest road" is the wrong question — and junctions are
+        // exactly where crossings are. A bar is square if it is perpendicular
+        // to ANY carriageway near it.
+        const dirs = window.__roadDirsNear ? window.__roadDirsNear(v3.x, v3.z, 16) : [];
+        if (!dirs.length) continue;
+        let bestOff = Math.PI;
+        for (const dir of dirs) {
+          const roadAng = Math.atan2(dir[0], dir[1]);
+          let d = Math.abs(barAng - roadAng) % Math.PI;
+          if (d > Math.PI / 2) d = Math.PI - d;
+          bestOff = Math.min(bestOff, Math.PI / 2 - d);
+        }
+        if (bestOff > 0.52) {
+          bad.push(`a zebra bar is ${(bestOff * 180 / Math.PI).toFixed(0)} degrees off square to every street near it at ${v3.x | 0},${v3.z | 0}`);
+        }
+      }
+    });
+    report('D21', 'zebra bars not laid across the road', bad);
+  }
+
+  /* D22  can the player reach the edge of the world. The heightfield is padded
+     90m past the sampled roads; ride past that and the ground stops. */
+  {
+    const t = window.__terrain && window.__terrain.g;
+    const bad = [];
+    if (t) {
+      const x0 = t.x0, z0 = t.z0;
+      const x1 = t.x0 + (t.nx - 1) * t.cell, z1 = t.z0 + (t.nz - 1) * t.cell;
+      let outside = 0, n = 0;
+      for (const r of data.roads || []) {
+        for (const [x, z] of r.p) {
+          n++;
+          if (x < x0 || x > x1 || z < z0 || z > z1) outside++;
+        }
+      }
+      if (outside) bad.push(`${outside} of ${n} road points lie outside the heightfield`);
+    }
+    report('D22', 'roads running off the edge of the ground', bad);
+  }
+
+  /* D23 DELETED.
+   *
+   * It counted how many distinct geometry signatures shared a square metre and
+   * flagged six or more as a heap. Every one of the 26 it found was an ordinary
+   * pavement: a kerb, a railing — which is three signatures, two rails and a
+   * post — a lamp column, a tree canopy overhead and a pedestrian, who is six
+   * signatures on their own.
+   *
+   * Counting signatures is not counting objects, and the threshold was picked
+   * before looking at what the numbers meant. Deleted rather than tuned, because
+   * a probe that needs a magic number to stop crying wolf is not measuring
+   * anything. P4 already covers the real version of this: the SAME prop
+   * duplicated in the same place.
+   */
+
   return out;
 });
 

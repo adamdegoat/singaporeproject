@@ -150,10 +150,19 @@ def dedupe_points(groups, tol=4.0):
     return out
 
 
-def sample(t, x, z):
-    """Bilinear lookup into a district heightfield, or None outside it."""
+def sample(t, x, z, clamp=False):
+    """Bilinear lookup into a district heightfield.
+
+    With clamp=True a point outside the grid takes the value at the nearest edge
+    instead of nothing, which is what the merged grid's apron needs: 65 road
+    points fell outside both districts' grids and would otherwise have sat at
+    sea level, which is a cliff rather than a missing sample.
+    """
     gx = (x - t["x0"]) / t["cell"]
     gz = (z - t["z0"]) / t["cell"]
+    if clamp:
+        gx = min(max(gx, 0.0), t["nx"] - 1.001)
+        gz = min(max(gz, 0.0), t["nz"] - 1.001)
     i, j = int(math.floor(gx)), int(math.floor(gz))
     if i < 0 or j < 0 or i >= t["nx"] - 1 or j >= t["nz"] - 1:
         return None
@@ -172,12 +181,21 @@ def inset(t, x, z):
     return min(gx, gz, (t["nx"] - 1) - gx, (t["nz"] - 1) - gz)
 
 
-def merge_terrain(ts):
+def merge_terrain(ts, cover=None):
     cell = ts[0]["cell"]
     x0 = min(t["x0"] for t in ts)
     z0 = min(t["z0"] for t in ts)
     x1 = max(t["x0"] + (t["nx"] - 1) * t["cell"] for t in ts)
     z1 = max(t["z0"] + (t["nz"] - 1) * t["cell"] for t in ts)
+    # The merged grid must cover every road in the merged scene. Each district
+    # padded its own grid 90m past its OWN roads, and a road that crosses the
+    # seam runs past both: 65 road points fell outside the union.
+    if cover:
+        pad = 90.0
+        x0 = min(x0, min(p[0] for p in cover) - pad)
+        x1 = max(x1, max(p[0] for p in cover) + pad)
+        z0 = min(z0, min(p[1] for p in cover) - pad)
+        z1 = max(z1, max(p[1] for p in cover) + pad)
     nx = int(round((x1 - x0) / cell)) + 1
     nz = int(round((z1 - z0) / cell)) + 1
     h = []
@@ -192,6 +210,7 @@ def merge_terrain(ts):
                 v = sample(t, x, z)
                 if v is None:
                     continue
+                _ = v
                 hits += 1
                 # weight rises with how far inside the grid the point sits, so
                 # the district that actually has road samples around here wins
@@ -199,7 +218,12 @@ def merge_terrain(ts):
                 num += v * w
                 den += w
             if den == 0:
-                h.append(0.0)
+                # in the apron beyond every district's grid: take the nearest
+                # edge value from whichever grid is closest, so the ground runs
+                # out flat instead of dropping to sea level
+                edge = [sample(t, x, z, clamp=True) for t in ts]
+                edge = [e for e in edge if e is not None]
+                h.append(round(sum(edge) / len(edge), 2) if edge else 0.0)
             else:
                 if hits > 1:
                     blended += 1
@@ -262,7 +286,8 @@ def main():
     ts = [s["terrain"] for s in scenes if s.get("terrain")]
     if len(ts) != len(scenes):
         sys.exit("  ! a district has no heightfield; run terrain.py for it first")
-    out["terrain"], blended = merge_terrain(ts)
+    cover = [p for r in out["roads"] for p in r["p"]]
+    out["terrain"], blended = merge_terrain(ts, cover)
     t = out["terrain"]
     print(f"  terrain    {t['nx']}x{t['nz']} @ {t['cell']:.0f}m, "
           f"{blended} cells blended where the districts overlap")
