@@ -86,6 +86,12 @@ def fetch(d, force=False):
                 f'node["railway"="station"]({bbox});'
                 f'way["railway"="subway_entrance"]({bbox});'),
         "taxi": f'node["amenity"="taxi"]({bbox});way["amenity"="taxi"]({bbox});',
+        # real overhead bridges and covered walkways, and the actual tenants at
+        # street level — the names people navigate by
+        "bridges": f'way["highway"="footway"]["bridge"]({bbox});',
+        "covered": f'way["highway"="footway"]["covered"]({bbox});',
+        "shops": (f'node["shop"]({bbox});way["shop"]({bbox});'
+                  f'node["amenity"~"^(restaurant|cafe|bank|fast_food|pharmacy|cinema)$"]({bbox});'),
         "water": f'way["natural"="water"]({bbox});way["waterway"]({bbox});',
     }
     merged, seen = [], set()

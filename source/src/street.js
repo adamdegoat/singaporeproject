@@ -244,26 +244,25 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     world.add(g);
   }
 
-  // covered walkway: continuous roof on slim columns, set at the shopfront line
+  // Covered walkway along the footways OSM actually tags as covered, rather
+  // than wherever we guessed a frontage existed.
   const linkPost = [], linkRoof = [], linkBeam = [];
-  let acc2 = 0;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
-    const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
-    if (len < 0.5) continue;
-    const ux = dx / len, uz = dz / len, nx = -uz, nz = ux;
-    const ang = Math.atan2(ux, uz);
-    for (let t = 0; t < len; t += 1, acc2++) {
-      if (acc2 % 4 !== 0) continue;
-      const px = x1 + ux * t, pz = z1 + uz * t;
-      for (const sgn of [-1, 1]) {
-        const cxp = px + nx * (half + 9.0) * sgn, czp = pz + nz * (half + 9.0) * sgn;
-        // only where there is actually a frontage to walk along
-        if (!isBlocked(px + nx * (half + 13.5) * sgn, pz + nz * (half + 13.5) * sgn)) continue;
+  let realCovered = 0;
+  for (const line of (data.covered || [])) {
+    if (line.length < 2) continue;
+    realCovered++;
+    for (let i = 0; i < line.length - 1; i++) {
+      const [x1, z1] = line[i], [x2, z2] = line[i + 1];
+      const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
+      if (len < 0.5) continue;
+      const ux = dx / len, uz = dz / len, nx = -uz, nz = ux;
+      const ang = Math.atan2(ux, uz);
+      for (let t = 0; t < len; t += 3.4) {
+        const cxp = x1 + ux * t, czp = z1 + uz * t;
         linkRoof.push([cxp, 3.35, czp, ang]);
         linkBeam.push([cxp, 3.12, czp, ang]);
-        linkPost.push([cxp + nx * 1.5 * sgn, 1.6, czp + nz * 1.5 * sgn, ang]);
-        linkPost.push([cxp - nx * 1.5 * sgn, 1.6, czp - nz * 1.5 * sgn, ang]);
+        linkPost.push([cxp + nx * 1.5, 1.6, czp + nz * 1.5, ang]);
+        linkPost.push([cxp - nx * 1.5, 1.6, czp - nz * 1.5, ang]);
       }
     }
   }
@@ -275,6 +274,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
 
   return {
     signals: signalList,
+    realCovered,
     realBusStops: realCount.busstops,
     realSignals: realCount.signals,
     realTaxis: realCount.taxis,

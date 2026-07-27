@@ -226,8 +226,25 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   }
   window.__realMrt = realMrt;
 
+  // Overhead bridges at the positions OSM records, spanning the way it maps.
+  let realBridges = 0;
+  for (const line of (data.bridges || [])) {
+    if (line.length < 2) continue;
+    let len = 0;
+    for (let i = 0; i < line.length - 1; i++) {
+      len += Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
+    }
+    if (len < 12) continue;                      // a kerb ramp, not a bridge
+    const a = line[0], b = line[line.length - 1];
+    const cx = (a[0] + b[0]) / 2, cz = (a[1] + b[1]) / 2;
+    const ang = Math.atan2(b[0] - a[0], b[1] - a[1]);
+    pedBridge(world, cx, cz, ang + Math.PI / 2, Math.min(46, len) - 14);
+    realBridges++;
+  }
+  window.__realBridges = realBridges;
+
   const pts = axis.p, half = axis.w / 2;
-  const stats = { erp: 0, bridges: 0, banners: 0, medianPlants: 0, roofSigns: 0, banners2: 0, mrt: realMrt };
+  const stats = { erp: 0, bridges: realBridges, banners: 0, medianPlants: 0, roofSigns: 0, banners2: 0, mrt: realMrt };
 
   const bannerT = [], medianKerb = [], medianShrub = [], medianPalm = [];
   let acc = 0;
@@ -257,7 +274,7 @@ export function buildSgDetail(world, axis, data, isBlocked) {
       // one ERP gantry and two pedestrian bridges along the stretch
       if (acc === 300) { erpGantry(world, px, pz, ang, axis.w); stats.erp++; }
       if (acc === 700) { erpGantry(world, px, pz, ang, axis.w); stats.erp++; }
-      if (acc === 470 || acc === 940) { pedBridge(world, px, pz, ang, axis.w); stats.bridges++; }
+
     }
   }
 
@@ -303,6 +320,52 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     new THREE.MeshStandardMaterial({ roughness: 0.8, side: THREE.DoubleSide }),
     bannerT, yaw, () => cc.setHex(pick(BANNER_COLS)));
   stats.banners = bannerT.length;
+
+  /* ---------------- real shopfront signage ---------------- */
+  // The tenants OSM records, at their own coordinates, on a fascia board facing
+  // the street. Name text only, neutral typeface: this is labelling a place the
+  // way a map labels it, not reproducing anyone's logo or brand styling.
+  let realShops = 0;
+  for (const sh of (data.shops || [])) {
+    const [sx, sz] = sh.p;
+    // face the nearest street, so a sign is never edge-on to the road
+    let bx = 0, bz = 0, bd = Infinity, bux = 0, buz = 1;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+      const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
+      let t = L2 < 1e-9 ? 0 : ((sx - x1) * vx + (sz - z1) * vz) / L2;
+      t = Math.max(0, Math.min(1, t));
+      const px2 = x1 + vx * t, pz2 = z1 + vz * t;
+      const d = (sx - px2) ** 2 + (sz - pz2) ** 2;
+      if (d < bd) {
+        bd = d; bx = px2; bz = pz2;
+        const L = Math.hypot(vx, vz) || 1; bux = vx / L; buz = vz / L;
+      }
+    }
+    const dist = Math.sqrt(bd);
+    if (dist > 46) continue;                    // fronts a different street
+    // sit the board just off the building face, turned toward the road
+    const tox = (bx - sx) / (dist || 1), toz = (bz - sz) / (dist || 1);
+    const ang = Math.atan2(tox, toz);
+    const bw = Math.min(7.5, 2.4 + sh.n.length * 0.30);
+    const y = 5.9 + ((sh.n.length * 7) % 13) * 0.12;
+    const board = new THREE.Mesh(
+      new THREE.PlaneGeometry(bw, bw * 0.235),
+      new THREE.MeshStandardMaterial({
+        map: texNameSign(sh.n, '#' + pick(SIGN_COLS).toString(16).padStart(6, '0'), '#f6f3ec'),
+        roughness: 0.5, emissive: 0x191919, emissiveIntensity: 0.4,
+      }));
+    board.position.set(sx + tox * 1.2, y, sz + toz * 1.2);
+    board.rotation.y = ang;
+    world.add(board);
+    const backer = new THREE.Mesh(
+      new THREE.BoxGeometry(bw + 0.3, bw * 0.235 + 0.3, 0.22), MAT.darkMetal);
+    backer.position.set(sx + tox * 1.05, y, sz + toz * 1.05);
+    backer.rotation.y = ang;
+    world.add(backer);
+    realShops++;
+  }
+  stats.realShops = realShops;
 
   /* ---------------- building signage ---------------- */
   // Rooftop sign boxes on the taller blocks and vertical banner signs down the

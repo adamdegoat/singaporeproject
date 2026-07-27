@@ -155,6 +155,7 @@ def main():
     # Real map positions, so street furniture stops being placed at intervals we
     # invented. This is what makes it the actual street rather than a plausible one.
     crossings, signals, busstops, mrt, taxis = [], [], [], [], []
+    bridges, covered, shops = [], [], []
 
     for e in els:
         tags = e.get("tags", {})
@@ -181,6 +182,12 @@ def main():
             elif tags.get("amenity") == "taxi":
                 x, z = proj(e["lat"], e["lon"])
                 taxis.append([round(x, 1), round(z, 1)])
+            elif tags.get("shop") or tags.get("amenity") in (
+                    "restaurant", "cafe", "bank", "fast_food", "pharmacy", "cinema"):
+                if tags.get("name"):
+                    x, z = proj(e["lat"], e["lon"])
+                    shops.append({"p": [round(x, 1), round(z, 1)], "n": tags["name"],
+                                  "k": tags.get("shop") or tags.get("amenity")})
             continue
         if e["type"] == "way" and tags.get("amenity") == "taxi" and "geometry" in e:
             pts = [proj(p["lat"], p["lon"]) for p in e["geometry"]]
@@ -195,6 +202,25 @@ def main():
             mrt.append({"p": [round(cx, 1), round(cz, 1)],
                         "n": tags.get("name", ""), "kind": "subway_entrance"})
             continue
+        if e["type"] == "way" and (tags.get("shop") or tags.get("amenity") in (
+                "restaurant", "cafe", "bank", "fast_food", "pharmacy", "cinema")) \
+                and tags.get("name") and "geometry" in e:
+            pts = [proj(p["lat"], p["lon"]) for p in e["geometry"]]
+            cx = sum(p[0] for p in pts) / len(pts)
+            cz = sum(p[1] for p in pts) / len(pts)
+            shops.append({"p": [round(cx, 1), round(cz, 1)], "n": tags["name"],
+                          "k": tags.get("shop") or tags.get("amenity")})
+            if "building" not in tags:
+                continue                      # otherwise fall through: it is a building too
+        if e["type"] == "way" and tags.get("highway") == "footway" and "geometry" in e:
+            line = [[round(x, 1), round(z, 1)] for x, z in
+                    (proj(p["lat"], p["lon"]) for p in e["geometry"])]
+            if tags.get("bridge"):
+                bridges.append(line)
+                continue
+            if tags.get("covered"):
+                covered.append(line)
+                continue
         if e["type"] == "way" and tags.get("natural") == "tree_row" and "geometry" in e:
             # a tree row is a line: plant along it every 8m
             pts = [proj(p["lat"], p["lon"]) for p in e["geometry"]]
@@ -393,6 +419,9 @@ def main():
         "busstops": busstops,
         "mrt": mrt,
         "taxis": taxis,
+        "bridges": bridges,
+        "covered": covered,
+        "shops": shops,
         "axis": {"p": [[round(x, 1), round(z, 1)] for x, z in axis], "w": 16.0, "n": "Orchard Road"},
     }
     path = OUT_PATH
@@ -403,6 +432,8 @@ def main():
     print(f"  roads {len(roads)}   osm trees {len(trees)}")
     print(f"  real POIs: {len(crossings)} crossings, {len(signals)} signals, "
           f"{len(busstops)} bus stops, {len(mrt)} MRT, {len(taxis)} taxi ranks")
+    print(f"  real structures: {len(bridges)} ped bridges, {len(covered)} covered walkways, "
+          f"{len(shops)} named shops")
     print(f"  wrote {path}  {os.path.getsize(path)/1024:.0f} KB")
     print("\nlargest by footprint:")
     for b in buildings[:12]:
