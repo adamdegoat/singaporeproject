@@ -115,20 +115,22 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
   const trees = new TreeField();
   const kerb = [], lamp = [], lampArm = [];
   let roads = 0, skipped = 0;
+  const segs = [];          // every dressed road segment, for matching crossings
+  let sideCrossings = 0, sidewalkReal = 0, sidewalkNone = 0;
 
   // Dress what can be seen from the route. The full district holds 46.8km of
   // side street, which produced 23,000 kerbs and 2,100 trees — most of it
   // hundreds of metres from anywhere the player goes.
   const REACH = 230;
   const A = axis.p;
-  const nearAxis = (x, z) => {
+  const nearAxis = (x, z, reach = REACH) => {
     for (let i = 0; i < A.length - 1; i++) {
       const [x1, z1] = A[i], [x2, z2] = A[i + 1];
       const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
       let t = L2 < 1e-9 ? 0 : ((x - x1) * vx + (z - z1) * vz) / L2;
       t = Math.max(0, Math.min(1, t));
       const dx = x - (x1 + vx * t), dz = z - (z1 + vz * t);
-      if (dx * dx + dz * dz < REACH * REACH) return true;
+      if (dx * dx + dz * dz < reach * reach) return true;
     }
     return false;
   };
@@ -139,12 +141,30 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
     const mid = r.p[Math.floor(r.p.length / 2)];
     if (!nearAxis(mid[0], mid[1])) { skipped++; continue; }
     const pts = r.p, half = r.w / 2;
+    for (let i = 0; i < pts.length - 1; i++) segs.push([pts[i], pts[i + 1], half]);
+
+    // OSM records which side of a street actually has a pavement. In this
+    // district 404 roads carry the tag; laying a kerb down both sides of every
+    // one of them puts pavements where there are none. The map's left/right is
+    // relative to the way direction: heading east, the right-hand side is
+    // south, which is +z here, and that is the +1 side below.
+    let doLeft = true, doRight = true;
+    const sw = r.sidewalk;
+    if (sw === 'left') doRight = false;
+    else if (sw === 'right') doLeft = false;
+    else if (sw === 'no' || sw === 'none' || sw === 'separate') { doLeft = doRight = false; }
+    const sides = [];
+    if (doLeft) sides.push(-1);
+    if (doRight) sides.push(1);
+
     let total = 0;
     for (let i = 0; i < pts.length - 1; i++) {
       total += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
     }
     if (total < 45) continue;
     roads++;
+    if (sw) sidewalkReal++;
+    if (!doLeft && !doRight) sidewalkNone++;
 
     let acc = 0;
     for (let i = 0; i < pts.length - 1; i++) {
@@ -155,7 +175,7 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
       const ang = Math.atan2(ux, uz);
       for (let t = 0; t < len; t += 4, acc += 4) {
         const px = x1 + ux * t, pz = z1 + uz * t;
-        for (const sgn of [-1, 1]) {
+        for (const sgn of sides) {
           const kx = px + nx * (half + 0.4) * sgn, kz = pz + nz * (half + 0.4) * sgn;
           if (!isBlocked(kx, kz)) kerb.push([kx, 0.15, kz, ang]);
           if (acc % 44 === 0) {
@@ -171,6 +191,36 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
     }
   }
 
+  // OSM maps a node for every pedestrian crossing in the district, and only the
+  // 35 on Orchard Road itself were being used. The other 465 are on the streets
+  // running off it, which is exactly where you meet them when you turn a corner.
+  const zebra = [];
+  const axisHalf = axis.w / 2;
+  for (const c of (data.crossings || [])) {
+    const [cx, cz] = c;
+    if (nearAxis(cx, cz, axisHalf + 7)) continue;    // already painted on the main street
+    let best = null, bd = Infinity, bt = 0;
+    for (const [a1, a2, hw] of segs) {
+      const vx = a2[0] - a1[0], vz = a2[1] - a1[1], L2 = vx * vx + vz * vz;
+      let t = L2 < 1e-9 ? 0 : ((cx - a1[0]) * vx + (cz - a1[1]) * vz) / L2;
+      t = Math.max(0, Math.min(1, t));
+      const d = (cx - (a1[0] + vx * t)) ** 2 + (cz - (a1[1] + vz * t)) ** 2;
+      if (d < bd) { bd = d; best = [a1, a2, hw]; bt = t; }
+    }
+    if (!best) continue;
+    const [a1, a2, hw] = best;
+    if (Math.sqrt(bd) > hw + 5) continue;            // belongs to a street we did not dress
+    const vx = a2[0] - a1[0], vz = a2[1] - a1[1], L = Math.hypot(vx, vz) || 1;
+    const ux = vx / L, uz = vz / L;
+    const ox = a1[0] + vx * bt, oz = a1[1] + vz * bt;
+    const ang = Math.atan2(ux, uz) + Math.PI / 2;
+    const bars = Math.max(3, Math.round(hw * 1.6));
+    for (let k = -bars; k <= bars; k += 2) {
+      zebra.push([ox + ux * k * 0.42, 0.035, oz + uz * k * 0.42, ang, hw * 2]);
+    }
+    sideCrossings++;
+  }
+
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
   const p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1);
   const emit = (geo, mat, list, fn) => {
@@ -182,10 +232,25 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
   };
   const yaw = (r) => { p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
   emit(new THREE.BoxGeometry(0.38, 0.3, 4.0), MAT.kerb, kerb, yaw);
+
+  // one bar geometry, stretched per crossing to the width of its own road
+  if (zebra.length) {
+    const im = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.62, 1), WHITE, zebra.length);
+    zebra.forEach((r, i) => {
+      p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
+      e.set(-Math.PI / 2, r[3], 0, 'YXZ'); q.setFromEuler(e);
+      s.set(1, r[4], 1);
+      m.compose(p, q, s); im.setMatrixAt(i, m);
+    });
+    s.set(1, 1, 1);
+    im.castShadow = false; im.receiveShadow = true;
+    world.add(im);
+  }
   emit(new THREE.CylinderGeometry(0.09, 0.13, 7.2, 8), MAT.metal, lamp, yaw);
   emit(new THREE.BoxGeometry(0.9, 0.16, 0.4), MAT.trim, lampArm, (r) => {
     p.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   const treeCount = trees.build(world);
-  return { sideRoads: roads, sideSkipped: skipped, sideTrees: treeCount, sideKerbs: kerb.length };
+  return { sideRoads: roads, sideSkipped: skipped, sideTrees: treeCount,
+           sideKerbs: kerb.length, sideCrossings, sidewalkReal, sidewalkNone };
 }

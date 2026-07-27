@@ -194,6 +194,25 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   };
   window.__dualSegs = dualSegs.length;
 
+  // direction of the road nearest a point, so things placed off the main axis
+  // are still square to the street they belong to
+  const nearestRoadDir = (x, z) => {
+    let bd = Infinity, dir = [0, 1];
+    for (const r of (data.roads || [])) {
+      if (r.k === 'footway' || r.k === 'pedestrian') continue;
+      const q2 = r.p;
+      for (let i = 0; i < q2.length - 1; i++) {
+        const [x1, z1] = q2[i], [x2, z2] = q2[i + 1];
+        const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
+        let t = L2 < 1e-9 ? 0 : ((x - x1) * vx + (z - z1) * vz) / L2;
+        t = Math.max(0, Math.min(1, t));
+        const d = (x - (x1 + vx * t)) ** 2 + (z - (z1 + vz * t)) ** 2;
+        if (d < bd) { bd = d; dir = [vx, vz]; }
+      }
+    }
+    return dir;
+  };
+
   // MRT entrances at the coordinates OSM records for them, rather than at two
   // arbitrary points along the street.
   let realMrt = 0;
@@ -210,9 +229,20 @@ export function buildSgDetail(world, axis, data, isBlocked) {
       const d = (mx - (x1 + vx * t)) ** 2 + (mz - (z1 + vz * t)) ** 2;
       if (d < bd) { bd = d; bi = i; bt = t; }
     }
-    if (Math.sqrt(bd) > 90) continue;
-    const [x1, z1] = P[bi], [x2, z2] = P[bi + 1];
-    const vx = x2 - x1, vz = z2 - z1, L = Math.hypot(vx, vz) || 1;
+    // Entrances up to the edge of the dressed area, not just the ones on the
+    // main street: Dhoby Ghaut and Somerset put exits a long way down the side
+    // roads, and they are real places you ride past.
+    if (Math.sqrt(bd) > 230) continue;
+    let vx, vz;
+    if (Math.sqrt(bd) < 60) {
+      const [x1, z1] = P[bi], [x2, z2] = P[bi + 1];
+      vx = x2 - x1; vz = z2 - z1;
+    } else {
+      // far from the axis, face the street it actually sits on
+      const seg = nearestRoadDir(mx, mz);
+      vx = seg[0]; vz = seg[1];
+    }
+    const L = Math.hypot(vx, vz) || 1;
     const ang = Math.atan2(vx / L, vz / L);
     const label = (m.n || 'MRT').replace(/\s*(MRT|Station|Exit).*$/i, '') || 'MRT';
     mrtEntrance(world, mx, mz, ang, label);

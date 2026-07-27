@@ -93,6 +93,25 @@ runs there it runs anywhere.
 - **Merge geometry per material AND per ~110m spatial tile.** Merging globally
   defeats frustum culling: one mesh spanning the map is never culled, and
   framerate fell from 51 to 33.
+- **Run `consolidate.js` over the finished world.** A dozen builders each adding
+  meshes as they go is the right way to write them and the wrong way to render
+  them. One pass afterwards dedupes identical materials and batches small static
+  meshes per tile: 1,236 materials became 155, 7,045 meshes became 845, and draw
+  calls fell from 1,372 to 513. Anything repainted at runtime must be flagged
+  `userData.dyn` — the traffic light lenses look identical at boot and would
+  otherwise collapse into three shared materials, making every junction on the
+  street change colour together.
+- **Text goes in an atlas, never one canvas per label.** 992 shop signs and 266
+  building names meant 1,018 materials wrapping 58 textures, and nothing could
+  batch. `SignAtlas` packs them into 2048px pages of 256x64 cells; the whole
+  district's signage is then 2 pages and a handful of draws.
+- **Dress what can be seen from the route, not what is in the bbox.** Orchard's
+  full box holds 46.8km of side street. Kerbing and planting all of it produced
+  23,000 kerbs and 2,100 trees, most of them hundreds of metres from anywhere
+  you can ride. Dressing is limited to 230m from the axis.
+- **Shadow casting is a height test, not a taste call.** `trimShadowCasters`
+  drops anything under 3m from the shadow map: kerbs, markings, plates, bins.
+  343 of 880 casters went, and it was worth 6fps on its own.
 - **`envMap` per material, never `scene.environment`.** Scene-wide makes tarmac
   and concrete sample the cube map for nothing.
 - **Stay in daylight.** One sun lights the whole island for free. Night has to be
@@ -110,6 +129,14 @@ runs there it runs anywhere.
   phone pixel count, `?touch=1` to force touch.
 - Useful flags: `?spec=x,y,z,tx,ty,tz` free camera, `?nofoliage`, `?nopeople`,
   `?notraffic`, `?noshadow`, `?nobuild` for bisecting a performance problem.
+- **Profile before optimising, by tallying the frame.** Walk the scene against
+  the camera frustum and group visible meshes by geometry, material and
+  triangle count. Every fix in the 24 -> 49fps batch came from that tally
+  naming the culprit; none came from guessing.
+- **Check placement analytically, not by eye.** After painting 172 side-street
+  crossings, every one of the 1,525 bars was tested against the nearest road
+  centreline: 1,525 on carriageway, 0 overhanging. A screenshot cannot tell you
+  that, and cannot tell you about the ones off screen.
 
 ## Harness gotchas
 
@@ -130,16 +157,25 @@ runs there it runs anywhere.
 ## Deploying
 
 ```
-npx esbuild src/main.js --bundle --format=esm --minify --outfile=build/app.js
-# copy index.html (rewriting ./src/main.js to ./app.js), app.js and data/ to the repo root, push
+./deploy.sh "what changed"
 ```
 
-Then verify by hash, not by eye:
+It runs the gates, builds, mirrors the sources into `source/`, pushes, and then
+verifies by hash rather than by eye — comparing the local bundle against
+`https://adamdegoat.github.io/singaporeproject/app.js` with a cache-buster until
+they match. It exits non-zero if they never do.
 
-```
-shasum -a 256 dist/app.js
-curl -s "https://adamdegoat.github.io/singaporeproject/app.js?cb=$RANDOM" | shasum -a 256
-```
+## Before calling a district done
+
+Run `python3 data/accuracy.py <id>`. It reads the counts out of the scene rather
+than from a hand-written list, because a ledger typed in by hand goes stale the
+moment the district grows, and a stale ledger reports a district as finished
+when it is not. Orchard is 18/28 feature classes from real data.
+
+Then re-read the INVENTED half and ask, for each line, whether the data really
+is missing. Twice now it was not: pedestrian crossings were tagged in OSM all
+along while being placed at invented intervals, and `sidewalk=left/right/no` sat
+unused in the scene file while kerbs went down both sides of every street.
 
 Equal means the served bundle is the one you built. Pages usually lands in under
 a minute.
