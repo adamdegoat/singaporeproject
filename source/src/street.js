@@ -10,6 +10,7 @@ const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d, 0xcf6b3a, 0
 export function buildFurniture(world, axis, isBlocked) {
   const pts = axis.p, half = axis.w / 2;
   const railT = [], postT = [], shelterAt = [], lightAt = [], signT = [], planterT = [], binT = [];
+  const crossingS = [], taxiAt = [];
 
   let acc = 0;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -29,6 +30,11 @@ export function buildFurniture(world, axis, isBlocked) {
         if (acc % 2 === 0 && !isBlocked(rx, rz)) {
           railT.push([rx, 1.0, rz, ang]);
           if (acc % 4 === 0) postT.push([rx, 0.55, rz, ang]);
+        }
+        // taxi stands, offset from the bus shelters
+        if (acc % 260 === 8) {
+          const tx = px + nx * (half + 3.0) * sgn, tz = pz + nz * (half + 3.0) * sgn;
+          if (!isBlocked(tx, tz)) taxiAt.push([tx, tz, ang, sgn]);
         }
         // bus shelters
         if (acc % 260 === 120) {
@@ -147,6 +153,47 @@ export function buildFurniture(world, axis, isBlocked) {
     signals.get(atS).lenses.push(lenses);
   }
 
+  // taxi stands: the yellow-topped rank sign, a queue rail, and a waiting cab
+  for (const [tx, tz, ang, sgn] of taxiAt) {
+    const g = new THREE.Group();
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.0, 8), MAT.metal);
+    pole.position.y = 1.5; pole.castShadow = true; g.add(pole);
+    const board = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 0.08),
+      new THREE.MeshStandardMaterial({ color: 0xd8b43c, roughness: 0.55 }));
+    board.position.set(0, 2.9, 0); board.castShadow = true; g.add(board);
+    // short queue rail alongside
+    for (let k = 0; k < 5; k++) {
+      const r = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 1.4), MAT.metal);
+      r.position.set(-0.9, 1.0, 1.0 + k * 1.4); g.add(r);
+      const pst = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.0, 6), MAT.metal);
+      pst.position.set(-0.9, 0.5, 0.4 + k * 1.4); g.add(pst);
+    }
+    // a cab at the head of the rank: SG taxis are commonly blue or black
+    const cabCol = Math.random() < 0.5 ? 0x2f5f9e : 0x1f2225;
+    const cab = new THREE.Group();
+    const paint = new THREE.MeshStandardMaterial({ color: cabCol, roughness: 0.4, metalness: 0.3 });
+    const gl = new THREE.MeshStandardMaterial({ color: 0x2a323a, roughness: 0.12, metalness: 0.2 });
+    const bx = (w, h, d, mat, x, y, z) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z); m.castShadow = true; cab.add(m);
+    };
+    bx(1.78, 0.62, 4.4, paint, 0, 0.6, 0);
+    bx(1.64, 0.52, 2.1, paint, 0, 1.12, -0.25);
+    bx(1.69, 0.4, 2.0, gl, 0, 1.10, -0.25);
+    bx(0.62, 0.2, 0.5, new THREE.MeshStandardMaterial({
+      color: 0xf0e2b0, emissive: 0xd8a83c, emissiveIntensity: 0.5 }), 0, 1.48, -0.25);
+    const w = new THREE.CylinderGeometry(0.31, 0.31, 0.22, 10);
+    for (const [wx, wz] of [[0.86, 1.45], [-0.86, 1.45], [0.86, -1.45], [-0.86, -1.45]]) {
+      const wheel = new THREE.Mesh(w, MAT.darkMetal);
+      wheel.rotation.x = Math.PI / 2; wheel.position.set(wx, 0.31, wz);
+      wheel.castShadow = true; cab.add(wheel);
+    }
+    cab.position.set(-2.6 * sgn, 0, 2.0);
+    g.add(cab);
+    g.position.set(tx, 0, tz); g.rotation.y = ang;
+    world.add(g);
+  }
+
   // covered walkway: continuous roof on slim columns, set at the shopfront line
   const linkPost = [], linkRoof = [], linkBeam = [];
   let acc2 = 0;
@@ -178,6 +225,7 @@ export function buildFurniture(world, axis, isBlocked) {
 
   return {
     signals: signalList,
+    taxiStands: taxiAt.length,
     linkway: linkRoof.length,
     rails: railT.length, shelters: shelterAt.length,
     lights: lightAt.length, signs: signT.length, planters: planterT.length,

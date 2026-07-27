@@ -61,6 +61,26 @@ export class Crowd {
     this.isBlocked = isBlocked;
     this.count = count;
     this.people = [];
+    this.crossings = [];        // arclengths of the zebra crossings
+  }
+
+  setCrossings(list) { this.crossings = list || []; }
+
+  _nearCrossing(s) {
+    for (const c of this.crossings) {
+      let d = c - ((s % this.path.len) + this.path.len) % this.path.len;
+      if (Math.abs(d) < 2.0) return c;
+    }
+    return null;
+  }
+
+  // pedestrians get their green when the traffic has red
+  _pedGreen(crossS, time, signals) {
+    if (!signals) return true;
+    for (const sig of signals.list) {
+      if (Math.abs(sig.s - crossS) < 70) return signals.stateAt(sig, time) === 2;
+    }
+    return true;
   }
 
   build(world) {
@@ -104,6 +124,8 @@ export class Crowd {
         scale: rand(0.92, 1.08),
         hasBag: chance(0.38),
         bagSide: chance(0.5) ? 1 : -1,
+        crosser: chance(0.34),
+        crossing: false, crossT: 0, crossFrom: 0, crossTo: 0,
       };
       this.people.push(p);
       cTop.setHex(pick(TOPS)); cBot.setHex(pick(BOTTOMS));
@@ -133,13 +155,34 @@ export class Crowd {
     return n;
   }
 
-  update(time, dt, playerX = 1e9, playerZ = 1e9) {
+  update(time, dt, playerX = 1e9, playerZ = 1e9, signals = null) {
     const { _m: m, _q: q, _e: e, _p: p, _s: s, _tmp: tmp } = this;
     const hidden = this._hidden || (this._hidden = new THREE.Matrix4().makeTranslation(0, -9999, 0));
 
     for (let i = 0; i < this.people.length; i++) {
       const pr = this.people[i];
-      pr.s += pr.dir * pr.speed * dt;
+
+      // crossing behaviour: wait at the kerb, cross on the pedestrian green,
+      // then carry on along the other pavement
+      if (pr.crossing) {
+        pr.crossT += dt / 5.2;
+        const e2 = pr.crossT < 0.5
+          ? 2 * pr.crossT * pr.crossT
+          : 1 - 2 * (1 - pr.crossT) * (1 - pr.crossT);
+        pr.off = pr.crossFrom + (pr.crossTo - pr.crossFrom) * Math.min(1, e2);
+        if (pr.crossT >= 1) { pr.crossing = false; pr.off = pr.crossTo; pr.waited = 0; }
+      } else if (pr.crosser && pr.speed > 0.1) {
+        const c = this._nearCrossing(pr.s);
+        if (c !== null && this._pedGreen(c, time, signals)) {
+          pr.crossing = true; pr.crossT = 0;
+          pr.crossFrom = pr.off; pr.crossTo = -pr.off;
+        } else {
+          pr.s += pr.dir * pr.speed * dt;
+        }
+      } else {
+        pr.s += pr.dir * pr.speed * dt;
+      }
+
       this.path.at(pr.s, tmp);
       const [cx, cz, ux, uz] = tmp;
       const nx = -uz, nz = ux;
@@ -170,8 +213,9 @@ export class Crowd {
 
       const heading = Math.atan2(ux * pr.dir, uz * pr.dir);
       const sc = pr.scale;
-      const walk = pr.speed > 0.1 ? Math.sin(time * 5.2 * (pr.speed / 1.3) + pr.phase) : 0;
-      const bob = pr.speed > 0.1 ? Math.abs(Math.cos(time * 5.2 + pr.phase)) * 0.022 : 0;
+      const moving = pr.crossing || pr.speed > 0.1;
+      const walk = moving ? Math.sin(time * 5.2 * (pr.speed / 1.3) + pr.phase) : 0;
+      const bob = moving ? Math.abs(Math.cos(time * 5.2 + pr.phase)) * 0.022 : 0;
 
       const put = (part, lx, ly, lz, rx, rz) => {
         // local offsets are in the walker's frame, then rotated into the street

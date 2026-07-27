@@ -123,6 +123,7 @@ function dressStreet(data, axis) {
   const pts = axis.p, half = axis.w / 2;
   const trees = new TreeField();
   const kerbT = [], lampT = [], armT = [], headT = [], zebraT = [];
+  const crossingS = [];
 
   let acc = 0;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -150,6 +151,7 @@ function dressStreet(data, axis) {
         if (acc % 2 === 0) kerbT.push([kx, 0.15, kz, ang]);
       }
       if (acc % 190 === 0 && acc > 40) {
+        crossingS.push(acc);
         for (let s2 = -3; s2 <= 3; s2++)
           zebraT.push([px + nx * s2 * 1.3, 0.035, pz + nz * s2 * 1.3, ang]);
       }
@@ -183,6 +185,7 @@ function dressStreet(data, axis) {
     q.setFromEuler(e);
   });
 
+  window.__crossings = crossingS;
   return trees.build(world);
 }
 
@@ -226,6 +229,8 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   if (!P.has('nopeople') && axis) {
     crowdSys = new Crowd(axis, blocked, 150);
     crowdSys.build(world);
+    // must come after construction, or the handover is a no-op
+    if (window.__crossings) crowdSys.setCrossings(window.__crossings);
   }
   if (!P.has('notraffic') && axis) {
     trafficSys = new Traffic(axis, 18, 3);
@@ -435,9 +440,9 @@ function loop(now) {
       sun.target.position.set(walker.x, 0, walker.z);
       sun.target.updateMatrixWorld();
       clock += dt;
-      if (crowdSys) crowdSys.update(clock, dt);
       if (signals) signals.update(clock);
       if (trafficSys) trafficSys.update(clock, dt, signals);
+      if (crowdSys) crowdSys.update(clock, dt, walker.x, walker.z, signals);
       if (wayfinder) wayfinder.update(walker, dt);
       sound.update(0, 'walk', walker.speed, walker.phase);
       walkCamera(dt);
@@ -477,9 +482,9 @@ function loop(now) {
     sun.target.updateMatrixWorld();
 
     clock += dt;
-    if (crowdSys) crowdSys.update(clock, dt, S.x, S.z);
     if (signals) signals.update(clock);
     if (trafficSys) trafficSys.update(clock, dt, signals);
+    if (crowdSys) crowdSys.update(clock, dt, S.x, S.z, signals);
     if (wayfinder) wayfinder.update(S, dt);
     sound.update(S.speed, 'ride', 0, 0);
 
@@ -518,6 +523,7 @@ window.__drive = (throttle, steer, seconds) => {
 };
 window.__inp = () => ({ TOUCH, steer: input.steer, throttle: input.throttle, brake: input.brake, touches: touchDebug(), fired: window.__touchFired || 0 });
 window.__snd = sound;
+window.__crossers = () => (crowdSys ? crowdSys.people.filter((p) => p.crossing).length : 0);
 window.__sig = () => (signals ? signals.list.map((g) => signals.stateAt(g, clock)) : []);
 window.__traffic = () => (trafficSys ? trafficSys.items.map((i) => +i.speed.toFixed(2)) : []);
 window.__mode = () => mode;
