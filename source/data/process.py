@@ -22,36 +22,61 @@ M_PER_DEG_LAT = 110574.0
 M_PER_DEG_LON = 111320.0 * math.cos(math.radians(LAT0))
 
 # Hand-set heights in metres for the buildings that carry the recognition.
-# Approximate, from published storey counts; exact enough for silhouette.
+#
+# Figures marked VERIFIED were checked against published sources on 2026-07-27
+# rather than estimated from a storey count. Several of the estimates were well
+# out: Ngee Ann City was 11m too tall, Wheelock Place 17m too short, Tang Plaza
+# 32m too tall, and 313@somerset was carrying 42m for a mall with five floors
+# above ground.
+#
+#   ION Orchard / The Orchard Residences  en.wikipedia.org/wiki/ION_Orchard
+#     12 storeys (8 retail, 4 car park); tower 218m over 56 floors; ION Sky on
+#     55-56; more than 90m of LED media wall on the facade
+#   Ngee Ann City                         skydb.net + archify.com/sg
+#     128.4m; twin 26-28 storey towers over a 7-floor retail podium clad in
+#     African Red polished granite; podium massing modelled on the Great Wall
+#   Wheelock Place                        gorillaspace.sg + en.wikipedia.org
+#     21 storeys, about 109m; 16 office levels over a 5-floor podium; Kisho
+#     Kurokawa's conical glass atrium
+#   Paragon                               paragon.com.sg/about-us
+#     6 retail floors plus a 20-storey medical and office tower
+#   313@somerset                          313somerset.com.sg/about-us
+#     8 retail levels, but only 5 above ground (L1-L5) and 3 basement
+#   Hilton Singapore Orchard              en.wikipedia.org/wiki/Hilton_Singapore_Orchard
+#     two towers: 36 storeys at 144m and 40 storeys at 152m
+#   Tang Plaza / Singapore Marriott       roots.gov.sg orchard-heritage-trail
+#     33-storey tower under a green-tiled pagoda roof, 403 rooms
+#   Orchard Central                       en.wikipedia.org/wiki/Orchard_Central
+#     12 storeys, Singapore's first high-rise vertical mall
 LANDMARKS = {
     "ion orchard":            {"h": 42,  "tower": 218, "key": True},
     "the orchard residences": {"h": 218, "key": True},
-    "ngee ann city":          {"h": 139, "podium": 32, "key": True},
+    "ngee ann city":          {"h": 128, "podium": 30, "key": True},   # VERIFIED 128.4m
     "takashimaya":            {"h": 32,  "key": True},
     "wisma atria":            {"h": 80,  "key": True},
-    "tang plaza":             {"h": 150, "key": True},
+    "tang plaza":             {"h": 118, "key": True},   # VERIFIED 33 storeys
     "tangs":                  {"h": 26,  "key": True},
-    "singapore marriott":     {"h": 150, "key": True},
+    "singapore marriott":     {"h": 118, "key": True},   # VERIFIED, same tower
     "shaw house":             {"h": 90},
     "shaw centre":            {"h": 90},
     "lucky plaza":            {"h": 85},
     "far east plaza":         {"h": 70},
-    "paragon":                {"h": 72},
+    "paragon":                {"h": 78, "podium": 24},   # VERIFIED 6 retail + 20-storey tower
     "orchard towers":         {"h": 60},
     "palais renaissance":     {"h": 55},
-    "hilton singapore orchard": {"h": 150},
+    "hilton singapore orchard": {"h": 152},   # VERIFIED taller of two towers
     "grand hyatt":            {"h": 60},
     "forum":                  {"h": 40},
-    "orchard central":        {"h": 62},
+    "orchard central":        {"h": 56},   # VERIFIED 12 storeys
     "cathay cineleisure":     {"h": 38},
     "scape":                  {"h": 24},
     "mandarin gallery":       {"h": 40},
     "delfi orchard":          {"h": 45},
     "royal thai embassy":     {"h": 12},
     "istana":                 {"h": 16},
-    "313somerset":            {"h": 42},
-    "313 somerset":           {"h": 42},
-    "wheelock place":         {"h": 92,  "key": True},
+    "313somerset":            {"h": 28},   # VERIFIED 5 floors above ground
+    "313 somerset":           {"h": 28},   # VERIFIED, same mall
+    "wheelock place":         {"h": 109, "key": True},   # VERIFIED 21 storeys
     "tripleone somerset":     {"h": 110, "key": True},
     "cairnhill nine":         {"h": 130, "key": True},
     "orchard gateway":        {"h": 45},
