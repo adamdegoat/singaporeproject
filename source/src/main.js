@@ -164,7 +164,7 @@ function dressStreet(data, axis) {
     if (!list.length) return;
     const im = new THREE.InstancedMesh(geo, mat, list.length);
     list.forEach((rec, i) => { fn(rec); m.compose(p3, q, s3); im.setMatrixAt(i, m); });
-    im.castShadow = true; im.receiveShadow = true;
+    im.castShadow = false; im.receiveShadow = true;   // keeps them out of the shadow pass
     world.add(im);
   };
   emit(new THREE.BoxGeometry(0.42, 0.3, 2.0), MAT.kerb, kerbT, (r) => {
@@ -261,7 +261,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
     const nx = -dz / L, nz = dx / L;
     S = newState(p0[0] + nx * -3.4, p0[1] + nz * -3.4, Math.atan2(dx, dz));
   }
-  stats = { marks, ...side, ...sg, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
+  stats = { marks, ...side, ...sg, merged: bs.mergedMeshes, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
   ready = true;
   window.__ready = true;
   window.__stats = stats;

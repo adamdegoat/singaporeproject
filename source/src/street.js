@@ -77,7 +77,7 @@ export function buildFurniture(world, axis, isBlocked) {
       if (colFn) im.setColorAt(i, colFn(rec, i));
     });
     if (im.instanceColor) im.instanceColor.needsUpdate = true;
-    im.castShadow = true; im.receiveShadow = true;
+    im.castShadow = false; im.receiveShadow = true;   // shadow pass is the cost
     world.add(im);
     return im;
   };

@@ -137,7 +137,7 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
     if (!list.length) return;
     const im = new THREE.InstancedMesh(geo, mat, list.length);
     list.forEach((r, i) => { fn(r); m.compose(p, q, s); im.setMatrixAt(i, m); });
-    im.castShadow = true; im.receiveShadow = true;
+    im.castShadow = false; im.receiveShadow = true;
     world.add(im);
   };
   const yaw = (r) => { p.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };

@@ -162,7 +162,7 @@ export function buildSgDetail(world, axis, data, isBlocked) {
       if (colFn) im.setColorAt(i, colFn());
     });
     if (im.instanceColor) im.instanceColor.needsUpdate = true;
-    im.castShadow = true; im.receiveShadow = true;
+    im.castShadow = false; im.receiveShadow = true;
     world.add(im);
   };
   const yaw = (r) => { p.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };

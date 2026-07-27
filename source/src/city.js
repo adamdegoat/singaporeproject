@@ -78,6 +78,93 @@ const LMAT = {
 
 const up = new THREE.Vector3(0, 1, 0);
 
+// Every building used to get its own cloned texture, which meant its own
+// material, which meant its own draw call. Instead: share a small set of
+// materials, bake the tiling into each geometry's UVs, and concatenate all the
+// geometries that share a material into one mesh. ~600 draws becomes ~15.
+// Merging EVERYTHING into a handful of meshes backfires: one mesh spanning the
+// whole map is never frustum-culled, so all million triangles draw every frame
+// no matter where you look. Merge per material AND per spatial tile instead, so
+// each merged mesh stays local and cullable.
+const TILE = 110;
+class Merger {
+  constructor() { this.groups = new Map(); this.mats = new Map(); }
+  add(geo, mat, x = 0, z = 0) {
+    const key = `${Math.floor(x / TILE)},${Math.floor(z / TILE)}|${this.matKey(mat)}`;
+    if (!this.groups.has(key)) { this.groups.set(key, []); this.mats.set(key, mat); }
+    this.groups.get(key).push(geo.index ? geo.toNonIndexed() : geo);
+  }
+  matKey(mat) {
+    if (!this._ids) { this._ids = new Map(); this._next = 0; }
+    if (!this._ids.has(mat)) this._ids.set(mat, this._next++);
+    return this._ids.get(mat);
+  }
+  flush(world) {
+    let meshes = 0;
+    for (const [key, list] of this.groups) {
+      const mat = this.mats.get(key);
+      let n = 0;
+      for (const g of list) n += g.attributes.position.count;
+      const pos = new Float32Array(n * 3);
+      const nor = new Float32Array(n * 3);
+      const uv = new Float32Array(n * 2);
+      let o3 = 0, o2 = 0;
+      for (const g of list) {
+        pos.set(g.attributes.position.array, o3);
+        if (g.attributes.normal) nor.set(g.attributes.normal.array, o3);
+        if (g.attributes.uv) uv.set(g.attributes.uv.array, o2);
+        o3 += g.attributes.position.count * 3;
+        o2 += g.attributes.position.count * 2;
+        g.dispose();
+      }
+      const merged = new THREE.BufferGeometry();
+      merged.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      merged.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+      merged.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      merged.computeBoundingSphere();
+      const mesh = new THREE.Mesh(merged, mat);
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      world.add(mesh);
+      meshes++;
+    }
+    this.groups.clear(); this.mats.clear();
+    return meshes;
+  }
+}
+
+// scale a geometry's UVs in place, so one shared material can tile correctly
+// across buildings of very different sizes
+function scaleUV(geo, sx, sy) {
+  const uv = geo.attributes.uv;
+  if (!uv) return geo;
+  for (let i = 0; i < uv.count; i++) {
+    uv.setXY(i, uv.getX(i) * sx, uv.getY(i) * sy);
+  }
+  uv.needsUpdate = true;
+  return geo;
+}
+
+// one shared material per facade texture, built lazily
+const sharedMats = new Map();
+function sharedMat(tex, rough, metal) {
+  if (!sharedMats.has(tex)) {
+    sharedMats.set(tex, new THREE.MeshStandardMaterial({
+      map: tex, roughness: rough, metalness: metal,
+    }));
+  }
+  return sharedMats.get(tex);
+}
+
+// the raw geometry, without wrapping it in a Mesh
+function extrudeGeo(pts, h, y0 = 0) {
+  const geo = new THREE.ExtrudeGeometry(shapeFrom(pts), {
+    depth: h, bevelEnabled: false, curveSegments: 1,
+  });
+  geo.rotateX(Math.PI / 2);
+  geo.translate(0, y0 + h, 0);
+  return geo;
+}
+
 /* ---------------- footprint helpers ---------------- */
 function signedArea(pts) {
   let a = 0;
@@ -130,6 +217,7 @@ function grow(pts, f) {
 
 export function buildBuildings(world, data) {
   const stats = { count: 0, tall: 0, bespoke: 0 };
+  const merger = new Merger();
   const api = {
     world, extrude, grow, axis: data.axis || null,
     mat: { ...LMAT, trim: MAT.trim, conc: MAT.conc, paving: MAT.paving, metal: MAT.metal },
@@ -142,20 +230,14 @@ export function buildBuildings(world, data) {
     const recipe = recipeFor(b.n);
     if (recipe) {
       recipe(api, b);
-      addShopfront(world, b, perimeter(pts));
+      addShopfront(world, b, perimeter(pts), merger);
       stats.count++; stats.bespoke++;
       continue;
     }
     const fam = familyFor(b);
-    const wallTex = pick(fam.pool).clone();
-    wallTex.needsUpdate = true;
-    const mat = new THREE.MeshStandardMaterial({
-      map: wallTex, roughness: fam.rough, metalness: fam.metal,
-    });
-    // repeat the wall texture by real size so storeys stay ~3.5m everywhere
+    const wallTex = pick(fam.pool);
+    const mat = sharedMat(wallTex, fam.rough, fam.metal);
     const per = perimeter(pts);
-    wallTex.repeat.set(Math.max(1, per / 26), Math.max(1, b.h / 28));
-
     const h = b.h;
     // Landmarks are podium + tower, which is what the Orchard skyline is made of
     if (b.k && h > 70) {
@@ -168,43 +250,48 @@ export function buildBuildings(world, data) {
       world.add(extrude(inset, h - podium, mat, podium));
       stats.tall++;
     } else {
-      world.add(extrude(pts, h, mat));
+      const cB = centroid(pts);
+      merger.add(scaleUV(extrudeGeo(pts, h), Math.max(1, per / 26), Math.max(1, h / 28)), mat, cB[0], cB[1]);
       // parapet cap so roofs are not a raw extruded edge
       if (h > 8) {
         const c = centroid(pts);
         const out = pts.map(([x, z]) => [c[0] + (x - c[0]) * 1.008, c[1] + (z - c[1]) * 1.008]);
-        world.add(extrude(out, 0.7, MAT.trim, h));
+        merger.add(extrudeGeo(out, 0.7, h), MAT.trim, c[0], c[1]);
       }
     }
 
-    addShopfront(world, b, per);
+    addShopfront(world, b, per, merger);
 
     // rooftop plant on the bigger flat roofs
     if (b.a > 900 && h > 12) {
       const c = centroid(pts);
       for (let i = 0; i < 3; i++) {
-        const bx = new THREE.Mesh(
-          new THREE.BoxGeometry(rand(3, 7), rand(1.6, 3.4), rand(3, 6)), MAT.conc);
-        bx.position.set(c[0] + rand(-8, 8), h + rand(1, 1.8), c[1] + rand(-8, 8));
-        bx.castShadow = true; world.add(bx);
+        const g2 = new THREE.BoxGeometry(rand(3, 7), rand(1.6, 3.4), rand(3, 6));
+        g2.translate(c[0] + rand(-8, 8), h + rand(1, 1.8), c[1] + rand(-8, 8));
+        merger.add(g2, MAT.conc, c[0], c[1]);
       }
     }
     stats.count++;
   }
+  stats.mergedMeshes = merger.flush(world);
   return stats;
 }
 
 // Ground floor is what you actually see from a scooter: glazed shopfront band,
 // an awning line above it, and a deeper canopy where the entrance would be.
-function addShopfront(world, b, per) {
+function addShopfront(world, b, per, merger) {
   if (b.a <= 600 || b.h <= 7) return;
   const pts = b.p;
-  const sf = pick(SHOPS).clone(); sf.needsUpdate = true;
-  sf.repeat.set(Math.max(2, per / 15), 1);
-  world.add(extrude(grow(pts, 1.012), 5.4, new THREE.MeshStandardMaterial({
-    map: sf, roughness: 0.32, metalness: 0.05,
-  })));
-  world.add(extrude(grow(pts, 1.055), 0.42, MAT.trim, 5.3));
+  const sf = pick(SHOPS);
+  const sfMat = sharedMat(sf, 0.32, 0.05);
+  if (merger) {
+    const cS = centroid(pts);
+    merger.add(scaleUV(extrudeGeo(grow(pts, 1.012), 5.4), Math.max(2, per / 15), 1), sfMat, cS[0], cS[1]);
+    merger.add(extrudeGeo(grow(pts, 1.055), 0.42, 5.3), MAT.trim, cS[0], cS[1]);
+  } else {
+    world.add(extrude(grow(pts, 1.012), 5.4, sfMat));
+    world.add(extrude(grow(pts, 1.055), 0.42, MAT.trim, 5.3));
+  }
   // entrance canopy: a deeper projection on the longest edge
   let bi = 0, bl = 0;
   for (let i = 0; i < pts.length; i++) {
