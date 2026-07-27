@@ -2,7 +2,7 @@
 // All three lean on the names already in the OSM data, so nothing is invented.
 import * as THREE from '../lib/three.module.js';
 import { rand, pick } from './tex.js';
-import { MAT } from './city.js';
+import { MAT, groundAt } from './city.js';
 
 /* ---------------- sign textures ---------------- */
 function signCanvas(w, h, draw) {
@@ -107,7 +107,7 @@ export function buildSignage(world, axis, data, isBlocked) {
         backer.rotation.y = ang;
         backer.castShadow = true; g.add(backer);
 
-        g.position.set(px, 0, pz);
+        g.position.set(px, groundAt(px, pz), pz);
         world.add(g);
         placed.gantries++;
       }
@@ -125,7 +125,7 @@ export function buildSignage(world, axis, data, isBlocked) {
             new THREE.MeshBasicMaterial({ map: texStreetName('Orchard Road'), side: THREE.DoubleSide })
           );
           plate.position.y = 2.5; g.add(plate);
-          g.position.set(sx, 0, sz);
+          g.position.set(sx, groundAt(sx, sz), sz);
           g.rotation.y = ang + Math.PI / 2;
           world.add(g);
           placed.plates++;

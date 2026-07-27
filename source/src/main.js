@@ -1,12 +1,13 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, rand, pick, chance } from './tex.js';
-import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain } from './city.js';
+import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, consolidate, trimShadowCasters } from './consolidate.js';
+import { buildRoadIndex, claim } from './roads.js';
 import { buildVespa, buildRider, newState, step, RIDE } from './vespa.js';
 import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
-import { buildMarkings, dressSideStreets } from './markings.js';
+import { buildMarkings, dressSideStreets, selectSideStreets } from './markings.js';
 import { buildSgDetail } from './sgdetail.js';
 import { Signals } from './signals.js';
 import { Sound } from './audio.js';
@@ -32,8 +33,13 @@ const camera = new THREE.PerspectiveCamera(58, 1, 0.3, 520);
 
 /* ---------------- sky + light ---------------- */
 const SUNDIR = new THREE.Vector3(-0.52, 0.80, -0.30).normalize();
-scene.add(new THREE.Mesh(
-  new THREE.SphereGeometry(900, 40, 24),
+// The dome rides with the camera. It used to be a fixed 900m sphere at the
+// world origin, which worked only while you were near the middle of the map:
+// once the camera's far plane came down to 520 the whole dome fell outside the
+// frustum and the sky rendered black. Only the position follows the camera —
+// never the rotation, or the sun and the cloud field would swing with the view.
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(480, 40, 24),
   new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
     uniforms: {
@@ -69,8 +75,10 @@ scene.add(new THREE.Mesh(
         c += vec3(1.0,0.86,0.68)*pow(dp,1.8)*0.10;
         gl_FragColor = vec4(c,1.0);
       }`,
-  })
-));
+  }));
+sky.frustumCulled = false;
+sky.renderOrder = -1;
+scene.add(sky);
 
 const sun = new THREE.DirectionalLight(0xfff0d6, 2.6);
 sun.castShadow = true;
@@ -112,6 +120,14 @@ function inPoly(poly, x, z) {
   }
   return hit;
 }
+// Street dressing must dodge two things: buildings AND carriageways. The old
+// test only knew about buildings, so a tree could sit in the middle of a back
+// road and nothing objected. The bike and the walker keep using the raw
+// building test below, because they are supposed to be on the road.
+let ROADIX = null;
+function place(x, z) {
+  return blocked(x, z) || (ROADIX ? ROADIX.onRoad(x, z, -0.4) : false);
+}
 function blocked(x, z) {
   const list = colGrid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));
   if (!list) return false;
@@ -140,18 +156,19 @@ function dressStreet(data, axis) {
       const px = x1 + ux * t, pz = z1 + uz * t;
       for (const sgn of [-1, 1]) {
         const kx = px + nx * (half + 0.4) * sgn, kz = pz + nz * (half + 0.4) * sgn;
+        const kerbOK = !place(kx, kz);
         if (acc % 17 === (sgn > 0 ? 0 : 8)) {
           for (const off of [3.2, 2.2, 4.4]) {
             const tx = px + nx * (half + off) * sgn, tz = pz + nz * (half + off) * sgn;
-            if (!blocked(tx, tz)) { trees.add(tx, tz, rand(0.85, 1.15)); break; }
+            if (!place(tx, tz) && claim('tree', tx, tz, 3.0)) { trees.add(tx, tz, rand(0.85, 1.15)); break; }
           }
         }
-        if (acc % 34 === 0) {
+        if (acc % 34 === 0 && kerbOK && claim('lamp', kx, kz, 6)) {
           lampT.push([kx, 4.5, kz, 0]);
           armT.push([kx - nx * 1.1 * sgn, 8.9, kz - nz * 1.1 * sgn, ang, sgn]);
           headT.push([kx - nx * 2.3 * sgn, 8.75, kz - nz * 2.3 * sgn, ang]);
         }
-        if (acc % 2 === 0) kerbT.push([kx, 0.15, kz, ang]);
+        if (acc % 2 === 0 && kerbOK && claim('kerb', kx, kz)) kerbT.push([kx, 0.15, kz, ang]);
       }
       // crossings are placed from the real map, after this loop
     }
@@ -200,20 +217,24 @@ function dressStreet(data, axis) {
     im.castShadow = false; im.receiveShadow = true;   // keeps them out of the shadow pass
     world.add(im);
   };
+  // Every one of these is placed relative to the ground, not to y=0. Orchard
+  // climbs about 34m over its length, and these were authored flat: the audit
+  // found 5,804 props buried, some 34.6m under the hill.
   emit(new THREE.BoxGeometry(0.42, 0.3, 2.0), MAT.kerb, kerbT, (r) => {
-    p3.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   emit(new THREE.CylinderGeometry(0.11, 0.16, 9.0, 8), MAT.metal, lampT, (r) => {
-    p3.set(r[0], r[1], r[2]); q.identity();
+    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); q.identity();
   });
   emit(new THREE.CylinderGeometry(0.07, 0.07, 2.4, 6), MAT.metal, armT, (r) => {
-    p3.set(r[0], r[1], r[2]); e.set(0, r[3], Math.PI / 2 - 0.2 * r[4]); q.setFromEuler(e);
+    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
+    e.set(0, r[3], Math.PI / 2 - 0.2 * r[4]); q.setFromEuler(e);
   });
   emit(new THREE.BoxGeometry(1.0, 0.2, 0.44), MAT.trim, headT, (r) => {
-    p3.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   emit(new THREE.PlaneGeometry(0.62, axis.w), MAT.white, zebraT, (r) => {
-    p3.set(r[0], r[1], r[2]);
+    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
     e.set(-Math.PI / 2, r[3], 0, 'YXZ');
     q.setFromEuler(e);
   });
@@ -256,6 +277,9 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   const fallbackAxis = buildRoads(world, data);
   const axis = data.axis || fallbackAxis;
 
+  ROADIX = buildRoadIndex(data, axis);
+  window.__onRoad = (x, z, m) => ROADIX.onRoad(x, z, m || 0);
+
   // the ground itself, from the heightfield
   const groundMat = new THREE.MeshStandardMaterial({ color: 0x9a9384, roughness: 0.95 });
   world.add(terrain.build(groundMat));
@@ -263,25 +287,30 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   // the whole screen. The grid is padded 90m beyond the sampled roads already.
 
   const treeCount = P.has('nofoliage') ? 0 : dressStreet(data, axis);
+  const sideStreets = axis ? selectSideStreets(data, axis) : [];
   if (!P.has('nopeople') && axis) {
-    crowdSys = new Crowd(axis, blocked, 260);
+    // spread over the whole dressed network, not just the main street. Only the
+    // few dozen in view are ever drawn, so a bigger population is nearly free.
+    crowdSys = new Crowd(axis, blocked, 460, sideStreets);
     crowdSys.build(world);
     // must come after construction, or the handover is a no-op
     if (window.__crossings) crowdSys.setCrossings(window.__crossings);
+    window.__crowdPositions = () => crowdSys.positions();
   }
   if (!P.has('notraffic') && axis) {
     trafficSys = new Traffic(axis, 18, 3);
     trafficSys.build(world, trafficSys.path.nearestS(S.x, S.z));
+    window.__trafficPositions = () => (trafficSys.items || []).map(() => 1);
   }
   const furniture = (!P.has('nofurniture') && axis)
-    ? buildFurniture(world, axis, blocked, data) : {};
+    ? buildFurniture(world, axis, place, data) : {};
   signals = new Signals(furniture.signals || []);
   const signage = (!P.has('nosigns') && axis)
-    ? buildSignage(world, axis, data, blocked) : {};
+    ? buildSignage(world, axis, data, place) : {};
   const marks = (!P.has('nomarks') && axis) ? buildMarkings(world, axis, data) : 0;
   const side = (!P.has('noside') && axis)
-    ? dressSideStreets(world, data, axis, blocked, TreeField) : {};
-  const sg = (!P.has('nosg') && axis) ? buildSgDetail(world, axis, data, blocked) : {};
+    ? dressSideStreets(world, data, axis, place, TreeField) : {};
+  const sg = (!P.has('nosg') && axis) ? buildSgDetail(world, axis, data, place) : {};
   if (axis) wayfinder = new Wayfinder(data, axis);
   window.__axis = axis;
   window.__roadList = data.roads.filter((r) => r.k !== 'footway' && r.k !== 'pedestrian');
@@ -304,10 +333,11 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   ready = true;
   // one pass over the finished district: share identical materials, then batch
   // small static meshes per 110m tile. See consolidate.js.
-  const dedupe = dedupeMaterials(world);
-  const cons = consolidate(world);
+  const RAW = P.has('raw');       // audit mode: leave objects unbatched
+  const dedupe = RAW ? { before: 0, after: 0 } : dedupeMaterials(world);
+  const cons = RAW ? { removed: 0, merged: 0 } : consolidate(world);
   stats.matsBefore = dedupe.before; stats.matsAfter = dedupe.after;
-  const shad = trimShadowCasters(world);
+  const shad = RAW ? { kept: 0, dropped: 0 } : trimShadowCasters(world);
   stats.batched = cons.removed; stats.batches = cons.merged;
   stats.casters = shad.kept; stats.castersDropped = shad.dropped;
 
@@ -595,7 +625,9 @@ function loop(now) {
     driveCamera(dt);
   }
 
-  renderer.render(scene, CAM === 'top' ? topCam : camera);
+  const activeCam = CAM === 'top' ? topCam : camera;
+  sky.position.copy(activeCam.position);      // keeps the dome inside the far plane
+  renderer.render(scene, activeCam);
 
   frames++;
   if (now - t0 > 1000) reportHud(now);

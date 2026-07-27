@@ -615,7 +615,7 @@ export class TreeField {
       }
       for (let k = 0; k < BLOBS; k++) {
         const r = rad * rand(0.16, 0.24);
-        p.set(x + rand(-0.45, 0.45) * rad, h * rand(0.94, 1.06), z + rand(-0.45, 0.45) * rad);
+        p.set(x + rand(-0.45, 0.45) * rad, gy + h * rand(0.94, 1.06), z + rand(-0.45, 0.45) * rad);
         q.identity(); sc.set(r, r * 0.5, r);
         m.compose(p, q, sc); blobs.setMatrixAt(li++, m);
       }

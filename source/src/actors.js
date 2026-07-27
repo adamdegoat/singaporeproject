@@ -56,9 +56,19 @@ const TOPS = [
 const BOTTOMS = [0x33383f, 0x2b3340, 0x4a4740, 0x59535c, 0x726a5e, 0x1f242b];
 
 export class Crowd {
-  constructor(axis, isBlocked, count = 150) {
-    this.path = new Path(axis.p);
-    this.half = axis.w / 2;
+  // Pedestrians used to live on one path, the main axis, so every side street
+  // in the district was deserted no matter how much frontage it had. They now
+  // walk any pavement we hand them; path 0 is the main street, which keeps the
+  // crossing behaviour because the crossing arclengths are measured along it.
+  constructor(axis, isBlocked, count = 150, sideStreets = []) {
+    this.paths = [new Path(axis.p)];
+    this.halves = [axis.w / 2];
+    for (const r of sideStreets) {
+      this.paths.push(new Path(r.p));
+      this.halves.push((r.w || 6) / 2);
+    }
+    this.path = this.paths[0];
+    this.half = this.halves[0];
     this.isBlocked = isBlocked;
     this.count = count;
     this.people = [];
@@ -66,6 +76,20 @@ export class Crowd {
   }
 
   setCrossings(list) { this.crossings = list || []; }
+
+  // every pedestrian's world position, whether or not they are being drawn.
+  // The audit needs all of them, and the instance buffers only ever hold the
+  // few dozen currently in view.
+  positions() {
+    const tmp = [0, 0, 0, 0], out = [];
+    for (const pr of this.people) {
+      const path = this.paths ? this.paths[pr.pi] : this.path;
+      path.at(pr.s, tmp);
+      const [cx, cz, ux, uz] = tmp;
+      out.push([cx + -uz * pr.off, cz + ux * pr.off]);
+    }
+    return out;
+  }
 
   _nearCrossing(s) {
     for (const c of this.crossings) {
@@ -113,12 +137,26 @@ export class Crowd {
 
     const cTop = new THREE.Color(), cBot = new THREE.Color();
     const cSkin = new THREE.Color(), cHair = new THREE.Color();
+    // Orchard Road carries the crowd, but the side streets should not be
+    // empty. Weight by length, then trebled for the main street.
+    const weights = this.paths.map((pt, i) => pt.len * (i === 0 ? 3.0 : 1.0));
+    const wTotal = weights.reduce((a, b) => a + b, 0);
+    const pickPath = () => {
+      let r = R() * wTotal;
+      for (let k = 0; k < weights.length; k++) { r -= weights[k]; if (r <= 0) return k; }
+      return 0;
+    };
+
     for (let i = 0; i < n; i++) {
       const side = chance(0.5) ? 1 : -1;
       const dir = chance(0.5) ? 1 : -1;
+      const pi = pickPath();
+      const half = this.halves[pi];
       const p = {
-        s: R() * this.path.len,
-        off: side * (this.half + rand(3.2, 10.5)),
+        pi,
+        s: R() * this.paths[pi].len,
+        // narrow streets get a narrower pavement band, or people walk in mid-air
+        off: side * (half + (pi === 0 ? rand(3.2, 10.5) : rand(1.4, 3.4))),
         dir,
         speed: rand(0.95, 1.65) * (chance(0.12) ? 0 : 1),   // some stand still
         phase: R() * Math.PI * 2,
@@ -181,7 +219,7 @@ export class Crowd {
           : 1 - 2 * (1 - pr.crossT) * (1 - pr.crossT);
         pr.off = pr.crossFrom + (pr.crossTo - pr.crossFrom) * Math.min(1, e2);
         if (pr.crossT >= 1) { pr.crossing = false; pr.off = pr.crossTo; pr.waited = 0; }
-      } else if (pr.crosser && pr.speed > 0.1) {
+      } else if (pr.crosser && pr.pi === 0 && pr.speed > 0.1) {
         const c = this._nearCrossing(pr.s);
         if (c !== null && this._pedGreen(c, time, signals)) {
           pr.crossing = true; pr.crossT = 0;
@@ -193,7 +231,7 @@ export class Crowd {
         pr.s += pr.dir * pr.speed * dt;
       }
 
-      this.path.at(pr.s, tmp);
+      this.paths[pr.pi].at(pr.s, tmp);
       const [cx, cz, ux, uz] = tmp;
       const nx = -uz, nz = ux;
       // sidestep the player instead of walking through them

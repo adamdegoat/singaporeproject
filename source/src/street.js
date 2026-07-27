@@ -4,6 +4,7 @@
 import * as THREE from '../lib/three.module.js';
 import { R, rand, pick, chance } from './tex.js';
 import { MAT, groundAt } from './city.js';
+import { claim } from './roads.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d, 0xcf6b3a, 0x2b2f33];
 
@@ -50,7 +51,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
         const rx = px + nx * railOff, rz = pz + nz * railOff;
 
         // pedestrian railing along the kerb, in 2m bays with a post each end
-        if (acc % 2 === 0 && !isBlocked(rx, rz)) {
+        if (acc % 2 === 0 && !isBlocked(rx, rz) && claim('rail', rx, rz, 1.2)) {
           railT.push([rx, 1.0, rz, ang]);
           if (acc % 4 === 0) postT.push([rx, 0.55, rz, ang]);
         }
@@ -59,16 +60,16 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
         // planters and bins
         if (acc % 46 === 12) {
           const qx = px + nx * (half + 6.4) * sgn, qz = pz + nz * (half + 6.4) * sgn;
-          if (!isBlocked(qx, qz)) planterT.push([qx, 0.32, qz, ang]);
+          if (!isBlocked(qx, qz) && claim('planter', qx, qz, 2)) planterT.push([qx, 0.32, qz, ang]);
         }
         if (acc % 120 === 60) {
           const bx = px + nx * (half + 4.2) * sgn, bz = pz + nz * (half + 4.2) * sgn;
-          if (!isBlocked(bx, bz)) binT.push([bx, 0.46, bz, ang]);
+          if (!isBlocked(bx, bz) && claim('bin', bx, bz, 2)) binT.push([bx, 0.46, bz, ang]);
         }
         // fascia sign boxes above the shopfront line, facing the street
         if (acc % 26 === 8) {
           const gx = px + nx * (half + 12.5) * sgn, gz = pz + nz * (half + 12.5) * sgn;
-          if (isBlocked(gx, gz)) {
+          if (isBlocked(gx, gz) && claim('fascia', gx, gz, 4)) {
             signT.push([px + nx * (half + 11.4) * sgn, rand(6.2, 7.6),
                         pz + nz * (half + 11.4) * sgn, ang, sgn]);
           }
@@ -149,14 +150,14 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
   // railing: a top rail and a lower rail, the classic grey tube barrier
   emit(new THREE.BoxGeometry(0.06, 0.05, 2.0), MAT.metal, railT, yaw);
   emit(new THREE.BoxGeometry(0.05, 0.04, 2.0), MAT.metal, railT, (r) => {
-    p.set(r[0], 0.62, r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+    p.set(r[0], groundAt(r[0], r[2]) + 0.62, r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   emit(new THREE.CylinderGeometry(0.035, 0.035, 1.0, 6), MAT.metal, postT, yaw);
 
   // planters and bins
   emit(new THREE.CylinderGeometry(0.55, 0.46, 0.64, 10), MAT.conc, planterT, yaw);
   emit(new THREE.SphereGeometry(0.52, 8, 6), MAT.canopy, planterT, (r) => {
-    p.set(r[0], 0.86, r[2]); q.identity();
+    p.set(r[0], groundAt(r[0], r[2]) + 0.86, r[2]); q.identity();
   });
   emit(new THREE.CylinderGeometry(0.24, 0.2, 0.9, 8), MAT.darkMetal, binT, yaw);
 
@@ -164,7 +165,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
   const cc = new THREE.Color();
   emit(new THREE.BoxGeometry(0.28, 1.05, 2.6),
     new THREE.MeshStandardMaterial({ roughness: 0.55 }), signT,
-    (r) => { p.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); },
+    (r) => { p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); },
     () => cc.setHex(pick(SIGN_COLS)));
 
   // bus shelters
@@ -273,10 +274,16 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
       const ang = Math.atan2(ux, uz);
       for (let t = 0; t < len; t += 3.4) {
         const cxp = x1 + ux * t, czp = z1 + uz * t;
+        // OSM traces these ways through junctions and building lobbies. A
+        // roofed walkway on posts standing in a live carriageway is something
+        // you ride into, so those segments are simply not built.
+        if (isBlocked(cxp, czp)) continue;
         linkRoof.push([cxp, 3.35, czp, ang]);
         linkBeam.push([cxp, 3.12, czp, ang]);
-        linkPost.push([cxp + nx * 1.5, 1.6, czp + nz * 1.5, ang]);
-        linkPost.push([cxp - nx * 1.5, 1.6, czp - nz * 1.5, ang]);
+        for (const sgn of [1, -1]) {
+          const lx = cxp + nx * 1.5 * sgn, lz = czp + nz * 1.5 * sgn;
+          if (!isBlocked(lx, lz)) linkPost.push([lx, 1.6, lz, ang]);
+        }
       }
     }
   }

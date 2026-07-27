@@ -329,21 +329,23 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   emit(new THREE.BoxGeometry(2.1, 0.34, 3.0), MAT.kerb, medianKerb, yaw);
   emit(new THREE.SphereGeometry(0.66, 7, 5),
     new THREE.MeshLambertMaterial({ color: 0x3f5c33 }), medianShrub, (r) => {
-      p.set(r[0], 0.72, r[2]); q.identity(); s.set(1, 0.78, 1);
+      p.set(r[0], groundAt(r[0], r[2]) + 0.72, r[2]); q.identity(); s.set(1, 0.78, 1);
     });
   s.set(1, 1, 1);
   stats.medianPlants = medianShrub.length;
 
   // slim median palms: trunk plus a fan of fronds
   emit(new THREE.CylinderGeometry(0.14, 0.2, 6.4, 7), MAT.trunk, medianPalm, (r) => {
-    p.set(r[0], 3.2, r[2]); q.identity();
+    p.set(r[0], groundAt(r[0], r[2]) + 3.2, r[2]); q.identity();
   });
   const frond = [];
   for (const [x, , z] of medianPalm) {
     for (let k = 0; k < 7; k++) frond.push([x, 6.3, z, (k / 7) * Math.PI * 2]);
   }
   emit(new THREE.PlaneGeometry(3.2, 0.8), MAT.leaf, frond, (r) => {
-    p.set(r[0] + Math.sin(r[3]) * 1.4, r[1] - 0.35, r[2] + Math.cos(r[3]) * 1.4);
+    p.set(r[0] + Math.sin(r[3]) * 1.4,
+          groundAt(r[0], r[2]) + r[1] - 0.35,
+          r[2] + Math.cos(r[3]) * 1.4);
     e.set(-0.95, r[3] + Math.PI / 2, 0, 'YXZ'); q.setFromEuler(e);
   });
 
@@ -449,7 +451,7 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 3.2, 0.5),
       new THREE.MeshStandardMaterial({ roughness: 0.6 }), roofSign.length);
     roofSign.forEach((r, i) => {
-      p.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+      p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
       s.set(r[4], 1, 1);
       m.compose(p, q, s); im.setMatrixAt(i, m);
       im.setColorAt(i, cc.setHex(pick(SIGN_COLS)));

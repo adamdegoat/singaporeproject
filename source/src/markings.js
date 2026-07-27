@@ -6,6 +6,7 @@
 import * as THREE from '../lib/three.module.js';
 import { R, rand, chance } from './tex.js';
 import { MAT, groundAt } from './city.js';
+import { claim } from './roads.js';
 
 const WHITE = new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.86 });
 const YELLOW = new THREE.MeshStandardMaterial({ color: 0xd6ae44, roughness: 0.86 });
@@ -111,6 +112,50 @@ export function buildMarkings(world, axis, data = {}) {
 /* ---------------- side streets ---------------- */
 // The back streets were bare tarmac. They get kerbs, lamps and a thinner tree
 // line so the world does not stop existing one block off Orchard.
+// The streets we treat as part of the world: named, long enough to be a street
+// rather than a slip, and close enough to the route to be worth building. The
+// crowd uses the same list, so people appear exactly where pavements do.
+export function selectSideStreets(data, axis, reach = 230) {
+  const A = axis.p;
+  const near = (x, z) => {
+    for (let i = 0; i < A.length - 1; i++) {
+      const [x1, z1] = A[i], [x2, z2] = A[i + 1];
+      const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
+      let t = L2 < 1e-9 ? 0 : ((x - x1) * vx + (z - z1) * vz) / L2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const dx = x - (x1 + vx * t), dz = z - (z1 + vz * t);
+      if (dx * dx + dz * dz < reach * reach) return true;
+    }
+    return false;
+  };
+  // Length is measured per STREET, not per way. OSM splits a road at every
+  // junction and tag change: Orchard Boulevard is 21 fragments, none of them
+  // 45m long, so testing each one on its own threw away the entire 1,376m
+  // street and left it bare.
+  const byName = new Map();
+  for (const r of data.roads) {
+    if (!r.n || /orchard road/i.test(r.n)) continue;
+    if (r.k === 'footway' || r.k === 'pedestrian' || r.k === 'service') continue;
+    let len = 0;
+    for (let i = 0; i < r.p.length - 1; i++) {
+      len += Math.hypot(r.p[i + 1][0] - r.p[i][0], r.p[i + 1][1] - r.p[i][1]);
+    }
+    const e = byName.get(r.n) || { len: 0, ways: [] };
+    e.len += len; e.ways.push(r);
+    byName.set(r.n, e);
+  }
+  const out = [];
+  for (const [, e] of byName) {
+    if (e.len < 45) continue;
+    for (const r of e.ways) {
+      const mid = r.p[Math.floor(r.p.length / 2)];
+      if (!near(mid[0], mid[1])) continue;
+      out.push(r);
+    }
+  }
+  return out;
+}
+
 export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
   const trees = new TreeField();
   const kerb = [], lamp = [], lampArm = [];
@@ -135,11 +180,9 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
     return false;
   };
 
-  for (const r of data.roads) {
-    if (!r.n || /orchard road/i.test(r.n)) continue;
-    if (r.k === 'footway' || r.k === 'pedestrian' || r.k === 'service') continue;
-    const mid = r.p[Math.floor(r.p.length / 2)];
-    if (!nearAxis(mid[0], mid[1])) { skipped++; continue; }
+  const chosen = selectSideStreets(data, axis, REACH);
+  skipped = data.roads.length - chosen.length;
+  for (const r of chosen) {
     const pts = r.p, half = r.w / 2;
     for (let i = 0; i < pts.length - 1; i++) segs.push([pts[i], pts[i + 1], half]);
 
@@ -157,11 +200,6 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
     if (doLeft) sides.push(-1);
     if (doRight) sides.push(1);
 
-    let total = 0;
-    for (let i = 0; i < pts.length - 1; i++) {
-      total += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
-    }
-    if (total < 45) continue;
     roads++;
     if (sw) sidewalkReal++;
     if (!doLeft && !doRight) sidewalkNone++;
@@ -177,12 +215,12 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
         const px = x1 + ux * t, pz = z1 + uz * t;
         for (const sgn of sides) {
           const kx = px + nx * (half + 0.4) * sgn, kz = pz + nz * (half + 0.4) * sgn;
-          if (!isBlocked(kx, kz)) kerb.push([kx, 0.15, kz, ang]);
+          if (!isBlocked(kx, kz) && claim('kerb', kx, kz)) kerb.push([kx, 0.15, kz, ang]);
           if (acc % 44 === 0) {
             const tx = px + nx * (half + 2.8) * sgn, tz = pz + nz * (half + 2.8) * sgn;
-            if (!isBlocked(tx, tz)) trees.add(tx, tz, rand(0.6, 0.9));
+            if (!isBlocked(tx, tz) && claim('tree', tx, tz, 3.0)) trees.add(tx, tz, rand(0.6, 0.9));
           }
-          if (acc % 96 === 0 && !isBlocked(kx, kz)) {
+          if (acc % 96 === 0 && !isBlocked(kx, kz) && claim('lamp', kx, kz, 6)) {
             lamp.push([kx, 3.6, kz, ang]);
             lampArm.push([kx - nx * 0.9 * sgn, 7.0, kz - nz * 0.9 * sgn, ang, sgn]);
           }
@@ -248,7 +286,7 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
   }
   emit(new THREE.CylinderGeometry(0.09, 0.13, 7.2, 8), MAT.metal, lamp, yaw);
   emit(new THREE.BoxGeometry(0.9, 0.16, 0.4), MAT.trim, lampArm, (r) => {
-    p.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+    p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   const treeCount = trees.build(world);
   return { sideRoads: roads, sideSkipped: skipped, sideTrees: treeCount,
