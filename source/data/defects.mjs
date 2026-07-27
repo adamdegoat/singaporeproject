@@ -214,6 +214,85 @@ const found = await page.evaluate(() => {
     report('D9', 'points on the main street centreline that are blocked', stuck);
   }
 
+  /* D10  buildings standing inside each other. OSM traces a mall and its own
+     annex as separate ways that share a wall, which is fine; what is not fine
+     is one footprint largely inside another, which draws two masses in the same
+     place and z-fights the whole facade. */
+  {
+    const bad = [];
+    const area = (p2) => {
+      let a2 = 0;
+      for (let i = 0; i < p2.length; i++) {
+        const q1 = p2[i], q2 = p2[(i + 1) % p2.length];
+        a2 += q1[0] * q2[1] - q2[0] * q1[1];
+      }
+      return Math.abs(a2) / 2;
+    };
+    for (const b of data.buildings) {
+      // how much of this footprint's own area sits inside a DIFFERENT one
+      let inside = 0, n = 0;
+      const [mnx, mnz, mxx, mxz] = b._bb;
+      for (let i = 1; i < 5; i++) for (let j = 1; j < 5; j++) {
+        const x = mnx + (mxx - mnx) * i / 5, z = mnz + (mxz - mnz) * j / 5;
+        if (!inPoly(b.p, x, z)) continue;
+        n++;
+        const o = buildingAt(x, z);
+        // A TALLER inner footprint is a tower on a podium and is meant to be
+        // there: 16 of the 28 this first reported were exactly that, including
+        // The Atrium @ Orchard standing above Plaza Singapura. Only a mass that
+        // is buried inside something at least as tall is invisible duplication.
+        if (o && o !== b && area(o.p) > area(b.p) * 1.05
+            && (o.h || 0) >= (b.h || 0)) inside++;
+      }
+      if (n >= 4 && inside / n > 0.8) {
+        bad.push(`"${b.n || '(unnamed)'}" sits almost entirely inside another building`);
+      }
+    }
+    report('D10', 'building footprints buried inside a larger one', bad);
+  }
+
+  /* D11  a kerb with no pavement behind it, which reads as a raised line across
+     bare ground. Every kerb should have walkable surface on its outer side. */
+  {
+    const m4 = new T.Matrix4(), v3 = new T.Vector3();
+    let bad = 0, n = 0;
+    sc.traverse((o) => {
+      if (!o.isInstancedMesh) return;
+      const pr = o.geometry.parameters || {};
+      if (!(Math.abs((pr.width || 0) - 0.42) < 0.01 && Math.abs((pr.depth || 0) - 2) < 0.01)) return;
+      for (let i = 0; i < o.count; i++) {
+        o.getMatrixAt(i, m4); v3.setFromMatrixPosition(m4);
+        n++;
+        // a kerb standing in the middle of a carriageway is the failure case
+        if (window.__onRoad(v3.x, v3.z, -1.2)) bad++;
+      }
+    });
+    report('D11', 'kerbs standing inside a carriageway', bad ? [`${bad} of ${n} kerbs`] : []);
+  }
+
+  /* D12  the walker can leave the world: is there anywhere on a pavement from
+     which every direction is blocked, trapping them */
+  {
+    const stuck = [];
+    const ax = window.__axis.p;
+    for (let i = 0; i < ax.length - 1; i += 3) {
+      const a = ax[i], c = ax[i + 1];
+      const dx = c[0] - a[0], dz = c[1] - a[1], L = Math.hypot(dx, dz) || 1;
+      const nx = -dz / L, nz = dx / L;
+      for (const off of [-12, 12]) {
+        const x = a[0] + nx * off, z = a[1] + nz * off;
+        if (window.__blocked(x, z)) continue;
+        let openDirs = 0;
+        for (let k = 0; k < 8; k++) {
+          const th = (k / 8) * Math.PI * 2;
+          if (!window.__blocked(x + Math.cos(th) * 1.5, z + Math.sin(th) * 1.5)) openDirs++;
+        }
+        if (openDirs === 0) stuck.push(`walled in at ${x | 0},${z | 0}`);
+      }
+    }
+    report('D12', 'spots on the pavement with no way out', stuck);
+  }
+
   return out;
 });
 

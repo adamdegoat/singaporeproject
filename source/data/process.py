@@ -634,6 +634,72 @@ def main():
           f"across {again_b} buildings")
 
     buildings.sort(key=lambda b: -b["a"])
+    # Drop a footprint that is buried inside a taller one.
+    #
+    # OSM traces a mall, its annex and sometimes its own outline again as
+    # separate ways. Where the inner one is TALLER it is a tower on a podium and
+    # must be drawn — 16 of the 28 buried footprints in this region are exactly
+    # that, including The Atrium @ Orchard above Plaza Singapura. Where it is the
+    # same height or lower it is invisible except for the z-fighting it causes
+    # along every shared face, so it is pure cost.
+    #
+    # Tested on the footprint's OWN area being inside the other, not on bounding
+    # boxes: an L-shaped plan's box overlaps its neighbour's without either
+    # building overlapping at all.
+    def _area(poly):
+        a2 = 0.0
+        for i in range(len(poly)):
+            q1, q2 = poly[i], poly[(i + 1) % len(poly)]
+            a2 += q1[0] * q2[1] - q2[0] * q1[1]
+        return abs(a2) / 2
+
+    def _inpoly(poly, x, z):
+        hit = False
+        j = len(poly) - 1
+        for i in range(len(poly)):
+            xi, zi = poly[i]; xj, zj = poly[j]
+            if ((zi > z) != (zj > z)) and (x < (xj - xi) * (z - zi) / (zj - zi) + xi):
+                hit = not hit
+            j = i
+        return hit
+
+    _CELL = 60.0
+    _grid = {}
+    for _b in buildings:
+        _xs = [q[0] for q in _b["p"]]; _zs = [q[1] for q in _b["p"]]
+        _b["_bb"] = (min(_xs), min(_zs), max(_xs), max(_zs))
+        for _cx in range(int(min(_xs) // _CELL), int(max(_xs) // _CELL) + 1):
+            for _cz in range(int(min(_zs) // _CELL), int(max(_zs) // _CELL) + 1):
+                _grid.setdefault((_cx, _cz), []).append(_b)
+    _buried = []
+    for _b in buildings:
+        mnx, mnz, mxx, mxz = _b["_bb"]
+        _in = _n = 0
+        for i in range(1, 5):
+            for j in range(1, 5):
+                x = mnx + (mxx - mnx) * i / 5
+                z = mnz + (mxz - mnz) * j / 5
+                if not _inpoly(_b["p"], x, z):
+                    continue
+                _n += 1
+                for _o in _grid.get((int(x // _CELL), int(z // _CELL)), []):
+                    if _o is _b or not _inpoly(_o["p"], x, z):
+                        continue
+                    if _area(_o["p"]) > _area(_b["p"]) * 1.05 \
+                            and (_o.get("h") or 0) >= (_b.get("h") or 0):
+                        _in += 1
+                        break
+        if _n >= 4 and _in / _n > 0.8:
+            _buried.append(_b)
+    for _b in buildings:
+        _b.pop("_bb", None)
+    if _buried:
+        _names = ", ".join((b.get("n") or "(unnamed)") for b in _buried[:3])
+        print(f"  dropped {len(_buried)} footprints buried inside a taller building: {_names}"
+              + ("..." if len(_buried) > 3 else ""))
+        _bset = {id(b) for b in _buried}
+        buildings = [b for b in buildings if id(b) not in _bset]
+
     out = {
         "origin": {"lat": LAT0, "lon": LON0},
         "buildings": buildings,
