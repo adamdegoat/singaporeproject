@@ -2,7 +2,7 @@ import * as THREE from '../lib/three.module.js';
 import { PAL, R, rand, pick, chance } from './tex.js';
 import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt } from './city.js';
 import { Terrain } from './terrain.js';
-import { dedupeMaterials, consolidate, trimShadowCasters } from './consolidate.js';
+import { dedupeMaterials, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
 import { buildVespa, buildRider, newState, step, RIDE } from './vespa.js';
 import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
@@ -296,6 +296,9 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
     ROADIX.pushClear(x, z, m == null ? -0.6 : m, limit == null ? 7 : limit);
 
   const bs = P.has('nobuild') ? { count: 0, tall: 0 } : buildBuildings(world, data);
+  // one sweep over what the building pass just added, before any street
+  // furniture exists, so the scope is exactly "buildings and landmarks"
+  const pruned = pruneCarriageway(world, ROADIX.onRoad, (x, z) => terrain.at(x, z));
   const fallbackAxis = buildRoads(world, data);
   const axis = data.axis || fallbackAxis;
   if (!data.axis && fallbackAxis) {
@@ -363,6 +366,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   const shad = RAW ? { kept: 0, dropped: 0 } : trimShadowCasters(world);
   stats.batched = cons.removed; stats.batches = cons.merged;
   stats.casters = shad.kept; stats.castersDropped = shad.dropped;
+  stats.prunedFromRoads = pruned;
 
   window.__scene = scene; window.__camera = camera; window.__THREE = THREE;
   window.__ready = true;

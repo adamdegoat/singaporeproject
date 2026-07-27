@@ -174,3 +174,56 @@ export function trimShadowCasters(root, minHeight = 3.0) {
   });
   return { dropped, kept };
 }
+
+// Remove building and landmark geometry that stands in a carriageway.
+//
+// The recipes place masses by offsets from a footprint's oriented bounding box,
+// and for an irregular plan that box lies outside the walls — which is how seven
+// 79m facade fins came to stand across Orchard Road. Guarding each recipe
+// individually kept missing paths: cones, shells, ribs, crowns and columns are
+// all placed directly. So this runs once over everything the building pass just
+// added, which is a complete and checkable scope, rather than trusting a dozen
+// call sites to remember.
+//
+// Run it immediately after buildBuildings and before any street furniture, so
+// the only things present are buildings. Vehicles, gantries and overhead bridges
+// are added later and are never seen by this.
+//
+// That scope is also its limit: the street furniture built afterwards — traffic
+// signal poles, arms, heads and lenses — is outside its reach, and those make up
+// most of what P1b still counts. Widening the pass to run later would mean
+// re-deciding, for every kind of furniture, what is allowed to sit over a road,
+// which is the allowlist problem again rather than a prune problem.
+export function pruneCarriageway(root, onRoad, groundAt) {
+  const v = new THREE.Vector3();
+  const doomed = [];
+  root.updateMatrixWorld(true);
+  root.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh) return;
+    const pos = o.geometry.attributes.position;
+    if (!pos) return;
+    // a merged tile is many buildings at once and must not be judged as one
+    if (pos.count > 6000) return;
+    const gp = o.geometry.parameters || {};
+    // anything this wide spans the street on purpose: canopies over a forecourt,
+    // ION's shell, a porte-cochere
+    if (Math.max(gp.width || 0, gp.depth || 0, (gp.radiusTop || 0) * 2) > 12) return;
+
+    const step = Math.max(1, Math.floor(pos.count / 60));
+    for (let i = 0; i < pos.count; i += step) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      const up = v.y - groundAt(v.x, v.z);
+      // Up to the height P1b judges, not just rider height. Most of the backlog
+      // was never something you would hit: it was cladding, trim courses and
+      // fascia bands sitting four to eight metres up and hanging over the
+      // carriageway, which is wrong to look at even if you can ride under it.
+      if (up < 0.3 || up > 8.5) continue;
+      if (onRoad(v.x, v.z, -1.0)) { doomed.push(o); return; }
+    }
+  });
+  for (const o of doomed) {
+    if (o.parent) o.parent.remove(o);
+    o.geometry.dispose();
+  }
+  return doomed.length;
+}

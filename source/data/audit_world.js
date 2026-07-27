@@ -275,7 +275,7 @@ window.__auditWorld = async function auditWorld() {
     // the best figure reached so far — 286 when the check was written, 116 now.
     // Leaving it at the original 286 would have quietly permitted a regression
     // all the way back, which defeats the point of a ratchet.
-    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 101,
+    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 97,
         Object.entries(bad).sort((a, b) => b[1] - a[1]).slice(0, 6)
           .map(([k, v2]) => `${v2}x ${k}`).join('  ') || 'none', ex);
   }
@@ -760,7 +760,7 @@ window.__auditWorld = async function auditWorld() {
     // landmark structure P1b is tracking at 101, seen from the traversal side
     // rather than the placement side. Zero is the target; the number may only go
     // down, and it will fall as P1b does.
-    add('T1', 'carriageway blocked by solid geometry (ratchet, target 0)', 'BLOCKER', blocked, 11,
+    add('T1', 'carriageway blocked by solid geometry (ratchet, target 0)', 'BLOCKER', blocked, 7,
         `${blocked} of ${sampled} centreline samples obstructed`, ex);
   }
   {
