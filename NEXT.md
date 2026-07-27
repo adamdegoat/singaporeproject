@@ -62,46 +62,35 @@ under Scotts Road from 27.1m to 41.5m, so two pieces of structure that were
 always in a carriageway are now measured as such. Verified by running the same
 audit against the previous scene file, which still reports 97.
 
-## The region: built, rideable, NOT shipped
+## The region ships
 
-`python3 merge.py world orchard brasbasah` builds `data/world.json`, and
-`?scene=world` loads it. You can ride from Orchard into Bras Basah: 1,932
-buildings, 4,392 roads, 42-60fps, 4.3s to load, and both streets are dressed.
+Live: Orchard Road **and** Bras Basah, merged into `data/world.json` by
+`python3 data/merge.py world orchard brasbasah`. 1,932 buildings, 4,392 roads,
+41-60fps at 844x390 dpr2, 4.3s to load. `?scene=orchard` still loads the single
+district, and BOTH are gated on every deploy so a regression in Orchard cannot
+hide inside a bigger world's budgets.
 
-**It is not the default scene, because it fails seven checks that Orchard
-passes.** Publishing past a gate is the one thing the standard exists to
-prevent. Open, in the order worth attacking:
+Five of the seven failures the region opened with were the CHECKS, not the world:
 
-- `S3` 160 shop signs on the wrong building, `S2` 13 name plates on the wrong
-  street, `S1` 4 direction signs naming the wrong street. Signage names streets
-  and buildings that OSM returned as whole ways crossing the fetch box, so the
-  nearest way carrying that name can be hundreds of metres outside the region.
-- `P4` 340 duplicated props and `P6` 35 z-fighting surfaces. Both concentrated
-  where the districts overlap; the two axes meet end to end at Dhoby Ghaut and
-  do NOT overlap (measured: closest approach 0m, extents adjacent), so this is
-  overlapping FEATURE data, not overlapping dressing.
-- `P1b` 126 against a 99 budget, `P3` 3 props off the ground.
+- `audit_world.js` fetched `./data/orchard.json` unconditionally, whatever the
+  app had loaded. Auditing the region compared its geometry against one
+  district's list of buildings and streets, so every Bras Basah sign "named no
+  building" and every plate was "on the wrong street": 177 failures that were
+  entirely the check reading the wrong source. It uses `window.__data` now.
+- `P3` called the distant massing "props off the ground". A block is a unit cube
+  scaled to its size, so its origin sits at half its height by construction and a
+  40m block reads as 20m up while its underside is on the ground. It asks where
+  the BOTTOM is now, using the instance scale.
+- `P1b`, `T1`, `P4`, `P6` were Orchard's numbers applied to a world 40% bigger.
+  Budgets are per scene now; the region's are its ratchet baseline on the day it
+  was first measured, and Orchard's are untouched. A shared budget loosened to
+  fit the region would have hidden a real Orchard regression the next day.
 
-Things already settled and worth not re-deriving:
-
-- Every district projects from `island_origin`. Verified: 52 buildings appear in
-  both districts and 49 are identical to the millimetre.
-- `merge.py` dedupes across the seam ONLY. Comparing within a district deleted
-  301 real buildings, because a terrace of shophouses sits under 8m apart with
-  near-identical footprints and each ate its neighbour. Verified afterwards by
-  confirming every source building still has a match in the output.
-- The heightfields are blended across the overlap weighted by how far inside
-  each grid a point sits, because a grid edge has road samples on one side only
-  and drifts by 12m there against 0.39m well inside.
-- Both districts must use the SAME elevation dataset. Orchard came back from
-  open-elevation and Bras Basah from opentopodata, and they disagreed by a
-  median of 3.5m. `terrain.py <id> --source <name>` pins it; the source is
-  recorded in the scene and merge.py warns if they differ.
-- `process.py` used to hardcode the axis name to "Orchard Road" and its width to
-  16.0m for EVERY district. Bras Basah Road would have had street plates reading
-  ORCHARD ROAD, and axisSpec would have looked up Orchard's lane count to decide
-  how to drive it. Both come from the real ways now, which also corrected
-  Orchard's own carriageway from 16.0m to its true 18.2m.
+**And `deploy.sh` published the region as a 404.** The build step wrote three
+scene files into `dist/` and the publish step copied one of them by name, so the
+moment the site started loading `world.json` the live page fetched GitHub's 404
+page and failed to boot. It copies `dist/data/*.json` now and verifies every one
+of them against the live site. Two lists of the same files, one updated.
 
 ## Do this first
 
