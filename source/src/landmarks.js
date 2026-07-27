@@ -376,6 +376,12 @@ export function shophouse(api, b) {
   const wall = api.mat.shophouse(b);
   const trim = api.mat.trim;
   const tile = api.mat.clayTile;
+  // a stable per-building variant, so a terrace reads as individual houses
+  let hh = 0;
+  for (const [x, z] of b.p) hh = (hh * 33 + ((x * 3) | 0) + ((z * 17) | 0)) | 0;
+  hh = Math.abs(hh);
+  const variant = hh % 4;          // 0-2 pitched, 3 flat-roofed infill
+  const hasAwning = (hh % 5) < 3;
   const groundH = 4.2;
   const upper = Math.max(3.4, b.h - groundH);
   const cx0 = ob.cx, cz0 = ob.cz;
@@ -404,14 +410,37 @@ export function shophouse(api, b) {
     api.merge(g, trim, cx0, cz0);
   }
 
-  // pitched clay roof along the long axis. A shallow pitch: the first attempt
-  // used the full half-depth as the radius and the roof was taller than a storey.
-  const rad = Math.min(3.4, ob.halfShort * 0.62);
-  const rg = new THREE.CylinderGeometry(rad, rad, span * 1.02, 3, 1, false);
-  rg.rotateZ(Math.PI / 2);
-  rg.rotateY(-ob.ang);
-  rg.translate(ob.cx, b.h + rad * 0.30, ob.cz);
-  api.merge(rg, tile, cx0, cz0);
+  // roof: mostly pitched clay, occasionally a flat-roofed later infill. A
+  // shallow pitch — the first attempt used the full half-depth as the radius
+  // and the roof came out taller than a storey.
+  if (variant < 3) {
+    const rad = Math.min(3.4, ob.halfShort * (0.5 + variant * 0.09));
+    const rg = new THREE.CylinderGeometry(rad, rad, span * 1.02, 3, 1, false);
+    rg.rotateZ(Math.PI / 2);
+    rg.rotateY(-ob.ang);
+    rg.translate(ob.cx, b.h + rad * 0.30, ob.cz);
+    api.merge(rg, tile, cx0, cz0);
+    // gable ends, so a row is read as separate houses rather than one long shed
+    for (const sgn of [-1, 1]) {
+      const gable = new THREE.CylinderGeometry(rad * 1.03, rad * 1.03, 0.3, 3, 1, false);
+      gable.rotateZ(Math.PI / 2);
+      gable.rotateY(-ob.ang);
+      gable.translate(
+        ob.cx + ob.ux * sgn * (span / 2), b.h + rad * 0.30, ob.cz + ob.uz * sgn * (span / 2));
+      api.merge(gable, trim, cx0, cz0);
+    }
+  } else {
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.05), 0.8, b.h + 0.5), trim, cx0, cz0);
+  }
+
+  // a canvas awning over the five-foot-way on most of them
+  if (hasAwning) {
+    const aw = new THREE.BoxGeometry(span * 0.92, 0.16, 2.0);
+    aw.rotateY(-ob.ang);
+    aw.translate(
+      ob.cx + sw.nx * (ob.halfShort + 0.9), groundH - 0.55, ob.cz + sw.nz * (ob.halfShort + 0.9));
+    api.merge(aw, api.mat.awning(b), cx0, cz0);
+  }
 }
 
 export const RECIPES = [

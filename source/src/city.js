@@ -65,7 +65,9 @@ export const MAT = {
 };
 
 const SHOPHOUSE_COLS = [0xd8cbb4, 0xbfd2c4, 0xd9c39a, 0xc9d3dd, 0xd6b6a8, 0xe0d6bd, 0xb9c9bd];
+const AWNING_COLS = [0x8c4a3f, 0x2f5f52, 0x8a7433, 0x3f5570, 0x6e4a63, 0x9a5f36];
 const shopHouseMats = new Map();
+const awningMats = new Map();
 
 // materials the landmark recipes draw on
 const LMAT = {
@@ -78,6 +80,15 @@ const LMAT = {
   warmStone: new THREE.MeshStandardMaterial({ map: texConcrete(0xb2a48f, 0.5), roughness: 0.85 }),
   jadeRoof: new THREE.MeshStandardMaterial({ color: 0x2f5f4a, roughness: 0.45, metalness: 0.2 }),
   clayTile: new THREE.MeshStandardMaterial({ color: 0x9c5a44, roughness: 0.82 }),
+  awning(b) {
+    let h = 0;
+    for (const [x, z] of b.p) h = (h * 29 + ((x * 9) | 0) + ((z * 7) | 0)) | 0;
+    const col = AWNING_COLS[Math.abs(h) % AWNING_COLS.length];
+    if (!awningMats.has(col)) {
+      awningMats.set(col, new THREE.MeshStandardMaterial({ color: col, roughness: 0.9 }));
+    }
+    return awningMats.get(col);
+  },
   // one shared material per shophouse colour, keyed off the footprint so a
   // given house keeps its colour between reloads
   shophouse(b) {
@@ -288,13 +299,32 @@ export function buildBuildings(world, data) {
 
     addShopfront(world, b, per, merger);
 
-    // rooftop plant on the bigger flat roofs
+    // rooftop plant on the bigger flat roofs: plant boxes, a stair housing,
+    // water tanks and a run of ducting, so no two roofs read the same
     if (b.a > 900 && h > 12) {
       const c = centroid(pts);
       for (let i = 0; i < 3; i++) {
         const g2 = new THREE.BoxGeometry(rand(3, 7), rand(1.6, 3.4), rand(3, 6));
         g2.translate(c[0] + rand(-8, 8), h + rand(1, 1.8), c[1] + rand(-8, 8));
         merger.add(g2, MAT.conc, c[0], c[1]);
+      }
+      // lift and stair housing
+      const sh = new THREE.BoxGeometry(rand(4, 7), rand(3.2, 4.6), rand(4, 6));
+      sh.translate(c[0] + rand(-6, 6), h + 2.2, c[1] + rand(-6, 6));
+      merger.add(sh, MAT.trim, c[0], c[1]);
+      // water tanks
+      if (chance(0.6)) {
+        for (let i = 0; i < 2; i++) {
+          const tk = new THREE.CylinderGeometry(rand(0.9, 1.4), rand(0.9, 1.4), 1.7, 10);
+          tk.translate(c[0] + rand(-9, 9), h + 0.9, c[1] + rand(-9, 9));
+          merger.add(tk, MAT.trim, c[0], c[1]);
+        }
+      }
+      // duct run
+      if (chance(0.5)) {
+        const dz = new THREE.BoxGeometry(rand(9, 16), 0.7, 0.7);
+        dz.translate(c[0] + rand(-4, 4), h + 0.9, c[1] + rand(-7, 7));
+        merger.add(dz, MAT.metal, c[0], c[1]);
       }
     }
     stats.count++;
