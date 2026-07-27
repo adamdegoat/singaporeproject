@@ -247,6 +247,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   const sg = (!P.has('nosg') && axis) ? buildSgDetail(world, axis, data, blocked) : {};
   if (axis) wayfinder = new Wayfinder(data, axis);
   window.__axis = axis;
+  window.__roadList = data.roads.filter((r) => r.k !== 'footway' && r.k !== 'pedestrian');
   const people = crowdSys ? crowdSys.people.length : 0;
 
   // start on Orchard Road facing along it
@@ -266,7 +267,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   ready = true;
   window.__ready = true;
   window.__stats = stats;
-}).catch((e) => { hud.textContent = 'data load failed: ' + e.message; });
+}).catch((e) => { window.__bootError = (e && e.stack) || String(e); hud.textContent = 'boot failed: ' + e.message; console.error('BOOT', e); });
 
 if (TOUCH) attachTouch(canvas);
 attachMouse(canvas);
@@ -570,6 +571,70 @@ window.__drive = (throttle, steer, seconds) => {
 };
 window.__inp = () => ({ TOUCH, steer: input.steer, throttle: input.throttle, brake: input.brake, touches: touchDebug(), fired: window.__touchFired || 0 });
 window.__snd = sound;
+// Audit every carriageway, not just Orchard Road, and check two bands:
+// obstruction (something standing on the road) and overhang (something
+// projecting over it below lorry height). Vehicles and the planted median are
+// expected hits, so they are excluded by position rather than pretended away.
+window.__auditRoads = (step = 4) => {
+  const ray = new THREE.Raycaster();
+  const upv = new THREE.Vector3(0, 1, 0);
+  const from = new THREE.Vector3();
+  const out = { tested: 0, obstruct: [], overhang: [] };
+  const roads = (window.__roadList || []);
+
+  for (const r of roads) {
+    const pts = r.p, half = r.w / 2;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+      const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
+      if (len < 1) continue;
+      const ux = dx / len, uz = dz / len, nx = -uz, nz = ux;
+      for (let t = 0; t < len; t += step) {
+        const px = x1 + ux * t, pz = z1 + uz * t;
+        for (let off = -half + 1.4; off <= half - 1.4; off += 2.8) {
+          // skip the planted median of the main axis, which belongs there
+          const isAxis = /orchard road/i.test(r.n || '');
+          if (isAxis && Math.abs(off) < 2.0) continue;
+          out.tested++;
+          const sx = px + nx * off, sz = pz + nz * off;
+
+          // band 1: standing on the road, 0.4m to 2.0m
+          from.set(sx, 0.4, sz);
+          ray.set(from, upv); ray.near = 0; ray.far = 1.6;
+          let hit = ray.intersectObjects(world.children, true);
+          // a vehicle is a legitimate hit; identify by proximity to traffic
+          const nearVeh = trafficSys ? trafficSys.nearest(sx, sz) : 999;
+          if (hit.length && nearVeh > 4.5) {
+            out.obstruct.push({ road: r.n || r.k, x: +sx.toFixed(1), z: +sz.toFixed(1),
+              off: +off.toFixed(1), h: +(0.4 + hit[0].distance).toFixed(2) });
+          }
+
+          // band 2: overhanging the road below 4.6m, which a lorry would clip
+          from.set(sx, 2.6, sz);
+          ray.set(from, upv); ray.far = 2.0;
+          hit = ray.intersectObjects(world.children, true);
+          if (hit.length && nearVeh > 4.5) {
+            out.overhang.push({ road: r.n || r.k, x: +sx.toFixed(1), z: +sz.toFixed(1),
+              off: +off.toFixed(1), h: +(2.6 + hit[0].distance).toFixed(2) });
+          }
+        }
+      }
+    }
+  }
+  const tally = (list) => {
+    const m = {};
+    for (const h of list) m[h.road] = (m[h.road] || 0) + 1;
+    return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  };
+  return {
+    tested: out.tested,
+    obstruct: out.obstruct.length, obstructPct: +(100 * out.obstruct.length / out.tested).toFixed(2),
+    overhang: out.overhang.length, overhangPct: +(100 * out.overhang.length / out.tested).toFixed(2),
+    worstObstruct: tally(out.obstruct), worstOverhang: tally(out.overhang),
+    sampleObstruct: out.obstruct.slice(0, 12), sampleOverhang: out.overhang.slice(0, 8),
+  };
+};
+
 window.__crossers = () => (crowdSys ? crowdSys.people.filter((p) => p.crossing).length : 0);
 window.__sig = () => (signals ? signals.list.map((g) => signals.stateAt(g, clock)) : []);
 window.__traffic = () => (trafficSys ? trafficSys.items.map((i) => +i.speed.toFixed(2)) : []);

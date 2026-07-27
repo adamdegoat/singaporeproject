@@ -288,6 +288,26 @@ def main():
         for i in range(len(axis) - 1):
             corridors.append((axis[i], axis[i + 1], aclear))
 
+    def subdivide(ring, maxlen=4.0):
+        out = []
+        n = len(ring)
+        for i in range(n):
+            a = ring[i]
+            c = ring[(i + 1) % n]
+            out.append(a)
+            L = math.dist(a, c)
+            if L > maxlen:
+                steps = int(L // maxlen)
+                for k in range(1, steps + 1):
+                    t = k / (steps + 1)
+                    out.append([round(a[0] + (c[0] - a[0]) * t, 1),
+                                round(a[1] + (c[1] - a[1]) * t, 1)])
+        return out
+
+    for b in buildings:
+        if len(b["p"]) < 40:                      # keep already-dense rings as they are
+            b["p"] = subdivide(b["p"])
+
     moved_pts, moved_b = 0, 0
     for b in buildings:
         touched = False

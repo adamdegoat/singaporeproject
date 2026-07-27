@@ -160,6 +160,72 @@ class Merger {
   }
 }
 
+// How far can something project outward from (x,z) along (nx,nz) before it
+// enters a carriageway? Plazas, porte-cocheres and entrance canopies were being
+// placed a fixed distance out, which put 36 of them in the road — including Ngee
+// Ann City's civic plaza 8.5m into Orchard Road.
+class Clearance {
+  constructor(roads, axis) {
+    this.CELL = 44;
+    this.grid = new Map();
+    const add = (a, b, clear) => {
+      const minx = Math.min(a[0], b[0]) - clear, maxx = Math.max(a[0], b[0]) + clear;
+      const minz = Math.min(a[1], b[1]) - clear, maxz = Math.max(a[1], b[1]) + clear;
+      for (let cx = Math.floor(minx / this.CELL); cx <= Math.floor(maxx / this.CELL); cx++)
+        for (let cz = Math.floor(minz / this.CELL); cz <= Math.floor(maxz / this.CELL); cz++) {
+          const k = cx + ',' + cz;
+          if (!this.grid.has(k)) this.grid.set(k, []);
+          this.grid.get(k).push([a, b, clear]);
+        }
+    };
+    for (const r of roads || []) {
+      if (r.k === 'footway' || r.k === 'pedestrian' || r.k === 'service') continue;
+      for (let i = 0; i < r.p.length - 1; i++) add(r.p[i], r.p[i + 1], r.w / 2 + 0.7);
+    }
+    if (axis) for (let i = 0; i < axis.p.length - 1; i++) add(axis.p[i], axis.p[i + 1], axis.w / 2 + 0.7);
+  }
+
+  inRoad(x, z) {
+    const list = this.grid.get(Math.floor(x / this.CELL) + ',' + Math.floor(z / this.CELL));
+    if (!list) return false;
+    for (const [a, b, clear] of list) {
+      const vx = b[0] - a[0], vz = b[1] - a[1];
+      const L2 = vx * vx + vz * vz;
+      let t = L2 < 1e-9 ? 0 : ((x - a[0]) * vx + (z - a[1]) * vz) / L2;
+      t = Math.max(0, Math.min(1, t));
+      const dx = x - (a[0] + vx * t), dz = z - (a[1] + vz * t);
+      if (dx * dx + dz * dz < clear * clear) return true;
+    }
+    return false;
+  }
+
+  // largest safe projection up to `want`, stepping outward
+  outward(x, z, nx, nz, want, halfWidth = 0) {
+    for (let d = want; d > 0.4; d -= 0.5) {
+      if (this.rectClear(x, z, nx, nz, halfWidth * 2, d)) return d;
+    }
+    return 0;
+  }
+
+  // Is the whole rectangle clear, not just its centreline? A 62m-wide plaza can
+  // have a clear centre and still cross a side road at its corners, which is
+  // exactly how Ngee Ann City's forecourt ended up 8.5m into Orchard Road.
+  rectClear(x, z, nx, nz, width, depth) {
+    const tx = -nz, tz = nx;
+    const hw = width / 2;
+    const across = Math.max(3, Math.ceil(width / 6));
+    const along = Math.max(2, Math.ceil(depth / 4));
+    for (let i = 0; i <= across; i++) {
+      const w = -hw + (i / across) * width;
+      for (let j = 0; j <= along; j++) {
+        const d = (j / along) * depth;
+        if (this.inRoad(x + nx * d + tx * w, z + nz * d + tz * w)) return false;
+      }
+    }
+    return true;
+  }
+}
+
 // scale a geometry's UVs in place, so one shared material can tile correctly
 // across buildings of very different sizes
 function scaleUV(geo, sx, sy) {
@@ -246,7 +312,9 @@ function grow(pts, f) {
 export function buildBuildings(world, data) {
   const stats = { count: 0, tall: 0, bespoke: 0 };
   const merger = new Merger();
+  const clearance = new Clearance(data.roads, data.axis);
   const api = {
+    clearance,
     world, extrude, grow, axis: data.axis || null,
     extrudeGeo, scaleUV,
     merge: (geo, mat, x, z) => merger.add(geo, mat, x, z),
@@ -257,7 +325,7 @@ export function buildBuildings(world, data) {
     if (pts.length < 3) continue;
 
     // small and low with no name: a shophouse, which is what fills the lanes
-    if (!b.k && b.a < 520 && b.h <= 20 && b.p.length <= 12) {
+    if (!b.k && b.a < 520 && b.h <= 20 && b.p.length <= 64) {
       shophouse(api, b);
       stats.count++; stats.shophouses = (stats.shophouses || 0) + 1;
       continue;
@@ -267,7 +335,7 @@ export function buildBuildings(world, data) {
     const recipe = recipeFor(b.n);
     if (recipe) {
       recipe(api, b);
-      addShopfront(world, b, perimeter(pts), merger);
+      addShopfront(world, b, perimeter(pts), merger, clearance);
       stats.count++; stats.bespoke++;
       continue;
     }
@@ -297,7 +365,7 @@ export function buildBuildings(world, data) {
       }
     }
 
-    addShopfront(world, b, per, merger);
+    addShopfront(world, b, per, merger, clearance);
 
     // rooftop plant on the bigger flat roofs: plant boxes, a stair housing,
     // water tanks and a run of ducting, so no two roofs read the same
@@ -335,7 +403,7 @@ export function buildBuildings(world, data) {
 
 // Ground floor is what you actually see from a scooter: glazed shopfront band,
 // an awning line above it, and a deeper canopy where the entrance would be.
-function addShopfront(world, b, per, merger) {
+function addShopfront(world, b, per, merger, clearance) {
   if (b.a <= 600 || b.h <= 7) return;
   const pts = b.p;
   const sf = pick(SHOPS);
@@ -402,18 +470,23 @@ function addShopfront(world, b, per, merger) {
       world.add(doors);
     }
     const cw = Math.min(18, bl * 0.34);
-    const can = new THREE.Mesh(new THREE.BoxGeometry(cw, 0.5, 4.4), MAT.trim);
-    can.position.set(mx + (outX / oL) * 1.9, 6.1, mz + (outZ / oL) * 1.9);
-    can.rotation.y = ang + Math.PI / 2;
-    can.castShadow = true; world.add(can);
-    for (const s2 of [-1, 1]) {
-      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 6.0, 8), MAT.metal);
-      col.position.set(
-        mx + (outX / oL) * 3.6 + Math.sin(ang) * s2 * cw * 0.42,
-        3.0,
-        mz + (outZ / oL) * 3.6 + Math.cos(ang) * s2 * cw * 0.42
-      );
-      col.castShadow = true; world.add(col);
+    // never project into the carriageway
+    const reach = clearance
+      ? clearance.outward(mx, mz, ux, uz, 3.6, cw * 0.5)
+      : 3.6;
+    if (reach > 1.0) {
+      const can = new THREE.Mesh(new THREE.BoxGeometry(cw, 0.5, reach * 1.15), MAT.trim);
+      can.position.set(mx + ux * reach * 0.5, 6.1, mz + uz * reach * 0.5);
+      can.rotation.y = ang + Math.PI / 2;
+      can.castShadow = true; world.add(can);
+      for (const s2 of [-1, 1]) {
+        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 6.0, 8), MAT.metal);
+        col.position.set(
+          mx + ux * reach * 0.9 + Math.sin(ang) * s2 * cw * 0.42, 3.0,
+          mz + uz * reach * 0.9 + Math.cos(ang) * s2 * cw * 0.42
+        );
+        col.castShadow = true; world.add(col);
+      }
     }
   }
 }

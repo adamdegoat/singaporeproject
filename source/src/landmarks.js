@@ -88,26 +88,39 @@ function ngeeAnnCity(api, b) {
   // holds 4,000 people and is where every event on this street happens. It is
   // as recognisable as the towers.
   const sw = streetward(api, ob);
-  const px = ob.cx + sw.nx * (ob.halfShort + 17);
-  const pz = ob.cz + sw.nz * (ob.halfShort + 17);
   const ang = Math.atan2(sw.nx, sw.nz);
-  const plaza = new THREE.Mesh(new THREE.BoxGeometry(62, 0.5, 34), api.mat.paving);
-  plaza.position.set(px, 0.25, pz);
-  plaza.rotation.y = ang;
-  plaza.receiveShadow = true; api.world.add(plaza);
-  // three shallow steps down to the pavement on the street edge
-  for (let k = 0; k < 3; k++) {
-    const st = new THREE.Mesh(new THREE.BoxGeometry(62, 0.18, 1.1), api.mat.paleStone);
-    st.position.set(px + sw.nx * (17 + k * 1.1), 0.42 - k * 0.16, pz + sw.nz * (17 + k * 1.1));
-    st.rotation.y = ang;
-    st.receiveShadow = true; st.castShadow = true; api.world.add(st);
-  }
-  // low granite planter walls flanking it
-  for (const sgn of [-1, 1]) {
-    const w = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.85, 30), granite);
-    w.position.set(px - sw.nz * sgn * 29, 0.68, pz + sw.nx * sgn * 29);
-    w.rotation.y = ang;
-    w.castShadow = true; w.receiveShadow = true; api.world.add(w);
+  const ex = ob.cx + sw.nx * ob.halfShort, ez = ob.cz + sw.nz * ob.halfShort;
+  // how much pavement is actually there before the kerb? The first version
+  // projected a fixed 17m and put the plaza 8.5m into Orchard Road.
+  // try the full forecourt, then progressively narrower ones, until the whole
+  // rectangle sits clear of every carriageway
+  let width = 62, depth = 0;
+  if (api.clearance) {
+    for (const w of [62, 52, 44, 36, 28]) {
+      const d = api.clearance.outward(ex, ez, sw.nx, sw.nz, 22, w / 2);
+      if (d >= 6) { width = w; depth = Math.min(30, d); break; }
+    }
+  } else { depth = 17; }
+  const px = ex + sw.nx * (depth / 2);
+  const pz = ez + sw.nz * (depth / 2);
+  if (depth >= 6) {
+    const plaza = new THREE.Mesh(new THREE.BoxGeometry(width, 0.5, depth), api.mat.paving);
+    plaza.position.set(px, 0.25, pz);
+    plaza.rotation.y = ang;
+    plaza.receiveShadow = true; api.world.add(plaza);
+    for (let k = 0; k < 3; k++) {
+      const st = new THREE.Mesh(new THREE.BoxGeometry(width, 0.18, 1.1), api.mat.paleStone);
+      st.position.set(px + sw.nx * (depth / 2 + k * 1.1), 0.42 - k * 0.16,
+                      pz + sw.nz * (depth / 2 + k * 1.1));
+      st.rotation.y = ang;
+      st.receiveShadow = true; st.castShadow = true; api.world.add(st);
+    }
+    for (const sgn of [-1, 1]) {
+      const w = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.85, depth * 0.88), granite);
+      w.position.set(px - sw.nz * sgn * (width / 2 - 2), 0.68, pz + sw.nx * sgn * (width / 2 - 2));
+      w.rotation.y = ang;
+      w.castShadow = true; w.receiveShadow = true; api.world.add(w);
+    }
   }
 }
 
@@ -128,8 +141,10 @@ function ionOrchard(api, b) {
   // section, which reads as the same sweep from the street.
   const sw = streetward(api, ob);
   const ang = Math.atan2(sw.nx, sw.nz);
-  const fx = ob.cx + sw.nx * (ob.halfShort + 4);
-  const fz = ob.cz + sw.nz * (ob.halfShort + 4);
+  const ex2 = ob.cx + sw.nx * ob.halfShort, ez2 = ob.cz + sw.nz * ob.halfShort;
+  const reach = api.clearance ? Math.min(5, api.clearance.outward(ex2, ez2, sw.nx, sw.nz, 5, 22)) : 4;
+  const fx = ob.cx + sw.nx * (ob.halfShort + reach);
+  const fz = ob.cz + sw.nz * (ob.halfShort + reach);
   const shellMat = new THREE.MeshStandardMaterial({
     color: 0xb9c4c9, roughness: 0.28, metalness: 0.45, side: THREE.DoubleSide,
   });
@@ -147,6 +162,7 @@ function ionOrchard(api, b) {
     col.position.set(fx - sw.nz * sgn * 17, 10, fz + sw.nx * sgn * 17);
     col.castShadow = true; api.world.add(col);
   }
+  void reach;
   // the LED media wall, one of the largest in Asia and the thing people photograph
   const media = new THREE.Mesh(
     new THREE.PlaneGeometry(Math.min(58, ob.halfLong * 1.5), 13),
@@ -348,24 +364,28 @@ function hotel(api, b) {
   // porte-cochere: a deep flat canopy on columns over the set-down
   const sw = streetward(api, ob);
   const ang = Math.atan2(sw.nx, sw.nz);
-  const px = ob.cx + sw.nx * (ob.halfShort + 7);
-  const pz = ob.cz + sw.nz * (ob.halfShort + 7);
-  const canopy = new THREE.Mesh(new THREE.BoxGeometry(22, 0.6, 13), stone);
-  canopy.position.set(px, 6.0, pz);
-  canopy.rotation.y = ang;
-  canopy.castShadow = true; api.world.add(canopy);
-  for (const ax of [-9, 9]) {
-    for (const az of [-5, 5]) {
-      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 6.0, 10), stone);
-      col.position.set(px - sw.nz * ax + sw.nx * az, 3.0, pz + sw.nx * ax + sw.nz * az);
-      col.castShadow = true; api.world.add(col);
+  const ex = ob.cx + sw.nx * ob.halfShort, ez = ob.cz + sw.nz * ob.halfShort;
+  // only build a set-down if there is forecourt to build it on
+  const room = api.clearance ? api.clearance.outward(ex, ez, sw.nx, sw.nz, 11, 13) : 7;
+  if (room > 6.5) {
+    const depth = Math.min(13, room * 1.05);
+    const px = ex + sw.nx * (depth / 2), pz = ez + sw.nz * (depth / 2);
+    const canopy = new THREE.Mesh(new THREE.BoxGeometry(22, 0.6, depth), stone);
+    canopy.position.set(px, 6.0, pz);
+    canopy.rotation.y = ang;
+    canopy.castShadow = true; api.world.add(canopy);
+    for (const ax of [-9, 9]) {
+      for (const az of [-depth / 2.6, depth / 2.6]) {
+        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 6.0, 10), stone);
+        col.position.set(px - sw.nz * ax + sw.nx * az, 3.0, pz + sw.nx * ax + sw.nz * az);
+        col.castShadow = true; api.world.add(col);
+      }
     }
+    const apron = new THREE.Mesh(new THREE.BoxGeometry(24, 0.12, depth * 1.12), api.mat.paving);
+    apron.position.set(px, 0.2, pz);
+    apron.rotation.y = ang;
+    apron.receiveShadow = true; api.world.add(apron);
   }
-  // a driveway apron under it
-  const apron = new THREE.Mesh(new THREE.BoxGeometry(24, 0.12, 15), api.mat.paving);
-  apron.position.set(px, 0.2, pz);
-  apron.rotation.y = ang;
-  apron.receiveShadow = true; api.world.add(apron);
 }
 
 // A shophouse: party walls, a five-foot-way colonnade at the ground floor, tall
