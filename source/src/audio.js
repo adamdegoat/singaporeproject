@@ -102,6 +102,20 @@ export class Sound {
     this.ambFilter.connect(this.ambGain);
     this.ambGain.connect(this.master);
 
+    /* ---- passing traffic: a low band that rises as a vehicle gets close ---- */
+    this.traffic = ctx.createBufferSource();
+    this.traffic.buffer = buf; this.traffic.loop = true;
+    this.trafficFilter = ctx.createBiquadFilter();
+    this.trafficFilter.type = 'bandpass';
+    this.trafficFilter.frequency.value = 240;
+    this.trafficFilter.Q.value = 0.9;
+    this.trafficGain = ctx.createGain();
+    this.trafficGain.gain.value = 0;
+    this.traffic.connect(this.trafficFilter);
+    this.trafficFilter.connect(this.trafficGain);
+    this.trafficGain.connect(this.master);
+    this.traffic.start();
+
     this.osc1.start(); this.osc2.start(); this.osc3.start();
     this.lfo.start(); this.wind.start(); this.amb.start();
 
@@ -126,10 +140,15 @@ export class Sound {
   }
 
   // speed in m/s (may be negative), mode 'ride' | 'walk'
-  update(speed, mode, walkSpeed, walkPhase) {
+  update(speed, mode, walkSpeed, walkPhase, nearestVehicle = 999) {
     if (!this.ready || this.muted) return;
     const t = this.ctx.currentTime;
     const v = Math.abs(speed);
+
+    // traffic you can hear before you see it
+    const near = Math.max(0, 1 - nearestVehicle / 42);
+    this.trafficGain.gain.setTargetAtTime(0.02 + near * near * 0.16, t, 0.35);
+    this.trafficFilter.frequency.setTargetAtTime(210 + near * 220, t, 0.4);
 
     if (mode === 'ride') {
       // engine note rises with speed, with a little compression at the top so it

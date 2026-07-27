@@ -227,7 +227,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
 
   const treeCount = P.has('nofoliage') ? 0 : dressStreet(data, axis);
   if (!P.has('nopeople') && axis) {
-    crowdSys = new Crowd(axis, blocked, 150);
+    crowdSys = new Crowd(axis, blocked, 260);
     crowdSys.build(world);
     // must come after construction, or the handover is a no-op
     if (window.__crossings) crowdSys.setCrossings(window.__crossings);
@@ -261,6 +261,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
     const nx = -dz / L, nz = dx / L;
     S = newState(p0[0] + nx * -3.4, p0[1] + nz * -3.4, Math.atan2(dx, dz));
   }
+  buildEnvironment();
   stats = { marks, ...side, ...sg, merged: bs.mergedMeshes, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
   ready = true;
   window.__ready = true;
@@ -289,6 +290,39 @@ attachMouse(canvas);
     btn.addEventListener('click', tap);
     btn.addEventListener('touchstart', tap, { passive: false });
   }
+}
+
+// Glass with nothing to reflect always looks like painted plastic. Render the
+// scene into a cube map once from above the street and hand it to the renderer
+// as the environment: every standard material then picks up sky and massing for
+// no per-frame cost. Intensity stays low on rough surfaces, per the hard-won
+// note that a bright sky blows out rough dielectrics.
+function buildEnvironment() {
+  const target = new THREE.WebGLCubeRenderTarget(256, {
+    generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter,
+  });
+  const cubeCam = new THREE.CubeCamera(1, 900, target);
+  cubeCam.position.set(0, 34, 0);
+  scene.add(cubeCam);
+  cubeCam.update(renderer, scene);
+  scene.remove(cubeCam);
+  // Assign per material rather than scene-wide: scene.environment makes every
+  // standard material sample the cube map, and on a fill-rate-bound GPU that is
+  // paid on concrete and tarmac for no visible gain.
+  let touched = 0;
+  scene.traverse((o) => {
+    const m = o.material;
+    if (!m) return;
+    for (const mm of Array.isArray(m) ? m : [m]) {
+      if (!mm.isMeshStandardMaterial) continue;
+      if (mm.roughness > 0.45) continue;          // glass and polished stone only
+      mm.envMap = target.texture;
+      mm.envMapIntensity = mm.roughness < 0.25 ? 0.95 : 0.5;
+      mm.needsUpdate = true;
+      touched++;
+    }
+  });
+  window.__envMats = touched;
 }
 
 /* ---------------- camera rigs ---------------- */
@@ -457,7 +491,7 @@ function loop(now) {
       if (trafficSys) trafficSys.update(clock, dt, signals);
       if (crowdSys) crowdSys.update(clock, dt, walker.x, walker.z, signals);
       if (wayfinder) wayfinder.update(walker, dt);
-      sound.update(0, 'walk', walker.speed, walker.phase);
+      sound.update(0, 'walk', walker.speed, walker.phase, trafficSys ? trafficSys.nearest(walker.x, walker.z) : 999);
       walkCamera(dt);
       renderer.render(scene, camera);
       frames++;
@@ -499,7 +533,7 @@ function loop(now) {
     if (trafficSys) trafficSys.update(clock, dt, signals);
     if (crowdSys) crowdSys.update(clock, dt, S.x, S.z, signals);
     if (wayfinder) wayfinder.update(S, dt);
-    sound.update(S.speed, 'ride', 0, 0);
+    sound.update(S.speed, 'ride', 0, 0, trafficSys ? trafficSys.nearest(S.x, S.z) : 999);
 
     driveCamera(dt);
   }

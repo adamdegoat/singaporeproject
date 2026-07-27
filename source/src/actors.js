@@ -127,9 +127,11 @@ export class Crowd {
         crosser: chance(0.34),
         crossing: false, crossT: 0, crossFrom: 0, crossTo: 0,
       };
+      p.cTop = pick(TOPS); p.cBot = pick(BOTTOMS);
+      p.cSkin = pick(SKIN); p.cHair = pick(HAIR);
       this.people.push(p);
-      cTop.setHex(pick(TOPS)); cBot.setHex(pick(BOTTOMS));
-      cSkin.setHex(pick(SKIN)); cHair.setHex(pick(HAIR));
+      cTop.setHex(p.cTop); cBot.setHex(p.cBot);
+      cSkin.setHex(p.cSkin); cHair.setHex(p.cHair);
       this.torso.setColorAt(i, cTop);
       this.armL.setColorAt(i, cTop); this.armR.setColorAt(i, cTop);
       this.hips.setColorAt(i, cBot);
@@ -158,6 +160,13 @@ export class Crowd {
   update(time, dt, playerX = 1e9, playerZ = 1e9, signals = null) {
     const { _m: m, _q: q, _e: e, _p: p, _s: s, _tmp: tmp } = this;
     const hidden = this._hidden || (this._hidden = new THREE.Matrix4().makeTranslation(0, -9999, 0));
+    // slot is the write index into the instance buffers: only visible people get
+    // one, and .count is set to however many were written, so the GPU never sees
+    // the rest at all
+    let slot = 0;
+    const parts = this._parts || (this._parts = [this.head, this.hair, this.torso,
+      this.hips, this.armL, this.armR, this.legL, this.legR, this.bag,
+      this.shoeL, this.shoeR, this.handL, this.handR, this.neck]);
 
     for (let i = 0; i < this.people.length; i++) {
       const pr = this.people[i];
@@ -202,14 +211,14 @@ export class Crowd {
       const z = baseZ + nz * (pr.dodge || 0) * dodgeSign;
 
       // a pedestrian standing inside a building is worse than a missing one
-      if (this.isBlocked(x, z)) {
-        for (const part of [this.head, this.hair, this.torso, this.hips,
-          this.armL, this.armR, this.legL, this.legR, this.bag,
-          this.shoeL, this.shoeR, this.handL, this.handR, this.neck]) {
-          part.setMatrixAt(i, hidden);
-        }
-        continue;
-      }
+      if (this.isBlocked(x, z)) continue;
+
+      // Only animate and draw the people you could actually see. With 260 of
+      // them spread over 1.2km, roughly forty are ever in range, so this is the
+      // difference between 44fps and 55 at no visual cost.
+      const ddx2 = x - playerX, ddz2 = z - playerZ;
+      if (ddx2 * ddx2 + ddz2 * ddz2 > 105 * 105) continue;
+      const idx = slot++;
 
       const heading = Math.atan2(ux * pr.dir, uz * pr.dir);
       const sc = pr.scale;
@@ -225,7 +234,7 @@ export class Crowd {
         q.setFromEuler(e);
         s.set(sc, sc, sc);
         m.compose(p, q, s);
-        part.setMatrixAt(i, m);
+        part.setMatrixAt(idx, m);
       };
 
       put(this.neck, 0, 1.47, 0.005);
@@ -243,12 +252,26 @@ export class Crowd {
       put(this.handL, -0.205, 0.99, walk * 0.27);
       put(this.handR, 0.205, 0.99, -walk * 0.27);
       if (pr.hasBag) put(this.bag, pr.bagSide * 0.26, 1.02, -0.06);
-      else this.bag.setMatrixAt(i, hidden);
+      else this.bag.setMatrixAt(idx, hidden);
+
+      // instance colours must follow the person into their packed slot,
+      // otherwise everyone swaps clothes as they move in and out of range
+      const cc = this._cc || (this._cc = new THREE.Color());
+      const setC = (part, hx) => {
+        if (!part.instanceColor) return;
+        cc.setHex(hx); part.setColorAt(idx, cc);
+      };
+      setC(this.torso, pr.cTop); setC(this.armL, pr.cTop); setC(this.armR, pr.cTop);
+      setC(this.hips, pr.cBot); setC(this.legL, pr.cBot); setC(this.legR, pr.cBot);
+      setC(this.bag, pr.cBot);
+      setC(this.head, pr.cSkin); setC(this.handL, pr.cSkin);
+      setC(this.handR, pr.cSkin); setC(this.neck, pr.cSkin);
+      setC(this.hair, pr.cHair);
     }
-    for (const part of [this.head, this.hair, this.torso, this.hips,
-      this.armL, this.armR, this.legL, this.legR, this.bag,
-      this.shoeL, this.shoeR, this.handL, this.handR, this.neck]) {
+    for (const part of parts) {
+      part.count = slot;
       part.instanceMatrix.needsUpdate = true;
+      if (part.instanceColor) part.instanceColor.needsUpdate = true;
     }
   }
 }
@@ -329,6 +352,17 @@ export class Traffic {
     this._s = new THREE.Vector3(1, 1, 1); this._tmp = [0, 0, 0, 0];
     this.update(0, 0);
     return n + b;
+  }
+
+  // metres to the closest vehicle, for the audio bed
+  nearest(px, pz) {
+    let best = 1e9;
+    for (const it of this.items) {
+      if (!it.wx) continue;
+      const d = (px - it.wx) ** 2 + (pz - it.wz) ** 2;
+      if (d < best) best = d;
+    }
+    return Math.sqrt(best);
   }
 
   // axis-aligned-ish blocker test: treat each vehicle as an oriented box

@@ -306,6 +306,45 @@ function addShopfront(world, b, per, merger) {
     const cen = centroid(pts);
     const outX = mx - cen[0], outZ = mz - cen[1];
     const oL = Math.hypot(outX, outZ) || 1;
+    const ux = outX / oL, uz = outZ / oL;
+
+    // A lobby you can actually see into. Recess a lit volume behind glass doors
+    // so the ground floor stops reading as a printed band.
+    if (b.a > 1200) {
+      const lw = Math.min(14, bl * 0.3);
+      const back = new THREE.Mesh(new THREE.PlaneGeometry(lw, 4.4),
+        new THREE.MeshStandardMaterial({
+          color: 0x2b2620, roughness: 0.7,
+          emissive: 0xd9b477, emissiveIntensity: 0.55,
+        }));
+      back.position.set(mx - ux * 5.2, 2.5, mz - uz * 5.2);
+      back.rotation.y = ang + Math.PI / 2;
+      world.add(back);
+      // side walls, so it reads as depth rather than a glowing sticker
+      for (const sgn of [-1, 1]) {
+        const side = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 4.4),
+          new THREE.MeshStandardMaterial({ color: 0x3a332b, roughness: 0.8, side: THREE.DoubleSide }));
+        side.position.set(mx - ux * 2.5 + Math.sin(ang) * sgn * lw / 2, 2.5,
+                          mz - uz * 2.5 + Math.cos(ang) * sgn * lw / 2);
+        side.rotation.y = ang;
+        world.add(side);
+      }
+      const ceil = new THREE.Mesh(new THREE.PlaneGeometry(lw, 5.6),
+        new THREE.MeshStandardMaterial({ color: 0x4a423a, roughness: 0.8, side: THREE.DoubleSide }));
+      ceil.rotation.x = Math.PI / 2;
+      ceil.rotation.z = -ang;
+      ceil.position.set(mx - ux * 2.5, 4.7, mz - uz * 2.5);
+      world.add(ceil);
+      // glass doors across the opening
+      const doors = new THREE.Mesh(new THREE.PlaneGeometry(lw, 4.2),
+        new THREE.MeshStandardMaterial({
+          color: 0xbcd0da, roughness: 0.08, metalness: 0.2,
+          transparent: true, opacity: 0.34, side: THREE.DoubleSide,
+        }));
+      doors.position.set(mx + ux * 0.35, 2.4, mz + uz * 0.35);
+      doors.rotation.y = ang + Math.PI / 2;
+      world.add(doors);
+    }
     const cw = Math.min(18, bl * 0.34);
     const can = new THREE.Mesh(new THREE.BoxGeometry(cw, 0.5, 4.4), MAT.trim);
     can.position.set(mx + (outX / oL) * 1.9, 6.1, mz + (outZ / oL) * 1.9);
