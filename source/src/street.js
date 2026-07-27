@@ -112,8 +112,8 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
   const realCount = { busstops: 0, signals: 0, taxis: 0 };
   for (const b of data.busstops || []) {
     const [bx, bz] = b.p;
-    const on = nearestOnAxis(pts, bx, bz);
-    if (on.dist > 60) continue;                 // belongs to another street
+    const on = nearestOnAnyRoad(bx, bz) || nearestOnAxis(pts, bx, bz);
+    if (on.dist > 45) continue;                 // not beside a road at all
     const ang2 = Math.atan2(on.ux, on.uz);
     const side = ((bx - on.x) * -on.uz + (bz - on.z) * on.ux) >= 0 ? 1 : -1;
     shelterAt.push([bx, bz, ang2, side, b.n || '']);
@@ -121,8 +121,11 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
   }
   for (const sPt of data.signals || []) {
     const [lx, lz] = sPt;
-    const on = nearestOnAxis(pts, lx, lz);
-    if (on.dist > 40) continue;
+    const onAxis = nearestOnAxis(pts, lx, lz);
+    const on = onAxis.dist <= 40 ? onAxis : (nearestOnAnyRoad(lx, lz) || onAxis);
+    // off the main street the head still cycles; it just does not gate traffic,
+    // which only drives the axis
+    if (on.dist > 30) continue;
     const ang2 = Math.atan2(on.ux, on.uz);
     const side = ((lx - on.x) * -on.uz + (lz - on.z) * on.ux) >= 0 ? 1 : -1;
     // arclength along the axis, so the signal controller can key off it
@@ -198,8 +201,58 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     (r) => { p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); },
     () => cc.setHex(pick(SIGN_COLS)));
 
-  // bus shelters
+  // Bus stops. Every mapped stop gets a pole and a flag, because a stop is a
+  // stop whether or not it is sheltered — and skipping the shelter used to make
+  // the whole stop vanish, so 42 of 48 real stops were simply absent from the
+  // street. The shelter is 9.2m by 3.1m and only goes in where that fits, which
+  // on most side streets it does not.
+  let poles = 0, shelters = 0;
   for (const [sx, sz, ang, sgn, sname] of shelterAt) {
+    // local axes of a group rotated by rotation.y = ang
+    const lx0 = Math.cos(ang), lz0 = -Math.sin(ang);   // local +x in world
+    const fx0 = Math.sin(ang), fz0 = Math.cos(ang);    // local +z in world
+
+    // the pole first: a 0.1m post needs almost nothing, so nudge it clear
+    // A node mapped on the centreline of a 16m road needs to travel further than
+    // the default search allows, and a failed search must NOT fall back to the
+    // point it was asked to move: that is how street furniture kept ending up in
+    // the traffic. No clear spot means no pole.
+    const moved = window.__pushClear ? window.__pushClear(sx, sz, 0.9, 18) : [sx, sz];
+    if (!moved) continue;
+    const [px, pz] = moved;
+    const gp = new THREE.Group();
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 3.1, 8), MAT.metal);
+    pole.position.y = 1.55; pole.castShadow = true; gp.add(pole);
+    const flag = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.42, 0.05),
+      new THREE.MeshStandardMaterial({ color: 0x2f6b3d, roughness: 0.4 }));
+    flag.position.set(0.34, 2.75, 0); flag.castShadow = true; gp.add(flag);
+    gp.position.set(px, groundAt(px, pz), pz);
+    gp.rotation.y = ang;
+    world.add(gp);
+    poles++;
+
+    // then the shelter, if the whole footprint will fit off the carriageway
+    const SPAN = 4.8, DEPTH = 1.8;
+    const clearAt = (cx3, cz3) => {
+      for (const a3 of [-SPAN, -SPAN / 2, 0, SPAN / 2, SPAN])
+        for (const d3 of [-DEPTH, 0, DEPTH]) {
+          const tx3 = cx3 + lx0 * a3 + fx0 * d3;
+          const tz3 = cz3 + lz0 * a3 + fz0 * d3;
+          if (window.__onRoad && window.__onRoad(tx3, tz3, -0.4)) return false;
+        }
+      return true;
+    };
+    let bx2 = sx, bz2 = sz, stand = false;
+    for (const dir3 of [1, -1]) {
+      for (let back = 0; back <= 8; back += 1.1) {
+        const cx3 = sx + fx0 * back * dir3, cz3 = sz + fz0 * back * dir3;
+        if (clearAt(cx3, cz3)) { bx2 = cx3; bz2 = cz3; stand = true; break; }
+      }
+      if (stand) break;
+    }
+    if (!stand) continue;
+    shelters++;
+
     const g = new THREE.Group();
     const roof = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.16, 3.1), MAT.trim);
     roof.position.y = 3.0; roof.castShadow = true; g.add(roof);
@@ -214,40 +267,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     const panel = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.5, 0.1),
       new THREE.MeshStandardMaterial({ color: 0x27313a, roughness: 0.3 }));
     panel.position.set(4.4, 1.7, -1.0); g.add(panel);
-  // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
-  // carriageway rather than dropping a shelter into the traffic
-    // An OSM bus_stop node sits on the kerb line and the shelter is 8.8m by
-    // 2.8m, so placing it at the node puts part of it in the traffic. The group
-    // is rotated by rotation.y = ang, under which local +x maps to
-    // (cos ang, -sin ang) and local +z to (sin ang, cos ang) — getting those two
-    // the wrong way round tests the footprint sideways and passes shelters that
-    // are lying across the road. Both axes are taken from the rotation itself
-    // here rather than assumed.
-    const lx0 = Math.cos(ang), lz0 = -Math.sin(ang);   // local +x in world
-    const fx0 = Math.sin(ang), fz0 = Math.cos(ang);    // local +z in world
-    const SPAN = 4.6, DEPTH = 1.7;                     // half extents, with slack
-    const clearAt = (cx3, cz3) => {
-      for (const a3 of [-SPAN, -SPAN / 2, 0, SPAN / 2, SPAN])
-        for (const d3 of [-DEPTH, 0, DEPTH]) {
-          const tx3 = cx3 + lx0 * a3 + fx0 * d3;
-          const tz3 = cz3 + lz0 * a3 + fz0 * d3;
-          if (window.__onRoad && window.__onRoad(tx3, tz3, -0.4)) return false;
-        }
-      return true;
-    };
-    // step away from the road along the depth axis, both directions
-    let px2 = sx, pz2 = sz, stand = false;
-    for (const dir3 of [1, -1]) {
-      for (let back = 0; back <= 10; back += 1.1) {
-        const cx3 = sx + fx0 * back * dir3, cz3 = sz + fz0 * back * dir3;
-        if (clearAt(cx3, cz3)) { px2 = cx3; pz2 = cz3; stand = true; break; }
-      }
-      if (stand) break;
-    }
-    // No room for a shelter here. The pole-and-flag stop is placed from the same
-    // node regardless, so the stop still exists on the street.
-    if (!stand) continue;
-    g.position.set(px2, groundAt(px2, pz2), pz2); g.rotation.y = ang;
+    g.position.set(bx2, groundAt(bx2, bz2), bz2); g.rotation.y = ang;
     world.add(g);
   }
 
@@ -276,7 +296,9 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     }
   // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
   // carriageway rather than dropping a shelter into the traffic
-    const [lx2, lz2] = (window.__pushClear ? window.__pushClear(lx, lz) : null) || [lx, lz];
+    const mv = window.__pushClear ? window.__pushClear(lx, lz, -0.6, 18) : [lx, lz];
+    if (!mv) continue;
+    const [lx2, lz2] = mv;
     g.position.set(lx2, groundAt(lx2, lz2), lz2); g.rotation.y = ang;
     world.add(g);
 
@@ -323,7 +345,9 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     g.add(cab);
   // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
   // carriageway rather than dropping a shelter into the traffic
-    const [tx2, tz2] = (window.__pushClear ? window.__pushClear(tx, tz) : null) || [tx, tz];
+    const mvt = window.__pushClear ? window.__pushClear(tx, tz, -0.6, 18) : [tx, tz];
+    if (!mvt) continue;
+    const [tx2, tz2] = mvt;
     g.position.set(tx2, groundAt(tx2, tz2), tz2); g.rotation.y = ang;
     world.add(g);
   }
@@ -371,7 +395,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     realTaxis: realCount.taxis,
     taxiStands: taxiAt.length,
     linkway: linkRoof.length,
-    rails: railT.length, shelters: shelterAt.length,
+    rails: railT.length, shelters, stopPoles: poles,
     lights: lightAt.length, signs: signT.length, planters: planterT.length,
   };
 }

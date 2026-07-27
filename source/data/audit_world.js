@@ -275,7 +275,7 @@ window.__auditWorld = async function auditWorld() {
     // the best figure reached so far — 286 when the check was written, 116 now.
     // Leaving it at the original 286 would have quietly permitted a regression
     // all the way back, which defeats the point of a ratchet.
-    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 116,
+    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 101,
         Object.entries(bad).sort((a, b) => b[1] - a[1]).slice(0, 6)
           .map(([k, v2]) => `${v2}x ${k}`).join('  ') || 'none', ex);
   }
@@ -551,11 +551,15 @@ window.__auditWorld = async function auditWorld() {
       return q && built.some((b) => (b[0] - q[0]) ** 2 + (b[1] - q[1]) ** 2 < reach * reach);
     }).length;
 
-    const shelters = posOf((t, pr) => t === 'BoxGeometry' && Math.abs((pr.width || 0) - 8.8) < 0.01);
+    // A stop counts as built when its pole is there. The shelter is a bonus that
+    // only fits on wide frontages, and measuring shelters alone reported 6 of 48
+    // stops built when the real answer depends on whether the stop exists at all.
+    const stopPoles = posOf((t, pr) => t === 'CylinderGeometry'
+      && Math.abs((pr.radiusTop || 0) - 0.085) < 0.005);
     const heads = posOf((t, pr) => t === 'BoxGeometry'
       && Math.abs((pr.width || 0) - 0.32) < 0.01 && Math.abs((pr.height || 0) - 0.86) < 0.01);
     const layers = [
-      ['bus stops', data.busstops || [], shelters, 16],
+      ['bus stops', data.busstops || [], stopPoles, 14],
       ['traffic signals', data.signals || [], heads, 22],
     ];
     const worst = [];
@@ -569,13 +573,12 @@ window.__auditWorld = async function auditWorld() {
     // Enters as a ratchet, like P1b: the check is new and found a real backlog,
     // and a gate that fails on day one is a gate people learn to ignore.
     //
-    // The baseline is 6%, not the 13% first measured, and the reason matters:
-    // fixing the shelter footprint test stopped shelters being built lying
-    // across the carriageway, and fewer of them now fit. That is correctness
-    // bought with coverage — P1b fell from 116 to 114 as C8 fell from 13 to 6.
-    // Both numbers have to come up together, which means the shelter needs to
-    // be narrower or the pavement wider, not a looser test.
-    add('C8', 'share of each real layer built (ratchet, target 70)', 'MAJOR', lowest, 6,
+    // Both numbers did come up together in the end. What unlocked it: a mapped
+    // stop is now represented by a POLE, which fits almost anywhere, with the
+    // 9.2m shelter added only where it genuinely fits; and the clearance search
+    // fans out around its first heading instead of pushing one way and giving up
+    // at a junction. 6% to 98%, while P1b fell from 116 to 101.
+    add('C8', 'share of each real layer built (target 70)', 'MAJOR', lowest, 70,
         worst.join('; '), worst);
   }
 

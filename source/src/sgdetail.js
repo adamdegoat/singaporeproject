@@ -53,7 +53,9 @@ function erpGantry(world, px, pz, ang, width) {
 
   // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
   // carriageway rather than dropping a shelter into the traffic
-  const [px2, pz2] = (window.__pushClear ? window.__pushClear(px, pz) : null) || [px, pz];
+  const mv2 = window.__pushClear ? window.__pushClear(px, pz, -0.6, 18) : [px, pz];
+  if (!mv2) return;
+  const [px2, pz2] = mv2;
   g.position.set(px2, groundAt(px2, pz2), pz2);
   g.rotation.y = ang;
   world.add(g);
@@ -85,7 +87,9 @@ function pedBridge(world, px, pz, ang, width) {
   }
   // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
   // carriageway rather than dropping a shelter into the traffic
-  const [px2, pz2] = (window.__pushClear ? window.__pushClear(px, pz) : null) || [px, pz];
+  const mv2 = window.__pushClear ? window.__pushClear(px, pz, -0.6, 18) : [px, pz];
+  if (!mv2) return;
+  const [px2, pz2] = mv2;
   g.position.set(px2, groundAt(px2, pz2), pz2);
   g.rotation.y = ang;
   world.add(g);
@@ -172,7 +176,9 @@ function mrtEntrance(world, px, pz, ang, label) {
 
   // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
   // carriageway rather than dropping a shelter into the traffic
-  const [px2, pz2] = (window.__pushClear ? window.__pushClear(px, pz) : null) || [px, pz];
+  const mv2 = window.__pushClear ? window.__pushClear(px, pz, -0.6, 18) : [px, pz];
+  if (!mv2) return;
+  const [px2, pz2] = mv2;
   g.position.set(px2, groundAt(px2, pz2), pz2);
   g.rotation.y = ang;
   world.add(g);

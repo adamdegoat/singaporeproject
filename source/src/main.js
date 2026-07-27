@@ -289,7 +289,10 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   ROADIX = buildRoadIndex(data, data.axis || null);
   window.__onRoad = (x, z, m, ex) => ROADIX.onRoad(x, z, m || 0, ex || null);
   window.__nearestStreet = (x, z) => ROADIX.nearestName(x, z);
-  window.__pushClear = (x, z, m) => ROADIX.pushClear(x, z, m == null ? -0.6 : m);
+  // the limit must be passed through: dropping it capped every search at the
+  // default 7m, and a stop node on the centreline of a 16m road needs further
+  window.__pushClear = (x, z, m, limit) =>
+    ROADIX.pushClear(x, z, m == null ? -0.6 : m, limit == null ? 7 : limit);
 
   const bs = P.has('nobuild') ? { count: 0, tall: 0 } : buildBuildings(world, data);
   const fallbackAxis = buildRoads(world, data);

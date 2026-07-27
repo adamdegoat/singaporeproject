@@ -114,9 +114,19 @@ export function buildRoadIndex(data, axis) {
     let ax = x - bx, az = z - bz;
     const L = Math.hypot(ax, az);
     if (L < 1e-6) { ax = 1; az = 0; } else { ax /= L; az /= L; }
+
+    // Straight out from the nearest centreline first, since that is the shortest
+    // way off this road. But at a junction that heading runs into the crossing
+    // street, so fan out around it: one direction alone left a third of the
+    // furniture with nowhere to stand.
+    const fan = [0, 0.4, -0.4, 0.85, -0.85, 1.35, -1.35, Math.PI / 2, -Math.PI / 2];
     for (let step = 0.8; step <= limit; step += 0.8) {
-      const nx2 = x + ax * step, nz2 = z + az * step;
-      if (!onRoad(nx2, nz2, margin)) return [nx2, nz2];
+      for (const turn of fan) {
+        const c = Math.cos(turn), s2 = Math.sin(turn);
+        const dx2 = ax * c - az * s2, dz2 = ax * s2 + az * c;
+        const nx2 = x + dx2 * step, nz2 = z + dz2 * step;
+        if (!onRoad(nx2, nz2, margin)) return [nx2, nz2];
+      }
     }
     return null;
   };
