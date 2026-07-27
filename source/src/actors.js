@@ -27,21 +27,70 @@ export class Path {
     return bestS;
   }
 
-  // returns [x, z, ux, uz] at arclength s (wraps)
-  at(s, out) {
-    let d = ((s % this.len) + this.len) % this.len;
+  // position only, at arclength d (wraps)
+  _point(d, out) {
+    d = ((d % this.len) + this.len) % this.len;
     let lo = 0, hi = this.cum.length - 1;
     while (lo < hi - 1) {
       const mid = (lo + hi) >> 1;
       if (this.cum[mid] <= d) lo = mid; else hi = mid;
     }
-    const a = this.pts[lo], b = this.pts[Math.min(lo + 1, this.pts.length - 1)];
-    const segLen = Math.max(1e-4, this.cum[lo + 1] - this.cum[lo]);
-    const t = (d - this.cum[lo]) / segLen;
-    const ux = (b[0] - a[0]) / segLen, uz = (b[1] - a[1]) / segLen;
+    const j = Math.min(lo + 1, this.pts.length - 1);
+    const a = this.pts[lo], b = this.pts[j];
+    const segLen = Math.max(1e-4, (this.cum[j] ?? this.cum[lo]) - this.cum[lo]);
+    const t = Math.min(1, Math.max(0, (d - this.cum[lo]) / segLen));
     out[0] = a[0] + (b[0] - a[0]) * t;
     out[1] = a[1] + (b[1] - a[1]) * t;
-    out[2] = ux; out[3] = uz;
+    return out;
+  }
+
+  // returns [x, z, ux, uz] at arclength s (wraps)
+  //
+  // The tangent is a CENTRAL DIFFERENCE over a few metres, not the direction of
+  // the segment s happens to land on. Everything that travels this path —
+  // pedestrians, cars, buses — is drawn at a lateral offset from the centreline,
+  // and a per-segment tangent flips direction the instant s crosses a vertex.
+  // The offset then swings by (offset x the turn angle) in a single frame.
+  //
+  // That is where the teleporting pedestrians came from. Someone walking 17m
+  // out on the pavement, passing a bend of 37 degrees, was thrown 11 metres
+  // sideways between two frames: measured at 75 m/s while their arclength moved
+  // 24 centimetres. It was never the crossing code, and the same pop was
+  // hitting every vehicle in the outer lanes.
+  //
+  // A central difference rotates the frame smoothly through a bend because both
+  // sample points move continuously as s does.
+  at(s, out) {
+    this._point(s, out);
+    // The window is CLAMPED to the ends of the path, never wrapped. Wrapping it
+    // was worse than the bug it replaced: on a twenty-metre side street the
+    // sample at s+2.5 fell off the end and came back at the far end, so the
+    // tangent pointed at the other side of the street and a pedestrian standing
+    // twelve metres out was thrown across it. Measured at 184 m/s.
+    const d = ((s % this.len) + this.len) % this.len;
+    const D = Math.min(2.5, this.len / 3);
+    // The upper sample stops just SHORT of the end. Clamping it to exactly
+    // this.len hands _point a value that its own wrap turns into 0, so the
+    // forward sample came back from the start of the street and the tangent
+    // pointed backwards. The offset then mirrored to the far side, a jump of
+    // exactly twice the offset: a pedestrian 14m out on an 18m stub moved 28m.
+    const EPS = 1e-3;
+    const lo = Math.max(0, d - D), hi = Math.min(this.len - EPS, d + D);
+    const a = this._tmpA || (this._tmpA = [0, 0]);
+    const b = this._tmpB || (this._tmpB = [0, 0]);
+    this._point(lo, a);
+    this._point(hi, b);
+    let ux = b[0] - a[0], uz = b[1] - a[1];
+    let L = Math.hypot(ux, uz);
+    if (L < 1e-6) {
+      // degenerate: a path shorter than any usable window, or a duplicated
+      // vertex. Fall back to the local segment rather than to a zero vector,
+      // which would collapse every lateral offset onto the centreline.
+      this._point(d, a); this._point(Math.min(this.len, d + 0.05), b);
+      ux = b[0] - a[0]; uz = b[1] - a[1];
+      L = Math.hypot(ux, uz) || 1;
+    }
+    out[2] = ux / L; out[3] = uz / L;
     return out;
   }
 }
@@ -210,10 +259,22 @@ export class Crowd {
     for (let i = 0; i < this.people.length; i++) {
       const pr = this.people[i];
 
-      // crossing behaviour: wait at the kerb, cross on the pedestrian green,
-      // then carry on along the other pavement
+      // Crossing: wait at the kerb, cross on the pedestrian green, carry on
+      // along the other pavement.
+      //
+      // This used to take a FIXED 5.2 seconds no matter how far it was. The
+      // lateral move ran from `off` to `-off`, and off is the kerb plus 3.2 to
+      // 10.5 metres of pavement, so the trip was 25 to 39 metres. Twenty-five
+      // metres in 5.2 seconds is 4.8 m/s average, and the ease-in-out doubles
+      // that at the midpoint: measured peaks of 9 to 13 m/s, which is 32 to 47
+      // km/h. That is the sprinting the user saw.
+      //
+      // Two fixes. The distance is now the carriageway plus a step onto each
+      // pavement, not the full width of both pavements. And the duration comes
+      // from that distance at a real crossing pace, so it is a walk however far
+      // it is.
       if (pr.crossing) {
-        pr.crossT += dt / 5.2;
+        pr.crossT += dt / pr.crossDur;
         const e2 = pr.crossT < 0.5
           ? 2 * pr.crossT * pr.crossT
           : 1 - 2 * (1 - pr.crossT) * (1 - pr.crossT);
@@ -221,18 +282,90 @@ export class Crowd {
         if (pr.crossT >= 1) { pr.crossing = false; pr.off = pr.crossTo; pr.waited = 0; }
       } else if (pr.crosser && pr.pi === 0 && pr.speed > 0.1) {
         const c = this._nearCrossing(pr.s);
-        if (c !== null && this._pedGreen(c, time, signals)) {
+        if (c === null) {
+          pr.s += pr.dir * (pr.speed / (pr.arc || 1)) * dt;
+        } else if (this._pedGreen(c, time, signals)) {
+          const half = this.halves[pr.pi];
+          const sgn = pr.off >= 0 ? 1 : -1;
+          // Start from where the person actually is. Snapping them to the kerb
+          // line first looked tidier in the code and moved them up to nine
+          // metres in a single frame, which measured as a 30 m/s pedestrian —
+          // the same class of bug as the one being fixed, introduced by the
+          // fix. They walk in from wherever they are.
+          //
+          // The far side IS capped: they finish a stride onto the far pavement
+          // rather than mirroring a ten-metre offset, which is what made the
+          // trip 39 metres long.
+          const from = pr.off;
+          const to = -sgn * (half + 1.6 + rand(0, 1.8));
           pr.crossing = true; pr.crossT = 0;
-          pr.crossFrom = pr.off; pr.crossTo = -pr.off;
+          pr.crossFrom = from; pr.crossTo = to;
+          // A crossing is walked a little faster than a stroll, not sprinted.
+          // The ease-in-out peaks at twice the average, so size the average to
+          // keep the PEAK at a plausible pace rather than the mean.
+          const dist = Math.abs(to - from);
+          pr.crossDur = Math.max(2.5, (dist / 1.45) * 1.35);
+          pr.waited = 0;
         } else {
-          pr.s += pr.dir * pr.speed * dt;
+          // Red for pedestrians. The comment here always claimed they wait at
+          // the kerb and the code walked them straight past it. Now they stop,
+          // with a patience limit so nobody stands at a junction forever.
+          pr.waited = (pr.waited || 0) + dt;
+          if (pr.waited > 26) { pr.waited = 0; pr.s += pr.dir * (pr.speed / (pr.arc || 1)) * dt; }
         }
       } else {
-        pr.s += pr.dir * pr.speed * dt;
+        pr.s += pr.dir * (pr.speed / (pr.arc || 1)) * dt;
+      }
+
+      // Turn round at the end of the street instead of wrapping to the other
+      // end of it. Path.at() takes s modulo the path length, so a pedestrian
+      // who walked off the east end reappeared at the west end: on a short side
+      // street that is a visible pop, and it measured as 35 to 39 m/s.
+      {
+        const L = this.paths[pr.pi].len;
+        // Reflect strictly INSIDE the path. Landing on s === L exactly is not
+        // safe: _point takes s modulo the length, so the end of the street and
+        // the start of it are the same value, and a walker standing on it is
+        // rendered at the far end.
+        const EDGE = 0.01;
+        if (pr.s < EDGE) { pr.s = EDGE + (EDGE - pr.s); pr.dir = 1; }
+        else if (pr.s > L - EDGE) { pr.s = (L - EDGE) - (pr.s - (L - EDGE)); pr.dir = -1; }
+        pr.s = Math.max(EDGE, Math.min(L - EDGE, pr.s));
       }
 
       this.paths[pr.pi].at(pr.s, tmp);
       const [cx, cz, ux, uz] = tmp;
+
+      // How much ground a metre of arclength covers AT THIS OFFSET. On the
+      // outside of a bend it is more than a metre, so someone walking eleven
+      // metres out on the pavement was covering three metres of pavement for
+      // every one the centreline advanced, and broke into a run at every kink
+      // in the road. A real person walks at their own pace round a corner and
+      // simply takes longer to get round it.
+      //
+      // Measured once per person per frame and used on the NEXT step, which is
+      // a frame of lag nobody can see and avoids evaluating the path twice
+      // before we know where they are.
+      {
+        // Centred on where they are and measured over a short window. Half a
+        // metre LOOKING AHEAD averaged the rate over ground they had not
+        // reached, and near a tight kink the rate changes faster than that:
+        // the correction lagged and one walker still hit 3.3 m/s rounding it.
+        const t1 = this._t1 || (this._t1 = [0, 0, 0, 0]);
+        const t2 = this._t2 || (this._t2 = [0, 0, 0, 0]);
+        const H = 0.15;
+        this.paths[pr.pi].at(pr.s - H, t1);
+        this.paths[pr.pi].at(pr.s + H, t2);
+        const ax = t1[0] - t1[3] * pr.off, az = t1[1] + t1[2] * pr.off;
+        const bx = t2[0] - t2[3] * pr.off, bz = t2[1] + t2[2] * pr.off;
+        const k = Math.hypot(bx - ax, bz - az) / (2 * H);
+        // The upper clamp has to be generous. Held at 3 the correction ran out
+        // on the tightest kink in the axis and a pedestrian eleven metres out
+        // still broke into a 3.3 m/s jog rounding it. Slowing to an eighth of
+        // pace on the outside of a hairpin is not a bug, it is what walking
+        // round a hairpin at a fixed pace looks like.
+        pr.arc = Math.max(0.35, Math.min(8.0, k)) || 1;
+      }
       const nx = -uz, nz = ux;
       // sidestep the player instead of walking through them
       const baseX = cx + nx * pr.off, baseZ = cz + nz * pr.off;
@@ -259,10 +392,38 @@ export class Crowd {
       if (ddx2 * ddx2 + ddz2 * ddz2 > 105 * 105) continue;
       const idx = slot++;
 
-      const heading = Math.atan2(ux * pr.dir, uz * pr.dir);
+      // Face the way you are actually going, and walk at the rate you are
+      // actually covering ground. Both used to come from the along-street
+      // values: heading was always parallel to the road, so a pedestrian
+      // crossing it slid sideways like a crab, and the leg cycle was driven by
+      // `pr.speed`, the along-path speed, which is zero during a crossing — so
+      // the fastest thing on the street was moving with its legs barely
+      // turning over. Deriving both from the real displacement fixes the two
+      // together and keeps working for the dodge as well.
+      let vx = 0, vz = 0;
+      if (pr.px !== undefined && dt > 0) { vx = (x - pr.px) / dt; vz = (z - pr.pz) / dt; }
+      pr.px = x; pr.pz = z;
+      const ground = Math.hypot(vx, vz);
+      // A teleport, a respawn or the first frame is not a stride. Ignore it for
+      // the gait, and keep the previous facing rather than snapping.
+      const real = ground > 0.05 && ground < 6;
+      if (real) {
+        const want = Math.atan2(vx, vz);
+        if (pr.head === undefined) pr.head = want;
+        else {
+          // shortest way round, then ease, so a turn is a turn and not a snap
+          let d = want - pr.head;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          pr.head += d * Math.min(1, dt * 7);
+        }
+      }
+      if (pr.head === undefined) pr.head = Math.atan2(ux * pr.dir, uz * pr.dir);
+      const heading = pr.head;
       const sc = pr.scale;
-      const moving = pr.crossing || pr.speed > 0.1;
-      const walk = moving ? Math.sin(time * 5.2 * (pr.speed / 1.3) + pr.phase) : 0;
+      const gait = real ? ground : 0;
+      const moving = gait > 0.1;
+      const walk = moving ? Math.sin(time * 5.2 * (gait / 1.3) + pr.phase) : 0;
       const bob = moving ? Math.abs(Math.cos(time * 5.2 + pr.phase)) * 0.022 : 0;
 
       const put = (part, lx, ly, lz, rx, rz) => {
@@ -319,12 +480,39 @@ export class Crowd {
 const CAR_COLS = [0xd8dade, 0x2b3038, 0x8f959c, 0x7a2f2a, 0x27405e, 0xb9bcc0, 0x3d4a3f];
 
 export class Traffic {
-  constructor(axis, cars = 16, buses = 3) {
+  // `spec` comes from axisSpec() in markings.js: the real lane count, the real
+  // lane centres, and whether the street is one-way. Passing it in rather than
+  // guessing here is the whole point — the lane a car drives in and the dashed
+  // line painted beside it are now the same number.
+  constructor(axis, cars = 16, buses = 3, spec = null) {
     this.path = new Path(axis.p);
     this.half = axis.w / 2;
     this.nCars = cars;
     this.nBuses = buses;
+    this.spec = spec;
     this.items = [];
+  }
+
+  // Which way a vehicle faces, and which lane it sits in.
+  //
+  // On a one-way street every vehicle runs with the way direction and may use
+  // any lane. On a two-way street the direction picks the half of the
+  // carriageway. Orchard Road is the first kind, and drawing it as the second
+  // put half the fleet driving straight up the street the wrong way.
+  _assign(i, kind) {
+    const sp = this.spec;
+    if (sp && sp.oneway) {
+      // keep buses in the two nearside lanes, where they actually stop
+      const lanes = sp.centres;
+      const idx = kind === 'bus'
+        ? lanes.length - 1 - (i % 2)
+        : i % lanes.length;
+      return { dir: 1, lane: lanes[idx] };
+    }
+    const dir = i % 2 === 0 ? 1 : -1;
+    return kind === 'bus'
+      ? { dir, lane: dir * 5.4 }
+      : { dir, lane: dir * (1.9 + (i % 4 < 2 ? 0 : 3.4)) };
   }
 
   build(world, avoidS = 0) {
@@ -356,13 +544,12 @@ export class Traffic {
 
     const col = new THREE.Color();
     for (let i = 0; i < n; i++) {
-      const dir = i % 2 === 0 ? 1 : -1;
+      const { dir, lane } = this._assign(i, 'car');
       const base = rand(7, 12);
       this.items.push({
         kind: 'car', i,
         s: avoidS + 55 + ((this.path.len - 110) / n) * i + rand(-6, 6),
-        lane: dir * (1.9 + (i % 4 < 2 ? 0 : 3.4)),
-        dir, speed: base, base,
+        lane, dir, speed: base, base,
       });
       col.setHex(pick(CAR_COLS));
       this.body.setColorAt(i, col); this.roof.setColorAt(i, col);
@@ -372,14 +559,14 @@ export class Traffic {
     const BUS_LIVERY = [0x3f7d46, 0x3f7d46, 0xc4342f];   // LTA green, green, SBS red
     const bcol = new THREE.Color();
     for (let i = 0; i < b; i++) {
-      const dir = i % 2 === 0 ? 1 : -1;
+      const { dir, lane } = this._assign(i, 'bus');
       bcol.setHex(BUS_LIVERY[i % BUS_LIVERY.length]);
       this.busBody.setColorAt(i, bcol);
       const base = rand(6, 9);
       this.items.push({
         kind: 'bus', i,
         s: avoidS + 140 + ((this.path.len - 200) / b) * i + rand(-15, 15),
-        lane: dir * 5.4, dir, speed: base, base,
+        lane, dir, speed: base, base,
       });
     }
 
@@ -420,7 +607,8 @@ export class Traffic {
     return null;
   }
 
-  update(time, dt, signals) {
+  // playerX/playerZ are only used to decide where a vehicle may be recycled.
+  update(time, dt, signals, playerX = 1e9, playerZ = 1e9) {
     const { _m: m, _q: q, _e: e, _p: p, _s: s, _tmp: tmp } = this;
     for (const it of this.items) {
       // slow for a red or amber signal ahead, and hold at the line
@@ -442,6 +630,28 @@ export class Traffic {
       const rate = want < it.speed ? 7.0 : 2.2;      // brakes harder than it pulls away
       it.speed += (want - it.speed) * Math.min(1, rate * dt);
       it.s += it.dir * it.speed * dt;
+
+      // Recycling at the end of the street.
+      //
+      // Path.at() takes s modulo the length, so a car that reached Dhoby Ghaut
+      // silently reappeared at the Tanglin end: measured as one sample at
+      // 15,500 m/s. Orchard Road is one-way, so it cannot simply turn round the
+      // way a pedestrian does. It has to be a different car arriving at the top
+      // of the street, and that swap must not happen where anyone can watch it.
+      //
+      // So it waits: past the end it holds at the last few metres, as if queuing
+      // at the junction, and only jumps back to the start once it is far enough
+      // from the player that the jump is off screen.
+      {
+        const L = this.path.len, EDGE = 4;
+        const past = it.dir > 0 ? it.s > L - EDGE : it.s < EDGE;
+        if (past) {
+          const far = (it.wx === undefined)
+            || ((it.wx - playerX) ** 2 + (it.wz - playerZ) ** 2) > 190 * 190;
+          if (far) it.s = it.dir > 0 ? EDGE : L - EDGE;
+          else { it.s = it.dir > 0 ? L - EDGE : EDGE; it.speed = 0; }
+        }
+      }
       this.path.at(it.s, tmp);
       const [cx, cz, ux, uz] = tmp;
       const nx = -uz, nz = ux;

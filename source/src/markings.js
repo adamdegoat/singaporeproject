@@ -42,28 +42,56 @@ function emitFlat(world, list, w, l, mat) {
   return list.length;
 }
 
+// How the main street actually works, read off the map rather than assumed.
+//
+// Orchard Road has been one-way since 1974: five lanes all running south-east
+// toward Dhoby Ghaut. Every Orchard Road way in the OSM extract carries
+// oneway=yes, and the flag was already sitting unused in the scene file while
+// the traffic system spawned half its vehicles head-on up the street. That is
+// the same failure as the crossings and the sidewalk tags before it: the data
+// was there, nothing read it.
+//
+// Both the lane markings and the traffic take their geometry from here, so they
+// cannot disagree about where a lane is.
+export function axisSpec(axis, data = {}) {
+  const name = (axis.n || '').toLowerCase();
+  const ways = (data.roads || []).filter((r) => (r.n || '').toLowerCase() === name);
+  let lanes = 0, tagged = 0, ow = 0, owTagged = 0;
+  for (const r of ways) {
+    if (r.lanes) { lanes += r.lanes; tagged++; }
+    if (r.oneway != null) { owTagged++; if (r.oneway) ow++; }
+  }
+  const half = axis.w / 2;
+  // A street is one-way only if the map says so everywhere it says anything.
+  // A majority vote would let a handful of mis-tagged slip roads flip a street
+  // that is one-way along its whole length, or the reverse.
+  const oneway = owTagged > 0 && ow === owTagged;
+  const count = tagged ? Math.max(2, Math.round(lanes / tagged)) : (oneway ? 3 : 6);
+  const laneW = (half * 2) / count;
+  // lane centres, offset from the centreline
+  const centres = [];
+  for (let i = 0; i < count; i++) centres.push(-half + laneW * (i + 0.5));
+  return { count, laneW, half, oneway, centres, ways: ways.length, tagged, owTagged };
+}
+
 export function buildMarkings(world, axis, data = {}) {
   const pts = axis.p, half = axis.w / 2;
   const dash = [], edge = [], yellowL = [], stopL = [], arrowShaft = [], arrowHead = [];
 
-  // Lane count from the map, not from a number we picked. OSM tags lanes on
-  // just over half the roads here, so where it is tagged the dividers land
-  // where the real ones do.
-  let lanes = 0, tagged = 0;
-  for (const r of (data.roads || [])) {
-    if (!/orchard road/i.test(r.n || '') || !r.lanes) continue;
-    lanes += r.lanes; tagged++;
-  }
-  const laneCount = tagged ? Math.max(2, Math.round(lanes / tagged)) : 6;
+  const spec = axisSpec(axis, data);
+  const laneCount = spec.count, laneW = spec.laneW;
   // divider offsets: evenly split the carriageway by the real lane count
-  const laneW = (half * 2) / laneCount;
   const dividers = [];
   for (let i = 1; i < laneCount; i++) {
     const off = -half + i * laneW;
-    if (Math.abs(off) < 1.6) continue;     // that one is the median, not a divider
+    // On a two-way street the middle line is the median and is drawn
+    // differently; on a one-way street it is an ordinary lane divider like any
+    // other and skipping it leaves a five-lane road looking like four.
+    if (!spec.oneway && Math.abs(off) < 1.6) continue;
     dividers.push(off);
   }
   window.__laneCount = laneCount;
+  window.__oneway = spec.oneway;
 
   let acc = 0;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -106,9 +134,7 @@ export function buildMarkings(world, axis, data = {}) {
         }
       }
       if (acc % 190 === 60 || acc % 190 === 140) {
-        const lanesMid = dividers.map((d, i) => d - laneW / 2)
-          .concat([half - laneW / 2]);
-        for (const off of lanesMid) {
+        for (const off of spec.centres) {
           arrowShaft.push([px + nx * off, MARK.arrow, pz + nz * off, ang]);
           arrowHead.push([px + nx * off + ux * 1.9, MARK.arrowHead, pz + nz * off + uz * 1.9, ang]);
         }

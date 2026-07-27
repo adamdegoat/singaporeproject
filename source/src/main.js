@@ -7,7 +7,7 @@ import { buildRoadIndex, claim } from './roads.js';
 import { buildVespa, buildRider, newState, step, RIDE } from './vespa.js';
 import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
-import { buildMarkings, dressSideStreets, selectSideStreets } from './markings.js';
+import { axisSpec, buildMarkings, dressSideStreets, selectSideStreets } from './markings.js';
 import { buildSgDetail } from './sgdetail.js';
 import { Signals } from './signals.js';
 import { Sound } from './audio.js';
@@ -325,9 +325,22 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
     // must come after construction, or the handover is a no-op
     if (window.__crossings) crowdSys.setCrossings(window.__crossings);
     window.__crowdPositions = () => crowdSys.positions();
+    // Full per-pedestrian state, for the behaviour probe. Speeds alone tell you
+    // that someone is sprinting and not why; this says which path they are on,
+    // whether they are mid-crossing, and where along it they are.
+    window.__crowdPaths = () => crowdSys.paths.map((pt, i) => ({
+      i, len: +pt.len.toFixed(1), n: pt.pts.length, half: crowdSys.halves[i],
+      pts: pt.pts,
+    }));
+    window.__pathAt = (i, s) => { const o = [0, 0, 0, 0]; crowdSys.paths[i].at(s, o); return o; };
+    window.__crowdState = () => crowdSys.people.map((p) => ({
+      pi: p.pi, s: +p.s.toFixed(2), off: +p.off.toFixed(2), dir: p.dir,
+      crossing: !!p.crossing, crossT: +(p.crossT || 0).toFixed(3),
+      crossDur: +(p.crossDur || 0).toFixed(2), speed: +p.speed.toFixed(2),
+    }));
   }
   if (!P.has('notraffic') && axis) {
-    trafficSys = new Traffic(axis, 18, 3);
+    trafficSys = new Traffic(axis, 18, 3, axis && axisSpec(axis, data));
     trafficSys.build(world, trafficSys.path.nearestS(S.x, S.z));
     window.__trafficPositions = () => (trafficSys.items || []).map(() => 1);
   }
@@ -514,15 +527,20 @@ function walkCamera(dt) {
 
 const camPos = new THREE.Vector3(), camAim = new THREE.Vector3();
 let camInit = false;
-// vet-only free camera: ?spec=x,y,z,tx,ty,tz
-const SPEC = (P.get('spec') || '').split(',').map(Number);
-const SPEC_ON = SPEC.length === 6 && SPEC.every((n) => Number.isFinite(n));
+// vet-only free camera: ?spec=x,y,z,tx,ty,tz[,fov]
+// Also settable at runtime through window.__cam so the comparison sheet can
+// take a dozen matched-angle frames from ONE load. Reloading per frame costs
+// four seconds of world build each time and, worse, rebuilds the crowd and the
+// traffic fleet, so no two frames would show the same street.
+const SPEC0 = (P.get('spec') || '').split(',').map(Number);
+let SPEC = (SPEC0.length === 6 || SPEC0.length === 7) && SPEC0.every((n) => Number.isFinite(n))
+  ? SPEC0 : null;
 
 function driveCamera(dt) {
-  if (SPEC_ON) {
+  if (SPEC) {
     camera.position.set(SPEC[0], SPEC[1], SPEC[2]);
     camera.lookAt(SPEC[3], SPEC[4], SPEC[5]);
-    camera.fov = 46; camera.updateProjectionMatrix();
+    camera.fov = SPEC[6] || 46; camera.updateProjectionMatrix();
     return;
   }
   const fwd = new THREE.Vector3(Math.sin(S.heading), 0, Math.cos(S.heading));
@@ -606,11 +624,11 @@ function loop(now) {
       sun.target.updateMatrixWorld();
       clock += dt;
       if (signals) signals.update(clock);
-      if (trafficSys) trafficSys.update(clock, dt, signals);
+      if (trafficSys) trafficSys.update(clock, dt, signals, walker.x, walker.z);
       if (crowdSys) crowdSys.update(clock, dt, walker.x, walker.z, signals);
       if (wayfinder) wayfinder.update(walker, dt);
       sound.update(0, 'walk', walker.speed, walker.phase, trafficSys ? trafficSys.nearest(walker.x, walker.z) : 999);
-      walkCamera(dt);
+      if (SPEC) driveCamera(dt); else walkCamera(dt);
       renderer.render(scene, camera);
       frames++;
       if (now - t0 > 1000) reportHud(now);
@@ -652,7 +670,7 @@ function loop(now) {
 
     clock += dt;
     if (signals) signals.update(clock);
-    if (trafficSys) trafficSys.update(clock, dt, signals);
+    if (trafficSys) trafficSys.update(clock, dt, signals, S.x, S.z);
     if (crowdSys) crowdSys.update(clock, dt, S.x, S.z, signals);
     if (wayfinder) wayfinder.update(S, dt);
     sound.update(S.speed, 'ride', 0, 0, trafficSys ? trafficSys.nearest(S.x, S.z) : 999);
@@ -710,6 +728,22 @@ window.__teleport = (x, z, heading) => {
   camInit = false;
   driveCamera(1.0);
   return { x: S.x, z: S.z, heading: S.heading };
+};
+// Free camera at runtime, for the comparison sheet. Pass null to hand the
+// camera back to the ride. fov is vertical; the default 46 is about a 26mm
+// lens across a 16:9 frame, which is the range street photographs are shot in.
+window.__cam = (x, y, z, tx, ty, tz, fov) => {
+  SPEC = x == null ? null : [x, y, z, tx, ty, tz, fov || 46];
+  camInit = false;
+  return SPEC;
+};
+// Hide the interface so a frame can be compared against a photograph without a
+// minimap and a control legend sitting on top of it.
+window.__ui = (on) => {
+  for (const id of ['hud', 'help', 'place', 'map', 'modebtn', 'soundbtn', 'stick', 'lookhint']) {
+    const el = document.getElementById(id);
+    if (el) el.style.visibility = on ? '' : 'hidden';
+  }
 };
 window.__inp = () => ({ TOUCH, steer: input.steer, throttle: input.throttle, brake: input.brake, touches: touchDebug(), fired: window.__touchFired || 0 });
 window.__snd = sound;

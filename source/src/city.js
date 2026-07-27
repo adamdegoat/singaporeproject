@@ -53,10 +53,16 @@ export const MAT = {
   metal: new THREE.MeshStandardMaterial({ color: 0x8b8f93, roughness: 0.5, metalness: 0.4 }),
   darkMetal: new THREE.MeshStandardMaterial({ color: 0x3b3f44, roughness: 0.6, metalness: 0.3 }),
   glass: new THREE.MeshStandardMaterial({ color: 0x53616d, roughness: 0.14, metalness: 0.18 }),
+  // A little emissive on the foliage. Leaf cards are double-sided, so from the
+  // pavement you are looking at the UNLIT back of half the crown above you, and
+  // a Lambert backface with no light on it is black. Real foliage seen from
+  // below is translucent, not black; this stands in for that without the cost
+  // of a transmission material. Keep it low, or the canopy glows at dusk.
   leaf: new THREE.MeshLambertMaterial({
     map: TEX.leaf, transparent: false, alphaTest: 0.42, side: THREE.DoubleSide,
+    emissive: 0x24331a, emissiveIntensity: 0.55,
   }),
-  canopy: new THREE.MeshLambertMaterial({ color: 0x24311a }),
+  canopy: new THREE.MeshLambertMaterial({ color: 0x3a4f24, emissive: 0x1d2812, emissiveIntensity: 0.4 }),
   trunk: new THREE.MeshStandardMaterial({ color: PAL.trunk, roughness: 0.95 }),
   ao: new THREE.MeshBasicMaterial({
     map: TEX.ao, transparent: true, blending: THREE.MultiplyBlending,
@@ -686,20 +692,41 @@ export function buildRoads(world, data) {
   return mainAxis;
 }
 
-/* ---------------- rain trees, as one instanced field ---------------- */
-// Every tree as its own Group would be ~10 draw calls each. Collect them and
-// emit three InstancedMeshes for the whole street instead.
+/* ---------------- the Angsana avenue, as one instanced field ---------------- */
+//
+// These are the most characteristic thing on Orchard Road and they were the
+// most wrong thing in the world. The street is an Angsana avenue (Pterocarpus
+// indicus, with Rain Trees mixed in): a dense DOME crown, wider than the tree
+// is tall, on a stout trunk, with branches that spread nearly horizontally and
+// then droop. NParks gives the crown as 12 to 34 metres across.
+//
+// What was here before was a 10 to 14 metre crown of thin scattered foliage on
+// a bare 8 to 12 metre trunk, which reads as a palm, and read as a palm in
+// every one of fourteen review frames. The fix is mostly proportion:
+//
+//   crown radius   5.2 - 7.2 m   ->   8.0 - 12.0 m   (16-24m across, in range)
+//   crown depth    flat scatter  ->   dome, deepest at the centre
+//   rim           level          ->   drooping, the Angsana's signature
+//   trunk         0.24 / 0.52    ->   0.34 / 0.78, a stout bole
+//   crown base    at 0.92 h      ->   from 0.52 h, so the canopy is a canopy
+//
+// Leaf cards scale WITH the crown radius, so a 1.7x wider crown is covered by
+// the same 30 cards at 1.7x the size. Widening the trees costs no extra
+// geometry; it costs fill rate, which is the right thing to spend it on.
+//
+// Every repeated thing is one InstancedMesh: as separate Groups this would be
+// about ten draw calls per tree.
 export class TreeField {
   constructor() { this.items = []; }
   add(x, z, scale = 1) { this.items.push([x, z, scale]); }
   build(world) {
     const n = this.items.length;
     if (!n) return 0;
-    const CARDS = 30, BLOBS = 3, BRANCH = 4;
+    const CARDS = 40, BLOBS = 7, BRANCH = 5;
     const trunks = new THREE.InstancedMesh(
-      new THREE.CylinderGeometry(0.24, 0.52, 1, 8), MAT.trunk, n);
+      new THREE.CylinderGeometry(0.30, 0.62, 1, 8), MAT.trunk, n);
     const branches = new THREE.InstancedMesh(
-      new THREE.CylinderGeometry(0.07, 0.2, 1, 5), MAT.trunk, n * BRANCH);
+      new THREE.CylinderGeometry(0.06, 0.22, 1, 5), MAT.trunk, n * BRANCH);
     const blobs = new THREE.InstancedMesh(
       new THREE.IcosahedronGeometry(1, 0), MAT.canopy, n * BLOBS);
     const cards = new THREE.InstancedMesh(
@@ -711,35 +738,84 @@ export class TreeField {
     let bi = 0, li = 0, ci = 0;
 
     this.items.forEach(([x, z, scale], i) => {
-      const h = rand(8.5, 12.5) * scale;
-      const rad = rand(5.2, 7.2) * scale;
+      // total height and crown radius. A mature roadside Angsana is about as
+      // wide as it is tall, which is what makes the avenue meet overhead.
+      let h = rand(13.0, 17.5) * scale;
+      const rad = rand(8.0, 12.0) * scale;
       const gy = TERRAIN.at(x, z);
-      p.set(x, gy + h / 2, z); q.identity(); sc.set(scale, h, scale);
+      // where the crown starts, and how deep the dome is from top to rim
+      let crownBase = h * rand(0.50, 0.60);
+      // Lift the crown clear of the traffic envelope. A crown eight to twelve
+      // metres across reaches well past the kerb, so on a smaller side-street
+      // tree the limbs came down to about four metres over a live lane, which a
+      // double-decker at 4.3m would take off. Real street trees are pruned up
+      // for precisely this reason, so lift the whole crown rather than shrink
+      // it, and grow the tree by the same amount so the dome keeps its depth.
+      const LIFT = 5.2;
+      if (crownBase < LIFT) { h += LIFT - crownBase; crownBase = LIFT; }
+      const crownTop = h;
+      const domeDepth = crownTop - crownBase;
+
+      p.set(x, gy + h * 0.5, z); q.identity(); sc.set(scale, h, scale);
       m.compose(p, q, sc); trunks.setMatrixAt(i, m);
 
+      // Main limbs: they leave the bole low, run out almost flat, and the
+      // Angsana's droop comes from tilting them back down past horizontal at
+      // the tip. A steep branch reads as a conifer.
+      //
+      // They must also finish INSIDE the foliage. Set at a shallower tilt they
+      // rose above the leaf layer and the tree read as a bare umbrella frame
+      // with green clumped on the spokes, which was worse than the palm it
+      // replaced. Two things keep them hidden: they are shorter than the crown
+      // radius, and they carry no vertical lift, so the tip is never higher
+      // than where the leaf cards sit.
       for (let k = 0; k < BRANCH; k++) {
-        const a = (k / BRANCH) * Math.PI * 2 + rand(-0.3, 0.3);
-        const L = rand(1.8, 3.0) * scale;
-        p.set(x + Math.cos(a) * L * 0.22, gy + h * rand(0.80, 0.96), z + Math.sin(a) * L * 0.22);
-        e.set(Math.cos(a) * 0.55, 0, -Math.sin(a) * 0.55);
+        const a = (k / BRANCH) * Math.PI * 2 + rand(-0.35, 0.35);
+        const L = rad * rand(0.40, 0.62);
+        const tilt = rand(1.32, 1.52);          // radians from vertical: near flat
+        p.set(x + Math.cos(a) * L * 0.42,
+              gy + crownBase + rand(-0.4, 0.6),
+              z + Math.sin(a) * L * 0.42);
+        e.set(Math.cos(a) * tilt, 0, -Math.sin(a) * tilt);
         q.setFromEuler(e); sc.set(scale, L, scale);
         m.compose(p, q, sc); branches.setMatrixAt(bi++, m);
       }
+
+      // Solid mass inside the dome so the crown is not see-through from below.
+      // Sitting these at the centre and squashing them vertically is what makes
+      // it read as one canopy rather than a cloud of separate leaves.
       for (let k = 0; k < BLOBS; k++) {
-        const r = rad * rand(0.16, 0.24);
-        p.set(x + rand(-0.45, 0.45) * rad, gy + h * rand(0.94, 1.06), z + rand(-0.45, 0.45) * rad);
-        q.identity(); sc.set(r, r * 0.5, r);
+        const rr = rad * rand(0.0, 0.60);
+        const a = R() * Math.PI * 2;
+        const t = rr / rad;
+        const r = rad * rand(0.26, 0.42);
+        // spread them down through the crown, not just under its skin, so the
+        // limbs below the leaf shell sit in foliage instead of in daylight
+        p.set(x + Math.cos(a) * rr,
+              gy + crownTop - domeDepth * (t * t * 0.8 + rand(0.05, 0.55)) - r * 0.30,
+              z + Math.sin(a) * rr);
+        q.identity(); sc.set(r, r * 0.52, r);
         m.compose(p, q, sc); blobs.setMatrixAt(li++, m);
       }
+
+      // Leaf cards over the dome surface. The height falls off with the SQUARE
+      // of the distance from the trunk, which is what makes a dome instead of a
+      // disc, and the outermost cards get an extra drop for the droop.
       for (let k = 0; k < CARDS; k++) {
         const a = R() * Math.PI * 2;
-        const rr = rad * Math.sqrt(R()) * 1.12;
+        // Biased slightly inward of even-area coverage (which is sqrt). Even
+        // coverage leaves the middle of the crown thin, and the middle is
+        // exactly where the limbs are.
+        const t = Math.pow(R(), 0.70);
+        const rr = rad * t;
+        const droop = domeDepth * t * t * 0.72 + t * t * t * rad * 0.30;
         p.set(x + Math.cos(a) * rr,
-              gy + h * rand(0.92, 1.06) - rr * 0.13 + rand(-0.4, 0.4),
+              gy + crownTop - droop + rand(-0.5, 0.5),
               z + Math.sin(a) * rr);
-        e.set(rand(-1.5, -0.7), a + rand(-0.7, 0.7), rand(-0.4, 0.4));
+        // cards near the rim hang steeper, following the drooping branch
+        e.set(rand(-1.5, -0.75) - t * 0.35, a + rand(-0.7, 0.7), rand(-0.4, 0.4));
         q.setFromEuler(e);
-        const v = rad * rand(0.45, 0.8); sc.set(v, v, v);
+        const v = rad * rand(0.42, 0.72); sc.set(v, v, v);
         m.compose(p, q, sc); cards.setMatrixAt(ci++, m);
       }
     });

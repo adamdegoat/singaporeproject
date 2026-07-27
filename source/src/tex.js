@@ -31,9 +31,13 @@ export const PAL = {
   trim:      0xd8d2c3,
   glassBlue: 0x5c7183,
   glassGrey: 0x6a727a,
-  leafDark:  0x2b3d21,
-  leafMid:   0x4a6430,
-  leafLight: 0x76893f,
+  // Angsana foliage in full Singapore sun, not woodland shade. The old values
+  // were a dark olive that went to near black on any surface the sun was not
+  // hitting, and since the leaf cards are double-sided, that is half of every
+  // crown seen from the pavement underneath it.
+  leafDark:  0x3b5227,
+  leafMid:   0x63823a,
+  leafLight: 0x96a852,
   trunk:     0x53483d,
   yellow:    0xd8b44a,
 };
@@ -305,9 +309,9 @@ export function texLeaves() {
   const S = 128, [c, x] = cvs(S);
   x.clearRect(0, 0, S, S);
   const g = x.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-  g.addColorStop(0, 'rgba(34,50,25,0.85)');
-  g.addColorStop(0.7, 'rgba(34,50,25,0.34)');
-  g.addColorStop(1, 'rgba(34,50,25,0)');
+  g.addColorStop(0, 'rgba(58,80,38,0.85)');
+  g.addColorStop(0.7, 'rgba(58,80,38,0.34)');
+  g.addColorStop(1, 'rgba(58,80,38,0)');
   x.fillStyle = g; x.fillRect(0, 0, S, S);
   const cols = [PAL.leafDark, PAL.leafDark, PAL.leafMid, PAL.leafMid, PAL.leafLight];
   for (let i = 0; i < 460; i++) {

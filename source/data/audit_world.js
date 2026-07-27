@@ -127,7 +127,17 @@ window.__auditWorld = async function auditWorld() {
                                     // 348 of them sit at 0.7m, so this is
                                     // planting, not the canopy it was labelled)
     'IcosahedronGeometry(1)',       // canopy detail, same reason
-    'CylinderGeometry(0.07,1)',     // tree branch inside that canopy
+    // An Angsana limb over the carriageway is not a defect, it is the street:
+    // the avenue meets overhead and that is what Orchard Road looks like. The
+    // exemption is still conditional on OVERHEAD_MIN below, so a branch at head
+    // height is not excused by this line.
+    //
+    // NOTE the fragility this exposed. These keys are geometry parameters, so
+    // retuning the tree from radiusTop 0.07 to 0.06 silently revoked the
+    // exemption and 409 branches appeared as blockers overnight. The check was
+    // right to shout; the lesson is that a signature allowlist fails OPEN for
+    // new shapes and fails CLOSED for changed ones, and only the second is safe.
+    'CylinderGeometry(0.06,1)',     // tree branch inside that canopy
     'CylinderGeometry(0.07,2.4)',   // lamp arm, reaches over the carriageway
     'BoxGeometry(1,0.2,0.44)',      // lamp head on the end of that arm
     'BoxGeometry(0.9,0.16,0.4)',    // side-street lamp head
@@ -152,10 +162,10 @@ window.__auditWorld = async function auditWorld() {
     'BoxGeometry(0.9,7.5,0.35)',    // vertical banner
     'BoxGeometry(1,3.2,0.5)',       // rooftop sign box
     'IcosahedronGeometry(1)', 'SphereGeometry(0.66)',   // canopy against a facade
-    'CylinderGeometry(0.07,1)', 'BoxGeometry(2.1,0.34,3)',
+    'CylinderGeometry(0.06,1)', 'BoxGeometry(2.1,0.34,3)',
   ]);
   // Clustered round a shared origin by construction, so proximity is not duplication.
-  const CLUSTERED = new Set(['CylinderGeometry(0.07,1)', 'IcosahedronGeometry(1)',
+  const CLUSTERED = new Set(['CylinderGeometry(0.06,1)', 'IcosahedronGeometry(1)',
     'SphereGeometry(0.66)',
     // a person carries two arms, two legs and two shoes, all within 60cm
     'CapsuleGeometry(0.4,0.04)', 'CapsuleGeometry(0.44,0.06)',
@@ -191,7 +201,13 @@ window.__auditWorld = async function auditWorld() {
       'SphereGeometry(0.05)', 'SphereGeometry(0.1)', 'SphereGeometry(0.11)',
       'CylinderGeometry(0.05,0.1)',
     ]);
-    const OVERHEAD_MIN = 3.0;       // clear of a rider on a scooter
+    // Clearance over a carriageway. This was 3.0m, "clear of a rider on a
+    // scooter", which is the wrong vehicle to size it by: Orchard Road is a bus
+    // route and a double-decker is 4.3m tall. Anything hanging lower than this
+    // over a live lane would be struck by traffic that actually uses the
+    // street, so the number comes from the tallest thing on the road, not from
+    // the thing the player happens to be riding.
+    const OVERHEAD_MIN = 4.8;
     const bad = {}, ex = [];
     for (const p of props) {
       if (p.flat) continue;
@@ -297,12 +313,43 @@ window.__auditWorld = async function auditWorld() {
     // A rooftop sign is on a roof, and the crowd parks the instances it is not
     // drawing at y = -9999 rather than paying to render them.
     const ROOFTOP = new Set(['BoxGeometry(1,3.2,0.5)']);
+    // What this check is really asking is "is there anything holding it up",
+    // and a flat 19m ceiling was standing in for that. It was silently
+    // calibrated to the old 12.5m trees: growing the Angsanas to a correct 17.5m
+    // put their canopy over the line and reported healthy foliage as floating
+    // in mid-air.
+    //
+    // So test the actual question for the one prop class that is legitimately
+    // high: canopy is supported if a trunk stands inside its crown. Everything
+    // else keeps the ceiling.
+    const CANOPY = new Set(['IcosahedronGeometry(1)', 'CylinderGeometry(0.06,1)']);
+    const TRUNK = 'CylinderGeometry(0.3,1)';
+    const CROWN = 13;               // the widest crown radius the tree field builds
+    const trunkGrid = new Map();
+    for (const p of props) {
+      if (p.sig !== TRUNK) continue;
+      const k = Math.floor(p.x / CROWN) + ',' + Math.floor(p.z / CROWN);
+      if (!trunkGrid.has(k)) trunkGrid.set(k, []);
+      trunkGrid.get(k).push(p);
+    }
+    const overATree = (p) => {
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+        const list = trunkGrid.get((Math.floor(p.x / CROWN) + dx) + ',' + (Math.floor(p.z / CROWN) + dz));
+        if (!list) continue;
+        for (const t of list)
+          if ((t.x - p.x) ** 2 + (t.z - p.z) ** 2 < CROWN * CROWN) return true;
+      }
+      return false;
+    };
     let floating = 0, sunk = 0; const ex = [];
     for (const p of props) {
       if (!terr) break;
       if (ROOFTOP.has(p.sig) || p.y < -900) continue;
       const d = p.y - terr.at(p.x, p.z);
-      if (d > 19) { floating++; ex.push(`${p.sig} ${d.toFixed(1)}m up`); }
+      if (d > 19) {
+        if ((CANOPY.has(p.sig) || p.flat) && overATree(p)) continue;
+        floating++; ex.push(`${p.sig} ${d.toFixed(1)}m up`);
+      }
       if (d < -1.2) { sunk++; ex.push(`${p.sig} ${(-d).toFixed(1)}m down`); }
     }
     add('P3', 'props off the ground', 'BLOCKER', floating + sunk, 0,
@@ -704,7 +751,19 @@ window.__auditWorld = async function auditWorld() {
     // props, so a building corner or a landmark column across the road — the
     // exact thing that was standing at the spawn point — was not counted as
     // blocking the carriageway by the check whose job is traversal.
-    const solid = props.filter((p) => !p.flat && !ROAD_OK.has(p.sig));
+    // Height matters here and was not being applied. The non-instanced pass
+    // below keeps only geometry between 0.35m and 2.6m up, "only what a rider
+    // would hit", but instanced props were admitted at ANY height: a branch
+    // seven metres over the road counted as blocking it. A carriageway is
+    // blocked by what is in it, not by what is above it, so props get the same
+    // band. Things that use roads stay exempt by signature as before.
+    const RIDER_LOW = 0.35, RIDER_HIGH = 2.6;
+    const solid = props.filter((p) => {
+      if (p.flat || ROAD_OK.has(p.sig)) return false;
+      if (!terr) return true;
+      const up = p.y - terr.at(p.x, p.z);
+      return up >= RIDER_LOW && up <= RIDER_HIGH;
+    });
     const vs = new T.Vector3();
     sc.traverse((o) => {
       if (!o.isMesh || o.isInstancedMesh) return;
