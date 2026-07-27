@@ -2,7 +2,7 @@
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, rng } from './tex.js';
-import { recipeFor, shophouse } from './landmarks.js';
+import { recipeFor, hasShopfront, shophouse } from './landmarks.js';
 
 export const TEX = {
   asphalt: texAsphalt(),
@@ -392,6 +392,10 @@ export function buildBuildings(world, data) {
     world, extrude, grow, axis: data.axis || null,
     extrudeGeo, scaleUV,
     merge: (geo, mat, x, z) => merger.add(geo, mat, x, z),
+    // the ground under a point, so a recipe can seat a dome or a spire on the
+    // terrain instead of on y=0. Without it every hand-placed piece floats or
+    // sinks the moment its building is on a grade.
+    groundAt: (x, z) => TERRAIN.at(x, z),
     mat: { ...LMAT, trim: MAT.trim, conc: MAT.conc, paving: MAT.paving, metal: MAT.metal },
   };
   for (const b of data.buildings) {
@@ -409,7 +413,7 @@ export function buildBuildings(world, data) {
     const recipe = recipeFor(b.n);
     if (recipe) {
       recipe(api, b);
-      addShopfront(world, b, perimeter(pts), merger, clearance);
+      if (hasShopfront(b.n)) addShopfront(world, b, perimeter(pts), merger, clearance);
       stats.count++; stats.bespoke++;
       continue;
     }

@@ -483,7 +483,207 @@ export function shophouse(api, b) {
   }
 }
 
+/* ============ the Civic District ============
+ *
+ * Bras Basah arrived with no recipe coverage at all: every one of its landmarks
+ * fell through to a facade picked by hashing the footprint, so the most
+ * recognisable buildings in Singapore were grey boxes. These are built from
+ * published descriptions, the same method as the Orchard recipes, and the same
+ * caveat applies: a written description fixes material, massing and named
+ * features, and cannot fix proportion or facade subdivision.
+ */
+
+// Esplanade. Two rounded space frames of triangulated glass, covered in more
+// than 7,000 triangular aluminium sunshades: DP Architects with Michael Wilford
+// & Partners. The shades are the entire identity of the building, and they are
+// angled plates over a dome rather than spikes sticking out of one.
+function esplanade(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.groundAt(ob.cx, ob.cz);
+  const glass = new THREE.MeshStandardMaterial({
+    color: 0x9db4c4, roughness: 0.12, metalness: 0.3,
+    transparent: true, opacity: 0.66, side: THREE.DoubleSide,
+  });
+  const shade = new THREE.MeshStandardMaterial({ color: 0xa9a49a, roughness: 0.42, metalness: 0.55 });
+  // the podium the two shells sit on
+  api.world.add(api.extrude(b.p, Math.max(9, b.h * 0.55), api.mat.paleStone));
+  const base = g0 + Math.max(9, b.h * 0.55);
+  const rad = Math.min(ob.halfShort * 0.82, ob.halfLong * 0.34);
+
+  for (const sgn of [-1, 1]) {
+    const cx = ob.cx + ob.ux * sgn * ob.halfLong * 0.42;
+    const cz = ob.cz + ob.uz * sgn * ob.halfLong * 0.42;
+    const shell = new THREE.Mesh(
+      new THREE.SphereGeometry(rad, 22, 12, 0, Math.PI * 2, 0, Math.PI * 0.52), glass);
+    shell.position.set(cx, base, cz);
+    shell.castShadow = true;
+    api.world.add(shell);
+    // The sunshades. MERGED GEOMETRY, not instances: as an InstancedMesh the
+    // audit counted all 300 of them as street props and reported them inside a
+    // building, off the ground and duplicated — 756 findings for something that
+    // is building fabric, not furniture. Merged, they fall under the structure
+    // checks where they belong, and cost no extra draw call.
+    const N = 150;
+    const up = new THREE.Vector3(0, 1, 0), nv = new THREE.Vector3();
+    const q = new THREE.Quaternion();
+    for (let i = 0; i < N; i++) {
+      const u = (i + 0.5) / N;
+      const phi = Math.acos(1 - u * 0.9);
+      const th = i * 2.399963;
+      nv.set(Math.sin(phi) * Math.cos(th), Math.cos(phi), Math.sin(phi) * Math.sin(th));
+      q.setFromUnitVectors(up, nv);
+      const cone = new THREE.ConeGeometry(rad * 0.085, rad * 0.16, 3);
+      cone.applyQuaternion(q);
+      cone.translate(cx + nv.x * rad * 1.02, base + nv.y * rad * 1.02, cz + nv.z * rad * 1.02);
+      api.merge(cone, shade, cx, cz);
+    }
+  }
+}
+
+// Raffles Hotel. Three storeys, white neo-Renaissance, verandahs on every
+// floor, pitched roof, opened 1887 and a national monument.
+function colonialHotel(api, b) {
+  const ob = orientedBox(b.p);
+  const cx0 = ob.cx, cz0 = ob.cz;
+  const white = new THREE.MeshStandardMaterial({ color: 0xece7dc, roughness: 0.86 });
+  const h = Math.max(11, Math.min(b.h, 16));
+  api.merge(api.extrudeGeo(b.p, h), white, cx0, cz0);
+  // a verandah band at each floor, which is what reads from the street
+  for (let f = 1; f <= 3; f++) {
+    const y = (h / 3.4) * f;
+    if (y > h - 1) break;
+    api.merge(api.extrudeGeo(api.grow(b.p, 0.9), 0.26, y), api.mat.trim, cx0, cz0);
+    api.merge(api.extrudeGeo(api.grow(b.p, 0.75), 0.14, y + 1.05), api.mat.metal, cx0, cz0);
+  }
+  // Pitched roof over the whole plan. CAPPED, because a three-sided cylinder's
+  // radius sets its height as well as its span: sized straight off the
+  // footprint, a wide building grew a roof taller than the building. The
+  // shophouse recipe next door caps its own at 3.4m for the same reason.
+  const rad = Math.min(ob.halfShort * 0.95, 5.5);
+  const rg = new THREE.CylinderGeometry(rad, rad, ob.halfLong * 2 * 0.98, 3, 1, false);
+  rg.rotateZ(Math.PI / 2);
+  rg.rotateY(-ob.ang);
+  rg.translate(cx0, api.groundAt(cx0, cz0) + h + rad * 0.26, cz0);
+  api.merge(rg, api.mat.clayTile, cx0, cz0);
+}
+
+// The neoclassical civic set: the National Museum's rotunda under a fish-scale
+// dome, and the National Gallery, which is the former Supreme Court's
+// copper-green dome beside City Hall's row of Corinthian columns facing the
+// Padang. Eighteen columns on City Hall, twenty-eight on the Supreme Court.
+function civicDome(api, b, opts = {}) {
+  const ob = orientedBox(b.p);
+  const cx0 = ob.cx, cz0 = ob.cz;
+  const g0 = api.groundAt(cx0, cz0);
+  const stone = new THREE.MeshStandardMaterial({ color: 0xe0dacb, roughness: 0.82 });
+  const h = Math.max(14, Math.min(b.h, 26));
+  api.merge(api.extrudeGeo(b.p, h), stone, cx0, cz0);
+  // cornice
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.1), 0.9, h - 1.2), api.mat.trim, cx0, cz0);
+
+  // the colonnade along the street frontage
+  const sw = streetward(api, ob);
+  const n = opts.columns || 18;
+  const span = ob.halfLong * 2 * 0.86;
+  const colH = h * 0.72;
+  for (let i = 0; i < n; i++) {
+    const t = (i / (n - 1) - 0.5) * span;
+    const px = cx0 + ob.ux * t + sw.nx * (ob.halfShort + 0.55);
+    const pz = cz0 + ob.uz * t + sw.nz * (ob.halfShort + 0.55);
+    if (onCarriageway(px, pz, -0.4)) continue;
+    const col = new THREE.CylinderGeometry(0.62, 0.72, colH, 10);
+    col.translate(px, api.groundAt(px, pz) + colH / 2, pz);
+    api.merge(col, stone, cx0, cz0);
+  }
+  // the dome over the central rotunda
+  const rad = Math.min(ob.halfShort * 0.55, 13);
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(rad, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.52),
+    new THREE.MeshStandardMaterial({
+      color: opts.domeColor || 0x76a894, roughness: 0.44, metalness: 0.35,
+    }));
+  dome.position.set(cx0, g0 + h, cz0);
+  dome.castShadow = true;
+  api.world.add(dome);
+  const drum = new THREE.Mesh(new THREE.CylinderGeometry(rad * 1.04, rad * 1.04, 3.2, 20), stone);
+  drum.position.set(cx0, g0 + h + 1.6, cz0);
+  api.world.add(drum);
+}
+
+function nationalMuseum(api, b) {
+  // fish-scale tiles on the original dome, not the copper of the Supreme Court
+  civicDome(api, b, { columns: 12, domeColor: 0xb9b2a4 });
+}
+function nationalGallery(api, b) { civicDome(api, b, { columns: 22, domeColor: 0x6f9e8b }); }
+
+// A church or chapel: white walls, a steep roof, and the spire that is the only
+// part visible from any distance. St Andrew's Cathedral and CHIJMES.
+//
+// The first version sized the roof from the footprint width, and since a
+// three-sided cylinder's radius sets its HEIGHT as well as its span, St
+// Andrew's grew a thirty-metre green prism that swallowed the whole block. Both
+// the roof and the spire are proportioned from the building's own height now
+// and capped, and the tower is seated on the ground rather than floated at a
+// fraction of the wall.
+function gothicChurch(api, b) {
+  const ob = orientedBox(b.p);
+  const cx0 = ob.cx, cz0 = ob.cz;
+  const white = new THREE.MeshStandardMaterial({ color: 0xf0ece1, roughness: 0.88 });
+  // the nave itself is low; anything tall in a church is the tower
+  const wall = Math.max(10, Math.min(b.h * 0.72, 17));
+  api.merge(api.extrudeGeo(b.p, wall), white, cx0, cz0);
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.5), 0.4, wall - 0.5), api.mat.trim, cx0, cz0);
+
+  // The roof is built from the FOOTPRINT, as stepped insets, not as a prism
+  // sized off the oriented bounding box. A box around an angled or cruciform
+  // plan is longer than the plan itself, so the prism hung out over the
+  // neighbours and read as a detached green tube floating above the walls.
+  // Built from the footprint it cannot leave the building it belongs to.
+  // grow() takes a SCALE, not an offset: a negative would mirror the polygon
+  // through its own centre and put the roof on the wrong side of the church.
+  let ring = b.p;
+  for (const [f, y] of [[0.90, 0], [0.74, 1.35], [0.56, 2.7]]) {
+    ring = api.grow(b.p, f);
+    api.merge(api.extrudeGeo(ring, 1.5, wall + y), api.mat.jadeRoof, cx0, cz0);
+  }
+
+  // the tower at the street end of the nave, standing on the ground
+  const sx = cx0 + ob.ux * ob.halfLong * 0.72, sz = cz0 + ob.uz * ob.halfLong * 0.72;
+  const gs = api.groundAt(sx, sz);
+  const tw = Math.min(3.2, ob.halfShort * 0.5);
+  const towerH = Math.max(wall + 4, Math.min(b.h, 30));
+  // A spire is the tallest thing a church has and it must not stand in the road.
+  // The nave is inside its own footprint by construction; the tower is placed by
+  // an offset along the long axis, which for a church set at an angle to the
+  // street runs straight out into it.
+  if (onCarriageway(sx, sz, -0.5)) return;
+  const tower = new THREE.Mesh(new THREE.BoxGeometry(tw * 2, towerH, tw * 2), white);
+  tower.position.set(sx, gs + towerH / 2, sz);
+  tower.rotation.y = -ob.ang;
+  tower.castShadow = true;
+  api.world.add(tower);
+  const spireH = Math.min(towerH * 0.8, 16);
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(tw * 1.2, spireH, 4), white);
+  spire.position.set(sx, gs + towerH + spireH / 2, sz);
+  spire.rotation.y = -ob.ang + Math.PI / 4;
+  spire.castShadow = true;
+  api.world.add(spire);
+}
+
 export const RECIPES = [
+  // the Civic District.
+  //
+  // The patterns are narrower than they look, and each exclusion is a mistake
+  // that was actually made: "Esplanade Theatre" and "Esplanade Concert Hall" are
+  // halls INSIDE the complex, and matching them gave the building three separate
+  // pairs of shells; "Grand Park City Hall" is a hotel that happens to carry the
+  // words city hall, and it was handed a Corinthian colonnade and a copper dome.
+  [/esplanade theatres on the bay/i, esplanade],
+  [/raffles hotel|raffles singapore/i, colonialHotel],
+  [/national museum/i, nationalMuseum],
+  [/national gallery|(?<!grand park )(old )?city hall|supreme court/i, nationalGallery],
+  [/cathedral|chijmes|st\.? ?andrew|church of|methodist church|saint joseph|presbyterian/i, gothicChurch],
+
   [/ngee ann city|takashimaya/i, ngeeAnnCity],
   [/ion orchard|orchard residences/i, ionOrchard],
   [/tang plaza|singapore marriott|^tangs/i, tangPlaza],
@@ -509,6 +709,16 @@ export const RECIPES = [
   [/waterloo centre|wilkie edge|one sophia|penang road|lazada|cuppage|school of|lasalle|singapore management|nanyang academy|istana|the atrium|manulife|winsland|somerset house|orchard shopping/i,
    finnedSlab],
 ];
+
+// Recipes whose buildings have no shopfront. A cathedral, a museum, a national
+// gallery and a concert hall do not have a row of shop awnings along the
+// pavement, and adding them was both wrong to look at and the source of 13
+// duplicated props where two civic frontages met.
+const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery, gothicChurch, colonialHotel]);
+export function hasShopfront(name) {
+  const fn = recipeFor(name);
+  return !fn || !NO_SHOPFRONT.has(fn);
+}
 
 export function recipeFor(name) {
   if (!name) return null;
