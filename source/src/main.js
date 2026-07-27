@@ -343,13 +343,25 @@ function updateHelp() {
 }
 
 function walkCamera(dt) {
-  const dist = 3.6;
-  const cy = Math.cos(camPitch), sy = Math.sin(camPitch);
-  const px = walker.x - Math.sin(camYaw) * dist * cy;
-  const pz = walker.z - Math.cos(camYaw) * dist * cy;
-  camera.position.set(px, 1.62 + dist * sy, pz);
-  camera.lookAt(walker.x, 1.35, walker.z);
-  camera.fov = 62; camera.updateProjectionMatrix();
+  // just above head height and offset to the shoulder, so the view forward is
+  // clear but you can still see who you are
+  const back = 2.15, side = 0.66, eye = 1.78;
+  const fx = Math.sin(camYaw), fz = Math.cos(camYaw);
+  const rx = -fz, rz = fx;                     // screen-right in world space
+  const sy = Math.sin(camPitch), cy = Math.cos(camPitch);
+  camera.position.set(
+    walker.x - fx * back * cy + rx * side,
+    eye + back * sy * 0.75,
+    walker.z - fz * back * cy + rz * side
+  );
+  // aim along the look direction, not at the walker, so it reads first-person
+  const AHEAD = 12;
+  camera.lookAt(
+    walker.x + fx * AHEAD * cy + rx * side,
+    eye - sy * AHEAD,
+    walker.z + fz * AHEAD * cy + rz * side
+  );
+  camera.fov = 65; camera.updateProjectionMatrix();
 }
 
 const camPos = new THREE.Vector3(), camAim = new THREE.Vector3();
@@ -418,8 +430,9 @@ function loop(now) {
       camPitch = Math.max(-0.35, Math.min(0.95, camPitch + inp.lookDY * 0.0035));
       // stick is relative to where the camera is pointing
       const fx = Math.sin(camYaw), fz = Math.cos(camYaw);
-      const mx = -inp.moveY * fx + inp.moveX * fz;
-      const mz = -inp.moveY * fz - inp.moveX * fx;
+      // forward is f, screen-right is (-fz, fx); stick up is negative moveY
+      const mx = -inp.moveY * fx - inp.moveX * fz;
+      const mz = -inp.moveY * fz + inp.moveX * fx;
       const wx = walker.x, wz = walker.z;
       stepWalk(walker, dt, mx, mz, inp.run);
       if (trafficSys && trafficSys.hits(walker.x, walker.z, 0.32)) {
@@ -526,6 +539,7 @@ window.__snd = sound;
 window.__crossers = () => (crowdSys ? crowdSys.people.filter((p) => p.crossing).length : 0);
 window.__sig = () => (signals ? signals.list.map((g) => signals.stateAt(g, clock)) : []);
 window.__traffic = () => (trafficSys ? trafficSys.items.map((i) => +i.speed.toFixed(2)) : []);
+window.__camYaw = () => camYaw;
 window.__mode = () => mode;
 window.__toggle = () => toggleMode();
 window.__walker = () => ({ x: +walker.x.toFixed(1), z: +walker.z.toFixed(1), sp: +walker.speed.toFixed(2) });

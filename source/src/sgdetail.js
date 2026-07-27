@@ -114,6 +114,90 @@ function pedBridge(world, px, pz, ang, width) {
   world.add(g);
 }
 
+/* ---------------- MRT entrance ---------------- */
+// A glazed canopy over a stair going down, the blue-and-red station totem, and
+// a railed opening. Every Singaporean recognises this from fifty metres.
+function mrtEntrance(world, px, pz, ang, label) {
+  const g = new THREE.Group();
+  const steel = MAT.metal, conc = MAT.conc;
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0xa8c0cf, roughness: 0.12, metalness: 0.25,
+    transparent: true, opacity: 0.62, side: THREE.DoubleSide,
+  });
+
+  // the opening in the pavement, with a stair running down into it
+  g.add(yawMesh(new THREE.BoxGeometry(7.4, 0.4, 5.2), conc, 0, -0.2, 0, 0));
+  for (let k = 0; k < 9; k++) {
+    const st = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.17, 0.42), conc);
+    st.position.set(0, -0.28 - k * 0.17, -1.6 + k * 0.42);
+    st.receiveShadow = true; g.add(st);
+  }
+  // a dark void under the canopy so it reads as going somewhere
+  g.add(yawMesh(new THREE.BoxGeometry(4.8, 0.1, 3.2),
+    new THREE.MeshBasicMaterial({ color: 0x0d1114 }), 0, -1.9, 1.4, 0));
+
+  // railed edges around three sides
+  for (const sgn of [-1, 1]) {
+    g.add(yawMesh(new THREE.BoxGeometry(0.07, 0.05, 5.0), steel, sgn * 2.6, 1.05, 0, 0));
+    g.add(yawMesh(new THREE.BoxGeometry(0.06, 0.04, 5.0), steel, sgn * 2.6, 0.66, 0, 0));
+    for (let k = 0; k < 4; k++) {
+      g.add(yawMesh(new THREE.CylinderGeometry(0.03, 0.03, 1.05, 6), steel,
+        sgn * 2.6, 0.52, -2.2 + k * 1.5, 0));
+    }
+  }
+
+  // the curved glass canopy
+  const shell = new THREE.Mesh(
+    new THREE.CylinderGeometry(3.5, 3.5, 6.6, 16, 1, true, Math.PI * 0.08, Math.PI * 0.84),
+    glassMat);
+  shell.rotation.z = Math.PI / 2;
+  shell.position.set(0, 2.5, 0);
+  shell.castShadow = true;
+  g.add(shell);
+  for (let k = 0; k <= 5; k++) {
+    const rib = new THREE.Mesh(new THREE.TorusGeometry(3.5, 0.05, 5, 12, Math.PI * 0.84), steel);
+    rib.rotation.y = Math.PI / 2;
+    rib.rotation.z = Math.PI * 0.08;
+    rib.position.set(-3.3 + k * 1.32, 2.5, 0);
+    g.add(rib);
+  }
+
+  // the station totem: red over blue, with the station name
+  const totem = new THREE.Mesh(new THREE.BoxGeometry(0.34, 3.3, 1.05), MAT.darkMetal);
+  totem.position.set(4.3, 1.65, 0); totem.castShadow = true; g.add(totem);
+  const faceTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 128; c.height = 400;
+    const x = c.getContext('2d');
+    x.fillStyle = '#c8102e'; x.fillRect(0, 0, 128, 130);
+    x.fillStyle = '#00358e'; x.fillRect(0, 130, 128, 270);
+    x.fillStyle = '#ffffff';
+    x.font = '700 30px ui-sans-serif, system-ui, Helvetica, Arial';
+    x.textAlign = 'center';
+    x.fillText('MRT', 64, 82);
+    x.save(); x.translate(64, 265); x.rotate(-Math.PI / 2);
+    let size = 30;
+    do { x.font = `600 ${size}px ui-sans-serif, system-ui, Helvetica, Arial`; size -= 2; }
+    while (x.measureText(label.toUpperCase()).width > 230 && size > 12);
+    x.fillText(label.toUpperCase(), 0, 8);
+    x.restore();
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+  for (const sgn of [-1, 1]) {
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 3.15),
+      new THREE.MeshStandardMaterial({ map: faceTex, roughness: 0.5 }));
+    face.position.set(4.3 + sgn * 0.18, 1.65, 0);
+    face.rotation.y = sgn > 0 ? Math.PI / 2 : -Math.PI / 2;
+    g.add(face);
+  }
+
+  g.position.set(px, 0, pz);
+  g.rotation.y = ang;
+  world.add(g);
+}
+
 /* ---------------- main placement pass ---------------- */
 export function buildSgDetail(world, axis, data, isBlocked) {
   const pts = axis.p, half = axis.w / 2;
@@ -141,6 +225,25 @@ export function buildSgDetail(world, axis, data, isBlocked) {
         for (const sgn of [-1, 1]) {
           const bx = px + nx * (half + 0.4) * sgn, bz = pz + nz * (half + 0.4) * sgn;
           if (!isBlocked(bx, bz)) bannerT.push([bx + nx * 0.28 * sgn, 5.4, bz + nz * 0.28 * sgn, ang]);
+        }
+      }
+
+      // MRT entrances: Orchard station sits mid-stretch, Somerset toward the east
+      if (acc === 520 || acc === 560) {
+        for (const sgn of [-1, 1]) {
+          const ex = px + nx * (half + 7.5) * sgn, ez = pz + nz * (half + 7.5) * sgn;
+          if (!isBlocked(ex, ez) && acc === 520 ? sgn > 0 : sgn < 0) {
+            mrtEntrance(world, ex, ez, ang + (sgn > 0 ? 0 : Math.PI),
+              acc === 520 ? 'Orchard' : 'Somerset');
+            stats.mrt = (stats.mrt || 0) + 1;
+          }
+        }
+      }
+      if (acc === 1000) {
+        const ex = px + nx * (half + 7.5), ez = pz + nz * (half + 7.5);
+        if (!isBlocked(ex, ez)) {
+          mrtEntrance(world, ex, ez, ang, 'Somerset');
+          stats.mrt = (stats.mrt || 0) + 1;
         }
       }
 
