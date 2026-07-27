@@ -1,7 +1,0 @@
-[out:json][timeout:240];
-(
-  way["building"](1.3000,103.8290,1.3070,103.8380);
-  way["highway"~"^(trunk|primary|secondary|tertiary|residential|service|unclassified|living_street|pedestrian|footway)$"](1.3000,103.8290,1.3070,103.8380);
-  node["natural"="tree"](1.3000,103.8290,1.3070,103.8380);
-);
-out geom;

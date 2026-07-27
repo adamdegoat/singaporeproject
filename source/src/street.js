@@ -7,7 +7,30 @@ import { MAT } from './city.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d, 0xcf6b3a, 0x2b2f33];
 
-export function buildFurniture(world, axis, isBlocked) {
+// Real map positions take priority over anything placed at an interval. Where
+// OSM has the coordinate we use it; where it does not, we fall back and the
+// stats say how many of each came from real data versus a fallback.
+function nearestOnAxis(pts, x, z) {
+  let bi = 0, bd = Infinity, bt = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+    const vx = x2 - x1, vz = z2 - z1;
+    const L2 = vx * vx + vz * vz;
+    let t = L2 < 1e-9 ? 0 : ((x - x1) * vx + (z - z1) * vz) / L2;
+    t = Math.max(0, Math.min(1, t));
+    const px = x1 + vx * t, pz = z1 + vz * t;
+    const d = (x - px) ** 2 + (z - pz) ** 2;
+    if (d < bd) { bd = d; bi = i; bt = t; }
+  }
+  const [x1, z1] = pts[bi], [x2, z2] = pts[bi + 1];
+  const vx = x2 - x1, vz = z2 - z1, L = Math.hypot(vx, vz) || 1;
+  return {
+    x: x1 + vx * bt, z: z1 + vz * bt,
+    ux: vx / L, uz: vz / L, dist: Math.sqrt(bd),
+  };
+}
+
+export function buildFurniture(world, axis, isBlocked, data = {}) {
   const pts = axis.p, half = axis.w / 2;
   const railT = [], postT = [], shelterAt = [], lightAt = [], signT = [], planterT = [], binT = [];
   const crossingS = [], taxiAt = [];
@@ -31,21 +54,8 @@ export function buildFurniture(world, axis, isBlocked) {
           railT.push([rx, 1.0, rz, ang]);
           if (acc % 4 === 0) postT.push([rx, 0.55, rz, ang]);
         }
-        // taxi stands, offset from the bus shelters
-        if (acc % 260 === 8) {
-          const tx = px + nx * (half + 3.0) * sgn, tz = pz + nz * (half + 3.0) * sgn;
-          if (!isBlocked(tx, tz)) taxiAt.push([tx, tz, ang, sgn]);
-        }
-        // bus shelters
-        if (acc % 260 === 120) {
-          const sx = px + nx * (half + 5.6) * sgn, sz = pz + nz * (half + 5.6) * sgn;
-          if (!isBlocked(sx, sz)) shelterAt.push([sx, sz, ang, sgn]);
-        }
-        // traffic light heads at intervals, facing oncoming traffic
-        if (acc % 190 === 30) {
-          const lx = px + nx * (half + 1.6) * sgn, lz = pz + nz * (half + 1.6) * sgn;
-          if (!isBlocked(lx, lz)) lightAt.push([lx, lz, ang, sgn, acc]);
-        }
+        // bus shelters, taxi ranks and signals now come from the real map,
+        // placed after this loop. Nothing here invents their position.
         // planters and bins
         if (acc % 46 === 12) {
           const qx = px + nx * (half + 6.4) * sgn, qz = pz + nz * (half + 6.4) * sgn;
@@ -65,6 +75,46 @@ export function buildFurniture(world, axis, isBlocked) {
         }
       }
     }
+  }
+
+  // ---- real positions from OpenStreetMap ----
+  const realCount = { busstops: 0, signals: 0, taxis: 0 };
+  for (const b of data.busstops || []) {
+    const [bx, bz] = b.p;
+    const on = nearestOnAxis(pts, bx, bz);
+    if (on.dist > 60) continue;                 // belongs to another street
+    const ang2 = Math.atan2(on.ux, on.uz);
+    const side = ((bx - on.x) * -on.uz + (bz - on.z) * on.ux) >= 0 ? 1 : -1;
+    shelterAt.push([bx, bz, ang2, side, b.n || '']);
+    realCount.busstops++;
+  }
+  for (const sPt of data.signals || []) {
+    const [lx, lz] = sPt;
+    const on = nearestOnAxis(pts, lx, lz);
+    if (on.dist > 40) continue;
+    const ang2 = Math.atan2(on.ux, on.uz);
+    const side = ((lx - on.x) * -on.uz + (lz - on.z) * on.ux) >= 0 ? 1 : -1;
+    // arclength along the axis, so the signal controller can key off it
+    let acc2 = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const seg = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+      const on2 = nearestOnAxis([pts[i], pts[i + 1]], lx, lz);
+      if (Math.abs(on2.x - on.x) < 0.5 && Math.abs(on2.z - on.z) < 0.5) {
+        acc2 += Math.hypot(on.x - pts[i][0], on.z - pts[i][1]);
+        break;
+      }
+      acc2 += seg;
+    }
+    lightAt.push([lx, lz, ang2, side, Math.round(acc2)]);
+    realCount.signals++;
+  }
+  for (const t of data.taxis || []) {
+    const on = nearestOnAxis(pts, t[0], t[1]);
+    if (on.dist > 60) continue;
+    const ang2 = Math.atan2(on.ux, on.uz);
+    const side = ((t[0] - on.x) * -on.uz + (t[1] - on.z) * on.ux) >= 0 ? 1 : -1;
+    taxiAt.push([t[0], t[1], ang2, side]);
+    realCount.taxis++;
   }
 
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
@@ -105,7 +155,7 @@ export function buildFurniture(world, axis, isBlocked) {
     () => cc.setHex(pick(SIGN_COLS)));
 
   // bus shelters
-  for (const [sx, sz, ang, sgn] of shelterAt) {
+  for (const [sx, sz, ang, sgn, sname] of shelterAt) {
     const g = new THREE.Group();
     const roof = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.16, 3.1), MAT.trim);
     roof.position.y = 3.0; roof.castShadow = true; g.add(roof);
@@ -225,6 +275,9 @@ export function buildFurniture(world, axis, isBlocked) {
 
   return {
     signals: signalList,
+    realBusStops: realCount.busstops,
+    realSignals: realCount.signals,
+    realTaxis: realCount.taxis,
     taxiStands: taxiAt.length,
     linkway: linkRoof.length,
     rails: railT.length, shelters: shelterAt.length,

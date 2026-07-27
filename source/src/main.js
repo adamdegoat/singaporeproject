@@ -120,6 +120,7 @@ function blocked(x, z) {
 /* ---------------- street dressing, all instanced ---------------- */
 function dressStreet(data, axis) {
   if (!axis) return 0;
+  const dataRef = data;
   const pts = axis.p, half = axis.w / 2;
   const trees = new TreeField();
   const kerbT = [], lampT = [], armT = [], headT = [], zebraT = [];
@@ -150,13 +151,43 @@ function dressStreet(data, axis) {
         }
         if (acc % 2 === 0) kerbT.push([kx, 0.15, kz, ang]);
       }
-      if (acc % 190 === 0 && acc > 40) {
-        crossingS.push(acc);
-        for (let s2 = -3; s2 <= 3; s2++)
-          zebraT.push([px + nx * s2 * 1.3, 0.035, pz + nz * s2 * 1.3, ang]);
-      }
+      // crossings are placed from the real map, after this loop
     }
   }
+
+  // ---- real crossings from OpenStreetMap ----
+  // OSM has a node for every pedestrian crossing. Placing them every 190m was
+  // an invention; this is the actual street.
+  let realCrossings = 0;
+  for (const c of (dataRef.crossings || [])) {
+    const [cx, cz] = c;
+    // find the nearest point on the axis and the local direction there
+    let bi = 0, bd = Infinity, bt = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+      const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
+      let t = L2 < 1e-9 ? 0 : ((cx - x1) * vx + (cz - z1) * vz) / L2;
+      t = Math.max(0, Math.min(1, t));
+      const d = (cx - (x1 + vx * t)) ** 2 + (cz - (z1 + vz * t)) ** 2;
+      if (d < bd) { bd = d; bi = i; bt = t; }
+    }
+    if (Math.sqrt(bd) > half + 6) continue;      // crossing on a different street
+    const [x1, z1] = pts[bi], [x2, z2] = pts[bi + 1];
+    const vx = x2 - x1, vz = z2 - z1, L = Math.hypot(vx, vz) || 1;
+    const ux2 = vx / L, uz2 = vz / L, nx2 = -uz2, nz2 = ux2;
+    const ox = x1 + vx * bt, oz = z1 + vz * bt;
+    const ang2 = Math.atan2(ux2, uz2);
+    for (let s2 = -3; s2 <= 3; s2++) {
+      zebraT.push([ox + ux2 * s2 * 1.3, 0.035, oz + uz2 * s2 * 1.3, ang2 + Math.PI / 2]);
+    }
+    // arclength for the pedestrian-signal logic
+    let arc = 0;
+    for (let i = 0; i < bi; i++) arc += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+    arc += Math.hypot(ox - x1, oz - z1);
+    crossingS.push(Math.round(arc));
+    realCrossings++;
+  }
+  window.__realCrossings = realCrossings;
 
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
   const p3 = new THREE.Vector3(), s3 = new THREE.Vector3(1, 1, 1);
@@ -181,7 +212,7 @@ function dressStreet(data, axis) {
   });
   emit(new THREE.PlaneGeometry(0.62, axis.w), MAT.white, zebraT, (r) => {
     p3.set(r[0], r[1], r[2]);
-    e.set(-Math.PI / 2, r[3] + Math.PI / 2, 0, 'YXZ');
+    e.set(-Math.PI / 2, r[3], 0, 'YXZ');
     q.setFromEuler(e);
   });
 
@@ -237,7 +268,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
     trafficSys.build(world, trafficSys.path.nearestS(S.x, S.z));
   }
   const furniture = (!P.has('nofurniture') && axis)
-    ? buildFurniture(world, axis, blocked) : {};
+    ? buildFurniture(world, axis, blocked, data) : {};
   signals = new Signals(furniture.signals || []);
   const signage = (!P.has('nosigns') && axis)
     ? buildSignage(world, axis, data, blocked) : {};
@@ -263,7 +294,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
     S = newState(p0[0] + nx * -3.4, p0[1] + nz * -3.4, Math.atan2(dx, dz));
   }
   buildEnvironment();
-  stats = { marks, ...side, ...sg, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
+  stats = { marks, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
   ready = true;
   window.__ready = true;
   window.__stats = stats;

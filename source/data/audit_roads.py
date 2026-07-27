@@ -11,7 +11,8 @@ canopies, shophouse colonnades) because that geometry ignores roads entirely.
 import json, math, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = json.load(open(os.path.join(HERE, "orchard.json")))
+SCENE = os.environ.get("SG_SCENE") or os.path.join(HERE, "orchard.json")
+DATA = json.load(open(SCENE))
 
 HOTEL_RE = re.compile(r"hotel|hyatt|hilton|marriott|four seasons|pullman|voco|royal plaza|"
                       r"pan pacific|regent|shangri|holiday inn|ibis|orchard rendezvous|"

@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""Quality gate for a district. Exits non-zero if it is not fit to ship.
+
+    python3 check.py orchard
+    python3 check.py --all
+
+Every check here exists because the corresponding mistake actually shipped once:
+zero-height buildings lying flat on the ground, 20m towers on 150 m2 footprints
+through the back lanes, and geometry standing in the middle of Orchard Road.
+"""
+import argparse, json, math, os, re, subprocess, sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+OUT_DIR = os.path.join(HERE, "districts")
+
+
+def load(did):
+    path = os.path.join(OUT_DIR, f"{did}.json")
+    if not os.path.exists(path):
+        # fall back to the pre-registry location for orchard
+        alt = os.path.join(HERE, f"{did}.json")
+        if os.path.exists(alt):
+            return json.load(open(alt)), alt
+        sys.exit(f"no scene for '{did}'. Run: python3 build_district.py {did}")
+    return json.load(open(path)), path
+
+
+def check(did):
+    data, path = load(did)
+    fails, warns = [], []
+    B = data["buildings"]
+    R = data["roads"]
+
+    def fail(msg):
+        fails.append(msg)
+    def warn(msg):
+        warns.append(msg)
+
+    print(f"== {did}  ({os.path.basename(path)})")
+    print(f"   buildings {len(B)}   roads {len(R)}   "
+          f"named {sum(1 for b in B if b.get('n'))}   "
+          f"axis pts {len((data.get('axis') or {}).get('p', []))}")
+
+    # 1. no building may be flat on the ground
+    flat = [b for b in B if b["h"] < 3.0]
+    if flat:
+        fail(f"{len(flat)} buildings under 3m tall (a missing or zero height tag): "
+             + ", ".join((b.get("n") or "(unnamed)")[:20] for b in flat[:5]))
+
+    # 2. no implausibly short big footprint
+    squat = [b for b in B if b["h"] < 8 and b["a"] > 600]
+    if squat:
+        fail(f"{len(squat)} footprints over 600 m2 shorter than 8m")
+
+    # 3. no needle towers on tiny footprints
+    needles = [b for b in B if b["a"] < 230 and b["h"] > 16 and not b.get("k")]
+    if needles:
+        fail(f"{len(needles)} sub-230 m2 footprints taller than 16m (back-lane needles)")
+
+    # 4. the axis must exist and be a sensible length
+    ax = data.get("axis")
+    if not ax or len(ax.get("p", [])) < 4:
+        fail("no usable street axis: nothing will be dressed, and there is no spawn point")
+    else:
+        L = sum(math.dist(ax["p"][i], ax["p"][i + 1]) for i in range(len(ax["p"]) - 1))
+        print(f"   axis length {L:.0f} m")
+        if L < 250:
+            fail(f"axis only {L:.0f}m long — the stitch probably failed")
+        elif L < 500:
+            warn(f"axis is short at {L:.0f}m")
+
+    # 5. real map positions must be present. This check exists because a whole
+    # district was built with every crossing, bus stop, signal and MRT entrance
+    # placed at invented intervals, while OSM held the real coordinates all
+    # along. Polish on top of invented positions is worse than no polish.
+    layers = {
+        "crossings": data.get("crossings", []),
+        "signals": data.get("signals", []),
+        "busstops": data.get("busstops", []),
+        "mrt": data.get("mrt", []),
+    }
+    print("   real map positions: " + ", ".join(f"{k} {len(v)}" for k, v in layers.items()))
+    missing = [k for k, v in layers.items() if not v]
+    if missing:
+        fail("no real positions for: " + ", ".join(missing)
+             + " — these would be placed at invented intervals. Refetch with --force.")
+    if len(layers["crossings"]) < 5:
+        warn(f"only {len(layers['crossings'])} crossings; sparse for a city district")
+
+    # 6. nothing in a carriageway (delegated to the road audit)
+    audit = os.path.join(HERE, "audit_roads.py")
+    if os.path.exists(audit):
+        env = dict(os.environ); env["SG_SCENE"] = path
+        r = subprocess.run([sys.executable, audit], env=env, capture_output=True, text=True)
+        m = re.search(r"NON-service: (\d+)", r.stdout)
+        e = re.search(r"building EDGES inside a carriageway: (\d+)", r.stdout)
+        if m:
+            n = int(m.group(1))
+            print(f"   geometry in a real carriageway: {n}")
+            if n > 0:
+                fail(f"{n} pieces of added geometry sit in a real carriageway")
+        if e:
+            print(f"   building edges crossing any corridor: {e.group(1)} "
+                  f"(service roads are expected)")
+    else:
+        warn("audit_roads.py missing, road clearance unverified")
+
+    # 7. payload size, since this ships to a phone
+    kb = os.path.getsize(path) / 1024
+    print(f"   scene payload {kb:.0f} KB")
+    if kb > 900:
+        fail(f"scene is {kb:.0f} KB; too heavy to ship alongside others")
+    elif kb > 400:
+        warn(f"scene is {kb:.0f} KB, watch the total as districts accumulate")
+
+    for w in warns:
+        print(f"   WARN  {w}")
+    for f in fails:
+        print(f"   FAIL  {f}")
+    print("   " + ("PASS" if not fails else "NOT READY"))
+    return len(fails)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("id", nargs="?")
+    ap.add_argument("--all", action="store_true")
+    a = ap.parse_args()
+    reg = json.load(open(os.path.join(HERE, "districts.json")))
+    ids = [d["id"] for d in reg["districts"]] if a.all else [a.id or "orchard"]
+    bad = 0
+    for i, did in enumerate(ids):
+        if a.all and not os.path.exists(os.path.join(OUT_DIR, f"{did}.json")):
+            continue
+        if i:
+            print()
+        bad += check(did)
+    sys.exit(1 if bad else 0)
+
+
+if __name__ == "__main__":
+    main()

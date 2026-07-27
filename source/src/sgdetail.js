@@ -200,8 +200,34 @@ function mrtEntrance(world, px, pz, ang, label) {
 
 /* ---------------- main placement pass ---------------- */
 export function buildSgDetail(world, axis, data, isBlocked) {
+  // MRT entrances at the coordinates OSM records for them, rather than at two
+  // arbitrary points along the street.
+  let realMrt = 0;
+  for (const m of (data.mrt || [])) {
+    if (m.kind !== 'subway_entrance') continue;
+    const [mx, mz] = m.p;
+    let bi = 0, bd = Infinity, bt = 0;
+    const P = axis.p;
+    for (let i = 0; i < P.length - 1; i++) {
+      const [x1, z1] = P[i], [x2, z2] = P[i + 1];
+      const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
+      let t = L2 < 1e-9 ? 0 : ((mx - x1) * vx + (mz - z1) * vz) / L2;
+      t = Math.max(0, Math.min(1, t));
+      const d = (mx - (x1 + vx * t)) ** 2 + (mz - (z1 + vz * t)) ** 2;
+      if (d < bd) { bd = d; bi = i; bt = t; }
+    }
+    if (Math.sqrt(bd) > 90) continue;
+    const [x1, z1] = P[bi], [x2, z2] = P[bi + 1];
+    const vx = x2 - x1, vz = z2 - z1, L = Math.hypot(vx, vz) || 1;
+    const ang = Math.atan2(vx / L, vz / L);
+    const label = (m.n || 'MRT').replace(/\s*(MRT|Station|Exit).*$/i, '') || 'MRT';
+    mrtEntrance(world, mx, mz, ang, label);
+    realMrt++;
+  }
+  window.__realMrt = realMrt;
+
   const pts = axis.p, half = axis.w / 2;
-  const stats = { erp: 0, bridges: 0, banners: 0, medianPlants: 0, roofSigns: 0, banners2: 0 };
+  const stats = { erp: 0, bridges: 0, banners: 0, medianPlants: 0, roofSigns: 0, banners2: 0, mrt: realMrt };
 
   const bannerT = [], medianKerb = [], medianShrub = [], medianPalm = [];
   let acc = 0;
@@ -225,25 +251,6 @@ export function buildSgDetail(world, axis, data, isBlocked) {
         for (const sgn of [-1, 1]) {
           const bx = px + nx * (half + 0.4) * sgn, bz = pz + nz * (half + 0.4) * sgn;
           if (!isBlocked(bx, bz)) bannerT.push([bx + nx * 0.28 * sgn, 5.4, bz + nz * 0.28 * sgn, ang]);
-        }
-      }
-
-      // MRT entrances: Orchard station sits mid-stretch, Somerset toward the east
-      if (acc === 520 || acc === 560) {
-        for (const sgn of [-1, 1]) {
-          const ex = px + nx * (half + 7.5) * sgn, ez = pz + nz * (half + 7.5) * sgn;
-          if (!isBlocked(ex, ez) && acc === 520 ? sgn > 0 : sgn < 0) {
-            mrtEntrance(world, ex, ez, ang + (sgn > 0 ? 0 : Math.PI),
-              acc === 520 ? 'Orchard' : 'Somerset');
-            stats.mrt = (stats.mrt || 0) + 1;
-          }
-        }
-      }
-      if (acc === 1000) {
-        const ex = px + nx * (half + 7.5), ez = pz + nz * (half + 7.5);
-        if (!isBlocked(ex, ez)) {
-          mrtEntrance(world, ex, ez, ang, 'Somerset');
-          stats.mrt = (stats.mrt || 0) + 1;
         }
       }
 

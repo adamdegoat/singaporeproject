@@ -1,0 +1,59 @@
+{
+  "_readme": "The world, one district at a time. Add an entry, run build_district.py <id>, then check.py <id>. Bboxes are OSM order: south,west,north,east. Keep them under ~1.2km on the long side or Overpass times out.",
+  "districts": [
+    {
+      "id": "orchard",
+      "name": "Orchard Road",
+      "bbox": "1.3000,103.8290,1.3070,103.8380",
+      "origin": [1.30370, 103.83350],
+      "axis": "orchard road",
+      "status": "live",
+      "notes": "The reference district. Axis is stitched from 28 OSM fragments into 1,192m."
+    },
+    {
+      "id": "somerset",
+      "name": "Somerset / Dhoby Ghaut",
+      "bbox": "1.2960,103.8370,1.3020,103.8470",
+      "origin": [1.29900, 103.84200],
+      "axis": "orchard road",
+      "status": "planned",
+      "notes": "Continues Orchard east: 313, Orchard Gateway, The Cathay, Plaza Singapura."
+    },
+    {
+      "id": "tanglin",
+      "name": "Tanglin",
+      "bbox": "1.3040,103.8180,1.3110,103.8300",
+      "origin": [1.30750, 103.82400],
+      "axis": "orchard road",
+      "status": "planned",
+      "notes": "Continues Orchard west: Tanglin Mall, Forum, St Regis, the Botanic Gardens edge."
+    },
+    {
+      "id": "bugis",
+      "name": "Bugis / Rochor",
+      "bbox": "1.2960,103.8520,1.3030,103.8620",
+      "origin": [1.29950, 103.85700],
+      "axis": "victoria street",
+      "status": "planned",
+      "notes": "Shophouse-heavy, so the shophouse recipe should carry most of it."
+    },
+    {
+      "id": "chinatown",
+      "name": "Chinatown / Telok Ayer",
+      "bbox": "1.2790,103.8410,1.2860,103.8500",
+      "origin": [1.28250, 103.84550],
+      "axis": "south bridge road",
+      "status": "planned",
+      "notes": "Densest shophouse fabric in the city; good test of the terrace variants."
+    },
+    {
+      "id": "marinabay",
+      "name": "Marina Bay",
+      "bbox": "1.2780,103.8520,1.2860,103.8640",
+      "origin": [1.28200, 103.85800],
+      "axis": "bayfront avenue",
+      "status": "planned",
+      "notes": "Towers and water. Needs a water surface, which nothing else has yet."
+    }
+  ]
+}

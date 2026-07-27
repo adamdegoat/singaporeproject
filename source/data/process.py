@@ -10,7 +10,14 @@ floor count, then to a per-type default.
 import json, math, os, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LAT0, LON0 = 1.30370, 103.83350          # outside Wisma Atria, mid-stretch
+
+# Driven by build_district.py via the environment so one code path serves every
+# district; the defaults keep a bare `python3 process.py` working on Orchard.
+RAW_PATH = os.environ.get("SG_RAW") or os.path.join(HERE, "raw.json")
+OUT_PATH = os.environ.get("SG_OUT") or os.path.join(HERE, "orchard.json")
+AXIS_NAME = os.environ.get("SG_AXIS") or "orchard road"
+LAT0 = float(os.environ.get("SG_LAT0") or 1.30370)
+LON0 = float(os.environ.get("SG_LON0") or 103.83350)
 M_PER_DEG_LAT = 110574.0
 M_PER_DEG_LON = 111320.0 * math.cos(math.radians(LAT0))
 
@@ -142,15 +149,63 @@ FALLBACK_ORCHARD = [
 
 
 def main():
-    raw = json.load(open(os.path.join(HERE, "raw.json")))
+    raw = json.load(open(RAW_PATH))
     els = raw["elements"]
     buildings, roads, trees = [], [], []
+    # Real map positions, so street furniture stops being placed at intervals we
+    # invented. This is what makes it the actual street rather than a plausible one.
+    crossings, signals, busstops, mrt, taxis = [], [], [], [], []
 
     for e in els:
         tags = e.get("tags", {})
-        if e["type"] == "node" and tags.get("natural") == "tree":
-            x, z = proj(e["lat"], e["lon"])
-            trees.append([round(x, 1), round(z, 1)])
+        if e["type"] == "node":
+            hw = tags.get("highway")
+            rw = tags.get("railway")
+            if tags.get("natural") == "tree":
+                x, z = proj(e["lat"], e["lon"])
+                trees.append([round(x, 1), round(z, 1)])
+            elif hw == "crossing":
+                x, z = proj(e["lat"], e["lon"])
+                crossings.append([round(x, 1), round(z, 1)])
+            elif hw == "traffic_signals":
+                x, z = proj(e["lat"], e["lon"])
+                signals.append([round(x, 1), round(z, 1)])
+            elif hw == "bus_stop" or tags.get("public_transport") == "platform":
+                x, z = proj(e["lat"], e["lon"])
+                busstops.append({"p": [round(x, 1), round(z, 1)],
+                                 "n": tags.get("name", "")})
+            elif rw in ("subway_entrance", "station"):
+                x, z = proj(e["lat"], e["lon"])
+                mrt.append({"p": [round(x, 1), round(z, 1)],
+                            "n": tags.get("name", ""), "kind": rw})
+            elif tags.get("amenity") == "taxi":
+                x, z = proj(e["lat"], e["lon"])
+                taxis.append([round(x, 1), round(z, 1)])
+            continue
+        if e["type"] == "way" and tags.get("amenity") == "taxi" and "geometry" in e:
+            pts = [proj(p["lat"], p["lon"]) for p in e["geometry"]]
+            cx = sum(p[0] for p in pts) / len(pts)
+            cz = sum(p[1] for p in pts) / len(pts)
+            taxis.append([round(cx, 1), round(cz, 1)])
+            continue
+        if e["type"] == "way" and tags.get("railway") == "subway_entrance" and "geometry" in e:
+            pts = [proj(p["lat"], p["lon"]) for p in e["geometry"]]
+            cx = sum(p[0] for p in pts) / len(pts)
+            cz = sum(p[1] for p in pts) / len(pts)
+            mrt.append({"p": [round(cx, 1), round(cz, 1)],
+                        "n": tags.get("name", ""), "kind": "subway_entrance"})
+            continue
+        if e["type"] == "way" and tags.get("natural") == "tree_row" and "geometry" in e:
+            # a tree row is a line: plant along it every 8m
+            pts = [proj(p["lat"], p["lon"]) for p in e["geometry"]]
+            for i in range(len(pts) - 1):
+                a0, a1 = pts[i], pts[i + 1]
+                L = math.dist(a0, a1)
+                steps = max(1, int(L // 8))
+                for k in range(steps):
+                    t = k / steps
+                    trees.append([round(a0[0] + (a1[0] - a0[0]) * t, 1),
+                                  round(a0[1] + (a1[1] - a0[1]) * t, 1)])
             continue
         if e["type"] != "way" or "geometry" not in e:
             continue
@@ -211,8 +266,8 @@ def main():
                 r["n"] = tags["name"]
             roads.append(r)
 
-    if not any(r.get("n", "").lower().startswith("orchard road") for r in roads):
-        print("  ! no Orchard Road way in data — using traced fallback centreline")
+    if not any(AXIS_NAME in r.get("n", "").lower() for r in roads):
+        print(f"  ! no '{AXIS_NAME}' way in data — using traced fallback centreline")
         roads.append({
             "p": [[round(x, 1), round(z, 1)] for x, z in
                   (proj(la, lo) for la, lo in FALLBACK_ORCHARD)],
@@ -253,10 +308,10 @@ def main():
             changed = True
         return chain
 
-    axis = stitch(r"orchard road")
+    axis = stitch(AXIS_NAME)
     if axis and len(axis) > 3:
         alen = sum(math.dist(axis[i], axis[i + 1]) for i in range(len(axis) - 1))
-        print(f"stitched Orchard Road axis: {len(axis)} pts, {alen:.0f} m")
+        print(f"  stitched axis '{AXIS_NAME}': {len(axis)} pts, {alen:.0f} m")
     else:
         print("  ! could not stitch an axis, falling back")
         axis = [[round(x, 1), round(z, 1)] for x, z in
@@ -325,7 +380,7 @@ def main():
             b["p"][j] = [round(px, 1), round(pz, 1)]
         if touched:
             moved_b += 1
-    print(f"road clearance: nudged {moved_pts} vertices across {moved_b} buildings")
+    print(f"  road clearance: nudged {moved_pts} vertices across {moved_b} buildings")
 
     buildings.sort(key=lambda b: -b["a"])
     out = {
@@ -333,15 +388,22 @@ def main():
         "buildings": buildings,
         "roads": roads,
         "trees": trees,
+        "crossings": crossings,
+        "signals": signals,
+        "busstops": busstops,
+        "mrt": mrt,
+        "taxis": taxis,
         "axis": {"p": [[round(x, 1), round(z, 1)] for x, z in axis], "w": 16.0, "n": "Orchard Road"},
     }
-    path = os.path.join(HERE, "orchard.json")
+    path = OUT_PATH
     json.dump(out, open(path, "w"), separators=(",", ":"))
 
     named = [b for b in buildings if "n" in b]
-    print(f"buildings {len(buildings)}  (named {len(named)}, landmarks {sum(1 for b in buildings if b.get('k'))})")
-    print(f"roads {len(roads)}   osm trees {len(trees)}")
-    print(f"wrote {path}  {os.path.getsize(path)/1024:.0f} KB")
+    print(f"  buildings {len(buildings)}  (named {len(named)}, landmarks {sum(1 for b in buildings if b.get('k'))})")
+    print(f"  roads {len(roads)}   osm trees {len(trees)}")
+    print(f"  real POIs: {len(crossings)} crossings, {len(signals)} signals, "
+          f"{len(busstops)} bus stops, {len(mrt)} MRT, {len(taxis)} taxi ranks")
+    print(f"  wrote {path}  {os.path.getsize(path)/1024:.0f} KB")
     print("\nlargest by footprint:")
     for b in buildings[:12]:
         print(f"  {b.get('n','(unnamed)')[:34]:36s} {b['a']:>7} m2   h={b['h']}")
