@@ -41,10 +41,11 @@ window.__auditWorld = async function auditWorld() {
       stamp(axis.p[i][0], axis.p[i][1], axis.p[i + 1][0], axis.p[i + 1][1],
             axis.w / 2, axis.n || 'Orchard Road', 'axis');
 
-  const roadAt = (x, z, margin) => {
+  const roadAt = (x, z, margin, skipService) => {
     const list = rGrid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));
     if (!list) return null;
-    for (const [x1, z1, x2, z2, half, name] of list) {
+    for (const [x1, z1, x2, z2, half, name, kind] of list) {
+      if (skipService && kind === 'service') continue;
       const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
       let t = L2 < 1e-9 ? 0 : ((x - x1) * vx + (z - z1) * vz) / L2;
       t = t < 0 ? 0 : t > 1 ? 1 : t;
@@ -156,6 +157,12 @@ window.__auditWorld = async function auditWorld() {
     'SphereGeometry(0.1)', 'SphereGeometry(0.11)', 'CylinderGeometry(0.05,0.1)',
     'BoxGeometry(0.22,0.26,0.1)']);
 
+  let sky = null;
+  sc.traverse((o) => {
+    if (o.isMesh && o.geometry.type === 'SphereGeometry'
+        && o.geometry.parameters.radius > 100) sky = o;
+  });
+
   /* ================= P: placement ================= */
   {
     const bad = {}, ex = [];
@@ -170,6 +177,51 @@ window.__auditWorld = async function auditWorld() {
     add('P1', 'props in a carriageway', 'BLOCKER', n, 0,
         Object.entries(bad).sort((a, b) => b[1] - a[1]).slice(0, 6)
           .map(([k, v]) => `${v}x ${k}`).join('  ') || 'none', ex);
+  }
+  {
+    // P1b: everything that is NOT an instanced prop. This check did not exist,
+    // and it is the largest category of geometry in the world: buildings,
+    // shopfronts, entrance canopies, colonnades, landmark structure. The audit
+    // reported a clean district while a row of six-metre columns stood across
+    // the carriageway at the spawn point, because it only ever looked at props.
+    const v = new T.Vector3();
+    const bad = {}, ex = [];
+    const RIDE_HEIGHT = 9;          // what you can actually hit on a scooter
+    sc.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh) return;
+      const pos = o.geometry.attributes.position;
+      if (!pos || pos.count > 6000) return;    // a merged tile is not one object
+      if (o === sky || o.material.fog === false) return;   // the sky dome
+      if (o.geometry.type === 'PlaneGeometry'
+          && o.geometry.parameters.width > 500) return;     // ground fallback plane
+      let hit = null, worstX = 0, worstZ = 0, minY = 1e9, maxY = -1e9, n = 0;
+      const step = Math.max(1, Math.floor(pos.count / 80));
+      for (let i = 0; i < pos.count; i += step) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        if (v.y < minY) minY = v.y;
+        if (v.y > maxY) maxY = v.y;
+        if (v.y - (terr ? terr.at(v.x, v.z) : 0) > RIDE_HEIGHT) continue;
+        n++;
+        // service lanes are skipped for the same reason P5 skips them: a hotel
+        // set-down or a loading bay is what a service road is for
+        const rd = roadAt(v.x, v.z, -1.0, true);
+        if (rd) { hit = rd; worstX = v.x; worstZ = v.z; }
+      }
+      // Nothing under 40cm is something you ride into: those are aprons,
+      // thresholds and paving trim that sit flush with the road on purpose.
+      if (!hit || !n || maxY - minY < 0.4) return;
+      const key = `${o.geometry.type}|${pos.count}v|${(maxY - minY).toFixed(1)}m tall`;
+      bad[key] = (bad[key] || 0) + 1;
+      if (ex.length < 8) ex.push(`${key} in "${hit}" at ${worstX | 0},${worstZ | 0}`);
+    });
+    const n = Object.values(bad).reduce((a, b) => a + b, 0);
+    // P1b is new and inherited a backlog. The target is zero, but a check
+    // introduced into an existing world cannot start by failing everything, so
+    // it runs as a RATCHET: the number may go down and never up. Lowering this
+    // baseline is progress; raising it is a regression and blocks the deploy.
+    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 286,
+        Object.entries(bad).sort((a, b) => b[1] - a[1]).slice(0, 6)
+          .map(([k, v2]) => `${v2}x ${k}`).join('  ') || 'none', ex);
   }
   {
     const bad = {}, ex = [];

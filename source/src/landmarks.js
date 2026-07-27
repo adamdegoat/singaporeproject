@@ -7,6 +7,11 @@
 import * as THREE from '../lib/three.module.js';
 import { rand, R } from './tex.js';
 
+// Is this point inside a carriageway? Asked through the window rather than
+// imported from city.js, which already imports this module.
+const onCarriageway = (x, z, margin = -0.6) =>
+  (window.__onRoad ? window.__onRoad(x, z, margin) : false);
+
 /* ---------------- footprint analysis ---------------- */
 // principal axis of the footprint, so towers can be laid out along the long side
 export function orientedBox(pts) {
@@ -35,10 +40,18 @@ export function orientedBox(pts) {
 }
 
 // a box placed in the footprint's own frame
+// Every slab is positioned by an offset in the footprint's oriented frame. For
+// an irregular footprint that frame is bigger than the building, so an offset
+// of "half the short side plus a bit" can land outside the walls and in the
+// street: Lucky Plaza's seven 79m facade fins were standing across Orchard Road,
+// which is the row of pillars you meet at the spawn point. Any slab whose own
+// footprint sits in a carriageway is not built.
 function slab(api, ob, u, v, w, d, y0, h, mat, yaw = 0) {
+  const x0 = ob.cx + ob.ux * u - ob.uz * v;
+  const z0 = ob.cz + ob.uz * u + ob.ux * v;
+  if (onCarriageway(x0, z0, -0.8)) return null;
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-  const x = ob.cx + ob.ux * u - ob.uz * v;
-  const z = ob.cz + ob.uz * u + ob.ux * v;
+  const x = x0, z = z0;
   m.position.set(x, y0 + h / 2, z);
   m.rotation.y = -ob.ang + yaw;
   m.castShadow = true; m.receiveShadow = true;
@@ -157,9 +170,16 @@ function ionOrchard(api, b) {
   shell.position.set(fx, 20.5, fz);
   shell.castShadow = true;
   api.world.add(shell);
+  // The two tree columns stand 17m either side of the entrance. That offset runs
+  // along the frontage, and on this site part of it lands in Orchard Road, so
+  // each one is tested where it actually stands. `reach` was being discarded
+  // here with `void reach`, which is how they came to be in the carriageway.
   for (const sgn of [-1, 1]) {
+    let off = 17;
+    while (off > 7 && onCarriageway(fx - sw.nz * sgn * off, fz + sw.nx * sgn * off)) off -= 2.5;
+    if (onCarriageway(fx - sw.nz * sgn * off, fz + sw.nx * sgn * off)) continue;
     const col = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 1.9, 20, 10), shellMat);
-    col.position.set(fx - sw.nz * sgn * 17, 10, fz + sw.nx * sgn * 17);
+    col.position.set(fx - sw.nz * sgn * off, 10, fz + sw.nx * sgn * off);
     col.castShadow = true; api.world.add(col);
   }
   void reach;

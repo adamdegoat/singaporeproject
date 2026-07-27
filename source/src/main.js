@@ -257,6 +257,7 @@ let crowdSys = null, trafficSys = null, wayfinder = null, signals = null;
 let terrain = new Terrain(null);
 let mode = 'ride';                 // 'ride' | 'walk'
 const sound = new Sound();
+window.__sound = sound;   // so the audio path can be verified, not assumed
 // browsers will not start audio without a gesture
 for (const ev of ['touchstart', 'touchend', 'pointerdown', 'mousedown', 'keydown', 'click']) {
   addEventListener(ev, () => { sound.start(); sound.poke(); }, { passive: true });
@@ -273,14 +274,25 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   setTerrain(terrain);
   window.__terrain = terrain;
   indexBuildings(data);
-  const bs = P.has('nobuild') ? { count: 0, tall: 0 } : buildBuildings(world, data);
-  const fallbackAxis = buildRoads(world, data);
-  const axis = data.axis || fallbackAxis;
 
-  ROADIX = buildRoadIndex(data, axis);
+  // The road index is built FIRST. Buildings carry structural pieces — entrance
+  // canopies, colonnades, the tree columns under ION's shell — that are placed
+  // by offsets from a facade and have to be tested against the carriageways as
+  // they are created. Building it after buildBuildings meant every one of those
+  // tests silently answered "not in a road", and 59 six-metre columns ended up
+  // standing in the street, including the row you meet at the spawn point.
+  ROADIX = buildRoadIndex(data, data.axis || null);
   window.__onRoad = (x, z, m, ex) => ROADIX.onRoad(x, z, m || 0, ex || null);
   window.__placeOn = (name) => (x, z) => blocked(x, z) || ROADIX.onRoad(x, z, -0.4, name);
   window.__nearestStreet = (x, z) => ROADIX.nearestName(x, z);
+
+  const bs = P.has('nobuild') ? { count: 0, tall: 0 } : buildBuildings(world, data);
+  const fallbackAxis = buildRoads(world, data);
+  const axis = data.axis || fallbackAxis;
+  if (!data.axis && fallbackAxis) {
+    // no stitched axis in the file, so re-index now that we have one
+    ROADIX = buildRoadIndex(data, fallbackAxis);
+  }
 
   // the ground itself, from the heightfield
   const groundMat = new THREE.MeshStandardMaterial({ color: 0x9a9384, roughness: 0.95 });
@@ -353,12 +365,17 @@ attachMouse(canvas);
 {
   const sbtn = document.getElementById('soundbtn');
   if (sbtn) {
+    // The label used to read "Sound on" while the sound was already on, so the
+    // first tap muted the ride and it looked like audio was broken. The button
+    // now says what the tap will DO.
+    const label = () => { sbtn.textContent = sound.muted ? 'Sound on' : 'Mute'; };
     const tap = (e) => {
       e.preventDefault(); e.stopPropagation();
       sound.start();
       sound.setMuted(!sound.muted);
-      sbtn.textContent = sound.muted ? 'Sound off' : 'Sound on';
+      label();
     };
+    label();
     sbtn.addEventListener('click', tap);
     sbtn.addEventListener('touchstart', tap, { passive: false });
   }

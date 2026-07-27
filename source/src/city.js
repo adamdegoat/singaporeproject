@@ -110,6 +110,13 @@ const up = new THREE.Vector3(0, 1, 0);
 // to assume ground at zero asks this instead.
 let TERRAIN = { at: () => 0 };
 export function setTerrain(t) { TERRAIN = t; }
+
+// Is this point inside a carriageway? Structural pieces are placed by offsets
+// from a facade, and an offset sideways along the frontage can put a column in
+// the middle of the street even when the outward projection was checked.
+export function onCarriageway(x, z, margin = -0.6) {
+  return window.__onRoad ? window.__onRoad(x, z, margin) : false;
+}
 export function groundAt(x, z) { return TERRAIN.at(x, z); }
 
 // Every building used to get its own cloned texture, which meant its own
@@ -484,17 +491,34 @@ function addShopfront(world, b, per, merger, clearance) {
       ? clearance.outward(mx, mz, ux, uz, 3.6, cw * 0.5)
       : 3.6;
     if (reach > 1.0) {
-      const can = new THREE.Mesh(new THREE.BoxGeometry(cw, 0.5, reach * 1.15), MAT.trim);
-      can.position.set(mx + ux * reach * 0.5, 6.1, mz + uz * reach * 0.5);
-      can.rotation.y = ang + Math.PI / 2;
-      can.castShadow = true; world.add(can);
-      for (const s2 of [-1, 1]) {
-        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 6.0, 8), MAT.metal);
-        col.position.set(
-          mx + ux * reach * 0.9 + Math.sin(ang) * s2 * cw * 0.42, 3.0,
-          mz + uz * reach * 0.9 + Math.cos(ang) * s2 * cw * 0.42
-        );
-        col.castShadow = true; world.add(col);
+      // The canopy is as wide as the frontage, and its posts stand at the ends
+      // of that width. `clearance.outward` only checked the projection straight
+      // out from the middle, so on a skewed frontage a post could end up in the
+      // carriageway: 59 six-metre columns were standing in roads, including the
+      // row you meet at the spawn point. Every post is now tested where it
+      // actually stands, and the canopy narrows until both of its ends are clear.
+      let w = cw;
+      const postAt = (width, s2) => [
+        mx + ux * reach * 0.9 + Math.sin(ang) * s2 * width * 0.42,
+        mz + uz * reach * 0.9 + Math.cos(ang) * s2 * width * 0.42,
+      ];
+      while (w > 4 && [-1, 1].some((s2) => {
+        const [px2, pz2] = postAt(w, s2); return onCarriageway(px2, pz2);
+      })) w *= 0.75;
+      const clear = ![-1, 1].some((s2) => {
+        const [px2, pz2] = postAt(w, s2); return onCarriageway(px2, pz2);
+      });
+      if (clear) {
+        const can = new THREE.Mesh(new THREE.BoxGeometry(w, 0.5, reach * 1.15), MAT.trim);
+        can.position.set(mx + ux * reach * 0.5, 6.1, mz + uz * reach * 0.5);
+        can.rotation.y = ang + Math.PI / 2;
+        can.castShadow = true; world.add(can);
+        for (const s2 of [-1, 1]) {
+          const [px2, pz2] = postAt(w, s2);
+          const col = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 6.0, 8), MAT.metal);
+          col.position.set(px2, 3.0, pz2);
+          col.castShadow = true; world.add(col);
+        }
       }
     }
   }
