@@ -280,15 +280,40 @@ function sharedMat(tex, rough, metal) {
   return sharedMats.get(tex);
 }
 
+// The ground a footprint actually sits on.
+//
+// Both extrusions used to seat a building at the terrain height under its
+// CENTROID and sink it 0.9m, which is fine on the flat and wrong on a hill.
+// Orchard and Bras Basah are not flat: 230 footprints span more than three
+// metres of ground, and Plaza Singapura spans fourteen. Seated on the middle,
+// its downhill end floated about seven metres in the air.
+//
+// Seat on the LOWEST ground under the footprint instead. Nothing can then
+// float; the uphill end is buried deeper, which is what a building cut into a
+// slope actually looks like and is invisible from outside.
+function footingY(pts) {
+  let lo = Infinity;
+  for (const [x, z] of pts) {
+    const g = TERRAIN.at(x, z);
+    if (g < lo) lo = g;
+  }
+  // and sample the middle too, in case a long edge dips between its ends
+  const c = centroid(pts);
+  lo = Math.min(lo, TERRAIN.at(c[0], c[1]));
+  // 0.9, the same sink as before, so a footprint on FLAT ground is seated exactly
+  // where it always was and only sloped ones move. Changing both at once made
+  // every building in the district 40cm higher for no reason and muddied what
+  // the slope fix was actually responsible for.
+  return lo - 0.9;
+}
+
 // the raw geometry, without wrapping it in a Mesh
 function extrudeGeo(pts, h, y0 = 0) {
   const geo = new THREE.ExtrudeGeometry(shapeFrom(pts), {
     depth: h, bevelEnabled: false, curveSegments: 1,
   });
   geo.rotateX(Math.PI / 2);
-  // sink slightly into the slope so a footprint on a hill has no gap beneath it
-  const c = centroid(pts);
-  geo.translate(0, TERRAIN.at(c[0], c[1]) - 0.9 + y0 + h, 0);
+  geo.translate(0, footingY(pts) + y0 + h, 0);
   return geo;
 }
 
@@ -330,8 +355,7 @@ function extrude(pts, h, mat, y0 = 0) {
     depth: h, bevelEnabled: false, curveSegments: 1,
   });
   geo.rotateX(Math.PI / 2);      // +Z extrusion becomes +Y
-  const c0 = centroid(pts);
-  geo.translate(0, TERRAIN.at(c0[0], c0[1]) - 0.9 + y0 + h, 0);
+  geo.translate(0, footingY(pts) + y0 + h, 0);
   const m = new THREE.Mesh(geo, mat);
   m.castShadow = true; m.receiveShadow = true;
   return m;
@@ -585,13 +609,43 @@ function ribbon(pts, width, y) {
   const half = width / 2;
 
   // drop repeated points, then work out each vertex's offset direction
-  const p = [];
+  const raw = [];
   for (const q of pts) {
-    if (!p.length || Math.hypot(q[0] - p[p.length - 1][0], q[1] - p[p.length - 1][1]) > 0.01) {
-      p.push([q[0], q[1]]);
+    if (!raw.length || Math.hypot(q[0] - raw[raw.length - 1][0], q[1] - raw[raw.length - 1][1]) > 0.01) {
+      raw.push([q[0], q[1]]);
     }
   }
-  if (p.length < 2) return g;
+  if (raw.length < 2) return g;
+
+  // SUBDIVIDE long segments so the tarmac follows the ground.
+  //
+  // A ribbon takes its height from the terrain at each centreline vertex and is
+  // flat in between. OSM road vertices sit up to thirty metres apart and the
+  // heightfield is bilinear over 35m cells, so wherever a road crosses a cell
+  // with any curvature the ground rose straight through the tarmac: measured at
+  // 16.6% of the whole road surface, worst case 4.9 METRES of hillside standing
+  // in the middle of a carriageway. It reads as the road simply stopping.
+  //
+  // Three metres, more than ten times finer than the 35m heightfield, so the
+  // ribbon tracks every cell it crosses. Measured: 16.6% of the road surface had
+  // ground standing through it before, 0.05% at six metres, 0.01% at three, and
+  // the worst case fell from 4.91m to 0.40m. It costs vertices on a layer that
+  // is already one draw call and nothing measurable in frame rate.
+  //
+  // KEEP THIS IN STEP with the check in audit_world.js (P8), which reproduces
+  // this subdivision to know where the drawn surface is.
+  const STEP = 3;
+  const p = [];
+  for (let i = 0; i < raw.length - 1; i++) {
+    const a = raw[i], c = raw[i + 1];
+    const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+    const n = Math.max(1, Math.ceil(L / STEP));
+    for (let k = 0; k < n; k++) {
+      const t = k / n;
+      p.push([a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t]);
+    }
+  }
+  p.push(raw[raw.length - 1]);
 
   const dir = [];
   for (let i = 0; i < p.length - 1; i++) {

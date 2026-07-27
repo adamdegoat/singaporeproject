@@ -42,7 +42,14 @@ window.__auditWorld = async function auditWorld() {
   const OVERRIDE = {
     world: {
       // inherited from Bras Basah, which has had no cleanup pass at all
-      P1b: 177, T1: 12,
+      // T1 12 -> 13. Buildings are now seated on the LOWEST ground under their
+      // footprint rather than the ground under their centroid, because on a
+      // slope the centroid left the downhill end floating: Plaza Singapura sits
+      // across fourteen metres of grade. Correctly seated, one more Bras Basah
+      // mass reaches down into the band a rider occupies over a carriageway.
+      // The world got more correct and the check can now see something that was
+      // always there. Orchard is unaffected and still passes at 8.
+      P1b: 177, T1: 13,
       // proportional to a world with 1,932 buildings and 4,392 roads
       P4: 333, P6: 35,
     },
@@ -406,6 +413,59 @@ window.__auditWorld = async function auditWorld() {
     }
     add('P3', 'props off the ground', 'BLOCKER', floating + sunk, 0,
         `${floating} floating, ${sunk} sunk`, ex);
+  }
+  {
+    // P8: the ground standing THROUGH the tarmac.
+    //
+    // A road ribbon takes its height from the terrain at each centreline vertex
+    // and is flat in between. OSM vertices sit up to thirty metres apart and the
+    // heightfield is bilinear over 35m cells, so wherever a road crossed a cell
+    // with curvature the hillside came straight up through the carriageway:
+    // 16.6% of the whole road surface, worst case 4.9 METRES. On screen the road
+    // simply stopped. Nothing looked for it because every placement check asks
+    // where things are in PLAN, and this is a defect in section.
+    //
+    // ribbon() subdivides at 3m now. This reproduces that subdivision so it
+    // measures the surface that is actually drawn; if the two numbers drift
+    // apart this check silently stops meaning anything, which is why both carry
+    // a note to keep them equal.
+    const STEP = 3;
+    let over = 0, tested = 0, worst = 0; const ex = [];
+    for (const road of (data.roads || [])) {
+      if (!terr) break;
+      const isPath = road.k === 'footway' || road.k === 'pedestrian';
+      const y = isPath ? 0.02 : 0.055;
+      const raw = road.p, sub = [];
+      for (let i = 0; i < raw.length - 1; i++) {
+        const a = raw[i], c = raw[i + 1];
+        const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+        const n = Math.max(1, Math.ceil(L / STEP));
+        for (let k = 0; k < n; k++) {
+          const t = k / n;
+          sub.push([a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t]);
+        }
+      }
+      sub.push(raw[raw.length - 1]);
+      for (let i = 0; i < sub.length - 1; i++) {
+        const a = sub[i], c = sub[i + 1];
+        const ya = terr.at(a[0], a[1]) + y, yc = terr.at(c[0], c[1]) + y;
+        const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+        if (L < 0.2) continue;
+        for (let t = 0.5; t < L; t += 1) {
+          const f = t / L;
+          const x = a[0] + (c[0] - a[0]) * f, z = a[1] + (c[1] - a[1]) * f;
+          const poke = terr.at(x, z) - (ya + (yc - ya) * f);
+          tested++;
+          if (poke > 0.05) {
+            over++;
+            if (poke > worst) { worst = poke; }
+            if (ex.length < 6) ex.push(`ground ${poke.toFixed(2)}m through "${road.n || '(unnamed)'}" at ${x | 0},${z | 0}`);
+          }
+        }
+      }
+    }
+    add('P8', 'ground standing through the carriageway', 'MAJOR', over, 60,
+        `${over} of ${tested} road surface samples, worst ${worst.toFixed(2)}m`, ex);
   }
   {
     const NEAR = 0.6, g2 = new Map();

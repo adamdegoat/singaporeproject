@@ -217,9 +217,40 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     // the default search allows, and a failed search must NOT fall back to the
     // point it was asked to move: that is how street furniture kept ending up in
     // the traffic. No clear spot means no pole.
+    // pushClear moves a point out of a CARRIAGEWAY. It knows nothing about
+    // buildings, so a stop mapped near a frontage was shoved off the tarmac and
+    // straight into a wall: 24 stops and taxi ranks ended up inside buildings.
+    // Walk outward from the cleared point until it is clear of both, and if
+    // there is nowhere, build nothing — a failed search must never fall back to
+    // the point it was asked to fix.
     const moved = window.__pushClear && window.__pushClear(sx, sz, 0.9, 18);
     if (!moved) continue;
-    const [px, pz] = moved;
+    let [px, pz] = moved;
+    // A stop has to end up beside the street it serves. pushClear is allowed to
+    // travel eighteen metres to escape a wide carriageway, and twice that left a
+    // pole stranded in the middle of a block with no road near it. Treat "too
+    // far from any road" exactly like "inside a building": look for somewhere
+    // that is both, or build nothing.
+    const stranded = window.__onRoad && !window.__onRoad(px, pz, 13);
+    if (isBlocked(px, pz) || stranded) {
+      // and it must still be a BUS STOP when it gets there. The first version
+      // only asked for somewhere unblocked, and pushed two poles so far out of a
+      // frontage that they no longer stood beside any road. A stop that is not
+      // on a street is not a stop, so require both, and build nothing if there
+      // is nowhere that is both.
+      let ok = null;
+      for (let r = 1.5; r <= 12 && !ok; r += 1.5) {
+        for (let a2 = 0; a2 < 16; a2++) {
+          const th = (a2 / 16) * Math.PI * 2;
+          const tx = px + Math.cos(th) * r, tz = pz + Math.sin(th) * r;
+          if (isBlocked(tx, tz)) continue;
+          if (window.__onRoad && !window.__onRoad(tx, tz, 13)) continue;
+          ok = [tx, tz]; break;
+        }
+      }
+      if (!ok) continue;
+      [px, pz] = ok;
+    }
     const gp = new THREE.Group();
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 3.1, 8), MAT.metal);
     pole.position.y = 1.55; pole.castShadow = true; gp.add(pole);
