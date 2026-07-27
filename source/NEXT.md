@@ -92,6 +92,41 @@ moment the site started loading `world.json` the live page fetched GitHub's 404
 page and failed to boot. It copies `dist/data/*.json` now and verifies every one
 of them against the live site. Two lists of the same files, one updated.
 
+## The defect hunt
+
+`SG_SCENE=world node data/defects.mjs` is the exploratory pass: eleven classes
+nothing has a gate for. It is NOT the gate. Anything it finds is either a defect
+to fix and then promote into `audit_world.js` with a budget, or a probe that was
+measuring the wrong thing and should be deleted loudly.
+
+Two loops of it found four real defects, all of them world-wide and none of them
+visible to any of the 31 checks, because every one of those asks where things
+are in PLAN and these are defects in SECTION:
+
+- **The ground stood through the tarmac over 16.6% of the road surface, worst
+  case 4.9 METRES.** A ribbon takes its height from the terrain at each
+  centreline vertex and is flat in between; OSM vertices sit up to thirty metres
+  apart and the heightfield is bilinear over 35m cells. `ribbon()` subdivides at
+  3m now, which takes it to 0.01% over 5cm, and `P8` gates it. **The check
+  reproduces the subdivision, so the two STEP values must be kept equal.**
+- **Buildings were seated on the ground under their CENTROID.** On a slope the
+  downhill end floated: Plaza Singapura spans fourteen metres of grade. They sit
+  on the lowest ground under the footprint now, same 0.9m sink on the flat.
+- **Bus stops were pushed out of carriageways into buildings.** `pushClear`
+  knows about roads and nothing about walls, so 24 stops stood inside masonry,
+  and raising the search stranded two more with no road near them. It now needs
+  somewhere that is both clear and beside a road, or it builds nothing.
+- **13 footprints were buried inside taller buildings**, invisible except for
+  z-fighting. Dropped in `process.py`. A TALLER inner footprint is a tower on a
+  podium and is kept: 16 of the 28 first flagged were exactly that.
+
+**The recurring lesson from this session, four separate times: a check that
+reads the source data instead of the built world is not a check.** The audit
+fetched `orchard.json` whatever the app had loaded; D3, D4 and D5 tested map
+positions rather than where the builder put things; and the first road-surface
+probe compared two numbers computed from the data, so it could not see the fix
+that had already landed. Test the world, not the input to the world.
+
 ## Do this first
 
 1. **RESEARCH THE STREET BEFORE ASKING ABOUT IT.** The comparison sheet exists
