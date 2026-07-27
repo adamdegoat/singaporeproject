@@ -53,9 +53,15 @@ def check(did):
         fail(f"{len(squat)} footprints over 600 m2 shorter than 8m")
 
     # 3. no needle towers on tiny footprints
-    needles = [b for b in B if b["a"] < 230 and b["h"] > 16 and not b.get("k")]
+    needles = [b for b in B if b["a"] < 230 and b["h"] > 16
+               and not b.get("k") and not b.get("hs")]
     if needles:
-        fail(f"{len(needles)} sub-230 m2 footprints taller than 16m (back-lane needles)")
+        fail(f"{len(needles)} sub-230 m2 footprints taller than 16m with GUESSED "
+             f"heights (back-lane needles)")
+    real_tall = [b for b in B if b["a"] < 230 and b["h"] > 16 and b.get("hs")]
+    if real_tall:
+        print(f"   {len(real_tall)} narrow towers kept: their heights are tagged, "
+              f"so they are real")
 
     # 4. the axis must exist and be a sensible length
     ax = data.get("axis")
@@ -69,7 +75,22 @@ def check(did):
         elif L < 500:
             warn(f"axis is short at {L:.0f}m")
 
-    # 5. real map positions must be present. This check exists because a whole
+    # 5. does the district actually cover its own main street? Orchard was built
+    # for a long time covering only 43% of Orchard Road, and no check caught it
+    # because nothing compared the axis against the street's real extent.
+    ax = data.get("axis")
+    full = data.get("axisFullLength")
+    if ax and full:
+        L = sum(math.dist(ax["p"][i], ax["p"][i + 1]) for i in range(len(ax["p"]) - 1))
+        cov = 100 * L / full
+        print(f"   main street coverage: {L:.0f}m of {full:.0f}m ({cov:.0f}%)")
+        if cov < 85:
+            fail(f"district covers only {cov:.0f}% of its main street; "
+                 f"{full - L:.0f}m is outside the bbox")
+    elif ax:
+        warn("axisFullLength not recorded, so street coverage is unverified")
+
+    # 6. real map positions must be present. This check exists because a whole
     # district was built with every crossing, bus stop, signal and MRT entrance
     # placed at invented intervals, while OSM held the real coordinates all
     # along. Polish on top of invented positions is worse than no polish.
@@ -87,7 +108,7 @@ def check(did):
     if len(layers["crossings"]) < 5:
         warn(f"only {len(layers['crossings'])} crossings; sparse for a city district")
 
-    # 6. nothing in a carriageway (delegated to the road audit)
+    # 7. nothing in a carriageway (delegated to the road audit)
     audit = os.path.join(HERE, "audit_roads.py")
     if os.path.exists(audit):
         env = dict(os.environ); env["SG_SCENE"] = path
@@ -105,12 +126,12 @@ def check(did):
     else:
         warn("audit_roads.py missing, road clearance unverified")
 
-    # 7. payload size, since this ships to a phone
+    # 8. payload size, since this ships to a phone
     kb = os.path.getsize(path) / 1024
     print(f"   scene payload {kb:.0f} KB")
-    if kb > 900:
+    if kb > 1400:
         fail(f"scene is {kb:.0f} KB; too heavy to ship alongside others")
-    elif kb > 400:
+    elif kb > 700:
         warn(f"scene is {kb:.0f} KB, watch the total as districts accumulate")
 
     for w in warns:

@@ -332,3 +332,91 @@ export function texAO() {
   x.fillStyle = g; x.fillRect(0, 0, S, S);
   return finish(c, null, false);
 }
+
+// ---------------------------------------------------------------------------
+// Sign atlas
+//
+// Every shopfront and building name used to be its own 512x128 canvas texture,
+// which meant its own material, which meant its own draw call: 992 shop signs
+// and 266 building names put ~350 tiny meshes on screen at once for barely
+// 100k triangles. Packing the labels into a few shared pages lets them all
+// merge, so the whole district's signage costs a handful of draws.
+//
+// Text only, neutral typeface: this labels a place the way a map labels it.
+const PAGE = 2048, CELL_W = 256, CELL_H = 64;
+const COLS = PAGE / CELL_W, ROWS = PAGE / CELL_H;   // 8 x 32 = 256 labels/page
+
+export class SignAtlas {
+  constructor(THREE) {
+    this.THREE = THREE;
+    this.pages = [];
+    this.slot = COLS * ROWS;   // force a new page on first add
+    this.map = new Map();
+  }
+
+  _newPage() {
+    const c = document.createElement('canvas');
+    c.width = PAGE; c.height = PAGE;
+    const x = c.getContext('2d');
+    x.fillStyle = '#101010'; x.fillRect(0, 0, PAGE, PAGE);
+    const t = new this.THREE.CanvasTexture(c);
+    t.colorSpace = this.THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    const mat = new this.THREE.MeshStandardMaterial({
+      map: t, roughness: 0.5, emissive: 0x191919, emissiveIntensity: 0.4,
+    });
+    const page = { c, x, t, mat };
+    this.pages.push(page);
+    this.slot = 0;
+    return page;
+  }
+
+  // returns { mat, u0, v0, u1, v1 } for a label, drawing it if new
+  add(label, bg, fg) {
+    const key = label + '|' + bg + '|' + fg;
+    if (this.map.has(key)) return this.map.get(key);
+    if (this.slot >= COLS * ROWS) this._newPage();
+    const page = this.pages[this.pages.length - 1];
+    const i = this.slot++;
+    const cx = (i % COLS) * CELL_W, cy = Math.floor(i / COLS) * CELL_H;
+
+    const x = page.x;
+    x.save();
+    x.beginPath(); x.rect(cx, cy, CELL_W, CELL_H); x.clip();
+    x.fillStyle = bg; x.fillRect(cx, cy, CELL_W, CELL_H);
+    x.fillStyle = 'rgba(255,255,255,0.10)'; x.fillRect(cx, cy, CELL_W, 3);
+    x.fillStyle = fg;
+    x.textAlign = 'center'; x.textBaseline = 'middle';
+    let size = 31;
+    const text = label.toUpperCase();
+    do {
+      x.font = `600 ${size}px ui-sans-serif, system-ui, -apple-system, Helvetica, Arial`;
+      size -= 2;
+    } while (x.measureText(text).width > CELL_W - 22 && size > 8);
+    x.fillText(text, cx + CELL_W / 2, cy + CELL_H / 2 + 2);
+    x.restore();
+
+    // inset by a texel so mipmaps never bleed a neighbouring label in
+    const pad = 1.0 / PAGE;
+    const uv = {
+      mat: page.mat,
+      u0: cx / PAGE + pad, u1: (cx + CELL_W) / PAGE - pad,
+      // canvas y runs down, texture v runs up
+      v0: 1 - (cy + CELL_H) / PAGE + pad, v1: 1 - cy / PAGE - pad,
+    };
+    this.map.set(key, uv);
+    return uv;
+  }
+
+  // a plane carrying one label, ready to merge
+  plane(w, h, uv) {
+    const g = new this.THREE.PlaneGeometry(w, h);
+    const a = g.attributes.uv;
+    a.setXY(0, uv.u0, uv.v1); a.setXY(1, uv.u1, uv.v1);
+    a.setXY(2, uv.u0, uv.v0); a.setXY(3, uv.u1, uv.v0);
+    a.needsUpdate = true;
+    return g;
+  }
+
+  finish() { for (const p of this.pages) p.t.needsUpdate = true; return this.pages.length; }
+}

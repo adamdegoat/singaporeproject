@@ -114,11 +114,30 @@ export function buildMarkings(world, axis, data = {}) {
 export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
   const trees = new TreeField();
   const kerb = [], lamp = [], lampArm = [];
-  let roads = 0;
+  let roads = 0, skipped = 0;
+
+  // Dress what can be seen from the route. The full district holds 46.8km of
+  // side street, which produced 23,000 kerbs and 2,100 trees — most of it
+  // hundreds of metres from anywhere the player goes.
+  const REACH = 230;
+  const A = axis.p;
+  const nearAxis = (x, z) => {
+    for (let i = 0; i < A.length - 1; i++) {
+      const [x1, z1] = A[i], [x2, z2] = A[i + 1];
+      const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
+      let t = L2 < 1e-9 ? 0 : ((x - x1) * vx + (z - z1) * vz) / L2;
+      t = Math.max(0, Math.min(1, t));
+      const dx = x - (x1 + vx * t), dz = z - (z1 + vz * t);
+      if (dx * dx + dz * dz < REACH * REACH) return true;
+    }
+    return false;
+  };
 
   for (const r of data.roads) {
     if (!r.n || /orchard road/i.test(r.n)) continue;
     if (r.k === 'footway' || r.k === 'pedestrian' || r.k === 'service') continue;
+    const mid = r.p[Math.floor(r.p.length / 2)];
+    if (!nearAxis(mid[0], mid[1])) { skipped++; continue; }
     const pts = r.p, half = r.w / 2;
     let total = 0;
     for (let i = 0; i < pts.length - 1; i++) {
@@ -168,5 +187,5 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
     p.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   const treeCount = trees.build(world);
-  return { sideRoads: roads, sideTrees: treeCount, sideKerbs: kerb.length };
+  return { sideRoads: roads, sideSkipped: skipped, sideTrees: treeCount, sideKerbs: kerb.length };
 }

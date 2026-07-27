@@ -119,17 +119,30 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
 
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
   const p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1);
+  // Chunk instanced runs by ~260m so distant sections frustum-cull. A single
+  // mesh spanning 2.4km of street is never culled and always drawn in full.
+  const CHUNK = 260;
   const emit = (geo, mat, list, fn, colFn) => {
     if (!list.length) return null;
-    const im = new THREE.InstancedMesh(geo, mat, list.length);
-    list.forEach((rec, i) => {
-      fn(rec); m.compose(p, q, s); im.setMatrixAt(i, m);
-      if (colFn) im.setColorAt(i, colFn(rec, i));
+    const buckets = new Map();
+    list.forEach((rec) => {
+      const k = `${Math.floor(rec[0] / CHUNK)},${Math.floor(rec[2] / CHUNK)}`;
+      if (!buckets.has(k)) buckets.set(k, []);
+      buckets.get(k).push(rec);
     });
-    if (im.instanceColor) im.instanceColor.needsUpdate = true;
-    im.castShadow = false; im.receiveShadow = true;   // shadow pass is the cost
-    world.add(im);
-    return im;
+    let last = null;
+    for (const group of buckets.values()) {
+      const im = new THREE.InstancedMesh(geo, mat, group.length);
+      group.forEach((rec, i) => {
+        fn(rec); m.compose(p, q, s); im.setMatrixAt(i, m);
+        if (colFn) im.setColorAt(i, colFn(rec, i));
+      });
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+      im.castShadow = false; im.receiveShadow = true;
+      world.add(im);
+      last = im;
+    }
+    return last;
   };
   const yaw = (r) => { p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
 
@@ -193,6 +206,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
           emissive: 0x000000, emissiveIntensity: 1.0,
         }));
       lens.position.set(-2.9 * sgn, 5.18 - k * 0.27, 0.16);
+      lens.userData.dyn = true;    // repainted every frame; must not be baked
       g.add(lens);
       lenses.push(lens);
     }

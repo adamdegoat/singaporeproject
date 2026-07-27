@@ -121,7 +121,7 @@ export function groundAt(x, z) { return TERRAIN.at(x, z); }
 // no matter where you look. Merge per material AND per spatial tile instead, so
 // each merged mesh stays local and cullable.
 const TILE = 110;
-class Merger {
+export class Merger {
   constructor() { this.groups = new Map(); this.mats = new Map(); }
   add(geo, mat, x = 0, z = 0) {
     const key = `${Math.floor(x / TILE)},${Math.floor(z / TILE)}|${this.matKey(mat)}`;

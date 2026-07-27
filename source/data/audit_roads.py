@@ -39,6 +39,37 @@ def seg_seg_dist(a, b, c, d):
     return min(pt_seg(a, c, d), pt_seg(b, c, d), pt_seg(c, a, b), pt_seg(d, a, b))
 
 
+CELL = 60.0
+
+
+class CorridorIndex:
+    """Spatial hash over road segments. Without this the audit is
+    buildings x corridors, which went from seconds to many minutes when the
+    district grew six-fold."""
+
+    def __init__(self, cors):
+        self.g = {}
+        for c in cors:
+            (a, b, clear, name) = c
+            minx = min(a[0], b[0]) - clear; maxx = max(a[0], b[0]) + clear
+            minz = min(a[1], b[1]) - clear; maxz = max(a[1], b[1]) + clear
+            for cx in range(int(minx // CELL), int(maxx // CELL) + 1):
+                for cz in range(int(minz // CELL), int(maxz // CELL) + 1):
+                    self.g.setdefault((cx, cz), []).append(c)
+
+    def near(self, x0, z0, x1, z1, pad=6.0):
+        out, seen = [], set()
+        minx = min(x0, x1) - pad; maxx = max(x0, x1) + pad
+        minz = min(z0, z1) - pad; maxz = max(z0, z1) + pad
+        for cx in range(int(minx // CELL), int(maxx // CELL) + 1):
+            for cz in range(int(minz // CELL), int(maxz // CELL) + 1):
+                for c in self.g.get((cx, cz), ()):
+                    k = id(c)
+                    if k not in seen:
+                        seen.add(k); out.append(c)
+        return out
+
+
 def corridors():
     out = []
     for r in DATA["roads"]:
@@ -103,7 +134,8 @@ def rect(cx, cz, w, d, nx, nz):
 
 
 def pt_in_corridor(x, z, cors, skip_service=True):
-    for (a, b, clear, name) in cors:
+    near = IDX.near(x, z, x, z) if IDX else cors
+    for (a, b, clear, name) in near:
         if skip_service and name == "service":
             continue
         vx, vz = b[0] - a[0], b[1] - a[1]
@@ -139,6 +171,7 @@ def clear_outward(x, z, nx, nz, want, halfw, cors):
 
 
 cors_cache = None
+IDX = None
 
 
 def added_geometry():
@@ -200,9 +233,10 @@ def added_geometry():
 
 
 def main():
-    global cors_cache
+    global cors_cache, IDX
     cors = corridors()
     cors_cache = cors
+    IDX = CorridorIndex(cors)
     print(f"corridors: {len(cors)}   buildings: {len(DATA['buildings'])}")
 
     # 1. building edges vs corridors
@@ -214,7 +248,7 @@ def main():
         worst = None
         for i in range(len(pts)):
             e0, e1 = pts[i], pts[(i + 1) % len(pts)]
-            for (c0, c1, clear, rname) in cors:
+            for (c0, c1, clear, rname) in IDX.near(e0[0], e0[1], e1[0], e1[1]):
                 d = seg_seg_dist(e0, e1, c0, c1)
                 if d < clear:
                     pen = clear - d
@@ -233,7 +267,7 @@ def main():
         worst = None
         for i in range(len(poly)):
             e0, e1 = poly[i], poly[(i + 1) % len(poly)]
-            for (c0, c1, clear, rname) in cors:
+            for (c0, c1, clear, rname) in IDX.near(e0[0], e0[1], e1[0], e1[1]):
                 d = seg_seg_dist(e0, e1, c0, c1)
                 if d < clear:
                     pen = clear - d

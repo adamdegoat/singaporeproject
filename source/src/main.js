@@ -2,6 +2,7 @@ import * as THREE from '../lib/three.module.js';
 import { PAL, R, rand, pick, chance } from './tex.js';
 import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain } from './city.js';
 import { Terrain } from './terrain.js';
+import { dedupeMaterials, consolidate, trimShadowCasters } from './consolidate.js';
 import { buildVespa, buildRider, newState, step, RIDE } from './vespa.js';
 import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
@@ -27,7 +28,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0xc9c3b2, 0.0021);
-const camera = new THREE.PerspectiveCamera(58, 1, 0.3, 1400);
+const camera = new THREE.PerspectiveCamera(58, 1, 0.3, 520);
 
 /* ---------------- sky + light ---------------- */
 const SUNDIR = new THREE.Vector3(-0.52, 0.80, -0.30).normalize();
@@ -139,7 +140,7 @@ function dressStreet(data, axis) {
       const px = x1 + ux * t, pz = z1 + uz * t;
       for (const sgn of [-1, 1]) {
         const kx = px + nx * (half + 0.4) * sgn, kz = pz + nz * (half + 0.4) * sgn;
-        if (acc % 13 === (sgn > 0 ? 0 : 6)) {
+        if (acc % 17 === (sgn > 0 ? 0 : 8)) {
           for (const off of [3.2, 2.2, 4.4]) {
             const tx = px + nx * (half + off) * sgn, tz = pz + nz * (half + off) * sgn;
             if (!blocked(tx, tz)) { trees.add(tx, tz, rand(0.85, 1.15)); break; }
@@ -301,6 +302,16 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
   buildEnvironment();
   stats = { marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
   ready = true;
+  // one pass over the finished district: share identical materials, then batch
+  // small static meshes per 110m tile. See consolidate.js.
+  const dedupe = dedupeMaterials(world);
+  const cons = consolidate(world);
+  stats.matsBefore = dedupe.before; stats.matsAfter = dedupe.after;
+  const shad = trimShadowCasters(world);
+  stats.batched = cons.removed; stats.batches = cons.merged;
+  stats.casters = shad.kept; stats.castersDropped = shad.dropped;
+
+  window.__scene = scene; window.__camera = camera; window.__THREE = THREE;
   window.__ready = true;
   window.__stats = stats;
 }).catch((e) => { window.__bootError = (e && e.stack) || String(e); hud.textContent = 'boot failed: ' + e.message; console.error('BOOT', e); });

@@ -282,10 +282,21 @@ def main():
             if len(pts) < 2:
                 continue
             w = ROAD_WIDTH.get(kind, 6.0)
-            lanes = tags.get("lanes")
-            if lanes:
+            wsrc = "class-default"
+            if tags.get("width"):
                 try:
-                    w = max(w, float(lanes) * 3.4)
+                    w = float(str(tags["width"]).replace("m", "").strip())
+                    wsrc = "osm-width"
+                except ValueError:
+                    pass
+            lanes = tags.get("lanes")
+            if wsrc != "osm-width" and lanes:
+                try:
+                    n = float(lanes)
+                    # 3.4m per lane is the SG norm, plus a shoulder each side on
+                    # anything bigger than a lane-and-a-half
+                    w = n * 3.4 + (1.2 if n >= 2 else 0.4)
+                    wsrc = "osm-lanes"
                 except ValueError:
                     pass
             r = {
@@ -306,6 +317,7 @@ def main():
                     break
             if tags.get("sidewalk"):
                 r["sidewalk"] = tags["sidewalk"]
+            r["ws"] = wsrc
             if tags.get("name"):
                 r["n"] = tags["name"]
             roads.append(r)
@@ -353,6 +365,13 @@ def main():
         return chain
 
     axis = stitch(AXIS_NAME)
+    # total length of every way carrying the axis name, whether or not our bbox
+    # reached it — this is what the coverage check compares against
+    axis_full = 0.0
+    for r in roads:
+        if AXIS_NAME in (r.get("n") or "").lower():
+            axis_full += sum(math.dist(r["p"][i], r["p"][i + 1])
+                             for i in range(len(r["p"]) - 1))
     if axis and len(axis) > 3:
         alen = sum(math.dist(axis[i], axis[i + 1]) for i in range(len(axis) - 1))
         print(f"  stitched axis '{AXIS_NAME}': {len(axis)} pts, {alen:.0f} m")
@@ -426,6 +445,31 @@ def main():
             moved_b += 1
     print(f"  road clearance: nudged {moved_pts} vertices across {moved_b} buildings")
 
+    def simplify(ring, eps=0.35):
+        """Drop vertices that sit on the straight line between their neighbours."""
+        if len(ring) < 5:
+            return ring
+        out = [ring[0]]
+        for i in range(1, len(ring) - 1):
+            a, b, c = out[-1], ring[i], ring[i + 1]
+            vx, vz = c[0] - a[0], c[1] - a[1]
+            L = math.hypot(vx, vz)
+            if L < 1e-6:
+                continue
+            # perpendicular distance from b to the line a->c
+            d = abs((b[0] - a[0]) * vz - (b[1] - a[1]) * vx) / L
+            if d > eps:
+                out.append(b)
+        out.append(ring[-1])
+        return out
+
+    before_pts = sum(len(b["p"]) for b in buildings)
+    for b in buildings:
+        b["p"] = simplify(b["p"])
+    after_pts = sum(len(b["p"]) for b in buildings)
+    print(f"  simplified rings: {before_pts} -> {after_pts} vertices "
+          f"({100 - 100 * after_pts // max(before_pts, 1)}% smaller)")
+
     buildings.sort(key=lambda b: -b["a"])
     out = {
         "origin": {"lat": LAT0, "lon": LON0},
@@ -440,6 +484,7 @@ def main():
         "bridges": bridges,
         "covered": covered,
         "shops": shops,
+        "axisFullLength": round(axis_full, 1),
         "axis": {"p": [[round(x, 1), round(z, 1)] for x, z in axis], "w": 16.0, "n": "Orchard Road"},
     }
     path = OUT_PATH
@@ -449,10 +494,16 @@ def main():
     hs_osm = sum(1 for b in buildings if b.get("hs") == "osm")
     hs_named = sum(1 for b in buildings if b.get("hs") == "named")
     lane_tagged = sum(1 for r in roads if "lanes" in r)
+    w_real = sum(1 for r in roads if r.get("ws") in ("osm-width", "osm-lanes"))
+    sw_real = sum(1 for r in roads if r.get("sidewalk"))
+    dual = sum(1 for r in roads if r.get("oneway") and r.get("k") in
+               ("primary", "secondary", "trunk", "tertiary"))
     print(f"  buildings {len(buildings)}  (named {len(named)}, landmarks {sum(1 for b in buildings if b.get('k'))})")
     print(f"  real heights: {hs_osm} from OSM tags + {hs_named} hand-entered "
           f"= {hs_osm + hs_named}/{len(buildings)}")
     print(f"  roads with real lane counts: {lane_tagged}/{len(roads)}")
+    print(f"  road widths from real data: {w_real}/{len(roads)}   "
+          f"sidewalk tags: {sw_real}   dual-carriageway: {dual}")
     print(f"  roads {len(roads)}   osm trees {len(trees)}")
     print(f"  real POIs: {len(crossings)} crossings, {len(signals)} signals, "
           f"{len(busstops)} bus stops, {len(mrt)} MRT, {len(taxis)} taxi ranks")

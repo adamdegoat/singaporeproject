@@ -4,35 +4,47 @@
     {
       "id": "orchard",
       "name": "Orchard Road",
-      "bbox": "1.3000,103.8290,1.3070,103.8380",
-      "origin": [1.30370, 103.83350],
+      "bbox": "1.2965,103.8265,1.3085,103.8505",
+      "origin": [
+        1.3025,
+        103.8385
+      ],
       "axis": "orchard road",
       "status": "live",
-      "notes": "The reference district. Axis is stitched from 28 OSM fragments into 1,192m."
+      "notes": "The full 2,586m of Orchard Road, Tanglin junction through to Dhoby Ghaut. The earlier box covered only the middle 1,119m (43%)."
     },
     {
       "id": "somerset",
       "name": "Somerset / Dhoby Ghaut",
       "bbox": "1.2960,103.8370,1.3020,103.8470",
-      "origin": [1.29900, 103.84200],
+      "origin": [
+        1.299,
+        103.842
+      ],
       "axis": "orchard road",
-      "status": "planned",
+      "status": "merged into orchard",
       "notes": "Continues Orchard east: 313, Orchard Gateway, The Cathay, Plaza Singapura."
     },
     {
       "id": "tanglin",
       "name": "Tanglin",
       "bbox": "1.3040,103.8180,1.3110,103.8300",
-      "origin": [1.30750, 103.82400],
+      "origin": [
+        1.3075,
+        103.824
+      ],
       "axis": "orchard road",
-      "status": "planned",
+      "status": "merged into orchard",
       "notes": "Continues Orchard west: Tanglin Mall, Forum, St Regis, the Botanic Gardens edge."
     },
     {
       "id": "bugis",
       "name": "Bugis / Rochor",
       "bbox": "1.2960,103.8520,1.3030,103.8620",
-      "origin": [1.29950, 103.85700],
+      "origin": [
+        1.2995,
+        103.857
+      ],
       "axis": "victoria street",
       "status": "planned",
       "notes": "Shophouse-heavy, so the shophouse recipe should carry most of it."
@@ -41,7 +53,10 @@
       "id": "chinatown",
       "name": "Chinatown / Telok Ayer",
       "bbox": "1.2790,103.8410,1.2860,103.8500",
-      "origin": [1.28250, 103.84550],
+      "origin": [
+        1.2825,
+        103.8455
+      ],
       "axis": "south bridge road",
       "status": "planned",
       "notes": "Densest shophouse fabric in the city; good test of the terrace variants."
@@ -50,7 +65,10 @@
       "id": "marinabay",
       "name": "Marina Bay",
       "bbox": "1.2780,103.8520,1.2860,103.8640",
-      "origin": [1.28200, 103.85800],
+      "origin": [
+        1.282,
+        103.858
+      ],
       "axis": "bayfront avenue",
       "status": "planned",
       "notes": "Towers and water. Needs a water surface, which nothing else has yet."

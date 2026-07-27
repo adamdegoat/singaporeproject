@@ -4,41 +4,12 @@
 //
 // No brand marks anywhere: signage is colour and form only.
 import * as THREE from '../lib/three.module.js';
-import { R, rand, pick, chance } from './tex.js';
-import { MAT, groundAt } from './city.js';
+import { R, rand, pick, chance, SignAtlas } from './tex.js';
+import { MAT, groundAt, Merger } from './city.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d,
                    0xcf6b3a, 0x2b2f33, 0xa8324f, 0x3d6f8f];
 const BANNER_COLS = [0xb23a2e, 0x2f6b8f, 0xd0a03a, 0x357a55, 0x8a3f70];
-
-// A signboard carrying the building's own name, drawn as text. This is
-// labelling in the sense a map labels a place: the name only, set in a neutral
-// typeface, with no logo, wordmark or brand styling reproduced.
-const signCache = new Map();
-function texNameSign(name, bg, fg) {
-  const key = name + bg + fg;
-  if (signCache.has(key)) return signCache.get(key);
-  const W = 512, H = 128;
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const x = c.getContext('2d');
-  x.fillStyle = bg; x.fillRect(0, 0, W, H);
-  x.fillStyle = 'rgba(255,255,255,0.10)'; x.fillRect(0, 0, W, 5);
-  x.fillStyle = fg;
-  x.textAlign = 'center'; x.textBaseline = 'middle';
-  let size = 62;
-  const label = name.toUpperCase();
-  do {
-    x.font = `600 ${size}px ui-sans-serif, system-ui, -apple-system, Helvetica, Arial`;
-    size -= 3;
-  } while (x.measureText(label).width > W - 44 && size > 16);
-  x.fillText(label, W / 2, H / 2 + 3);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  signCache.set(key, t);
-  return t;
-}
 
 function yawMesh(geo, mat, x, y, z, ang) {
   const m = new THREE.Mesh(geo, mat);
@@ -200,6 +171,29 @@ function mrtEntrance(world, px, pz, ang, label) {
 
 /* ---------------- main placement pass ---------------- */
 export function buildSgDetail(world, axis, data, isBlocked) {
+  const atlas = new SignAtlas(THREE);
+  const signs = new Merger();
+  // where is the street divided? one-way primary/secondary ways running as a
+  // pair are how OSM records a dual carriageway
+  const dualSegs = [];
+  for (const r of (data.roads || [])) {
+    if (!r.oneway) continue;
+    if (!['primary', 'secondary', 'trunk', 'tertiary'].includes(r.k)) continue;
+    for (let i = 0; i < r.p.length - 1; i++) dualSegs.push([r.p[i], r.p[i + 1]]);
+  }
+  const hasMedianAt = (x, z) => {
+    for (const [a, b] of dualSegs) {
+      const vx = b[0] - a[0], vz = b[1] - a[1];
+      const L2 = vx * vx + vz * vz;
+      let t = L2 < 1e-9 ? 0 : ((x - a[0]) * vx + (z - a[1]) * vz) / L2;
+      t = Math.max(0, Math.min(1, t));
+      const dx = x - (a[0] + vx * t), dz = z - (a[1] + vz * t);
+      if (dx * dx + dz * dz < 26 * 26) return true;
+    }
+    return false;
+  };
+  window.__dualSegs = dualSegs.length;
+
   // MRT entrances at the coordinates OSM records for them, rather than at two
   // arbitrary points along the street.
   let realMrt = 0;
@@ -262,10 +256,14 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     for (let t = 0; t < len; t += 1, acc++) {
       const px = x1 + ux * t, pz = z1 + uz * t;
 
-      // planted central median — Orchard's road is not one flat expanse
-      if (acc % 3 === 0) medianKerb.push([px, 0.14, pz, ang]);
-      if (acc % 7 === 0) medianShrub.push([px + nx * rand(-0.45, 0.45), 0.72, pz + nz * rand(-0.45, 0.45), ang]);
-      if (acc % 46 === 0) medianPalm.push([px, 0, pz, ang]);
+      // Planted median only where the street is actually a dual carriageway.
+      // A continuous median down every metre was an invention; OSM maps the
+      // divided sections as one-way pairs, so that is what we follow.
+      if (hasMedianAt(px, pz)) {
+        if (acc % 3 === 0) medianKerb.push([px, 0.14, pz, ang]);
+        if (acc % 7 === 0) medianShrub.push([px + nx * rand(-0.45, 0.45), 0.72, pz + nz * rand(-0.45, 0.45), ang]);
+        if (acc % 46 === 0) medianPalm.push([px, 0, pz, ang]);
+      }
 
       // banners on the lamp columns
       if (acc % 34 === 8) {
@@ -352,21 +350,17 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     const tox = (bx - sx) / (dist || 1), toz = (bz - sz) / (dist || 1);
     const ang = Math.atan2(tox, toz);
     const bw = Math.min(7.5, 2.4 + sh.n.length * 0.30);
+    const bh = bw * 0.235;
     const y = 5.9 + ((sh.n.length * 7) % 13) * 0.12;
-    const board = new THREE.Mesh(
-      new THREE.PlaneGeometry(bw, bw * 0.235),
-      new THREE.MeshStandardMaterial({
-        map: texNameSign(sh.n, '#' + pick(SIGN_COLS).toString(16).padStart(6, '0'), '#f6f3ec'),
-        roughness: 0.5, emissive: 0x191919, emissiveIntensity: 0.4,
-      }));
-    board.position.set(sx + tox * 1.2, y, sz + toz * 1.2);
-    board.rotation.y = ang;
-    world.add(board);
-    const backer = new THREE.Mesh(
-      new THREE.BoxGeometry(bw + 0.3, bw * 0.235 + 0.3, 0.22), MAT.darkMetal);
-    backer.position.set(sx + tox * 1.05, y, sz + toz * 1.05);
-    backer.rotation.y = ang;
-    world.add(backer);
+    const uv = atlas.add(sh.n, '#' + pick(SIGN_COLS).toString(16).padStart(6, '0'), '#f6f3ec');
+    const face = atlas.plane(bw, bh, uv);
+    face.rotateY(ang);
+    face.translate(sx + tox * 1.2, y, sz + toz * 1.2);
+    signs.add(face, uv.mat, sx, sz);
+    const back = new THREE.BoxGeometry(bw + 0.3, bh + 0.3, 0.22);
+    back.rotateY(ang);
+    back.translate(sx + tox * 1.05, y, sz + toz * 1.05);
+    signs.add(back, MAT.darkMetal, sx, sz);
     realShops++;
   }
   stats.realShops = realShops;
@@ -397,23 +391,18 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     // lets you tell where you are
     if (b.n && bl > 14) {
       const bgc = pick(SIGN_COLS);
-      const boardW = Math.min(26, bl * 0.55);
-      const board = new THREE.Mesh(
-        new THREE.PlaneGeometry(boardW, boardW * 0.25),
-        new THREE.MeshStandardMaterial({
-          map: texNameSign(b.n, '#' + bgc.toString(16).padStart(6, '0'), '#f4f1ea'),
-          roughness: 0.5, emissive: 0x151515, emissiveIntensity: 0.35,
-        }));
+      const boardW = Math.min(26, bl * 0.55), boardH = boardW * 0.25;
       const sy = Math.min(b.h - 2.2, 7.4);
-      board.position.set(mx + (oX / oL) * 1.05, sy, mz + (oZ / oL) * 1.05);
-      board.rotation.y = ang + Math.PI / 2;
-      world.add(board);
-      const backer = new THREE.Mesh(
-        new THREE.BoxGeometry(boardW + 0.5, boardW * 0.25 + 0.5, 0.3), MAT.darkMetal);
-      backer.position.set(mx + (oX / oL) * 0.85, sy, mz + (oZ / oL) * 0.85);
-      backer.rotation.y = ang + Math.PI / 2;
-      backer.castShadow = true;
-      world.add(backer);
+      const rot = ang + Math.PI / 2;
+      const uv = atlas.add(b.n, '#' + bgc.toString(16).padStart(6, '0'), '#f4f1ea');
+      const face = atlas.plane(boardW, boardH, uv);
+      face.rotateY(rot);
+      face.translate(mx + (oX / oL) * 1.05, sy, mz + (oZ / oL) * 1.05);
+      signs.add(face, uv.mat, mx, mz);
+      const back = new THREE.BoxGeometry(boardW + 0.5, boardH + 0.5, 0.3);
+      back.rotateY(rot);
+      back.translate(mx + (oX / oL) * 0.85, sy, mz + (oZ / oL) * 0.85);
+      signs.add(back, MAT.darkMetal, mx, mz);
       stats.nameSigns = (stats.nameSigns || 0) + 1;
     }
 
@@ -444,6 +433,9 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     vertSign, yaw, () => cc.setHex(pick(SIGN_COLS)));
   stats.roofSigns = roofSign.length;
   stats.banners2 = vertSign.length;
+
+  stats.signPages = atlas.finish();
+  stats.signMeshes = signs.flush(world);
 
   return stats;
 }

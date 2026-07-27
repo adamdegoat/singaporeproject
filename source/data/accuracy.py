@@ -36,11 +36,13 @@ LEDGER = [
     ("overhead pedestrian bridges", "REAL", "OSM footway + bridge=yes", None),
     ("covered walkways", "REAL", "OSM footway + covered=yes", None),
     ("shopfront signage", "REAL", "OSM shop/amenity names, 472 tenants", None),
+    ("terrain", "REAL", "elevation sampled along roads, rooftop spikes filtered", None),
+    ("road markings", "REAL", "OSM lanes and turn:lanes, 387 roads tagged", None),
 
     ("road WIDTHS", "INVENTED", "inferred from lane tags or a default per class",
      "use OSM width=* where tagged; measure the rest from imagery"),
-    ("most building heights (~200)", "INVENTED", "type defaults, not surveyed",
-     "OSM building:levels where present; hand-enter the rest by area"),
+    ("building heights: 142 of 241", "INVENTED", "type defaults; 99 are real",
+     "OSM tags only cover 32%; the rest needs hand entry or imagery"),
     ("most building APPEARANCE (~200)", "INVENTED", "facade family chosen by footprint hash",
      "research each, or accept as background fabric"),
     ("ERP gantries", "INVENTED", "2, placed at chosen arclengths",
@@ -51,13 +53,11 @@ LEDGER = [
      "OSM barrier=fence/guard_rail where mapped"),
     ("central median + planting", "INVENTED", "continuous down the axis",
      "real Orchard has median only in parts; needs imagery or dual-carriageway tags"),
-    ("road markings", "INVENTED", "generic lane pattern",
-     "derive lane count and turn arrows from OSM lanes / turn:lanes"),
+
     ("pavement widths", "INVENTED", "fixed offset from the kerb",
      "OSM sidewalk tags, or footway ways where separately mapped"),
 
-    ("terrain", "INVENTED", "completely flat",
-     "Orchard Road genuinely slopes; needs an elevation source"),
+
     ("planters, bins, banners, bollards", "INVENTED", "regular intervals",
      "mostly unmapped; acceptable as dressing"),
     ("traffic and crowd behaviour", "INVENTED", "plausible simulation",
