@@ -165,6 +165,39 @@ verifies by hash rather than by eye — comparing the local bundle against
 `https://adamdegoat.github.io/singaporeproject/app.js` with a cache-buster until
 they match. It exits non-zero if they never do.
 
+## The whole-map audit
+
+`data/audit_world.js`, loaded into the page with `?raw=1` (which skips batching
+so objects are still individually inspectable). It walks the ENTIRE district and
+reports: props standing in carriageways, props inside buildings, props off the
+ground, named streets with nothing on them, where the pedestrians actually are,
+building footprints crossing a road, and duplicated props.
+
+Run it before saying anything is finished. Checking one camera angle and a few
+frame counters missed all of this at once:
+
+- **5,804 props buried, some 34.6m underground.** The street furniture was
+  authored before the heightfield existed and kept absolute Y. Anything placed
+  in the world goes through `groundAt(x, z)`, with no exceptions.
+- **4,582 props standing in carriageways.** The placement test only knew about
+  building footprints, so a tree in the middle of a back road passed: it was not
+  inside a building, so it was fair game. `src/roads.js` supplies the other half.
+  The bike and the walker keep the raw building test — they belong on the road.
+- **Every pedestrian on the main street.** `Crowd` was built around one path, so
+  the side streets could not have people no matter what. It takes a list now.
+- **A 1,376m street with nothing on it.** OSM splits a road at every junction:
+  Orchard Boulevard is 21 fragments, none of them 45m, so a per-way length test
+  discarded the whole street. Measure length per NAME, not per way. This is the
+  same lesson as stitching the axis, in a place nobody thought to look.
+- **The sky went black off-axis.** A fixed 900m dome at the world origin fell
+  outside a 520m far plane. There is no clear colour set, so the result is
+  black. The dome follows the camera's position now — never its rotation.
+
+When the audit reports something, check whether it is really a defect before
+"fixing" it. The central median, lamp arms reaching over the road, vehicles,
+tree canopies overhanging a kerb and pedestrians on a crossing all belong where
+they are. The allowlists at the top of each check say which, and why.
+
 ## Before calling a district done
 
 Run `python3 data/accuracy.py <id>`. It reads the counts out of the scene rather
