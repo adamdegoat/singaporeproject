@@ -5,7 +5,7 @@
 // rewrite per part per frame — cheap in JS, free on the GPU.
 import * as THREE from '../lib/three.module.js';
 import { R, rand, pick, chance } from './tex.js';
-import { groundAt } from './city.js';
+import { groundAt, surfaceAt } from './city.js';
 
 /* ---------------- path helper along the street axis ---------------- */
 export class Path {
@@ -268,7 +268,7 @@ export class Crowd {
       const put = (part, lx, ly, lz, rx, rz) => {
         // local offsets are in the walker's frame, then rotated into the street
         const wx = x + (nx * lx + ux * lz), wz = z + (nz * lx + uz * lz);
-        p.set(wx, groundAt(wx, wz) + ly * sc + bob, wz);
+        p.set(wx, surfaceAt(wx, wz) + ly * sc + bob, wz);
         e.set(rx || 0, heading, rz || 0, 'YXZ');
         q.setFromEuler(e);
         s.set(sc, sc, sc);
@@ -451,7 +451,7 @@ export class Traffic {
       e.set(0, heading, 0); q.setFromEuler(e);
 
       if (it.kind === 'car') {
-        const gy = groundAt(x, z);
+        const gy = surfaceAt(x, z);
         p.set(x, gy + 0.62, z); m.compose(p, q, s); this.body.setMatrixAt(it.i, m);
         p.set(x - ux * 0.35 * it.dir, gy + 1.14, z - uz * 0.35 * it.dir);
         m.compose(p, q, s); this.roof.setMatrixAt(it.i, m);
@@ -467,7 +467,7 @@ export class Traffic {
           this.wheel.setMatrixAt(it.i * 4 + w, m);
         }
       } else {
-        const gyb = groundAt(x, z);
+        const gyb = surfaceAt(x, z);
         p.set(x, gyb + 1.55, z); m.compose(p, q, s); this.busBody.setMatrixAt(it.i, m);
         p.set(x, gyb + 0.62, z); m.compose(p, q, s); this.busSkirt.setMatrixAt(it.i, m);
         p.set(x, gyb + 2.05, z); m.compose(p, q, s); this.busGlaze.setMatrixAt(it.i, m);

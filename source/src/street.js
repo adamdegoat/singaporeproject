@@ -217,7 +217,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     // the default search allows, and a failed search must NOT fall back to the
     // point it was asked to move: that is how street furniture kept ending up in
     // the traffic. No clear spot means no pole.
-    const moved = window.__pushClear ? window.__pushClear(sx, sz, 0.9, 18) : [sx, sz];
+    const moved = window.__pushClear && window.__pushClear(sx, sz, 0.9, 18);
     if (!moved) continue;
     const [px, pz] = moved;
     const gp = new THREE.Group();

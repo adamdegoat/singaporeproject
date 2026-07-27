@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, rand, pick, chance } from './tex.js';
-import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt } from './city.js';
+import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, consolidate, trimShadowCasters } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
@@ -131,19 +131,6 @@ function inPoly(poly, x, z) {
 let ROADIX = null;
 function place(x, z) {
   return blocked(x, z) || (ROADIX ? ROADIX.onRoad(x, z, -0.4) : false);
-}
-// How high the surface you are standing ON is, which is not the same as the
-// terrain height. The carriageway is drawn at terrain + 0.055 (plus up to 5mm of
-// per-road offset so overlapping ways do not speckle), and footways at
-// terrain + 0.02. Placing the ride at the raw terrain height put its wheels up
-// to 6cm under the tarmac, which is why it looked like it was sinking into the
-// road.
-const SURFACE_ROAD = 0.061;      // clears the highest per-road offset
-const SURFACE_PATH = 0.024;
-function surfaceAt(x, z) {
-  const g = terrain.at(x, z);
-  if (ROADIX && ROADIX.onRoad(x, z, 0.4)) return g + SURFACE_ROAD;
-  return g + SURFACE_PATH;
 }
 function blocked(x, z) {
   const list = colGrid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));

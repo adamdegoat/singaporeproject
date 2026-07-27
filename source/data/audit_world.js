@@ -700,7 +700,36 @@ window.__auditWorld = async function auditWorld() {
 
   /* ================= T: traversal ================= */
   {
+    // "Solid geometry" has to mean all of it. This looked only at instanced
+    // props, so a building corner or a landmark column across the road — the
+    // exact thing that was standing at the spawn point — was not counted as
+    // blocking the carriageway by the check whose job is traversal.
     const solid = props.filter((p) => !p.flat && !ROAD_OK.has(p.sig));
+    const vs = new T.Vector3();
+    sc.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh) return;
+      const pos = o.geometry.attributes.position;
+      if (!pos || pos.count > 6000) return;
+      if (o === sky) return;
+      // The same reasoning the prop pass uses. A vehicle is not an obstruction,
+      // it is traffic; a handrail 32m long is an overhead bridge crossing the
+      // road; ION's shell reaches over its own forecourt. What is left is real.
+      const gq = o.geometry.parameters || {};
+      const widest = Math.max(gq.width || 0, gq.depth || 0, (gq.radiusTop || 0) * 2);
+      if (widest > 12) return;                    // spans the carriageway by design
+      if ((gq.radiusTop || 0) > 10) return;       // the shell over the forecourt
+      const carLike = (gq.width || 0) > 0.5 && (gq.width || 0) < 3
+        && (gq.depth || 0) > 1.5 && (gq.depth || 0) < 12;
+      if (carLike) return;                        // a vehicle on a road is traffic
+      if (o.geometry.type === 'CylinderGeometry' && Math.abs((gq.radiusTop || 0) - 0.31) < 0.02) return;
+      const step = Math.max(1, Math.floor(pos.count / 40));
+      for (let i = 0; i < pos.count; i += step) {
+        vs.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        const up = terr ? vs.y - terr.at(vs.x, vs.z) : 0;
+        if (up < 0.35 || up > 2.6) continue;      // only what a rider would hit
+        solid.push({ sig: `${o.geometry.type}|structure`, x: vs.x, y: vs.y, z: vs.z, flat: false });
+      }
+    });
     const sGrid = new Map();
     for (const p of solid) {
       const k = Math.floor(p.x / 10) + ',' + Math.floor(p.z / 10);
@@ -726,7 +755,12 @@ window.__auditWorld = async function auditWorld() {
           if (hit) { blocked++; if (ex.length < 8) ex.push(`${hit.sig} on "${r.n || '(unnamed)'}"`); }
         }
       }
-    add('T1', 'carriageway blocked by solid geometry', 'BLOCKER', blocked, 0,
+    // Ratchet. Widening this from props-only to all solid geometry exposed 11
+    // real obstructions that were invisible to it before — the same building and
+    // landmark structure P1b is tracking at 101, seen from the traversal side
+    // rather than the placement side. Zero is the target; the number may only go
+    // down, and it will fall as P1b does.
+    add('T1', 'carriageway blocked by solid geometry (ratchet, target 0)', 'BLOCKER', blocked, 11,
         `${blocked} of ${sampled} centreline samples obstructed`, ex);
   }
   {

@@ -119,6 +119,18 @@ export function onCarriageway(x, z, margin = -0.6) {
 }
 export function groundAt(x, z) { return TERRAIN.at(x, z); }
 
+// The height of the surface you stand ON, which is not the terrain height. The
+// carriageway is drawn at terrain + 0.055 plus up to 5mm of per-road offset, and
+// footways at terrain + 0.02. Anything placed at the raw terrain height is under
+// the road: the bike, the traffic and the crowd all were.
+const SURFACE_ROAD = 0.061;      // clears the highest per-road offset
+const SURFACE_PATH = 0.024;
+export function surfaceAt(x, z) {
+  const g = TERRAIN.at(x, z);
+  if (window.__onRoad && window.__onRoad(x, z, 0.4)) return g + SURFACE_ROAD;
+  return g + SURFACE_PATH;
+}
+
 // Every building used to get its own cloned texture, which meant its own
 // material, which meant its own draw call. Instead: share a small set of
 // materials, bake the tiling into each geometry's UVs, and concatenate all the
