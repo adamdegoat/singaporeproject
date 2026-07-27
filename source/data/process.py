@@ -129,6 +129,10 @@ def norm(s):
     return re.sub(r"[^a-z0-9 ]", "", (s or "").lower()).strip()
 
 
+# Every height tag we refused, so the count is printed rather than swallowed.
+BAD_HEIGHT_TAGS = []
+
+
 def height_for(tags):
     """Returns (height, is_landmark, source). Source is 'osm' when the figure
     comes from a tag, 'named' when hand-entered, 'guess' when a type default."""
@@ -139,9 +143,28 @@ def height_for(tags):
     h = tags.get("height")
     if h:
         try:
-            return float(str(h).replace("m", "").strip()), False, "osm"
+            v = float(str(h).replace("m", "").strip())
         except ValueError:
-            pass
+            v = None
+        # A height tag under about two and a half metres is not a height, it is
+        # a bad tag. Across Orchard and Bras Basah 28 buildings carry one:
+        # Four Seasons Hotel, Carlton Hotel, Peninsula Plaza and St Andrew's
+        # Cathedral are all tagged height=0, and The Cenotaph is tagged
+        # height=1 by someone who meant one storey.
+        #
+        # There was already a guard for this, but it was scoped by FOOTPRINT
+        # ("a 3,000 m2 building is never 3.5m tall"), so it only rescued the big
+        # ones and left a 498 m2 public hall standing one metre tall. The test
+        # is plausibility, not area: nothing with a building tag is a metre high.
+        #
+        # It also matters for honesty, not just for geometry. Returning "osm"
+        # here counted all 28 as heights that came from surveyed data, so the
+        # accuracy ledger was reporting garbage as real. Fall through instead,
+        # and let it be recorded as the guess it is.
+        if v is not None and v >= 2.5:
+            return v, False, "osm"
+        if v is not None:
+            BAD_HEIGHT_TAGS.append((tags.get("name") or "(unnamed)", v))
     lv = tags.get("building:levels")
     if lv:
         try:
@@ -353,6 +376,12 @@ def main():
                 b["k"] = 1
             if hsrc != "guess":
                 b["hs"] = hsrc          # height provenance, for the accuracy ledger
+            # A roof structure is a canopy with no walls: large and low is what
+            # it IS, not a bad height. Flagged so the "no squat big footprint"
+            # check does not report a 2,122 m2 covered area from 1930 as a
+            # defect for being five metres tall.
+            if tags.get("building") == "roof":
+                b["roof"] = 1
             buildings.append(b)
 
         elif "highway" in tags:
@@ -634,6 +663,10 @@ def main():
           f"{len(busstops)} bus stops, {len(mrt)} MRT, {len(taxis)} taxi ranks")
     print(f"  real structures: {len(bridges)} ped bridges, {len(covered)} covered walkways, "
           f"{len(shops)} named shops")
+    if BAD_HEIGHT_TAGS:
+        names = ", ".join(n for n, _ in BAD_HEIGHT_TAGS[:4])
+        print(f"  refused {len(BAD_HEIGHT_TAGS)} implausible height tags "
+              f"(under 2.5m): {names}{'...' if len(BAD_HEIGHT_TAGS) > 4 else ''}")
     print(f"  wrote {path}  {os.path.getsize(path)/1024:.0f} KB")
     print("\nlargest by footprint:")
     for b in buildings[:12]:

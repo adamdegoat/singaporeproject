@@ -53,6 +53,14 @@
       "axis": "bayfront avenue",
       "status": "planned",
       "notes": "Towers and water. Needs a water surface, which nothing else has yet."
+    },
+    {
+      "id": "brasbasah",
+      "name": "Bras Basah / Civic District",
+      "bbox": "1.2885,103.8450,1.2995,103.8560",
+      "axis": "bras basah road",
+      "status": "planned",
+      "notes": "Continues east from where Orchard Road ends at Handy Road. Fort Canning, the National Museum, SMU, Bras Basah, Bencoolen, Waterloo Street, up to Raffles Hotel and City Hall. Chosen because the street physically hands over here, so the seam needs no invention, and because it looks nothing like Orchard: low colonial civic buildings and open green instead of a canyon of malls."
     }
   ]
 }

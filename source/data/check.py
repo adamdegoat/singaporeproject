@@ -56,7 +56,9 @@ def check(did):
              + ", ".join((b.get("n") or "(unnamed)")[:20] for b in flat[:5]))
 
     # 2. no implausibly short big footprint
-    squat = [b for b in B if b["h"] < 8 and b["a"] > 600]
+    # building=roof is excluded by kind, not by fudging the threshold: a roof
+    # structure is a wide low canopy by definition.
+    squat = [b for b in B if b["h"] < 8 and b["a"] > 600 and not b.get("roof")]
     if squat:
         fail(f"{len(squat)} footprints over 600 m2 shorter than 8m")
 
