@@ -1,6 +1,7 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, rand, pick, chance } from './tex.js';
-import { MAT, buildBuildings, buildRoads, TreeField, aoPatch } from './city.js';
+import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain } from './city.js';
+import { Terrain } from './terrain.js';
 import { buildVespa, buildRider, newState, step, RIDE } from './vespa.js';
 import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
@@ -231,6 +232,7 @@ scene.add(bike);
 let S = newState(0, 0, 0);
 let ready = false, stats = {};
 let crowdSys = null, trafficSys = null, wayfinder = null, signals = null;
+let terrain = new Terrain(null);
 let mode = 'ride';                 // 'ride' | 'walk'
 const sound = new Sound();
 // browsers will not start audio without a gesture
@@ -245,16 +247,19 @@ scene.add(walkerRig.group);
 let clock = 0;
 
 fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
+  terrain = new Terrain(data.terrain || null);
+  setTerrain(terrain);
+  window.__terrain = terrain;
   indexBuildings(data);
   const bs = P.has('nobuild') ? { count: 0, tall: 0 } : buildBuildings(world, data);
   const fallbackAxis = buildRoads(world, data);
   const axis = data.axis || fallbackAxis;
 
-  // ground plane under everything so there are no holes between road ribbons
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(2600, 2600),
-    new THREE.MeshStandardMaterial({ color: 0x9a9384, roughness: 0.95 }));
-  ground.rotation.x = -Math.PI / 2; ground.position.y = -0.05;
-  ground.receiveShadow = true; world.add(ground);
+  // the ground itself, from the heightfield
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0x9a9384, roughness: 0.95 });
+  world.add(terrain.build(groundMat));
+  // no apron: it overlapped the heightfield and doubled the shading cost across
+  // the whole screen. The grid is padded 90m beyond the sampled roads already.
 
   const treeCount = P.has('nofoliage') ? 0 : dressStreet(data, axis);
   if (!P.has('nopeople') && axis) {
@@ -294,7 +299,7 @@ fetch('./data/orchard.json').then((r) => r.json()).then((data) => {
     S = newState(p0[0] + nx * -3.4, p0[1] + nz * -3.4, Math.atan2(dx, dz));
   }
   buildEnvironment();
-  stats = { marks, laneCount: window.__laneCount, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
+  stats = { marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
   ready = true;
   window.__ready = true;
   window.__stats = stats;
@@ -415,16 +420,17 @@ function walkCamera(dt) {
   const fx = Math.sin(camYaw), fz = Math.cos(camYaw);
   const rx = -fz, rz = fx;                     // screen-right in world space
   const sy = Math.sin(camPitch), cy = Math.cos(camPitch);
+  const wy = terrain.at(walker.x, walker.z);
   camera.position.set(
     walker.x - fx * back * cy + rx * side,
-    eye + back * sy * 0.75,
+    wy + eye + back * sy * 0.75,
     walker.z - fz * back * cy + rz * side
   );
   // aim along the look direction, not at the walker, so it reads first-person
   const AHEAD = 12;
   camera.lookAt(
     walker.x + fx * AHEAD * cy + rx * side,
-    eye - sy * AHEAD,
+    wy + eye - sy * AHEAD,
     walker.z + fz * AHEAD * cy + rz * side
   );
   camera.fov = 65; camera.updateProjectionMatrix();
@@ -444,9 +450,12 @@ function driveCamera(dt) {
     return;
   }
   const fwd = new THREE.Vector3(Math.sin(S.heading), 0, Math.cos(S.heading));
-  const want = new THREE.Vector3(S.x, 0, S.z)
+  const gy = terrain.at(S.x, S.z);
+  const want = new THREE.Vector3(S.x, gy, S.z)
     .addScaledVector(fwd, -5.8).add(new THREE.Vector3(0, 3.05, 0));
-  const aim = new THREE.Vector3(S.x, 1.35, S.z).addScaledVector(fwd, 7.5);
+  want.y = Math.max(want.y, terrain.at(want.x, want.z) + 1.6);
+  const aim = new THREE.Vector3(S.x, gy + 1.35, S.z).addScaledVector(fwd, 7.5);
+  aim.y = terrain.at(aim.x, aim.z) + 1.35;
   if (!camInit) { camPos.copy(want); camAim.copy(aim); camInit = true; }
   camPos.lerp(want, Math.min(1, dt * 4.2));
   camAim.lerp(aim, Math.min(1, dt * 6.0));
@@ -512,11 +521,12 @@ function loop(now) {
       if (knobEl) {
         knobEl.style.transform = `translate(${input.stickDX.toFixed(1)}px, ${input.stickDY.toFixed(1)}px)`;
       }
-      walkerRig.group.position.set(walker.x, 0, walker.z);
+      walkerRig.group.position.set(walker.x, terrain.at(walker.x, walker.z), walker.z);
       walkerRig.group.rotation.y = walker.heading;
       walkerRig.pose(walker.phase, walker.speed);
-      sun.position.set(walker.x + SUNDIR.x * 150, SUNDIR.y * 150, walker.z + SUNDIR.z * 150);
-      sun.target.position.set(walker.x, 0, walker.z);
+      const wgy = terrain.at(walker.x, walker.z);
+      sun.position.set(walker.x + SUNDIR.x * 150, wgy + SUNDIR.y * 150, walker.z + SUNDIR.z * 150);
+      sun.target.position.set(walker.x, wgy, walker.z);
       sun.target.updateMatrixWorld();
       clock += dt;
       if (signals) signals.update(clock);
@@ -549,15 +559,19 @@ function loop(now) {
       else { S.x = px; S.z = pz; S.speed *= 0.2; }
     }
 
-    bike.position.set(S.x, 0, S.z);
+    const gy = terrain.at(S.x, S.z);
+    bike.position.set(S.x, gy, S.z);
     bike.rotation.y = S.heading;
+    // pitch into the slope, so a climb reads as a climb
+    const fwdX = Math.sin(S.heading), fwdZ = Math.cos(S.heading);
+    bike.rotation.x = -Math.atan(terrain.slopeAlong(S.x, S.z, fwdX, fwdZ, 3.5));
     vespa.group.rotation.z = S.lean;
     vespa.wheels[0].rotation.x = -S.wheel;
     vespa.wheels[1].rotation.x = -S.wheel;
 
     // keep the shadow frustum on the rider, not the whole town
-    sun.position.set(S.x + SUNDIR.x * 150, SUNDIR.y * 150, S.z + SUNDIR.z * 150);
-    sun.target.position.set(S.x, 0, S.z);
+    sun.position.set(S.x + SUNDIR.x * 150, gy + SUNDIR.y * 150, S.z + SUNDIR.z * 150);
+    sun.target.position.set(S.x, gy, S.z);
     sun.target.updateMatrixWorld();
 
     clock += dt;

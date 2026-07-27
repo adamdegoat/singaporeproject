@@ -106,6 +106,12 @@ const LMAT = {
 
 const up = new THREE.Vector3(0, 1, 0);
 
+// Set by main once the district's heightfield is loaded. Everything that used
+// to assume ground at zero asks this instead.
+let TERRAIN = { at: () => 0 };
+export function setTerrain(t) { TERRAIN = t; }
+export function groundAt(x, z) { return TERRAIN.at(x, z); }
+
 // Every building used to get its own cloned texture, which meant its own
 // material, which meant its own draw call. Instead: share a small set of
 // materials, bake the tiling into each geometry's UVs, and concatenate all the
@@ -255,7 +261,9 @@ function extrudeGeo(pts, h, y0 = 0) {
     depth: h, bevelEnabled: false, curveSegments: 1,
   });
   geo.rotateX(Math.PI / 2);
-  geo.translate(0, y0 + h, 0);
+  // sink slightly into the slope so a footprint on a hill has no gap beneath it
+  const c = centroid(pts);
+  geo.translate(0, TERRAIN.at(c[0], c[1]) - 0.9 + y0 + h, 0);
   return geo;
 }
 
@@ -297,7 +305,8 @@ function extrude(pts, h, mat, y0 = 0) {
     depth: h, bevelEnabled: false, curveSegments: 1,
   });
   geo.rotateX(Math.PI / 2);      // +Z extrusion becomes +Y
-  geo.translate(0, y0 + h, 0);
+  const c0 = centroid(pts);
+  geo.translate(0, TERRAIN.at(c0[0], c0[1]) - 0.9 + y0 + h, 0);
   const m = new THREE.Mesh(geo, mat);
   m.castShadow = true; m.receiveShadow = true;
   return m;
@@ -497,14 +506,17 @@ function ribbon(pts, width, y) {
   const g = new THREE.BufferGeometry();
   const pos = [], uv = [];
   let run = 0;
+  const H = (x, z) => TERRAIN.at(x, z) + y;      // the road lies on the ground
   for (let i = 0; i < pts.length - 1; i++) {
     const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
     const dx = x2 - x1, dz = z2 - z1;
     const len = Math.hypot(dx, dz);
     if (len < 0.01) continue;
     const nx = (-dz / len) * width / 2, nz = (dx / len) * width / 2;
-    const a = [x1 - nx, y, z1 - nz], b = [x1 + nx, y, z1 + nz];
-    const c = [x2 + nx, y, z2 + nz], d = [x2 - nx, y, z2 - nz];
+    const a = [x1 - nx, H(x1 - nx, z1 - nz), z1 - nz];
+    const b = [x1 + nx, H(x1 + nx, z1 + nz), z1 + nz];
+    const c = [x2 + nx, H(x2 + nx, z2 + nz), z2 + nz];
+    const d = [x2 - nx, H(x2 - nx, z2 - nz), z2 - nz];
     pos.push(...a, ...b, ...c, ...a, ...c, ...d);
     const u0 = run / width, u1 = (run + len) / width;
     uv.push(0, u0, 1, u0, 1, u1, 0, u0, 1, u1, 0, u1);
@@ -589,13 +601,14 @@ export class TreeField {
     this.items.forEach(([x, z, scale], i) => {
       const h = rand(8.5, 12.5) * scale;
       const rad = rand(5.2, 7.2) * scale;
-      p.set(x, h / 2, z); q.identity(); sc.set(scale, h, scale);
+      const gy = TERRAIN.at(x, z);
+      p.set(x, gy + h / 2, z); q.identity(); sc.set(scale, h, scale);
       m.compose(p, q, sc); trunks.setMatrixAt(i, m);
 
       for (let k = 0; k < BRANCH; k++) {
         const a = (k / BRANCH) * Math.PI * 2 + rand(-0.3, 0.3);
         const L = rand(1.8, 3.0) * scale;
-        p.set(x + Math.cos(a) * L * 0.22, h * rand(0.80, 0.96), z + Math.sin(a) * L * 0.22);
+        p.set(x + Math.cos(a) * L * 0.22, gy + h * rand(0.80, 0.96), z + Math.sin(a) * L * 0.22);
         e.set(Math.cos(a) * 0.55, 0, -Math.sin(a) * 0.55);
         q.setFromEuler(e); sc.set(scale, L, scale);
         m.compose(p, q, sc); branches.setMatrixAt(bi++, m);
@@ -610,7 +623,7 @@ export class TreeField {
         const a = R() * Math.PI * 2;
         const rr = rad * Math.sqrt(R()) * 1.12;
         p.set(x + Math.cos(a) * rr,
-              h * rand(0.92, 1.06) - rr * 0.13 + rand(-0.4, 0.4),
+              gy + h * rand(0.92, 1.06) - rr * 0.13 + rand(-0.4, 0.4),
               z + Math.sin(a) * rr);
         e.set(rand(-1.5, -0.7), a + rand(-0.7, 0.7), rand(-0.4, 0.4));
         q.setFromEuler(e);
@@ -626,6 +639,6 @@ export class TreeField {
 
 export function aoPatch(world, x, z, size) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size), MAT.ao);
-  m.rotation.x = -Math.PI / 2; m.position.set(x, 0.17, z);
+  m.rotation.x = -Math.PI / 2; m.position.set(x, TERRAIN.at(x, z) + 0.17, z);
   world.add(m);
 }

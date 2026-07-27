@@ -5,7 +5,7 @@
 // surface, all in two draw calls.
 import * as THREE from '../lib/three.module.js';
 import { R, rand, chance } from './tex.js';
-import { MAT } from './city.js';
+import { MAT, groundAt } from './city.js';
 
 const WHITE = new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.86 });
 const YELLOW = new THREE.MeshStandardMaterial({ color: 0xd6ae44, roughness: 0.86 });
@@ -17,7 +17,7 @@ function emitFlat(world, list, w, l, mat) {
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
   const p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1);
   list.forEach((r, i) => {
-    p.set(r[0], r[1], r[2]);
+    p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
     e.set(-Math.PI / 2, r[3], 0, 'YXZ');
     q.setFromEuler(e);
     m.compose(p, q, s);
@@ -161,7 +161,7 @@ export function dressSideStreets(world, data, axis, isBlocked, TreeField) {
     im.castShadow = false; im.receiveShadow = true;
     world.add(im);
   };
-  const yaw = (r) => { p.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
+  const yaw = (r) => { p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
   emit(new THREE.BoxGeometry(0.38, 0.3, 4.0), MAT.kerb, kerb, yaw);
   emit(new THREE.CylinderGeometry(0.09, 0.13, 7.2, 8), MAT.metal, lamp, yaw);
   emit(new THREE.BoxGeometry(0.9, 0.16, 0.4), MAT.trim, lampArm, (r) => {

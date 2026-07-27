@@ -3,7 +3,7 @@
 // Everything is instanced and placed by walking the street axis.
 import * as THREE from '../lib/three.module.js';
 import { R, rand, pick, chance } from './tex.js';
-import { MAT } from './city.js';
+import { MAT, groundAt } from './city.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d, 0xcf6b3a, 0x2b2f33];
 
@@ -131,7 +131,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     world.add(im);
     return im;
   };
-  const yaw = (r) => { p.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
+  const yaw = (r) => { p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
 
   // railing: a top rail and a lower rail, the classic grey tube barrier
   emit(new THREE.BoxGeometry(0.06, 0.05, 2.0), MAT.metal, railT, yaw);
@@ -170,7 +170,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     const panel = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.5, 0.1),
       new THREE.MeshStandardMaterial({ color: 0x27313a, roughness: 0.3 }));
     panel.position.set(4.4, 1.7, -1.0); g.add(panel);
-    g.position.set(sx, 0, sz); g.rotation.y = ang;
+    g.position.set(sx, groundAt(sx, sz), sz); g.rotation.y = ang;
     world.add(g);
   }
 
@@ -196,7 +196,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
       g.add(lens);
       lenses.push(lens);
     }
-    g.position.set(lx, 0, lz); g.rotation.y = ang;
+    g.position.set(lx, groundAt(lx, lz), lz); g.rotation.y = ang;
     world.add(g);
 
     if (!signals.has(atS)) signals.set(atS, { s: atS, lenses: [], phase: signals.size * 5.5 });
@@ -240,7 +240,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     }
     cab.position.set(-2.6 * sgn, 0, 2.0);
     g.add(cab);
-    g.position.set(tx, 0, tz); g.rotation.y = ang;
+    g.position.set(tx, groundAt(tx, tz), tz); g.rotation.y = ang;
     world.add(g);
   }
 

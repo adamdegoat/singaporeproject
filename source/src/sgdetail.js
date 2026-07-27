@@ -5,7 +5,7 @@
 // No brand marks anywhere: signage is colour and form only.
 import * as THREE from '../lib/three.module.js';
 import { R, rand, pick, chance } from './tex.js';
-import { MAT } from './city.js';
+import { MAT, groundAt } from './city.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d,
                    0xcf6b3a, 0x2b2f33, 0xa8324f, 0x3d6f8f];
@@ -80,7 +80,7 @@ function erpGantry(world, px, pz, ang, width) {
     0, 8.1, 0.1, 0);
   g.add(panel);
 
-  g.position.set(px, 0, pz);
+  g.position.set(px, groundAt(px, pz), pz);
   g.rotation.y = ang;
   world.add(g);
 }
@@ -109,7 +109,7 @@ function pedBridge(world, px, pz, ang, width) {
         sx, 0.5 + s * 0.46, sgn * (1.9 + s * 0.2), 0));
     }
   }
-  g.position.set(px, 0, pz);
+  g.position.set(px, groundAt(px, pz), pz);
   g.rotation.y = ang;
   world.add(g);
 }
@@ -193,7 +193,7 @@ function mrtEntrance(world, px, pz, ang, label) {
     g.add(face);
   }
 
-  g.position.set(px, 0, pz);
+  g.position.set(px, groundAt(px, pz), pz);
   g.rotation.y = ang;
   world.add(g);
 }
@@ -234,11 +234,15 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     for (let i = 0; i < line.length - 1; i++) {
       len += Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
     }
-    if (len < 12) continue;                      // a kerb ramp, not a bridge
     const a = line[0], b = line[line.length - 1];
+    const straight = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    // a real overhead crossing spans the road: short or twisty ways are ramps,
+    // stairs or kerb cuts, and building a bridge on them drops stair towers
+    // into the carriageway
+    if (straight < 22 || len > straight * 1.6) continue;
     const cx = (a[0] + b[0]) / 2, cz = (a[1] + b[1]) / 2;
     const ang = Math.atan2(b[0] - a[0], b[1] - a[1]);
-    pedBridge(world, cx, cz, ang + Math.PI / 2, Math.min(46, len) - 14);
+    pedBridge(world, cx, cz, ang + Math.PI / 2, Math.max(16, straight - 14));
     realBridges++;
   }
   window.__realBridges = realBridges;
@@ -292,7 +296,7 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     im.castShadow = false; im.receiveShadow = true;
     world.add(im);
   };
-  const yaw = (r) => { p.set(r[0], r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
+  const yaw = (r) => { p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
 
   emit(new THREE.BoxGeometry(2.1, 0.34, 3.0), MAT.kerb, medianKerb, yaw);
   emit(new THREE.SphereGeometry(0.66, 7, 5),

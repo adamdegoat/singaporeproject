@@ -5,6 +5,7 @@
 // rewrite per part per frame — cheap in JS, free on the GPU.
 import * as THREE from '../lib/three.module.js';
 import { R, rand, pick, chance } from './tex.js';
+import { groundAt } from './city.js';
 
 /* ---------------- path helper along the street axis ---------------- */
 export class Path {
@@ -229,7 +230,7 @@ export class Crowd {
       const put = (part, lx, ly, lz, rx, rz) => {
         // local offsets are in the walker's frame, then rotated into the street
         const wx = x + (nx * lx + ux * lz), wz = z + (nz * lx + uz * lz);
-        p.set(wx, ly * sc + bob, wz);
+        p.set(wx, groundAt(wx, wz) + ly * sc + bob, wz);
         e.set(rx || 0, heading, rz || 0, 'YXZ');
         q.setFromEuler(e);
         s.set(sc, sc, sc);
@@ -412,14 +413,15 @@ export class Traffic {
       e.set(0, heading, 0); q.setFromEuler(e);
 
       if (it.kind === 'car') {
-        p.set(x, 0.62, z); m.compose(p, q, s); this.body.setMatrixAt(it.i, m);
-        p.set(x - ux * 0.35 * it.dir, 1.14, z - uz * 0.35 * it.dir);
+        const gy = groundAt(x, z);
+        p.set(x, gy + 0.62, z); m.compose(p, q, s); this.body.setMatrixAt(it.i, m);
+        p.set(x - ux * 0.35 * it.dir, gy + 1.14, z - uz * 0.35 * it.dir);
         m.compose(p, q, s); this.roof.setMatrixAt(it.i, m);
         m.compose(p, q, s); this.glaze.setMatrixAt(it.i, m);
         for (let w = 0; w < 4; w++) {
           const along = (w < 2 ? 1.4 : -1.4) * it.dir;
           const across = (w % 2 ? 0.86 : -0.86);
-          p.set(x + ux * along + nx * across, 0.31, z + uz * along + nz * across);
+          p.set(x + ux * along + nx * across, gy + 0.31, z + uz * along + nz * across);
           e.set(0, heading, Math.PI / 2, 'YXZ');
           this._q2 = this._q2 || new THREE.Quaternion();
           this._q2.setFromEuler(e);
@@ -427,15 +429,16 @@ export class Traffic {
           this.wheel.setMatrixAt(it.i * 4 + w, m);
         }
       } else {
-        p.set(x, 1.55, z); m.compose(p, q, s); this.busBody.setMatrixAt(it.i, m);
-        p.set(x, 0.62, z); m.compose(p, q, s); this.busSkirt.setMatrixAt(it.i, m);
-        p.set(x, 2.05, z); m.compose(p, q, s); this.busGlaze.setMatrixAt(it.i, m);
-        p.set(x + ux * 5.95 * it.dir, 2.42, z + uz * 5.95 * it.dir);
+        const gyb = groundAt(x, z);
+        p.set(x, gyb + 1.55, z); m.compose(p, q, s); this.busBody.setMatrixAt(it.i, m);
+        p.set(x, gyb + 0.62, z); m.compose(p, q, s); this.busSkirt.setMatrixAt(it.i, m);
+        p.set(x, gyb + 2.05, z); m.compose(p, q, s); this.busGlaze.setMatrixAt(it.i, m);
+        p.set(x + ux * 5.95 * it.dir, gyb + 2.42, z + uz * 5.95 * it.dir);
         m.compose(p, q, s); this.busBlind.setMatrixAt(it.i, m);
         for (let w = 0; w < 4; w++) {
           const along = (w < 2 ? 3.6 : -3.6) * it.dir;
           const across = (w % 2 ? 1.2 : -1.2);
-          p.set(x + ux * along + nx * across, 0.48, z + uz * along + nz * across);
+          p.set(x + ux * along + nx * across, gyb + 0.48, z + uz * along + nz * across);
           e.set(0, heading, Math.PI / 2, 'YXZ');
           this._q2 = this._q2 || new THREE.Quaternion();
           this._q2.setFromEuler(e);
