@@ -670,7 +670,170 @@ function gothicChurch(api, b) {
   api.world.add(spire);
 }
 
+// Raffles City. I.M. Pei: a nine-square plan carved away and rotated 45 degrees
+// so it angles back from the street instead of presenting a 600-foot broadside,
+// and towers that read cylindrical from one direction and rectangular from
+// another. The 226m Swissotel The Stamford was the tallest hotel in the world
+// when it opened in 1986.
+function rafflesCity(api, b) {
+  const ob = orientedBox(b.p);
+  const cx0 = ob.cx, cz0 = ob.cz;
+  const g0 = api.groundAt(cx0, cz0);
+  const glass = api.mat.towerGlass, stone = api.mat.warmStone;
+  const pod = Math.min(30, Math.max(16, b.h * 0.16));
+  api.merge(api.extrudeGeo(b.p, pod), stone, cx0, cz0);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.02), 1.0, pod - 1.2), api.mat.trim, cx0, cz0);
+
+  // the tall slab, turned 45 degrees to the plan, and rounded on its ends so it
+  // reads round from one side and flat from the other
+  const tall = Math.max(120, b.h);
+  const tw = Math.min(ob.halfShort * 0.62, 21);
+  const td = tw * 0.55;
+  const core = new THREE.BoxGeometry(tw * 2, tall - pod, td * 2);
+  core.rotateY(-ob.ang + Math.PI / 4);
+  core.translate(cx0, g0 + pod + (tall - pod) / 2, cz0);
+  api.merge(core, glass, cx0, cz0);
+  for (const sgn of [-1, 1]) {
+    const rx = Math.cos(-ob.ang + Math.PI / 4) * tw * sgn;
+    const rz = -Math.sin(-ob.ang + Math.PI / 4) * tw * sgn;
+    const round = new THREE.CylinderGeometry(td, td, tall - pod, 16);
+    round.translate(cx0 + rx, g0 + pod + (tall - pod) / 2, cz0 + rz);
+    api.merge(round, glass, cx0, cz0);
+  }
+  // the two shorter hotel towers alongside
+  for (const sgn of [-1, 1]) {
+    const ux = ob.ux * ob.halfLong * 0.52 * sgn, uz = ob.uz * ob.halfLong * 0.52 * sgn;
+    const px = cx0 + ux, pz = cz0 + uz;
+    if (onCarriageway(px, pz, -1)) continue;
+    const hh = (tall - pod) * 0.52;
+    const t2 = new THREE.CylinderGeometry(td * 0.82, td * 0.82, hh, 14);
+    t2.translate(px, api.groundAt(px, pz) + pod + hh / 2, pz);
+    api.merge(t2, glass, cx0, cz0);
+  }
+}
+
+// The National Library. T.R. Hamzah & Ken Yeang: TWO 16-storey blocks split by
+// a full-height atrium, the larger regular one holding the collections and
+// sitting over an open civic plaza, the second one curved.
+//
+// Built by SPLITTING THE FOOTPRINT, not by sizing boxes off the oriented box. A
+// box sized from halfLong and halfShort filled the whole plan as one featureless
+// 83-metre slab with no atrium visible at all, which is the same mistake the
+// church roof made: the bounding frame is not the building.
+function nationalLibrary(api, b) {
+  const ob = orientedBox(b.p);
+  const cx0 = ob.cx, cz0 = ob.cz;
+  const g0 = api.groundAt(cx0, cz0);
+  const glass = api.mat.blueGlass, stone = api.mat.paleStone;
+  const h = Math.max(58, b.h);
+  const nx = -ob.uz, nz = ob.ux;
+
+  // the plaza the blocks stand over, open at ground level
+  api.merge(api.extrudeGeo(b.p, 7), stone, cx0, cz0);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 0.9, 6.4), api.mat.trim, cx0, cz0);
+
+  // split the real footprint into two halves either side of the atrium
+  const side = (sgn) => b.p.map(([x, z]) => {
+    const d = (x - cx0) * nx + (z - cz0) * nz;      // distance across the plan
+    const keep = sgn > 0 ? Math.max(d, ob.halfShort * 0.14)
+                         : Math.min(d, -ob.halfShort * 0.14);
+    return [x + nx * (keep - d), z + nz * (keep - d)];
+  });
+
+  // the larger, regular block: full height, straight
+  api.merge(api.extrudeGeo(side(1), h - 7, 7), stone, cx0, cz0);
+  // and the curved one: shorter, stepped back in three bands so the plan bows
+  const curved = side(-1);
+  for (const [f, y, t] of [[1.0, 7, 0.42], [0.92, 7 + (h - 7) * 0.42, 0.34], [0.8, 7 + (h - 7) * 0.76, 0.24]]) {
+    api.merge(api.extrudeGeo(api.grow(curved, f), (h - 7) * t, y), glass, cx0, cz0);
+  }
+  // the atrium roof spanning the gap between them
+  const roof = new THREE.BoxGeometry(ob.halfLong * 1.7, 0.5, ob.halfShort * 0.34);
+  roof.rotateY(-ob.ang);
+  roof.translate(cx0, g0 + h * 0.72, cz0);
+  api.merge(roof, glass, cx0, cz0);
+}
+
+// South Beach. Foster + Partners: the identity is the CANOPY, ribbons of steel
+// and aluminium louvres flexing above the public route and dipping at the edges,
+// with the tower facades continuing the same arc.
+function southBeach(api, b) {
+  const ob = orientedBox(b.p);
+  const cx0 = ob.cx, cz0 = ob.cz;
+  const g0 = api.groundAt(cx0, cz0);
+  const glass = api.mat.towerGlass;
+  const louvre = new THREE.MeshStandardMaterial({ color: 0xb4aea3, roughness: 0.38, metalness: 0.6 });
+  api.merge(api.extrudeGeo(b.p, Math.max(12, b.h * 0.22)), api.mat.paleStone, cx0, cz0);
+  const tall = Math.max(90, b.h);
+  const tw = Math.min(ob.halfShort * 0.5, 17);
+  slab(api, ob, ob.midU - ob.halfLong * 0.4, ob.midV, tw, tw * 0.8,
+       Math.max(12, b.h * 0.22), tall, glass);
+
+  // the canopy: ribbons running the long way, arched and dipping at the ends
+  const nx = -ob.uz, nz = ob.ux;
+  const RIB = 9;
+  for (let i = 0; i < RIB; i++) {
+    const t = i / (RIB - 1) - 0.5;
+    const off = t * ob.halfShort * 1.7;
+    const px = cx0 + nx * off, pz = cz0 + nz * off;
+    const rise = 16 + Math.cos(t * Math.PI) * 7;
+    const rib = new THREE.BoxGeometry(ob.halfLong * 2 * 0.9, 0.45, 1.5);
+    rib.rotateY(-ob.ang);
+    rib.rotateZ(0);
+    rib.translate(px, g0 + rise, pz);
+    api.merge(rib, louvre, cx0, cz0);
+  }
+}
+
+// Bugis+. WOHA with realities:united: a "crystal mesh" facade wrapping the
+// convex side of the building, with lit billboards on the flatter faces.
+function crystalMesh(api, b) {
+  const ob = orientedBox(b.p);
+  const cx0 = ob.cx, cz0 = ob.cz;
+  const g0 = api.groundAt(cx0, cz0);
+  const h = Math.max(20, b.h);
+  api.merge(api.extrudeGeo(b.p, h), api.mat.towerGlass, cx0, cz0);
+  const mesh = new THREE.MeshStandardMaterial({
+    color: 0xcfd7dd, roughness: 0.24, metalness: 0.5,
+    transparent: true, opacity: 0.55, side: THREE.DoubleSide,
+  });
+  // a diagonal lattice over the street face, which is the whole point of it
+  const sw = streetward(api, ob);
+  const N = 14;
+  for (let i = 0; i < N; i++) {
+    const t = (i / (N - 1) - 0.5) * ob.halfLong * 1.8;
+    const px = cx0 + ob.ux * t + sw.nx * (ob.halfShort + 0.5);
+    const pz = cz0 + ob.uz * t + sw.nz * (ob.halfShort + 0.5);
+    if (onCarriageway(px, pz, -0.3)) continue;
+    for (const lean of [0.32, -0.32]) {
+      const bar = new THREE.BoxGeometry(0.34, h * 1.06, 0.34);
+      bar.rotateZ(lean);
+      bar.rotateY(-ob.ang);
+      bar.translate(px, api.groundAt(px, pz) + h / 2, pz);
+      api.merge(bar, mesh, cx0, cz0);
+    }
+  }
+}
+
 export const RECIPES = [
+  [/raffles city|swissotel|fairmont singapore|westin plaza/i, rafflesCity],
+
+  // nationalLibrary, southBeach and crystalMesh are WRITTEN AND NOT WIRED UP.
+  //
+  // Each of them looked worse than the generic facade family it would have
+  // replaced. The library came out as one flat grey ninety-metre slab with no
+  // articulation at all, where the family would at least have given it a
+  // punched facade; South Beach's canopy ribbons read as a handful of white
+  // sticks; the Bugis+ mesh read as dark panels rather than a lattice.
+  //
+  // A recipe exists to make a building more recognisable than the generic
+  // treatment. One that does not is a regression, and shipping it because the
+  // work is done is how a world gets worse one landmark at a time. They stay
+  // here, unreferenced, until they are better than what they replace.
+  // [/national library/i, nationalLibrary],
+  // [/south beach/i, southBeach],
+  // [/bugis\+|bugis junction|bugis street/i, crystalMesh],
+
   // the Civic District.
   //
   // The patterns are narrower than they look, and each exclusion is a mistake

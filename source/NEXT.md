@@ -127,6 +127,49 @@ positions rather than where the builder put things; and the first road-surface
 probe compared two numbers computed from the data, so it could not see the fix
 that had already landed. Test the world, not the input to the world.
 
+## Landmark recipes: the loop, and the rule
+
+`src/landmarks.js` holds the recipes. Two batches done for the Civic District,
+which arrived with zero coverage: **Esplanade** (two shells with the aluminium
+sunshades, merged as geometry not instances), **Raffles City** (Pei's plan turned
+45 degrees, tall slab rounded on its ends, two shorter towers), the **National
+Museum** and **National Gallery** (rotunda, dome, Corinthian colonnade), and
+**churches** (white walls, stepped roof, tower and spire), which covers St
+Andrew's, CHIJMES and five more in Orchard.
+
+**THE RULE, learned by nearly breaking it:** a recipe exists to make a building
+more recognisable than the generic facade family. One that does not is a
+regression. `nationalLibrary`, `southBeach` and `crystalMesh` are written, work,
+and are DELIBERATELY NOT WIRED UP, because each looked worse than what it
+replaced: the library came out as one flat grey 90m slab where the family would
+at least have given it a punched facade. Shipping a recipe because the work is
+done is how a world gets worse one landmark at a time.
+
+Mistakes worth not repeating, all of them the same shape:
+
+- **Size massing from the FOOTPRINT, not from the oriented bounding box.** A box
+  around an angled or cruciform plan is bigger than the plan, so the church roof
+  hung out over the neighbours as a detached green tube and the library filled
+  its whole site as one slab. Building from the footprint cannot leave the
+  building.
+- A three-sided cylinder's radius sets its HEIGHT as well as its span. Sized off
+  the footprint width, St Andrew's grew a thirty-metre roof.
+- **Patterns match more than you think.** "Grand Park City Hall" is a hotel and
+  was handed a Corinthian colonnade and a copper dome; "Esplanade Theatre" and
+  "Esplanade Concert Hall" are halls INSIDE the complex and each grew their own
+  pair of shells.
+- Building fabric belongs in merged geometry, not in an InstancedMesh. The 300
+  Esplanade sunshades as instances were counted as street props and produced 756
+  findings for something that is part of the building.
+- Civic buildings get no shopfront. A cathedral does not have shop awnings, and
+  adding them was also the source of 13 duplicated props.
+- `orientedBox` returns `ux/uz`, and the normal is `(-uz, ux)`. There is no
+  `ob.nx`; using it writes NaN and the building silently vanishes.
+
+Next batch: Lucky Plaza, The Centrepoint, 313, Plaza Singapura on the Orchard
+side; Funan, Marina Square, Bras Basah Complex on the other. Roughly 96 of the
+116 street-facing buildings still have no recipe of their own.
+
 ## Do this first
 
 1. **RESEARCH THE STREET BEFORE ASKING ABOUT IT.** The comparison sheet exists
