@@ -493,6 +493,21 @@ export const RECIPES = [
   [/wisma atria|313|orchard gateway|shaw (house|centre)|mandarin gallery|the heeren/i, glassBoxPodiumTower],
   [/hotel|hyatt|hilton|marriott|four seasons|pullman|voco|royal plaza|pan pacific|regent|shangri|holiday inn|ibis|orchard rendezvous|concorde|mandarin orchard/i, hotel],
   [/lucky plaza|far east plaza|orchard towers|midpoint|palais|delfi|orchard plaza|cairnhill|tripleone|far east shopping|international building|liat|pacific plaza|scotts square|orchard building|forum the shopping|268 orchard|scape|design orchard|cathay cineleisure/i, finnedSlab],
+
+  // Everything below was falling through to a facade picked by hashing the
+  // footprint, which is how Plaza Singapura and The Centrepoint — two of the
+  // malls people actually name when they describe Orchard Road — ended up as
+  // generic blocks. 197 of the 264 named buildings had no recipe at all.
+  [/plaza singapura|the centrepoint|centrepoint|the cathay|orchard gateway|holland/i,
+   glassBoxPodiumTower],
+  // hotels whose names do not contain the word "hotel", so the pattern above
+  // never matched them
+  [/conrad|the elizabeth|grand park|orchard grand|orchard parade|york |goodwood park|quincy|oasia|jen |m social|parkroyal|swissotel|carlton|peninsula|excelsior/i,
+   hotel],
+  // offices, schools and civic blocks: concrete frames with vertical fins, which
+  // is what most of this stock actually is
+  [/waterloo centre|wilkie edge|one sophia|penang road|lazada|cuppage|school of|lasalle|singapore management|nanyang academy|istana|the atrium|manulife|winsland|somerset house|orchard shopping/i,
+   finnedSlab],
 ];
 
 export function recipeFor(name) {
