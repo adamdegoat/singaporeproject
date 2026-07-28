@@ -228,16 +228,65 @@ export class Crowd {
       return 0;
     };
 
+    // WHERE A PERSON IS ALLOWED TO START.
+    //
+    // The pavement band is an offset from a centreline and a carriageway is not
+    // the same width along its whole length, so an offset that is on the
+    // pavement at one end is on the tarmac at the other: six people were
+    // standing in live traffic without crossing. And at 2,200 of them, six
+    // pairs were spawning inside one another — a body is half a metre across
+    // and two in the same place read as one smeared figure.
+    //
+    // Both are fixed by rejecting the position rather than by nudging it. A
+    // rejected sample costs nothing; a nudged one invents a walker standing
+    // somewhere the rule said no.
+    const tmpP = [0, 0, 0, 0];
+    const takenCell = new Map();
+    const where = (pi, sVal, off) => {
+      this.paths[pi].at(sVal, tmpP);
+      return [tmpP[0] + -tmpP[3] * off, tmpP[1] + tmpP[2] * off];
+    };
+    const freeAt = (x, z) => {
+      const cx = Math.floor(x / 1), cz = Math.floor(z / 1);
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+        const list = takenCell.get((cx + dx) + ',' + (cz + dz));
+        if (!list) continue;
+        for (let q = 0; q < list.length; q += 2) {
+          if ((list[q] - x) ** 2 + (list[q + 1] - z) ** 2 < 0.55 * 0.55) return false;
+        }
+      }
+      return true;
+    };
+    const take = (x, z) => {
+      const k = Math.floor(x / 1) + ',' + Math.floor(z / 1);
+      let list = takenCell.get(k);
+      if (!list) { list = []; takenCell.set(k, list); }
+      list.push(x, z);
+    };
+
     for (let i = 0; i < n; i++) {
-      const side = chance(0.5) ? 1 : -1;
       const dir = chance(0.5) ? 1 : -1;
-      const pi = pickPath();
+      let pi = 0, sVal = 0, off = 0, ok = false;
+      for (let tries = 0; tries < 12 && !ok; tries++) {
+        const side = chance(0.5) ? 1 : -1;
+        pi = pickPath();
+        const half0 = this.halves[pi];
+        sVal = R() * this.paths[pi].len;
+        off = side * (half0 + (pi === 0 ? rand(3.2, 10.5) : rand(1.4, 3.4)));
+        const [wx, wz] = where(pi, sVal, off);
+        // not in the traffic, not inside anyone else, not inside a wall
+        if (window.__onRoad && window.__onRoad(wx, wz, -0.8)) continue;
+        if (!freeAt(wx, wz)) continue;
+        if (this.isBlocked && this.isBlocked(wx, wz)) continue;
+        take(wx, wz);
+        ok = true;
+      }
+      if (!ok) continue;              // twelve tries and nowhere to stand: skip
       const half = this.halves[pi];
       const p = {
         pi,
-        s: R() * this.paths[pi].len,
-        // narrow streets get a narrower pavement band, or people walk in mid-air
-        off: side * (half + (pi === 0 ? rand(3.2, 10.5) : rand(1.4, 3.4))),
+        s: sVal,
+        off,
         dir,
         speed: rand(0.95, 1.65) * (chance(0.12) ? 0 : 1),   // some stand still
         phase: R() * Math.PI * 2,
@@ -283,6 +332,8 @@ export class Crowd {
     // one, and .count is set to however many were written, so the GPU never sees
     // the rest at all
     let slot = 0, bagSlot = 0;
+    const seen = [];
+    const tick = (this._tick = ((this._tick || 0) + 1) & 7);
     const parts = this._parts || (this._parts = [this.head, this.hair, this.torso,
       this.hips, this.armL, this.armR, this.legL, this.legR, this.bag,
       this.shoeL, this.shoeR, this.handL, this.handR, this.neck]);
@@ -402,6 +453,38 @@ export class Crowd {
       const baseX = cx + nx * pr.off, baseZ = cz + nz * pr.off;
       const ddx = baseX - playerX, ddz = baseZ - playerZ;
       const near = Math.hypot(ddx, ddz);
+      // Each other, not just the player.
+      //
+      // At 460 people this could not happen often enough to notice; at 2,200 on
+      // a finite set of pavements six pairs were standing inside one another at
+      // any moment, which reads as one smeared figure. Resolved against the
+      // positions from the PREVIOUS frame — the same one-frame lag the gait
+      // already uses — so it stays a single pass and costs a grid lookup.
+      let crowdPush = 0;
+      // Only for people who will actually be drawn. Run for all 2,200 it cost
+      // five frames a second — nine map lookups each, twenty thousand a frame —
+      // to separate people nobody can see. The draw cull is 105m; this uses 120
+      // so someone is already separated by the time they come into range.
+      const prev = near < 120 ? this._seen : null;
+      if (prev) {
+        const k = Math.floor(baseX / 2) + ',' + Math.floor(baseZ / 2);
+        for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+          const list = prev.get((Math.floor(baseX / 2) + dx) + ',' + (Math.floor(baseZ / 2) + dz));
+          if (!list) continue;
+          for (let q = 0; q < list.length; q += 3) {
+            if (list[q + 2] === i) continue;
+            const sx = baseX - list[q], sz = baseZ - list[q + 1];
+            const d2 = sx * sx + sz * sz;
+            if (d2 > 0.7 * 0.7 || d2 < 1e-6) continue;
+            // push along the pavement's normal, which is the only direction a
+            // walker has room to move in
+            const along = sx * nx + sz * nz;
+            crowdPush += (along >= 0 ? 1 : -1) * (0.7 - Math.sqrt(d2)) * 0.9;
+          }
+        }
+        if (crowdPush > 0.5) crowdPush = 0.5;
+        else if (crowdPush < -0.5) crowdPush = -0.5;
+      }
       if (near < 2.6) {
         const push = (2.6 - near) / 2.6;
         pr.dodge = (pr.dodge || 0) + (push * 1.5 - (pr.dodge || 0)) * Math.min(1, dt * 5);
@@ -410,8 +493,41 @@ export class Crowd {
         if (Math.abs(pr.dodge) < 0.01) pr.dodge = 0;
       }
       const dodgeSign = pr.off >= 0 ? 1 : -1;
-      const x = baseX + nx * (pr.dodge || 0) * dodgeSign;
-      const z = baseZ + nz * (pr.dodge || 0) * dodgeSign;
+      const shift = (pr.dodge || 0) * dodgeSign + crowdPush;
+      const x = baseX + nx * shift;
+      const z = baseZ + nz * shift;
+
+      // Standing in the road when not crossing it. The pavement band is an
+      // offset from the centreline and the carriageway is not the same width
+      // everywhere, so a band that is on the pavement at one end is on the
+      // tarmac at the other. Walk outward until off it rather than blinking
+      // out of existence: a failed placement should move, not vanish, when
+      // there is somewhere to move to.
+      // Standing in the road when not crossing: aim for the pavement, then
+      // WALK there.
+      //
+      // The test is sampled one person in eight per frame, staggered by index,
+      // because asking 2,200 people every frame is a grid lookup and a run of
+      // segment tests each and cost three frames a second on its own. The first
+      // version compensated by multiplying the step by eight — which made it a
+      // 17.6 m/s sideways jump, and B1 caught a pedestrian doing 7.2 m/s. That
+      // is the same bug as the walkers who were thrown eleven metres sideways
+      // by a flipped tangent: a correction applied as a POSITION CHANGE is a
+      // teleport, however good the reason.
+      //
+      // So the sampled test only sets a target, and the movement toward it is
+      // capped at a walking pace on every frame.
+      if (!pr.crossing && window.__onRoad && ((i + tick) & 7) === 0
+          && window.__onRoad(x, z, -0.8)) {
+        const sgn = pr.off >= 0 ? 1 : -1;
+        pr.offWant = Math.min(26, Math.abs(pr.off) + 3.0) * sgn;
+      }
+      if (pr.offWant !== undefined) {
+        const step = 1.1 * dt;                     // slower than the walk itself
+        const d2 = pr.offWant - pr.off;
+        if (Math.abs(d2) <= step) { pr.off = pr.offWant; pr.offWant = undefined; }
+        else pr.off += Math.sign(d2) * step;
+      }
 
       // a pedestrian standing inside a building is worse than a missing one
       if (this.isBlocked(x, z)) continue;
@@ -422,6 +538,7 @@ export class Crowd {
       const ddx2 = x - playerX, ddz2 = z - playerZ;
       if (ddx2 * ddx2 + ddz2 * ddz2 > 105 * 105) continue;
       const idx = slot++;
+      seen.push(x, z, i);
 
       // Face the way you are actually going, and walk at the rate you are
       // actually covering ground. Both used to come from the along-street
@@ -505,6 +622,17 @@ export class Crowd {
       setC(this.handR, pr.cSkin); setC(this.neck, pr.cSkin);
       setC(this.hair, pr.cHair);
     }
+    // buckets of [x, z, index] for the next frame's separation pass
+    {
+      const g = new Map();
+      for (let q = 0; q < seen.length; q += 3) {
+        const k = Math.floor(seen[q] / 2) + ',' + Math.floor(seen[q + 1] / 2);
+        let list = g.get(k);
+        if (!list) { list = []; g.set(k, list); }
+        list.push(seen[q], seen[q + 1], seen[q + 2]);
+      }
+      this._seen = g;
+    }
     for (const part of parts) {
       part.count = part === this.bag ? bagSlot : slot;
       part.instanceMatrix.needsUpdate = true;
@@ -514,6 +642,9 @@ export class Crowd {
 }
 
 /* ---------------- traffic ---------------- */
+// Lengths, used by both the following rule and the boot-time spacing pass, so
+// the two cannot disagree about how much room a bus needs.
+const VLEN = { car: 4.32, bus: 11.8 };
 const CAR_COLS = [0xd8dade, 0x2b3038, 0x8f959c, 0x7a2f2a, 0x27405e, 0xb9bcc0, 0x3d4a3f];
 
 export class Traffic {
@@ -607,6 +738,36 @@ export class Traffic {
       });
     }
 
+    // NOSE TO TAIL, BY LENGTH.
+    //
+    // `s` is spread evenly over the path and jittered by up to fifteen metres,
+    // which at 21 vehicles left 123m between them and could not go wrong. At 90
+    // it leaves 28m, and a bus is 11.8m long while a car is 4.3m: eight pairs
+    // were sharing a lane with 2.3m between their centres, which is one vehicle
+    // inside another. Buses are put in the two nearside lanes and cars anywhere,
+    // so the two kinds share lanes by construction.
+    //
+    // Sorted per (direction, lane) and pushed forward until each gap clears the
+    // two half-lengths plus a car's worth of daylight.
+    {
+      const LEN = VLEN;
+      const lanes = new Map();
+      for (const it of this.items) {
+        const k = it.dir + ',' + Math.round(it.lane * 2);
+        let list = lanes.get(k);
+        if (!list) { list = []; lanes.set(k, list); }
+        list.push(it);
+      }
+      for (const [, list] of lanes) {
+        list.sort((a, b) => a.s - b.s);
+        for (let k = 1; k < list.length; k++) {
+          const a = list[k - 1], b = list[k];
+          const need = (LEN[a.kind] + LEN[b.kind]) / 2 + 4.0;
+          if (b.s - a.s < need) b.s = a.s + need;
+        }
+      }
+    }
+
     // flag AFTER the bus liveries have actually been written
     if (this.busBody.instanceColor) this.busBody.instanceColor.needsUpdate = true;
 
@@ -647,6 +808,43 @@ export class Traffic {
   // playerX/playerZ are only used to decide where a vehicle may be recycled.
   update(time, dt, signals, playerX = 1e9, playerZ = 1e9) {
     const { _m: m, _q: q, _e: e, _p: p, _s: s, _tmp: tmp } = this;
+
+    // NO VEHICLE INSIDE ANOTHER, resolved per lane in the order they queue.
+    //
+    // The follow rule only reduces a speed, and a queue at a red light gives it
+    // unlimited time at zero speed to settle in the wrong place — eight pairs
+    // were overlapping, every one of them at a signal. Clamping each vehicle
+    // against "the nearest thing in front" instead produced something worse:
+    // three followers all clamped to the SAME leader and stacked at one point,
+    // 0.0m apart. A queue has an order and the fix has to respect it, so this
+    // sorts the lane and walks it from the front.
+    //
+    // Runs before integration, so it corrects last frame's positions — the same
+    // one-frame lag the gait and the crowd separation already use.
+    {
+      const lanes = this._lanes || (this._lanes = new Map());
+      for (const [, list] of lanes) list.length = 0;
+      for (const it of this.items) {
+        const k = it.dir + ',' + Math.round(it.lane * 2);
+        let list = lanes.get(k);
+        if (!list) { list = []; lanes.set(k, list); }
+        list.push(it);
+      }
+      for (const [, list] of lanes) {
+        if (list.length < 2) continue;
+        // leader first: furthest along in the direction of travel
+        list.sort((a, b) => (b.s - a.s) * a.dir);
+        for (let k = 1; k < list.length; k++) {
+          const lead = list[k - 1], back = list[k];
+          const stop = (VLEN[lead.kind] + VLEN[back.kind]) / 2 + 1.6;
+          if ((lead.s - back.s) * back.dir < stop) {
+            back.s = lead.s - back.dir * stop;
+            if (back.speed > 0) back.speed = 0;
+          }
+        }
+      }
+    }
+
     for (const it of this.items) {
       // slow for a red or amber signal ahead, and hold at the line
       let want = it.base;
@@ -657,12 +855,21 @@ export class Traffic {
           want = d <= STOP ? 0 : it.base * Math.min(1, (d - STOP) / 22);
         }
       }
-      // and do not drive into the vehicle in front, in the same lane
+      // and do not drive into the vehicle in front, in the same lane.
+      //
+      // This braked to a standstill at a gap of 4.5m BETWEEN CENTRES, which for
+      // a bus 11.8m long is a car parked inside it. Eight pairs were overlapping
+      // at any moment and all of them were queues at a red light, where the
+      // controller has all the time in the world to settle into the wrong place.
+      // The stopping distance is the two half-lengths plus a bumper's gap.
       for (const o of this.items) {
         if (o === it || o.dir !== it.dir || Math.abs(o.lane - it.lane) > 1.6) continue;
         const gap = (o.s - it.s) * it.dir;
-        const need = (it.kind === 'bus' || o.kind === 'bus') ? 15 : 9;
-        if (gap > 0 && gap < need) want = Math.min(want, it.base * Math.max(0, (gap - 4.5) / (need - 4.5)));
+        const stop = (VLEN[it.kind] + VLEN[o.kind]) / 2 + 1.6;
+        const need = stop + (it.kind === 'bus' || o.kind === 'bus' ? 9 : 6);
+        if (gap > 0 && gap < need) {
+          want = Math.min(want, it.base * Math.max(0, (gap - stop) / (need - stop)));
+        }
       }
       const rate = want < it.speed ? 7.0 : 2.2;      // brakes harder than it pulls away
       it.speed += (want - it.speed) * Math.min(1, rate * dt);

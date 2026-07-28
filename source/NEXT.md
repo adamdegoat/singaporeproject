@@ -148,6 +148,49 @@ the spawn point — so every frame shows an empty carriageway however many vehic
 exist. The count is real (`window.__traffic().length` is 90); the frames just
 cannot see it. Do not tune traffic from that sheet.
 
+## The density round: five actor classes nothing could reach before
+
+Raising the crowd from 460 to 2,200 and the fleet from 21 to 90 did not just
+make the street busier, it made a whole family of defects REACHABLE. 21 vehicles
+spaced over 2,586m cannot collide with each other by accident; 90 can. D33-D37
+are that family, and four of the five found something.
+
+- **Six pairs of pedestrians standing inside one another.** A body is half a
+  metre across and two in the same place read as one smeared figure. Fixed at
+  SPAWN by rejection sampling — twelve tries for a spot that is not in a road,
+  not inside anyone else and not inside a wall, and no spawn at all if all
+  twelve fail — plus a separation nudge at runtime against the previous frame's
+  drawn positions.
+- **Six pedestrians standing in live traffic without crossing.** The pavement
+  band is an offset from a centreline and a carriageway is not the same width
+  along its length, so a band that is on the pavement at one end is on the
+  tarmac at the other. Same spawn rejection, plus a walk-outward correction for
+  anyone the road widens under.
+- **Eight vehicles inside other vehicles, every one of them at a red light.**
+  The follow rule braked to a standstill at a gap of 4.5m BETWEEN CENTRES, which
+  for an 11.8m bus is a car parked inside it. **A queue is where a controller
+  that only reduces a speed goes wrong: unlimited time at zero speed to settle
+  into the wrong position.** The stopping distance is the two half-lengths now,
+  and the no-overlap invariant is ENFORCED after integration rather than braked
+  towards.
+- The first attempt at that enforcement was worse than the bug: each vehicle
+  clamped against "the nearest thing in front", so three followers all clamped
+  to the same leader and stacked at one point, 0.0m apart. **A queue has an
+  order and the fix has to respect it** — sort the lane, walk it from the front.
+
+And one probe was wrong before it was right, the usual way: **D34 measured
+centre-to-centre distance and reported nine overlaps, every one of them a car in
+one lane and a bus in the next.** A road is not a plane, it is a set of lanes.
+It compares along-street gap and lane separately now.
+
+**Cost of the fixes: 38 to 35fps**, and about two of those three came back by
+noticing what was being computed for people nobody can see. The separation scan
+ran for all 2,200 when 54 are drawn (nine map lookups each, twenty thousand a
+frame); the "am I standing in a road" test ran sixty times a second for a
+correction that takes a second to complete. Gated to 120m and staggered one
+person in eight. The measurement noise in a spawned window is about +/-3fps, so
+treat 35 and 38 as the same number until a focused browser says otherwise.
+
 ## The defect hunt after the shopfronts: 113 findings to 5
 
 Eight new probe classes (D24-D31), ten rounds. Everything above D24 was written

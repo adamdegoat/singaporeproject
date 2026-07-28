@@ -515,6 +515,13 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
     trafficSys = new Traffic(axis, 78, 12, axis && axisSpec(axis, data));
     trafficSys.build(world, trafficSys.path.nearestS(S.x, S.z));
     window.__trafficPositions = () => (trafficSys.items || []).map(() => 1);
+    // Where every vehicle actually is, which nothing could ask before. A fleet
+    // of 21 spaced over 2,586m could not collide with itself by accident; 90
+    // can, and the spacing was never sized for it.
+    window.__trafficState = () => (trafficSys.items || []).map((it) => ({
+      kind: it.kind, x: it.wx, z: it.wz, lane: it.lane, dir: it.dir,
+      heading: it.heading, speed: +it.speed.toFixed(2), s: +it.s.toFixed(1),
+    }));
   }
   const furniture = {};
   let marks = 0; const side = {}; const sg = {}; const signage = {};

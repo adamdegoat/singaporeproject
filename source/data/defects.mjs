@@ -979,6 +979,146 @@ const found = await page.evaluate(() => {
            `${at.length} walkers drawn`);
   }
 
+  /* ==================================================================
+     Round three. The population went from 460 to 2,200 and the fleet from 21
+     to 90, and every actor-on-actor class below was impossible to hit at the
+     old numbers: 21 vehicles spaced over 2,586m cannot collide with each other
+     by accident. Density does not just make a street look busier, it makes a
+     whole family of defects reachable for the first time.
+     ================================================================== */
+
+  /* D33  two people standing in the same place.
+     A pedestrian is 0.5m across. Anything closer than that is one body inside
+     another, which at 2,200 of them on a finite set of pavements is a real
+     risk and reads as a single smeared figure. */
+  {
+    const pos = window.__crowdPositions ? window.__crowdPositions() : [];
+    const CE = 1.0, g = new Map();
+    for (let i = 0; i < pos.length; i++) {
+      const p = pos[i];
+      if (!p) continue;
+      const k = Math.floor(p[0] / CE) + ',' + Math.floor(p[1] / CE);
+      if (!g.has(k)) g.set(k, []);
+      g.get(k).push([p[0], p[1], i]);
+    }
+    let pairs = 0; const ex = [];
+    for (const [, list] of g) {
+      for (const [x, z, i] of list) {
+        for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+          for (const [x2, z2, j] of g.get((Math.floor(x / CE) + dx) + ',' + (Math.floor(z / CE) + dz)) || []) {
+            if (j <= i) continue;
+            const d = Math.hypot(x - x2, z - z2);
+            if (d < 0.45) {
+              pairs++;
+              if (ex.length < 6) ex.push(`two walkers ${d.toFixed(2)}m apart at ${x | 0},${z | 0}`);
+            }
+          }
+        }
+      }
+    }
+    report('D33', 'pedestrians standing inside each other', pairs ? ex : [],
+           `${pos.length} walkers`);
+  }
+
+  /* D34  two vehicles in the same place.
+     Same class, and the fleet spacing was computed for a fleet a quarter of
+     this size: `s` is spread evenly over the path and jittered by up to six
+     metres, which at 21 vehicles is 123m apart and at 90 is 28m. */
+  {
+    // IN THE ROAD FRAME, not as centre-to-centre distance.
+    //
+    // The first version measured the straight-line gap and reported nine
+    // overlaps, every one of them "car and bus" 2.7 to 4.5m apart — which is a
+    // car in one lane and a bus in the next, three and a half metres across and
+    // perfectly fine. Two vehicles overlap only if they share the lane AND the
+    // gap along the street is less than their combined half-lengths. A road is
+    // not a plane, it is a set of lanes, and a check that forgets that reports
+    // ordinary traffic as a pile-up.
+    const tr = window.__trafficState ? window.__trafficState() : [];
+    const LEN = { car: 4.32, bus: 11.8 };
+    const bad = [];
+    for (let i = 0; i < tr.length; i++) {
+      for (let j = i + 1; j < tr.length; j++) {
+        const a = tr[i], b = tr[j];
+        if (a.x === undefined || b.x === undefined) continue;
+        if (a.dir !== b.dir) continue;                       // opposing flows
+        if (Math.abs(a.lane - b.lane) > 2.6) continue;       // different lanes
+        const gap = Math.abs(a.s - b.s);
+        const need = (LEN[a.kind] + LEN[b.kind]) / 2;
+        if (gap < need) {
+          bad.push(`${a.kind} and ${b.kind} share a lane with ${gap.toFixed(1)}m `
+            + `between centres at ${a.x | 0},${a.z | 0} (needs ${need.toFixed(1)}m)`);
+        }
+      }
+    }
+    report('D34', 'vehicles overlapping each other', bad, `${tr.length} vehicles`);
+  }
+
+  /* D35  a vehicle not on the road.
+     B4 measures the RIDER's wheels against the ground. Nothing has ever asked
+     the same question of the traffic, which is 90 vehicles now and drives the
+     whole length of the street. */
+  {
+    const tr = window.__trafficState ? window.__trafficState() : [];
+    const offRoad = [], sunk = [];
+    for (const v of tr) {
+      if (v.x === undefined) continue;
+      if (!window.__onRoad(v.x, v.z, 0.6)) {
+        offRoad.push(`a ${v.kind} is off the carriageway at ${v.x | 0},${v.z | 0}`);
+      }
+    }
+    report('D35', 'vehicles driving off the carriageway', offRoad, `${tr.length} vehicles`);
+  }
+
+  /* D36  a pedestrian standing in the road who is not crossing it.
+     The crowd walks a pavement band offset from the centreline, and the band
+     was sized per path; a narrow street or a wide vehicle lane can put the
+     band on the tarmac. Crossers are excluded because crossing is the one time
+     being on the road is correct. */
+  {
+    const st = window.__crowdState ? window.__crowdState() : [];
+    const pos = window.__crowdPositions ? window.__crowdPositions() : [];
+    let onRoad = 0; const ex = [];
+    for (let i = 0; i < pos.length && i < st.length; i++) {
+      const p = pos[i];
+      if (!p || st[i].crossing) continue;
+      if (window.__onRoad(p[0], p[1], -0.8)) {
+        onRoad++;
+        if (ex.length < 6) ex.push(`a walker stands in the carriageway at ${p[0] | 0},${p[1] | 0}`);
+      }
+    }
+    report('D36', 'pedestrians standing in a carriageway', onRoad ? ex : [],
+           `${pos.length} walkers, crossers excluded`);
+  }
+
+  /* D37  a street tree growing through a wall.
+     D6 checks the trees OSM maps. It says nothing about the avenue, which is
+     placed by walking the axis and is most of the foliage in the district. */
+  {
+    const m4 = new T.Matrix4(), p4 = new T.Vector3();
+    const q4 = new T.Quaternion(), s4 = new T.Vector3();
+    const bad = [];
+    let trunks = 0;
+    sc.traverse((o) => {
+      if (!o.isInstancedMesh) return;
+      const pr = o.geometry.parameters || {};
+      if (o.geometry.type !== 'CylinderGeometry') return;
+      // the avenue's trunk: a tapered cylinder well over two metres tall
+      if (!(pr.height > 3 && (pr.radiusBottom || 0) > 0.18)) return;
+      for (let i = 0; i < o.count; i++) {
+        o.getMatrixAt(i, m4); m4.decompose(p4, q4, s4);
+        p4.applyMatrix4(o.matrixWorld);
+        if (p4.y < -900) continue;
+        trunks++;
+        const b = buildingAt(p4.x, p4.z);
+        if (b && bad.length < 6) bad.push(`a tree trunk stands inside "${b.n || '(unnamed)'}" at ${p4.x | 0},${p4.z | 0}`);
+        else if (b) bad.push('');
+      }
+    });
+    report('D37', 'street trees standing inside a building', bad.filter((x, i) => i < 6 || x),
+           `${trunks} trunks`);
+  }
+
   /* D23 DELETED.
    *
    * It counted how many distinct geometry signatures shared a square metre and
