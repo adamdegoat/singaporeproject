@@ -511,7 +511,8 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
     }
   }
   if (!P.has('notraffic') && axis) {
-    trafficSys = new Traffic(axis, 18, 3, axis && axisSpec(axis, data));
+    // Five lanes one way carrying 21 vehicles over 2,586m is a road at 4am.
+    trafficSys = new Traffic(axis, 78, 12, axis && axisSpec(axis, data));
     trafficSys.build(world, trafficSys.path.nearestS(S.x, S.z));
     window.__trafficPositions = () => (trafficSys.items || []).map(() => 1);
   }
@@ -552,7 +553,16 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   if (!P.has('nopeople') && axis) {
     // spread over the whole dressed network, not just the main street. Only the
     // few dozen in view are ever drawn, so a bigger population is nearly free.
-    crowdSys = new Crowd(axis, walkBlocked, 460, sideStreets);
+    // 460 was a correct system with nothing in it. Fourteen matched-angle
+    // frames of Orchard Road had ONE pedestrian visible between them, which is
+    // the single loudest way this stops reading as Singapore — the geometry can
+    // be right to the metre and an empty Orchard Road on a Saturday is still
+    // obviously not Orchard Road.
+    //
+    // Everyone beyond 105m is skipped before any matrix is written, so the cost
+    // of a bigger population is the path evaluation and a grid lookup per
+    // person per frame, not draw calls. Measured either side: see NEXT.md.
+    crowdSys = new Crowd(axis, walkBlocked, 2200, sideStreets);
     crowdSys.build(world);
     // must come after construction, or the handover is a no-op
     if (window.__crossings) crowdSys.setCrossings(window.__crossings);

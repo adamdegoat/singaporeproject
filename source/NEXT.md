@@ -31,14 +31,12 @@ the drawn geometry, and about two dozen buildings with a researched design.
 
 **What is NOT done**, in the order worth doing:
 
-1. **Density.** 460 pedestrians and 21 vehicles over 2.6km. The systems are
-   correct; there are simply not enough of them for a Saturday on Orchard.
-2. **Heights.** 917 of 1,557 are still a type default. Most sit behind something
+1. **Heights.** 917 of 1,557 are still a type default. Most sit behind something
    and never matter; the ones visible from the road do.
-3. **More districts.** The pipeline is proven and the seam holds. Little India is
+2. **More districts.** The pipeline is proven and the seam holds. Little India is
    directly connected. But the app loads the whole region at once, so streaming
    has to come before the world gets much bigger.
-4. **The 226 tenants off the built street network.** Little India, Selegie and
+3. **The 226 tenants off the built street network.** Little India, Selegie and
    Killiney have real shops in the scene file and no street to put them on,
    because the dressing stops 230m from an axis. That is a district-expansion
    job, not a shopfront one.
@@ -125,6 +123,29 @@ was fine while it was a lightbox.
 
 `data/fps.mjs` and `SG_EXTRA=noshops` on the audit runner are how the cost above
 was attributed: build the world without one subsystem and diff the numbers.
+
+## Density: 460 to 2,200 people, 21 to 90 vehicles
+
+Fourteen matched-angle frames of Orchard Road had ONE pedestrian visible between
+them. The geometry can be right to the metre and an empty Orchard Road on a
+Saturday afternoon still obviously is not Orchard Road, and this was the loudest
+remaining thing in the comparison sheet by a distance.
+
+**It cost nothing.** 36 to 38fps at 844x390 dpr2, 1.607M to 1.684M triangles,
+draw calls unchanged at 610. Two reasons, both already in the code and neither
+of them obvious: everyone beyond 105m is skipped before a matrix is written, so
+a bigger population costs a path evaluation and one grid lookup per person per
+frame and no draw work at all; and the whole fleet lives in seven InstancedMeshes
+whatever its size, so 90 vehicles is the same seven draw calls as 21 was.
+
+The population had been sized when the world was one district and 1.2km long. It
+was never re-sized for 2.6km plus Bras Basah plus the side streets.
+
+**The vantage frames cannot judge traffic density.** Vehicles recycle by distance
+from the PLAYER, and `vantage.mjs` teleports the CAMERA while the player stays at
+the spawn point — so every frame shows an empty carriageway however many vehicles
+exist. The count is real (`window.__traffic().length` is 90); the frames just
+cannot see it. Do not tune traffic from that sheet.
 
 ## The defect hunt after the shopfronts: 113 findings to 5
 
