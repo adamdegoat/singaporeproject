@@ -68,16 +68,23 @@ for (const name of names) {
       // swing 35 degrees off dead-on so the frame shows two faces, not one
       const a = Math.atan2(dx, dz) + 0.61;
       const ux = Math.sin(a), uz = Math.cos(a);
+      // THE GROUND IS NOT AT ZERO. Both the eye and the look-at were absolute
+      // heights, so on Orchard -- where the ground runs 26m to 50m above the
+      // datum -- the camera was framing the BASE of a 152m tower and calling it
+      // a portrait of the building. Same two-numbers trap as the recipes that
+      // seated a slab at y0 instead of footingY. Add the ground under the
+      // subject to both.
+      const g = window.__terrain ? window.__terrain.at(cx, cz) : 0;
       const dist = Math.max(rad * 1.9, b.h * 1.6, 70);
-      const eye = Math.max(b.h * 0.55, 18);
-      window.__cam(cx + ux * dist, eye, cz + uz * dist, cx, b.h * 0.42, cz, 40);
-      return { n: b.n, h: b.h, a: Math.round(b.a), rad: Math.round(rad) };
+      const eye = g + Math.max(b.h * 0.55, 18);
+      window.__cam(cx + ux * dist, eye, cz + uz * dist, cx, g + b.h * 0.42, cz, 40);
+      return { n: b.n, h: b.h, a: Math.round(b.a), rad: Math.round(rad), ground: Math.round(g) };
     }, name);
     if (!info) { console.error(`  "${name}" is not in this scene`); await page.close(); break; }
     await page.waitForTimeout(500);
     const file = `${OUT}/${slug}.${variant}.jpg`;
     await page.screenshot({ path: file, type: 'jpeg', quality: 90 });
-    console.log(`  ${file}   ${info.n}  h=${info.h}  ${info.a}m2  r=${info.rad}`);
+    console.log(`  ${file}   ${info.n}  h=${info.h}  ${info.a}m2  r=${info.rad}  ground=${info.ground}`);
     await page.close();
   }
 }

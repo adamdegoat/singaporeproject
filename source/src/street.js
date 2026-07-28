@@ -338,6 +338,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
   }
 
   // taxi stands: the yellow-topped rank sign, a queue rail, and a waiting cab
+  let noCabAtRank = 0;
   for (const [tx, tz, ang, sgn] of taxiAt) {
     const g = new THREE.Group();
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.0, 8), MAT.metal);
@@ -372,13 +373,39 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
       wheel.rotation.x = Math.PI / 2; wheel.position.set(wx, 0.31, wz);
       wheel.castShadow = true; cab.add(wheel);
     }
-    cab.position.set(-2.6 * sgn, 0, 2.0);
-    g.add(cab);
-  // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
-  // carriageway rather than dropping a shelter into the traffic
+    // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
+    // carriageway rather than dropping a shelter into the traffic
     const mvt = window.__pushClear ? window.__pushClear(tx, tz, -0.6, 18) : [tx, tz];
     if (!mvt) continue;
     const [tx2, tz2] = mvt;
+
+    // THE WAITING CAB GOES IN THE LAY-BY, NOT IN A RUNNING LANE.
+    //
+    // The sign and the queue rail are pushed clear, and then the cab was hung
+    // 2.6m off them toward the road with nothing checking where that landed --
+    // 21 P1b findings, counting its body, glass, lamp and four wheels. A rank
+    // in Singapore is a lay-by at the kerb, so a cab at the kerb is right and a
+    // cab in a traffic lane is not. Try the offset, then progressively smaller
+    // ones, and if the cab has nowhere to stand build the rank without it: a
+    // failed search must never fall back to the point it was asked to fix.
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    let placed = false;
+    for (const off of [2.6, 2.0, 1.5, 1.0, 0.5]) {
+      const lx = -off * sgn, lz = 2.0;
+      let clear = true;
+      // the cab's own plan, 1.78 x 4.4, tested at its corners
+      for (const ox of [-0.9, 0, 0.9])
+        for (const oz of [-2.2, 0, 2.2]) {
+          const wx2 = tx2 + (lx + ox) * ca + (lz + oz) * sa;
+          const wz2 = tz2 - (lx + ox) * sa + (lz + oz) * ca;
+          if (window.__onRoad && window.__onRoad(wx2, wz2, 0.3)) { clear = false; }
+        }
+      if (!clear) continue;
+      cab.position.set(lx, 0, lz);
+      g.add(cab);
+      placed = true; break;
+    }
+    if (!placed) noCabAtRank++;
     g.position.set(tx2, groundAt(tx2, tz2), tz2); g.rotation.y = ang;
     world.add(g);
   }
@@ -425,6 +452,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     realSignals: realCount.signals,
     realTaxis: realCount.taxis,
     taxiStands: taxiAt.length,
+    ranksWithNoCab: noCabAtRank,
     linkway: linkRoof.length,
     rails: railT.length, shelters, stopPoles: poles,
     lights: lightAt.length, signs: signT.length, planters: planterT.length,

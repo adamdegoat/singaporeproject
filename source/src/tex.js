@@ -178,6 +178,85 @@ export function texShopfront() {
   return finish(c, [1, 1]);
 }
 
+// Ngee Ann City's TOWERS, at the real panel module.
+//
+// Sources (2026-07-28): archify.com/sg + raymondwoo.com. The complex is "built
+// in concrete and totally faced with granite as a finish", and specifically
+// "the 28 floors of twin towers are constructed of 3.8m by 3.2m granite
+// pre-finished concrete wall panels". So the towers are the SAME African Red
+// granite as the podium, not a curtain wall -- they were being drawn as pale
+// grey-blue glass, which is the largest single recognition error on Orchard
+// Road because this is the widest frontage on the street.
+//
+// One tile is 2x2 panels, i.e. 7.6m by 6.4m, and it must be mapped with
+// uvMetres(mesh, 7.6, 6.4) or the module is decorative rather than real. Two
+// panels rather than one because a single-panel tile repeated up 98m of tower
+// reads as a screen door: the mottling has to differ between neighbours.
+export function texGranitePanel() {
+  // ITS OWN RANDOM STREAM, and this is not a style choice.
+  //
+  // Every texture in this file draws from the module-level `R`, which is also
+  // what city.js, street.js, actors.js, shopfront.js, markings.js, wayfind.js
+  // and sgdetail.js use to place things. The sequence is seeded, so the world
+  // is reproducible -- but only as long as nobody inserts a new consumer
+  // upstream of the others. Adding this texture drew ~3,600 numbers before any
+  // of them ran and shifted the entire district: T1 went 10 -> 13 with no
+  // geometry near the change, and the three new findings were in Bras Basah,
+  // 1.5km from the building this texture is for.
+  //
+  // That is a whole class of phantom regression, and it is worse than a wrong
+  // number because it sends you hunting geometry that did not move -- which
+  // this project has already lost half an hour to once, on the same two
+  // ratchets. A texture must not be able to move a bus stop.
+  const r2 = rng(0x6e676163);            // "ngac"
+  const rnd = (a, b) => a + r2() * (b - a);
+  const S = 256, [c, x] = cvs(S);
+  const H = S / 2;                       // one panel = half the tile, each way
+  for (let py = 0; py < 2; py++) {
+    for (let px = 0; px < 2; px++) {
+      const ox = px * H, oy = py * H;
+      // polished African Red: reddish-brown, and each panel a shade of its own
+      // because they are pre-finished units, not a poured wall
+      const t = rnd(-8, 8);
+      x.fillStyle = `rgb(${118 + t},${72 + t},${59 + t})`;
+      x.fillRect(ox, oy, H, H);
+      // mottling both ways. Lightening flecks only, which is what this had,
+      // raise the average until the tower reads pale pink against a podium of
+      // the SAME stone -- and they are the same stone, so a difference that
+      // large is a texture bug, not weathering.
+      for (let i = 0; i < 900; i++) {
+        const v = rnd(-26, 26), up = v > 0;
+        x.fillStyle = up
+          ? `rgba(${150 + v},${100 + v},${84 + v},${rnd(0.10, 0.34)})`
+          : `rgba(${86 + v},${50 + v},${40 + v},${rnd(0.12, 0.38)})`;
+        x.fillRect(ox + rnd(0, H), oy + rnd(0, H), rnd(1, 2.6), rnd(1, 2.6));
+      }
+      // the window: a vertical slot, 1.8m of a 3.8m panel, set into the granite
+      // so it reads as a punched opening rather than glazing applied over it
+      const ww = H * (1.8 / 3.8), wh = H * (2.3 / 3.2);
+      const wx = ox + (H - ww) / 2, wy = oy + H * 0.16;
+      x.fillStyle = 'rgba(26,32,39,0.96)';
+      x.fillRect(wx, wy, ww, wh);
+      const g = x.createLinearGradient(wx, wy, wx + ww, wy + wh);
+      g.addColorStop(0, 'rgba(196,214,228,0.22)');
+      g.addColorStop(0.55, 'rgba(196,214,228,0.05)');
+      g.addColorStop(1, 'rgba(196,214,228,0)');
+      x.fillStyle = g; x.fillRect(wx, wy, ww, wh);
+      // reveal: the granite is thick, so one jamb is in shadow and the head
+      // throws a line across the top of the glass
+      x.fillStyle = 'rgba(58,34,26,0.5)';
+      x.fillRect(wx, wy, ww * 0.16, wh);
+      x.fillRect(wx, wy, ww, wh * 0.07);
+    }
+  }
+  // panel joints, drawn last and across the whole tile: half a joint at each
+  // outer edge so the seam closes against the next tile under RepeatWrapping
+  x.fillStyle = 'rgba(72,44,36,0.85)';
+  for (const px of [0, 1, 2]) x.fillRect(px * H - 1.5, 0, 3, S);
+  for (const py of [0, 1, 2]) x.fillRect(0, py * H - 1.5, S, 3);
+  return finish(c, [1, 1]);
+}
+
 // dark polished granite with narrow vertical window slots (Ngee Ann City)
 export function texGranite() {
   // Ngee Ann City is clad in "African Red" polished granite, which reads far

@@ -35,8 +35,12 @@ M_PER_DEG_LON = 111320.0 * math.cos(math.radians(LAT0))
 #     12 storeys (8 retail, 4 car park); tower 218m over 56 floors; ION Sky on
 #     55-56; more than 90m of LED media wall on the facade
 #   Ngee Ann City                         skydb.net + archify.com/sg
-#     128.4m; twin 26-28 storey towers over a 7-floor retail podium clad in
-#     African Red polished granite; podium massing modelled on the Great Wall
+#     128.4m; twin 28-storey towers over a 7-floor retail podium, the WHOLE
+#     complex faced in African Red polished granite -- "twin brown polished
+#     granite towers", not a curtain wall. The 3.8m x 3.2m granite pre-finished
+#     concrete panels are the TOWERS' module (this file used to attribute them
+#     to the podium); the podium is pre-cast wall clad with granite in situ.
+#     The Great Wall is Raymond Woo's stated intent for the massing.
 #   Wheelock Place                        gorillaspace.sg + en.wikipedia.org
 #     21 storeys, about 109m; 16 office levels over a 5-floor podium; Kisho
 #     Kurokawa's conical glass atrium
@@ -158,12 +162,20 @@ BAD_HEIGHT_TAGS = []
 
 
 def height_for(tags):
-    """Returns (height, is_landmark, source). Source is 'osm' when the figure
-    comes from a tag, 'named' when hand-entered, 'guess' when a type default."""
+    """Returns (height, is_landmark, source, podium). Source is 'osm' when the
+    figure comes from a tag, 'named' when hand-entered, 'guess' when a type
+    default. Podium is the researched podium height in metres, or None.
+
+    The podium figure was in LANDMARKS from the day the table was written and
+    was never returned, so Ngee Ann City's researched 7-floor / 30m podium and
+    Paragon's 6-floor / 24m one were both invented again inside the recipe. That
+    is the same shape as the four OSM tags this project found sitting unused
+    (crossings, sidewalk=, oneway=, level=) -- the only difference is that this
+    time the data we were ignoring was our own research."""
     name = norm(tags.get("name"))
     for key, spec in LANDMARKS.items():
         if key and key in name:
-            return spec["h"], spec.get("key", False), "named"
+            return spec["h"], spec.get("key", False), "named", spec.get("podium")
     h = tags.get("height")
     if h:
         try:
@@ -186,17 +198,17 @@ def height_for(tags):
         # accuracy ledger was reporting garbage as real. Fall through instead,
         # and let it be recorded as the guess it is.
         if v is not None and v >= 2.5:
-            return v, False, "osm"
+            return v, False, "osm", None
         if v is not None:
             BAD_HEIGHT_TAGS.append((tags.get("name") or "(unnamed)", v))
     lv = tags.get("building:levels")
     if lv:
         try:
             # 3.4m per storey is closer for SG commercial than 3.6
-            return max(3.5, float(lv) * 3.4), False, "osm"
+            return max(3.5, float(lv) * 3.4), False, "osm", None
         except ValueError:
             pass
-    return TYPE_DEFAULT.get(tags.get("building", "yes"), 18), False, "guess"
+    return TYPE_DEFAULT.get(tags.get("building", "yes"), 18), False, "guess", None
 
 
 def ring(geometry):
@@ -426,7 +438,7 @@ def main():
             per = sum(math.dist(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts)))
             if per > 0 and (4 * math.pi * a) / (per * per) < 0.03:
                 continue
-            h, key, hsrc = height_for(tags)
+            h, key, hsrc, podium = height_for(tags)
             # a 3,000 m2 footprint is never 3.5m tall: that is a bad tag, not a
             # single-storey building. Fall back to the type default.
             if h < 8 and a > 600:
@@ -450,6 +462,8 @@ def main():
                 b["k"] = 1
             if hsrc != "guess":
                 b["hs"] = hsrc          # height provenance, for the accuracy ledger
+            if podium:
+                b["pod"] = podium       # researched podium height, read by the recipe
             # WHAT A BUILDING LOOKS LIKE, from the map rather than from a hash.
             #
             # The facade family was chosen by hashing the footprint, which is a

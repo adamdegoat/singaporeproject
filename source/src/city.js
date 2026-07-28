@@ -1,7 +1,7 @@
 // Build the street from real OSM geometry: extruded footprints, road ribbons,
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, rng } from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, rng } from './tex.js';
 import { recipeFor, hasShopfront, shophouse } from './landmarks.js';
 
 export const TEX = {
@@ -123,6 +123,8 @@ const awningMats = new Map();
 // materials the landmark recipes draw on
 const LMAT = {
   granite: new THREE.MeshStandardMaterial({ map: texGranite(), roughness: 0.30, metalness: 0.12 }),
+  // the tower panel, mapped at its real 3.8m x 3.2m by uvMetres()
+  granitePanel: new THREE.MeshStandardMaterial({ map: texGranitePanel(), roughness: 0.28, metalness: 0.10 }),
   towerGlass: new THREE.MeshStandardMaterial({ map: texTowerGlass(), roughness: 0.22, metalness: 0.16 }),
   blueGlass: new THREE.MeshStandardMaterial({
     map: texTowerGlass(), color: 0x9fc4dd, roughness: 0.18, metalness: 0.2,

@@ -39,6 +39,68 @@ export function orientedBox(pts) {
   };
 }
 
+/* ---------------- texture scale ---------------- */
+// Map a mesh's texture at a REAL SIZE, in metres.
+//
+// Measured 2026-07-28, and it was wrong in both directions at once:
+//
+//   BoxGeometry (every slab, so every tower)  UVs run 0..1 per face, so one
+//     tile is stretched over the WHOLE face. Ngee Ann City's towers are 38m by
+//     107m and texTowerGlass draws 12 floors, so each "floor" band was 8.9m
+//     tall. The tower read as a dozen enormous stripes.
+//   ExtrudeGeometry (every recipe podium)     three.js generates side-wall UVs
+//     from raw vertex POSITIONS, which here are metres from the island origin.
+//     Measured uSpan 7147 across a 236m building: the tile repeats once per
+//     metre. On a 30m podium that is 240 floor lines over 7 storeys, which
+//     averages out to flat colour and is why the podium looked untextured.
+//
+// This is the project's pattern #2 -- two numbers that should be compared and
+// are not. The size a texture is DRAWN at and the size the thing IS were never
+// the same number. Both fixes are the same one line: put the UVs in metres,
+// then divide by the metres one tile is meant to cover.
+//
+// It takes an explicit size rather than guessing one, because "how big is a
+// window" is a fact about the building, not about the geometry.
+export function uvMetres(mesh, mH, mV) {
+  const geo = mesh.isMesh ? mesh.geometry : mesh;
+  const uv = geo.attributes.uv, pos = geo.attributes.position;
+  if (!uv || !pos) return mesh;
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox;
+  const sx = bb.max.x - bb.min.x, sy = bb.max.y - bb.min.y, sz = bb.max.z - bb.min.z;
+  for (let i = 0; i < uv.count; i++) {
+    // Which way is this vertex's face looking? A box has three pairs and the
+    // horizontal run differs per pair, so scaling by one number stretches four
+    // of the six faces. Pick the horizontal extent from the axis the face does
+    // NOT face, using the normal where there is one.
+    const n = geo.attributes.normal;
+    const nx = n ? Math.abs(n.getX(i)) : 0;
+    const ny = n ? Math.abs(n.getY(i)) : 0;
+    const nz = n ? Math.abs(n.getZ(i)) : 1;
+    let run = sx, rise = sy;
+    if (ny > nx && ny > nz) { rise = sz; }        // a roof: v runs in z, not y
+    else if (nx > nz) { run = sz; }               // a side face: u runs in z
+    uv.setXY(i, uv.getX(i) * (run / mH), uv.getY(i) * (rise / mV));
+  }
+  uv.needsUpdate = true;
+  return mesh;
+}
+
+// The same, for an extruded footprint, whose UVs are already in metres and
+// offset by the district origin. Dividing puts one tile on mH by mV metres; the
+// offset only shifts which part of the pattern lands where, which for a tiling
+// stone is not something anyone can see.
+export function uvMetresExtruded(mesh, mH, mV) {
+  const geo = mesh.isMesh ? mesh.geometry : mesh;
+  const uv = geo.attributes.uv;
+  if (!uv) return mesh;
+  for (let i = 0; i < uv.count; i++) {
+    uv.setXY(i, uv.getX(i) / mH, uv.getY(i) / mV);
+  }
+  uv.needsUpdate = true;
+  return mesh;
+}
+
 // a box placed in the footprint's own frame
 // Every slab is positioned by an offset in the footprint's oriented frame. For
 // an irregular footprint that frame is bigger than the building, so an offset
@@ -79,22 +141,57 @@ function streetward(api, ob) {
 /* ---------------- recipes ---------------- */
 // Each recipe: (api, b) => void. api gives extrude/materials/world.
 
+// Ngee Ann City. Researched 2026-07-28 against archify.com/sg,
+// raymondwoo.com/project/33 and eresources.nlb.gov.sg (Infopedia), which
+// corrected two things this recipe had wrong and one thing NEXT.md had wrong:
+//
+//   The TOWERS are granite, not glass. "Twin brown polished granite towers";
+//   the whole complex is "totally faced with granite as a finish". They were
+//   drawn as a pale grey-blue curtain wall. On the widest frontage on Orchard
+//   Road that is the biggest recognition error in the district.
+//   The 3.8m x 3.2m panels are the TOWERS' module, not the podium's. NEXT.md
+//   recorded them as podium cladding. The podium is pre-cast wall clad with
+//   granite in situ; the towers are "3.8m by 3.2m granite pre-finished
+//   concrete wall panels" over 28 floors.
+//   The Great Wall is the architect's stated intent for the massing -- Raymond
+//   Woo, "to reflect the dignity, solidity and strength of the Ngee Ann
+//   Kongsi" -- which is a heavy battered wall with a projecting cap and a
+//   buttress rhythm, not crenellation.
+//
+// And the recipe was 14m too tall: it hardcoded a 107m tower on top of a 31.6m
+// podium, reaching 142.8m with the crown, for a building VERIFIED at 128.4m.
+// Everything is derived from b.h now, so the researched figure is what gets
+// built.
 function ngeeAnnCity(api, b) {
   const ob = orientedBox(b.p);
-  const granite = api.mat.granite, glassT = api.mat.towerGlass, stone = api.mat.paleStone;
-  // deep granite podium, the widest single mass on the street
-  api.world.add(api.extrude(b.p, 30, granite));
-  api.world.add(api.extrude(api.grow(b.p, 1.004), 1.6, stone, 30));
+  const granite = api.mat.granite, panel = api.mat.granitePanel, stone = api.mat.paleStone;
+  const PANEL_W = 3.8, PANEL_H = 3.2;    // the real tower panel, in metres
+
+  // THE GROUND THIS SITS ON. slab() and crown() take an ABSOLUTE y0 while every
+  // extruded mass is seated on footingY, and this recipe mixed the two: the
+  // towers were started at y=31.6 absolute while Orchard's ground here is 37m
+  // above the datum, so they were embedded 27m into the podium and topped out
+  // at 123.8m for a building verified at 128.4m above its own pavement. The
+  // trap is already written up in NEXT.md from Lucky Plaza's bubble lift, and
+  // this recipe has had it since the day it was written.
+  const base = api.footingY(b.p);
+
+  // deep granite podium, the widest single mass on the street. 7 retail floors.
+  const podium = b.pod || 30;
+  api.world.add(uvMetresExtruded(api.extrude(b.p, podium, granite), 34.2, podium));
+  // the cap: the Great Wall reference is a heavy projecting course closing the
+  // top of the wall, and it is what makes the podium read as a rampart rather
+  // than a box with a lid
+  api.world.add(api.extrude(api.grow(b.p, 1.004), 1.6, stone, podium));
+
   // two square towers set along the long axis, stepped back from the podium edge
   const tw = Math.min(38, ob.halfShort * 1.05);
+  const towerH = Math.max(20, b.h - podium - 1.6 - 4.2);   // 4.2 = the crown
   for (const side of [-1, 1]) {
     const u = ob.midU + side * ob.halfLong * 0.40;
-    slab(api, ob, u, ob.midV, tw, tw, 31.6, 107, granite);
-    // vertical glazing strips on the two long faces
-    for (const s2 of [-1, 1]) {
-      slab(api, ob, u, ob.midV + s2 * (tw / 2 + 0.15), tw * 0.82, 0.4, 34, 100, glassT);
-    }
-    crown(api, ob, u, ob.midV, tw, tw, 138.6, stone);
+    const t = slab(api, ob, u, ob.midV, tw, tw, base + podium + 1.6, towerH, panel);
+    if (t) uvMetres(t, PANEL_W, PANEL_H);
+    crown(api, ob, u, ob.midV, tw, tw, base + podium + 1.6 + towerH, stone);
   }
 
   // The civic forecourt: a raised granite plaza fronting Orchard Road that
@@ -374,6 +471,119 @@ function luckyPlaza(api, b) {
     cone.position.set(lx, gy + 1.6, lz);
     cone.rotation.x = Math.PI;
     api.world.add(cone);
+  }
+}
+
+// Hilton Singapore Orchard, 333 Orchard Road. TWO towers, and which one is
+// which is a researched fact rather than a choice.
+//
+// en.wikipedia.org/wiki/Hilton_Singapore_Orchard, checked 2026-07-28: it opened
+// in 1971 as The Mandarin Singapore, "occupying a single 36-storey block facing
+// Orchard Road"; "a second block, Tower Two, standing 40 storeys and 152m high,
+// was added IN THE REAR in 1973". Tower One is 36 floors at 144m.
+//
+// So the pair splits along the axis that points at the street, not along the
+// footprint's long side, and the TALLER one is the one further from Orchard
+// Road. Getting that backwards would put the wrong silhouette over the street
+// from every vantage on the north side. The generic `hotel` recipe drew the
+// whole 4,869 m2 site as one 152m mass.
+function hiltonOrchard(api, b) {
+  const ob = orientedBox(b.p);
+  const stone = api.mat.warmStone, pale = api.mat.paleStone, glass = api.mat.towerGlass;
+  const FRONT_H = 144, REAR_H = Math.max(b.h, 152);   // 36 and 40 storeys
+
+  // slab() takes an ABSOLUTE y0 and the extrude below is seated on footingY --
+  // the trap NEXT.md records from Lucky Plaza. Hilton's ground is 37m up, so
+  // without this the towers start at y=14 and top out 38m short.
+  const base = api.footingY(b.p);
+  const podium = Math.min(14, b.h * 0.11);
+  api.world.add(uvMetresExtruded(api.extrude(b.p, podium, stone), 16, 13));
+  api.world.add(api.extrude(api.grow(b.p, 1.03), 0.9, pale, podium - 0.9));
+
+  // which box axis points at Orchard Road?
+  const sw = streetward(api, ob);
+  const uc = sw.nx * ob.ux + sw.nz * ob.uz;         // streetward, in the box frame
+  const vc = -sw.nx * ob.uz + sw.nz * ob.ux;
+  const alongU = Math.abs(uc) > Math.abs(vc);
+  const half = alongU ? ob.halfLong : ob.halfShort;
+  const cross = alongU ? ob.halfShort : ob.halfLong;
+  const sgn = alongU ? Math.sign(uc) || 1 : Math.sign(vc) || 1;
+
+  // a tower each side of the middle, along that axis
+  // Depth is what sets the GAP between the pair, and at 24m they nearly
+  // touched and read as one slab with a seam. Tower Two was built two years
+  // later on the land behind, so there is a real gap and it should be legible.
+  const depth = Math.min(19, half * 0.62);          // front-to-back, per tower
+  const width = Math.min(46, cross * 1.55);         // face width
+  for (const [towerH, place] of [[FRONT_H, 1], [REAR_H, -1]]) {
+    // Search inward for a stand that is over the plan and out of the road. The
+    // Lucky Plaza trap was a tower silently never drawn because slab() refused
+    // one offset and said nothing, so this reports what it could not place.
+    let u = 0, v = 0, ok = false;
+    for (const f of [0.52, 0.44, 0.36, 0.28, 0.20, 0.12, 0]) {
+      const o = place * sgn * half * f;
+      u = ob.midU + (alongU ? o : 0);
+      v = ob.midV + (alongU ? 0 : o);
+      const x = ob.cx + ob.ux * u - ob.uz * v, z = ob.cz + ob.uz * u + ob.ux * v;
+      if (onCarriageway(x, z, 0.3)) continue;
+      if (!pointInRing(x, z, b.p)) continue;
+      ok = true; break;
+    }
+    if (!ok) { console.warn('hilton: no stand for the', place > 0 ? 'front' : 'rear', 'tower'); continue; }
+    const w = alongU ? depth : width, d = alongU ? width : depth;
+    const t = slab(api, ob, u, v, w, d, base + podium, towerH - podium - 4.2, stone);
+    if (!t) continue;
+    uvMetres(t, 14, 3.3);          // a hotel room bay is about 3.5m wide
+
+    // banded balconies on the two long faces, the giveaway that it is rooms
+    const bh = towerH - podium - 4.2;
+    const floors = Math.max(4, Math.round(bh / 3.3));
+    for (let f = 1; f < floors; f += 2) {
+      const y = base + podium + f * (bh / floors);
+      if (y > base + podium + bh - 2) break;
+      for (const s2 of [-1, 1]) {
+        const bu = u + (alongU ? s2 * (w / 2 + 0.18) : 0);
+        const bv = v + (alongU ? 0 : s2 * (d / 2 + 0.18));
+        slab(api, ob, bu, bv,
+             alongU ? 0.42 : w * 0.96, alongU ? d * 0.96 : 0.42, y - 0.2, 0.28, pale);
+      }
+    }
+    // One continuous glazed band per long face. It runs 0.62 of the face, not
+    // 0.94: this opened in 1971 and the towers are concrete with solid end
+    // walls, so a sheet of glass corner to corner reads as a 2010s office
+    // block. The banded balconies above are what should carry the face.
+    for (const s2 of [-1, 1]) {
+      const gu = u + (alongU ? s2 * (w / 2 + 0.06) : 0);
+      const gv = v + (alongU ? 0 : s2 * (d / 2 + 0.06));
+      const g = slab(api, ob, gu, gv,
+                     alongU ? 0.1 : w * 0.62, alongU ? d * 0.62 : 0.1,
+                     base + podium + 1.2, bh - 2.4, glass);
+      if (g) uvMetres(g, 14, 3.3);
+    }
+    crown(api, ob, u, v, w, d, base + podium + bh, pale);
+  }
+
+  // the porte-cochere over the set-down, same idiom as every other hotel here
+  const ang = Math.atan2(sw.nx, sw.nz);
+  const ex = ob.cx + sw.nx * ob.halfShort, ez = ob.cz + sw.nz * ob.halfShort;
+  const room = api.clearance ? api.clearance.outward(ex, ez, sw.nx, sw.nz, 11, 13) : 7;
+  if (room > 6.5) {
+    const dp = Math.min(13, room * 1.05);
+    const px = ex + sw.nx * (dp / 2), pz = ez + sw.nz * (dp / 2);
+    // on the GROUND under the set-down, not on y=0. Same two-numbers trap.
+    const gy = api.groundAt(px, pz);
+    const canopy = new THREE.Mesh(new THREE.BoxGeometry(22, 0.6, dp), pale);
+    canopy.position.set(px, gy + 6.0, pz);
+    canopy.rotation.y = ang;
+    canopy.castShadow = true; api.world.add(canopy);
+    for (const ax of [-9, 9]) {
+      for (const az of [-dp / 2.6, dp / 2.6]) {
+        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 6.0, 10), pale);
+        const colX = px - sw.nz * ax + sw.nx * az, colZ = pz + sw.nx * ax + sw.nz * az;
+        col.position.set(colX, api.groundAt(colX, colZ) + 3.0, colZ);
+        col.castShadow = true; api.world.add(col);
+      }
+    }
   }
 }
 
@@ -1020,7 +1230,10 @@ export const RECIPES = [
   [/wheelock/i, wheelockPlace],
   [/orchard central/i, orchardCentral],
   [/wisma atria|313|orchard gateway|shaw (house|centre)|mandarin gallery|the heeren/i, glassBoxPodiumTower],
-  [/hotel|hyatt|hilton|marriott|four seasons|pullman|voco|royal plaza|pan pacific|regent|shangri|holiday inn|ibis|orchard rendezvous|concorde|mandarin orchard/i, hotel],
+  // ABOVE the generic hotel, which matches "hilton" and would win: the first
+  // pattern to match is the one that runs.
+  [/hilton singapore orchard|mandarin orchard/i, hiltonOrchard],
+  [/hotel|hyatt|hilton|marriott|four seasons|pullman|voco|royal plaza|pan pacific|regent|shangri|holiday inn|ibis|orchard rendezvous|concorde/i, hotel],
   [/lucky plaza|far east plaza|orchard towers|midpoint|palais|delfi|orchard plaza|cairnhill|tripleone|far east shopping|international building|liat|pacific plaza|scotts square|orchard building|forum the shopping|268 orchard|scape|design orchard|cathay cineleisure/i, finnedSlab],
 
   // Everything below was falling through to a facade picked by hashing the

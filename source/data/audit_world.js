@@ -67,7 +67,24 @@ window.__auditWorld = async function auditWorld() {
       // ones — legs searched outward until clear, overhead parts exempt with
       // the reason written — left the world measurably cleaner than the
       // numbers it inherited.
-      P1b: 211, T1: 10,
+      // P1b 211 -> 76 and T1 10 -> 5 on 2026-07-28, from three placement bugs
+      // rather than from anything being exempted:
+      //
+      //   MRT entrances were walked out of the malls they are mapped inside
+      //   and set down in the road, because the escape search asked only about
+      //   BUILDINGS. That is the mirror of the bus-stop bug already recorded
+      //   here as "pushClear knows roads, not walls". One misplaced entrance is
+      //   about twenty findings -- apron, glass shell, six ribs, eight
+      //   balusters, totem -- so this alone was 108 of them. All 19 entrances
+      //   still get built; none was dropped to buy the number.
+      //   Overhead-bridge STAIR TOWERS were laid out at a fixed span/2 - 1.0
+      //   with nothing under them checked. The deck over the road is correct
+      //   and stays exempt; the towers now walk outward, per end, until their
+      //   own footprint is clear.
+      //   The waiting cab at a taxi rank was hung 2.6m toward the road,
+      //   unchecked. A rank is a lay-by, so the cab is sited at the kerb or the
+      //   rank is built without it.
+      P1b: 76, T1: 5,
       // proportional to a world with 1,932 buildings and 4,392 roads
       // P4 333 -> 360 and P1b 177 -> 179 on the day the Civic District landmarks
       // got real massing. Both are consequences of that, not new defects:
@@ -416,7 +433,10 @@ window.__auditWorld = async function auditWorld() {
     // arclengths to LTA's surveyed positions, with their legs searched outward
     // until clear and only their genuinely-overhead parts exempt. The world got
     // cleaner than the number it inherited, so the number follows it down.
-    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 124,
+    window.__p1bAll = Object.entries(bad).sort((a, b) => b[1] - a[1]);
+    // 124 -> 56 on 2026-07-28: see the world override above for the three
+    // placement bugs behind it.
+    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 56,
         Object.entries(bad).sort((a, b) => b[1] - a[1]).slice(0, 6)
           .map(([k, v2]) => `${v2}x ${k}`).join('  ') || 'none', ex);
   }
@@ -1093,7 +1113,9 @@ window.__auditWorld = async function auditWorld() {
     // using a constant stride. Same reason as P1b: more geometry is looked at,
     // nothing moved. Both numbers are stable across repeated runs now, so a
     // change in either means a change in the world.
-    add('T1', 'carriageway blocked by solid geometry (ratchet, target 0)', 'BLOCKER', blocked, 12,
+    // 12 -> 6 on 2026-07-28, alongside P1b: MRT entrances, footbridge stair
+    // towers and the taxi-rank cab were all standing in the carriageway.
+    add('T1', 'carriageway blocked by solid geometry (ratchet, target 0)', 'BLOCKER', blocked, 6,
         `${blocked} of ${sampled} centreline samples obstructed`, ex);
   }
   {

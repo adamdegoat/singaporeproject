@@ -96,9 +96,63 @@ function erpGantry(world, px, pz, ang, width, surveyed = false) {
 
 /* ---------------- overhead pedestrian bridge ---------------- */
 function pedBridge(world, px, pz, ang, width) {
-  const g = new THREE.Group();
   const steel = MAT.metal, deck = MAT.conc;
-  const span = width + 14;
+
+  // WHERE IT STANDS IS DECIDED BEFORE ANYTHING IS BUILT.
+  //
+  // This used to build the whole bridge in local space and only then ask
+  // pushClear where to put it, which meant the stair towers were laid out at a
+  // fixed span/2 - 1.0 with nothing knowing what was underneath them. Eight of
+  // them stood in live traffic. The deck over the road is correct -- that is
+  // what an overpass IS, and P1b exempts it by signature -- but a stair tower
+  // is the part that meets the ground, and it belongs on a pavement.
+  const mv2 = window.__pushClear ? window.__pushClear(px, pz, -0.6, 18) : [px, pz];
+  if (!mv2) return;
+  const [px2, pz2] = mv2;
+
+  const g = new THREE.Group();
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  // local (x along the span, z across it) -> world
+  const wx = (lx, lz) => px2 + lx * ca + lz * sa;
+  const wz = (lx, lz) => pz2 - lx * sa + lz * ca;
+
+  // Walk each tower OUTWARD along the span until its own footprint is clear,
+  // and take the DECK out to meet it. Extending the bridge is the honest
+  // repair: a stair that stops short of the pavement is not a stair, and
+  // pulling the towers in instead would leave the deck ending over the road.
+  // The tower is 2.6 x 2.8 centred 3.2m off the deck line, so it is tested at
+  // its own corners rather than at one point -- the same mistake as the canopy
+  // posts and the shopfront bays before them.
+  const span0 = width + 14;
+  const base = span0 / 2 - 1.0;
+  const reachOf = {};
+  if (window.__onRoad) {
+    const clearAt = (d, sgn) => {
+      for (const ox of [-1.5, 0, 1.5])
+        for (const oz of [1.8, 3.2, 4.6]) {
+          const lz = sgn * oz;
+          if (window.__onRoad(wx(d * sgn + ox, lz), wz(d * sgn + ox, lz), 0.4)) return false;
+        }
+      return true;
+    };
+    // PER END, not one reach for both. A bridge often has pavement on one side
+    // and a slip road on the other, and forcing symmetry pushed the good end
+    // out to match the bad one.
+    //
+    // And when an end never clears, it keeps its ORIGINAL reach. The first
+    // version left it at the largest distance tried, which extends the deck and
+    // its 92m parapet across MORE road than it started with -- a fallback that
+    // returns something worse than the value it was asked to fix, which is
+    // pattern #1 in NEXT.md and is how this bridge got here in the first place.
+    for (const sgn of [-1, 1]) {
+      reachOf[sgn] = base;
+      for (let d = base; d <= base + 26; d += 1.0) {
+        if (clearAt(d, sgn)) { reachOf[sgn] = d; break; }
+      }
+    }
+  } else { reachOf[-1] = base; reachOf[1] = base; }
+  const span = Math.max(span0, (reachOf[-1] + 1.3) * 2, (reachOf[1] + 1.3) * 2);
+
   g.add(yawMesh(new THREE.BoxGeometry(span, 0.42, 2.6), deck, 0, 6.0, 0, 0));
   g.add(yawMesh(new THREE.BoxGeometry(span, 0.16, 3.0), MAT.trim, 0, 8.6, 0, 0));   // roof
   // parapets and roof posts
@@ -109,20 +163,14 @@ function pedBridge(world, px, pz, ang, width) {
       g.add(yawMesh(new THREE.CylinderGeometry(0.055, 0.055, 2.4, 6), steel, x, 7.4, sgn * 1.3, 0));
     }
   }
-  // stair towers at each end
   for (const sgn of [-1, 1]) {
-    const sx = sgn * (span / 2 - 1.0);
+    const sx = sgn * reachOf[sgn];
     g.add(yawMesh(new THREE.BoxGeometry(2.6, 6.0, 2.8), deck, sx, 3.0, sgn * 3.2, 0));
     for (let s = 0; s < 12; s++) {
       g.add(yawMesh(new THREE.BoxGeometry(2.2, 0.16, 0.34), deck,
         sx, 0.5 + s * 0.46, sgn * (1.9 + s * 0.2), 0));
     }
   }
-  // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
-  // carriageway rather than dropping a shelter into the traffic
-  const mv2 = window.__pushClear ? window.__pushClear(px, pz, -0.6, 18) : [px, pz];
-  if (!mv2) return;
-  const [px2, pz2] = mv2;
   g.position.set(px2, groundAt(px2, pz2), pz2);
   g.rotation.y = ang;
   world.add(g);
@@ -263,7 +311,7 @@ export function buildSgDetail(world, axis, data, isBlocked) {
 
   // MRT entrances at the coordinates OSM records for them, rather than at two
   // arbitrary points along the street.
-  let realMrt = 0;
+  let realMrt = 0, droppedMrt = 0;
   for (const m of (data.mrt || [])) {
     if (m.kind !== 'subway_entrance') continue;
     const [mx, mz] = m.p;
@@ -301,24 +349,56 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     // The door is on the facade, so walk outward until the point is clear of
     // buildings, and build nothing if there is nowhere clear, because an
     // entrance that is not on a pavement is not an entrance.
+    // WHERE THE ENTRANCE ACTUALLY STANDS.
+    //
+    // This searched outward until the point was clear of BUILDINGS and never
+    // asked about the road, so it walked an exit out of a mall and set it down
+    // in live traffic. That is the mirror image of the bus-stop bug already in
+    // NEXT.md -- "pushClear knows roads, not walls" -- and it is more than half
+    // of P1b: the apron, the glass shell, its six ribs, eight balusters and the
+    // totem are each counted, so one misplaced entrance is about twenty
+    // findings. Six to eleven of them were in a carriageway.
+    //
+    // Two other things were wrong with it:
+    //   It only searched when the ORIGINAL point was blocked, so an exit whose
+    //   OSM node sits in the road was built there without a single test.
+    //   It tested ONE point for a structure 8.6m across including its totem --
+    //   centre clear, apron in the traffic. Same as the canopy posts and the
+    //   shopfront bays before it.
+    const HALF_X = 4.9, HALF_Z = 2.9;    // the entrance's own plan, totem included
+    const stands = (cx2, cz2) => {
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      for (const ox of [-HALF_X, 0, HALF_X])
+        for (const oz of [-HALF_Z, 0, HALF_Z]) {
+          const tx = cx2 + ox * ca + oz * sa;
+          const tz = cz2 - ox * sa + oz * ca;
+          if (isBlocked && isBlocked(tx, tz)) return false;
+          if (window.__onRoad && window.__onRoad(tx, tz, 0.4)) return false;
+        }
+      return true;
+    };
     let ex = mx, ez = mz;
-    if (isBlocked && isBlocked(ex, ez)) {
+    if (!stands(ex, ez)) {
       let ok = null;
       for (let r = 2; r <= 26 && !ok; r += 2) {
         for (let a2 = 0; a2 < 16; a2++) {
           const th = (a2 / 16) * Math.PI * 2;
           const tx = mx + Math.cos(th) * r, tz = mz + Math.sin(th) * r;
-          if (isBlocked(tx, tz)) continue;
+          if (!stands(tx, tz)) continue;
           ok = [tx, tz]; break;
         }
       }
-      if (!ok) continue;
+      // A failed search must never fall back to the point it was asked to fix.
+      // An entrance with nowhere to stand is not built, and the count of what
+      // was dropped is reported rather than swallowed.
+      if (!ok) { droppedMrt++; continue; }
       [ex, ez] = ok;
     }
     mrtEntrance(world, ex, ez, ang, label);
     realMrt++;
   }
   window.__realMrt = realMrt;
+  window.__droppedMrt = droppedMrt;
 
   // Overhead bridges at the positions OSM records, spanning the way it maps.
   let realBridges = 0;

@@ -13,11 +13,17 @@ Everything green:
 
 | gate | what it covers | state |
 |---|---|---|
-| `node data/audit_run.mjs` | 36 snapshot checks, per scene | pass, both scenes |
+| `SG_SCENE=orchard node data/audit_run.mjs` | 36 snapshot checks | pass |
+| `SG_SCENE=world node data/audit_run.mjs` | the same 36, region budgets | pass |
 | `node data/behaviour.mjs` | 5 checks on how things MOVE | pass, both scenes |
-| `SG_SCENE=world node data/defects.mjs` | 29 exploratory classes | 5, all D26, diagnosed below |
+| `SG_SCENE=world node data/defects.mjs` | 35 exploratory classes | 16, diagnosed below |
 | `node test/ride.test.mjs` | the ride model, no browser | 18 pass |
 | `python3 data/check.py <id>` | the data gate, per district | pass, both |
+
+**Pass `SG_SCENE` explicitly.** A bare `node data/audit_run.mjs` defaults to
+`scene=orchard` and prints the header "== world audit" anyway, which reads as
+though the region was gated when only one district was. deploy.sh has always run
+both; a hand-run of the bare command has not.
 
 Start the dev server first (`node server.cjs`), and run `bash data/tidy.sh` after
 any batch — every gate drives a headless browser rendering at 60fps and one that
@@ -58,6 +64,113 @@ researched design.
 
 Everything above the line is correctness. Everything below it is making it look
 more like Singapore. They are different jobs.
+
+## The two researched landmarks, and a texture that could move a bus stop
+
+**Ngee Ann City and Hilton Singapore Orchard are built.** Both were sitting in
+this file as "researched but not built"; the research was re-checked before
+building, and it corrected two things this file had recorded wrongly.
+
+- **The 3.8m x 3.2m granite panels are the TOWERS' module, not the podium's.**
+  archify.com/sg and raymondwoo.com: the podium is pre-cast wall clad with
+  granite in situ, while "the 28 floors of twin towers are constructed of 3.8m
+  by 3.2m granite pre-finished concrete wall panels".
+- **The towers are granite, not glass.** "Twin brown polished granite towers";
+  the complex is "totally faced with granite as a finish". They were being drawn
+  as a pale grey-blue curtain wall, which on the widest frontage on Orchard Road
+  was the single biggest recognition error in the district.
+- The Great Wall is the architect's stated intent for the massing (Raymond Woo,
+  "to reflect the dignity, solidity and strength of the Ngee Ann Kongsi") --
+  a heavy wall with a projecting cap, not crenellation.
+- **Hilton is two towers and which is which is a fact.** Wikipedia: it opened in
+  1971 as The Mandarin, "a single 36-storey block facing Orchard Road", and
+  "Tower Two, standing 40 storeys and 152m high, was added in the rear in 1973".
+  So the TALLER one is further from Orchard Road. Verified after building: the
+  144m tower measures 70.2m from the axis and the 152m one 99.6m.
+
+**Ngee Ann City was also 14m too tall and its towers 33m too low, at once.** The
+recipe hardcoded a 107m tower on a 31.6m podium, reaching 142.8m for a building
+verified at 128.4m -- and it passed `31.6` as an ABSOLUTE y0 while the ground
+here is 37m up, so the towers were embedded 27m into their own podium and topped
+out at 123.8m. Both numbers are derived from `b.h` and `api.footingY(b.p)` now.
+This is the slab-vs-footing trap already written up for Lucky Plaza's bubble
+lift; **the same trap was in the vet tool itself**, which framed every building
+as if the ground were at zero and so photographed the base of a 152m tower.
+
+### Textures were never mapped at a real size, anywhere
+
+Measured, not guessed, and wrong in both directions at once:
+
+- **`slab()` boxes** carry 0..1 UVs per face, so one tile stretches over the
+  WHOLE face. Ngee Ann's towers are 38m by 107m and texTowerGlass draws 12
+  floors, so each "floor" band was **8.9m tall**.
+- **`api.extrude()` masses** get three.js side-wall UVs, which come from raw
+  vertex POSITIONS -- metres from the island origin. Measured uSpan **7147**
+  across a 236m building: the tile repeats **once per metre**, so a 30m podium
+  carried 240 floor lines and averaged out to flat colour.
+
+`uvMetres(mesh, mH, mV)` and `uvMetresExtruded(...)` in landmarks.js fix it by
+taking the size in metres explicitly, because "how big is a window" is a fact
+about the building and not about the geometry. **Only Ngee Ann City and Hilton
+use them so far.** Every other recipe is still mapped at the wrong scale, and
+the generic facade path is worse -- `scaleUV(geo, per/26, h/28)` multiplies
+UVs that are already in metres. That is the biggest open cosmetic item in the
+project and it is a one-line change per call site.
+
+### A texture must not be able to move a bus stop
+
+Adding one procedural texture moved **T1 from 10 to 13** with no geometry
+anywhere near the change: the three new findings were in Bras Basah, 1.5km from
+the building the texture was for. Two rounds went into looking for what had
+moved. Nothing had.
+
+`tex.js` exports a single module-level seeded PRNG `R`, and `rand`/`pick`/
+`chance` come off it -- but so does every placement decision in city.js,
+street.js, actors.js, shopfront.js, markings.js, wayfind.js and sgdetail.js.
+`texGranitePanel()` draws ~3,600 numbers at module load, **before any of them
+run**, so the entire district reshuffled. It has its own stream now
+(`rng(0x6e676163)`) and the ratchets went straight back to baseline.
+
+**This is unfixed in general.** Every other texture still draws from the shared
+`R`, so editing any one of them silently relocates street furniture across two
+districts. The real fix is a private stream per texture, which costs a ONE-TIME
+reshuffle of the whole world and a re-baseline of P1b, P4, P6 and T1 -- worth
+doing deliberately, not as a side effect of someone retouching a facade.
+
+### P1b 211 -> 76 and T1 10 -> 5, from three placement bugs
+
+The note that P1b was "mostly traffic signal poles, arms and heads" was wrong.
+Listing all 72 classes instead of the top 6 showed it was **MRT entrances**, and
+one misplaced entrance is about twenty findings because its apron, glass shell,
+six ribs, eight balusters and totem are each counted.
+
+- **MRT entrances were walked out of malls and into the road.** The escape
+  search asked only `isBlocked`, which is buildings and walls, and never asked
+  about the carriageway -- the exact mirror of the bus-stop bug already recorded
+  here as "pushClear knows roads, not walls". It also only searched when the
+  ORIGINAL point was blocked, so an exit whose OSM node is in the road was built
+  there untested, and it tested ONE point for a structure 8.6m across. **108 of
+  the 211. All 19 entrances still get built and none was dropped to buy the
+  number** (`window.__droppedMrt` is 0).
+- **Footbridge stair towers** were laid out at a fixed `span/2 - 1.0` with
+  nothing under them checked. The deck over the road is correct and stays
+  exempt; the towers now search outward, per end, until their own footprint is
+  clear. The first version searched both ends together and, when an end never
+  cleared, left it at the LARGEST distance tried -- extending a 92m parapet
+  across more road than it started with. A fallback that returns something worse
+  than what it was asked to fix is pattern #1 in this file, and I wrote a fresh
+  one into the fix for it.
+- **The waiting cab at a taxi rank** was hung 2.6m toward the road, unchecked. A
+  rank is a lay-by, so the cab is sited at the kerb or the rank is built without
+  it (`ranksWithNoCab`).
+
+Budgets are now P1b 76 / T1 5 on the region and P1b 56 / T1 6 on Orchard. **Not
+a pass: the target is 0.** What remains is 53 building masses standing in
+carriageways (single merged BufferGeometries, 3m to 163m tall, which is a
+process.py corridor-push question, not a furniture one) and about 23 assorted
+props. Cost: **1740k triangles and 603 draw calls, against 1742k and 613 before**
+-- ten fewer draw calls, because entrances that used to be built in the road are
+now built where they can be batched with their neighbours.
 
 ## Shopfronts, and the count that was lying
 
@@ -688,18 +801,19 @@ side; Funan, Marina Square, Bras Basah Complex on the other. Roughly 96 of the
    camera's real lat/lon linked to Street View. Fourteen vantage points, all
    derived from surveyed geometry so none of them flatter.
 
-3. **Two researched facts not yet built.** Both verified from sources, see the
-   comment block above `LANDMARKS` in `data/process.py`:
-   - Ngee Ann City's podium is modelled on the Great Wall and clad in 3.8m by
-     3.2m African Red polished granite panels. We draw a plain podium.
-   - Hilton Singapore Orchard is **two** towers, 36 storeys at 144m and 40 at
-     152m. We draw one mass.
+3. **Both of those researched facts are BUILT** as of 2026-07-28, and checking
+   the sources again corrected two things this file had recorded wrongly — the
+   granite panels are the towers' module, not the podium's, and the towers are
+   granite rather than glass. See the section above. The next researched-but-
+   unbuilt item is **The Centrepoint**, described further down.
 
-4. **The open ratchets.** `P1b` 97 and `T1` 7, both target 0. Mostly traffic
-   signal poles, arms and heads over carriageways. `pruneCarriageway` cannot
-   reach them because street furniture is built after it runs — see the comment
-   on that function. Closing this means deciding, deliberately, what each kind of
-   furniture may hang over a road. Do not do it by loosening an allowlist.
+4. **The open ratchets.** `P1b` 76 and `T1` 5 on the region, `P1b` 56 and `T1` 6
+   on Orchard, all target 0. Three placement bugs were closed on 2026-07-28 (see
+   the section above) and NONE of it was bought by exempting anything. What is
+   left is mostly **53 building masses** standing in carriageways — one merged
+   BufferGeometry each, 3m to 163m tall — which is a question for process.py's
+   corridor push, not for street furniture. Do not close the rest by loosening
+   an allowlist.
 
 ## Six bug patterns worth hunting on sight
 
