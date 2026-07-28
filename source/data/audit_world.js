@@ -84,7 +84,16 @@ window.__auditWorld = async function auditWorld() {
       //   The waiting cab at a taxi rank was hung 2.6m toward the road,
       //   unchecked. A rank is a lay-by, so the cab is sited at the kerb or the
       //   rank is built without it.
-      P1b: 76, T1: 5,
+      // P1b 76 -> 28 and T1 5 -> 4 on 2026-07-28. Most of that drop is the
+      // CHECK being corrected, not the world improving, and it is recorded that
+      // way deliberately: P1b had a ceiling and no floor, so the buried base of
+      // every building on a grade counted as structure standing in a road. 45
+      // of the 51 building masses it was reporting were underground, 36 of them
+      // by more than three metres and one by 20.6m. Only 2 of the drop is real
+      // geometry moving (building edges cleared against real carriageways in
+      // process.py). What is left is 6 building masses and 22 props, and those
+      // are genuine.
+      P1b: 28, T1: 4,
       // proportional to a world with 1,932 buildings and 4,392 roads
       // P4 333 -> 360 and P1b 177 -> 179 on the day the Civic District landmarks
       // got real massing. Both are consequences of that, not new defects:
@@ -355,7 +364,24 @@ window.__auditWorld = async function auditWorld() {
         v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
         if (v.y < minY) minY = v.y;
         if (v.y > maxY) maxY = v.y;
-        if (v.y - (terr ? terr.at(v.x, v.z) : 0) > RIDE_HEIGHT) continue;
+        // The envelope a rider actually occupies has a FLOOR as well as a
+        // ceiling, and this only had a ceiling.
+        //
+        // Buildings are seated on footingY -- the lowest ground under the whole
+        // footprint, sunk a further 0.9m -- so on a grade the uphill end is
+        // deliberately buried, which this project chose on purpose because "a
+        // building cut into a slope is invisible from outside". Orchard falls
+        // 46m. The result was that the buried BASE of a building counted as
+        // structure standing in a carriageway: measured, 45 of the 51 building
+        // masses reported here were underground, 36 of them by more than three
+        // metres, one by 20.6m. Nothing can encounter a wall 20m under a road.
+        //
+        // pruneCarriageway has always had this floor (`up < 0.3`) and P1b never
+        // did, so the two have been disagreeing about the same geometry. The
+        // prune is the one that is right. Geometry that rises THROUGH the road
+        // still has vertices in the band and is still caught.
+        const up = v.y - (terr ? terr.at(v.x, v.z) : 0);
+        if (up > RIDE_HEIGHT || up < -0.3) continue;
         n++;
         // service lanes are skipped for the same reason P5 skips them: a hotel
         // set-down or a loading bay is what a service road is for
@@ -433,10 +459,10 @@ window.__auditWorld = async function auditWorld() {
     // arclengths to LTA's surveyed positions, with their legs searched outward
     // until clear and only their genuinely-overhead parts exempt. The world got
     // cleaner than the number it inherited, so the number follows it down.
-    window.__p1bAll = Object.entries(bad).sort((a, b) => b[1] - a[1]);
-    // 124 -> 56 on 2026-07-28: see the world override above for the three
-    // placement bugs behind it.
-    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 56,
+    // 124 -> 56 -> 17 on 2026-07-28. See the world override above: the first
+    // step was three placement bugs, the second was giving this check a FLOOR
+    // as well as a ceiling.
+    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 17,
         Object.entries(bad).sort((a, b) => b[1] - a[1]).slice(0, 6)
           .map(([k, v2]) => `${v2}x ${k}`).join('  ') || 'none', ex);
   }

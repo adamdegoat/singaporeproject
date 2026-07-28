@@ -164,13 +164,60 @@ six ribs, eight balusters and totem are each counted.
   rank is a lay-by, so the cab is sited at the kerb or the rank is built without
   it (`ranksWithNoCab`).
 
-Budgets are now P1b 76 / T1 5 on the region and P1b 56 / T1 6 on Orchard. **Not
-a pass: the target is 0.** What remains is 53 building masses standing in
-carriageways (single merged BufferGeometries, 3m to 163m tall, which is a
-process.py corridor-push question, not a furniture one) and about 23 assorted
-props. Cost: **1740k triangles and 603 draw calls, against 1742k and 613 before**
--- ten fewer draw calls, because entrances that used to be built in the road are
+Cost: **1740k triangles and 603 draw calls, against 1742k and 613 before** --
+ten fewer draw calls, because entrances that used to be built in the road are
 now built where they can be batched with their neighbours.
+
+### Then P1b 76 -> 28, and most of that was the check, not the world
+
+The "53 building masses standing in carriageways" turned out to be almost
+entirely an artefact of the check, and finding that out cost two wrong theories
+that are worth writing down so nobody pays for them again.
+
+**Wrong theory 1: the edges were never cleared.** True, and nearly useless.
+process.py clears VERTICES in three passes and nothing looks at the wall
+BETWEEN two cleared vertices; audit_roads.py has printed "building EDGES inside
+a carriageway: 106" the whole time. Clearing them the obvious way -- walk each
+edge at a metre, push what is inside out to the kerb, insert it into the ring --
+made things worse: 2,230 vertices across 125 buildings, the scene file 4%
+bigger, and self-crossing footprints from 6 to 68 with 31 beyond a
+single-vertex repair. **383 of the 413 crossings are into SERVICE roads**, which
+is a hotel set-down or a loading bay under a porte-cochere, and the audit has
+always skipped service roads while the fix did not. So it was shoving buildings
+out of their own driveways. Scoped to real carriageways it inserts 144 vertices
+across 5 buildings, keeps the ring-fold count at the baseline 6 by reverting any
+building whose repair would fold it, and moves P1b by **2**.
+
+**Wrong theory 2: our invented road widths are too wide.** Plausible -- the
+accuracy ledger lists road width under INVENTED, there are three width tags in
+the whole bbox and all three are on footpaths. It measures as false: only 2 road
+samples in the region are drawn wider than the gap between the buildings either
+side. **The test was also circular** and would have been worth little either
+way, because the vertex passes have already pushed every vertex out to the
+corridor boundary, so the gap is clear by construction. A measurement taken
+after the thing that would hide the effect is not a measurement.
+
+**What it actually was: P1b had a ceiling and no floor.** It skipped vertices
+ABOVE ride height and never skipped ones below the ground. Buildings are seated
+on `footingY` -- the lowest ground under the whole footprint, sunk 0.9m -- so on
+a grade the uphill end is deliberately buried, a decision this file already
+defends as "invisible from outside", and Orchard falls 46m. So the buried BASE
+of a building was being counted as structure standing in a road: measured, **45
+of the 51 building masses were underground, 36 of them by more than three metres
+and one by 20.6m.** `pruneCarriageway` has always had that floor (`up < 0.3`)
+and P1b never did, so the two have been disagreeing about the same geometry for
+as long as both existed, and the prune is the one that is right.
+
+Getting there took three passes of "print the thing, not a number near the
+thing". The finding list is capped at 8 examples, so the first look at 13 T1
+hits saw 8 and concluded none were near the changed buildings. Then a parallel
+probe was written that measured 131 where the check said 53, because it was not
+the check. Only reading the check's OWN hit heights answered it.
+
+Budgets are now **P1b 28 / T1 4** on the region and **P1b 17 / T1 6** on
+Orchard. **Not a pass: the target is 0.** What is left is 6 building masses and
+22 props — footbridge stair towers that still cannot find clear ground, their
+parapets, taxi queue-rail posts, and a handful of pedestrian parts.
 
 ## Shopfronts, and the count that was lying
 
@@ -807,13 +854,13 @@ side; Funan, Marina Square, Bras Basah Complex on the other. Roughly 96 of the
    granite rather than glass. See the section above. The next researched-but-
    unbuilt item is **The Centrepoint**, described further down.
 
-4. **The open ratchets.** `P1b` 76 and `T1` 5 on the region, `P1b` 56 and `T1` 6
-   on Orchard, all target 0. Three placement bugs were closed on 2026-07-28 (see
-   the section above) and NONE of it was bought by exempting anything. What is
-   left is mostly **53 building masses** standing in carriageways — one merged
-   BufferGeometry each, 3m to 163m tall — which is a question for process.py's
-   corridor push, not for street furniture. Do not close the rest by loosening
-   an allowlist.
+4. **The open ratchets.** `P1b` 28 and `T1` 4 on the region, `P1b` 17 and `T1` 6
+   on Orchard, all target 0. What is left is small and named: footbridge stair
+   towers that still cannot find clear ground within 26m, their parapets, taxi
+   queue-rail posts, six building masses, and some pedestrian parts. Do not
+   close the rest by loosening an allowlist — and read the section above before
+   touching process.py's corridor push, because two obvious theories about it
+   were built, measured and thrown away.
 
 ## Six bug patterns worth hunting on sight
 

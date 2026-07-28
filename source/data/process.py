@@ -630,16 +630,20 @@ def main():
         return math.dist((px, pz), (cx, cz)), cx, cz
 
     corridors = []
+    corridor_meta = []                 # same segments, carrying name and class
     for r in roads:
         if r["k"] in ("footway", "pedestrian"):
             continue
         clear = r["w"] / 2 + 1.2          # half the carriageway plus a kerb
         for i in range(len(r["p"]) - 1):
             corridors.append((r["p"][i], r["p"][i + 1], clear))
+            corridor_meta.append((r["p"][i], r["p"][i + 1], clear,
+                                  r.get("n"), r["k"]))
     if axis:
         aclear = 16.0 / 2 + 2.0
         for i in range(len(axis) - 1):
             corridors.append((axis[i], axis[i + 1], aclear))
+            corridor_meta.append((axis[i], axis[i + 1], aclear, AXIS_NAME, "axis"))
 
     # A spatial hash over the corridors. Testing every vertex against all 6,587
     # of them is 300 million distance calculations and takes about twenty
@@ -657,13 +661,20 @@ def main():
     def corridors_near(px, pz):
         return cgrid.get((int(px // CGRID_CELL), int(pz // CGRID_CELL)), ())
 
-    def clear_vertex(px, pz):
+    def clear_vertex(px, pz, tol=0.0):
         """Slide a vertex out of every corridor it is inside. Returns the point
-        and whether it moved."""
+        and whether it moved.
+
+        `tol` is how far inside a corridor a point may be before it counts as
+        being in it. It exists for the EDGE pass below: a wall that runs
+        alongside a kerb has midpoints a few centimetres inside it constantly,
+        from rounding and from an edge being the chord of a curved corridor, and
+        treating those as crossings inserted 6,209 vertices where 106 edges
+        actually cross and grew the scene file by 10%."""
         moved = False
         for (a, c, clear) in corridors_near(px, pz):
             d, cx, cz = seg_dist(px, pz, a[0], a[1], c[0], c[1])
-            if d < clear and d > 1e-6:
+            if d < clear - tol and d > 1e-6:
                 nx, nz = (px - cx) / d, (pz - cz) / d
                 px, pz = cx + nx * clear, cz + nz * clear
                 moved = True
@@ -792,6 +803,100 @@ def main():
                 if _segs_cross(ring[i], ring[(i + 1) % n], ring[j], ring[(j + 1) % n]):
                     return True
         return False
+
+    # ---- and now the EDGES, on REAL carriageways only ------------------------
+    # Every pass above moves VERTICES, so a wall between two cleared vertices can
+    # still cut through a corridor. audit_roads.py has been printing "building
+    # EDGES inside a carriageway: 106" the whole time while the vertex passes
+    # reported themselves clean, and those edges are most of what P1b still
+    # counts as building masses standing in a road.
+    #
+    # The first version of this cleared edges against EVERY corridor and was
+    # measured to be worse than the problem: 2,230 vertices inserted across 125
+    # buildings, the scene file 4% bigger, and self-crossing footprints from 6
+    # to 68 with 31 having no single-vertex repair. This file already records
+    # what a self-crossing ring costs -- it confuses every point-in-polygon test
+    # built on it, including the collision grid.
+    #
+    # The reason was scope, not method. Sampling every building edge showed 413
+    # crossings deeper than 0.6m and **383 of them are into SERVICE roads**,
+    # which is a hotel set-down or a loading bay under a porte-cochere and is
+    # what a service road is for. The audit has always skipped service roads
+    # here; the fix was not. So it was shoving buildings out of their own
+    # driveways and folding their rings to do it.
+    #
+    # Against real carriageways only there are 30, and they are chords cutting
+    # the corner of a bend or a junction, which is what a simplified ring does
+    # between two vertices that were each pushed straight out.
+    edge_corr = [(a, c, cl) for (a, c, cl, _n, k) in corridor_meta
+                 if k not in ("service", "service_link")]
+    ecg = {}
+    for seg in edge_corr:
+        (ax, az), (bx, bz), cl = seg
+        for gx in range(int((min(ax, bx) - cl) // CGRID_CELL),
+                        int((max(ax, bx) + cl) // CGRID_CELL) + 1):
+            for gz in range(int((min(az, bz) - cl) // CGRID_CELL),
+                            int((max(az, bz) + cl) // CGRID_CELL) + 1):
+                ecg.setdefault((gx, gz), []).append(seg)
+
+    def clear_edge_pt(px, pz, tol=0.6):
+        """Slide a point out of every REAL carriageway it is inside. `tol` is
+        how far in it may be first: a wall running along a kerb grazes it by
+        centimetres constantly, from rounding and from an edge being the chord
+        of a curved corridor, and treating those as crossings is what inserted
+        thousands of needless vertices."""
+        moved = False
+        for (a, c, cl) in ecg.get((int(px // CGRID_CELL), int(pz // CGRID_CELL)), ()):
+            d, cx, cz = seg_dist(px, pz, a[0], a[1], c[0], c[1])
+            if d < cl - tol and d > 1e-6:
+                nx, nz = (px - cx) / d, (pz - cz) / d
+                px, pz = cx + nx * cl, cz + nz * cl
+                moved = True
+        return px, pz, moved
+
+    edge_pts, edge_b, edge_folded = 0, 0, 0
+    for b in buildings:
+        # NOT `ring` -- that is a function defined in this same scope, and
+        # binding it here makes it local for the whole of main(), which broke
+        # the footprint reader 570 lines earlier. Same shadowing class as the
+        # heightfield loop variable already recorded in NEXT.md.
+        bring = b["p"]
+        n = len(bring)
+        out = []
+        touched = False
+        for i in range(n):
+            a = bring[i]
+            c = bring[(i + 1) % n]
+            out.append(a)
+            L = math.dist(a, c)
+            if L < 1.2:
+                continue
+            steps = int(L // 1.0)
+            for k in range(1, max(1, steps)):
+                t = k / steps
+                mx = a[0] + (c[0] - a[0]) * t
+                mz = a[1] + (c[1] - a[1]) * t
+                px, pz, moved = clear_edge_pt(mx, mz)
+                if moved:
+                    out.append([round(px, 1), round(pz, 1)])
+                    edge_pts += 1
+                    touched = True
+        # A FAILED REPAIR MUST NOT SHIP DAMAGE. Pushing a midpoint
+        # perpendicular to a corridor can move it past its own neighbours where
+        # a wall meets the road at a shallow angle, folding the ring -- and a
+        # self-crossing ring confuses every point-in-polygon test built on it,
+        # including the collision grid. If the insertion folds a ring that was
+        # sound, keep the original and count it: a wall clipping a kerb is a
+        # smaller defect than a footprint that lies about its own interior.
+        if touched:
+            if _self_crossing(out) and not _self_crossing(bring):
+                edge_pts -= sum(1 for q in out if q not in bring)
+                edge_folded += 1
+                continue
+            b["p"] = out
+            edge_b += 1
+    print(f"  edge clearance: inserted {edge_pts} vertices across {edge_b} buildings"
+          + (f", {edge_folded} left alone (the fix would fold the ring)" if edge_folded else ""))
 
     # SG_NO_RING_REPAIR=1 rebuilds without this, so its effect can be measured
     # rather than argued about.
