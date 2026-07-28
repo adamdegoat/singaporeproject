@@ -614,6 +614,26 @@ export class Crowd {
           if (mask2 && k2 < 32 && !(mask2 & (1 << k2))) shift = 0;
         }
       }
+      // AND ASK THE ROAD ITSELF, not only the mask.
+      //
+      // The mask is precomputed per bucket at WHOLE-METRE offsets (k2 is
+      // rounded, capped at 32), so a kerb line that falls between two metres
+      // reads as clear when it is not: measured 2026-07-29, walkers whose own
+      // offset was legitimately on the pavement were drawn on the tarmac by
+      // their dodge, and riding right up to one it stayed there -- unlike the
+      // D33 overlaps, which clear as soon as anyone is near enough to see.
+      // Same family as every other bug in this file where two descriptions of
+      // one thing disagree: the mask says where the walker MAY stand, the road
+      // index says where it IS.
+      //
+      // Tested against the PREVIOUS frame's drawn position, the same one-frame
+      // lag the gait and the crowd separation already use, and it only sets
+      // the target -- the rate limiter below still owns how fast shift moves,
+      // so this cannot become the fourth teleport in this file.
+      if (!pr.crossing && shift !== 0 && pr.dx !== undefined
+          && window.__onRoad && window.__onRoad(pr.dx, pr.dz, -0.8)) {
+        shift = 0;
+      }
       // AND EASE INTO IT. Setting shift to 0 the instant the effective offset
       // enters a blocked bucket is a jump of the whole dodge in one frame:
       // measured, a walker's parameters moved 0.25m while its DRAWN position

@@ -173,6 +173,48 @@ for researching before modelling rather than after:
   Filter the probe, do not truncate it — "print the thing, not a number near
   the thing" applies to the harness as much as to the world.
 
+### THE ONE OPEN BUG, found and NOT fixed: D36, and it is user-visible
+
+**A pedestrian stands in the carriageway, right beside you, and stays there.**
+Diagnosed 2026-07-29, unfixed, and this is the first thing to pick up.
+
+D36 has been dismissed in this file before as "walkers mid-walk-out at the
+instant of the snapshot, which is the correction working". **That is wrong, and
+the test that proves it is the same one that cleared D33:** ride to one.
+
+    node /tmp/d36b.mjs style probe -- window.__teleport onto the walker, then
+    watch window.__crowdPositions() and window.__onRoad over five seconds
+
+D33's overlaps clear within four seconds of the ride arriving. **D36's do
+not.** Walker index 12 at 823,7271 on Orchard Road sat on the tarmac at 0-1m
+from the ride for the whole five seconds and drifted 0.9m, when the walk-out
+correction should move 1.1 m/s. The count also GROWS with time (7 to 18 over
+7.5s), so it is accumulating, not settling.
+
+What is ruled out, by measurement:
+
+  * It is not the dodge/separation shift. Cancelling `shift` outright against
+    a live road test changed nothing for walker 12.
+  * It is not the clear-mask being coarse -- though that WAS a real second
+    defect and is now fixed (see below). Fixing it did not move D36.
+
+Where to go next: `pr.offWant` is set by the walk-out test and consumed by a
+rate-limited step on `pr.off`. The walker is not moving at anything like
+1.1 m/s, so either the test is not firing for this walker (check the
+`(i + tick) & 7` stagger against however far `tick` has advanced) or `pr.off`
+is being overwritten each frame by whatever recomputes the band. **Print
+pr.off, pr.offWant and the drawn position for ONE walker across consecutive
+frames** -- this file's own rule, print the thing rather than a number near
+it, and note that `__crowdState()` and `__crowdPositions()` do NOT report the
+same point, which is what made the first two probes disagree.
+
+**Fixed on the way past:** the dodge guard trusted a clearance mask
+precomputed at WHOLE-METRE offsets (`k2` is rounded and capped at 32), so a
+kerb falling between two metres read as clear. It now also asks the road index
+about the previous frame's DRAWN position, one-frame lag, target only -- the
+rate limiter still owns the speed, so it cannot become the fourth teleport in
+that file. Verified: B1 2.73 m/s, B3 0, 40/40 on orchard and world.
+
 - **D33 is scoped to what can be seen, and it is a measurement.** Overlapping
   walkers existed only 816m-3.7km from the ride, NONE inside the 105m draw
   range; riding onto one cleared it in four seconds while it was still behind

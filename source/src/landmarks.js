@@ -2181,7 +2181,133 @@ function peranakanPlace(api, b) {
   }
 }
 
+// TONG BUILDING, 302 Orchard Road. Researched 2026-07-29 by agent against
+// Archello, Wikipedia (Timothy Seow), OneMap and 2024 transaction reporting.
+// The brief was wrong twice and the report said so: the building was NEVER
+// demolished or replaced (September 2024 sales describe the same 1978 tower),
+// and it is at the Orchard / Mount Elizabeth junction wedged between Lucky
+// Plaza and Paragon, not at Claymore.
+//
+// Published: 19 storeys, 1978, Timothy Seow & Partners, site 2,265 m2, GFA
+// 11,094 m2, typical floor ~638 m2. Height UNPUBLISHED (one listing site says
+// 182ft, single low-quality source, not used) so the mapped 64.6m stands.
+//
+// The published DESIGN IDEA is the whole recipe: four tile-clad corner
+// service cores read as solid vertical shafts with curtain wall infilling
+// between them, which is what gives column-free floors. So each elevation is
+// solid band | glass | solid band, and it is the only pure office tower with
+// no shopping podium on this stretch -- a plain glazed box standing back
+// behind a forecourt between two malls.
+function tongBuilding(api, b) {
+  const ob = orientedBox(b.p);
+  const H = b.h;
+  const glass = api.mat.towerGlass, core = api.mat.warmStone;
+  // NO PODIUM. The forecourt onto Orchard Road replaces it, so the mass runs
+  // straight to the ground at one footprint.
+  api.world.add(api.extrude(b.p, H, glass));
+  // the four corner cores, as solid shafts on the corners of the plan
+  const c = [ob.cx, ob.cz];
+  for (let i = 0; i < b.p.length; i++) {
+    const [px, pz] = b.p[i];
+    const dx = px - c[0], dz = pz - c[1], dl = Math.hypot(dx, dz) || 1;
+    // a shaft centred slightly inboard of each vertex, so it reads as part of
+    // the mass rather than as a pier bolted to it
+    const sx = px - (dx / dl) * 1.7, sz = pz - (dz / dl) * 1.7;
+    if (onCarriageway(sx, sz, 0.3)) continue;
+    const sh = new THREE.Mesh(new THREE.BoxGeometry(4.6, H, 4.6), core);
+    sh.position.set(sx, api.footingY(b.p) + H / 2, sz);
+    sh.rotation.y = -ob.ang;
+    sh.castShadow = true; sh.receiveShadow = true;
+    autoUV(sh, core);
+    api.world.add(sh);
+  }
+  // horizontal floor-line mullions across the glazed field
+  const floors = Math.max(8, Math.round(H / 3.5));
+  for (let k = 1; k < floors; k++) {
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.012), 0.16, k * (H / floors)),
+              api.mat.trim, c[0], c[1]);
+  }
+}
+
+// THE NCO CLUB, 32 Beach Road. Researched 2026-07-29 by agent against
+// BiblioAsia (NLB), roots.gov.sg, thencoclub.com and Wikipedia. Corrections
+// the report made, unprompted: it is the former NAAFI BRITANNIA CLUB, renamed
+// SAF NCO Club in 1974 -- "Nissen" in the brief was a confusion with the
+// Nuffield Swimming Pool it overlooked -- and it is at Beach Road / Bras
+// Basah, 2.5km from Orchard. That last one it flagged as out of scope; it is
+// NOT, because this world covers Bras Basah, which is why the building is in
+// the scene file at all.
+//
+// Published: 3 storeys (NLB Infopedia says two; BiblioAsia and the operator
+// both say three, so three), built 1951-52, opened 17 Dec 1952, Palmer &
+// Turner -- the same firm as MacDonald House. Gazetted 9 Oct 2002, one of the
+// first post-war Modern buildings conserved here. Height UNPUBLISHED.
+//
+// The form is deliberately LOW and horizontal: a rust-tiled corner block with
+// a pitched GREEN roof and an open terrace running the entire length, built
+// as a counterpoint to Raffles Hotel across the road. The mapped 30m is a
+// three-storey building, so the recipe overrides it the way The Centrepoint's
+// does -- a storey count is a fact and a default is not.
+function ncoClub(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const FLOOR = 4.0, H = FLOOR * 3;
+  const rust = api.mat.clayTile, green = api.mat.jadeRoof, pale = api.mat.paleStone;
+  api.world.add(api.extrude(b.p, H, rust));
+  // the pitched green roof, low and oversailing
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.04), 0.5, H), green, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.84), 1.4, H + 0.5), green, ob.cx, ob.cz);
+  // THE TERRACES, running the entire length on every floor: a slab and a rail
+  // per storey, which is what makes the elevation read as horizontal bands
+  // rather than as a punched-window grid.
+  for (let k = 1; k <= 2; k++) {
+    const y = g0 + k * FLOOR;
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.055), 0.28, k * FLOOR), pale, ob.cx, ob.cz);
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.052), 0.12, k * FLOOR + 0.95), pale, ob.cx, ob.cz);
+    // the balusters between slab and rail
+    const per = perimeterOf(b.p);
+    const n = Math.max(12, Math.round(per / 1.6));
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n;
+      const p2 = alongRing(b.p, t, 1.052, ob);
+      if (!p2) continue;
+      const bal = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.85, 5), pale);
+      bal.position.set(p2[0], y + 0.55, p2[1]);
+      bal.castShadow = false; bal.receiveShadow = true;
+      api.world.add(bal);
+    }
+  }
+}
+
+// perimeter of a ring, and a point a fraction of the way round it -- used by
+// the NCO Club's terrace rails, which follow the plan rather than a box
+function perimeterOf(p) {
+  let d = 0;
+  for (let i = 0; i < p.length; i++) {
+    const a = p[i], c = p[(i + 1) % p.length];
+    d += Math.hypot(c[0] - a[0], c[1] - a[1]);
+  }
+  return d;
+}
+function alongRing(p, t, grow, ob) {
+  const total = perimeterOf(p);
+  let want = t * total, acc = 0;
+  for (let i = 0; i < p.length; i++) {
+    const a = p[i], c = p[(i + 1) % p.length];
+    const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+    if (acc + L >= want) {
+      const f = (want - acc) / (L || 1);
+      const x = a[0] + (c[0] - a[0]) * f, z = a[1] + (c[1] - a[1]) * f;
+      return [ob.cx + (x - ob.cx) * grow, ob.cz + (z - ob.cz) * grow];
+    }
+    acc += L;
+  }
+  return null;
+}
+
 export const RECIPES = [
+  [/^tong building/i, tongBuilding],
+  [/nco club/i, ncoClub],
   [/peranakan place/i, peranakanPlace],
   [/^macdonald house|^macdonald hse/i, macdonaldHouse],
   [/^liat tower/i, liatTowers],
