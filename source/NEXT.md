@@ -1372,6 +1372,22 @@ looking for anything cleverer.
 
 ## Leave nothing running
 
+**A `pgrep -f` wait-loop can match ITSELF and never exit.** Twenty-three shells
+were found spinning after fourteen hours, each one
+
+    until ! pgrep -f "probe.mjs|defects.mjs"; do sleep 8; done
+
+waiting for a probe that had finished long before. `pgrep -f` matches against a
+full command line, and the pattern string is IN the waiting shell's own command
+line, so the shell finds itself, decides the probe is still running, and sleeps
+again forever. Every one of them woke every 8 to 12 seconds all night.
+
+Use a marker the pattern cannot contain -- match on the interpreter and script
+path (`pgrep -f "node .*defects\.mjs"`), or wait on the PID, or just run the
+thing in the foreground. `bash data/tidy.sh` kills stray BROWSERS and knew
+nothing about these.
+
+
 `bash data/tidy.sh` after any batch of checks. Every gate here drives a headless
 browser rendering a 60fps WebGL page, which holds two CPU cores, and a browser
 that outlives its script keeps doing it. Left overnight it cooks the laptop.

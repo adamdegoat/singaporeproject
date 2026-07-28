@@ -1228,7 +1228,19 @@ window.__auditWorld = async function auditWorld() {
               for (const p of list)
                 if ((p.x - x) ** 2 + (p.z - z) ** 2 < 1.4 * 1.4) { hit = p; break; }
             }
-          if (hit) { blocked++; if (ex.length < 8) ex.push(`${hit.sig} on "${r.n || '(unnamed)'}" at ${Math.round(hit.x||0)},${Math.round(hit.z||0)} y=${(hit.y||0).toFixed(1)} up=${(hit.y - (terr?terr.at(hit.x,hit.z):0)).toFixed(1)} [verts=${hit.o&&hit.o.geometry.attributes.position.count} col=${hit.o&&hit.o.material&&hit.o.material.color?hit.o.material.color.getHexString():'-'}]`); }
+          if (hit) {
+            blocked++;
+            // height above ground and vertex count, because the two questions
+            // always asked of a T1 finding are "how high is it" and "is it a
+            // merged tile" -- a tile is out of pruneCarriageway's reach and a
+            // single mesh is not.
+            if (ex.length < 8) {
+              const up9 = hit.y - (terr ? terr.at(hit.x, hit.z) : 0);
+              ex.push(`${hit.sig} on "${r.n || '(unnamed)'}" at ${Math.round(hit.x || 0)},`
+                + `${Math.round(hit.z || 0)} up=${up9.toFixed(1)}m`
+                + ` verts=${hit.o && hit.o.geometry.attributes.position.count}`);
+            }
+          }
         }
       }
     }
@@ -1505,8 +1517,6 @@ window.__auditWorld = async function auditWorld() {
         if (OVERHANGS.has(p.sig)) continue;
         if (!inWater(p.x, p.z)) continue;
         inW++;
-        window.__w2sig = window.__w2sig || {};
-        window.__w2sig[p.sig] = (window.__w2sig[p.sig] || 0) + 1;
         if (exW2.length < 6) exW2.push(`${p.sig} in open water at ${p.x | 0},${p.z | 0}`);
       }
       const vv2 = new T.Vector3();

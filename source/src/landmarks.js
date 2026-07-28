@@ -271,6 +271,10 @@ function ionOrchard(api, b) {
   // along the frontage, and on this site part of it lands in Orchard Road, so
   // each one is tested where it actually stands. `reach` was being discarded
   // here with `void reach`, which is how they came to be in the carriageway.
+  // It is used properly now (it sets fx/fz above); the discard statement that
+  // survived the fix has been removed, because a dead `void x` sitting under a
+  // comment warning about dead `void x` is how the next reader concludes the
+  // bug is still live.
   for (const sgn of [-1, 1]) {
     let off = 17;
     while (off > 7 && onCarriageway(fx - sw.nz * sgn * off, fz + sw.nx * sgn * off)) off -= 2.5;
@@ -279,7 +283,6 @@ function ionOrchard(api, b) {
     col.position.set(fx - sw.nz * sgn * off, 10, fz + sw.nx * sgn * off);
     col.castShadow = true; api.world.add(col);
   }
-  void reach;
   // the LED media wall, one of the largest in Asia and the thing people photograph
   const media = new THREE.Mesh(
     new THREE.PlaneGeometry(Math.min(58, ob.halfLong * 1.5), 13),
@@ -616,8 +619,10 @@ function merlion(api, b) {
   const plinth = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 7.5, 2.2, 16), api.mat.conc);
   plinth.position.set(ob.cx, base + 1.1, ob.cz);
   plinth.receiveShadow = true; api.world.add(plinth);
-  // EAST is +x in this projection
-  const face = 0;
+  // EAST is +x in this projection, which is why the head, chest and jet are all
+  // offset in +x below. It used to be held in a `face` constant that nothing
+  // read and a `void face` at the end -- the exact dead-variable pattern this
+  // file warns about three lines from here in ionOrchard.
   const body = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2.6, H * 0.62, 12), white);
   body.position.set(ob.cx, base + 2.2 + H * 0.31, ob.cz);
   body.castShadow = true; api.world.add(body);
@@ -642,7 +647,6 @@ function merlion(api, b) {
   jet.position.set(ob.cx + 1.0 + 3.4, base + 2.2 + H * 0.78, ob.cz);
   jet.rotation.z = Math.PI / 2 - 0.16;
   api.world.add(jet);
-  void face;
 }
 
 // MARINA BAY SANDS. The building the whole city is recognised by, so the
