@@ -54,6 +54,12 @@ def build_ledger(d):
         # the span are all real. Checking one tag in one source is not checking.
         (f"ERP gantries ({n('gantries')})",
          "LTA Gantry layer, data.gov.sg, cross-checked against OSM toll=yes"),
+        # Also moved out of INVENTED on 2026-07-28, and for the same reason: the
+        # old line said "NOT MAPPED in OSM here (checked highway=street_lamp)"
+        # and a lamp went in every 96m. LTA publishes all 126,144 lamp posts in
+        # Singapore. Two entries in this ledger were wrong in the same way on
+        # the same day, both concluded from one tag in one source.
+        (f"street lamps ({n('lamps')})", "LTA Lamp Post layer, data.gov.sg"),
         (f"street trees ({n('trees')})", "OSM natural=tree and tree_row"),
         (f"overhead bridges ({n('bridges')})", "OSM footway + bridge=yes"),
         (f"covered walkways ({n('covered')})", "OSM footway + covered=yes"),
@@ -71,6 +77,13 @@ def build_ledger(d):
         (f"lane counts ({lanes} of {len(R)} roads)", "OSM lanes / turn:lanes"),
         (f"pavement sides ({sw_tagged} of {len(R)} roads)",
          "OSM sidewalk=both/left/right/no, so kerbs only go where a pavement exists"),
+        # This sat under INVENTED reading "continuous down the axis; needs
+        # dual-carriageway tags" long after the code stopped doing that.
+        # `hasMedianAt` follows the one-way pairs OSM maps, which IS the
+        # dual-carriageway tag the fix asked for. A ledger that is hand-typed
+        # goes stale in the other direction too: it can under-report as easily
+        # as it flatters.
+        ("central median", "only where OSM maps a one-way pair, not continuous"),
         (f"landmark massing ({massed})", "researched descriptions"),
         ("terrain", "elevation sampled along road centrelines, rooftop spikes filtered"),
     ]
@@ -86,12 +99,8 @@ def build_ledger(d):
         (f"road widths ({len(R) - widths} of {len(R)})",
          "inferred from lane count, or a default per road class",
          f"only {widths} roads carry an OSM width tag; the rest needs imagery"),
-        ("street lamps", "at intervals along each road",
-         "NOT MAPPED in OSM here (checked highway=street_lamp)"),
         ("pedestrian railings", "continuous along both kerbs",
          "OSM barrier=fence/guard_rail where mapped"),
-        ("central median and planting", "continuous down the axis",
-         "real Orchard has median only in parts; needs dual-carriageway tags or imagery"),
         (f"pavement widths, and sides on the other {len(R) - sw_tagged} roads",
          "fixed offset from the kerb, assumed both sides where untagged",
          "no OSM tag records pavement WIDTH; sides are now real where tagged"),

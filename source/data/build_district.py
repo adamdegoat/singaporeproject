@@ -155,6 +155,7 @@ def main():
     # and so are a separate step. They were placed by rule at two invented
     # arclengths until 2026-07-28; see data/gantries.py.
     subprocess.run([sys.executable, os.path.join(HERE, "gantries.py"), d["id"]], check=False)
+    subprocess.run([sys.executable, os.path.join(HERE, "lamps.py"), d["id"]], check=False)
 
     print(f"\nNext: python3 check.py {d['id']}")
 

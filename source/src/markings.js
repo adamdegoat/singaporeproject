@@ -348,10 +348,9 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
             const tx = px + nx * (half + 2.8) * sgn, tz = pz + nz * (half + 2.8) * sgn;
             if (!isBlocked(tx, tz) && claim('tree', tx, tz, 3.0)) trees.add(tx, tz, rand(0.6, 0.9));
           }
-          if (acc % 96 === 0 && !isBlocked(kx, kz) && claim('lamp', kx, kz, 6)) {
-            lamp.push([kx, 3.6, kz, ang]);
-            lampArm.push([kx - nx * 0.9 * sgn, 7.0, kz - nz * 0.9 * sgn, ang, sgn]);
-          }
+          // Lamps used to go in here, every 96 metres. They come from LTA's
+          // published lamp-post layer now — see the block below, and
+          // data/lamps.py. 96 was a number nobody measured.
         }
       }
     }
@@ -413,6 +412,65 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
     im.castShadow = false; im.receiveShadow = true;
     world.add(im);
   }
+  // THE REAL LAMP POSTS.
+  //
+  // LTA publishes all 126,144 of them, so the position is surveyed and the only
+  // thing left to work out is which way the arm points — over the nearest road,
+  // which is what a street lamp is for. Done once for the district, not once per
+  // axis, and only for lamps this pass has not already placed, so a region with
+  // two axes does not get two lamps in every hole.
+  if (!window.__lampsDone) {
+    window.__lampsDone = true;
+    // Its own spatial index. `__roadDirsNear` walks every road in the district
+    // on every call, which is fine for the handful of things that used it and
+    // is fifty million iterations across 2,669 lamps.
+    const LC = 50, lgrid = new Map();
+    for (const r of (data.roads || [])) {
+      if (r.k === 'footway' || r.k === 'pedestrian') continue;
+      for (let i = 0; i < r.p.length - 1; i++) {
+        const a = r.p[i], c = r.p[i + 1];
+        const mnx = Math.min(a[0], c[0]), mxx = Math.max(a[0], c[0]);
+        const mnz = Math.min(a[1], c[1]), mxz = Math.max(a[1], c[1]);
+        for (let cx = Math.floor((mnx - LC) / LC); cx <= Math.floor((mxx + LC) / LC); cx++)
+          for (let cz = Math.floor((mnz - LC) / LC); cz <= Math.floor((mxz + LC) / LC); cz++) {
+            const k = cx + ',' + cz;
+            if (!lgrid.has(k)) lgrid.set(k, []);
+            lgrid.get(k).push([a, c]);
+          }
+      }
+    }
+    const dirAt = (x, z) => {
+      let best = null, bd = Infinity;
+      const cx = Math.floor(x / LC), cz = Math.floor(z / LC);
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+        for (const [a, c] of lgrid.get((cx + i) + ',' + (cz + j)) || []) {
+          const dx = c[0] - a[0], dz = c[1] - a[1], l2 = dx * dx + dz * dz || 1;
+          const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / l2));
+          const d = (x - (a[0] + dx * t)) ** 2 + (z - (a[1] + dz * t)) ** 2;
+          if (d < bd) { bd = d; const L = Math.sqrt(l2); best = [dx / L, dz / L]; }
+        }
+      }
+      return best;
+    };
+    for (const [lx, lz] of (data.lamps || [])) {
+      // `blockedIn` is the parameter; `isBlocked` is an alias declared inside
+      // the per-road loop and is not in scope out here.
+      if (blockedIn(lx, lz)) continue;
+      if (!claim('lamp', lx, lz, 3)) continue;
+      // the arm reaches toward the carriageway: take the road direction here and
+      // decide the side from which way the road actually lies
+      const dir = dirAt(lx, lz);
+      if (!dir) continue;
+      const [ux2, uz2] = dir;
+      const ang2 = Math.atan2(ux2, uz2);
+      const nx2 = -uz2, nz2 = ux2;
+      // whichever side of the lamp the road is on is the side the arm reaches
+      const sgn2 = window.__onRoad && window.__onRoad(lx + nx2 * 4, lz + nz2 * 4, 0) ? -1 : 1;
+      lamp.push([lx, 3.6, lz, ang2]);
+      lampArm.push([lx - nx2 * 0.9 * sgn2, 7.0, lz - nz2 * 0.9 * sgn2, ang2, sgn2]);
+    }
+  }
+
   emit(new THREE.CylinderGeometry(0.09, 0.13, 7.2, 8), MAT.metal, lamp, yaw);
   emit(new THREE.BoxGeometry(0.9, 0.16, 0.4), MAT.trim, lampArm, (r) => {
     p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);

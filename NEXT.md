@@ -139,6 +139,33 @@ was fine while it was a lightbox.
 `data/fps.mjs` and `SG_EXTRA=noshops` on the audit runner are how the cost above
 was attributed: build the world without one subsystem and diff the numbers.
 
+## Street lamps too, and a ledger entry that was stale rather than wrong
+
+Straight after the gantries, the same audit was run over every remaining
+INVENTED line, because the gantry entry failed in a way that could not be a
+one-off: it had concluded "not mapped" from checking ONE tag in ONE source.
+
+- **Street lamps.** The ledger said *NOT MAPPED in OSM here (checked
+  highway=street_lamp)* and put a lamp every 96 metres. **LTA publishes all
+  126,144 lamp posts in Singapore** on data.gov.sg. 2,441 are in this region;
+  1,881 are built, the rest skipped because they fall inside a carriageway we
+  drew too wide or inside other geometry. `data/lamps.py`, wired into
+  `build_district.py` exactly like the gantries. +60k triangles, draw calls
+  unchanged at 603, P1 "props in a carriageway" still zero.
+- **The central median entry was STALE, not wrong.** It read *continuous down
+  the axis; needs dual-carriageway tags* long after `hasMedianAt` started
+  following the one-way pairs OSM maps, which IS that fix. A hand-typed ledger
+  goes stale in BOTH directions: it can under-report a finished feature as
+  easily as it can flatter an unfinished one. The counts in this file are read
+  from the scene for exactly that reason; these prose lines are not, and that is
+  now the weakest part of it.
+
+**Ledger: 21 of 28 feature classes real, up from 18 at the start of the day.**
+
+The rule this establishes, and it is the important part: **"we checked and there
+is no data" is a claim that expires.** Two of the three entries audited today
+were false and one was stale. Re-audit the INVENTED list whenever you touch it.
+
 ## ERP gantries are REAL now, and "not mapped" was wrong a third time
 
 The accuracy ledger said, in writing: *ERP gantries — NOT MAPPED in OSM here
