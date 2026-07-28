@@ -253,6 +253,61 @@ completeness for building heights and floor counts by international standards.
 The way to close the remaining 917 is one building at a time from published
 sources, the way the 49 hand-entered ones were done.
 
+## A vet tool for landmark recipes, and the bug it found in all of them
+
+`node data/landmark.mjs "lucky plaza"` renders the SAME building twice from the
+SAME camera — once with its recipe, once with `?norecipe` forcing it through the
+generic facade family — with `?solo=` building nothing else at all.
+
+It exists because the rule needed a way to look. The rule is that a bespoke
+recipe must be more recognisable than the generic family or it is a regression
+and does not get wired up, and three recipes have been held back under it. But
+judging a recipe inside a full street means fighting the street: four attempts
+put the camera INSIDE the building, then BEHIND the block opposite, then on the
+wrong mass, then behind the Angsana canopy. Every one of those was the harness,
+not the world. **A vet tool that has to fight the scene will lose to it.**
+
+It found real bugs immediately, and one is not confined to my recipes:
+
+- **`slab()` and `crown()` take an ABSOLUTE y0** while every extruded mass is
+  seated on `footingY`. Lucky Plaza's ground is 26m up, so its podium sat
+  correctly on the hill and its bubble lift was drawn from y=0 — buried, with
+  three metres showing. `api.footingY` is exposed now. **Any recipe mixing an
+  extrude with a slab on sloped ground has this**, and Orchard falls 46m.
+- **The tower was silently never drawn.** It was positioned from the oriented
+  box, and for a plan this irregular the box centre lies outside the walls and
+  over Orchard Road, so `slab()` refused it and said nothing. Third time this
+  trap has been hit after the church roof and the library slab. It now searches
+  candidate offsets and requires the point to be inside the FOOTPRINT.
+- **The bubble lift was inside the podium.** `ob.halfShort` stops well short of
+  the real facade on an irregular plan; it walks out from the centroid until it
+  leaves the footprint now.
+
+**And a measurement of mine was wrong in the same old way.** I counted "28 meshes
+near Lucky Plaza, 5 above 40m" in the FULL world and concluded the recipe worked.
+Those were its neighbours. The solo view showed a bare podium. Counting things
+near a target is not counting the target.
+
+## Two recipes, researched by agent and judged against the generic
+
+**Plaza Singapura** and **Lucky Plaza**, from published sources; the reports and
+their URLs are in the recipe comments in `src/landmarks.js`. Both were rendered
+against their generic twin and both are clearly more recognisable, so both are
+wired up.
+
+Notable: height in metres is NOT published for any of the three buildings
+researched — no skyscraper-database entry exists for a Singapore mall. Storey
+counts are. And the research agent for The Centrepoint **corrected a false
+premise in the prompt** rather than answering around it: there is no "Centrepoint
+Suites", the residential is 66 apartments on floors 4-7 of the rear block.
+
+**The Centrepoint is researched but NOT built.** Red gridded cladding panel about
+three storeys tall with an elliptical window cut into it, dark tinted curtain
+wall in a strong mullion grid, ground floor recessed under a flat canopy soffit,
+white-painted concrete on the Cuppage elevation, tree-planted forecourt. 6
+storeys plus 2 basements, opened Nov 1983, full-plot slab and NOT tower-on-
+podium.
+
 ## Density: 460 to 2,200 people, 21 to 90 vehicles
 
 Fourteen matched-angle frames of Orchard Road had ONE pedestrian visible between

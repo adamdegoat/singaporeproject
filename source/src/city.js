@@ -441,6 +441,12 @@ export function buildBuildings(world, data) {
     clearance,
     world, extrude, grow, axis: data.axis || null,
     extrudeGeo, scaleUV,
+    // The height a footprint is SEATED at. Every extruded mass already uses
+    // this internally, but slab() and crown() take an absolute y0, so a recipe
+    // that mixes the two puts its tower at sea level while its podium sits on
+    // the hill. Lucky Plaza's ground is 26m up and its bubble lift was drawn
+    // from y=0, buried with three metres showing.
+    footingY,
     merge: (geo, mat, x, z) => merger.add(geo, mat, x, z),
     // the ground under a point, so a recipe can seat a dome or a spire on the
     // terrain instead of on y=0. Without it every hand-placed piece floats or
@@ -448,9 +454,22 @@ export function buildBuildings(world, data) {
     groundAt: (x, z) => TERRAIN.at(x, z),
     mat: { ...LMAT, trim: MAT.trim, conc: MAT.conc, paving: MAT.paving, metal: MAT.metal },
   };
+  // VET MODES. `?solo=<text>` builds only the buildings whose name contains
+  // that text, and `?norecipe` forces every one of them through the generic
+  // facade family. Together they are the only honest way to apply this
+  // project's own rule — a bespoke recipe that looks WORSE than the generic
+  // must not be wired up — because judging a recipe on its own tells you
+  // nothing, and judging it in a full street means fighting to frame it. Three
+  // attempts at that produced a camera inside the building, a camera behind the
+  // block opposite, and a camera pointed at the wrong mass.
+  const VP = new URLSearchParams(location.search);
+  const SOLO = (VP.get('solo') || '').toLowerCase();
+  const NORECIPE = VP.has('norecipe');
+
   for (const b of data.buildings) {
     const pts = b.p;
     if (pts.length < 3) continue;
+    if (SOLO && !((b.n || '').toLowerCase().includes(SOLO))) continue;
 
     // small and low with no name: a shophouse, which is what fills the lanes
     if (!b.k && b.a < 520 && b.h <= 20 && b.p.length <= 64) {
@@ -460,7 +479,7 @@ export function buildBuildings(world, data) {
     }
 
     // the buildings people navigate by get their real arrangement, not a box
-    const recipe = recipeFor(b.n);
+    const recipe = NORECIPE ? null : recipeFor(b.n);
     if (recipe) {
       recipe(api, b);
       if (hasShopfront(b.n)) addShopfront(world, b, perimeter(pts), merger, clearance);

@@ -250,6 +250,143 @@ function paragon(api, b) {
   crown(api, ob, ob.midU + ob.halfLong * 0.25, ob.midV, tw, tw * 0.8, 70, stone);
 }
 
+// PLAZA SINGAPURA. Researched 2026-07-28; sources in NEXT.md.
+//
+// The 2012 Benoy/RSP revamp is what it looks like now, and its whole identity is
+// one move: undulating WHITE ALUMINIUM RIBBON BANDS curving around the building
+// with unitised glass between them. MERO, who built the facade, list about
+// 6,000 m2 of white aluminium coil "curving around the building" against
+// 9,100 m2 of glass-and-metal panel. Seven retail floors above ground and two
+// below; a 170m frontage to Orchard Road.
+//
+// Height in metres is genuinely not published anywhere — no skyscraper database
+// entry, nothing in the Wikipedia infobox — so this is seven retail floors at
+// mall height, and it is recorded as a storey-derived figure, not a surveyed one.
+function plazaSingapura(api, b) {
+  const ob = orientedBox(b.p);
+  const glass = api.mat.blueGlass;
+  const white = api.mat.paleStone;
+  // the glazed mass
+  api.world.add(api.extrude(b.p, b.h, glass));
+  // The ribbons. Seven of them, alternating deep and shallow so the band
+  // spacing reads as the wave it is rather than as floor lines — a constant
+  // pitch would just look like the storey banding every other mall here has.
+  const bands = 7;
+  for (let i = 0; i < bands; i++) {
+    const t = i / (bands - 1);
+    const y = 2.2 + t * (b.h - 5.0);
+    const out = 1.010 + (i % 2 ? 0.006 : 0.014);
+    const th = i % 2 ? 0.55 : 0.95;
+    api.world.add(api.extrude(api.grow(b.p, out), th, white, y));
+  }
+  // the triangular-grid glass entrance canopy, on the street face
+  const sw = streetward(api, ob);
+  const cw = Math.min(26, ob.halfLong * 1.1);
+  const cx = ob.cx + sw.nx * (ob.halfShort + 1.4);
+  const cz = ob.cz + sw.nz * (ob.halfShort + 1.4);
+  if (!onCarriageway(cx, cz, 0.3)) {
+    const can = new THREE.Mesh(new THREE.BoxGeometry(cw, 0.4, 5.0), api.mat.towerGlass);
+    can.position.set(cx, 7.4, cz);
+    can.rotation.y = Math.atan2(sw.nx, sw.nz) + Math.PI / 2;
+    can.castShadow = true;
+    api.world.add(can);
+  }
+}
+
+// LUCKY PLAZA. Researched 2026-07-28; sources in NEXT.md.
+//
+// Tower on podium, and the two halves look nothing alike: a six-storey retail
+// podium in matte warm grey-beige panel grid, and a slender residential slab
+// running to level 30, off-white, set well back at the rear so from across
+// Orchard Road it reads as a wide box with a thin pale slab rising behind it.
+//
+// The signature is the BUBBLE LIFT: a projecting blue-glass shaft climbing the
+// front facade with a faceted pointed base. Singapore's first glass lifts, and
+// the one thing on this building nobody mistakes for anything else.
+//
+// Height in metres is not published either. 30 storeys, podium 1977, apartments
+// 1981, BEP Akitek. No brand marks: the Far East rooftop logo and the gold
+// lettering are deliberately not reproduced, the same rule the rest of the
+// signage follows.
+function luckyPlaza(api, b) {
+  const ob = orientedBox(b.p);
+  const podium = Math.min(26, b.h * 0.3);
+  const beige = api.mat.warmStone;
+  // the podium, and the horizontal slot-vent band above the shopfronts that
+  // gives away the car park stacked inside it
+  api.world.add(api.extrude(b.p, podium, beige));
+  api.world.add(api.extrude(api.grow(b.p, 1.012), 0.5, api.mat.trim, podium - 3.2));
+  api.world.add(api.extrude(api.grow(b.p, 1.006), 1.6, api.mat.darkMetal || api.mat.trim, podium - 2.6));
+  // GROUND LEVEL HERE. Not zero — Lucky Plaza stands 26m up, and everything
+  // below was drawn from y=0 while the podium was correctly seated, so the
+  // bubble lift was buried with three metres showing. slab() and crown() take
+  // an ABSOLUTE y0; the extruded masses use footingY. Mixing them is the same
+  // "drawn at versus stands on" mistake that had the bike under the road.
+  const base = api.footingY(b.p);
+
+  // the residential slab, set BACK: the tower does not sit over the frontage.
+  //
+  // Positioned from the FOOTPRINT, not from the oriented box. The first version
+  // offset from ob.midU/midV, and for a plan this irregular the box centre sits
+  // outside the walls and over Orchard Road, so slab() refused it and the tower
+  // silently never appeared. This is the trap already written down for the
+  // church roof and the library slab, hit a third time.
+  const sw = streetward(api, ob);
+  const tw = Math.min(22, ob.halfShort * 0.9);
+  let bestU = ob.midU, bestV = ob.midV, found = false;
+  for (const fu of [-0.18, 0, 0.18, -0.34, 0.34]) {
+    for (const fv of [-0.3, 0, 0.3]) {
+      const u = ob.midU + ob.halfLong * fu, v = ob.midV + ob.halfShort * fv;
+      const x = ob.cx + ob.ux * u - ob.uz * v, z = ob.cz + ob.uz * u + ob.ux * v;
+      if (onCarriageway(x, z, 0.3)) continue;
+      if (!pointInRing(x, z, b.p)) continue;          // must be over the plan
+      bestU = u; bestV = v; found = true; break;
+    }
+    if (found) break;
+  }
+  if (found) {
+    slab(api, ob, bestU, bestV, tw, tw * 0.62,
+         base + podium, Math.max(18, b.h - podium), api.mat.paleStone);
+  }
+
+  // THE BUBBLE LIFT, on the street face, running the height of the podium and
+  // a little above it
+  //
+  // Walked out from the centroid until it LEAVES the footprint, rather than
+  // guessed at halfShort from the oriented box. For an irregular plan the box's
+  // short half-width stops well inside the walls, and the lift ended up buried
+  // in the podium with its cap showing above the roof.
+  let lx = ob.cx, lz = ob.cz;
+  for (let d = 2; d <= ob.halfLong + 20; d += 1.5) {
+    const x = ob.cx + sw.nx * d, z = ob.cz + sw.nz * d;
+    if (!pointInRing(x, z, b.p)) { lx = x + sw.nx * 1.0; lz = z + sw.nz * 1.0; break; }
+  }
+  if (!onCarriageway(lx, lz, 0.3)) {
+    const gy = api.groundAt(lx, lz);
+    const shaftH = podium + 3.0;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 2.1, shaftH, 7),
+      api.mat.blueGlass);
+    shaft.position.set(lx, gy + shaftH / 2, lz);
+    shaft.castShadow = true;
+    api.world.add(shaft);
+    // the faceted pointed base it stands on
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(2.1, 3.2, 7), api.mat.blueGlass);
+    cone.position.set(lx, gy + 1.6, lz);
+    cone.rotation.x = Math.PI;
+    api.world.add(cone);
+  }
+}
+
+// is a point inside a footprint ring
+function pointInRing(x, z, poly) {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, zi] = poly[i], [xj, zj] = poly[j];
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+  }
+  return c;
+}
+
 function glassBoxPodiumTower(api, b) {
   const ob = orientedBox(b.p);
   let glass = api.mat.towerGlass;
@@ -874,6 +1011,8 @@ export const RECIPES = [
   // arrangement rather than the church one despite the name.
   [/st\.? ?joseph's institution|singapore art museum/i, nationalMuseum],
 
+  [/plaza singapura/i, plazaSingapura],
+  [/lucky plaza/i, luckyPlaza],
   [/ngee ann city|takashimaya/i, ngeeAnnCity],
   [/ion orchard|orchard residences/i, ionOrchard],
   [/tang plaza|singapore marriott|^tangs/i, tangPlaza],
