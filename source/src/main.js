@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, rand, pick, chance } from './tex.js';
-import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, buildSurround } from './city.js';
+import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, buildSurround, buildWater, buildSupertrees } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
@@ -139,8 +139,47 @@ function place(x, z) {
 // podiums, canopies, colonnades and the covered walkway are placed by recipe
 // and never had a footprint. See solid.js.
 let SOLID = null;
+// WATER IS SOLID, as far as anything that travels on wheels or feet is
+// concerned. A scooter does not drive onto a reservoir and a pedestrian does
+// not stroll across one, and without this the bay is a 300m hole you fall into
+// the moment you leave the promenade. Kept in its own grid rather than in
+// SOLID, because SOLID is rasterised from drawn WALLS and water is not a wall:
+// folding it in would make every check that asks "is there a wall here" answer
+// yes over open water.
+let WATERPOLY = [];
+const wCell = 40, wGrid = new Map();
+function setWater(polys) {
+  WATERPOLY = polys || [];
+  wGrid.clear();
+  // Exposed HERE, not with the other globals at the end of boot: the street
+  // dressing runs before that point and asks about water, so assigning it late
+  // made every `dry()` guard in markings.js a silent no-op and 2,064 lane lines
+  // stayed painted on the reservoir. A guard that is installed after the thing
+  // it guards is not a guard.
+  window.__inWater = (x, z) => inWater(x, z);
+  for (const ring of WATERPOLY) {
+    let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
+    for (const [x, z] of ring) {
+      if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+      if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+    }
+    for (let gx = Math.floor(mnx / wCell); gx <= Math.floor(mxx / wCell); gx++)
+      for (let gz = Math.floor(mnz / wCell); gz <= Math.floor(mxz / wCell); gz++) {
+        const k = gx + ',' + gz;
+        if (!wGrid.has(k)) wGrid.set(k, []);
+        wGrid.get(k).push(ring);
+      }
+  }
+}
+function inWater(x, z) {
+  const list = wGrid.get(Math.floor(x / wCell) + ',' + Math.floor(z / wCell));
+  if (!list) return false;
+  for (const ring of list) if (inPoly(ring, x, z)) return true;
+  return false;
+}
 function blocked(x, z) {
   if (SOLID && SOLID.at(x, z)) return true;
+  if (inWater(x, z)) return true;
   const list = colGrid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));
   if (!list) return false;
   for (const poly of list) if (inPoly(poly, x, z)) return true;
@@ -468,6 +507,14 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
     S = newState(p0[0] + nx * -3.4, p0[1] + nz * -3.4, Math.atan2(dx, dz));
   }
 
+  // WATER FIRST. Everything downstream asks "is this spot free", and until the
+  // reservoir is registered the answer is yes: trees were planted in Marina Bay
+  // because TreeField.add() ran during buildRoads, which used to happen before
+  // this. Water depends on nothing, so it goes first and every later guard is
+  // live by the time it is consulted.
+  const water = P.has('nowater') ? { water: 0, waterArea: 0 } : buildWater(world, data);
+  if (!P.has('nowater')) setWater((data.water || []).map((w) => w.p));
+
   const bs = P.has('nobuild') ? { count: 0, tall: 0 } : buildBuildings(world, data);
   // one sweep over what the building pass just added, before any street
   // furniture exists, so the scope is exactly "buildings and landmarks"
@@ -486,6 +533,9 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   // the whole screen. The grid is padded 90m beyond the sampled roads already.
 
   // the city beyond the fetched box, so the district does not end in a plain
+  // WATER BEFORE THE SURROUND, so the surround's grey massing can be kept out
+  // of the bay rather than built across it.
+  const trees2 = P.has('notowers') ? { supertrees: 0 } : buildSupertrees(world, data);
   const surround = P.has('nosurround') ? 0 : buildSurround(world, data);
 
   // Collision is rasterised in TWO passes, and this is the first: the buildings,
@@ -637,7 +687,7 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   const people = crowdSys ? crowdSys.people.length : 0;
 
   buildEnvironment();
-  stats = { surround, marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage, ...shopf };
+  stats = { surround, ...water, ...trees2, marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage, ...shopf };
   ready = true;
   // one pass over the finished district: share identical materials, then batch
   // small static meshes per 110m tile. See consolidate.js.

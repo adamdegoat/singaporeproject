@@ -75,7 +75,11 @@ def fetch(d, force=False):
         return path
     bbox = d["bbox"]
     parts = {
-        "buildings": f'way["building"]({bbox});',
+        # Relations too: 11 of Marina Bay's buildings are multipolygons,
+        # among them the ArtScience Museum, The Shoppes, Victoria Theatre,
+        # Parliament House and Clifford Pier. A way-only query loses them all
+        # and looks like a clean fetch.
+        "buildings": f'way["building"]({bbox});rel["building"]({bbox});',
         "roads": (f'way["highway"~"^(trunk|primary|secondary|tertiary|residential|'
                   f'service|unclassified|living_street|pedestrian)$"]({bbox});'),
         "paths": f'way["highway"="footway"]({bbox});',
@@ -96,13 +100,28 @@ def fetch(d, force=False):
         "covered": f'way["highway"="footway"]["covered"]({bbox});',
         "shops": (f'node["shop"]({bbox});way["shop"]({bbox});'
                   f'node["amenity"~"^(restaurant|cafe|bank|fast_food|pharmacy|cinema)$"]({bbox});'),
-        "water": f'way["natural"="water"]({bbox});way["waterway"]({bbox});',
+        # WATER, and it has to include RELATIONS. A bay, a reservoir or a river
+        # basin is almost always a multipolygon relation in OSM, not a closed
+        # way -- Marina Reservoir and the Singapore River both are -- so a
+        # way-only query returns the ornamental ponds and misses the bay. The
+        # sea is a `natural=coastline` way rather than a polygon at all, and is
+        # fetched separately so the shoreline can close against the bbox.
+        "water": (f'way["natural"="water"]({bbox});rel["natural"="water"]({bbox});'
+                  f'way["landuse"="reservoir"]({bbox});rel["landuse"="reservoir"]({bbox});'
+                  f'way["waterway"~"^(riverbank|dock|canal|river|stream)$"]({bbox});'
+                  f'rel["waterway"="riverbank"]({bbox});'),
+        "coast": f'way["natural"="coastline"]({bbox});',
+        # Free-standing structures that are not buildings: the Supertrees are
+        # `man_made=tower` and are mapped individually with real positions,
+        # while the Grove itself is only a garden polygon. Without this the most
+        # recognisable thing in Gardens by the Bay is an empty lawn.
+        "towers": f'way["man_made"="tower"]({bbox});node["man_made"="tower"]({bbox});',
     }
     merged, seen = [], set()
     empty = []
     for label, body in parts.items():
-        got = fetch_part(bbox, body, label, expect=label not in ("water",))
-        if not got and label not in ("water", "taxi"):
+        got = fetch_part(bbox, body, label, expect=label not in ("water", "coast", "towers"))
+        if not got and label not in ("water", "coast", "towers", "taxi"):
             empty.append(label)
         for e in got:
             k = (e["type"], e["id"])

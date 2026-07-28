@@ -5,9 +5,12 @@ hash-verified live.
 
 ## Where it stands
 
-Live: https://adamdegoat.github.io/singaporeproject/ — **two districts**, Orchard
-Road and Bras Basah, merged into one region you can ride between. 1,918
-buildings, 4,392 roads, 38fps at 844x390 dpr2, ~5s to load.
+Live: https://adamdegoat.github.io/singaporeproject/ — **three districts**,
+Orchard Road, Bras Basah and Marina Bay, merged into one region you can ride
+between. 2,155 buildings, ~6,000 roads, **2.0M m2 of water**, 35fps at 844x390
+dpr2. Marina Bay landed 2026-07-28 and brought the first WATER this project has
+had, plus Marina Bay Sands, the ArtScience Museum, the Singapore Flyer, the
+Merlion, the Fullerton and seven Supertrees.
 
 Everything green:
 
@@ -661,6 +664,104 @@ The collision grid correctly ignores it (5m up is not an obstacle where it
 stands) and a raycast at eye height correctly hits it. Both are right. It is a
 grade artefact, not a shopfront defect, and it is written here rather than tuned
 away.
+
+## Marina Bay, and the first water
+
+Chosen over Chinatown deliberately: it is the skyline everyone recognises, and
+it is the only district so far that is mostly **not land**.
+
+**The planned bbox was wrong before a byte was fetched.** It was 1.18 km2,
+reached none of the Flyer, the Esplanade or the Supertrees, and stopped 275m
+short of Bras Basah in latitude -- so the two districts would never have touched
+and the seam would have been a hole. Widened to 3.54 km2 with a 390m x 620m
+overlap. Check the bbox against the landmarks AND against its neighbour before
+fetching; Overpass took about an hour and failed over four mirrors.
+
+### Water, which nothing had ever drawn
+
+It was FETCHED from the very first district and thrown away in process.py --
+invisible even to the new tag gate, because the tag was on an element class the
+scene file had no collection for at all. Now: 24 polygons, 2.0M m2, drawn as one
+flat surface per polygon at a level taken from the terrain at its own RIM.
+
+Four things had to be learned to get it in:
+
+- **A bay is a multipolygon RELATION whose outer ring is split across many
+  ways.** Marina Reservoir arrives as 40 open segments; treating each as a ring
+  gives 40 slivers of no area, which the area filter drops, so the bay silently
+  did not exist. Stitched now, and the same stitcher found that **11 of Marina
+  Bay's buildings are relations too** -- the ArtScience Museum, The Shoppes,
+  Victoria Theatre, Parliament House, Clifford Pier -- which a way-only query
+  had been losing in every district since the project started.
+- **`waterway=canal` on a plain way is a CENTRELINE, not an outline.** Reading
+  it as a polygon turned Stamford Canal into a 222,000 m2 blob lying across
+  Orchard, and W2 duly reported 5,447 things built in open water three
+  kilometres from the nearest water.
+- **A relation can be `type=building` rather than `type=multipolygon`**, with
+  roles `outline`/`part` instead of `outer`. The ArtScience Museum is one.
+- **Water must be built FIRST.** Everything downstream asks "is this spot free",
+  and until the reservoir is registered the answer is yes: trees were planted in
+  Marina Bay because TreeField.add ran during buildRoads, which used to happen
+  before the water existed. A guard installed after the thing it guards is not a
+  guard -- the same mistake put `window.__inWater` at the end of boot, which
+  made every `dry()` filter in markings.js a no-op and left 2,064 lane lines
+  painted on the bay.
+
+**W1/W2/W3 were written before the water was.** A new subsystem gets its checks
+first, because you cannot find a defect class you have not named. They found
+every one of the failures above.
+
+### Terrain: the DEM is a surface model and nobody had noticed
+
+Marina Bay is where this finally mattered. **srtm30m, mapzen and aster30m all
+report about 104m at Raffles Place, where the ground is about 5m** -- they are
+reading the roofs of a canyon of 280m towers, and a local median cannot repair
+it because every neighbour is on a roof too.
+
+We do have the footprints, so a sample within 34m of a building is a sample OF
+that building. First attempt DELETED those, which removed the bias and took the
+ground under the roads with it: P8 went to 197 because the grid then
+interpolated roads from hundreds of metres away. They are **corrected, not
+deleted** now -- position kept, value re-read from the nearest clean ground.
+Density is what makes a road sit on its own terrain. The filter abstains
+entirely below a 30% clean floor, which is why Orchard (13% clean) and Bras
+Basah (12%) are untouched by it.
+
+Two more terrain bugs fell out: **`despike` only ever looked upward** despite
+its name, so nodata holes at -38m sailed through -- now repaired downward too,
+but ONLY below -2m, because a symmetric rule flattened every real dip and took
+Orchard's P8 from 10 to 216. And **a bridge deck is not the ground**: sampling
+the Benjamin Sheares Bridge put a 53m ridge across flat reclaimed land.
+
+### Landmarks, researched
+
+Marina Bay Sands from Safdie's own CTBUH case study and Arup in STRUCTURE:
+**207m is the top of the SkyPark, not the towers** (roofs ~194m); **the towers
+do not lean** -- each is a pair of legs, west vertical and east inclined,
+spreading at the base and converging as they rise; and the three are not
+identical. OSM maps each tower separately and SkyPark separately again with
+`min_height 193`, which had to be read or the deck became a solid 207m block
+standing in the atrium.
+
+**The Float @ Marina Bay was demolished in March 2023** and NS Square completes
+in 2027, so in 2026 it is a construction site. Not built, deliberately.
+
+**The 280m aviation ceiling** means One Raffles Place, UOB Plaza One and
+Republic Plaza are all exactly 280m -- three different heights would be visibly
+wrong to any Singaporean.
+
+**Substring matching bit four times** (Grand Park City Hall, Esplanade Theatre,
+"Singapore Flyer Car Park" given the wheel's 165m, "The Shoppes at Marina Bay
+Sands" given a tower's 194m). Each time the repair was to reorder the dict and
+each time the next entry broke it. **Longest match wins now**, which is a rule
+rather than a coincidence.
+
+### And three teleports, all mine
+
+Every correction applied as a POSITION CHANGE became a teleport: the water clamp
+snapped `shift` to the nearest clear metre (135 m/s), then to zero in one frame
+(4.75 m/s). `shift` is rate-limited now, so whatever any guard decides, a walker
+moves toward it at a walking pace. That is the third instance in this file.
 
 ## The check that was supposed to catch all of this, and didn't
 

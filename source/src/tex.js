@@ -282,6 +282,44 @@ export function texTactile() {
   return finish(c, [1, 1]);
 }
 
+// Marina Reservoir: fresh water behind a barrage, so it is green-grey and
+// fairly still rather than open-sea blue. Ripple is drawn as overlapping
+// low-contrast bands rather than noise, because noise at 24m to a tile just
+// averages to flat colour at any distance you would actually see it from.
+// Its own RNG stream so adding it moves nothing else in the world.
+export function texWater() {
+  const S = 256, [c, x] = cvs(S);
+  const r2 = rng(0x77617472);            // "watr"
+  x.fillStyle = '#5f7b78'; x.fillRect(0, 0, S, S);
+  // broad swell: long shallow bands at a slight angle
+  for (let i = 0; i < 26; i++) {
+    const y = r2() * S, h = 3 + r2() * 16;
+    const g = x.createLinearGradient(0, y, 0, y + h);
+    const a = 0.05 + r2() * 0.13;
+    g.addColorStop(0, `rgba(196,214,210,0)`);
+    g.addColorStop(0.5, `rgba(196,214,210,${a})`);
+    g.addColorStop(1, `rgba(196,214,210,0)`);
+    x.fillStyle = g;
+    x.save(); x.translate(S / 2, S / 2); x.rotate(0.16); x.translate(-S / 2, -S / 2);
+    x.fillRect(-S, y, S * 3, h);
+    x.restore();
+  }
+  // darker troughs between them
+  for (let i = 0; i < 18; i++) {
+    const y = r2() * S, h = 2 + r2() * 9;
+    x.fillStyle = `rgba(38,58,58,${0.04 + r2() * 0.09})`;
+    x.save(); x.translate(S / 2, S / 2); x.rotate(0.16); x.translate(-S / 2, -S / 2);
+    x.fillRect(-S, y, S * 3, h);
+    x.restore();
+  }
+  // a few short glints, so a still surface still has something moving on it
+  for (let i = 0; i < 260; i++) {
+    x.fillStyle = `rgba(236,246,244,${0.06 + r2() * 0.16})`;
+    x.fillRect(r2() * S, r2() * S, 2 + r2() * 9, 1);
+  }
+  return finish(c, [1, 1]);
+}
+
 // dark polished granite with narrow vertical window slots (Ngee Ann City)
 export function texGranite() {
   // Ngee Ann City is clad in "African Red" polished granite, which reads far

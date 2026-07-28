@@ -474,7 +474,316 @@ function luckyPlaza(api, b) {
   }
 }
 
-// Hilton Singapore Orchard, 333 Orchard Road. TWO towers, and which one is
+// THE SINGAPORE FLYER. singaporeflyer.com publishes 165m overall, a 150m wheel
+// and 28 capsules. The 15m difference is the clearance under the rim, which is
+// the three-storey terminal building the wheel is mounted over -- so the wheel
+// is NOT a 165m circle sitting on the ground, and drawing it that way buries a
+// quarter of it. Capsules ride OUTBOARD of a slim ladder-truss rim.
+function singaporeFlyer(api, b) {
+  const ob = orientedBox(b.p);
+  const base = api.footingY(b.p);
+  const steel = api.mat.metal, glass = api.mat.blueGlass, pale = api.mat.paleStone;
+  const TOTAL = Math.max(90, b.h);            // 165m
+  const R = TOTAL * (150 / 165) / 2;          // 75m wheel radius
+  const HUB = TOTAL - R;                      // rim clearance + radius
+
+  // the three-storey terminal the wheel stands on
+  api.world.add(api.extrude(b.p, Math.min(15, TOTAL * 0.09), pale));
+
+  // the wheel sits in a plane; face it across the footprint's short axis so it
+  // reads broadside from the bay, which is how it is always seen
+  const nx = -ob.uz, nz = ob.ux;
+  const cx = ob.cx, cz = ob.cz, cy = base + HUB;
+  const ring = (rad, tube) => {
+    const g = new THREE.TorusGeometry(rad, tube, 6, 44);
+    g.rotateY(Math.atan2(nx, nz));
+    g.translate(cx, cy, cz);
+    api.merge(g, steel, cx, cz);
+  };
+  ring(R, 0.9);
+  ring(R * 0.955, 0.55);
+  // spokes as a cable fan, and the hub
+  for (let i = 0; i < 32; i++) {
+    const a = (i / 32) * Math.PI * 2;
+    const ex = cx + ob.ux * Math.cos(a) * R, ez = cz + ob.uz * Math.cos(a) * R;
+    const ey = cy + Math.sin(a) * R;
+    const dx = ex - cx, dy = ey - cy, dz = ez - cz;
+    const L = Math.hypot(dx, dy, dz) || 1;
+    const g = new THREE.CylinderGeometry(0.16, 0.16, L, 4);
+    g.translate(0, L / 2, 0);
+    const m = new THREE.Mesh(g, steel);
+    m.position.set(cx, cy, cz);
+    m.lookAt(ex, ey, ez);
+    m.rotateX(Math.PI / 2);
+    api.world.add(m);
+  }
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 5, 12), steel);
+  hub.rotation.z = Math.PI / 2;
+  hub.rotation.y = Math.atan2(ob.ux, ob.uz);
+  hub.position.set(cx, cy, cz);
+  api.world.add(hub);
+  // 28 capsules, outboard of the rim
+  for (let i = 0; i < 28; i++) {
+    const a = (i / 28) * Math.PI * 2;
+    const rr = R + 2.6;
+    const g = new THREE.CapsuleGeometry(1.9, 2.4, 4, 8);
+    g.rotateZ(Math.PI / 2);
+    g.rotateY(Math.atan2(ob.ux, ob.uz));
+    g.translate(cx + ob.ux * Math.cos(a) * rr, cy + Math.sin(a) * rr,
+                cz + ob.uz * Math.cos(a) * rr);
+    api.merge(g, glass, cx, cz);
+  }
+  // the two A-frame legs carrying the hub
+  for (const sgn of [-1, 1]) {
+    for (const spread of [-1, 1]) {
+      const fx = cx + nx * sgn * 5 + ob.ux * spread * (R * 0.5);
+      const fz = cz + nz * sgn * 5 + ob.uz * spread * (R * 0.5);
+      const dx = cx - fx, dy = cy - (base + 2), dz = cz - fz;
+      const L = Math.hypot(dx, dy, dz) || 1;
+      const g = new THREE.CylinderGeometry(1.0, 1.5, L, 7);
+      g.translate(0, L / 2, 0);
+      const m = new THREE.Mesh(g, steel);
+      m.position.set(fx, base + 2, fz);
+      m.lookAt(cx, cy, cz);
+      m.rotateX(Math.PI / 2);
+      m.castShadow = true;
+      api.world.add(m);
+    }
+  }
+}
+
+// THE FULLERTON HOTEL. Wikipedia and fullertonhotels.com: 36.6m (120ft), 8
+// storeys above ground, neoclassical/Palladian, GREY ABERDEEN GRANITE with
+// Shanghai plaster, and a TWO-STOREY FLUTED DORIC COLONNADE running across its
+// five frontages with a lofty portico over the entrance. The colonnade is the
+// whole building -- without it this is a grey box.
+function fullerton(api, b) {
+  const ob = orientedBox(b.p);
+  const base = api.footingY(b.p);
+  const stone = api.mat.paleStone, trim = api.mat.trim;
+  const H = Math.max(24, b.h);
+  const COL = H * 0.42;                       // the two-storey order
+
+  api.world.add(api.extrude(b.p, H, stone));
+  // the heavy base the order stands on
+  api.world.add(api.extrude(api.grow(b.p, 1.012), COL * 0.24, trim, 0));
+  // the cornice, and a parapet above it
+  api.world.add(api.extrude(api.grow(b.p, 1.03), 1.5, trim, H - 1.5));
+  api.world.add(api.extrude(api.grow(b.p, 1.01), 2.2, stone, H));
+
+  // THE COLONNADE, on every frontage rather than only the street one: this
+  // building is free-standing and its five faces all carry the order.
+  const ring = b.p;
+  const plinth = COL * 0.24;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], c = ring[(i + 1) % ring.length];
+    const dx = c[0] - a[0], dz = c[1] - a[1];
+    const L = Math.hypot(dx, dz);
+    if (L < 6) continue;
+    const ux = dx / L, uz = dz / L;
+    // outward normal, found by stepping off the edge rather than by comparing
+    // against the centroid -- this plan is not convex
+    let nx = -uz, nz = ux;
+    if (pointInRing(a[0] + (dx / 2) + nx * 1.5, a[1] + (dz / 2) + nz * 1.5, ring)) {
+      nx = -nx; nz = -nz;
+    }
+    const n = Math.max(2, Math.round(L / 4.2));
+    for (let k = 0; k <= n; k++) {
+      const t = k / n;
+      const px = a[0] + dx * t + nx * 1.1, pz = a[1] + dz * t + nz * 1.1;
+      if (onCarriageway(px, pz, 0.2)) continue;
+      const g = new THREE.CylinderGeometry(0.62, 0.68, COL, 12);
+      g.translate(px, base + plinth + COL / 2, pz);
+      api.merge(g, stone, ob.cx, ob.cz);
+      // a Doric capital: a plain square abacus, which is what makes it Doric
+      const cap = new THREE.BoxGeometry(1.6, 0.45, 1.6);
+      cap.translate(px, base + plinth + COL + 0.22, pz);
+      api.merge(cap, trim, ob.cx, ob.cz);
+    }
+  }
+}
+
+// THE MERLION. 8.6m, concrete on a steel frame, skinned in porcelain plates,
+// and it FACES EAST -- a deliberate geomancy decision preserved through the
+// 2002 move (roots.gov.sg), not an accident of siting. Small, and the single
+// most photographed object in Singapore.
+function merlion(api, b) {
+  const ob = orientedBox(b.p);
+  const base = api.footingY(b.p);
+  const white = api.mat.paleStone;
+  const H = 8.6;
+  // the promontory it stands on
+  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 7.5, 2.2, 16), api.mat.conc);
+  plinth.position.set(ob.cx, base + 1.1, ob.cz);
+  plinth.receiveShadow = true; api.world.add(plinth);
+  // EAST is +x in this projection
+  const face = 0;
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2.6, H * 0.62, 12), white);
+  body.position.set(ob.cx, base + 2.2 + H * 0.31, ob.cz);
+  body.castShadow = true; api.world.add(body);
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(1.9, 12, 10), white);
+  chest.position.set(ob.cx + 0.6, base + 2.2 + H * 0.58, ob.cz);
+  chest.castShadow = true; api.world.add(chest);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(1.35, 12, 10), white);
+  head.position.set(ob.cx + 1.0, base + 2.2 + H * 0.82, ob.cz);
+  head.castShadow = true; api.world.add(head);
+  // the mane
+  for (let i = 0; i < 9; i++) {
+    const a = -1.1 + (i / 8) * 2.2;
+    const sp = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.5, 6), white);
+    sp.position.set(ob.cx + 1.0 - Math.cos(a) * 1.2, base + 2.2 + H * 0.82 + Math.sin(a) * 1.2, ob.cz + Math.sin(a) * 1.0);
+    sp.rotation.z = a - Math.PI / 2;
+    api.world.add(sp);
+  }
+  // the jet, which is why anybody stands there
+  const jet = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.42, 7.0, 8),
+    new THREE.MeshStandardMaterial({ color: 0xdfeef0, roughness: 0.1, metalness: 0.2,
+                                     transparent: true, opacity: 0.55 }));
+  jet.position.set(ob.cx + 1.0 + 3.4, base + 2.2 + H * 0.78, ob.cz);
+  jet.rotation.z = Math.PI / 2 - 0.16;
+  api.world.add(jet);
+  void face;
+}
+
+// MARINA BAY SANDS. The building the whole city is recognised by, so the
+// massing has to be right rather than approximately right.
+//
+// Sources (2026-07-28): Moshe Safdie's own case study in CTBUH Journal 2011-I,
+// Arup's engineering account in STRUCTURE June 2011, and CTBUH's per-tower
+// entries. Three things are widely got wrong and every one changes the shape:
+//
+//   THE TOWERS ARE NOT 207m. That is the top of the SkyPark. The concrete tower
+//   roofs are about 194m and MBS's own site says 191m. Building 207m towers
+//   lifts the deck into the sky above where it actually sits.
+//
+//   THE TOWERS DO NOT LEAN. Each tower is a PAIR OF LEGS: the west leg is
+//   vertical and the east leg is curved and inclined, leaning against it. They
+//   spread apart at the base -- that gap is the hotel atrium -- and CONVERGE as
+//   they rise. A tower modelled as a single leaning slab is the opposite shape.
+//
+//   THE THREE ARE NOT IDENTICAL. Safdie: "as the parcel varies in width, the
+//   cross section is decreased from one tower to the next", and each slab is
+//   twisted slightly against its pair, "resulting in the appearance of six
+//   towers, rather than three".
+//
+// The SkyPark is 340m long and at most 40m wide, its deck 200m up, cantilevering
+// 66.5m past the NORTHERN tower. Safdie and CTBUH both publish 66.5m; Arup's
+// body text says 64.9m while its own figure caption says 218ft, so the engineer
+// contradicts himself in one document and the architect is the better source.
+//
+// What is NOT published, and is therefore taken from the OSM footprint rather
+// than invented: the centre-to-centre spacing of the towers and their plan
+// dimensions. No source gives either.
+function marinaBaySands(api, b) {
+  const ob = orientedBox(b.p);
+  const base = api.footingY(b.p);
+  const glass = api.mat.towerGlass, stone = api.mat.warmStone, pale = api.mat.paleStone;
+
+  // ONE FOOTPRINT IS ONE TOWER. OSM maps "Marina Bay Sands Tower 1/2/3"
+  // separately at about 3,000 m2 each, and SkyPark separately again with
+  // min_height 193 -- so the deck is already built by the min_height path and
+  // this must not build a second one. The first version of this recipe assumed
+  // a single footprint containing all three towers and would have produced NINE
+  // towers and three stacked SkyParks.
+  const ROOF = Math.max(120, b.h);          // ~194m, the concrete tower roof
+  const PODIUM = Math.min(24, ROOF * 0.12);
+
+  // the base the pair spreads from
+  api.world.add(api.extrude(b.p, PODIUM, pale));
+
+  // TWO LEGS. West vertical, east inclined and leaning against it; they spread
+  // at the base -- that gap is the hotel atrium -- and CONVERGE as they rise.
+  const legD = Math.max(7, ob.halfShort * 0.52);
+  const gap = ob.halfShort * 0.55;
+  const towerW = ob.halfLong * 1.55;
+  for (const leg of [-1, 1]) {
+    const inclined = leg > 0;
+    const vBase = ob.midV + leg * (gap / 2 + legD / 2);
+    const vTop = inclined ? ob.midV + leg * (legD * 0.30) : vBase;
+    const steps = 10;
+    for (let k = 0; k < steps; k++) {
+      const f0 = k / steps, f1 = (k + 1) / steps;
+      const y0 = PODIUM + (ROOF - PODIUM) * f0, y1 = PODIUM + (ROOF - PODIUM) * f1;
+      const v0 = vBase + (vTop - vBase) * f0, v1 = vBase + (vTop - vBase) * f1;
+      // the WEST face is a reflective curtain wall, the EAST face is planted
+      // terraces -- two different materials, which is what Safdie describes
+      const seg = slab(api, ob, ob.midU, (v0 + v1) / 2, towerW, legD,
+                       base + y0, y1 - y0, inclined ? stone : glass);
+      if (seg) uvMetres(seg, 12, 3.0);      // 3.0m floor to floor, published
+    }
+  }
+  crown(api, ob, ob.midU, ob.midV, towerW * 0.9, gap + legD * 2, base + ROOF, pale);
+}
+
+// THE ARTSCIENCE MUSEUM. Ten petals of varying height on a circular base,
+// "reaching as high as 60m" -- Safdie Architects. White joint-less
+// fibre-reinforced polymer, with bead-blasted stainless steel on the VERTICAL
+// sides of each petal, which is a second material and is why the thing reads as
+// a hand rather than as a white blob.
+//
+// Its diameter is genuinely not published anywhere, so it is taken from the OSM
+// footprint. It is not literally a lotus: Safdie's office calls it a hand.
+function artScienceMuseum(api, b) {
+  const ob = orientedBox(b.p);
+  const base = api.footingY(b.p);
+  const R = Math.max(14, Math.min(ob.halfLong, ob.halfShort) * 0.95);
+  const TOP = Math.max(30, b.h);
+  // Joint-less white FRP, which is the whole point of the building: the first
+  // attempt alternated pale stone and metal up each petal and came out as a
+  // cluster of concrete stumps.
+  const skin = new THREE.MeshStandardMaterial({
+    color: 0xeceae4, roughness: 0.34, metalness: 0.06,
+  });
+  const steelBase = new THREE.MeshStandardMaterial({
+    color: 0xb9bcc0, roughness: 0.28, metalness: 0.55,   // bead-blasted stainless
+  });
+
+  // THE DISH. A shallow bowl the petals rise out of, not a plinth: the roof is
+  // dish-shaped and drains through a central oculus into the atrium.
+  const dish = new THREE.Mesh(
+    new THREE.CylinderGeometry(R * 1.02, R * 0.62, 6.5, 26), steelBase);
+  dish.position.set(ob.cx, base + 3.2, ob.cz);
+  dish.castShadow = true; dish.receiveShadow = true;
+  api.world.add(dish);
+  const lip = new THREE.Mesh(new THREE.TorusGeometry(R * 1.02, 0.5, 6, 28), skin);
+  lip.rotation.x = Math.PI / 2;
+  lip.position.set(ob.cx, base + 6.4, ob.cz);
+  api.world.add(lip);
+
+  // TEN PETALS of varying height. Slender and tapering, splaying outward as
+  // they rise, each crowned by a small skylight -- not a sphere the size of the
+  // finger, which is what made the first version look like a bunch of balloons.
+  const F = [1.0, 0.62, 0.84, 0.47, 0.93, 0.55, 0.97, 0.51, 0.76, 0.60];
+  for (let i2 = 0; i2 < 10; i2++) {
+    const a = (i2 / 10) * Math.PI * 2 + 0.31;
+    const h = 9 + (TOP - 9) * F[i2];
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const r0 = R * 0.30, r1 = R * 0.30 + R * 0.52 * F[i2];   // splay
+    const steps = 10;
+    for (let k = 0; k < steps; k++) {
+      const t0 = k / steps, t1 = (k + 1) / steps;
+      const y0 = 5 + (h - 5) * t0, y1 = 5 + (h - 5) * t1;
+      const rr = r0 + (r1 - r0) * ((t0 + t1) / 2);
+      // a finger is fat at the base and narrow at the tip
+      const w0 = R * 0.30 * (1 - 0.62 * t0), w1 = R * 0.30 * (1 - 0.62 * t1);
+      // the SAME floor at both ends, or each segment is fractionally wider at
+      // its base than the one below is at its top and the petal reads as a
+      // stack of cups rather than a taper
+      const g = new THREE.CylinderGeometry(Math.max(0.55, w1), Math.max(0.55, w0),
+                                           y1 - y0, 9);
+      g.translate(ob.cx + ca * rr, base + (y0 + y1) / 2, ob.cz + sa * rr);
+      api.merge(g, skin, ob.cx, ob.cz);
+    }
+    // the skylight: a small cap, not a ball
+    const capR = Math.max(0.7, R * 0.30 * 0.42);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(capR, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0xcfe2ea, roughness: 0.12, metalness: 0.3 }));
+    cap.position.set(ob.cx + ca * r1, base + h - 0.3, ob.cz + sa * r1);
+    api.world.add(cap);
+  }
+}
+
+// Hilton Singapore Orchard, 333 Orchard Road. TWO towers, and which one is// Hilton Singapore Orchard, 333 Orchard Road. TWO towers, and which one is
 // which is a researched fact rather than a choice.
 //
 // en.wikipedia.org/wiki/Hilton_Singapore_Orchard, checked 2026-07-28: it opened
@@ -1320,6 +1629,17 @@ export const RECIPES = [
   [/wisma atria|313|orchard gateway|shaw (house|centre)|mandarin gallery|the heeren/i, glassBoxPodiumTower],
   // ABOVE the generic hotel, which matches "hilton" and would win: the first
   // pattern to match is the one that runs.
+  // Marina Bay. ABOVE the generic patterns, and ArtScience before the museum
+  // rule, or "ArtScience Museum" is built as a civic rotunda.
+  // Tower footprints ONLY. "Apple Marina Bay Sands" is a glass dome on the
+  // water and "Marina Bay Sands Theatres" is a hall inside the podium; both
+  // contain the name and neither is a hotel tower.
+  [/marina bay sands tower/i, marinaBaySands],
+  [/singapore flyer/i, singaporeFlyer],
+  [/fullerton hotel|^the fullerton$|fullerton building/i, fullerton],
+  [/^merlion|merlion park/i, merlion],
+  [/artscience/i, artScienceMuseum],
+
   [/hilton singapore orchard|mandarin orchard/i, hiltonOrchard],
   [/hotel|hyatt|hilton|marriott|four seasons|pullman|voco|royal plaza|pan pacific|regent|shangri|holiday inn|ibis|orchard rendezvous|concorde/i, hotel],
   [/lucky plaza|far east plaza|orchard towers|midpoint|palais|delfi|orchard plaza|cairnhill|tripleone|far east shopping|international building|liat|pacific plaza|scotts square|orchard building|forum the shopping|268 orchard|scape|design orchard|cathay cineleisure/i, finnedSlab],

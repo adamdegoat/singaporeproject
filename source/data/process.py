@@ -136,6 +136,119 @@ LANDMARKS = {
     "pan pacific":            {"h": 58},
     "scotts 27":              {"h": 60},
     "shaw tower":             {"h": 60},
+
+    # ---- Marina Bay, researched 2026-07-28 --------------------------------
+    #
+    #   THE 280m AVIATION CEILING is the single most important fact here. One
+    #   Raffles Place Tower 1, UOB Plaza One and Republic Plaza are ALL exactly
+    #   280m, because that is the maximum the aviation authority permits. Giving
+    #   them three different heights would be visibly wrong to any Singaporean,
+    #   and a hash or a storey-count estimate would have done exactly that.
+    #     en.wikipedia.org/wiki/One_Raffles_Place, /Republic_Plaza_(Singapore),
+    #     /UOB_Plaza
+    #
+    #   Marina Bay Financial Centre  mbfc.com.sg + skyscrapercenter.com (CTBUH)
+    #     FIVE towers, not one complex. Office T1 33 storeys/186.1m, T2 50/245m,
+    #     T3 46/239m, Marina Bay Residences 55/227m, Marina Bay Suites 66/227m.
+    #     Wikipedia's infobox lists heights and floor counts as two unmapped
+    #     sets and disagrees with CTBUH on T1 (192m/32st); CTBUH and the
+    #     operator agree, so they win.
+    #
+    #   Singapore Flyer      singaporeflyer.com/en/fun-facts
+    #     165m overall, 150m wheel over a THREE-STOREY terminal, 28 capsules.
+    #     The 15m difference is the clearance under the wheel.
+    #
+    #   The Fullerton Hotel  en.wikipedia.org/wiki/The_Fullerton_Hotel_Singapore
+    #     36.6m (120ft), 8 storeys above ground, neoclassical, grey Aberdeen
+    #     granite, a two-storey fluted Doric colonnade across five frontages.
+    #
+    #   Merlion              eresources.nlb.gov.sg + roots.gov.sg
+    #     8.6m, concrete on a steel frame, skinned in porcelain plates, and it
+    #     FACES EAST -- a deliberate geomancy decision kept through the 2002
+    #     move, not an accident of siting.
+    #
+    #   Supertrees           gardensbythebay.com.sg
+    #     18 of them, 12 in Supertree Grove, at 25/30/37/42/50m. Exactly ONE is
+    #     50m and carries the observatory. Canopy diameter is genuinely not
+    #     published anywhere.
+    #
+    #   NOT BUILT, DELIBERATELY: The Float @ Marina Bay was DEMOLISHED in March
+    #   2023. NS Square replaces it, broke ground March 2024 and completes 2027,
+    #   so in 2026 the site is a construction site and not a floating platform.
+    #   If OSM still carries the Float, it is stale and must not be built.
+    "one raffles place":      {"h": 280, "key": True},   # VERIFIED 280m ceiling
+    "oub centre":             {"h": 280, "key": True},   # same building, old name
+    "republic plaza":         {"h": 280, "key": True},   # VERIFIED
+    "uob plaza":              {"h": 280, "key": True},   # VERIFIED
+    "marina bay financial centre": {"h": 245, "key": True},
+    "marina bay residences":  {"h": 227, "key": True},
+    "marina bay suites":      {"h": 227, "key": True},
+    # NOT "asia square": that name is the site OUTLINE, and giving the outline
+    # the tower height made it swallow both of its own towers as buried
+    # footprints. The towers carry their own names and their own heights.
+    "asia square tower 1":    {"h": 250, "key": True},
+    "asia square tower 2":    {"h": 220, "key": True},
+    "the sail @ marina bay":  {"h": 245, "key": True},
+    # These two patterns matched things that are NOT the landmark, which is the
+    # mistake already recorded here for "Grand Park City Hall" and "Esplanade
+    # Theatre": "Singapore Flyer Car Park" was given the wheel's 165m and
+    # "Apple Marina Bay Sands" -- a glass dome sitting ON the water -- was given
+    # a hotel tower's 194m. LANDMARKS is matched by substring, so anything whose
+    # name CONTAINS a landmark name inherits its height.
+    "singapore flyer car park": {"h": 18},   # matched before the wheel, on purpose
+    "apple marina bay sands":   {"h": 9},    # the dome on the water, not a tower
+    "marina bay sands theatres": {"h": 30},
+    "singapore flyer":        {"h": 165, "key": True},   # VERIFIED total height
+    "fullerton hotel":        {"h": 37},                 # VERIFIED 36.6m
+    "the fullerton":          {"h": 37},
+    "fullerton waterboat":    {"h": 20},
+    "customs house":          {"h": 14},
+    "clifford pier":          {"h": 16},
+    "the exchange":           {"h": 20},
+    "millenia tower":         {"h": 190, "key": True},
+    "centennial tower":       {"h": 180, "key": True},
+    "the ritz-carlton":       {"h": 130, "key": True},
+    "pan pacific singapore":  {"h": 130},
+    "marina square":          {"h": 40},
+    "suntec":                 {"h": 150, "key": True},
+    "one marina boulevard":   {"h": 170, "key": True},
+    "ocbc centre":            {"h": 198, "key": True},
+    "maybank tower":          {"h": 190, "key": True},
+
+    #   Marina Bay Sands   Safdie's own CTBUH Journal 2011-I case study, Arup in
+    #                      STRUCTURE Jun 2011, CTBUH per-tower entries
+    #     THREE things here are widely got wrong and all three change the shape:
+    #     (a) 207m is the top of the SKYPARK, not the towers. The concrete tower
+    #         roofs are ~194m and MBS's own site says ~191m. Building 207m towers
+    #         puts the deck in the sky above where it belongs.
+    #     (b) The towers do NOT lean as towers. Each is a PAIR OF LEGS: the west
+    #         leg is vertical, the east leg is curved and inclined and leans
+    #         against it. They spread at the base into the atrium and CONVERGE
+    #         as they rise -- the opposite of leaning outward.
+    #     (c) The three are not identical: the cross-section decreases from one
+    #         to the next, and CTBUH has T1 and T3 at 206.9m to tip with T2 at
+    #         202.8m.
+    #     SkyPark: 340m long, 40m max width, deck at 200m, cantilevering 66.5m
+    #     past the NORTHERN tower (Safdie and CTBUH both publish 66.5m; Arup's
+    #     own body text says 64.9m and its figure caption says 218ft, so the
+    #     engineer contradicts himself and the architect wins).
+    #     West facade is reflective glass; EAST facade is planted terraces.
+    #   ArtScience Museum  safdiearchitects.com
+    #     TEN petals of varying height on a circular base, up to 60m. White
+    #     joint-less fibre-reinforced polymer, with bead-blasted stainless steel
+    #     on the vertical sides of each petal -- two materials, not one. Dish
+    #     roof draining through a central oculus. Diameter is NOT published
+    #     anywhere; it comes from the OSM footprint.
+    #     It is not literally a lotus and it does not have 10 galleries; it has
+    #     21 over 3 levels.
+    "marina bay sands":       {"h": 194, "key": True},   # VERIFIED tower roof
+    "artscience museum":      {"h": 60,  "key": True},   # VERIFIED "as high as 60m"
+    "the shoppes at marina bay sands": {"h": 15},   # 2 storeys, published
+    "the shoppes":            {"h": 26},
+    "sands expo":             {"h": 32},
+    "gardens by the bay":     {"h": 20},
+    "flower dome":            {"h": 38, "key": True},
+    "cloud forest":           {"h": 58, "key": True},
 }
 TYPE_DEFAULT = {
     "retail": 22, "commercial": 30, "hotel": 55, "apartments": 45,
@@ -173,9 +286,27 @@ def height_for(tags):
     (crossings, sidewalk=, oneway=, level=) -- the only difference is that this
     time the data we were ignoring was our own research."""
     name = norm(tags.get("name"))
+    # LONGEST MATCH WINS, not first match.
+    #
+    # LANDMARKS is matched by substring, so anything whose name CONTAINS a
+    # landmark's name inherited its height. That has now bitten four times:
+    # "Grand Park City Hall" as City Hall, "Esplanade Theatre" as the Esplanade,
+    # "Singapore Flyer Car Park" given the wheel's 165m, and "The Shoppes at
+    # Marina Bay Sands" -- a two-storey retail podium -- given a hotel tower's
+    # 194m. Every time the repair was to reorder the dict, and every time the
+    # next entry broke it again.
+    #
+    # Ordering is not a rule, it is a coincidence that holds until someone adds
+    # a line. Preferring the longest matching key IS a rule: "the shoppes at
+    # marina bay sands" beats "marina bay sands" because it says more about the
+    # building, and no future insertion can change that.
+    best_key, best_spec = "", None
     for key, spec in LANDMARKS.items():
-        if key and key in name:
-            return spec["h"], spec.get("key", False), "named", spec.get("podium")
+        if key and key in name and len(key) > len(best_key):
+            best_key, best_spec = key, spec
+    if best_spec is not None:
+        return (best_spec["h"], best_spec.get("key", False), "named",
+                best_spec.get("podium"))
     h = tags.get("height")
     if h:
         try:
@@ -216,6 +347,59 @@ def ring(geometry):
     if len(pts) > 2 and abs(pts[0][0] - pts[-1][0]) < 1e-6 and abs(pts[0][1] - pts[-1][1]) < 1e-6:
         pts = pts[:-1]
     return pts
+
+
+def stitch_outer(rel):
+    """Join a multipolygon relation's OUTER members into closed rings.
+
+    OSM splits a large outline across many ways: Marina Reservoir arrives as 40
+    outer members, every one an OPEN line a few points long. Treating each as
+    its own ring gives slivers of no area, which an area filter then drops -- so
+    the bay silently did not exist, and neither did the ArtScience Museum, The
+    Shoppes, Victoria Theatre, Parliament House or Clifford Pier, all of which
+    are relations rather than ways.
+
+    The same operation process.py already does to turn OSM's 28 Orchard Road
+    fragments into one centreline. Endpoints match on a rounded key because they
+    are shared nodes and agree to full precision.
+    """
+    # TWO DIFFERENT RELATION SCHEMAS use the word "building".
+    #
+    #   type=multipolygon  outer members that must be stitched into a ring
+    #                      (Marina Reservoir: 40 open segments)
+    #   type=building      a single `outline` member plus `part` members, from
+    #                      the Simple 3D Buildings scheme. The ArtScience Museum
+    #                      is one of these, and a reader that only knows about
+    #                      `outer` returns nothing and drops it silently.
+    #
+    # An `outline` member is already a closed way, so it is taken whole and the
+    # `part` members are ignored: they are the internal massing, and we have our
+    # own recipe for the shape.
+    outline = [m["geometry"] for m in rel.get("members", [])
+               if m.get("role") == "outline" and len(m.get("geometry") or []) > 2]
+    if outline:
+        return [max(outline, key=len)]
+    segs = [m["geometry"] for m in rel.get("members", [])
+            if m.get("role") in ("outer", "") and len(m.get("geometry") or []) > 1]
+    key = lambda q: (round(q["lat"], 7), round(q["lon"], 7))
+    rings = []
+    while segs:
+        cur = list(segs.pop(0))
+        joined = True
+        while joined and key(cur[0]) != key(cur[-1]):
+            joined = False
+            for i, sg in enumerate(segs):
+                if key(sg[0]) == key(cur[-1]):
+                    cur.extend(sg[1:]); segs.pop(i); joined = True; break
+                if key(sg[-1]) == key(cur[-1]):
+                    cur.extend(list(reversed(sg))[1:]); segs.pop(i); joined = True; break
+                if key(sg[-1]) == key(cur[0]):
+                    cur = sg[:-1] + cur; segs.pop(i); joined = True; break
+                if key(sg[0]) == key(cur[0]):
+                    cur = list(reversed(sg))[:-1] + cur; segs.pop(i); joined = True; break
+        if len(cur) > 3:
+            rings.append(cur)
+    return rings
 
 
 def area(pts):
@@ -422,7 +606,19 @@ def main():
                     trees.append([round(a0[0] + (a1[0] - a0[0]) * t, 1),
                                   round(a0[1] + (a1[1] - a0[1]) * t, 1)])
             continue
-        if e["type"] != "way" or "geometry" not in e:
+        # A BUILDING CAN BE A RELATION. 11 of Marina Bay's are, including the
+        # ArtScience Museum, The Shoppes at Marina Bay Sands, Victoria Theatre,
+        # Parliament House, Clifford Pier and The Fullerton Bay Hotel -- so a
+        # way-only reader silently loses the most recognisable things in the
+        # district and reports a clean run. Its outer members are stitched into
+        # a ring exactly as the water polygons are, and the LARGEST ring is the
+        # building: the others are courtyards and light wells.
+        if e["type"] == "relation" and "building" in tags:
+            _rings = stitch_outer(e)
+            if _rings:
+                e = dict(e)
+                e["geometry"] = max(_rings, key=len)
+        if e["type"] not in ("way", "relation") or "geometry" not in e:
             continue
 
         # Underground structures are not buildings you can see. Dhoby Ghaut's
@@ -475,6 +671,17 @@ def main():
             # `building:colour` and 29 carry `roof:colour`, and both were being
             # overridden by a hash of the footprint -- which is a deterministic
             # way of saying "at random".
+            # A BUILDING THAT STARTS IN THE AIR. `min_height` says the mass
+            # begins above the ground, and 16 footprints here carry it -- the
+            # most important being SkyPark, min_height 193 and height 207. Read
+            # as a plain height that is a solid 207m block standing where Marina
+            # Bay Sands' atrium is; read properly it is a 14m deck in the sky.
+            try:
+                _mh = float(str(tags.get("min_height", "")).replace("m", "").strip())
+                if 1.0 < _mh < h:
+                    b["mh"] = round(_mh, 1)
+            except ValueError:
+                pass
             for _src, _dst in (("building:colour", "col"), ("roof:colour", "rcol")):
                 _v = (tags.get(_src) or "").strip()
                 if _v:
@@ -513,6 +720,21 @@ def main():
 
         elif "highway" in tags:
             kind = tags["highway"]
+            # A TUNNEL IS NOT A STREET YOU CAN SEE. 302 ways in Marina Bay are
+            # tagged tunnel -- the Marina Coastal Expressway and the network
+            # under the reclaimed land -- and drawing them at ground level puts
+            # tarmac across the promenade and through the bay. Dropped for the
+            # same reason process.py already drops footprints tagged layer=-1:
+            # underground is not part of the world you ride through. Portals
+            # would be better than nothing but nothing is better than a
+            # motorway laid over a park.
+            if str(tags.get("tunnel", "no")) not in ("no", ""):
+                continue
+            try:
+                if int(tags.get("layer", 0)) < 0:
+                    continue
+            except ValueError:
+                pass
             pts = [proj(p["lat"], p["lon"]) for p in e["geometry"]]
             if len(pts) < 2:
                 continue
@@ -586,6 +808,18 @@ def main():
             # drawn as asphalt. Eighth instance of real data present and unused.
             if tags.get("surface"):
                 r["surface"] = tags["surface"]
+            # A BRIDGE DECK IS NOT THE GROUND. Carried so terrain.py can refuse
+            # to sample elevation on it: the Benjamin Sheares Bridge crosses
+            # Marina Bay about 30m up, and sampling its deck as ground put a 53m
+            # ridge across a district whose real relief is a few metres. Same
+            # for anything on a layer above zero.
+            if str(tags.get("bridge", "no")) not in ("no", ""):
+                r["bridge"] = 1
+            try:
+                if int(tags.get("layer", 0)) > 0:
+                    r["bridge"] = 1
+            except ValueError:
+                pass
             r["ws"] = wsrc
             if tags.get("name"):
                 r["n"] = tags["name"]
@@ -1042,6 +1276,15 @@ def main():
                 for _o in _grid.get((int(x // _CELL), int(z // _CELL)), []):
                     if _o is _b or not _inpoly(_o["p"], x, z):
                         continue
+                    # A MASS THAT STARTS IN THE AIR BURIES NOTHING. SkyPark is
+                    # 12,455 m2 at h=207 with min_height 193 -- a 14m deck in
+                    # the sky -- and it sits over all three Marina Bay Sands
+                    # towers. Judged on height alone it "contains" them and two
+                    # of the three were dropped, along with both Asia Square
+                    # towers under their own outline. A footprint with
+                    # min_height does not occupy the ground beneath it.
+                    if _o.get("mh"):
+                        continue
                     if _area(_o["p"]) > _area(_b["p"]) * 1.05 \
                             and (_o.get("h") or 0) >= (_b.get("h") or 0):
                         _in += 1
@@ -1057,9 +1300,141 @@ def main():
         _bset = {id(b) for b in _buried}
         buildings = [b for b in buildings if id(b) not in _bset]
 
+    # ---- FREE-STANDING TOWERS (the Supertrees) -----------------------------
+    # OSM maps the Supertrees individually as `man_made=tower` with REAL
+    # positions, while the Grove itself is only a garden polygon -- so the
+    # positions are surveyed and do not have to be invented. Their HEIGHTS are
+    # another matter: several carry `fixme=height`, one is tagged 0.5m and one
+    # gives a storey count instead of metres.
+    #
+    # Gardens by the Bay publishes the real set: 18 Supertrees at 25, 30, 37, 42
+    # and 50m, of which exactly ONE is 50m and carries the observatory. So a
+    # tagged height is SNAPPED to the nearest published value, and the one
+    # tagged `tower:type=observation` is forced to 50m regardless of what its
+    # height tag says. That is the same treatment the building heights already
+    # get when a tag is implausible, and it keeps the silhouette right: a row of
+    # Supertrees where one is clearly tallest is the thing people photograph.
+    SUPERTREE_H = [25, 30, 37, 42, 50]
+    towers = []
+    for e in els:
+        t = e.get("tags") or {}
+        if t.get("man_made") != "tower":
+            continue
+        g = e.get("geometry")
+        if g:
+            xs = [proj(q["lat"], q["lon"]) for q in g if "lat" in q]
+            if not xs:
+                continue
+            cx = sum(p[0] for p in xs) / len(xs)
+            cz = sum(p[1] for p in xs) / len(xs)
+            rad = max(math.dist((cx, cz), p) for p in xs)
+        elif "lat" in e:
+            cx, cz = proj(e["lat"], e["lon"])
+            rad = 4.0
+        else:
+            continue
+        h = None
+        try:
+            h = float(str(t.get("height", "")).replace("m", "").strip())
+        except ValueError:
+            h = None
+        if h is None and t.get("building:levels"):
+            # On a TOWER this is a mis-tagged height, not a storey count: a
+            # Supertree has no storeys. One of them carries `building:levels=27`
+            # and multiplying by a floor height made it 92m, which snapped to
+            # the 50m bucket and produced TWO 50m Supertrees when Gardens by the
+            # Bay publishes exactly one.
+            try:
+                h = float(t["building:levels"])
+            except ValueError:
+                h = None
+        if t.get("tower:type") == "observation":
+            h = 50.0                      # the one with the observatory
+        elif h is None or h < 12:
+            h = 25.0                      # a Supertree is never shorter than this
+        else:
+            h = min(SUPERTREE_H, key=lambda v: abs(v - h))
+        towers.append({"p": [round(cx, 1), round(cz, 1)], "h": h,
+                       "r": round(min(9.0, max(3.0, rad)), 1)})
+    if towers:
+        print(f"  towers: {len(towers)} free-standing, heights "
+              + "/".join(str(int(t['h'])) for t in sorted(towers, key=lambda q: -q['h'])))
+
+    # ---- WATER -------------------------------------------------------------
+    # Nothing in this project has ever drawn water. It was FETCHED from the very
+    # first district and thrown away here, which is the eighth instance of the
+    # pattern data/unused.py now gates -- except this one was invisible to that
+    # gate too, because the tag was on an element class the scene file has no
+    # collection for at all.
+    #
+    # A bay is a multipolygon RELATION, not a closed way: Marina Reservoir and
+    # the Singapore River both are, so a way-only reader gets the ornamental
+    # ponds and misses the bay. Outer rings only -- an island in a reservoir is
+    # drawn as land by the buildings and terrain that sit on it, and a hole in
+    # the water surface would show the terrain through it anyway.
+    water = []
+    for e in els:
+        t = e.get("tags") or {}
+        # AN AREA, NOT A CENTRELINE. `waterway=canal` and `waterway=river` on a
+        # plain way are the LINE down the middle of the water, not its outline:
+        # treating them as polygons turned Stamford Canal into a 222,000 m2
+        # blob lying across Orchard, and W2 duly reported 5,447 things built in
+        # open water three kilometres from the nearest water.
+        #
+        # Only `natural=water`, `landuse=reservoir` and the two area-by-
+        # definition waterway values are outlines, and even then the ring has to
+        # actually close.
+        is_water = (t.get("natural") == "water"
+                    or t.get("landuse") == "reservoir"
+                    or t.get("waterway") in ("riverbank", "dock"))
+        if not is_water:
+            continue
+        rings = []
+        if e["type"] == "way" and e.get("geometry"):
+            rings.append(e["geometry"])
+        elif e["type"] == "relation":
+            # A MULTIPOLYGON'S OUTER RING IS SPLIT ACROSS MANY WAYS and has to
+            # be stitched end to end. Marina Reservoir arrives as 40 outer
+            # members, every one an OPEN line a few points long; treating each
+            # as its own ring gives 40 slivers of no area, which the area filter
+            # then drops -- so the bay silently did not exist.
+            #
+            # Exactly the same operation process.py already does to turn OSM's
+            # 28 Orchard Road fragments into one centreline. Endpoints are
+            # matched on a rounded key because they are shared nodes and agree
+            # to full precision.
+            rings.extend(stitch_outer(e))
+        for g in rings:
+            pts = [proj(q["lat"], q["lon"]) for q in g if "lat" in q]
+            if len(pts) < 4:
+                continue
+            # a ring that does not close is a line someone tagged as water
+            if math.dist(pts[0], pts[-1]) > 25.0:
+                continue
+            a2 = 0.0
+            for i in range(len(pts)):
+                q1, q2 = pts[i], pts[(i + 1) % len(pts)]
+                a2 += q1[0] * q2[1] - q2[0] * q1[1]
+            # NOT `area` -- that is a function defined in this same scope, and
+            # binding it here makes it local for the whole of main(), which
+            # broke the building reader 500 lines earlier. This is the SECOND
+            # time in one session: `ring` went the same way in the edge-clearance
+            # pass. In a 1,300-line main() every helper name is a landmine.
+            warea = abs(a2) / 2
+            if warea < 120:           # a pond smaller than this is dressing
+                continue
+            water.append({"p": [[round(x, 1), round(z, 1)] for x, z in pts],
+                          "a": round(warea)})
+    water.sort(key=lambda w: -w["a"])
+    if water:
+        print(f"  water: {len(water)} polygons, largest {water[0]['a']:,} m2, "
+              f"total {sum(w['a'] for w in water):,} m2")
+
     out = {
         "origin": {"lat": LAT0, "lon": LON0},
         "buildings": buildings,
+        "water": water,
+        "towers": towers,
         "roads": roads,
         "trees": trees,
         "crossings": crossings,

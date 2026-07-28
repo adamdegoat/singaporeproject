@@ -607,6 +607,23 @@ export class Crowd {
           if (mask2 && k2 < 32 && !(mask2 & (1 << k2))) shift = 0;
         }
       }
+      // AND EASE INTO IT. Setting shift to 0 the instant the effective offset
+      // enters a blocked bucket is a jump of the whole dodge in one frame:
+      // measured, a walker's parameters moved 0.25m while its DRAWN position
+      // moved 0.59m, and B1 read 4.75 m/s. That is the same teleport this file
+      // has now produced three times -- the 17.6 m/s sidestep, the 135 m/s
+      // snap-to-metre, and this -- every time from applying a correction as a
+      // position change instead of as a rate.
+      //
+      // So `shift` itself is rate-limited. Whatever any guard above decides,
+      // the walker can only move toward it at a walking pace.
+      {
+        const cap = 1.2 * dt;
+        if (pr.shPrev === undefined) pr.shPrev = shift;
+        const d5 = shift - pr.shPrev;
+        pr.shPrev += Math.abs(d5) <= cap ? d5 : Math.sign(d5) * cap;
+        shift = pr.shPrev;
+      }
       const x = baseX + nx * shift;
       const z = baseZ + nz * shift;
       pr.dx = x; pr.dz = z;             // what positions() reports: where it IS

@@ -1,66 +1,66 @@
 {
-  "_readme": "The world, one district at a time. Add an entry, run build_district.py <id>, then check.py <id>. Bboxes are OSM order: south,west,north,east. Keep them under ~1.2km on the long side or Overpass times out.",
-  "_origin_note": "ONE origin for the whole island, and every district projects from it. Each district used to carry its own, which meant two districts built side by side were each measured from a different zero and would not line up at the seam. Nothing caught it because only one district was ever built. This is the SVY21 datum origin, the point Singapore's own national survey grid is measured from. Coordinates run to tens of thousands of metres across the island; float32 still resolves under 2mm at 30km, and depth precision depends on y, which stays under 200m.",
-  "island_origin": [
-    1.366666,
-    103.833333
-  ],
-  "districts": [
-    {
-      "id": "orchard",
-      "name": "Orchard Road",
-      "bbox": "1.2965,103.8265,1.3085,103.8505",
-      "axis": "orchard road",
-      "status": "live",
-      "notes": "The full 2,586m of Orchard Road, Tanglin junction through to Dhoby Ghaut. The earlier box covered only the middle 1,119m (43%)."
-    },
-    {
-      "id": "somerset",
-      "name": "Somerset / Dhoby Ghaut",
-      "bbox": "1.2960,103.8370,1.3020,103.8470",
-      "axis": "orchard road",
-      "status": "merged into orchard",
-      "notes": "Continues Orchard east: 313, Orchard Gateway, The Cathay, Plaza Singapura."
-    },
-    {
-      "id": "tanglin",
-      "name": "Tanglin",
-      "bbox": "1.3040,103.8180,1.3110,103.8300",
-      "axis": "orchard road",
-      "status": "merged into orchard",
-      "notes": "Continues Orchard west: Tanglin Mall, Forum, St Regis, the Botanic Gardens edge."
-    },
-    {
-      "id": "bugis",
-      "name": "Bugis / Rochor",
-      "bbox": "1.2960,103.8520,1.3030,103.8620",
-      "axis": "victoria street",
-      "status": "planned",
-      "notes": "Shophouse-heavy, so the shophouse recipe should carry most of it."
-    },
-    {
-      "id": "chinatown",
-      "name": "Chinatown / Telok Ayer",
-      "bbox": "1.2790,103.8410,1.2860,103.8500",
-      "axis": "south bridge road",
-      "status": "planned",
-      "notes": "Densest shophouse fabric in the city; good test of the terrace variants."
-    },
-    {
-      "id": "marinabay",
-      "name": "Marina Bay",
-      "bbox": "1.2780,103.8520,1.2860,103.8640",
-      "axis": "bayfront avenue",
-      "status": "planned",
-      "notes": "Towers and water. Needs a water surface, which nothing else has yet."
-    },
-    {
-      "id": "brasbasah",
-      "name": "Bras Basah / Civic District",
-      "bbox": "1.2885,103.8450,1.2995,103.8560",
-      "axis": "bras basah road",
-      "status": "planned",
-      "notes": "Continues east from where Orchard Road ends at Handy Road. Fort Canning, the National Museum, SMU, Bras Basah, Bencoolen, Waterloo Street, up to Raffles Hotel and City Hall. Chosen because the street physically hands over here, so the seam needs no invention, and because it looks nothing like Orchard: low colonial civic buildings and open green instead of a canyon of malls."
-    }
-  ]
+ "_readme": "The world, one district at a time. Add an entry, run build_district.py <id>, then check.py <id>. Bboxes are OSM order: south,west,north,east. Keep them under ~1.2km on the long side or Overpass times out.",
+ "_origin_note": "ONE origin for the whole island, and every district projects from it. Each district used to carry its own, which meant two districts built side by side were each measured from a different zero and would not line up at the seam. Nothing caught it because only one district was ever built. This is the SVY21 datum origin, the point Singapore's own national survey grid is measured from. Coordinates run to tens of thousands of metres across the island; float32 still resolves under 2mm at 30km, and depth precision depends on y, which stays under 200m.",
+ "island_origin": [
+  1.366666,
+  103.833333
+ ],
+ "districts": [
+  {
+   "id": "orchard",
+   "name": "Orchard Road",
+   "bbox": "1.2965,103.8265,1.3085,103.8505",
+   "axis": "orchard road",
+   "status": "live",
+   "notes": "The full 2,586m of Orchard Road, Tanglin junction through to Dhoby Ghaut. The earlier box covered only the middle 1,119m (43%)."
+  },
+  {
+   "id": "somerset",
+   "name": "Somerset / Dhoby Ghaut",
+   "bbox": "1.2960,103.8370,1.3020,103.8470",
+   "axis": "orchard road",
+   "status": "merged into orchard",
+   "notes": "Continues Orchard east: 313, Orchard Gateway, The Cathay, Plaza Singapura."
+  },
+  {
+   "id": "tanglin",
+   "name": "Tanglin",
+   "bbox": "1.3040,103.8180,1.3110,103.8300",
+   "axis": "orchard road",
+   "status": "merged into orchard",
+   "notes": "Continues Orchard west: Tanglin Mall, Forum, St Regis, the Botanic Gardens edge."
+  },
+  {
+   "id": "bugis",
+   "name": "Bugis / Rochor",
+   "bbox": "1.2960,103.8520,1.3030,103.8620",
+   "axis": "victoria street",
+   "status": "planned",
+   "notes": "Shophouse-heavy, so the shophouse recipe should carry most of it."
+  },
+  {
+   "id": "chinatown",
+   "name": "Chinatown / Telok Ayer",
+   "bbox": "1.2790,103.8410,1.2860,103.8500",
+   "axis": "south bridge road",
+   "status": "planned",
+   "notes": "Densest shophouse fabric in the city; good test of the terrace variants."
+  },
+  {
+   "id": "marinabay",
+   "name": "Marina Bay",
+   "bbox": "1.2760,103.8500,1.2920,103.8680",
+   "axis": "bayfront avenue",
+   "status": "live",
+   "notes": "Towers and WATER, which nothing else in this project has. The planned box was 1.18 km2 and reached none of the things that make Marina Bay recognisable, and it stopped 275m short of Bras Basah in latitude, so the two districts would not have touched and the seam would have been a hole. Widened to overlap Bras Basah (1.2885-1.2920) and to contain Marina Bay Sands, the ArtScience Museum, the Merlion, the Esplanade, the Singapore Flyer, the Helix Bridge, Gardens by the Bay's Supertrees, Marina Bay Financial Centre and the Fullerton."
+  },
+  {
+   "id": "brasbasah",
+   "name": "Bras Basah / Civic District",
+   "bbox": "1.2885,103.8450,1.2995,103.8560",
+   "axis": "bras basah road",
+   "status": "planned",
+   "notes": "Continues east from where Orchard Road ends at Handy Road. Fort Canning, the National Museum, SMU, Bras Basah, Bencoolen, Waterloo Street, up to Raffles Hotel and City Hall. Chosen because the street physically hands over here, so the seam needs no invention, and because it looks nothing like Orchard: low colonial civic buildings and open green instead of a canyon of malls."
+  }
+ ]
 }

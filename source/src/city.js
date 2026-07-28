@@ -1,7 +1,7 @@
 // Build the street from real OSM geometry: extruded footprints, road ribbons,
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, rng } from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, rng } from './tex.js';
 import { recipeFor, hasShopfront, shophouse } from './landmarks.js';
 
 export const TEX = {
@@ -96,6 +96,13 @@ export const MAT = {
   white: new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.85 }),
   yellow: new THREE.MeshStandardMaterial({ color: PAL.yellow, roughness: 0.85 }),
   tactile: new THREE.MeshStandardMaterial({ map: texTactile(), roughness: 0.72 }),
+  // Marina Reservoir is fresh water held behind a barrage, not open sea: it
+  // reads green-grey and fairly still, not blue. Low roughness so it picks up
+  // the environment map the sky already provides, which is what makes it read
+  // as water rather than as painted concrete.
+  water: new THREE.MeshStandardMaterial({
+    map: texWater(), color: 0x8fa9a8, roughness: 0.16, metalness: 0.34,
+  }),
   // the two surfaces OSM names that are neither asphalt nor our pavement slab
   unitPave: new THREE.MeshStandardMaterial({ map: texPaving(), color: 0x9a9184, roughness: 0.92 }),
   roadConc: new THREE.MeshStandardMaterial({ map: texConcrete(0x9d9a94, 0.6), roughness: 0.93 }),
@@ -530,6 +537,19 @@ export function buildBuildings(world, data) {
                       : sharedMat(wallTex, fam.rough, fam.metal);
     const per = perimeter(pts);
     const h = b.h;
+    // A MASS THAT STARTS IN THE AIR. `min_height` says the building begins
+    // above the ground -- a sky bridge, a deck, a canopy spanning between
+    // towers. SkyPark is min_height 193 of height 207, so read as a plain
+    // height it is a solid 207m block standing exactly where Marina Bay Sands'
+    // atrium is. Built from its own base, it is the 14m deck everyone knows.
+    if (b.mh && b.mh > 1 && b.mh < h - 0.5) {
+      const lift = extrude(pts, h - b.mh, mat, b.mh);
+      lift.castShadow = true; lift.receiveShadow = true;
+      world.add(lift);
+      stats.count++;
+      if (h > 40) stats.tall++;
+      continue;
+    }
     // Landmarks are podium + tower, which is what the Orchard skyline is made of
     if (b.k && h > 70) {
       const podium = Math.min(34, h * 0.28);
@@ -714,10 +734,23 @@ function addShopfront(world, b, per, merger, clearance) {
 // overlapping a crossing road is unavoidable. Each road carries a deterministic
 // sub-centimetre height offset so those overlaps have a stable winner instead of
 // shimmering.
-function ribbon(pts, width, y) {
+// `flat` draws the ribbon at ONE height instead of following the ground.
+//
+// A bridge deck does not follow the ground -- that is what makes it a bridge.
+// Bridge ways were being laid on the terrain, so every causeway across Marina
+// Bay was painted on the seabed: 1,900 lane markings drawn under water, which
+// is what W2 caught. The height is the HIGHEST ground the way touches, which is
+// its own bank, so it comes from surveyed terrain rather than from a number
+// somebody chose.
+function ribbon(pts, width, y, flat = false) {
   const g = new THREE.BufferGeometry();
   const pos = [], uv = [];
-  const H = (x, z) => TERRAIN.at(x, z) + y;
+  let deck = 0;
+  if (flat) {
+    for (const q of pts) deck = Math.max(deck, TERRAIN.at(q[0], q[1]));
+    deck += 1.2;                       // the deck sits above its abutment
+  }
+  const H = (x, z) => (flat ? deck : TERRAIN.at(x, z)) + y;
   const half = width / 2;
 
   // drop repeated points, then work out each vertex's offset direction
@@ -825,7 +858,7 @@ export function buildRoads(world, data) {
     // own geometry, gives every overlap a consistent winner.
     const seed = Math.abs(Math.round(r.p[0][0] * 7 + r.p[0][1] * 13)) % 5;
     const y = isPath ? 0.02 : 0.055 + seed * 0.0012;
-    const g = ribbon(r.p, r.w, y);
+    const g = ribbon(r.p, r.w, y, !!r.bridge);
     if (!g.attributes.position || g.attributes.position.count === 0) continue;
     // WHAT IT IS MADE OF, from the map. `surface` is on 61% of ways here and
     // nothing read it until data/unused.py enumerated the extract: 293 ways in
@@ -909,7 +942,14 @@ export function buildRoads(world, data) {
 // about ten draw calls per tree.
 export class TreeField {
   constructor() { this.items = []; }
-  add(x, z, scale = 1) { this.items.push([x, z, scale]); }
+  // NOTHING GROWS IN THE RESERVOIR. Trees come from surveyed OSM nodes and
+  // from the avenue walk, and neither has any idea where the water is: 97 leaf
+  // cards and canopy blobs were standing in Marina Bay. Guarded at add() so
+  // every caller is covered rather than each one remembering.
+  add(x, z, scale = 1) {
+    if (window.__inWater && window.__inWater(x, z)) return;
+    this.items.push([x, z, scale]);
+  }
   build(world) {
     const n = this.items.length;
     if (!n) return 0;
@@ -1039,6 +1079,147 @@ export function aoPatch(world, x, z, size) {
 // real buildings are. It is explicitly NOT a claim about what stands there: it
 // is a horizon, the same way a matte painting is, and it is deliberately grey
 // and featureless so it never reads as surveyed geometry.
+// WATER. Marina Bay is a reservoir with a city built round it, and until this
+// existed the bay was a flat grey plain -- which is not a detail, it is most of
+// what the place looks like.
+//
+// Drawn as a single flat surface per polygon at ONE level, because a reservoir
+// held behind a barrage is at one level by definition. The level comes from the
+// terrain at the polygon's own EDGE rather than from a constant: the heightfield
+// is sampled from an elevation dataset that has no idea where the shoreline is,
+// so hard-coding a sea level either floods the promenade or leaves the bay as a
+// pit. Taking the lowest ground around the rim and dropping a little below it
+// puts the surface just under the quay, which is where a reservoir sits.
+export function buildWater(world, data) {
+  const polys = data.water || [];
+  if (!polys.length) return { water: 0, waterArea: 0 };
+  const geos = [];
+  let area = 0;
+  for (const w of polys) {
+    const pts = w.p;
+    if (pts.length < 4) continue;
+    // the rim: the lowest ground around the edge is the waterline
+    let lo = Infinity;
+    for (const [x, z] of pts) {
+      const g = TERRAIN.at(x, z);
+      if (g < lo) lo = g;
+    }
+    if (!isFinite(lo)) continue;
+    const level = lo - 0.35;
+    const geo = new THREE.ShapeGeometry(shapeFrom(pts));
+    geo.rotateX(Math.PI / 2);
+    geo.translate(0, level, 0);
+    // ShapeGeometry lays UVs out in the shape's own coordinates, which here are
+    // metres from the island origin, so one tile per metre. A water texture at
+    // that scale is noise; 24m reads as swell at a distance and as ripple close up.
+    const uv = geo.attributes.uv;
+    if (uv) {
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 24, uv.getY(i) / 24);
+      uv.needsUpdate = true;
+    }
+    geos.push(geo);
+    area += w.a || 0;
+  }
+  if (!geos.length) return { water: 0, waterArea: 0 };
+  // one mesh for the whole layer: it is flat, it never moves, and it is the
+  // single largest surface in the district
+  const merged = mergeGeos(geos);
+  const mesh = new THREE.Mesh(merged, MAT.water);
+  mesh.name = 'waterSurface';
+  mesh.receiveShadow = false;      // a shadow on water reads as dirt
+  mesh.renderOrder = -1;
+  world.add(mesh);
+  return { water: geos.length, waterArea: Math.round(area) };
+}
+
+// concatenate position/uv-only geometries into one
+function mergeGeos(geos) {
+  let total = 0;
+  for (const g of geos) total += g.attributes.position.count;
+  const pos = new Float32Array(total * 3), uv = new Float32Array(total * 2);
+  const idx = [];
+  let o = 0, ou = 0, base = 0;
+  for (const g of geos) {
+    pos.set(g.attributes.position.array, o);
+    uv.set(g.attributes.uv.array, ou);
+    const gi = g.index;
+    if (gi) for (let i = 0; i < gi.count; i++) idx.push(base + gi.getX(i));
+    o += g.attributes.position.array.length;
+    ou += g.attributes.uv.array.length;
+    base += g.attributes.position.count;
+  }
+  const m = new THREE.BufferGeometry();
+  m.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  m.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  if (idx.length) m.setIndex(idx);
+  m.computeVertexNormals();
+  return m;
+}
+
+// THE SUPERTREES. gardensbythebay.com.sg: 18 of them at 25/30/37/42/50m, of
+// which exactly one is 50m and carries the Supertree Observatory. Built as a
+// reinforced-concrete core, a steel frame wrapped round it carrying planting
+// panels, and a canopy "shaped like an inverted umbrella".
+//
+// The canopy DIAMETER is genuinely not published anywhere -- not by Gardens by
+// the Bay, not by Atelier One who engineered them -- so it is taken from the
+// OSM footprint radius, which is surveyed. That is the honest source for it;
+// inventing a number and writing it down as if researched would be worse than
+// saying where it came from.
+export function buildSupertrees(world, data) {
+  const list = data.towers || [];
+  if (!list.length) return { supertrees: 0 };
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b6f63, roughness: 0.9 });
+  const skinMat = new THREE.MeshLambertMaterial({
+    color: 0x5c7f36, emissive: 0x1e2c14, emissiveIntensity: 0.35,
+  });
+  const canopyMat = new THREE.MeshStandardMaterial({
+    color: 0x8d5a3c, roughness: 0.62, metalness: 0.28, side: THREE.DoubleSide,
+  });
+  let n = 0;
+  for (const t of list) {
+    const [x, z] = t.p;
+    const g0 = TERRAIN.at(x, z);
+    const H = t.h, R = t.r;
+    // the trunk: a flared column, wider at the base than the neck
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(R * 0.30, R * 0.62, H, 10), trunkMat);
+    trunk.position.set(x, g0 + H / 2, z);
+    trunk.castShadow = true; world.add(trunk);
+    // the planted skin, as a sleeve of foliage over the lower two thirds
+    const skin = new THREE.Mesh(
+      new THREE.CylinderGeometry(R * 0.40, R * 0.74, H * 0.72, 10, 1, true), skinMat);
+    skin.position.set(x, g0 + H * 0.40, z);
+    world.add(skin);
+    // THE CANOPY: an inverted umbrella, so the cone opens UPWARD -- a cone the
+    // other way up is a fir tree and reads as nothing like a Supertree
+    const canopy = new THREE.Mesh(new THREE.ConeGeometry(R * 2.1, H * 0.13, 12, 1, true),
+                                  canopyMat);
+    canopy.position.set(x, g0 + H + H * 0.055, z);
+    canopy.rotation.x = Math.PI;              // point down, mouth up
+    canopy.castShadow = true; world.add(canopy);
+    // the ribs under it
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const rib = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, R * 2.0, 4), trunkMat);
+      rib.position.set(x + Math.cos(a) * R * 0.95, g0 + H - H * 0.02, z + Math.sin(a) * R * 0.95);
+      rib.rotation.z = Math.PI / 2 - 0.30;
+      rib.rotation.y = -a;
+      world.add(rib);
+    }
+    // the observatory ring, on the one that has it
+    if (H >= 50) {
+      const obs = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.95, R * 0.95, 3.2, 14, 1, true),
+        new THREE.MeshStandardMaterial({ color: 0x9aa3a8, roughness: 0.4, metalness: 0.4,
+                                         side: THREE.DoubleSide }));
+      obs.position.set(x, g0 + H - 3.0, z);
+      obs.castShadow = true; world.add(obs);
+    }
+    n++;
+  }
+  return { supertrees: n };
+}
+
 export function buildSurround(world, data, reach = 470) {
   const built = [];
   for (const b of data.buildings) {
@@ -1064,6 +1245,24 @@ export function buildSurround(world, data, reach = 470) {
       if (p2[1] < dz0) dz0 = p2[1]; if (p2[1] > dz1) dz1 = p2[1];
     }
   }
+
+  // KEEP THE SURROUND OUT OF THE WATER. It is grey massing standing in for a
+  // city that continues past the district edge, and a city does not continue
+  // across a reservoir: without this, Marina Bay gets office blocks growing out
+  // of the middle of it. Tested against the water polygons the same way the
+  // core is tested against buildings.
+  const wetRings = (data.water || []).map((w) => w.p);
+  const inWater = (x, z) => {
+    for (const ring of wetRings) {
+      let c = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, zi] = ring[i], [xj, zj] = ring[j];
+        if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+      }
+      if (c) return true;
+    }
+    return false;
+  };
 
   const rnd = rng(20260727);
   const put = [];
@@ -1092,6 +1291,19 @@ export function buildSurround(world, data, reach = 470) {
       // straddling carriageways 20m away.
       const keepOut = 40 + Math.max(bw, bd) / 2;
       if (window.__onRoad && window.__onRoad(jx, jz, keepOut)) continue;
+      // AND NOT IN THE RESERVOIR. Tested at the JITTERED position and at the
+      // block's own corners, for the same reason the road test is: the grid is
+      // 78m, the jitter moves a block up to 23m off its grid point and the
+      // block is up to 48m across, so a dry grid point can still put a
+      // fifty-metre office block in the middle of Marina Bay. Testing the grid
+      // point alone left 2,104 of them out there.
+      {
+        let wet = false;
+        for (const ox of [-bw / 2, 0, bw / 2])
+          for (const oz of [-bd / 2, 0, bd / 2])
+            if (inWater(jx + ox, jz + oz)) wet = true;
+        if (wet) continue;
+      }
       put.push([jx, jz, 16 + rnd() * 62 * fade, bw, bd, rnd() * Math.PI]);
     }
   }

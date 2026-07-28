@@ -253,6 +253,29 @@ def main():
 
     out = {"origin": scenes[0]["origin"]}
 
+    # `water` is a polygon layer but must NOT be deduped by footprint overlap:
+    # the same bay legitimately appears in two districts as two different
+    # clippings of one reservoir, and dedupe_polys would drop one of them and
+    # leave half the bay dry. Concatenated and left to the builder, which draws
+    # a flat surface where overlapping polygons are indistinguishable anyway.
+    # Deduped on a rounded outline key. The earlier note here said water must
+    # NOT be deduped because two districts clip the same bay differently -- true
+    # for the clipped ones, but the IDENTICAL ones are the same polygon fetched
+    # twice from an overlapping bbox, and drawing it twice gives two coplanar
+    # surfaces that z-fight. P6 caught it.
+    out["water"] = []
+    _wseen = set()
+    for sc in scenes:
+        for w in sc.get("water", []):
+            k = (round(w["p"][0][0]), round(w["p"][0][1]), len(w["p"]), w.get("a"))
+            if k in _wseen:
+                continue
+            _wseen.add(k)
+            out["water"].append(w)
+    if out["water"]:
+        print(f"  {'water':<10} {len(out['water']):>5}  "
+              f"({sum(w.get('a', 0) for w in out['water']):,} m2, not deduped by design)")
+
     poly_layers = ["buildings", "roads", "bridges", "covered"]
     for layer in poly_layers:
         groups = [s.get(layer, []) for s in scenes]
@@ -264,6 +287,8 @@ def main():
               f"({before - len(out[layer])} duplicates across the seam)")
 
     point_layers = ["trees", "crossings", "signals", "busstops", "mrt", "taxis", "shops", "gantries", "lamps"]
+    # towers carry a height and a radius, so they are dicts rather than points
+    out["towers"] = [t for sc in scenes for t in sc.get("towers", [])]
     for layer in point_layers:
         groups = [s.get(layer, []) for s in scenes]
         before = sum(len(g) for g in groups)

@@ -91,6 +91,9 @@ IGNORED = {
     "wikimedia_commons": "a photo link", "image": "a photo link",
     "mapillary":       "a street-level photo id",
     "wheelchair":      "accessibility of the interior; nothing has an interior",
+    "tunnel":          "underground ways are DROPPED in process.py, not drawn",
+    "traffic_signals": "the signal's own sub-type; the signal itself is the node",
+    "crossing:signals": "whether a crossing is signalised; the signal node says so",
 }
 
 # Tags carried in a structure the field scan cannot see -- a positional array
@@ -123,6 +126,7 @@ DEFERRED = {
     "lanes:bus":           "same",
     "lanes:bus:conditional": "same, with the hours they apply",
     "amenity":             "building use; the facade family uses material and era instead",
+    "roof:material":       "roof surfaces are only modelled on shophouses so far",
 }
 
 
@@ -163,6 +167,7 @@ def audit(did):
         "sidewalk:left": "sidewalk", "sidewalk:right": "sidewalk",
         "sidewalk:both": "sidewalk",
         "building:colour": "col", "roof:colour": "rcol",
+        "min_height": "mh",
     }
 
     groups = collections.defaultdict(lambda: [0, collections.Counter()])

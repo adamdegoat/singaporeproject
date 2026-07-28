@@ -157,6 +157,10 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
   // mesh spanning 2.4km of street is never culled and always drawn in full.
   const CHUNK = 260;
   const emit = (geo, mat, list, fn, colFn) => {
+    // Street furniture is not built on water either. blocked() knows about the
+    // reservoir, but several of these lists are filled by paths that never ask
+    // it -- the same reason markings.js needed one guard at the emit point.
+    if (window.__inWater) list = list.filter((r) => !window.__inWater(r[0], r[2]));
     if (!list.length) return null;
     const buckets = new Map();
     list.forEach((rec) => {

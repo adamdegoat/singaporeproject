@@ -24,7 +24,21 @@ const MARK = {
 const WHITE = new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.86 });
 const YELLOW = new THREE.MeshStandardMaterial({ color: 0xd6ae44, roughness: 0.86 });
 
+// NOTHING PAINTED ON WATER.
+//
+// Road markings are placed by walking an axis at a lateral offset, and Marina
+// Bay's axis is Bayfront Avenue, which runs along the waterfront: at half a
+// carriageway out, the offset lands in the reservoir. 1,900 lane lines were
+// drawn on the bay, which the new W2 check caught the first time it ran against
+// real water. One guard at the emit point covers every marking type, rather
+// than threading a water test through six placement loops.
+function dry(list) {
+  if (!window.__inWater) return list;
+  return list.filter((r) => !window.__inWater(r[0], r[2]));
+}
+
 function emitFlat(world, list, w, l, mat) {
+  list = dry(list);
   if (!list.length) return 0;
   const geo = new THREE.PlaneGeometry(w, l);
   const im = new THREE.InstancedMesh(geo, mat, list.length);
@@ -183,6 +197,14 @@ export function selectSideStreets(data, axis, reach = 230) {
   for (const r of data.roads) {
     if (!r.n || /orchard road/i.test(r.n)) continue;
     if (r.k === 'footway' || r.k === 'pedestrian') continue;
+    // NOT ON A BRIDGE DECK. Markings are placed at groundAt(), and a bridge
+    // deck is by definition not at ground level -- so every causeway across
+    // Marina Bay had its lane lines painted on the seabed. 1,900 of them, which
+    // is what the new W2 check caught on its first run against real water.
+    // The ribbon itself is drawn flat at bank height; the markings would need
+    // the same treatment threaded through four placement paths, and an unmarked
+    // bridge deck is a far smaller defect than a painted reservoir.
+    if (r.bridge) continue;
     let len = 0;
     for (let i = 0; i < r.p.length - 1; i++) {
       len += Math.hypot(r.p[i + 1][0] - r.p[i][0], r.p[i + 1][1] - r.p[i][1]);
@@ -359,7 +381,7 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
   // OSM maps a node for every pedestrian crossing in the district, and only the
   // 35 on Orchard Road itself were being used. The other 465 are on the streets
   // running off it, which is exactly where you meet them when you turn a corner.
-  const zebra = [];
+  let zebra = [];
   const axisHalf = axis.w / 2;
   for (const c of (data.crossings || [])) {
     const [cx, cz] = c;
@@ -390,6 +412,7 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
   const p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1);
   const emit = (geo, mat, list, fn) => {
+    list = dry(list);                     // kerbs and lamps are not built on water either
     if (!list.length) return;
     const im = new THREE.InstancedMesh(geo, mat, list.length);
     list.forEach((r, i) => { fn(r); m.compose(p, q, s); im.setMatrixAt(i, m); });
@@ -401,6 +424,7 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
 
   // one bar geometry, stretched per crossing to the width of its own road
   if (zebra.length) {
+    zebra = dry(zebra);
     const im = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.62, 1), WHITE, zebra.length);
     zebra.forEach((r, i) => {
       p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);

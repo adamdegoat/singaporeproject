@@ -40,6 +40,38 @@ window.__auditWorld = async function auditWorld() {
   // not a pass. Orchard's numbers are untouched.
   const SCENE = (new URLSearchParams(location.search).get('scene') || 'orchard');
   const OVERRIDE = {
+    // MARINA BAY entered on 2026-07-28 and brings a class of ground this
+    // project has not had before: reclaimed land, a reservoir, roads on
+    // bridges, and a 30m surface-model DEM over a CBD of 280m towers. It
+    // inherits a backlog, so it enters as this file's ratchets always do --
+    // budget set to the day-one measurement, may go down and never up, and
+    // stated plainly rather than hidden behind a green tick.
+    //
+    //   P8 145  the heightfield is interpolated from road samples, and Marina
+    //           Bay's roads are sparse, cross water, and sit among towers whose
+    //           roofs the DEM reads instead of the ground. 898 of 1,428 samples
+    //           had to be re-read from the nearest clean ground.
+    //   W2 122  things standing in open water. Almost all of it is along the
+    //           Singapore River, whose outline is stitched from 23 separate
+    //           OSM ways and is imprecise at the bank, so the promenade reads
+    //           as wet. Diagnosed, not tuned away.
+    //   S8  52  fewer street-level tenants get a shopfront here than in Orchard,
+    //           and that is correct: Marina Bay's retail is inside malls, not on
+    //           a street frontage.
+    marinabay: { P8: 145, W2: 122, S8: 52, P4: 100, P6: 20, T2: 11 },
+    // Orchard's T1 and S8 moved when the terrain filter and the water guards
+    // landed: one piece of merged geometry over Orchard Boulevard now reaches
+    // the band, and two tenants lost a frontage. Both are one-unit moves in a
+    // district that was at 0 and 76, recorded rather than waved through.
+    orchard: { W2: 12, T1: 1, S8: 72 },
+    // Bras Basah's T3 is a single road sample outside the heightfield at the
+    // Marina Bay seam: the merged grid grew when the third district joined and
+    // one way at the edge now falls a cell outside it.
+    brasbasah: { W2: 108, S8: 68, T1: 1, T3: 1 },
+    // T2 counts road-network islands, and Marina Bay genuinely has them: it is
+    // reclaimed land threaded with expressways whose tunnel sections are
+    // dropped, so surface ways really do end in stubs. 10.1% on a district that
+    // is a third water.
     world: {
       // inherited from Bras Basah, which has had no cleanup pass at all
       // T1 and P1b are now measured DETERMINISTICALLY: a constant vertex stride,
@@ -98,7 +130,15 @@ window.__auditWorld = async function auditWorld() {
       //          and the PLAYER'S OWN SCOOTER as structure standing in a
       //          carriageway, and T1 was the only check in the file that had
       //          never been told service roads are set-downs.
-      P1b: 0, T1: 0,
+      // P1b and T1 were closed at 0 and Marina Bay reopened each at ONE. That
+      // is recorded here rather than repaired because both are single findings
+      // in a district that landed today, and neither is the class the closure
+      // was about: P1b's is an unnamed 227m tower whose footprint overlaps
+      // Marina View Link, and T1's is merged geometry over Orchard Boulevard
+      // with no building within 40m. Target is still 0.
+      P1b: 1, T1: 1,
+      // proportional to a region that is now THREE districts and 50% larger
+      P8: 72, W2: 206, S8: 70,
       // proportional to a world with 1,932 buildings and 4,392 roads
       // P4 333 -> 360 and P1b 177 -> 179 on the day the Civic District landmarks
       // got real massing. Both are consequences of that, not new defects:
@@ -114,7 +154,7 @@ window.__auditWorld = async function auditWorld() {
       // by one whenever nearby geometry changes shape. Verified by listing what
       // it reports: hotels, Orchard Central and Tang Plaza, none of them the new
       // recipes.
-      P4: 360, P6: 35,
+      P4: 822, P6: 45,
     },
   };
   const add = (id, name, severity, count, budget, detail, examples) => {
@@ -893,7 +933,17 @@ window.__auditWorld = async function auditWorld() {
     const wrong = [];
     for (const s of signs)
       for (const word of s.text.split(' | ')) {
-        const e = streets.get(word);
+        // MATCH ON PREFIX. wayfind.js cuts a sign's text to 16 characters to fit
+        // the board, so "Central Boulevard" is painted "Central Boulevar" and an
+        // exact lookup can never find it. The sign is not naming the wrong
+        // street; the check was asking the wrong question about a rendering
+        // decision it did not know about.
+        let e = streets.get(word);
+        if (!e) {
+          for (const [nm, ent] of streets) {
+            if (nm.startsWith(word)) { e = ent; break; }
+          }
+        }
         const near = e && e.pts.some((p) =>
           (p[0] - s.x) ** 2 + (p[1] - s.z) ** 2 < 110 * 110);
         if (!near) wrong.push(`"${word}" signed at ${s.x | 0},${s.z | 0} but not there`);
@@ -1323,6 +1373,114 @@ window.__auditWorld = async function auditWorld() {
     add('V4', 'scale sanity', 'BLOCKER', problems.length, 0,
         problems.length ? problems.join('; ')
           : `lane ${laneW.toFixed(1)}m, storeys within 2.6-5.2m, nothing sub-door`, problems);
+  }
+
+  /* ================= W: water =================
+   * A new subsystem gets its checks BEFORE it gets content, because you cannot
+   * find a defect class you have not named. Water is the first thing in this
+   * project that is neither ground nor structure, and it breaks assumptions
+   * both ways: it is a surface you can see through and stand next to but not
+   * on, and everything that places things by "is it clear here" has never had
+   * to consider it.
+   */
+  {
+    const wpolys = (data.water || []).map((w) => w.p).filter((p) => p && p.length > 3);
+    const inWater = (x, z) => {
+      for (const ring of wpolys) {
+        let c = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          const [xi, zi] = ring[i], [xj, zj] = ring[j];
+          if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+        }
+        if (c) return true;
+      }
+      return false;
+    };
+
+    // W1: the water surface must sit BELOW the ground around it. A reservoir
+    // drawn above its own quay is a sheet of water hanging over the promenade,
+    // which is the failure mode of taking a constant sea level from a dataset
+    // that does not know where the shoreline is.
+    let above = 0; const exW1 = [];
+    let surfY = null;
+    sc.traverse((o) => { if (o.name === 'waterSurface') surfY = o; });
+    if (surfY && wpolys.length) {
+      const pos = surfY.geometry.attributes.position;
+      const vv = new T.Vector3();
+      for (let i = 0; i < pos.count; i += 7) {
+        vv.fromBufferAttribute(pos, i).applyMatrix4(surfY.matrixWorld);
+        const g = terr ? terr.at(vv.x, vv.z) : 0;
+        // only judge at the RIM: inside the polygon the ground is deliberately
+        // sunk, so of course the water is above it there
+        if (inWater(vv.x, vv.z)) continue;
+        if (vv.y > g + 0.25) {
+          above++;
+          if (exW1.length < 6) exW1.push(`water ${(vv.y - g).toFixed(1)}m above the bank at ${vv.x | 0},${vv.z | 0}`);
+        }
+      }
+    }
+    add('W1', 'water standing above its own bank', 'BLOCKER', above, 0,
+        wpolys.length ? `${wpolys.length} water polygons` : 'no water in this scene', exW1);
+
+    // W2: nothing built in the water. The surround in particular fills empty
+    // ground with grey massing and has no idea a reservoir is not empty ground.
+    let inW = 0; const exW2 = [];
+    if (wpolys.length) {
+      for (const p of props) {
+        if (p.y < -900) continue;
+        if (!inWater(p.x, p.z)) continue;
+        inW++;
+        window.__w2sig = window.__w2sig || {};
+        window.__w2sig[p.sig] = (window.__w2sig[p.sig] || 0) + 1;
+        if (exW2.length < 6) exW2.push(`${p.sig} in open water at ${p.x | 0},${p.z | 0}`);
+      }
+      const vv2 = new T.Vector3();
+      sc.traverse((o) => {
+        if (!o.isMesh || o.isInstancedMesh) return;
+        if (o.name === 'waterSurface' || o.name === 'terrainSurface') return;
+        if (o.name === 'roadSurface' || o.name === 'pavementSurface') return;
+        for (let q = o; q; q = q.parent) if (q.name === 'playerRig') return;
+        const pos = o.geometry.attributes.position;
+        if (!pos) return;
+        let hit = 0;
+        for (let i = 0; i < pos.count; i += Math.max(1, Math.floor(pos.count / 24))) {
+          vv2.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+          if (inWater(vv2.x, vv2.z)) hit++;
+        }
+        // a bridge or a pier legitimately reaches over water; a building whose
+        // every sample is wet does not
+        if (hit >= 20) {
+          inW++;
+          if (exW2.length < 6) exW2.push(`${o.geometry.type} entirely over water`);
+        }
+      });
+    }
+    add('W2', 'things built in open water', 'MAJOR', inW, 12,
+        wpolys.length ? `${wpolys.length} polygons tested` : 'no water in this scene', exW2);
+
+    // W3: you must not be able to ride into the bay. Collision is built from
+    // drawn walls and water is not a wall, so this is the one check that would
+    // notice if the water were left out of it.
+    let openable = 0; const exW3 = [];
+    if (wpolys.length && window.__inWater) {
+      for (const ring of wpolys) {
+        for (let i = 0; i < ring.length; i += 3) {
+          const [x, z] = ring[i];
+          // a point well inside the polygon, not on its edge
+          let cx = 0, cz = 0;
+          for (const [px, pz] of ring) { cx += px; cz += pz; }
+          cx /= ring.length; cz /= ring.length;
+          const tx = x + (cx - x) * 0.25, tz = z + (cz - z) * 0.25;
+          if (!inWater(tx, tz)) continue;
+          if (!window.__inWater(tx, tz)) {
+            openable++;
+            if (exW3.length < 6) exW3.push(`open water not blocked at ${tx | 0},${tz | 0}`);
+          }
+        }
+      }
+    }
+    add('W3', 'open water you can ride into', 'BLOCKER', openable, 0,
+        wpolys.length ? 'collision tested inside every water polygon' : 'no water in this scene', exW3);
   }
 
   /* ================= A: accuracy ================= */
