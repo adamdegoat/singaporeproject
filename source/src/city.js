@@ -2,7 +2,7 @@
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, rng } from './tex.js';
-import { recipeFor, hasShopfront, shophouse } from './landmarks.js';
+import { recipeFor, hasShopfront, shophouse, autoUV } from './landmarks.js';
 
 export const TEX = {
   asphalt: texAsphalt(),
@@ -145,6 +145,10 @@ const LMAT = {
   }),
   paleStone: new THREE.MeshStandardMaterial({ map: texConcrete(0xc4bdae, 0.35), roughness: 0.78 }),
   warmStone: new THREE.MeshStandardMaterial({ map: texConcrete(0xb2a48f, 0.5), roughness: 0.85 }),
+  // The real-world size of ONE TILE of each texture, in metres, read by
+  // autoUV: texGranite is 9 bays (2.9m bays), texTowerGlass 12 floors (3.2m
+  // floor-to-floor), the concretes are streak noise that reads at ~12m, and
+  // the panel's 3.8 x 3.2 is Ngee Ann's published module.
   jadeRoof: new THREE.MeshStandardMaterial({ color: 0x2f5f4a, roughness: 0.45, metalness: 0.2 }),
   clayTile: new THREE.MeshStandardMaterial({ color: 0x9c5a44, roughness: 0.82 }),
   // a roof at its surveyed colour, cached so a terrace of them is one material
@@ -180,6 +184,12 @@ const LMAT = {
     return shopHouseMats.get(col);
   },
 };
+LMAT.granite.userData.tile = [26, 26];
+LMAT.granitePanel.userData.tile = [3.8, 3.2];
+LMAT.towerGlass.userData.tile = [26, 38.4];
+LMAT.blueGlass.userData.tile = [26, 38.4];
+LMAT.paleStone.userData.tile = [12, 12];
+LMAT.warmStone.userData.tile = [12, 12];
 
 const up = new THREE.Vector3(0, 1, 0);
 
@@ -495,15 +505,24 @@ export function buildBuildings(world, data) {
   const clearance = new Clearance(data.roads, data.axis);
   const api = {
     clearance,
-    world, extrude, grow, axis: data.axis || null,
-    extrudeGeo, scaleUV,
+    // Every geometry a recipe hands over gets the material's metre tile
+    // applied by autoUV unless the recipe already stated a researched size.
+    // See the UV RULE above; recipes were the last path still mapping windows
+    // at whatever size the geometry happened to be.
+    world, grow, axis: data.axis || null,
+    extrude: (pts, h, mat, y0) => autoUV(extrude(pts, h, mat, y0), mat),
+    extrudeGeo,
+    scaleUV: (geo, sx, sy) => {
+      geo.userData.uvTile = [1 / sx, 1 / sy];    // a stated scale is a stated tile
+      return scaleUV(geo, sx, sy);
+    },
     // The height a footprint is SEATED at. Every extruded mass already uses
     // this internally, but slab() and crown() take an absolute y0, so a recipe
     // that mixes the two puts its tower at sea level while its podium sits on
     // the hill. Lucky Plaza's ground is 26m up and its bubble lift was drawn
     // from y=0, buried with three metres showing.
     footingY,
-    merge: (geo, mat, x, z) => merger.add(geo, mat, x, z),
+    merge: (geo, mat, x, z) => merger.add(autoUV(geo, mat), mat, x, z),
     // the ground under a point, so a recipe can seat a dome or a spire on the
     // terrain instead of on y=0. Without it every hand-placed piece floats or
     // sinks the moment its building is on a grade.
@@ -571,18 +590,32 @@ export function buildBuildings(world, data) {
       continue;
     }
     // Landmarks are podium + tower, which is what the Orchard skyline is made of
+    //
+    // UV RULE, everywhere below: extrudeGeo's side-wall UVs come from vertex
+    // POSITIONS, so they are already in METRES. The scale factor is therefore
+    // 1/(tile size in metres) -- a constant -- never per/26 or h/28, which
+    // multiply metres by metres and tile a window pattern ten times per metre,
+    // averaging every facade to flat colour. texCurtain draws 8 floors and
+    // texPunched 8 floors x 7 bays per tile, so a 26m x 28m tile is 3.7m
+    // windows on 3.5m floors. How big a window is is a fact about buildings,
+    // not about whichever geometry carries it. (Same trap as texTowerGlass'
+    // 8.9m floors, already fixed for Ngee Ann and Hilton via uvMetres.)
     if (b.k && h > 70) {
       const podium = Math.min(34, h * 0.28);
-      world.add(extrude(pts, podium, new THREE.MeshStandardMaterial({
+      const pod = extrude(pts, podium, new THREE.MeshStandardMaterial({
         map: pick(STONE), roughness: 0.8,
-      })));
+      }));
+      scaleUV(pod.geometry, 1 / 12, 1 / 12);   // stone streaks read at ~12m
+      world.add(pod);
       const c = centroid(pts);
       const inset = pts.map(([x, z]) => [c[0] + (x - c[0]) * 0.62, c[1] + (z - c[1]) * 0.62]);
-      world.add(extrude(inset, h - podium, mat, podium));
+      const tower = extrude(inset, h - podium, mat, podium);
+      scaleUV(tower.geometry, 1 / 26, 1 / 28);
+      world.add(tower);
       stats.tall++;
     } else {
       const cB = centroid(pts);
-      merger.add(scaleUV(extrudeGeo(pts, h), Math.max(1, per / 26), Math.max(1, h / 28)), mat, cB[0], cB[1]);
+      merger.add(scaleUV(extrudeGeo(pts, h), 1 / 26, 1 / 28), mat, cB[0], cB[1]);
       // parapet cap so roofs are not a raw extruded edge
       if (h > 8) {
         const c = centroid(pts);
@@ -636,10 +669,15 @@ function addShopfront(world, b, per, merger, clearance) {
   const sfMat = sharedMat(sf, 0.32, 0.05);
   if (merger) {
     const cS = centroid(pts);
-    merger.add(scaleUV(extrudeGeo(grow(pts, 1.012), 5.4), Math.max(2, per / 15), 1), sfMat, cS[0], cS[1]);
+    // metre UVs (see the UV RULE above): texShopfront is 6 bays per tile, so
+    // 1/15 is a 2.5m bay, and 1/5.4 fits exactly one row to the 5.4m band
+    // instead of stacking five of them
+    merger.add(scaleUV(extrudeGeo(grow(pts, 1.012), 5.4), 1 / 15, 1 / 5.4), sfMat, cS[0], cS[1]);
     merger.add(extrudeGeo(grow(pts, 1.055), 0.42, 5.3), MAT.trim, cS[0], cS[1]);
   } else {
-    world.add(extrude(grow(pts, 1.012), 5.4, sfMat));
+    const band = extrude(grow(pts, 1.012), 5.4, sfMat);
+    scaleUV(band.geometry, 1 / 15, 1 / 5.4);   // same metre rule as the merger branch
+    world.add(band);
     world.add(extrude(grow(pts, 1.055), 0.42, MAT.trim, 5.3));
   }
   // entrance canopy: a deeper projection on the longest edge
@@ -852,19 +890,32 @@ function ribbon(pts, width, y, flat = false) {
     off.push([mx * k, mz * k]);
   }
 
+  // SUBDIVIDE ACROSS THE WIDTH too. The along-length subdivision above pins
+  // the ribbon to the ground every 3m at its EDGES, but one flat quad across
+  // an 18m carriageway touches the ground only at the kerbs, and wherever the
+  // ground crowns between them the terrain stood up THROUGH the middle of the
+  // road -- the other half of the "yellow patches" defect, found by P8 the day
+  // it learned to sample off the centreline. Strips of at most 6m track the
+  // 35m heightfield to within a couple of centimetres.
+  const ACROSS = Math.max(1, Math.ceil(width / 6));
   let run = 0;
   for (let i = 0; i < p.length - 1; i++) {
     const [x1, z1] = p[i], [x2, z2] = p[i + 1];
     const o1 = off[i], o2 = off[i + 1];
     const len = Math.hypot(x2 - x1, z2 - z1);
     if (len < 0.01) continue;
-    const a = [x1 - o1[0], H(x1 - o1[0], z1 - o1[1]), z1 - o1[1]];
-    const b = [x1 + o1[0], H(x1 + o1[0], z1 + o1[1]), z1 + o1[1]];
-    const c = [x2 + o2[0], H(x2 + o2[0], z2 + o2[1]), z2 + o2[1]];
-    const d = [x2 - o2[0], H(x2 - o2[0], z2 - o2[1]), z2 - o2[1]];
-    pos.push(...a, ...b, ...c, ...a, ...c, ...d);
     const u0 = run / width, u1 = (run + len) / width;
-    uv.push(0, u0, 1, u0, 1, u1, 0, u0, 1, u1, 0, u1);
+    for (let s = 0; s < ACROSS; s++) {
+      const f0 = -1 + 2 * s / ACROSS, f1 = -1 + 2 * (s + 1) / ACROSS;
+      const a = [x1 + o1[0] * f0, 0, z1 + o1[1] * f0];
+      const b = [x1 + o1[0] * f1, 0, z1 + o1[1] * f1];
+      const c = [x2 + o2[0] * f1, 0, z2 + o2[1] * f1];
+      const d = [x2 + o2[0] * f0, 0, z2 + o2[1] * f0];
+      for (const v of [a, b, c, d]) v[1] = H(v[0], v[2]);
+      pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+      const t0 = (f0 + 1) / 2, t1 = (f1 + 1) / 2;
+      uv.push(t0, u0, t1, u0, t1, u1, t0, u0, t1, u1, t0, u1);
+    }
     run += len;
   }
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));

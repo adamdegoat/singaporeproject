@@ -65,6 +65,18 @@ export function uvMetres(mesh, mH, mV) {
   const geo = mesh.isMesh ? mesh.geometry : mesh;
   const uv = geo.attributes.uv, pos = geo.attributes.position;
   if (!uv || !pos) return mesh;
+  // Already mapped once (autoUV runs inside slab/extrude/merge). A researched
+  // size overrides the material default by RATIO rather than compounding: the
+  // UVs are metres/oldTile, so multiplying by oldTile/newTile lands them at
+  // metres/newTile whatever came first.
+  if (geo.userData.uvTile) {
+    const [tw, th] = geo.userData.uvTile;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (tw / mH), uv.getY(i) * (th / mV));
+    uv.needsUpdate = true;
+    geo.userData.uvTile = [mH, mV];
+    return mesh;
+  }
+  geo.userData.uvTile = [mH, mV];
   geo.computeBoundingBox();
   const bb = geo.boundingBox;
   const sx = bb.max.x - bb.min.x, sy = bb.max.y - bb.min.y, sz = bb.max.z - bb.min.z;
@@ -94,11 +106,31 @@ export function uvMetresExtruded(mesh, mH, mV) {
   const geo = mesh.isMesh ? mesh.geometry : mesh;
   const uv = geo.attributes.uv;
   if (!uv) return mesh;
+  const prior = geo.userData.uvTile;
+  const [dw, dh] = prior ? [prior[0] / mH, prior[1] / mV] : [1 / mH, 1 / mV];
   for (let i = 0; i < uv.count; i++) {
-    uv.setXY(i, uv.getX(i) / mH, uv.getY(i) / mV);
+    uv.setXY(i, uv.getX(i) * dw, uv.getY(i) * dh);
   }
   uv.needsUpdate = true;
+  geo.userData.uvTile = [mH, mV];
   return mesh;
+}
+
+// The default texture scale for everything a recipe builds, applied inside
+// slab(), api.extrude and api.merge so no recipe can forget it. Each material
+// carries its tile size in metres (userData.tile, set beside the material);
+// a researched size stated in the recipe still wins through uvMetres above.
+// Before this, only Ngee Ann and Hilton were mapped at a real size and every
+// other bespoke building had 8.9m floor bands or per-metre noise.
+export function autoUV(mesh, mat) {
+  const geo = mesh.isMesh ? mesh.geometry : mesh;
+  const m = mat || (mesh.isMesh && mesh.material);
+  if (!geo || !geo.attributes || !geo.attributes.uv) return mesh;
+  if (geo.userData.uvTile) return mesh;
+  if (!m || !m.map) return mesh;
+  const tile = (m.userData && m.userData.tile) || [12, 12];
+  const boxy = geo.type === 'BoxGeometry';
+  return boxy ? uvMetres(mesh, tile[0], tile[1]) : uvMetresExtruded(mesh, tile[0], tile[1]);
 }
 
 // a box placed in the footprint's own frame
@@ -113,6 +145,7 @@ function slab(api, ob, u, v, w, d, y0, h, mat, yaw = 0) {
   const z0 = ob.cz + ob.uz * u + ob.ux * v;
   if (onCarriageway(x0, z0, 0.3)) return null;
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  autoUV(m, mat);
   const x = x0, z = z0;
   m.position.set(x, y0 + h / 2, z);
   m.rotation.y = -ob.ang + yaw;
@@ -1117,8 +1150,10 @@ export function shophouse(api, b) {
   // 139 shophouses as loose meshes cost 850 draw calls on their own.
   const sw = streetward(api, ob);
   api.merge(api.extrudeGeo(api.grow(b.p, 0.86), groundH), api.mat.warmStone, cx0, cz0);
+  // metre UVs (see the UV RULE in city.js): texShophouse is 3 floors x 3 bays
+  // per tile, so 1/8 x 1/11 is a 2.7m bay on a 3.7m floor
   api.merge(api.scaleUV(api.extrudeGeo(b.p, upper, groundH),
-    Math.max(1, ob.halfLong / 4), Math.max(1, upper / 11)), wall, cx0, cz0);
+    1 / 8, 1 / 11), wall, cx0, cz0);
   api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 0.34, groundH - 0.34), trim, cx0, cz0);
   api.merge(api.extrudeGeo(api.grow(b.p, 1.04), 0.5, b.h), trim, cx0, cz0);
 

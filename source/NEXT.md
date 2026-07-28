@@ -1,3 +1,98 @@
+# HANDOVER — state as of 2026-07-29
+
+Read this block, then `STANDARD.md`. Everything below the line is the historical
+record: read it when you need the reasoning behind a rule, not before starting.
+
+## Live and green
+
+Three districts merged into one region: **Orchard Road, Bras Basah, Marina Bay**.
+2,155 buildings, ~6,000 roads, 2.0M m2 of water, ~30fps at 844x390 dpr2.
+Deployed and hash-verified: https://adamdegoat.github.io/singaporeproject/
+
+    node server.cjs                                  # dev server, :8933 -- START THIS FIRST
+    SG_SCENE=<id> node data/audit_run.mjs            # 40 checks; id = orchard|brasbasah|marinabay|world
+    SG_SCENE=world node data/behaviour.mjs           # 5 checks on how things MOVE
+    SG_SCENE=world node data/defects.mjs             # 35 exploratory classes (NOT a gate)
+    python3 data/unused.py                           # every OSM tag must be read/ignored/deferred
+    python3 data/check.py <id>                       # the data gate
+    node test/ride.test.mjs                          # ride model, no browser
+    SG_SCENE=<id> node data/patchprobe.mjs           # eye-level ray audit of the drawn road surface
+    bash data/tidy.sh                                # ALWAYS after a batch
+    ./deploy.sh "message"                            # runs every gate, refuses to publish on regression
+
+All gates pass on all four scenes. Do not trust that sentence -- run them.
+
+## RESOLVED 2026-07-29: "yellow patches on the road" was the TERRAIN
+
+The user could see it and four probes could not, because every probe compared
+the bilinear height function `terr.at()` with a road built FROM `terr.at()` --
+the input against the input -- and only ever at the CENTRELINE. The probe that
+found it in one run raycast the DRAWN meshes from an eye-level camera
+(`data/patchprobe.mjs`, kept).
+
+It was three defects stacked, all the same disease -- **two different
+approximations of the same surface drift apart between their shared sample
+points**:
+
+  1. **The drawn terrain diverged from `at()` by up to 32cm.** One vertex per
+     35m cell, and a flat triangle sits up to |twist|/4 above the bilinear
+     surface everything else is built against. The beige ground surfaced
+     through the tarmac in smooth mid-cell blobs and swallowed the lane lines.
+     Fixed in terrain.js: each cell subdivides by its own twist (1.5cm target,
+     divisors of 24 so shared edges weld); `atDrawn()` replicates the drawn
+     triangulation exactly and P8 now measures THAT, across the width, not the
+     function it was sampled from.
+  2. **The road ribbon was one flat quad across an 18m carriageway**, pinned to
+     the ground only at its kerbs, so the (now accurate) ground still crowned
+     through mid-width. ribbon() subdivides ACROSS into <=6m strips now, same
+     as the 3m along-length rule.
+  3. **On violently-curved DEM (Empress Place, tower-contaminated grade) no
+     finite subdivision wins the arms race**, so the ground now GIVES WAY:
+     Terrain.carve() drops drawn-terrain vertices inside any road corridor
+     0.45m below the ground line, applied identically in build() and atDrawn().
+     Invisible past the kerb; measured sag never exceeded 0.40m.
+
+Fallout, all verified: P8 went 202-537 over budget the day it could see, then
+to 0/0/19/(world remeasuring) once the world was fixed. **Orchard's T1
+disagreement is resolved** -- the "190k-vertex merged tile 1.3m over Orchard
+Boulevard" was the ROAD SURFACE (a deck over a dip), S7 was right to ignore it,
+and T1 now carries the same by-name surface exemption P1b has; its ratchet is
+CLOSED at 0 for orchard. Cost: ~+100k tris (terrain subdivision + road strips),
+draw calls unchanged -- the scene is fill-rate bound and these add no fill.
+
+NOTE, still true: three meshes are named `roadSurface` (asphalt at colour
+#ffffff-with-dark-map, unit-paving #9a9184, concrete). Filter by material
+colour, not by the first name match. That cost an hour twice.
+
+## Next after that
+
+1. **D26 at 6 and D36 at 3** in `defects.mjs` -- both diagnosed and documented
+   below; neither is worth another attempt without a new idea. (Orchard's old
+   T1-vs-S7 disagreement is resolved -- see the top of this file.)
+2. **Finish the bus lanes.** Data is carried on 274 ways. Drawn per-way they are
+   red stains, because OSM fragments streets. Merge a street's tagged ways into
+   continuous runs first -- the way process.py stitches Orchard Road's 28
+   fragments into one centreline -- then lay one ribbon per run.
+3. **Streaming and LOD before any fourth district.** The app loads the whole
+   region at once. Measured: the island is 158,682 OSM buildings, ~83x what is
+   loaded now. The plan and the numbers are in the expansion section below.
+4. Still deferred, low yield: `addr:housenumber`/`addr:street`,
+   `crossing:markings`, `kerb`, `roof:material`, `amenity`, `turn:lanes:*`.
+
+## How this project works, in four rules
+
+1. **Test the world, not the input to the world.** Seven checks have been found
+   reading `data/*.json` instead of the built scene. If a check is green,
+   confirm what it looks at.
+2. **A failed search must skip, never substitute.** Returning the value you were
+   asked to fix is the single most repeated bug here.
+3. **A correction applied as a position change is a teleport.** Three times:
+   17.6 m/s, 135 m/s, 4.75 m/s. Rate-limit it.
+4. **Real data is usually already there.** `python3 data/unused.py` gates this
+   now; it found 24 unread tags in Orchard on its first run.
+
+---
+
 # Start here
 
 Read this, then `STANDARD.md`, then work. Current as of 2026-07-28, deployed and

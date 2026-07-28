@@ -457,6 +457,9 @@ let clock = 0;
 const SCENE = (P.get('scene') || 'world').replace(/[^a-z0-9_-]/gi, '');
 fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   terrain = new Terrain(data.terrain || null);
+  // The ground gives way to the road. See carve() for why this exists; it must
+  // happen before build() OR atDrawn() is used, so it is done at construction.
+  terrain.carve(data.roads || []);
   setTerrain(terrain);
   window.__terrain = terrain;
   indexBuildings(data);

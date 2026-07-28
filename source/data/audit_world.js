@@ -58,17 +58,16 @@ window.__auditWorld = async function auditWorld() {
     //   S8  52  fewer street-level tenants get a shopfront here than in Orchard,
     //           and that is correct: Marina Bay's retail is inside malls, not on
     //           a street frontage.
-    marinabay: { P8: 145, W2: 76, S8: 52, P4: 100, P6: 20, T2: 11 },
-    // Orchard's T1 and S8 moved when the terrain filter and the water guards
-    // landed: one piece of merged geometry over Orchard Boulevard now reaches
-    // the band, and two tenants lost a frontage. Both are one-unit moves in a
-    // district that was at 0 and 76, recorded rather than waved through.
-    // Orchard's T1 is ONE sample: a 190k-vertex merged tile 1.3m above Orchard
-    // Boulevard. Merged tiles are out of pruneCarriageway's reach by design (it
-    // will not delete twenty buildings to remove one overhang) and S7, which
-    // asks the same question of shopfront bays, reads 0 -- so the two disagree
-    // and the disagreement is not resolved. Stated rather than tuned away.
-    orchard: { W2: 0, T1: 1, S8: 72 },
+    // P8 145 -> 19 the day the terrain was drawn faithfully and carved under
+    // roads; the residual 19 are sub-5cm-class edges on paths, diagnosed in
+    // NEXT.md. A ratchet's budget is the best figure reached.
+    marinabay: { P8: 19, W2: 76, S8: 52, P4: 100, P6: 20, T2: 11 },
+    // Orchard's T1 is CLOSED at 0. The long-open "merged tile 1.3m above
+    // Orchard Boulevard that S7 reads as 0" was the ROAD SURFACE -- a bridge
+    // deck belongs above the road it spans, S7 was right to ignore it, and T1
+    // now carries the same by-name surface exemption P1b has. The two checks
+    // agree again and the disagreement is resolved, not tuned away.
+    orchard: { W2: 0, T1: 0, S8: 72 },
     // Bras Basah's T3 is a single road sample outside the heightfield at the
     // Marina Bay seam: the merged grid grew when the third district joined and
     // one way at the edge now falls a cell outside it.
@@ -141,9 +140,13 @@ window.__auditWorld = async function auditWorld() {
       // was about: P1b's is an unnamed 227m tower whose footprint overlaps
       // Marina View Link, and T1's is merged geometry over Orchard Boulevard
       // with no building within 40m. Target is still 0.
-      P1b: 1, T1: 1,
+      // T1 1 -> 0: the Marina Bay reopening finding was the road surface
+      // itself, exempt by name since 2026-07-29. P8 72 -> 6 with the faithful
+      // terrain; the region's residuals are the same path-edge class as
+      // Marina Bay's.
+      P1b: 1, T1: 0,
       // proportional to a region that is now THREE districts and 50% larger
-      P8: 72, W2: 37, S8: 70,
+      P8: 6, W2: 37, S8: 70,
       // proportional to a world with 1,932 buildings and 4,392 roads
       // P4 333 -> 360 and P1b 177 -> 179 on the day the Civic District landmarks
       // got real massing. Both are consequences of that, not new defects:
@@ -630,12 +633,27 @@ window.__auditWorld = async function auditWorld() {
     // measures the surface that is actually drawn; if the two numbers drift
     // apart this check silently stops meaning anything, which is why both carry
     // a note to keep them equal.
+    // Two upgrades, both from the day the user's "yellow patches" were finally
+    // found and this check was green the whole time:
+    //
+    // 1. It compared terr.at() against a road built FROM terr.at() -- the input
+    //    against the input. The DRAWN terrain is piecewise flat between its
+    //    vertices and bulged up to 26cm above the bilinear surface, straight
+    //    through the tarmac. terr.atDrawn() is the height of the mesh that is
+    //    actually rendered.
+    // 2. It sampled only the CENTRELINE. The ribbon's edge vertices follow the
+    //    ground at the kerb, so the centre of a wide carriageway is where the
+    //    two surfaces drift furthest apart. Sampled at five stations across the
+    //    width now.
     const STEP = 3;
     let over = 0, tested = 0, worst = 0; const ex = [];
+    const ACROSS = [-0.85, -0.5, 0, 0.5, 0.85];
     for (const road of (data.roads || [])) {
       if (!terr) break;
+      if (road.bridge) continue;             // a deck does not follow the ground
       const isPath = road.k === 'footway' || road.k === 'pedestrian';
       const y = isPath ? 0.02 : 0.055;
+      const half = (road.w || 6) / 2;
       const raw = road.p, sub = [];
       for (let i = 0; i < raw.length - 1; i++) {
         const a = raw[i], c = raw[i + 1];
@@ -649,18 +667,32 @@ window.__auditWorld = async function auditWorld() {
       sub.push(raw[raw.length - 1]);
       for (let i = 0; i < sub.length - 1; i++) {
         const a = sub[i], c = sub[i + 1];
-        const ya = terr.at(a[0], a[1]) + y, yc = terr.at(c[0], c[1]) + y;
         const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
         if (L < 0.2) continue;
-        for (let t = 0.5; t < L; t += 1) {
+        const nx = -(c[1] - a[1]) / L, nz = (c[0] - a[0]) / L;
+        for (let t = 0.5; t < L; t += 2) {
           const f = t / L;
           const x = a[0] + (c[0] - a[0]) * f, z = a[1] + (c[1] - a[1]) * f;
-          const poke = terr.at(x, z) - (ya + (yc - ya) * f);
-          tested++;
-          if (poke > 0.05) {
-            over++;
-            if (poke > worst) { worst = poke; }
-            if (ex.length < 6) ex.push(`ground ${poke.toFixed(2)}m through "${road.n || '(unnamed)'}" at ${x | 0},${z | 0}`);
+          // the drawn road: strips of at most 6m across, each vertex on the
+          // ground -- KEEP IN STEP with ribbon() in city.js
+          const nAcross = Math.max(1, Math.ceil((road.w || 6) / 6));
+          const stripY = [];
+          for (let k = 0; k <= nAcross; k++) {
+            const fk = -1 + 2 * k / nAcross;
+            stripY.push(terr.at(x + nx * half * fk, z + nz * half * fk) + y);
+          }
+          for (const s of ACROSS) {
+            const px = x + nx * half * s, pz = z + nz * half * s;
+            const u = (s + 1) / 2 * nAcross;
+            const k = Math.min(nAcross - 1, Math.floor(u));
+            const roadY = stripY[k] + (stripY[k + 1] - stripY[k]) * (u - k);
+            const poke = terr.atDrawn(px, pz) - roadY;
+            tested++;
+            if (poke > 0.05) {
+              over++;
+              if (poke > worst) { worst = poke; }
+              if (ex.length < 6) ex.push(`ground ${poke.toFixed(2)}m through "${road.n || '(unnamed)'}" at ${px | 0},${pz | 0} (${s > 0.1 ? 'right' : s < -0.1 ? 'left' : 'centre'})`);
+            }
           }
         }
       }
@@ -1178,6 +1210,14 @@ window.__auditWorld = async function auditWorld() {
       const pos = o.geometry.attributes.position;
       if (!pos) return;
       if (o === sky) return;
+      // The surfaces the rider rides ON are not obstructions -- the same
+      // by-name exemption P1b carries, for the same reason. A bridge deck sits
+      // 1.2m+ above the ground it spans, which is inside the rider band, and
+      // the day the road ribbon gained cross-width vertices T1 jumped 1 -> 16
+      // on Oxley Rise by hitting the deck of Oxley Rise's own bridge. P8 and
+      // T5 own every surface-vs-surface question; T1's job is what stands IN
+      // the road, not the road itself.
+      if (/^(roadSurface|pavementSurface|terrainSurface|playerRig)$/.test(o.name)) return;
       // The same reasoning the prop pass uses. A vehicle is not an obstruction,
       // it is traffic; a handrail 32m long is an overhead bridge crossing the
       // road; ION's shell reaches over its own forecourt. What is left is real.
