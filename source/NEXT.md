@@ -32,8 +32,22 @@ researched design.
 
 **What is NOT done**, in the order worth doing:
 
-1. **Heights.** 917 of 1,557 are still a type default. Most sit behind something
-   and never matter; the ones visible from the road do.
+1. **Heights — the visible ones are DONE, and the headline number was a lie.**
+   961 of 1,918 are still a type default, which sounds like the biggest gap in
+   the project and is not. Only **23 of them front a main street at all**; the
+   rest sit behind something and are never seen. Of those 23, only 7 are named,
+   and a nameless footprint has nothing to look up.
+   
+   Four were researched and entered on 2026-07-28: 268 Orchard 30 -> **70m**
+   (published as 69.60m), South Beach Residences 40 -> **153m** (45 storeys),
+   Carlton Hotel 55 -> **83m** (26 floors), NoMad Singapore 18 -> **63m** (19
+   storeys, WOHA, on the former 8-storey Faber House site, opening 2027).
+   Orchard Rendezvous was checked and left alone: 17 storeys is about 54m and it
+   already carried 55.
+   
+   What is left is Orchard Shopping Centre and Claymore Connect, for which no
+   reliable figure could be found, and 16 unnamed footprints. **Measure which
+   guesses are VISIBLE before treating a guess count as a backlog.**
 2. **More districts.** The pipeline is proven and the seam holds. Little India is
    directly connected. But the app loads the whole region at once, so streaming
    has to come before the world gets much bigger.

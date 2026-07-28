@@ -70,6 +70,30 @@ LANDMARKS = {
     "grand hyatt":            {"h": 60},
     "forum":                  {"h": 40},
     "orchard central":        {"h": 56},   # VERIFIED 12 storeys
+
+    # Researched 2026-07-28, for the buildings that FRONT A MAIN STREET and
+    # still carried a type default. Only 23 of the 965 guessed heights are
+    # visible from a street at all and only 7 of those are named, which is what
+    # makes them researchable — a nameless footprint has nothing to look up.
+    #
+    #   268 Orchard          archify.com/sg + structurae.net
+    #     12 storeys over 1 basement, building height 69.60m, ~2,800 m2 site
+    #   South Beach Residences   en.wikipedia.org/wiki/South_Beach_(Singapore)
+    #     two towers, 45 and 42 storeys; the residences occupy the 45-storey
+    #     tower from level 23 up. Metres are not published, so this is the
+    #     storey count at the 3.4m the OSM `building:levels` path already uses.
+    #     NOTE the sibling trap already recorded for this complex: the footprint
+    #     named "South Beach" is the AVENUE and is 10m tall. This is the TOWER
+    #     footprint, 2,805 m2, and they are different buildings.
+    #   Carlton Hotel        26 floors (hotel listings agree; one source says 32
+    #     and is the outlier). Hotel storeys run about 3.2m.
+    #   NoMad Singapore      uol.com.sg media release 2025-05-05 + edgeprop.sg
+    #     19-storey mixed-use by WOHA on the former Faber House site, which was
+    #     8 storeys. Opens 2027, so this is a building going up right now.
+    "268 orchard":            {"h": 70},   # VERIFIED 69.6m published
+    "south beach residences": {"h": 153},  # 45 storeys
+    "carlton hotel":          {"h": 83},   # 26 floors
+    "nomad singapore":        {"h": 63},   # 19 storeys, under construction
     "cathay cineleisure":     {"h": 38},
     "scape":                  {"h": 24},
     "mandarin gallery":       {"h": 40},
