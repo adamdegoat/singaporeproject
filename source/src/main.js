@@ -454,6 +454,43 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   // the city beyond the fetched box, so the district does not end in a plain
   const surround = P.has('nosurround') ? 0 : buildSurround(world, data);
 
+  // Collision is rasterised in TWO passes, and this is the first: the buildings,
+  // the landmark massing and the distant surround, before a single piece of
+  // street furniture exists.
+  //
+  // The scope is the point. A shopfront may not be glazed where a wall stands
+  // in front of it, and the walls that do that — podiums, atria, colonnades,
+  // ION's shells — are placed by recipes and have no footprint to test against.
+  // Rasterised AFTER the dressing instead, this grid also contained bus
+  // shelters, planters and railings, and a bay was being refused because a bus
+  // shelter stood on the pavement outside it. A shelter is not a reason for a
+  // shop to have no window.
+  //
+  // The crowd is built against this too, so a pedestrian route through a podium
+  // is a route the crowd can see. The second pass, at the end, adds everything
+  // built after this line.
+  // A SEPARATE grid, not the shared one.
+  //
+  // Assigning this to SOLID meant `blocked()` knew about building walls while
+  // the street furniture was being placed, which moved the furniture, which
+  // moved Orchard's P1b ratchet from 135 to 136. The furniture placement was
+  // not the thing being fixed and a ratchet may not go up, so the two are kept
+  // apart: this grid answers "is there a building wall here" for the bays and
+  // the crowd, and SOLID is still built once at the end over everything, from
+  // exactly the same geometry it always was.
+  let WALLS = null, solidMs0 = 0;
+  if (!P.has('nosolid')) {
+    const tS = performance.now();
+    WALLS = new Solid();
+    WALLS.build(world, (x, z) => terrain.at(x, z));
+    solidMs0 = performance.now() - tS;
+    window.__wallBefore = (x, z) => WALLS.at(x, z);
+  }
+  const solidBefore = WALLS ? (x, z) => WALLS.at(x, z) : null;
+  // the crowd gets footprints AND drawn walls, which is what stopped seven
+  // pedestrian routes running through podiums
+  const walkBlocked = WALLS ? (x, z) => blocked(x, z) || WALLS.at(x, z) : blocked;
+
   // EVERY district's main street gets dressed, not just the first one.
   //
   // All of the dressing — kerbs, crossings, trees, markings, furniture, signage
@@ -472,28 +509,6 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
       if (seen.has(r)) continue;
       seen.add(r); sideStreets.push(r);
     }
-  }
-  if (!P.has('nopeople') && axis) {
-    // spread over the whole dressed network, not just the main street. Only the
-    // few dozen in view are ever drawn, so a bigger population is nearly free.
-    crowdSys = new Crowd(axis, blocked, 460, sideStreets);
-    crowdSys.build(world);
-    // must come after construction, or the handover is a no-op
-    if (window.__crossings) crowdSys.setCrossings(window.__crossings);
-    window.__crowdPositions = () => crowdSys.positions();
-    // Full per-pedestrian state, for the behaviour probe. Speeds alone tell you
-    // that someone is sprinting and not why; this says which path they are on,
-    // whether they are mid-crossing, and where along it they are.
-    window.__crowdPaths = () => crowdSys.paths.map((pt, i) => ({
-      i, len: +pt.len.toFixed(1), n: pt.pts.length, half: crowdSys.halves[i],
-      pts: pt.pts,
-    }));
-    window.__pathAt = (i, s) => { const o = [0, 0, 0, 0]; crowdSys.paths[i].at(s, o); return o; };
-    window.__crowdState = () => crowdSys.people.map((p) => ({
-      pi: p.pi, s: +p.s.toFixed(2), off: +p.off.toFixed(2), dir: p.dir,
-      crossing: !!p.crossing, crossT: +(p.crossT || 0).toFixed(3),
-      crossDur: +(p.crossDur || 0).toFixed(2), speed: +p.speed.toFixed(2),
-    }));
   }
   if (!P.has('notraffic') && axis) {
     trafficSys = new Traffic(axis, 18, 3, axis && axisSpec(axis, data));
@@ -525,9 +540,43 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
       for (const k of Object.keys(q)) sg[k] = (sg[k] || 0) + q[k];
     }
   }
+  // The crowd is built AFTER the collision grid, not before it.
+  //
+  // A pedestrian route is a road or footway centreline, and seven of those pass
+  // through geometry that has no footprint: a podium wall, the SOTA underpass,
+  // a hotel's structure. Built first, the crowd's only idea of an obstacle was
+  // the OSM footprint list — the same list that was wrong for the rider until
+  // collision started being rasterised from the walls actually drawn. Now the
+  // crowd is handed the same grid, so a route that goes through a wall is a
+  // route it can see.
+  if (!P.has('nopeople') && axis) {
+    // spread over the whole dressed network, not just the main street. Only the
+    // few dozen in view are ever drawn, so a bigger population is nearly free.
+    crowdSys = new Crowd(axis, walkBlocked, 460, sideStreets);
+    crowdSys.build(world);
+    // must come after construction, or the handover is a no-op
+    if (window.__crossings) crowdSys.setCrossings(window.__crossings);
+    window.__crowdPositions = () => crowdSys.positions();
+    // Full per-pedestrian state, for the behaviour probe. Speeds alone tell you
+    // that someone is sprinting and not why; this says which path they are on,
+    // whether they are mid-crossing, and where along it they are.
+    window.__crowdPaths = () => crowdSys.paths.map((pt, i) => ({
+      i, len: +pt.len.toFixed(1), n: pt.pts.length, half: crowdSys.halves[i],
+      pts: pt.pts,
+    }));
+    window.__pathAt = (i, s) => { const o = [0, 0, 0, 0]; crowdSys.paths[i].at(s, o); return o; };
+    window.__crowdState = () => crowdSys.people.map((p) => ({
+      pi: p.pi, s: +p.s.toFixed(2), off: +p.off.toFixed(2), dir: p.dir,
+      crossing: !!p.crossing, crossT: +(p.crossT || 0).toFixed(3),
+      crossDur: +(p.crossDur || 0).toFixed(2), speed: +p.speed.toFixed(2),
+    }));
+  }
+
   // Once for the district, not once per axis: a shopfront belongs to a
   // building, and a building on a corner fronts two streets.
-  const shopf = P.has('noshops') ? {} : buildShopfronts(world, data, axes);
+  const shopGroup = new THREE.Group();
+  world.add(shopGroup);
+  const shopf = P.has('noshops') ? {} : buildShopfronts(shopGroup, data, axes, solidBefore);
 
   signals = new Signals(furniture.signals || []);
   if (axis) wayfinder = new Wayfinder(data, axis);
@@ -548,7 +597,7 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
     SOLID = new Solid();
     const st = SOLID.build(world, (x, z) => terrain.at(x, z));
     stats.solidCells = st.cells; stats.solidWalls = st.walls;
-    stats.solidMs = Math.round(performance.now() - t0);
+    stats.solidMs = Math.round(solidMs0 + (performance.now() - t0));
     window.__solid = (x, z) => SOLID.at(x, z);
   }
 

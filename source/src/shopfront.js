@@ -30,6 +30,7 @@
 import * as THREE from '../lib/three.module.js';
 import { Merger, onCarriageway, groundAt, footingY } from './city.js';
 import { SignAtlas } from './tex.js';
+import { hasShopfront } from './landmarks.js';
 
 /* ---------------- what a kind of shop looks like ---------------- */
 // Colour and light only. A bakery is warm and bright, a bank is cool and even,
@@ -297,7 +298,7 @@ class BuildingIndex {
 }
 
 /* ---------------- the build ---------------- */
-export function buildShopfronts(world, data, axes) {
+export function buildShopfronts(world, data, axes, wallAt) {
   const stats = {
     shopRuns: 0, bays: 0, realShops: 0, glazedFrontage: 0, shopAwnings: 0,
     // why a tenant got nothing, split out rather than pooled, because "382 have
@@ -308,6 +309,7 @@ export function buildShopfronts(world, data, axes) {
     shopsBackBlock: 0,     // host fronts no street this world builds
     shopsFarFromRun: 0,    // host has frontage, but not near this tenant
     shopsNoBay: 0,         // frontage full: every bay already claimed
+    baysOnPodium: 0,       // moved out to the drawn face because the footprint was inside it
   };
   if (!data.buildings || !data.buildings.length) return stats;
 
@@ -364,6 +366,12 @@ export function buildShopfronts(world, data, axes) {
     if (!b.p || b.p.length < 3) continue;
     // the same test buildBuildings uses to send a footprint to the shophouse
     // recipe, because the two have completely different ground floors
+    // A cathedral does not have shop windows, and neither does the National
+    // Museum, the National Gallery, CHIJMES or St Andrew's. landmarks.js has
+    // kept a NO_SHOPFRONT set for this since the civic district was built and
+    // the bay builder was not asking it: 77 bays of retail glazing went onto
+    // museums and churches. Ask the one list rather than keeping a second.
+    if (!hasShopfront(b.n)) continue;
     const isShophouse = !b.k && b.a < 520 && b.h <= 20 && b.p.length <= 64;
     const prof = isShophouse ? SHOP : BIG;
     // addShopfront's own test for whether a ground-floor band was drawn
@@ -468,38 +476,109 @@ export function buildShopfronts(world, data, axes) {
     best.tenants.push({ sh, s: bs });
   }
 
+  // One wall, one set of bays.
+  //
+  // OSM maps a block and a building:part over each other often enough that two
+  // footprints share a wall, and each of them then glazes it: two lots of glass
+  // z-fighting, two fascias one behind the other, two names on the same shop.
+  // Claimed on a 1.2m grid keyed by position AND facing, so a corner where two
+  // frontages genuinely meet at right angles is not mistaken for a duplicate.
+  const claimed = new Set();
+  const claimKey = (x, z, nx, nz, dx = 0, dz = 0, da = 0) =>
+    `${Math.round(x / 1.2) + dx},${Math.round(z / 1.2) + dz},`
+    + `${Math.round(Math.atan2(nx, nz) / (Math.PI / 3)) + da}`;
+
   /* --- 3. bays --- */
   for (const runs of runsOf.values()) for (const r of runs) {
     let n = Math.max(1, Math.round(r.L / BAY_PITCH));
     if (r.L / n < BAY_MIN) n = Math.max(1, Math.floor(r.L / BAY_MIN));
     const bw = r.L / n;
-    // tenants claim the bay their node projects onto, then the nearest free one
+    // WHICH BAYS CAN EXIST IS SETTLED BEFORE ANY TENANT IS GIVEN ONE.
+    //
+    // Tenants used to be assigned first and the bay built second, so a tenant
+    // whose bay then failed a placement test — in a carriageway, solid all the
+    // way out — vanished silently: out of the numerator, out of the
+    // denominator, out of every skip bucket, and coverage fell without anything
+    // saying why. Site the bays, then hand out the ones that are real.
+    const site = new Array(n);
+    for (let i = 0; i < n; i++) site[i] = siteBay(r, i, n, bw);
+    const usable = [];
+    for (let i = 0; i < n; i++) if (site[i]) usable.push(i);
+
     const claim = new Array(n).fill(null);
     r.tenants.sort((p, q) => p.s - q.s);
     for (const t of r.tenants) {
-      let i = Math.floor(t.s / bw);
-      i = i < 0 ? 0 : i > n - 1 ? n - 1 : i;
-      if (claim[i]) {
-        let found = -1;
-        for (let k = 1; k < n && found < 0; k++) {
-          if (i - k >= 0 && !claim[i - k]) found = i - k;
-          else if (i + k < n && !claim[i + k]) found = i + k;
-        }
-        if (found < 0) { skip(t.sh, 'shopsNoBay'); continue; }   // frontage full
-        i = found;
+      if (!usable.length) { skip(t.sh, 'shopsNoBay'); continue; }
+      // the usable bay nearest where the tenant's own door projects
+      let best = -1, bd = Infinity;
+      for (const i of usable) {
+        if (claim[i]) continue;
+        const d = Math.abs((i + 0.5) * bw - t.s);
+        if (d < bd) { bd = d; best = i; }
       }
-      claim[i] = t.sh;
+      if (best < 0) { skip(t.sh, 'shopsNoBay'); continue; }   // frontage full
+      claim[best] = t.sh;
     }
-    for (let i = 0; i < n; i++) {
-      if (emitBay(r, i, n, bw, claim[i])) stats.bays++;
+    for (const i of usable) {
+      drawBay(r, i, n, bw, claim[i], site[i]);
+      stats.bays++;
     }
   }
 
-  function emitBay(r, i, n, bw, tenant) {
+  // Where this bay would stand, or null if it cannot. Every placement test
+  // lives here and NOTHING is drawn, so the answer can be had before a tenant
+  // is committed to it.
+  function siteBay(r, i, n, bw) {
     const { prof, off, ux, uz, nx, nz } = r;
     const s = (i + 0.5) * bw;
     const px = r.a[0] + ux * s, pz = r.a[1] + uz * s;
-    const fx = px + nx * off, fz = pz + nz * off;
+    let fx = px + nx * off, fz = pz + nz * off;
+    let onPodium = false;
+
+    // THE GLASS GOES ON THE FACE THAT IS DRAWN, NOT ON THE FOOTPRINT LINE.
+    //
+    // A mall with a landmark recipe has a podium wider than its footprint —
+    // Ngee Ann City's, ION's, Orchard Central's — so a bay placed on the
+    // footprint line is inside masonry, invisible, with the podium wall a metre
+    // in front of it. 794 bays were built that way, including most of the
+    // Orchard Road frontages that are the entire point of this file, and no
+    // check could see it: S6 asks about FOOTPRINTS and the podium has none.
+    //
+    // So walk outward until the wall grid says the wall has ended, and put the
+    // shopfront there. This is the same offset problem the ground-floor band
+    // solves with `grow()`, except the amount cannot be computed from the
+    // footprint because it is whatever the recipe drew. Ask the world.
+    //
+    // Refusing instead is what the first version did, and losing a third of the
+    // named tenants to avoid drawing them wrongly is not a fix, it is a smaller
+    // world.
+    if (wallAt) {
+      const clearAt = (d) => ![-bw * 0.34, 0, bw * 0.34]
+        .some((du) => wallAt(fx + ux * du + nx * d, fz + uz * du + nz * d));
+      if (!clearAt(0.7)) {
+        let push = 0;
+        for (let d = 0.5; d <= 9; d += 0.4) {
+          // Clear here AND still clear well beyond, so the search cannot stop
+          // in a doorway, a light well or a recess inside the podium. Two
+          // samples were not enough: a wall reappearing 2m further out left 48
+          // bays glazing the back of a niche.
+          if (clearAt(d + 0.7) && clearAt(d + 1.5) && clearAt(d + 2.6)) { push = d; break; }
+        }
+        if (!push) return null;           // solid all the way out: no frontage here
+        fx += nx * push; fz += nz * push;
+        onPodium = true;
+      }
+      // A refusal for bays still behind something after the push was tried and
+      // REMOVED. It threw away 202 bays and 11 named tenants and D26 did not
+      // move: the residual findings are not walls. They are the 42cm awning
+      // trim of the building NEXT DOOR, which sits 5.3m above its own footing
+      // and therefore at eye level from here wherever the ground steps down
+      // between the two. The collision grid correctly ignores it — 5m up is not
+      // an obstacle where it stands — and a raycast at eye height correctly
+      // hits it. Both are right; the thing itself is a grade artefact, not a
+      // shopfront defect. A fix that costs 11 tenants and moves no number is
+      // not a fix.
+    }
     // Nothing may lean into the traffic. Checked where the glass actually
     // stands, not on the centreline of the frontage: a run skewed to the kerb
     // is clear at one end and in the road at the other.
@@ -512,10 +591,10 @@ export function buildShopfronts(world, data, axes) {
     const reachOut = prof.depth + 0.26;
     for (const du of [-bw / 2, 0, bw / 2]) {
       const cx2 = fx + ux * du + nx * reachOut, cz2 = fz + uz * du + nz * reachOut;
-      if (onCarriageway(cx2, cz2, 0)) return false;
+      if (onCarriageway(cx2, cz2, 0)) return null;
     }
     // and the bay must still be on a street once it is placed
-    if (streets.dist(fx + nx * 2.5, fz + nz * 2.5) > ROAD_NEAR + 4) return false;
+    if (streets.dist(fx + nx * 2.5, fz + nz * 2.5) > ROAD_NEAR + 4) return null;
     // A run is judged at three points along it and accepted on two of them,
     // which says nothing about any particular bay. 271 bays at the ends of
     // otherwise good runs were facing straight into the neighbouring block —
@@ -528,8 +607,26 @@ export function buildShopfronts(world, data, axes) {
     // 236 bays were glazing the inside of their own light well. Allowing the
     // host through was the whole difference between 236 and zero.
     for (const dv of [1.2, 2.4]) {
-      if (index.at(fx + nx * dv, fz + nz * dv)) return false;
+      if (index.at(fx + nx * dv, fz + nz * dv)) return null;
     }
+    // and this wall has not already been glazed by an overlapping footprint.
+    // Checked over the whole 3x3 neighbourhood: two bays 1.16m apart landed in
+    // different cells of a 1.2m grid and both were built, which is how eleven
+    // duplicate frontages survived the first pass.
+    // Neighbouring cells AND neighbouring facings: the heading is bucketed into
+    // sixths of a circle, and two bays on the same wall can fall either side of
+    // a bucket edge. Two pairs survived the first version for exactly that.
+    for (const dx of [-1, 0, 1]) for (const dz of [-1, 0, 1]) for (const da of [-1, 0, 1]) {
+      if (claimed.has(claimKey(fx, fz, nx, nz, dx, dz, da))) return null;
+    }
+    claimed.add(claimKey(fx, fz, nx, nz));
+    if (onPodium) stats.baysOnPodium++;
+    return { fx, fz };
+  }
+
+  function drawBay(r, i, n, bw, tenant, site) {
+    const { prof, ux, uz, nx, nz } = r;
+    const { fx, fz } = site;
 
     // The bay stands on the PAVEMENT IN FRONT OF IT, not on the building's
     // footing.
@@ -578,8 +675,11 @@ export function buildShopfronts(world, data, axes) {
     };
 
     if (blank) {
+      // A blank panel in the reveal colour reads as a hole punched in the
+      // frontage. It is a service door or a fire exit: a wall, in the wall's
+      // own tone, not a void.
       const panel = new THREE.BoxGeometry(wInner, gh, prof.depth * 0.5);
-      put(at(panel, prof.depth * 0.25, yMid), revealMat);
+      put(at(panel, prof.depth * 0.25, yMid), riserMat);
     } else {
       // The lit inside, right behind the glass — and dimmer than the fitting
       // that lights it, with a per-bay wobble. At full brightness every window
@@ -676,9 +776,16 @@ export function buildShopfronts(world, data, axes) {
       // Somewhere to eat outside. Only where the pavement can take it, which on
       // Orchard it usually cannot: the awning is checked where its front edge
       // lands, not at the wall.
-      if (st.awning && prof === BIG
-          && !onCarriageway(fx + nx * 1.55, fz + nz * 1.55, 0)
-          && streets.dist(fx + nx * 1.55, fz + nz * 1.55) > 0.8) {
+      // At its CORNERS. An awning is 96% of a bay wide and reaches 1.5m out,
+      // and it was checked on the centreline only — the third time in this file
+      // that a wide thing was tested at one point, after the bays themselves
+      // and the canopy columns before them. Worth exactly one finding on
+      // Orchard's P1b ratchet, which is a gate, so it is worth fixing.
+      const awnClear = st.awning && prof === BIG && [-bw * 0.48, 0, bw * 0.48].every((du) => {
+        const ax = fx + ux * du + nx * 1.55, az = fz + uz * du + nz * 1.55;
+        return !onCarriageway(ax, az, 0) && streets.dist(ax, az) > 0.8;
+      });
+      if (awnClear) {
         // A 9cm slab read as a plank stuck to the wall. An awning is a sloped
         // sheet with a valance hanging off its front edge, and the valance is
         // the part you actually see from the pavement.
@@ -702,7 +809,6 @@ export function buildShopfronts(world, data, axes) {
       depth: prof.depth, reach: +reach.toFixed(2), building: r.b.n || '',
     });
     stats.glazedFrontage += bw;
-    return true;
   }
 
   // Bays are fabric on a wall that already casts, and they are the most

@@ -91,7 +91,7 @@ per-way test discarded the entire 1,376m street.
 | S5 | MRT entrances without their real exit letter | MINOR | — |
 | S6 | Shopfront bays built inside a building | BLOCKER | 0 |
 | S7 | Shopfront bays reaching into a carriageway | BLOCKER | 0 |
-| S8 | Share of street-level tenants given a shopfront | MAJOR | floor 85% |
+| S8 | Share of street-level tenants given a shopfront | MAJOR | floor 76% |
 | S9 | Shopfront bays of an impossible height | MAJOR | 0 |
 
 This is the category geometry checks are blind to. An overhead gantry can be
@@ -109,6 +109,13 @@ S7 tests each bay at the reach that bay RECORDS — 48cm to the face of the fasc
 1.8m for a tenanted bay with an awning — not at one number for all of them.
 Judging all 3,624 at the awning's reach reported 445 failures against geometry
 that was never built.
+
+S8's floor was RE-BASELINED 85 to 76 the day bays started being sited before
+they were handed to tenants. More tenants are placed than before, not fewer —
+257 against 252. What changed is the denominator: a tenant whose bay then failed
+a placement test used to disappear from the numerator, the denominator and every
+skip bucket, so 35 of them were being ignored and the ratio flattered itself.
+A ratchet on a measurement that has become honest is reset to the honest number.
 
 S8's denominator is deliberately not every named shop. 629 tenants are upstairs
 or in a basement, 399 are in an atrium and 226 front streets this world does not

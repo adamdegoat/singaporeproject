@@ -921,11 +921,24 @@ window.__auditWorld = async function auditWorld() {
     // missing coverage would make a correct world look 17% done for ever. Each
     // exclusion is counted separately in __stats and each one is a rule that
     // can be argued with, which is the point.
+    // RE-BASELINED 85 -> 76, and this is not a regression waved through.
+    //
+    // 257 tenants are placed now against 252 when the floor was written, so
+    // more of them have a shopfront, not fewer. What changed is the
+    // DENOMINATOR. Bays used to be assigned to tenants and then built, so a
+    // tenant whose bay failed a placement test disappeared from the numerator
+    // AND the denominator and from every skip bucket: 35 tenants were being
+    // quietly dropped and the ratio flattered itself by ignoring them. Bays are
+    // sited before they are handed out now, so those 35 are counted as
+    // `shopsNoBay`, which is what they are.
+    //
+    // A ratchet on a measurement that has become honest has to be reset to the
+    // honest number. It may go up and never down from here.
     const st = window.__stats || {};
     const placed = st.realShops || 0;
     const eligible = placed + (st.shopsNoBay || 0) + (st.shopsFarFromRun || 0);
     const pct = eligible ? Math.round((placed / eligible) * 100) : 0;
-    add('S8', 'street-level tenants given a shopfront', 'MAJOR', pct, 85,
+    add('S8', 'street-level tenants given a shopfront', 'MAJOR', pct, 76,
         `${placed} of ${eligible} eligible tenants placed; excluded: `
         + `${st.shopsUpstairs || 0} not on the street floor, ${st.shopsInside || 0} in an atrium, `
         + `${st.shopsBackBlock || 0} off the built street network, ${st.shopsNoHost || 0} with no footprint`,

@@ -611,6 +611,318 @@ const found = await page.evaluate(() => {
     report('D22', 'roads running off the edge of the ground', bad);
   }
 
+  /* ==================================================================
+     Round added with the shopfronts. Everything above was written before
+     src/shopfront.js existed, so nothing above looks at 3,624 new pieces of
+     geometry, and the general classes (D24 to D31) are ones no check covers
+     for any subsystem.
+     ================================================================== */
+
+  /* D24  retail glazing on a building that would never have any.
+     A cathedral does not have shop windows. landmarks.js already keeps a
+     NO_SHOPFRONT set for exactly this and the bay builder does not consult it,
+     so the test here is deliberately crude and name-based: if it finds
+     anything, the fix is to use the real list, not to copy this regex. */
+  {
+    // NARROWED. "gallery" matched Mandarin Gallery and Steinway Gallery, which
+    // are a shopping mall and a piano shop; "court" matched Selegie Court and
+    // Cairnhill Court, which are flats. 43 of the first 77 findings were the
+    // probe over-matching, which is the same lesson the landmark recipes
+    // learned when "Grand Park City Hall" was handed a Corinthian colonnade.
+    // Only words that cannot be anything else are left. Whatever this finds now
+    // is a gap in landmarks.js's NO_SHOPFRONT list, which the builder consults.
+    const CIVIC = /cathedral|church|chapel|mosque|synagogue|museum|monument|memorial|cenotaph|parliament|embassy/i;
+    const bad = [];
+    for (const b of window.__shopBays || []) {
+      if (CIVIC.test(b.building || '')) bad.push(`bay on "${b.building}" at ${b.x | 0},${b.z | 0}`);
+    }
+    report('D24', 'shop bays glazing a civic building', bad);
+  }
+
+  /* D25  the same frontage glazed twice.
+     OSM maps a block and a building:part over each other often enough that two
+     footprints can share a wall. Two sets of bays on one wall z-fight, and at
+     the fascia it is two names on top of each other. */
+  {
+    const CE = 6, g = new Map();
+    const bays = window.__shopBays || [];
+    const bad = [];
+    for (const b of bays) {
+      const k = Math.floor(b.x / CE) + ',' + Math.floor(b.z / CE);
+      if (!g.has(k)) g.set(k, []);
+      g.get(k).push(b);
+    }
+    for (const b of bays) {
+      const cx = Math.floor(b.x / CE), cz = Math.floor(b.z / CE);
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+        for (const o of g.get((cx + i) + ',' + (cz + j)) || []) {
+          if (o === b) continue;
+          const d = Math.hypot(o.x - b.x, o.z - b.z);
+          // facing roughly the same way, and closer than a bay is wide
+          if (d < 1.4 && (o.nx * b.nx + o.nz * b.nz) > 0.5) {
+            bad.push(`two bays ${d.toFixed(2)}m apart at ${b.x | 0},${b.z | 0}`
+              + ` ("${b.name || 'unnamed'}" / "${o.name || 'unnamed'}")`);
+          }
+        }
+      }
+    }
+    // each pair is found twice, once from each end
+    report('D25', 'the same frontage glazed twice', bad.slice(0, Math.ceil(bad.length / 2)));
+  }
+
+  /* D26  a bay glazing the inside of something DRAWN.
+     S6 asks whether a footprint is in front of the bay, and a footprint is the
+     map. Podiums, colonnades, entrance canopies, ION's shells and the covered
+     walkway are placed by recipes and have no footprint at all — the same blind
+     spot that let collision be built from OSM outlines while 11.5% of the walls
+     at rider height had none. So: raycast outward from the glass through the
+     geometry that exists. Sampled, because 3,624 rays against the whole scene
+     is a minute of work for a probe. */
+  {
+    const bays = (window.__shopBays || []);
+    const step = Math.max(1, Math.floor(bays.length / 500));
+    const ray = new T.Raycaster();
+    ray.far = 4.0;
+    const bad = [];
+    let sampled = 0;
+    for (let i = 0; i < bays.length; i += step) {
+      const b = bays[i];
+      sampled++;
+      const y = b.y + (b.top - b.y) * 0.55;
+      const tx = -b.nz, tz = b.nx;                  // along the frontage
+      // THREE rays, not one, and the bay only counts as hidden if all three are
+      // stopped. A single ray reported four bays with "something 6cm in front
+      // of the glass" and every one of them was an entrance-canopy COLUMN
+      // standing 0.9m out — which is a five-foot-way, not a defect: half the
+      // shops on this island are behind a colonnade. A column stops one ray, a
+      // wall stops all three.
+      let blocked = 0, what = '';
+      for (const off of [-1.2, 0, 1.2]) {
+        const ox = b.x + tx * off + b.nx * 3.2, oz = b.z + tz * off + b.nz * 3.2;
+        ray.set(new T.Vector3(ox, y, oz), new T.Vector3(-b.nx, 0, -b.nz).normalize());
+        const hits = ray.intersectObjects(sc.children, true)
+          .filter((h) => h.distance > 0.02 && h.object.visible);
+        // the bay's own frontmost geometry is its fascia, 0.46m proud of the
+        // facade, so anything stopping the ray more than 0.6m short of that is
+        // standing between the street and the shop
+        // A SIGN IS NOT A WALL. Two of the seven survivors were a 1.7m-tall
+        // 8cm-thick panel and a fascia board — things that hang in front of a
+        // shop by design. Anything under 30cm thick is signage, a fin or a
+        // banner, and a bay behind one is not walled off.
+        const h0 = hits[0];
+        const thin = (() => {
+          if (!h0) return false;
+          const g = h0.object.geometry;
+          if (!g.boundingBox) g.computeBoundingBox();
+          const s2 = g.boundingBox.getSize(new T.Vector3());
+          return Math.min(s2.x, s2.z) < 0.3 && s2.y < 4;
+        })();
+        if (hits.length && !thin && hits[0].distance < 3.2 - b.depth - 0.6) {
+          blocked++;
+          // WHAT it hit, not just that it hit. Two rounds went into guessing
+          // why the builder's wall grid and this ray disagreed; the grid only
+          // records near-vertical faces crossing 0.45-2.4m above the ground, so
+          // the answer was always going to be a property of the thing hit.
+          if (!what) {
+            const o = hits[0].object;
+            const g = o.geometry;
+            if (!g.boundingBox) g.computeBoundingBox();
+            // WORLD space. The local bounding box of a positioned mesh says
+            // nothing about where it is, and reading one as if it did produced
+            // "y 22.9..45.3" for something a ray at 2.4m had just hit.
+            const bb = g.boundingBox.clone().applyMatrix4(o.matrixWorld);
+            const pr = g.parameters || {};
+            const dims = [pr.radiusTop, pr.width, pr.height, pr.depth, pr.radius]
+              .filter((v) => v != null).map((v) => +v.toFixed(2)).join('x');
+            what = `${g.type}(${dims}) y ${bb.min.y.toFixed(1)}..${bb.max.y.toFixed(1)}`
+              + ` hit at y ${hits[0].point.y.toFixed(1)}, ${(3.2 - hits[0].distance).toFixed(2)}m out`;
+          }
+        }
+      }
+      if (blocked === 3) {
+        bad.push(`bay at ${b.x | 0},${b.z | 0} walled off by ${what} `
+          + `("${b.name || 'unnamed'}" on ${b.building || '?'})`);
+      }
+    }
+    report('D26', 'shop bays walled off from the street', bad,
+           `${sampled} of ${bays.length} bays sampled, three rays each`);
+  }
+
+  /* D27  anything instanced that is buried.
+     D2 checks three signatures it knows the origin height of. This asks a
+     weaker question of EVERYTHING: is the origin more than 1.2m under the
+     surface? Nothing legitimate is, except the things whose origin is
+     deliberately below ground, which are listed. */
+  {
+    const m4 = new T.Matrix4(), p4 = new T.Vector3(), q4 = new T.Quaternion(), s4 = new T.Vector3();
+    const bad = {}, ex = [];
+    sc.traverse((o) => {
+      if (!o.isInstancedMesh) return;
+      const g = o.geometry, pr = g.parameters || {};
+      const sig = `${g.type}(${[pr.radiusTop, pr.width, pr.height, pr.depth, pr.radius]
+        .filter((v) => v != null).map((v) => +v.toFixed(2)).join(',')})`;
+      for (let i = 0; i < o.count; i++) {
+        o.getMatrixAt(i, m4);
+        m4.decompose(p4, q4, s4);
+        p4.applyMatrix4(o.matrixWorld);
+        if (p4.y < -900) continue;                  // parked out of the world on purpose
+        const d = window.__surfaceAt(p4.x, p4.z) - p4.y;
+        if (d > 1.2) {
+          bad[sig] = (bad[sig] || 0) + 1;
+          if (ex.length < 6) ex.push(`${sig} ${d.toFixed(1)}m under the surface at ${p4.x | 0},${p4.z | 0}`);
+        }
+      }
+    });
+    const n = Object.values(bad).reduce((a, b) => a + b, 0);
+    report('D27', 'instanced props buried more than 1.2m', n ? ex : [],
+           n ? `${n} across ${Object.keys(bad).length} signatures` : undefined);
+  }
+
+  /* D28  a pedestrian route that goes through a wall.
+     B3 proves every path is CONTINUOUS and B5 proves you cannot walk into a
+     mapped building, and neither asks whether the routes the crowd is given
+     pass through one. A walker gliding through Tangs is not a frame
+     discontinuity and not a collision failure; it is a bad path. */
+  {
+    // Against the DRAWN WALLS, not against footprints. The first version used
+    // footprints and found nine vertices inside hotels — Concorde, Rendezvous,
+    // Hotel Rendezvous again — and every one of them was a service road running
+    // under a porte-cochere, which is a place you can genuinely walk. A
+    // footprint says a building is mapped there; the collision grid says
+    // whether anything is actually in the way.
+    const paths = window.__crowdPaths ? window.__crowdPaths() : [];
+    const solid = window.__solid;
+    let n = 0, inside = 0;
+    const ex = [];
+    if (solid) for (const p of paths) {
+      for (let i = 0; i < p.pts.length; i++) {
+        const [x, z] = p.pts[i];
+        n++;
+        if (solid(x, z)) {
+          inside++;
+          if (ex.length < 6) {
+            const b = buildingAt(x, z);
+            ex.push(`path ${p.i} point ${i} is inside a wall at ${x | 0},${z | 0}`
+              + (b ? ` ("${b.n || 'a building'}")` : ''));
+          }
+        }
+      }
+    }
+    report('D28', 'crowd path vertices inside a drawn wall', inside ? ex : [],
+           `${n} vertices over ${paths.length} paths` + (inside ? `, ${inside} in a wall` : ''));
+  }
+
+  /* D29  props sitting exactly on the world origin.
+     An InstancedMesh slot that never had a matrix written to it sits at (0,0,0)
+     with unit scale, which is a real bug that looks like a pile of furniture at
+     the island datum — seven kilometres from anything anyone will ride past, so
+     nobody would ever see it. */
+  {
+    const m4 = new T.Matrix4(), p4 = new T.Vector3(), q4 = new T.Quaternion(), s4 = new T.Vector3();
+    const bad = [];
+    sc.traverse((o) => {
+      if (!o.isInstancedMesh) return;
+      let atOrigin = 0;
+      for (let i = 0; i < o.count; i++) {
+        o.getMatrixAt(i, m4);
+        m4.decompose(p4, q4, s4);
+        // y under -900 is a slot deliberately parked out of the world. That is
+        // its own problem — the GPU still draws it, see the crowd bag — but it
+        // is not an unwritten matrix, and conflating the two sent this probe
+        // after eight pedestrian handbags.
+        if (p4.y < -900) continue;
+        if (Math.abs(p4.x) < 0.01 && Math.abs(p4.z) < 0.01) atOrigin++;
+      }
+      if (atOrigin) {
+        const pr = o.geometry.parameters || {};
+        const dims = [pr.radiusTop, pr.width, pr.height, pr.depth, pr.radius]
+          .filter((v) => v != null).map((v) => +v.toFixed(2)).join('x');
+        bad.push(`${atOrigin} of ${o.count} instances of ${o.geometry.type}(${dims}) at (0,0)`);
+      }
+    });
+    report('D29', 'instances left at the world origin', bad);
+  }
+
+  /* D30  geometry that is not finite.
+     One NaN in a position buffer poisons the bounding sphere, and a mesh with a
+     NaN bounding sphere is either never culled or never drawn, depending on the
+     path. Both look like something else entirely. */
+  {
+    const bad = [];
+    sc.traverse((o) => {
+      if (!o.isMesh) return;
+      const pos = o.geometry.attributes && o.geometry.attributes.position;
+      if (!pos) return;
+      const bs = o.geometry.boundingSphere;
+      if (bs && (!Number.isFinite(bs.radius) || !Number.isFinite(bs.center.x))) {
+        bad.push(`${o.geometry.type} has a non-finite bounding sphere`); return;
+      }
+      const stride = Math.max(1, Math.floor(pos.count / 400));
+      for (let i = 0; i < pos.count; i += stride) {
+        if (!Number.isFinite(pos.getX(i)) || !Number.isFinite(pos.getY(i)) || !Number.isFinite(pos.getZ(i))) {
+          bad.push(`${o.geometry.type} has a non-finite vertex`); return;
+        }
+      }
+    });
+    report('D30', 'geometry with non-finite numbers in it', bad);
+  }
+
+  /* D31  a fascia nobody can read.
+     A sign is only a sign if it faces the street. The bay normal comes from the
+     footprint edge, and a footprint edge can face away from the road it was
+     matched to when the frontage wraps a corner. */
+  {
+    // `__nearestStreet` returns a NAME, not a position, so the distance is
+    // measured here. The bay's normal is world — it is where the fascia was
+    // actually turned — and the road is map, which is fine: the road is drawn
+    // from that map and the question is whether the two agree.
+    const RC = 40, rg = new Map();
+    for (const r of data.roads || []) {
+      if (r.k === 'footway') continue;
+      for (let i = 0; i < r.p.length - 1; i++) {
+        const a = r.p[i], c = r.p[i + 1];
+        const mnx = Math.min(a[0], c[0]) - 30, mxx = Math.max(a[0], c[0]) + 30;
+        const mnz = Math.min(a[1], c[1]) - 30, mxz = Math.max(a[1], c[1]) + 30;
+        for (let cx = Math.floor(mnx / RC); cx <= Math.floor(mxx / RC); cx++)
+          for (let cz = Math.floor(mnz / RC); cz <= Math.floor(mxz / RC); cz++) {
+            const k = cx + ',' + cz;
+            if (!rg.has(k)) rg.set(k, []);
+            rg.get(k).push([a, c]);
+          }
+      }
+    }
+    const roadDist = (x, z) => {
+      let best = Infinity;
+      const cx = Math.floor(x / RC), cz = Math.floor(z / RC);
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++)
+        for (const [a, c] of rg.get((cx + i) + ',' + (cz + j)) || []) {
+          const vx = c[0] - a[0], vz = c[1] - a[1], L2 = vx * vx + vz * vz;
+          let t = L2 < 1e-9 ? 0 : ((x - a[0]) * vx + (z - a[1]) * vz) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const d = Math.hypot(x - (a[0] + vx * t), z - (a[1] + vz * t));
+          if (d < best) best = d;
+        }
+      return best;
+    };
+    const bad = [];
+    for (const b of window.__shopBays || []) {
+      if (!b.name) continue;
+      // six metres out along the fascia's own normal, against six metres behind
+      // it. A sign that faces the street gets closer to a road going forward.
+      // "Faces the NEAREST street" was the wrong question and it flagged seven
+      // corner sites — 313@Somerset has Orchard Road one side and Somerset Road
+      // the other, and a fascia facing the road 8m away rather than the one 4m
+      // behind it is a corner, not a defect. The real defect is a fascia facing
+      // no street at all.
+      const out = roadDist(b.x + b.nx * 6, b.z + b.nz * 6);
+      if (out > 30) {
+        bad.push(`"${b.name}" at ${b.x | 0},${b.z | 0} faces open ground: `
+          + `nearest road ${out.toFixed(0)}m ahead`);
+      }
+    }
+    report('D31', 'tenant fascias facing no street at all', bad);
+  }
+
   /* D23 DELETED.
    *
    * It counted how many distinct geometry signatures shared a square metre and

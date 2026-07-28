@@ -905,7 +905,14 @@ export const RECIPES = [
 // pavement, and adding them was both wrong to look at and the source of 13
 // duplicated props where two civic frontages met.
 const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery, gothicChurch, colonialHotel]);
+// Buildings that never have a shopfront whether or not a recipe knows them.
+// Maghain Aboth Synagogue has no recipe, so the set above let it through and it
+// was given a row of glazed retail bays. Only words that cannot be anything
+// else: "gallery" is Mandarin Gallery, a mall, and "court" is a block of flats.
+const NEVER_SHOPFRONT =
+  /synagogue|mosque|masjid|gurdwara|temple|cathedral|chapel|church|monastery|convent|cenotaph|parliament|embassy|high commission/i;
 export function hasShopfront(name) {
+  if (name && NEVER_SHOPFRONT.test(name)) return false;
   const fn = recipeFor(name);
   return !fn || !NO_SHOPFRONT.has(fn);
 }

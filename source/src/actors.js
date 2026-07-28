@@ -110,11 +110,43 @@ export class Crowd {
   // walk any pavement we hand them; path 0 is the main street, which keeps the
   // crossing behaviour because the crossing arclengths are measured along it.
   constructor(axis, isBlocked, count = 150, sideStreets = []) {
-    this.paths = [new Path(axis.p)];
-    this.halves = [axis.w / 2];
+    // A route may not run through a wall.
+    //
+    // These paths are road and footway centrelines, and seven of them had a
+    // vertex inside drawn geometry that has no footprint — a podium, a hotel's
+    // structure, the underpass at SOTA. A walker offset from such a vertex
+    // walks through the wall, and neither B3 (which asks whether the frame is
+    // continuous) nor B5 (which asks about MAPPED buildings) can see it.
+    //
+    // The blocked vertex is not moved, it is cut out, and the polyline is split
+    // there into the runs either side of it. Dragging it clear would put a bend
+    // in a street that has none, and a fix that invents geometry to hide a
+    // defect is how the kerb-snap bug got into the path frames.
+    const clearRuns = (pts) => {
+      if (!isBlocked) return [pts];
+      const runs = [];
+      let cur = [];
+      for (const q of pts) {
+        if (isBlocked(q[0], q[1])) {
+          if (cur.length > 1) runs.push(cur);
+          cur = [];
+        } else cur.push(q);
+      }
+      if (cur.length > 1) runs.push(cur);
+      return runs;
+    };
+    this.paths = []; this.halves = [];
+    for (const run of clearRuns(axis.p)) {
+      this.paths.push(new Path(run)); this.halves.push(axis.w / 2);
+    }
+    // the main street must exist even if its centreline crosses something, or
+    // the crossings, which are measured along path 0, have nothing to attach to
+    if (!this.paths.length) { this.paths.push(new Path(axis.p)); this.halves.push(axis.w / 2); }
     for (const r of sideStreets) {
-      this.paths.push(new Path(r.p));
-      this.halves.push((r.w || 6) / 2);
+      for (const run of clearRuns(r.p)) {
+        this.paths.push(new Path(run));
+        this.halves.push((r.w || 6) / 2);
+      }
     }
     this.path = this.paths[0];
     this.half = this.halves[0];
@@ -247,11 +279,10 @@ export class Crowd {
 
   update(time, dt, playerX = 1e9, playerZ = 1e9, signals = null) {
     const { _m: m, _q: q, _e: e, _p: p, _s: s, _tmp: tmp } = this;
-    const hidden = this._hidden || (this._hidden = new THREE.Matrix4().makeTranslation(0, -9999, 0));
     // slot is the write index into the instance buffers: only visible people get
     // one, and .count is set to however many were written, so the GPU never sees
     // the rest at all
-    let slot = 0;
+    let slot = 0, bagSlot = 0;
     const parts = this._parts || (this._parts = [this.head, this.hair, this.torso,
       this.hips, this.armL, this.armR, this.legL, this.legR, this.bag,
       this.shoeL, this.shoeR, this.handL, this.handR, this.neck]);
@@ -426,7 +457,9 @@ export class Crowd {
       const walk = moving ? Math.sin(time * 5.2 * (gait / 1.3) + pr.phase) : 0;
       const bob = moving ? Math.abs(Math.cos(time * 5.2 + pr.phase)) * 0.022 : 0;
 
-      const put = (part, lx, ly, lz, rx, rz) => {
+      // `at` is the write index, which is the person's packed slot for every
+      // part they always have and the bag's own counter for the one they may not
+      const put = (part, lx, ly, lz, rx, rz, at) => {
         // local offsets are in the walker's frame, then rotated into the street
         const wx = x + (nx * lx + ux * lz), wz = z + (nz * lx + uz * lz);
         p.set(wx, surfaceAt(wx, wz) + ly * sc + bob, wz);
@@ -434,7 +467,7 @@ export class Crowd {
         q.setFromEuler(e);
         s.set(sc, sc, sc);
         m.compose(p, q, s);
-        part.setMatrixAt(idx, m);
+        part.setMatrixAt(at === undefined ? idx : at, m);
       };
 
       put(this.neck, 0, 1.47, 0.005);
@@ -451,25 +484,29 @@ export class Crowd {
       put(this.shoeR, 0.085, 0.06, 0.02 + walk * 0.30);
       put(this.handL, -0.205, 0.99, walk * 0.27);
       put(this.handR, 0.205, 0.99, -walk * 0.27);
-      if (pr.hasBag) put(this.bag, pr.bagSide * 0.26, 1.02, -0.06);
-      else this.bag.setMatrixAt(idx, hidden);
+      // Bags get their OWN slot counter. Parking a bagless person's bag at
+      // y=-9999 does not cull it — the GPU draws every instance up to .count,
+      // which is the lesson already written down for the crowd itself and not
+      // applied to the one part only some of them carry. Two thirds of the bag
+      // instances were being submitted every frame to draw nothing.
+      if (pr.hasBag) put(this.bag, pr.bagSide * 0.26, 1.02, -0.06, 0, 0, bagSlot);
 
       // instance colours must follow the person into their packed slot,
       // otherwise everyone swaps clothes as they move in and out of range
       const cc = this._cc || (this._cc = new THREE.Color());
-      const setC = (part, hx) => {
+      const setC = (part, hx, at) => {
         if (!part.instanceColor) return;
-        cc.setHex(hx); part.setColorAt(idx, cc);
+        cc.setHex(hx); part.setColorAt(at === undefined ? idx : at, cc);
       };
       setC(this.torso, pr.cTop); setC(this.armL, pr.cTop); setC(this.armR, pr.cTop);
       setC(this.hips, pr.cBot); setC(this.legL, pr.cBot); setC(this.legR, pr.cBot);
-      setC(this.bag, pr.cBot);
+      if (pr.hasBag) { setC(this.bag, pr.cBot, bagSlot); bagSlot++; }
       setC(this.head, pr.cSkin); setC(this.handL, pr.cSkin);
       setC(this.handR, pr.cSkin); setC(this.neck, pr.cSkin);
       setC(this.hair, pr.cHair);
     }
     for (const part of parts) {
-      part.count = slot;
+      part.count = part === this.bag ? bagSlot : slot;
       part.instanceMatrix.needsUpdate = true;
       if (part.instanceColor) part.instanceColor.needsUpdate = true;
     }

@@ -126,6 +126,87 @@ was fine while it was a lightbox.
 `data/fps.mjs` and `SG_EXTRA=noshops` on the audit runner are how the cost above
 was attributed: build the world without one subsystem and diff the numbers.
 
+## The defect hunt after the shopfronts: 113 findings to 5
+
+Eight new probe classes (D24-D31), ten rounds. Everything above D24 was written
+before `src/shopfront.js` existed, so nothing was looking at 3,400 new pieces of
+geometry, and D27-D31 are general classes no check covered for any subsystem.
+
+**The one that mattered: 1,436 bays were built inside masonry.** A mall with a
+landmark recipe has a podium drawn WIDER than its footprint — Ngee Ann City's,
+ION's, Orchard Central's — so a bay placed on the footprint line sits inside the
+podium with its wall a metre in front of the glass. Nothing could see it: S6 asks
+about FOOTPRINTS and a podium has none. The bay now walks outward until the wall
+grid says the wall has ended and puts the glass on the face that is drawn. The
+amount cannot be computed — it is whatever the recipe drew — so it is measured.
+
+Getting there took three wrong answers, all recorded in the file:
+
+- **Refusing those bays instead of moving them** cost 78 of 252 named tenants,
+  a third of the point of the file. A smaller world is not a fix.
+- **A refusal for bays still behind something after the move** threw away 202
+  bays and 11 tenants and moved D26 by zero. Removed. A fix that costs eleven
+  tenants and no findings is not a fix.
+- **The wall grid was the SHARED collision grid**, so building it before the
+  dressing meant the street furniture could suddenly see building walls, which
+  moved the furniture, which moved Orchard's P1b ratchet 135 to 136. The bays
+  get their own grid now and `blocked()` is untouched. A ratchet may not go up
+  because of a change that was not about it.
+
+Also fixed, each its own class:
+
+- **77 bays of retail glazing on museums and churches.** `landmarks.js` has kept
+  a NO_SHOPFRONT set since the civic district was built and the bay builder was
+  not asking it. A synagogue with no recipe got through even then, so there is
+  now a name test beside it — one authority, not two.
+- **18 frontages glazed twice**, from footprints that share a wall: two lots of
+  glass z-fighting and two names on one shop. Claimed on a grid keyed by
+  position and facing; the first version missed pairs 1.16m apart because the
+  cell was 1.2m and they landed either side of it.
+- **236 bays glazing the inside of their own light well.** The skip read `if (o
+  && o !== r.b)` — any building in front except this one — which is exactly
+  backwards for a concave plan that folds back on itself.
+- **Seven crowd routes ran through drawn walls.** Paths are road centrelines and
+  the crowd's only idea of an obstacle was the footprint list, the same list
+  that was wrong for the rider. A blocked vertex is CUT and the path split
+  there, not dragged clear: inventing a bend to hide a defect is what put the
+  kerb-snap into the path frames.
+- **Two thirds of the pedestrian handbags were drawn at y=-9999 every frame.**
+  Parking an instance out of the world does not cull it — the lesson was already
+  written down for the crowd and not applied to the one part only some of them
+  carry. Bags have their own slot counter now.
+- **Tenants assigned to bays that then failed to build vanished silently**, out
+  of the numerator, the denominator and every skip bucket. Bays are sited first
+  and handed out second. This is why S8's floor moved 85 to 76 while the number
+  of tenants actually placed went 252 to 257: the metric became honest, and 35
+  tenants that were being ignored are now counted as `shopsNoBay`.
+
+**Three probes were wrong before they were right**, and all three the same way —
+measuring something adjacent to the thing they claimed:
+
+- D24 matched "gallery" and "court", so Mandarin Gallery, Steinway Gallery and
+  Selegie Court were civic buildings. 43 of the first 77 findings were the regex.
+- D26 with one ray found entrance-canopy COLUMNS 0.9m out and called them walls.
+  Half the shops on this island are behind a colonnade. Three rays now, and a
+  bay only counts as walled off if all three are stopped.
+- D28 used footprints and found nine vertices inside hotels, every one a service
+  road under a porte-cochere, which is a place you can walk. It asks the
+  collision grid now.
+
+**Two rounds were spent guessing why the wall grid and the raycast disagreed**
+before the probe was made to print WHAT it hit — and then it printed the LOCAL
+bounding box of a positioned mesh, which said y 22.9..45.3 for something a ray at
+2.4m had just hit. Print world coordinates. Print the thing, not a number near
+the thing.
+
+**D26's residual 5 findings are diagnosed and left.** They are the 42cm awning
+trim of the building NEXT DOOR, which sits 5.3m above its own footing and
+therefore at eye level from here wherever the ground steps down between the two.
+The collision grid correctly ignores it (5m up is not an obstacle where it
+stands) and a raycast at eye height correctly hits it. Both are right. It is a
+grade artefact, not a shopfront defect, and it is written here rather than tuned
+away.
+
 ## One origin for the island
 
 `districts.json` holds `island_origin` (the SVY21 datum point, 1.366666,
