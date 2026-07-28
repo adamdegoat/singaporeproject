@@ -116,7 +116,12 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     if (on.dist > 45) continue;                 // not beside a road at all
     const ang2 = Math.atan2(on.ux, on.uz);
     const side = ((bx - on.x) * -on.uz + (bz - on.z) * on.ux) >= 0 ? 1 : -1;
-    shelterAt.push([bx, bz, ang2, side, b.n || '']);
+    // OSM SAYS WHICH STOPS HAVE WHAT. We were deciding the shelter by whether a
+    // 9.2m roof happened to fit, and inventing benches and bins; 94 of these
+    // stops carry a `shelter` tag, 97 carry the actual bus numbers in
+    // `route_ref`. Where the map has an opinion it wins; where it is silent the
+    // frontage test still decides.
+    shelterAt.push([bx, bz, ang2, side, b.n || '', b]);
     realCount.busstops++;
   }
   for (const sPt of data.signals || []) {
@@ -211,7 +216,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
   // street. The shelter is 9.2m by 3.1m and only goes in where that fits, which
   // on most side streets it does not.
   let poles = 0, shelters = 0;
-  for (const [sx, sz, ang, sgn, sname] of shelterAt) {
+  for (const [sx, sz, ang, sgn, sname, rec] of shelterAt) {
     // local axes of a group rotated by rotation.y = ang
     const lx0 = Math.cos(ang), lz0 = -Math.sin(ang);   // local +x in world
     const fx0 = Math.sin(ang), fz0 = Math.cos(ang);    // local +z in world
@@ -286,6 +291,8 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
       if (stand) break;
     }
     if (!stand) continue;
+    // the map's answer beats the fit test
+    if (rec && rec.sh === 0) continue;
     shelters++;
 
     const g = new THREE.Group();

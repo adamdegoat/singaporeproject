@@ -118,9 +118,9 @@ function widthProbe(axis, data) {
   const segs = [];
   for (const r of (data.roads || [])) {
     if ((r.n || '').toLowerCase() !== name) continue;
-    for (let i = 0; i < r.p.length - 1; i++) segs.push([r.p[i], r.p[i + 1], r.w || axis.w, !!r.bridge]);
+    for (let i = 0; i < r.p.length - 1; i++) segs.push([r.p[i], r.p[i + 1], r.w || axis.w, !!r.bridge, r.lf || 0, r.lb || 0]);
   }
-  if (!segs.length) return () => ({ w: axis.w, bridge: false });
+  if (!segs.length) return () => ({ w: axis.w, bridge: false, lf: 0, lb: 0 });
   const CELL = 60;
   const grid = new Map();
   for (const sg of segs) {
@@ -133,20 +133,20 @@ function widthProbe(axis, data) {
       }
   }
   return (x, z) => {
-    let best = axis.w, bestBr = false, bd = Infinity;
+    let best = axis.w, bestBr = false, bestF = 0, bestB = 0, bd = Infinity;
     for (let dx = -1; dx <= 1; dx++)
       for (let dz = -1; dz <= 1; dz++) {
         const list = grid.get((Math.floor(x / CELL) + dx) + ',' + (Math.floor(z / CELL) + dz));
         if (!list) continue;
-        for (const [a, b, w, br] of list) {
+        for (const [a, b, w, br, lf, lb] of list) {
           const vx = b[0] - a[0], vz = b[1] - a[1];
           const L2 = vx * vx + vz * vz;
           const t = L2 < 1e-9 ? 0 : Math.max(0, Math.min(1, ((x - a[0]) * vx + (z - a[1]) * vz) / L2));
           const d = (x - (a[0] + vx * t)) ** 2 + (z - (a[1] + vz * t)) ** 2;
-          if (d < bd) { bd = d; best = w; bestBr = br; }
+          if (d < bd) { bd = d; best = w; bestBr = br; bestF = lf; bestB = lb; }
         }
       }
-    return { w: best, bridge: bestBr };
+    return { w: best, bridge: bestBr, lf: bestF, lb: bestB };
   };
 }
 
@@ -189,10 +189,20 @@ export function buildMarkings(world, axis, data = {}) {
       // and Bayfront Avenue crosses two.
       if (wh.bridge) continue;
       half = wh.w / 2;
+      // THE EXACT DIRECTIONAL SPLIT, where the map gives it. 768 ways carry
+      // lanes:forward and lanes:backward and we were halving the total instead,
+      // which is right only when the split is even: on a 3-lane road with two
+      // lanes one way and one the other, the centre line was drawn down the
+      // middle of a lane. The median sits at the real boundary now.
+      const nF = wh.lf, nB = wh.lb;
+      const nTot = (nF && nB) ? nF + nB : laneCount;
+      const lw2 = (half * 2) / nTot;
+      const medianOff = (nF && nB) ? (-half + nF * lw2) : 0;
       const dividers2 = [];
-      for (let i2 = 1; i2 < laneCount; i2++) {
-        const off2 = -half + i2 * ((half * 2) / laneCount);
-        if (!spec.oneway && Math.abs(off2) < 1.6) continue;
+      for (let i2 = 1; i2 < nTot; i2++) {
+        const off2 = -half + i2 * lw2;
+        // the median is drawn separately as a double yellow, not as a divider
+        if (!spec.oneway && Math.abs(off2 - medianOff) < 0.4) continue;
         dividers2.push(off2);
       }
       dividers.length = 0;

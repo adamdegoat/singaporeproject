@@ -96,6 +96,9 @@ export const MAT = {
   white: new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.85 }),
   yellow: new THREE.MeshStandardMaterial({ color: PAL.yellow, roughness: 0.85 }),
   tactile: new THREE.MeshStandardMaterial({ map: texTactile(), roughness: 0.72 }),
+  // the red bus lane, tinted asphalt rather than paint: it is a coloured
+  // surface course, so it keeps the tarmac texture and changes hue
+  busLane: new THREE.MeshStandardMaterial({ map: TEX.asphalt, color: 0xa8574a, roughness: 0.93 }),
   // Marina Reservoir is fresh water held behind a barrage, not open sea: it
   // reads green-grey and fairly still, not blue. Low roughness so it picks up
   // the environment map the sky already provides, which is what makes it read
@@ -759,6 +762,19 @@ function addShopfront(world, b, per, merger, clearance) {
 // is what W2 caught. The height is the HIGHEST ground the way touches, which is
 // its own bank, so it comes from surveyed terrain rather than from a number
 // somebody chose.
+// A ribbon laid parallel to a centreline but offset sideways, for a bus lane
+// that runs inside the kerb rather than down the middle.
+function ribbonOffset(pts, width, y, off, flat) {
+  const moved = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    const dx = b[0] - a[0], dz = b[1] - a[1];
+    const L = Math.hypot(dx, dz) || 1;
+    moved.push([pts[i][0] - (dz / L) * off, pts[i][1] + (dx / L) * off]);
+  }
+  return ribbon(moved, width, y, flat);
+}
+
 function ribbon(pts, width, y, flat = false) {
   const g = new THREE.BufferGeometry();
   const pos = [], uv = [];
@@ -866,7 +882,7 @@ function polyLen(pts) {
 }
 
 export function buildRoads(world, data) {
-  const roadGeos = [], paveGeos = [], unitPaveGeos = [], concGeos = [];
+  const roadGeos = [], paveGeos = [], unitPaveGeos = [], concGeos = [], busGeos = [];
   let mainAxis = null, bestLen = Infinity;
   for (const r of data.roads) {
     // A CROSSING IS NOT A PAVEMENT. `footway=crossing` is the pedestrian
@@ -891,6 +907,38 @@ export function buildRoads(world, data) {
     //
     // Only three buckets, because that is all the difference a rider can see at
     // speed: bituminous, pale slab, and small unit paving.
+    // SINGAPORE'S BUS LANES ARE RED. 274 ways carry the tag, and a red kerbside
+    // lane is one of the most recognisable things about a street here -- the
+    // sort of detail whose absence a Singaporean notices without being able to
+    // say why. Drawn as a tinted ribbon inside the kerb, on the side OSM says.
+    // THE BUS LANE IS WRITTEN AND DELIBERATELY NOT DRAWN.
+    //
+    // `r.bus` is real, carried from 274 ways, and Singapore's red kerbside bus
+    // lanes are one of the most recognisable things about its streets. But OSM
+    // splits a street into fragments -- 108 of those 274 ways are under 30m --
+    // and drawn per way the result is isolated red patches a few metres long
+    // that read as STAINS on the tarmac, not as a lane. Filtering to ways over
+    // 30m did not fix it; the patches are still patches. Verified by rendering
+    // it, then rendering without it: the road is cleaner without.
+    //
+    // Same rule as the three landmark recipes held back for looking worse than
+    // the generic family. The difference is that this comment matches the code,
+    // which the landmark one did not -- it claimed those recipes were
+    // unreferenced while they sat in the live array.
+    //
+    // To finish it: merge the tagged ways of a street into continuous runs
+    // FIRST, the way process.py stitches Orchard Road's 28 fragments into one
+    // centreline, then lay one ribbon per run.
+    const DRAW_BUS_LANES = false;
+    let busLen = 0;
+    if (r.bus) for (let i = 0; i < r.p.length - 1; i++)
+      busLen += Math.hypot(r.p[i + 1][0] - r.p[i][0], r.p[i + 1][1] - r.p[i][1]);
+    if (DRAW_BUS_LANES && r.bus && busLen >= 30 && !isPath && (r.w || 0) > 6) {
+      const laneW = Math.min(3.6, r.w * 0.28);
+      const off = (r.bus === 'left' ? -1 : 1) * (r.w / 2 - laneW / 2);
+      const bg = ribbonOffset(r.p, laneW, 0.058 + seed * 0.0012, off, !!r.bridge);
+      if (bg && bg.attributes.position && bg.attributes.position.count) busGeos.push(bg);
+    }
     const sf = (r.surface || '').toLowerCase();
     let bucket = isPath ? paveGeos : roadGeos;
     if (sf) {
@@ -937,6 +985,7 @@ export function buildRoads(world, data) {
   merge(paveGeos, MAT.paving, 'pavementSurface');
   merge(unitPaveGeos, MAT.unitPave, 'roadSurface');
   merge(concGeos, MAT.roadConc, 'roadSurface');
+  merge(busGeos, MAT.busLane, 'roadSurface');
   return mainAxis;
 }
 

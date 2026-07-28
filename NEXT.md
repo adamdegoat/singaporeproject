@@ -665,6 +665,53 @@ stands) and a raycast at eye height correctly hits it. Both are right. It is a
 grade artefact, not a shopfront defect, and it is written here rather than tuned
 away.
 
+## Emptying the DEFERRED list
+
+`data/unused.py` printed a list of tags that were carried or ignored with a
+reason but genuinely SHOULD be read. Most of it is now read:
+
+- **`maxspeed`** on 1,987 ways -- the posted limit, carried as `kmh`.
+- **`lanes:forward` / `lanes:backward`** on 768 ways. We were halving the total
+  lane count, which is right only when the split is even: on a 3-lane road with
+  two lanes one way and one the other, the centre line was drawn down the middle
+  of a lane. The median now sits at the real boundary.
+- **`shelter`, `bench`, `bin`** on 94 stops, and **`route_ref`** on 97 -- the
+  actual bus numbers. The shelter was being decided by whether a 9.2m roof
+  happened to fit; where the map has an opinion it now wins, and where it is
+  silent the frontage test still decides.
+- **`crossing:island`** -- and reading it is a good example of why carrying data
+  is worth it even when it changes almost nothing. 95 crossings carry the tag
+  and **89 of them say `no`**: only six real refuges exist across three
+  districts. A rule that put an island on every wide crossing would have been
+  wrong 94% of the time.
+- **`tactile_paving`**, **`surface`**, **`sidewalk:left/right/both`**,
+  **`building:colour`**, **`roof:colour`**, **`min_height`**, **`tunnel`**,
+  **`footway`** -- all landed earlier in the same sweep.
+
+### The bus lanes are written and deliberately switched off
+
+`r.bus` is carried from 274 ways and Singapore's red kerbside lanes are one of
+the most recognisable things about its streets. Drawn per way they are not a
+lane: OSM splits a street into fragments, 108 of the 274 are under 30m, and the
+result is isolated red patches that read as STAINS on the tarmac. Filtering to
+runs over 30m did not fix it. Verified by rendering with and without -- the road
+is cleaner without -- so `DRAW_BUS_LANES` is false and the reason is in the code
+beside it.
+
+Same rule as the three landmark recipes held back for looking worse than the
+generic family, with one difference that matters: **this comment matches the
+code.** The landmark one claimed those recipes were unreferenced while they sat
+in the live array, and that went unnoticed for weeks.
+
+**To finish it:** merge a street's tagged ways into continuous runs first -- the
+way process.py already stitches Orchard Road's 28 fragments into one centreline
+-- then lay one ribbon per run.
+
+**Still deferred, all low-yield:** `addr:housenumber`/`addr:street` (no
+building-number signage is modelled anywhere), `crossing:markings` (zebra vs
+ladder), `kerb` (lowered/flush/raised), `roof:material`, `amenity`, and
+`turn:lanes:forward`/`backward`.
+
 ## The defect loop after Marina Bay: 60 findings to 9
 
 Marina Bay took the exploratory hunt from 16 to 60. Working it down was mostly

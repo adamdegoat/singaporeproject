@@ -542,14 +542,34 @@ def main():
                 # its absence read as wrong to anyone who has stood on one. A
                 # third element means "the map says yes".
                 tp = 1 if tags.get("tactile_paving") == "yes" else 0
-                crossings.append([round(x, 1), round(z, 1), tp])
+                # A PEDESTRIAN REFUGE is real geometry: a raised island in the
+                # middle of the carriageway that you stand on halfway across.
+                # 74 crossings across the three districts are tagged with one
+                # and none was built, so every wide crossing read as an
+                # unbroken run of tarmac.
+                isl = 1 if tags.get("crossing:island") == "yes" else 0
+                crossings.append([round(x, 1), round(z, 1), tp, isl])
             elif hw == "traffic_signals":
                 x, z = proj(e["lat"], e["lon"])
                 signals.append([round(x, 1), round(z, 1)])
             elif hw == "bus_stop" or tags.get("public_transport") == "platform":
                 x, z = proj(e["lat"], e["lon"])
+                # OSM SAYS WHICH STOPS HAVE A SHELTER, A BENCH AND A BIN, and
+                # which routes call there. We were deciding the shelter by
+                # frontage width and inventing the rest, while 114 stops carry
+                # `shelter`, 105 carry `bench`, 87 carry `bin` and 111 carry
+                # `route_ref` -- the actual bus numbers on the flag.
+                _bs = {}
+                if tags.get("shelter") in ("yes", "no"):
+                    _bs["sh"] = 1 if tags["shelter"] == "yes" else 0
+                if tags.get("bench") in ("yes", "no"):
+                    _bs["be"] = 1 if tags["bench"] == "yes" else 0
+                if tags.get("bin") in ("yes", "no"):
+                    _bs["bi"] = 1 if tags["bin"] == "yes" else 0
+                if tags.get("route_ref"):
+                    _bs["rr"] = tags["route_ref"][:40]
                 busstops.append({"p": [round(x, 1), round(z, 1)],
-                                 "n": tags.get("name", "")})
+                                 "n": tags.get("name", ""), **_bs})
             elif rw in ("subway_entrance", "station"):
                 x, z = proj(e["lat"], e["lon"])
                 mrt.append({"p": [round(x, 1), round(z, 1)],
@@ -766,6 +786,18 @@ def main():
                     r["lanes"] = int(float(lanes))
                 except ValueError:
                     pass
+            # THE EXACT DIRECTIONAL SPLIT. 812 ways carry lanes:forward and
+            # lanes:backward, and we were halving `lanes` instead -- which is
+            # right only where the split is even. A 3-lane road with 2 forward
+            # and 1 back had its centre line drawn down the middle of the
+            # wrong lane.
+            for _k, _d in (("lanes:forward", "lf"), ("lanes:backward", "lb")):
+                try:
+                    _v2 = int(float(tags.get(_k, "")))
+                    if 0 < _v2 < 12:
+                        r[_d] = _v2
+                except ValueError:
+                    pass
             if tags.get("oneway") == "yes":
                 r["oneway"] = 1
             for tk in ("turn:lanes", "turn:lanes:forward"):
@@ -817,6 +849,24 @@ def main():
             # NODES, so the way is pure duplication.
             if tags.get("footway"):
                 r["fw"] = tags["footway"]
+            # SINGAPORE'S BUS LANES ARE RED AND THEY ARE EVERYWHERE. 299 ways
+            # across the three districts carry `lanes:bus` or `busway:*`, and a
+            # red-tinted kerbside lane with BUS painted in it is one of the most
+            # recognisable things about a Singapore street. Which SIDE matters:
+            # busway:left/right is relative to the way direction.
+            _bw = tags.get("busway:left") or tags.get("busway:right") or tags.get("busway")
+            if _bw and _bw not in ("no", "none"):
+                r["bus"] = "left" if tags.get("busway:left") not in (None, "no") else "right"
+            elif tags.get("lanes:bus"):
+                try:
+                    if float(tags["lanes:bus"]) > 0:
+                        r["bus"] = "right"      # kerbside; SG drives on the left
+                except ValueError:
+                    pass
+            # the posted limit, so traffic can be driven at the real speed
+            _ms = str(tags.get("maxspeed", "")).strip()
+            if _ms.isdigit():
+                r["kmh"] = int(_ms)
             # A BRIDGE DECK IS NOT THE GROUND. Carried so terrain.py can refuse
             # to sample elevation on it: the Benjamin Sheares Bridge crosses
             # Marina Bay about 30m up, and sampling its deck as ground put a 53m

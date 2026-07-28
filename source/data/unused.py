@@ -100,6 +100,7 @@ IGNORED = {
 # rather than a dict -- with where they live.
 CARRIED_ELSEWHERE = {
     "tactile_paving": "crossings[] third element; drawn as the yellow kerb pad",
+    "crossing:island": "crossings[] fourth element; drawn as a raised refuge",
 }
 
 # Tags we SHOULD read and have not yet. These print every run and do not fail
@@ -107,24 +108,16 @@ CARRIED_ELSEWHERE = {
 # quietly folding them into IGNORED is how this project lost seven of them in
 # the first place. Empty this list, do not grow it.
 DEFERRED = {
-    "maxspeed":            "traffic speed is invented; 1,254 ways carry a real limit",
-    "lanes:forward":       "exact directional split; we infer it from lanes + oneway",
-    "lanes:backward":      "same",
+    # carried into the scene and read by nothing YET, which is a different
+    # state from unread: the bus lane is drawn behind a DRAW_BUS_LANES flag
+    # that is off because per-fragment ribbons render as stains. See city.js.
+    "busway": "carried as r.bus; drawing is written and switched off, see city.js",
     "turn:lanes:forward":  "per-direction turn arrows; we use the undirected turn:lanes",
     "turn:lanes:backward": "same",
     "addr:housenumber":    "no building-number signage is modelled anywhere yet",
     "addr:street":         "same",
-    "route_ref":           "the real bus numbers at each stop; the flag shows none",
     "kerb":                "lowered/flush/raised; every kerb is drawn the same",
-    "crossing:island":     "a pedestrian refuge is real geometry we do not build",
     "crossing:markings":   "zebra vs ladder vs dashes; all drawn as zebra",
-    "shelter":             "OSM says WHICH stops have one; we decide by frontage width",
-    "bench":               "same, for benches",
-    "bin":                 "same, for bins",
-    "busway:left":         "Singapore's red bus lanes; markings work, very visible",
-    "busway:right":        "same",
-    "lanes:bus":           "same",
-    "lanes:bus:conditional": "same, with the hours they apply",
     "amenity":             "building use; the facade family uses material and era instead",
     "roof:material":       "roof surfaces are only modelled on shophouses so far",
 }
@@ -168,6 +161,10 @@ def audit(did):
         "sidewalk:both": "sidewalk",
         "building:colour": "col", "roof:colour": "rcol",
         "min_height": "mh", "footway": "fw",
+        "maxspeed": "kmh", "busway:left": "bus", "busway:right": "bus",
+        "lanes:bus": "bus", "lanes:bus:conditional": "bus",
+        "route_ref": "rr", "shelter": "sh", "bench": "be", "bin": "bi",
+        "lanes:forward": "lf", "lanes:backward": "lb",
     }
 
     groups = collections.defaultdict(lambda: [0, collections.Counter()])

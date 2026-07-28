@@ -273,9 +273,9 @@ function dressStreet(data, axis) {
   // OSM has a node for every pedestrian crossing. Placing them every 190m was
   // an invention; this is the actual street.
   let realCrossings = 0, tactilePads = 0;
-  const tactileT = [];
+  const tactileT = [], refugeT = [];
   for (const c of (dataRef.crossings || [])) {
-    const [cx, cz, tp] = c;
+    const [cx, cz, tp, isl] = c;
     // find the nearest point on the axis and the local direction there
     let bi = 0, bd = Infinity, bt = 0;
     for (let i = 0; i < pts.length - 1; i++) {
@@ -340,6 +340,16 @@ function dressStreet(data, axis) {
       }
     }
 
+    // A PEDESTRIAN REFUGE: the raised island you stand on halfway across. Only
+    // six crossings in the three districts are tagged with one -- 89 are tagged
+    // explicitly as having none -- so this is a small, surveyed detail rather
+    // than a rule applied everywhere, which is exactly the kind this project
+    // keeps finding it had invented instead of read.
+    if (isl) {
+      const rx = ox, rz = oz;
+      if (!(window.__onRoad && !window.__onRoad(rx, rz, 0))) refugeT.push([rx, 0.10, rz, ang2]);
+    }
+
     // arclength for the pedestrian-signal logic
     let arc = 0;
     for (let i = 0; i < bi; i++) arc += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
@@ -379,6 +389,10 @@ function dressStreet(data, axis) {
     p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
     e.set(-Math.PI / 2, r[3], 0, 'YXZ');
     q.setFromEuler(e);
+  });
+  // the refuge: a low kerbed island in the middle of the crossing
+  emit(new THREE.BoxGeometry(2.0, 0.22, 3.4), MAT.kerb, refugeT, (r) => {
+    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   // the tactile pad: a 1.2m by 0.9m yellow panel laid flat at the kerb
   emit(new THREE.PlaneGeometry(1.2, 0.9), MAT.tactile, tactileT, (r) => {
