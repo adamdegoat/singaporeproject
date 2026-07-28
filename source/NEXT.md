@@ -125,6 +125,47 @@ was fine while it was a lightbox.
 `data/fps.mjs` and `SG_EXTRA=noshops` on the audit runner are how the cost above
 was attributed: build the world without one subsystem and diff the numbers.
 
+## Other data sources: tested, and mostly a dead end. Do not redo this.
+
+The 917 guessed building heights are the biggest remaining accuracy gap, so the
+obvious question is whether a Singapore government source can fill them. The
+answer, measured rather than assumed:
+
+**URA's SDCP Building Height Control layer (data.gov.sg, Open Data Licence,
+`d_ee8e2e0d13a50a699f9100029b8c0b0a`) is NOT a height source.** It is a planning
+CONTROL, and it was tested against the 413 buildings in this district whose
+height we already know from an OSM tag or a published figure:
+
+- only **30% of real heights fall within +/-25% of the control**
+- median error -12.2m: real buildings are usually well under what is permitted
+- and **16% are TALLER than the control**, so it is not even a safe upper bound.
+  Hilton Singapore Orchard is 152m in a 102m zone, Cairnhill Nine 130m in a 68m
+  zone, Scotts Square 150m in a 102m zone.
+- it covers only 32% of the guessed heights anyway
+
+Using it would make the world less accurate AND would record a guess as real
+data, which is the exact failure the accuracy ledger exists to prevent.
+
+**The rest of the landscape, checked at the same time:**
+- URA Master Plan building footprints and HDB Property Information: HDB only.
+  Orchard Road and Bras Basah have essentially none. No use here.
+- OneMap 3D: a viewer. The model cannot be downloaded.
+- Google Maps / Earth / 3D Tiles: terms forbid extracting or deriving a model
+  from them. Street View is legitimate as VISUAL REFERENCE by eye, which is what
+  the comparison sheet already links to, and that is the only allowed use.
+- No open LiDAR or aerial imagery exists for Singapore at all.
+- trees.sg has real per-tree species, girth and height, but the only downloadable
+  copy is a scrape (`cheeaun/sgtreesdata`) carrying "(c) NParks" and no reuse
+  licence. Deriving the species mix and spacing from it and encoding that
+  ourselves is defensible; shipping their coordinates is not.
+
+**So OSM plus researched published figures is the best available source for this
+district, and that is a finding, not a default.** The Urban Analytics Lab's own
+guide to Singapore open data says OSM here has a relatively high level of
+completeness for building heights and floor counts by international standards.
+The way to close the remaining 917 is one building at a time from published
+sources, the way the 49 hand-entered ones were done.
+
 ## Density: 460 to 2,200 people, 21 to 90 vehicles
 
 Fourteen matched-angle frames of Orchard Road had ONE pedestrian visible between
