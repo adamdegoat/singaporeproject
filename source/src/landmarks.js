@@ -587,6 +587,32 @@ function hiltonOrchard(api, b) {
   }
 }
 
+// Is a rotated rectangle clear of every carriageway?
+//
+// The shophouse is placed almost entirely from its ORIENTED BOX -- the roof and
+// its gables from the box centre, the awning from `halfShort + 0.9` -- and for
+// an irregular plan that box lies outside the walls. This is the trap already
+// recorded in NEXT.md three times over (Lucky Plaza's facade fins, the church
+// roof, the library slab) and slab() refuses to build in a carriageway because
+// of it; these pieces are constructed directly and handed to the merger, so
+// they never met that guard. Then they are merged into a 110m tile, which puts
+// them out of pruneCarriageway's reach too -- it will not delete a tile holding
+// twenty other buildings to remove one eave.
+//
+// Corners AND edge midpoints, because a 40m awning tested only at its centre is
+// the same mistake as the canopy posts, the shopfront bays and the colonnade.
+function rectClear(cx, cz, ux, uz, halfU, halfV, margin = 0.2) {
+  const vx = -uz, vz = ux;
+  for (const a of [-1, 0, 1])
+    for (const b of [-1, 0, 1]) {
+      if (a === 0 && b === 0) continue;
+      const x = cx + ux * (a * halfU) + vx * (b * halfV);
+      const z = cz + uz * (a * halfU) + vz * (b * halfV);
+      if (onCarriageway(x, z, margin)) return false;
+    }
+  return true;
+}
+
 // is a point inside a footprint ring
 function pointInRing(x, z, poly) {
   let c = false;
@@ -787,20 +813,50 @@ export function shophouse(api, b) {
   const ang = Math.atan2(sw.nx, sw.nz);
   const span = ob.halfLong * 2;
   const n = Math.max(2, Math.round(span / 3.6));
+  // A COLUMN IN THE ROAD IS NOT A FIVE-FOOT WAY.
+  //
+  // These are offset by `ob.halfShort * 0.94` from the ORIENTED BOX, and for an
+  // irregular plan that box lies outside the walls -- the trap already recorded
+  // in NEXT.md for Lucky Plaza's facade fins, the church roof and the library
+  // slab. slab() refuses to build in a carriageway for exactly this reason, but
+  // these columns are constructed directly and handed to the merger, so they
+  // never went past that guard. They are then merged into a 110m tile, which
+  // puts them out of pruneCarriageway's reach as well: it will not delete a
+  // tile of many buildings to remove one column.
+  //
+  // Four of them were the last building geometry standing in a carriageway
+  // anywhere in the region, on North Bridge Road, Armenian Street and Niven
+  // Road -- which is shophouse country, so this is where it would show.
   for (let i = 0; i <= n; i++) {
     const u = ob.midU - ob.halfLong + (i / n) * span;
-    const cx = ob.cx + ob.ux * u - ob.uz * (ob.midV + sw.dist * 0);
-    const cz = ob.cz + ob.uz * u + ob.ux * (ob.midV);
+    const cx = ob.cx + ob.ux * u - ob.uz * ob.midV;
+    const cz = ob.cz + ob.uz * u + ob.ux * ob.midV;
+    const px = cx + sw.nx * (ob.halfShort * 0.94);
+    const pz = cz + sw.nz * (ob.halfShort * 0.94);
+    // its own footprint, not its centre: a 0.34m column tested at one point is
+    // the same mistake as the canopy posts and the shopfront bays before it
+    let clear = true;
+    for (const ox of [-0.17, 0.17])
+      for (const oz of [-0.17, 0.17])
+        if (onCarriageway(px + ox, pz + oz, 0.2)) clear = false;
+    if (!clear) continue;
     const g = new THREE.BoxGeometry(0.34, groundH, 0.34);
-    g.translate(cx + sw.nx * (ob.halfShort * 0.94), groundH / 2,
-                cz + sw.nz * (ob.halfShort * 0.94));
+    g.translate(px, groundH / 2, pz);
     api.merge(g, trim, cx0, cz0);
   }
 
   // roof: mostly pitched clay, occasionally a flat-roofed later infill. A
   // shallow pitch — the first attempt used the full half-depth as the radius
   // and the roof came out taller than a storey.
+  // A pitched roof whose eaves reach over the road becomes the flat-roofed
+  // later-infill variant instead of being drawn into the traffic. The flat one
+  // is built from grow(), which pulls its ring back out of a carriageway.
+  let pitched = false;
   if (variant < 3) {
+    const rad = Math.min(3.4, ob.halfShort * (0.5 + variant * 0.09));
+    pitched = rectClear(ob.cx, ob.cz, ob.ux, ob.uz, span * 0.51, rad);
+  }
+  if (pitched) {
     const rad = Math.min(3.4, ob.halfShort * (0.5 + variant * 0.09));
     const rg = new THREE.CylinderGeometry(rad, rad, span * 1.02, 3, 1, false);
     rg.rotateZ(Math.PI / 2);
@@ -809,11 +865,12 @@ export function shophouse(api, b) {
     api.merge(rg, tile, cx0, cz0);
     // gable ends, so a row is read as separate houses rather than one long shed
     for (const sgn of [-1, 1]) {
+      const gx = ob.cx + ob.ux * sgn * (span / 2), gz = ob.cz + ob.uz * sgn * (span / 2);
+      if (!rectClear(gx, gz, ob.ux, ob.uz, 0.15, rad * 1.03)) continue;
       const gable = new THREE.CylinderGeometry(rad * 1.03, rad * 1.03, 0.3, 3, 1, false);
       gable.rotateZ(Math.PI / 2);
       gable.rotateY(-ob.ang);
-      gable.translate(
-        ob.cx + ob.ux * sgn * (span / 2), b.h + rad * 0.30, ob.cz + ob.uz * sgn * (span / 2));
+      gable.translate(gx, b.h + rad * 0.30, gz);
       api.merge(gable, trim, cx0, cz0);
     }
   } else {
@@ -822,11 +879,13 @@ export function shophouse(api, b) {
 
   // a canvas awning over the five-foot-way on most of them
   if (hasAwning) {
-    const aw = new THREE.BoxGeometry(span * 0.92, 0.16, 2.0);
-    aw.rotateY(-ob.ang);
-    aw.translate(
-      ob.cx + sw.nx * (ob.halfShort + 0.9), groundH - 0.55, ob.cz + sw.nz * (ob.halfShort + 0.9));
-    api.merge(aw, api.mat.awning(b), cx0, cz0);
+    const ax2 = ob.cx + sw.nx * (ob.halfShort + 0.9), az2 = ob.cz + sw.nz * (ob.halfShort + 0.9);
+    if (rectClear(ax2, az2, ob.ux, ob.uz, span * 0.46, 1.0)) {
+      const aw = new THREE.BoxGeometry(span * 0.92, 0.16, 2.0);
+      aw.rotateY(-ob.ang);
+      aw.translate(ax2, groundH - 0.55, az2);
+      api.merge(aw, api.mat.awning(b), cx0, cz0);
+    }
   }
 }
 
@@ -1080,10 +1139,30 @@ function nationalLibrary(api, b) {
 
   // the two halves, split wide enough that the atrium is visible from the street
   const GAP = Math.max(4, ob.halfShort * 0.22);
+  // A DERIVED RING IS NOT A SURVEYED ONE.
+  //
+  // This slides every footprint vertex sideways by up to GAP (4m or more) to
+  // split the block into two halves. process.py has pushed the FOOTPRINT clear
+  // of every carriageway, but nothing has ever checked the ring that comes out
+  // of here -- so a wall that was correctly on the pavement could be moved four
+  // metres into North Bridge Road, and one was: the last piece of structure
+  // standing in a carriageway anywhere in the region.
+  //
+  // grow() cannot catch it downstream either. Its own pull-back gives up at
+  // t = 0.92 and then returns the vertex it was handed, which by then is the
+  // moved one. So walk each moved vertex back toward the surveyed vertex it
+  // came from until it is clear, and fall back to the surveyed one, which is
+  // known good. That is a fallback to a CORRECT value, not to the broken one.
   const side = (sgn) => b.p.map(([x, z]) => {
     const d = (x - cx0) * nx + (z - cz0) * nz;
     const keep = sgn > 0 ? Math.max(d, GAP) : Math.min(d, -GAP);
-    return [x + nx * (keep - d), z + nz * (keep - d)];
+    let mx = x + nx * (keep - d), mz = z + nz * (keep - d);
+    if (!onCarriageway(mx, mz, 0.2)) return [mx, mz];
+    for (let t = 0.9; t >= 0; t -= 0.1) {
+      mx = x + nx * (keep - d) * t; mz = z + nz * (keep - d) * t;
+      if (!onCarriageway(mx, mz, 0.2)) return [mx, mz];
+    }
+    return [x, z];
   });
 
   const big = side(1), curved = side(-1);
@@ -1188,18 +1267,22 @@ function crystalMesh(api, b) {
 export const RECIPES = [
   [/raffles city|swissotel|fairmont singapore|westin plaza/i, rafflesCity],
 
-  // nationalLibrary, southBeach and crystalMesh are WRITTEN AND NOT WIRED UP.
+  // THESE THREE ARE WIRED UP, and the comment that used to sit here said the
+  // opposite: "WRITTEN AND NOT WIRED UP ... they stay here, unreferenced".
+  // They were never unreferenced -- the entries below have always been live
+  // members of this array, so the file has been documenting a decision it was
+  // not enforcing. Found on 2026-07-28 while tracing the last piece of
+  // structure standing in a carriageway, which was the library's.
   //
-  // Each of them looked worse than the generic facade family it would have
-  // replaced. The library came out as one flat grey ninety-metre slab with no
-  // articulation at all, where the family would at least have given it a
-  // punched facade; South Beach's canopy ribbons read as a handful of white
-  // sticks; the Bugis+ mesh read as dark panels rather than a lattice.
+  // Re-judged with data/landmark.mjs rather than from the note: the library's
+  // recipe is CLEARLY better than the generic. It reads as a blue block with
+  // sixteen projecting floor bands and a split atrium, where the generic gives
+  // it a featureless pale slab -- which is what the old note actually described.
+  // So they stay, and the comment now matches the code.
   //
-  // A recipe exists to make a building more recognisable than the generic
-  // treatment. One that does not is a regression, and shipping it because the
-  // work is done is how a world gets worse one landmark at a time. They stay
-  // here, unreferenced, until they are better than what they replace.
+  // The rule itself stands: a recipe exists to make a building more
+  // recognisable than the generic treatment, and one that does not is a
+  // regression. Judge it with the vet tool, not from memory of an old render.
   [/national library/i, nationalLibrary],
   [/south beach/i, southBeach],
   [/bugis\+|bugis junction|bugis street/i, crystalMesh],

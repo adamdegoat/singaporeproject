@@ -801,7 +801,7 @@ export function buildRoads(world, data) {
       if (near < bestLen) { bestLen = near; mainAxis = r; }
     }
   }
-  const merge = (geos, mat) => {
+  const merge = (geos, mat, name) => {
     if (!geos.length) return;
     // one draw call for the whole layer
     let total = 0;
@@ -817,11 +817,20 @@ export function buildRoads(world, data) {
     m.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     m.computeVertexNormals();
     const mesh = new THREE.Mesh(m, mat);
+    // Named so the audit can tell the ROAD SURFACE apart from things standing
+    // ON it. P1b reports "structure in a carriageway" and was counting the
+    // carriageway: the merged asphalt and paving layers are single meshes
+    // spanning the whole district, every vertex of them is by definition on a
+    // road, and they were two of its findings. Nothing about a road being where
+    // the road is is a defect. P7 ("road markings under the tarmac") and P8
+    // ("ground standing through the carriageway") are the checks that own the
+    // surface itself.
+    mesh.name = name;
     mesh.receiveShadow = true;
     world.add(mesh);
   };
-  merge(roadGeos, MAT.asphalt);
-  merge(paveGeos, MAT.paving);
+  merge(roadGeos, MAT.asphalt, 'roadSurface');
+  merge(paveGeos, MAT.paving, 'pavementSurface');
   return mainAxis;
 }
 

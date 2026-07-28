@@ -150,6 +150,69 @@ export class Crowd {
     }
     this.path = this.paths[0];
     this.half = this.halves[0];
+
+    // HOW FAR OUT THE PAVEMENT ACTUALLY STARTS, ALONG EACH PATH.
+    //
+    // `halves` is one number per road, taken from that road's own width. But
+    // __onRoad answers about EVERY road, so a walker holding a perfectly good
+    // offset for its own street is in the carriageway the moment its path
+    // passes a junction, a slip road or a bus bay. That is why five people were
+    // standing in live traffic at any given instant.
+    //
+    // There is already a runtime correction and it is right to keep: it walks
+    // them out at 1.1 m/s rather than teleporting, because a correction applied
+    // as a position change is a teleport however good the reason, and that
+    // exact mistake once had pedestrians moving sideways at 17.6 m/s. But it is
+    // REACTIVE -- it cannot fire until someone is already on the tarmac, and it
+    // is sampled one person in eight per frame on top of that.
+    //
+    // So measure it once, at build: walk each path and record the smallest
+    // clear offset per 10m bucket. The walker then starts moving out BEFORE it
+    // reaches the narrow stretch instead of after, and the smooth walk-out does
+    // the moving. Predictive, not reactive; nothing teleports.
+    // A BITMASK OF WHICH OFFSETS ARE CLEAR, not a single threshold.
+    //
+    // The first version stored one number per bucket: the smallest offset that
+    // is off the road. That is wrong whenever there is a SECOND carriageway
+    // further out -- a slip road, a dual carriageway, a service lane behind the
+    // pavement -- because it stops at the first clear metre and never sees the
+    // blockage beyond it. Measured: walkers sitting at 12.1m with a "need" of
+    // 11.7m and still standing in traffic.
+    //
+    // So record one bit per metre, per side, per 10m of path: bit k set means
+    // an offset of k metres on that side is clear here. The walker then asks
+    // about ITS OWN offset instead of comparing against a threshold, and steps
+    // to the nearest clear metre if its own is not.
+    this.clearBucket = 10;
+    this.clearMask = [];
+    const OFFMAX = 32;                      // bits 0..31, one per metre
+    for (let pi = 0; pi < this.paths.length; pi++) {
+      const path = this.paths[pi], half0 = this.halves[pi];
+      const nb = Math.max(1, Math.ceil(path.len / this.clearBucket));
+      const arr = new Uint32Array(nb * 2);
+      const tp = [0, 0, 0, 0];
+      for (let bkt = 0; bkt < nb; bkt++) {
+        for (let si = 0; si < 2; si++) {
+          const side = si ? 1 : -1;
+          let mask = 0;
+          for (let o = 0; o < OFFMAX; o++) {
+            if (o < half0) continue;        // never inside the kerb of its own street
+            let clear = true;
+            // both ends of the bucket, so a band that narrows inside it counts
+            // as narrow for the whole bucket
+            for (const frac of [0.1, 0.5, 0.9]) {
+              path.at(Math.min(path.len, (bkt + frac) * this.clearBucket), tp);
+              const x = tp[0] - tp[3] * (o * side), z = tp[1] + tp[2] * (o * side);
+              if (window.__onRoad && window.__onRoad(x, z, -0.8)) { clear = false; break; }
+              if (this.isBlocked && this.isBlocked(x, z)) { clear = false; break; }
+            }
+            if (clear) mask |= (1 << o);
+          }
+          arr[bkt * 2 + si] = mask;
+        }
+      }
+      this.clearMask.push(arr);
+    }
     this.isBlocked = isBlocked;
     this.count = count;
     this.people = [];
@@ -161,9 +224,22 @@ export class Crowd {
   // every pedestrian's world position, whether or not they are being drawn.
   // The audit needs all of them, and the instance buffers only ever hold the
   // few dozen currently in view.
+  // WHERE EACH WALKER IS DRAWN, not where its path parameters say it should be.
+  //
+  // This recomputed the position from `pr.off` alone and ignored `shift`, the
+  // per-frame sidestep for avoiding other people -- so every check reading it
+  // was told about a place the walker was not. D36 spent three rounds reporting
+  // walkers "standing in a carriageway" whose drawn position was on the
+  // pavement, and reporting nothing about ones the dodge had pushed onto the
+  // tarmac. This project's own rule, for the fifth time: test the world, not
+  // the input to the world.
+  //
+  // The update loop stores the drawn position now and this reports it. The
+  // fallback path is only for a walker that has not been stepped yet.
   positions() {
     const tmp = [0, 0, 0, 0], out = [];
     for (const pr of this.people) {
+      if (pr.dx !== undefined) { out.push([pr.dx, pr.dz]); continue; }
       const path = this.paths ? this.paths[pr.pi] : this.path;
       path.at(pr.s, tmp);
       const [cx, cz, ux, uz] = tmp;
@@ -195,6 +271,13 @@ export class Crowd {
       const im = new THREE.InstancedMesh(geo, mat, n);
       im.castShadow = true;
       im.frustumCulled = false;
+      // Marked as part of a PERSON, and indexed by person, so a check can tell
+      // a walker's arm from anything else that happens to have the same
+      // instance count. D32 identified body parts by `o.count === walkersDrawn`
+      // and reported "57 of 57 detached, worst 1619.6m" against a pedestrian
+      // RAILING POST from street.js, which had 57 instances by coincidence.
+      // Counting things that resemble the target is not counting the target.
+      im.userData.crowdPart = true;
       world.add(im);
       return im;
     };
@@ -493,9 +576,40 @@ export class Crowd {
         if (Math.abs(pr.dodge) < 0.01) pr.dodge = 0;
       }
       const dodgeSign = pr.off >= 0 ? 1 : -1;
-      const shift = (pr.dodge || 0) * dodgeSign + crowdPush;
+      let shift = (pr.dodge || 0) * dodgeSign + crowdPush;
+
+      // THE DODGE MAY NOT PUSH SOMEONE INTO THE ROAD.
+      //
+      // A walker is drawn at `off + shift`, where shift is the per-frame
+      // sidestep for avoiding other people. Every rule about where the pavement
+      // is was applied to `off` alone, so a crowded stretch could shove a
+      // correctly-placed walker onto the tarmac.
+      //
+      // The fix is to CANCEL the dodge, not to relocate the walker. The first
+      // version snapped `shift` to the nearest clear metre, which is a jump of
+      // several metres in one frame: B1 caught a pedestrian at 135 m/s. That is
+      // the third time in this file that a correction applied as a position
+      // change has turned into a teleport, after the 17.6 m/s sidestep and the
+      // 11m tangent flip. Winding shift down to zero moves them by at most the
+      // dodge itself, which is centimetres.
+      //
+      // If the walker's OWN offset is the problem, that is offWant's job above
+      // and it is rate-limited to 1.1 m/s.
+      if (!pr.crossing && this.clearMask && shift !== 0) {
+        const arr = this.clearMask[pr.pi];
+        if (arr) {
+          const nb2 = arr.length >> 1;
+          const bkt2 = Math.min(nb2 - 1, Math.max(0, (pr.s / this.clearBucket) | 0));
+          const eff = pr.off + shift;
+          const sgn2 = eff >= 0 ? 1 : -1;
+          const mask2 = arr[bkt2 * 2 + (sgn2 > 0 ? 1 : 0)];
+          const k2 = Math.round(Math.abs(eff));
+          if (mask2 && k2 < 32 && !(mask2 & (1 << k2))) shift = 0;
+        }
+      }
       const x = baseX + nx * shift;
       const z = baseZ + nz * shift;
+      pr.dx = x; pr.dz = z;             // what positions() reports: where it IS
 
       // Standing in the road when not crossing it. The pavement band is an
       // offset from the centreline and the carriageway is not the same width
@@ -517,6 +631,50 @@ export class Crowd {
       //
       // So the sampled test only sets a target, and the movement toward it is
       // capped at a walking pace on every frame.
+      // PREDICTIVE: the measured clear offset for where this walker is now, so
+      // it starts stepping out before the carriageway reaches it. Costs one
+      // array lookup per person per frame, not a road query.
+      if (!pr.crossing) {
+        const arr = this.clearMask && this.clearMask[pr.pi];
+        if (arr) {
+          const nb = arr.length >> 1;
+          const sgn0 = pr.off >= 0 ? 1 : -1;
+          const si0 = sgn0 > 0 ? 1 : 0;
+          const bktOf = (sv) => Math.min(nb - 1, Math.max(0, (sv / this.clearBucket) | 0));
+          // LOOK AHEAD as well as underfoot. The walk-out is capped at 1.1 m/s
+          // and a walker moves at up to 1.65, so someone entering a narrowing
+          // stretch is inside it before a here-and-now test can finish moving
+          // them. Twelve metres is about nine seconds of correction.
+          const here = arr[bktOf(pr.s) * 2 + si0];
+          const soon = arr[bktOf(pr.s + pr.dir * 12) * 2 + si0];
+          const mask = (here & soon) || here || soon;
+          const k = Math.round(Math.abs(pr.off));
+          if (mask && k < 32 && !(mask & (1 << k))) {
+            // nearest clear metre on this side, outward first: stepping toward
+            // the buildings is the pavement, stepping inward is the road
+            let best = -1;
+            for (let d3 = 1; d3 < 32 && best < 0; d3++) {
+              if (k + d3 < 32 && (mask & (1 << (k + d3)))) best = k + d3;
+              else if (k - d3 >= 0 && (mask & (1 << (k - d3)))) best = k - d3;
+            }
+            if (best >= 0) pr.offWant = best * sgn0;
+          }
+          // NO PAVEMENT ON THIS SIDE AT ALL, here or ahead. There is nowhere on
+          // this side of this stretch that is not road or wall, so the walker
+          // turns round -- which is what a person does when a footway ends, and
+          // it reuses the reflection the path ends already use rather than
+          // teleporting anyone. The cooldown stops a walker oscillating on the
+          // spot at the boundary of the dead stretch.
+          if (!here && !soon) {
+            pr.uturn = (pr.uturn || 0) - dt;
+            if (pr.uturn <= 0) { pr.dir = -pr.dir; pr.uturn = 4.0; }
+          } else if (pr.uturn > 0) {
+            pr.uturn -= dt;
+          }
+        }
+      }
+      // and the reactive test stays as a backstop, for anything the buckets
+      // cannot see (a walker mid-cross, a path end, a bucket boundary)
       if (!pr.crossing && window.__onRoad && ((i + tick) & 7) === 0
           && window.__onRoad(x, z, -0.8)) {
         const sgn = pr.off >= 0 ? 1 : -1;

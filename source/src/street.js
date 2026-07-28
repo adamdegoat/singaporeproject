@@ -338,23 +338,63 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
   }
 
   // taxi stands: the yellow-topped rank sign, a queue rail, and a waiting cab
-  let noCabAtRank = 0;
+  let noCabAtRank = 0, noRailAtRank = 0;
   for (const [tx, tz, ang, sgn] of taxiAt) {
+    // WHERE THE RANK STANDS, BEFORE ANY OF IT IS LAID OUT.
+    //
+    // The sign was pushed clear and then the queue rail, six metres of it, was
+    // hung off the sign at a fixed -0.9 with nothing checking where that fell.
+    // Five of its posts were in Killiney Road, and two of them were also the
+    // only two things T1 could see blocking a carriageway there. Third instance
+    // of build-then-place in this codebase after the footbridge and the rank's
+    // own cab: if a group is positioned after its parts are laid out, no part
+    // can be tested against the world it will land in.
+    const mvt = window.__pushClear ? window.__pushClear(tx, tz, -0.6, 18) : [tx, tz];
+    if (!mvt) continue;
+    const [tx2, tz2] = mvt;
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const clearLocal = (lx, lz, m = 0.3) =>
+      !(window.__onRoad && window.__onRoad(tx2 + lx * ca + lz * sa,
+                                           tz2 - lx * sa + lz * ca, m));
+
     const g = new THREE.Group();
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.0, 8), MAT.metal);
     pole.position.y = 1.5; pole.castShadow = true; g.add(pole);
     const board = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 0.08),
       new THREE.MeshStandardMaterial({ color: 0xd8b43c, roughness: 0.55 }));
     board.position.set(0, 2.9, 0); board.castShadow = true; g.add(board);
-    // short queue rail alongside
-    for (let k = 0; k < 5; k++) {
-      const r = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 1.4), MAT.metal);
-      r.position.set(-0.9, 1.0, 1.0 + k * 1.4); g.add(r);
-      const pst = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.0, 6), MAT.metal);
-      pst.position.set(-0.9, 0.5, 0.4 + k * 1.4); g.add(pst);
+
+    // The queue rail goes on the PAVEMENT side. Which side that is depends on
+    // the rank, so try both and test the whole six-metre run rather than one
+    // end of it. If neither side is clear the rank keeps its sign and loses its
+    // rail: a failed search skips, it does not substitute.
+    let railX = null;
+    for (const cand of [-0.9, 0.9]) {
+      let ok = true;
+      for (let k = 0; k < 5 && ok; k++) {
+        if (!clearLocal(cand, 0.4 + k * 1.4)) ok = false;
+        if (!clearLocal(cand, 1.0 + k * 1.4)) ok = false;
+      }
+      if (ok) { railX = cand; break; }
     }
-    // a cab at the head of the rank: SG taxis are commonly blue or black
-    const cabCol = Math.random() < 0.5 ? 0x2f5f9e : 0x1f2225;
+    if (railX === null) noRailAtRank++;
+    else for (let k = 0; k < 5; k++) {
+      const r = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 1.4), MAT.metal);
+      r.position.set(railX, 1.0, 1.0 + k * 1.4); g.add(r);
+      const pst = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.0, 6), MAT.metal);
+      pst.position.set(railX, 0.5, 0.4 + k * 1.4); g.add(pst);
+    }
+
+    // A cab at the head of the rank: SG taxis are commonly blue or black.
+    //
+    // From the RANK'S OWN POSITION, not Math.random() and not the shared
+    // stream. Math.random() made the world unreproducible between reloads,
+    // which nothing else here is. But reaching for `chance()` instead would
+    // draw from the module-level PRNG that also drives every placement after
+    // it, and this file has just been burned by exactly that: adding one
+    // texture that consumed 3,600 numbers moved street furniture 1.5km away.
+    // A local hash is deterministic and perturbs nothing.
+    const cabCol = ((Math.abs((tx2 * 31 + tz2 * 17) | 0) % 2) === 0) ? 0x2f5f9e : 0x1f2225;
     const cab = new THREE.Group();
     const paint = new THREE.MeshStandardMaterial({ color: cabCol, roughness: 0.4, metalness: 0.3 });
     const gl = new THREE.MeshStandardMaterial({ color: 0x2a323a, roughness: 0.12, metalness: 0.2 });
@@ -373,12 +413,6 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
       wheel.rotation.x = Math.PI / 2; wheel.position.set(wx, 0.31, wz);
       wheel.castShadow = true; cab.add(wheel);
     }
-    // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
-    // carriageway rather than dropping a shelter into the traffic
-    const mvt = window.__pushClear ? window.__pushClear(tx, tz, -0.6, 18) : [tx, tz];
-    if (!mvt) continue;
-    const [tx2, tz2] = mvt;
-
     // THE WAITING CAB GOES IN THE LAY-BY, NOT IN A RUNNING LANE.
     //
     // The sign and the queue rail are pushed clear, and then the cab was hung
@@ -388,7 +422,6 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     // cab in a traffic lane is not. Try the offset, then progressively smaller
     // ones, and if the cab has nowhere to stand build the rank without it: a
     // failed search must never fall back to the point it was asked to fix.
-    const ca = Math.cos(ang), sa = Math.sin(ang);
     let placed = false;
     for (const off of [2.6, 2.0, 1.5, 1.0, 0.5]) {
       const lx = -off * sgn, lz = 2.0;
@@ -453,6 +486,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     realTaxis: realCount.taxis,
     taxiStands: taxiAt.length,
     ranksWithNoCab: noCabAtRank,
+    ranksWithNoRail: noRailAtRank,
     linkway: linkRoof.length,
     rails: railT.length, shelters, stopPoles: poles,
     lights: lightAt.length, signs: signT.length, planters: planterT.length,

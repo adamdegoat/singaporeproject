@@ -84,16 +84,21 @@ window.__auditWorld = async function auditWorld() {
       //   The waiting cab at a taxi rank was hung 2.6m toward the road,
       //   unchecked. A rank is a lay-by, so the cab is sited at the kerb or the
       //   rank is built without it.
-      // P1b 76 -> 28 and T1 5 -> 4 on 2026-07-28. Most of that drop is the
-      // CHECK being corrected, not the world improving, and it is recorded that
-      // way deliberately: P1b had a ceiling and no floor, so the buried base of
-      // every building on a grade counted as structure standing in a road. 45
-      // of the 51 building masses it was reporting were underground, 36 of them
-      // by more than three metres and one by 20.6m. Only 2 of the drop is real
-      // geometry moving (building edges cleared against real carriageways in
-      // process.py). What is left is 6 building masses and 22 props, and those
-      // are genuine.
-      P1b: 28, T1: 4,
+      // P1b and T1 are CLOSED. Both reached 0 on 2026-07-28 and are now
+      // ordinary BLOCKERS at zero rather than ratchets, so anything that puts
+      // structure back in a carriageway fails the deploy outright.
+      //
+      // The last stretch, 28 -> 0, was half world and half check:
+      //   world  taxi queue rails, footbridge stair towers, shophouse roofs,
+      //          gables, awnings and colonnade columns, and the National
+      //          Library's derived ring -- all placed from an oriented box or
+      //          hung off a group before it was positioned, so none of them
+      //          ever met the guard that slab() has had all along.
+      //   check  it was counting the ROAD SURFACE, the PAVEMENT, the TERRAIN
+      //          and the PLAYER'S OWN SCOOTER as structure standing in a
+      //          carriageway, and T1 was the only check in the file that had
+      //          never been told service roads are set-downs.
+      P1b: 0, T1: 0,
       // proportional to a world with 1,932 buildings and 4,392 roads
       // P4 333 -> 360 and P1b 177 -> 179 on the day the Civic District landmarks
       // got real massing. Both are consequences of that, not new defects:
@@ -116,7 +121,7 @@ window.__auditWorld = async function auditWorld() {
     const o = (OVERRIDE[SCENE] || {})[id];
     findings.push({ id, name, severity, count,
                     budget: o === undefined ? budget : o, detail,
-                    examples: (examples || []).slice(0, 8) });
+                    examples: (examples || []).slice(0, (window.__auditEx || 8)) });
   };
 
   /* ================= shared indices ================= */
@@ -343,6 +348,22 @@ window.__auditWorld = async function auditWorld() {
       const pos = o.geometry.attributes.position;
       if (!pos) return;
       if (o === sky || o.material.fog === false) return;   // the sky dome
+      // THE PLAYER'S OWN VEHICLE IS NOT STRUCTURE.
+      //
+      // The scooter and its rider were nine findings here -- wheels, seat,
+      // deck, helmet, limbs -- for standing on Orchard Road, which is what a
+      // scooter on Orchard Road is meant to do. T1 has always said "a vehicle
+      // is not an obstruction" and this check never had the same sentence.
+      // Matched by the rig's NAME, walking up the parents, because a signature
+      // allowlist silently stops applying the moment a shape is retuned.
+      for (let q = o; q; q = q.parent) if (q.name === 'playerRig') return;
+      // The ground itself. P8 owns "ground standing through the carriageway"
+      // and measures it as a fraction of the road surface, which is the right
+      // shape for a heightfield; counting it here as well was double-counting.
+      if (o.name === 'terrainSurface') return;
+      // ...and the road surface itself, for the same reason. A check called
+      // "structure in a carriageway" was counting the carriageway.
+      if (o.name === 'roadSurface' || o.name === 'pavementSurface') return;
       if (o.geometry.type === 'PlaneGeometry'
           && o.geometry.parameters.width > 500) return;     // ground fallback plane
       let hit = null, worstX = 0, worstZ = 0, minY = 1e9, maxY = -1e9, n = 0;
@@ -437,7 +458,16 @@ window.__auditWorld = async function auditWorld() {
         .filter((q) => q != null).map((q) => +q.toFixed(2)).join('x');
       const key = `${o.geometry.type}(${dims})|${(maxY - minY).toFixed(1)}m tall`;
       bad[key] = (bad[key] || 0) + 1;
-      if (ex.length < 8) ex.push(`${key} in "${hit}" at ${worstX | 0},${worstZ | 0}`);
+      if (ex.length < 200) {
+        const bb2 = new T.Box3().setFromObject(o);
+        const mm = o.material || {};
+        ex.push(`${key} in "${hit}" at ${worstX | 0},${worstZ | 0}`
+          + ` [verts=${pos.count} name=${o.name || '-'} mat=${mm.type || '-'}`
+          + `/${(mm.map && (mm.map.name || 'map')) || 'nomap'}`
+          + ` col=${mm.color ? mm.color.getHexString() : '-'}`
+          + ` bbox=${bb2.min.x | 0},${bb2.min.z | 0}..${bb2.max.x | 0},${bb2.max.z | 0}`
+          + ` y=${bb2.min.y.toFixed(1)}..${bb2.max.y.toFixed(1)}]`);
+      }
     });
     const n = Object.values(bad).reduce((a, b) => a + b, 0);
     // P1b is new and inherited a backlog. The target is zero, but a check
@@ -459,10 +489,9 @@ window.__auditWorld = async function auditWorld() {
     // arclengths to LTA's surveyed positions, with their legs searched outward
     // until clear and only their genuinely-overhead parts exempt. The world got
     // cleaner than the number it inherited, so the number follows it down.
-    // 124 -> 56 -> 17 on 2026-07-28. See the world override above: the first
-    // step was three placement bugs, the second was giving this check a FLOOR
-    // as well as a ceiling.
-    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 17,
+    // 286 -> 124 -> 56 -> 17 -> 0 over 2026-07-27/28. CLOSED: a plain BLOCKER
+    // at zero now, not a ratchet. See the world override above.
+    add('P1b', 'structure in a carriageway', 'BLOCKER', n, 0,
         Object.entries(bad).sort((a, b) => b[1] - a[1]).slice(0, 6)
           .map(([k, v2]) => `${v2}x ${k}`).join('  ') || 'none', ex);
   }
@@ -1100,7 +1129,7 @@ window.__auditWorld = async function auditWorld() {
         vs.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
         const up = terr ? vs.y - terr.at(vs.x, vs.z) : 0;
         if (up < 0.35 || up > 2.6) continue;      // only what a rider would hit
-        solid.push({ sig: `${o.geometry.type}|structure`, x: vs.x, y: vs.y, z: vs.z, flat: false });
+        solid.push({ sig: `${o.geometry.type}|structure`, x: vs.x, y: vs.y, z: vs.z, flat: false, o });
       }
     });
     const sGrid = new Map();
@@ -1110,7 +1139,16 @@ window.__auditWorld = async function auditWorld() {
       sGrid.get(k).push(p);
     }
     let blocked = 0, sampled = 0; const ex = [];
-    for (const r of carriage)
+    for (const r of carriage) {
+      // SERVICE ROADS ARE EXCLUDED, the same as P1b and P5 already exclude
+      // them and for the same stated reason: a service road is a driveway, a
+      // loading bay or a hotel set-down, so it runs UNDER a porte-cochere and
+      // between the columns of an entrance canopy by design. audit_roads.py has
+      // said so in as many words for months ("service-road overlaps are hotel
+      // set-downs and loading bays, which is what a service road is for") and
+      // this was the one check that had never been told. All four of its
+      // remaining Orchard findings were shophouse trim over a 6m driveway.
+      if (r.k === 'service' || r.k === 'service_link') continue;
       for (let i = 0; i < r.p.length - 1; i++) {
         const [x1, z1] = r.p[i], [x2, z2] = r.p[i + 1];
         const len = Math.hypot(x2 - x1, z2 - z1);
@@ -1125,9 +1163,10 @@ window.__auditWorld = async function auditWorld() {
               for (const p of list)
                 if ((p.x - x) ** 2 + (p.z - z) ** 2 < 1.4 * 1.4) { hit = p; break; }
             }
-          if (hit) { blocked++; if (ex.length < 8) ex.push(`${hit.sig} on "${r.n || '(unnamed)'}"`); }
+          if (hit) { blocked++; if (ex.length < 8) ex.push(`${hit.sig} on "${r.n || '(unnamed)'}" at ${Math.round(hit.x||0)},${Math.round(hit.z||0)}`); }
         }
       }
+    }
     // Ratchet. Widening this from props-only to all solid geometry exposed 11
     // real obstructions that were invisible to it before — the same building and
     // landmark structure P1b is tracking at 101, seen from the traversal side
@@ -1141,7 +1180,7 @@ window.__auditWorld = async function auditWorld() {
     // change in either means a change in the world.
     // 12 -> 6 on 2026-07-28, alongside P1b: MRT entrances, footbridge stair
     // towers and the taxi-rank cab were all standing in the carriageway.
-    add('T1', 'carriageway blocked by solid geometry (ratchet, target 0)', 'BLOCKER', blocked, 6,
+    add('T1', 'carriageway blocked by solid geometry', 'BLOCKER', blocked, 0,
         `${blocked} of ${sampled} centreline samples obstructed`, ex);
   }
   {

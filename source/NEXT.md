@@ -214,10 +214,57 @@ hits saw 8 and concluded none were near the changed buildings. Then a parallel
 probe was written that measured 131 where the check said 53, because it was not
 the check. Only reading the check's OWN hit heights answered it.
 
-Budgets are now **P1b 28 / T1 4** on the region and **P1b 17 / T1 6** on
-Orchard. **Not a pass: the target is 0.** What is left is 6 building masses and
-22 props — footbridge stair towers that still cannot find clear ground, their
-parapets, taxi queue-rail posts, and a handful of pedestrian parts.
+### P1b and T1 are CLOSED at 0, both scenes
+
+Not ratchets any more: plain BLOCKERS at zero, so anything that puts structure
+back in a carriageway fails the deploy. The last 28 was half world and half
+check, and both halves are worth reading.
+
+**The world half — five more places that placed geometry without asking.** Each
+is the same shape as bugs already in this file, which is the point: the pattern
+list works, it just had not been applied everywhere.
+
+- **The taxi rank's queue rail**, six metres of it, hung off the sign at a fixed
+  -0.9 and laid out before the rank was positioned. Third instance of
+  build-then-place after the footbridge and the rank's own cab. It picks the
+  pavement side now and tests the whole run; a rank with nowhere for it keeps
+  its sign and loses its rail.
+- **Footbridge stair towers** that could not land. Searching only outward
+  dropped all 15 bridges, because several cross the Singapore River at Boat Quay
+  where the clear ground is INBOARD -- their ends come down beside a road, not
+  their middles. Searching both ways within 10m of the mapped end lands 13 and
+  drops 2, and those 2 cross dual carriageways (New Bridge Road plus Eu Tong Sen
+  Street 20m away) and would need 36m and 43m of invented deck.
+- **Shophouse roofs, gables, awnings and colonnade columns**, all placed from
+  the ORIENTED BOX, which for an irregular plan lies outside the walls. Fourth,
+  fifth and sixth instance of the trap already recorded for Lucky Plaza's facade
+  fins, the church roof and the library slab. A pitched roof whose eaves would
+  reach over the road becomes the flat-roofed variant, which is built from
+  grow() and pulls itself back.
+- **The National Library's derived ring.** `side()` slides every footprint
+  vertex sideways by 4m or more to split the block in two, and process.py had
+  cleared the FOOTPRINT, not the ring that comes out of that. grow() cannot save
+  it downstream either: its pull-back gives up at t=0.92 and then returns the
+  vertex it was handed, which by then is the moved one.
+- **And those three "held back" recipes were wired up all along.** The comment
+  above them said "WRITTEN AND NOT WIRED UP ... they stay here, unreferenced"
+  while the entries sat in the live `RECIPES` array. Re-judged with
+  data/landmark.mjs rather than from the note: the library's recipe is clearly
+  BETTER than the generic -- a blue block with sixteen projecting floor bands
+  against a featureless pale slab, which is what the old note was actually
+  describing. They stay, and the comment now matches the code. **A file that
+  documents a decision it does not enforce is worse than one that says nothing.**
+
+**The check half — it was counting four things that are not defects.** P1b
+reported the ROAD SURFACE, the PAVEMENT, the TERRAIN and the PLAYER'S OWN
+SCOOTER as structure standing in a carriageway. The scooter alone was nine
+findings, for being on Orchard Road, in a project about riding a scooter down
+Orchard Road. T1 had always said "a vehicle is not an obstruction" and P1b never
+had the sentence; T1 in turn was the only check in the file that had never been
+told service roads are set-downs, which was all four of its Orchard findings.
+Each exclusion is by NAME (`playerRig`, `terrainSurface`, `roadSurface`,
+`pavementSurface`) rather than by geometry signature, because this file already
+records that a signature allowlist stops applying the moment a shape is retuned.
 
 ## Shopfronts, and the count that was lying
 
@@ -615,6 +662,52 @@ stands) and a raycast at eye height correctly hits it. Both are right. It is a
 grade artefact, not a shopfront defect, and it is written here rather than tuned
 away.
 
+## The crowd, and a position that was not where anyone was
+
+`positions()` recomputed each walker from `pr.off` alone and ignored `shift`,
+the per-frame sidestep for avoiding other people. **So every check reading it
+was told about a place the walker was not.** D36 spent three rounds reporting
+people "standing in a carriageway" whose drawn position was on the pavement, and
+saying nothing about the ones the dodge had pushed onto the tarmac. Fifth
+instance of this project's oldest rule: test the world, not the input to it.
+
+With honest positions, three real fixes took it 5 to 2 of 2,200:
+
+- **A bitmask of which offsets are clear**, one bit per metre per side per 10m
+  of path, measured once at build. The first version stored a single "smallest
+  clear offset" per bucket and was wrong wherever a SECOND carriageway lies
+  further out: walkers sat at 12.1m against a "need" of 11.7m and were still in
+  traffic. A threshold cannot describe clear-blocked-clear.
+- **Look ahead twelve metres**, because the walk-out is capped at 1.1 m/s and a
+  walker moves at up to 1.65, so a here-and-now test cannot finish moving anyone
+  before they are inside the narrowing.
+- **Where a side has no clear offset at all, the walker turns round**, which is
+  what a person does when a footway ends, and reuses the reflection the path
+  ends already use rather than teleporting anyone.
+
+**And I wrote the teleport bug into it myself, again.** Clamping `shift` to the
+nearest clear metre is a several-metre jump in one frame: B1 caught a pedestrian
+at **135 m/s**. Third time in this file after the 17.6 m/s sidestep and the 11m
+tangent flip. Cancelling the dodge to zero instead moves them by centimetres and
+B1 reads 2.41 m/s. **A correction applied as a position change is a teleport,
+however good the reason.**
+
+**D32 was a false positive and the probe was the bug.** It identified pedestrian
+body parts as "any instanced mesh whose count equals the number of walkers
+drawn", and a pedestrian RAILING POST from street.js had exactly 57 instances --
+so it reported all 57 "detached from their torso, worst 1619.6m", which reads
+like a serious crowd bug. The crowd builder tags its own meshes
+(`userData.crowdPart`) now. Counting things that resemble the target is not
+counting the target.
+
+**Still open: D26 at 6, and it stays open deliberately.** Six of 570 sampled
+bays have a neighbour's fabric at eye level in front of them, on stretches where
+the ground steps down between two buildings. Both previous attempts to refuse
+those bays are recorded above: one cost 78 of 252 named tenants, the other cost
+202 bays and 11 tenants and moved the number by zero. A smaller world is not a
+fix. D36's residual 2 are walkers mid-walk-out at the moment of the snapshot,
+which is the correction working rather than failing.
+
 ## One origin for the island
 
 `districts.json` holds `island_origin` (the SVY21 datum point, 1.366666,
@@ -854,13 +947,10 @@ side; Funan, Marina Square, Bras Basah Complex on the other. Roughly 96 of the
    granite rather than glass. See the section above. The next researched-but-
    unbuilt item is **The Centrepoint**, described further down.
 
-4. **The open ratchets.** `P1b` 28 and `T1` 4 on the region, `P1b` 17 and `T1` 6
-   on Orchard, all target 0. What is left is small and named: footbridge stair
-   towers that still cannot find clear ground within 26m, their parapets, taxi
-   queue-rail posts, six building masses, and some pedestrian parts. Do not
-   close the rest by loosening an allowlist — and read the section above before
-   touching process.py's corridor push, because two obvious theories about it
-   were built, measured and thrown away.
+4. **The ratchets are closed.** `P1b` and `T1` are 0 on both scenes and are
+   plain BLOCKERS now, not ratchets. Read the section above before touching
+   process.py's corridor push: two obvious theories about it were built,
+   measured and thrown away.
 
 ## Six bug patterns worth hunting on sight
 

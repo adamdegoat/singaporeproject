@@ -107,7 +107,7 @@ function pedBridge(world, px, pz, ang, width) {
   // what an overpass IS, and P1b exempts it by signature -- but a stair tower
   // is the part that meets the ground, and it belongs on a pavement.
   const mv2 = window.__pushClear ? window.__pushClear(px, pz, -0.6, 18) : [px, pz];
-  if (!mv2) return;
+  if (!mv2) return false;
   const [px2, pz2] = mv2;
 
   const g = new THREE.Group();
@@ -144,12 +144,32 @@ function pedBridge(world, px, pz, ang, width) {
     // its 92m parapet across MORE road than it started with -- a fallback that
     // returns something worse than the value it was asked to fix, which is
     // pattern #1 in NEXT.md and is how this bridge got here in the first place.
+    // Search BOTH ways from the mapped end, nearest offset first, and only
+    // within 10m of it. span0 IS the surveyed straight length of the OSM way,
+    // so its ends are where the real bridge lands and anything past them is
+    // bridge we are inventing: two of these cross DUAL carriageways (New Bridge
+    // Road plus Eu Tong Sen Street 20m away) and would need 36m and 43m of
+    // extension, which would give a 37.8m mapped bridge an 88m deck.
+    //
+    // Both ways, because searching only outward dropped all 15 bridges. The
+    // clear ground on several is INBOARD: they cross the Singapore River at
+    // Boat Quay, so it is their ENDS that come down beside a road, not their
+    // middles. A stair tower a little short of the mapped end is what a ramp
+    // does anyway.
     for (const sgn of [-1, 1]) {
-      reachOf[sgn] = base;
-      for (let d = base; d <= base + 26; d += 1.0) {
+      reachOf[sgn] = null;
+      const tries = [];
+      for (let k = 0; k <= 10; k += 1) { tries.push(base + k); if (k) tries.push(base - k); }
+      tries.sort((p2, q2) => Math.abs(p2 - base) - Math.abs(q2 - base));
+      for (const d of tries) {
+        if (d < 6) continue;                  // a deck shorter than this is not a bridge
         if (clearAt(d, sgn)) { reachOf[sgn] = d; break; }
       }
     }
+    // A footbridge whose stairs stand in live traffic is worse than no
+    // footbridge. Same rule this file already applies to bus shelters, MRT
+    // entrances and the cab at a taxi rank: a failed search skips.
+    if (reachOf[-1] === null || reachOf[1] === null) return false;
   } else { reachOf[-1] = base; reachOf[1] = base; }
   const span = Math.max(span0, (reachOf[-1] + 1.3) * 2, (reachOf[1] + 1.3) * 2);
 
@@ -174,6 +194,7 @@ function pedBridge(world, px, pz, ang, width) {
   g.position.set(px2, groundAt(px2, pz2), pz2);
   g.rotation.y = ang;
   world.add(g);
+  return true;
 }
 
 /* ---------------- MRT entrance ---------------- */
@@ -401,7 +422,7 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   window.__droppedMrt = droppedMrt;
 
   // Overhead bridges at the positions OSM records, spanning the way it maps.
-  let realBridges = 0;
+  let realBridges = 0, droppedBridges = 0;
   for (const line of (data.bridges || [])) {
     if (line.length < 2) continue;
     let len = 0;
@@ -430,10 +451,11 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     }
     const cx = (a[0] + b[0]) / 2, cz = (a[1] + b[1]) / 2;
     const ang = Math.atan2(b[0] - a[0], b[1] - a[1]);
-    pedBridge(world, cx, cz, ang + Math.PI / 2, Math.max(16, straight - 14));
-    realBridges++;
+    if (pedBridge(world, cx, cz, ang + Math.PI / 2, Math.max(16, straight - 14))) realBridges++;
+    else droppedBridges++;
   }
   window.__realBridges = realBridges;
+  window.__droppedBridges = droppedBridges;
 
   // The real ERP gantries, from LTA's published layer.
   //

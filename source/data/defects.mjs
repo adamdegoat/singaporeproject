@@ -958,6 +958,13 @@ const found = await page.evaluate(() => {
     const bad = [];
     if (at.length) {
       for (const [sig, o] of parts) {
+        // BY IDENTITY, not by resemblance. This used to take any instanced
+        // mesh whose count matched the number of walkers drawn, and a
+        // pedestrian railing post happened to have exactly 57 -- so the probe
+        // reported all 57 of them "detached from their torso, worst 1619.6m"
+        // and looked like a serious crowd bug. The crowd builder tags its own
+        // meshes now.
+        if (!o.userData || !o.userData.crowdPart) continue;
         if (!/Box|Sphere|Capsule|Cylinder/.test(sig)) continue;
         // Only parts indexed BY PERSON. The bag has its own slot counter now
         // (a bagless walker used to have one drawn at y=-9999 every frame), so

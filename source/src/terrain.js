@@ -59,6 +59,14 @@ export class Terrain {
     geo.translate(g.x0 + w / 2, 0, g.z0 + d / 2);
     geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, material);
+    // Named so the audit can tell the GROUND apart from structure standing on
+    // it. P1b was reporting the heightfield as "structure in a carriageway"
+    // wherever the ground surfaces within 6cm of the tarmac -- but the ground is
+    // not structure, and P8 ("ground standing through the carriageway") is the
+    // check that owns exactly that question and measures it properly, at 10 of
+    // a 60 budget. Two checks counting the same thing means fixing it twice and
+    // believing it once.
+    mesh.name = 'terrainSurface';
     mesh.receiveShadow = true;
     return mesh;
   }

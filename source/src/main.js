@@ -321,6 +321,15 @@ const vespa = buildVespa();
 const rider = buildRider();
 vespa.group.add(rider);
 const bike = new THREE.Group();
+// Named so the audit can tell the PLAYER'S OWN VEHICLE apart from the world.
+// P1b was counting the scooter and its rider -- nine separate findings for the
+// wheels, seat, deck, helmet and limbs -- as "structure standing in a
+// carriageway", on a project whose entire premise is riding a scooter down
+// Orchard Road. T1 has always had the principle written into it ("a vehicle is
+// not an obstruction") and P1b never did. Named rather than matched by
+// geometry signature, because this file already records that a signature
+// allowlist fails closed the moment a shape is retuned.
+bike.name = 'playerRig';
 bike.add(vespa.group);
 scene.add(bike);
 
@@ -574,6 +583,7 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
     // must come after construction, or the handover is a no-op
     if (window.__crossings) crowdSys.setCrossings(window.__crossings);
     window.__crowdPositions = () => crowdSys.positions();
+    window.__clearMask = (pi) => Array.from(crowdSys.clearMask[pi] || []);
     // Full per-pedestrian state, for the behaviour probe. Speeds alone tell you
     // that someone is sprinting and not why; this says which path they are on,
     // whether they are mid-crossing, and where along it they are.
