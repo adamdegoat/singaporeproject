@@ -25,25 +25,89 @@ outlives its script holds two CPU cores indefinitely.
 
 Done and from real data: layout, road widths from lane tags, one-way traffic,
 terrain under every road, 671 crossings, bus stops, signals, MRT exits with their
-real exit letters, 1,642 named shopfronts, the Angsana avenue, 460 pedestrians,
-collision built from the drawn geometry, and about two dozen buildings with a
-researched design.
+real exit letters, 3,624 glazed shopfront bays carrying 252 named tenants at the
+floor OSM puts them on, the Angsana avenue, 460 pedestrians, collision built from
+the drawn geometry, and about two dozen buildings with a researched design.
 
 **What is NOT done**, in the order worth doing:
 
-1. **Shopfronts.** 1,642 real shop names sit on blank ground-floor walls with no
-   window, no light, no display. At street level this is the biggest gap left,
-   and the data is already in the scene file.
-2. **Density.** 460 pedestrians and 21 vehicles over 2.6km. The systems are
+1. **Density.** 460 pedestrians and 21 vehicles over 2.6km. The systems are
    correct; there are simply not enough of them for a Saturday on Orchard.
-3. **Heights.** 917 of 1,557 are still a type default. Most sit behind something
+2. **Heights.** 917 of 1,557 are still a type default. Most sit behind something
    and never matter; the ones visible from the road do.
-4. **More districts.** The pipeline is proven and the seam holds. Little India is
+3. **More districts.** The pipeline is proven and the seam holds. Little India is
    directly connected. But the app loads the whole region at once, so streaming
    has to come before the world gets much bigger.
+4. **The 226 tenants off the built street network.** Little India, Selegie and
+   Killiney have real shops in the scene file and no street to put them on,
+   because the dressing stops 230m from an axis. That is a district-expansion
+   job, not a shopfront one.
 
 Everything above the line is correctness. Everything below it is making it look
 more like Singapore. They are different jobs.
+
+## Shopfronts, and the count that was lying
+
+`src/shopfront.js`. The ground floor was a flat coloured band with a tenant name
+board floating over it, and the stats said 1,642 named shopfronts were placed.
+Two things were wrong with that, and neither could be seen in a single frame:
+
+- **1,505 of the 1,642 boards were inside the masonry.** Each was drawn at the
+  tenant's own map coordinate nudged 1.2m toward the nearest road, and a mall
+  tenant's node is in the middle of the mall: median **9.2m past the facade**,
+  p90 26.6m, worst 66.6m. 137 shop points fall outside a footprint at all. So
+  the street read blank while the count read complete.
+- **`level` was in the raw OSM on 1,043 of 1,718 tenants and was never carried
+  into the scene file.** 253 are below the street and 376 above it, and all of
+  them were handed a board on the street facade six metres up. **Fourth time**
+  real data was present and unused: crossings, `sidewalk=`, `oneway=`, now this.
+  `cuisine` (473), `brand` (469), `name:zh` (177) and `addr:unit` were sitting
+  there too — `#01-15` is Singapore's way of writing the same floor number.
+
+Now: **3,624 glazed bays over 20.4km of frontage, 252 of them a named tenant**,
+with `name:zh` on the fascia where OSM has it. A bay is a lit panel, a bright
+ceiling strip, a counter, a door, glass 34cm proud of it with real reveals, a
+stall riser, mullions and a fascia. A tenant qualifies only if OSM puts it on the
+ground floor AND its node is either its own small building or within 8m of its
+host's facade; deeper than that it is in the atrium, and inventing a frontage for
+it is inventing a shop. Everything dropped is counted by REASON in
+`window.__stats` — 629 upstairs, 399 in an atrium, 226 off the built street
+network, 50 with no footprint — because "382 have no frontage" hides whether the
+rule is right or merely tight.
+
+Cost: **+207k triangles, +47 draw calls, 38 to 36fps** at 844x390 dpr2 in a
+spawned window. Bays stay out of the shadow map (`Merger.flush(world, {cast:
+false})`) — they are fabric on a wall that already casts.
+
+Four bugs found by the new checks, all the same shape as ones already in this
+file:
+
+- **The outward normal was chosen by comparing against the centroid**, which is
+  only right for a convex plan. An L, a U or a courtyard has edges whose midpoint
+  sits the far side of its own centroid, so the normal pointed INTO the building
+  and the test "2.5m outside the wall" landed inside the shop. It steps off the
+  edge and asks the footprint which side it is on now.
+- **236 bays glazed the inside of their own light well.** The skip was written
+  `if (o && o !== r.b)` — any building in front except this one, which is exactly
+  backwards for a concave plan that folds back on itself.
+- **One point per bay was tested against the carriageway while a bay is up to
+  eight metres wide.** Centre clear, end in the traffic: 14 findings on P1b and
+  5 on T1. Tested at its corners now. Identical to the canopy-post bug that put
+  59 columns in the road.
+- **S7 first tested every bay at the awning's reach**, and only a tenanted F&B
+  bay has an awning: 445 failures against geometry that does not exist. Each bay
+  records its own reach.
+
+`data/shopshots.mjs` is the vet loop for this: it stands a person 9m in front of
+bays that were actually built and photographs them. Three rounds of it fixed a
+window that was a flat lightbox (one lit panel, no foreground), a black L where
+the counter and the door were drawn on top of each other, and an awning that
+read as a plank because it had no valance. **A shopfront cannot be judged from a
+street-level frame** — at 30m it is a smudge, and the comparison sheet said it
+was fine while it was a lightbox.
+
+`data/fps.mjs` and `SG_EXTRA=noshops` on the audit runner are how the cost above
+was attributed: build the world without one subsystem and diff the numbers.
 
 ## One origin for the island
 
@@ -356,7 +420,11 @@ that outlives its script keeps doing it. Left overnight it cooks the laptop.
 node server.cjs                  # dev server on :8933
 node data/vantage.mjs [ids...]   # comparison sheet, 14 matched-angle frames
 node data/sheet.mjs > sheet.html # standalone page of them, lat/lon per frame
-node data/audit_run.mjs          # the 31 snapshot checks; needs the server
+node data/audit_run.mjs          # the 36 snapshot checks; needs the server
+SG_EXTRA=noshops node data/audit_run.mjs   # build without a subsystem, to attribute a count
+node data/shopshots.mjs 6        # eye-level frames OF THE SHOPFRONTS, 9m out
+node data/fps.mjs 6              # headed fps at 844x390 dpr2; a floor, not the number
+SG_SCENE=world node data/probe.mjs "expr"  # stats + draw calls, plus any expression
 node data/behaviour.mjs         # B1-B5: how things MOVE; needs the server
 SG_SCENE=world node data/defects.mjs   # the exploratory hunt, 15 classes
 bash data/tidy.sh               # kill stray browsers; ALWAYS after a batch

@@ -208,6 +208,58 @@ def _neg_layer(tags):
         return False
 
 
+# Which floor a tenant is on. 1,043 of the 1,718 named shops in the two
+# districts carry `level`, and the scene file was throwing it away, so a tenant
+# in the second basement of Ngee Ann City was handed a board on the street
+# facade six metres up. 646 of them are not on the street at all: 265 below it
+# and 381 above.
+#
+# `level` is OSM's own numbering, ground = 0. `addr:unit` is Singapore's, and it
+# is the SAME information written the local way: "#01-15" is the ground floor,
+# "#B2-32" is the second basement. Both are read, level first.
+#
+# Returns None when neither says, which is the honest answer for 650 of them and
+# is NOT the same as ground floor: the builder decides what to do with unknown.
+FLOOR_RE = re.compile(r"^\s*(-?\d+)")
+UNIT_RE = re.compile(r"#?\s*(B?)(\d{1,2})\s*-")
+
+
+def floor_of(tags):
+    lv = tags.get("level")
+    if lv:
+        m = FLOOR_RE.match(str(lv))
+        if m:
+            return int(m.group(1))
+    for key in ("addr:unit", "addr:floor"):
+        u = str(tags.get(key) or "")
+        m = UNIT_RE.search(u)
+        if m:
+            n = int(m.group(2))
+            return -n if m.group(1) == "B" else n - 1
+        m = FLOOR_RE.match(u)
+        if m and u.strip() == m.group(1):
+            return int(m.group(1))
+    return None
+
+
+def shop_rec(tags, x, z):
+    """A tenant, with the tags a shopfront needs to look like itself.
+    Optional fields are omitted when absent rather than written empty, because
+    every one of these lands 1,600 times in a file the phone downloads."""
+    r = {"p": [round(x, 1), round(z, 1)], "n": tags["name"],
+         "k": tags.get("shop") or tags.get("amenity")}
+    fl = floor_of(tags)
+    if fl is not None:
+        r["lv"] = fl
+    cu = tags.get("cuisine")
+    if cu:
+        r["cu"] = cu.split(";")[0].strip()[:24]
+    zh = tags.get("name:zh") or tags.get("name:zh-Hans")
+    if zh:
+        r["zh"] = zh[:24]
+    return r
+
+
 def carry_terrain(out_path, scene):
     """Keep the heightfield across a reprocess.
 
@@ -283,8 +335,7 @@ def main():
                     "restaurant", "cafe", "bank", "fast_food", "pharmacy", "cinema"):
                 if tags.get("name"):
                     x, z = proj(e["lat"], e["lon"])
-                    shops.append({"p": [round(x, 1), round(z, 1)], "n": tags["name"],
-                                  "k": tags.get("shop") or tags.get("amenity")})
+                    shops.append(shop_rec(tags, x, z))
             continue
         if e["type"] == "way" and tags.get("amenity") == "taxi" and "geometry" in e:
             pts = [proj(p["lat"], p["lon"]) for p in e["geometry"]]
@@ -305,8 +356,7 @@ def main():
             pts = [proj(p["lat"], p["lon"]) for p in e["geometry"]]
             cx = sum(p[0] for p in pts) / len(pts)
             cz = sum(p[1] for p in pts) / len(pts)
-            shops.append({"p": [round(cx, 1), round(cz, 1)], "n": tags["name"],
-                          "k": tags.get("shop") or tags.get("amenity")})
+            shops.append(shop_rec(tags, cx, cz))
             if "building" not in tags:
                 continue                      # otherwise fall through: it is a building too
         if e["type"] == "way" and tags.get("highway") == "footway" and "geometry" in e:

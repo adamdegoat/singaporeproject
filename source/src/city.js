@@ -158,7 +158,12 @@ export class Merger {
     if (!this._ids.has(mat)) this._ids.set(mat, this._next++);
     return this._ids.get(mat);
   }
-  flush(world) {
+  // `cast` is opt-out because most merged geometry is building fabric and has
+  // to cast. Shopfronts are the exception: 4,000 bays on walls that already
+  // cast their own shadow, so putting them in the map buys nothing and costs a
+  // second pass over the most numerous geometry in the district.
+  flush(world, opts = {}) {
+    const cast = opts.cast !== false;
     let meshes = 0;
     for (const [key, list] of this.groups) {
       const mat = this.mats.get(key);
@@ -182,7 +187,7 @@ export class Merger {
       merged.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
       merged.computeBoundingSphere();
       const mesh = new THREE.Mesh(merged, mat);
-      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.castShadow = cast; mesh.receiveShadow = true;
       world.add(mesh);
       meshes++;
     }
@@ -291,7 +296,7 @@ function sharedMat(tex, rough, metal) {
 // Seat on the LOWEST ground under the footprint instead. Nothing can then
 // float; the uphill end is buried deeper, which is what a building cut into a
 // slope actually looks like and is invisible from outside.
-function footingY(pts) {
+export function footingY(pts) {
   let lo = Infinity;
   for (const [x, z] of pts) {
     const g = TERRAIN.at(x, z);

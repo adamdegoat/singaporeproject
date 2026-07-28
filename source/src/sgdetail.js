@@ -406,47 +406,17 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     bannerT, yaw, () => cc.setHex(pick(BANNER_COLS)));
   stats.banners = bannerT.length;
 
-  /* ---------------- real shopfront signage ---------------- */
-  // The tenants OSM records, at their own coordinates, on a fascia board facing
-  // the street. Name text only, neutral typeface: this is labelling a place the
-  // way a map labels it, not reproducing anyone's logo or brand styling.
-  let realShops = 0;
-  for (const sh of (data.shops || [])) {
-    const [sx, sz] = sh.p;
-    // face the nearest street, so a sign is never edge-on to the road
-    let bx = 0, bz = 0, bd = Infinity, bux = 0, buz = 1;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
-      const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
-      let t = L2 < 1e-9 ? 0 : ((sx - x1) * vx + (sz - z1) * vz) / L2;
-      t = Math.max(0, Math.min(1, t));
-      const px2 = x1 + vx * t, pz2 = z1 + vz * t;
-      const d = (sx - px2) ** 2 + (sz - pz2) ** 2;
-      if (d < bd) {
-        bd = d; bx = px2; bz = pz2;
-        const L = Math.hypot(vx, vz) || 1; bux = vx / L; buz = vz / L;
-      }
-    }
-    const dist = Math.sqrt(bd);
-    if (dist > 46) continue;                    // fronts a different street
-    // sit the board just off the building face, turned toward the road
-    const tox = (bx - sx) / (dist || 1), toz = (bz - sz) / (dist || 1);
-    const ang = Math.atan2(tox, toz);
-    const bw = Math.min(7.5, 2.4 + sh.n.length * 0.30);
-    const bh = bw * 0.235;
-    const y = 5.9 + ((sh.n.length * 7) % 13) * 0.12;
-    const uv = atlas.add(sh.n, '#' + pick(SIGN_COLS).toString(16).padStart(6, '0'), '#f6f3ec');
-    const face = atlas.plane(bw, bh, uv);
-    face.rotateY(ang);
-    face.translate(sx + tox * 1.2, y, sz + toz * 1.2);
-    signs.add(face, uv.mat, sx, sz);
-    const back = new THREE.BoxGeometry(bw + 0.3, bh + 0.3, 0.22);
-    back.rotateY(ang);
-    back.translate(sx + tox * 1.05, y, sz + toz * 1.05);
-    signs.add(back, MAT.darkMetal, sx, sz);
-    realShops++;
-  }
-  stats.realShops = realShops;
+  /* ---------------- tenant signage: moved to shopfront.js ---------------- */
+  // This used to draw a board at each tenant's own map coordinate, nudged 1.2m
+  // toward the nearest road. A mall tenant's node is in the middle of the mall,
+  // so 1,505 of the 1,642 boards were built inside the masonry — median 9.2m
+  // past the facade — and every one of them was drawn whether the shop was on
+  // the street, on the fourth floor or in the second basement.
+  //
+  // A tenant now goes on the facade its shop actually meets the street at, in
+  // a real shop bay, or it is not drawn. See src/shopfront.js. It runs once for
+  // the whole district rather than once per axis, which is also why it is not
+  // here: this function is called for each axis in turn.
 
   /* ---------------- building signage ---------------- */
   // Rooftop sign boxes on the taller blocks and vertical banner signs down the

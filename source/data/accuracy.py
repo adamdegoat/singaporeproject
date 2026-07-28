@@ -50,7 +50,14 @@ def build_ledger(d):
         (f"street trees ({n('trees')})", "OSM natural=tree and tree_row"),
         (f"overhead bridges ({n('bridges')})", "OSM footway + bridge=yes"),
         (f"covered walkways ({n('covered')})", "OSM footway + covered=yes"),
-        (f"shopfront names ({n('shops')})", "OSM shop/amenity names"),
+        # The count is the tenants in the file, not the shopfronts built from
+        # them. Those are different numbers on purpose: 629 of these are on a
+        # floor OSM says is not the street and 399 sit in an atrium, and the
+        # builder draws no street frontage for either. Reporting the file's
+        # count as the built count is exactly the lie this ledger exists to
+        # stop — it is what let 1,505 signs inside the masonry read as placed.
+        (f"shopfront names ({n('shops')} tenants, with floor and cuisine)",
+         "OSM shop/amenity name + level/addr:unit + cuisine + name:zh"),
         (f"building names ({named})", "OSM name tags"),
         (f"building heights ({real_h} of {len(B)})",
          f"{hs['osm']} from OSM tags, {hs['named']} hand-entered from published storey counts"),

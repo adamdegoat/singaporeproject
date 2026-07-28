@@ -9,7 +9,7 @@
 // Checks where a HIGHER number is better, so the budget is a floor rather than a
 // ceiling. Declared once: listing them by id at each comparison site is how C8
 // came to report 13% coverage as a pass against a 70% floor.
-const FLOORS = new Set(['C4', 'C7', 'C8']);
+const FLOORS = new Set(['C4', 'C7', 'C8', 'S8']);
 
 window.__auditWorld = async function auditWorld() {
   const T = window.__THREE, sc = window.__scene;
@@ -56,7 +56,12 @@ window.__auditWorld = async function auditWorld() {
       // mass reaches down into the band a rider occupies over a carriageway.
       // The world got more correct and the check can now see something that was
       // always there. Orchard is unaffected and still passes at 8.
-      P1b: 234, T1: 13,
+      // T1 13 -> 11. A ratchet's budget is the best figure reached so far, and
+      // 11 is where the region now measures with the shopfronts in. It got
+      // there by SKIPPING bays whose corners land in a carriageway rather than
+      // by loosening anything: one point per bay was tested while a bay is up
+      // to eight metres wide.
+      P1b: 234, T1: 11,
       // proportional to a world with 1,932 buildings and 4,392 roads
       // P4 333 -> 360 and P1b 177 -> 179 on the day the Civic District landmarks
       // got real massing. Both are consequences of that, not new defects:
@@ -853,6 +858,78 @@ window.__auditWorld = async function auditWorld() {
     const orphan = shops.filter((sh) => !buildingAt(sh.p[0], sh.p[1])).length;
     add('S4', 'shop signs off their mapped building', 'MINOR', orphan, null,
         `${orphan} of ${shops.length} shop points fall outside any footprint`, []);
+  }
+
+  /* ---- S6-S9: the shopfronts, tested where the glass ended up ---- */
+  // Not where the map said a shop was. A tenant board used to be drawn at its
+  // own OSM coordinate, and a mall tenant's coordinate is in the middle of the
+  // mall: 1,505 of 1,642 were inside the masonry, median 9.2m past the facade.
+  // Nothing here reads data.shops for that reason — it reads the bays that were
+  // actually built.
+  {
+    const bays = window.__shopBays || [];
+    // S6: a bay standing inside a building is the defect this whole file
+    // exists to stop coming back. Sampled 1.2m in front of the glass, at the
+    // bay's own position and normal.
+    const buried = [];
+    for (const b of bays) {
+      const px = b.x + b.nx * 1.2, pz = b.z + b.nz * 1.2;
+      const hit = buildingAt(px, pz);
+      if (hit) buried.push(`${b.name || 'bay'} on ${b.building || '(unnamed)'} `
+        + `faces into ${hit.n || 'another footprint'}`);
+    }
+    add('S6', 'shopfront bays built inside a building', 'BLOCKER',
+        buried.length, 0, `${bays.length} bays checked 1.2m in front of the glass`, buried);
+
+    // S7: and nothing may lean into the traffic. Tested at the reach each bay
+    // RECORDS, not at a single number for all of them: most reach 48cm to the
+    // face of the fascia and only a tenanted bay with an awning reaches 1.8m.
+    // Judging all 3,958 at the awning's reach reported 445 failures for
+    // geometry that does not exist, which is the same mistake as a check that
+    // reads the source data instead of the world.
+    const inRoad = [];
+    let maxReach = 0;
+    for (const b of bays) {
+      const reach = b.reach || (b.depth + 0.14);
+      if (reach > maxReach) maxReach = reach;
+      const px = b.x + b.nx * reach, pz = b.z + b.nz * reach;
+      const on = roadAt(px, pz, 0, false);
+      if (on) inRoad.push(`${b.name || 'bay'} on ${b.building || '(unnamed)'} `
+        + `reaches ${reach.toFixed(2)}m into ${on}`);
+    }
+    add('S7', 'shopfront bays reaching into a carriageway', 'BLOCKER',
+        inRoad.length, 0,
+        `${bays.length} bays, each at its own reach (deepest ${maxReach.toFixed(2)}m)`, inRoad);
+
+    // S8: a bay's fascia has to be somewhere a person could read it. Below the
+    // knee or above the first floor means the profile drifted off its datum,
+    // which is exactly what happens when heights get measured from local ground
+    // on a street that slopes.
+    const odd = bays.filter((b) => (b.top - b.y) < 1.6 || (b.top - b.y) > 5.2);
+    add('S9', 'shopfront bays of an impossible height', 'MAJOR', odd.length, 0,
+        `${bays.length} bays, sill to fascia top`,
+        odd.slice(0, 6).map((b) => `${b.name || 'bay'}: ${(b.top - b.y).toFixed(1)}m tall`));
+  }
+
+  {
+    // S8: coverage. Of the tenants that OSM puts on the ground floor with a
+    // frontage on a street this world builds, how many got a shopfront? A
+    // FLOOR: higher is better.
+    //
+    // The denominator is deliberately not "every named shop". 629 of them are
+    // upstairs or in a basement and 399 are in an atrium, and counting those as
+    // missing coverage would make a correct world look 17% done for ever. Each
+    // exclusion is counted separately in __stats and each one is a rule that
+    // can be argued with, which is the point.
+    const st = window.__stats || {};
+    const placed = st.realShops || 0;
+    const eligible = placed + (st.shopsNoBay || 0) + (st.shopsFarFromRun || 0);
+    const pct = eligible ? Math.round((placed / eligible) * 100) : 0;
+    add('S8', 'street-level tenants given a shopfront', 'MAJOR', pct, 85,
+        `${placed} of ${eligible} eligible tenants placed; excluded: `
+        + `${st.shopsUpstairs || 0} not on the street floor, ${st.shopsInside || 0} in an atrium, `
+        + `${st.shopsBackBlock || 0} off the built street network, ${st.shopsNoHost || 0} with no footprint`,
+        []);
   }
 
   {

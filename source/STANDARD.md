@@ -89,10 +89,32 @@ per-way test discarded the entire 1,376m street.
 | S3 | Building name signs attached to a different building | MAJOR | < 5 |
 | S4 | Shop signs further than 46m from their mapped position | MAJOR | < 5 |
 | S5 | MRT entrances without their real exit letter | MINOR | — |
+| S6 | Shopfront bays built inside a building | BLOCKER | 0 |
+| S7 | Shopfront bays reaching into a carriageway | BLOCKER | 0 |
+| S8 | Share of street-level tenants given a shopfront | MAJOR | floor 85% |
+| S9 | Shopfront bays of an impossible height | MAJOR | 0 |
 
 This is the category geometry checks are blind to. An overhead gantry can be
 perfectly placed, perfectly lit and perfectly modelled while pointing to a
 street picked at random, and no amount of collision checking will notice.
+
+S6 to S9 read `window.__shopBays`, which is where the builder actually put each
+bay, and never `data.shops`. A tenant board used to be drawn at the tenant's own
+OSM coordinate, and a mall tenant's coordinate is in the middle of the mall:
+1,505 of 1,642 signs stood inside the masonry, median 9.2m past the facade,
+while every count reported them placed. A check reading the same list would have
+agreed with the bug.
+
+S7 tests each bay at the reach that bay RECORDS — 48cm to the face of the fascia,
+1.8m for a tenanted bay with an awning — not at one number for all of them.
+Judging all 3,624 at the awning's reach reported 445 failures against geometry
+that was never built.
+
+S8's denominator is deliberately not every named shop. 629 tenants are upstairs
+or in a basement, 399 are in an atrium and 226 front streets this world does not
+build; counting those as missing coverage would make a correct world read as 15%
+done for ever. Each exclusion is counted separately in `window.__stats`, so every
+one of them is a rule that can be argued with.
 
 ### T — Traversal: can you actually ride it
 

@@ -10,6 +10,7 @@ import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from '.
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
 import { axisSpec, buildMarkings, dressSideStreets, selectSideStreets } from './markings.js';
 import { buildSgDetail } from './sgdetail.js';
+import { buildShopfronts } from './shopfront.js';
 import { Signals } from './signals.js';
 import { Sound } from './audio.js';
 import { Crowd, Traffic } from './actors.js';
@@ -524,6 +525,10 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
       for (const k of Object.keys(q)) sg[k] = (sg[k] || 0) + q[k];
     }
   }
+  // Once for the district, not once per axis: a shopfront belongs to a
+  // building, and a building on a corner fronts two streets.
+  const shopf = P.has('noshops') ? {} : buildShopfronts(world, data, axes);
+
   signals = new Signals(furniture.signals || []);
   if (axis) wayfinder = new Wayfinder(data, axis);
   window.__axis = axis;
@@ -531,7 +536,7 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   const people = crowdSys ? crowdSys.people.length : 0;
 
   buildEnvironment();
-  stats = { surround, marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage };
+  stats = { surround, marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage, ...shopf };
   ready = true;
   // one pass over the finished district: share identical materials, then batch
   // small static meshes per 110m tile. See consolidate.js.
