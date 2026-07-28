@@ -139,6 +139,52 @@ was fine while it was a lightbox.
 `data/fps.mjs` and `SG_EXTRA=noshops` on the audit runner are how the cost above
 was attributed: build the world without one subsystem and diff the numbers.
 
+## ERP gantries are REAL now, and "not mapped" was wrong a third time
+
+The accuracy ledger said, in writing: *ERP gantries — NOT MAPPED in OSM here
+(checked barrier=toll_booth): needs imagery*. Two were placed per axis at
+arclengths 300 and 700, which is three invented numbers per gantry — where, which
+way round, and how wide.
+
+**LTA publishes every gantry in Singapore** on data.gov.sg under the Open Data
+Licence (`d_753090823cc9920ac41efaa6530c5893`), and publishes them as
+**LINESTRINGS** — the line is the span across the carriageway, so it carries the
+position, the bearing AND the width. 15 of them are in this region.
+`data/gantries.py` fetches and clips them; `build_district.py` runs it.
+
+That is the third time "no data exists" has been false here, after the crossings
+and the `sidewalk=` tags — and the ledger line records exactly why it was wrong:
+**it had checked ONE tag in ONE source.** `barrier=toll_booth` is not in OSM, so
+the conclusion was "not mapped". Checking one tag is not checking.
+
+The dataset does not say which gantries are ERP and which carry EMAS signs — the
+only attribute is a mostly-empty GNTRY_NUM. So each is cross-checked against the
+`toll=yes` ways in our OWN extract, which is a fourth piece of real data that was
+sitting unread: all ten near a built axis are within five metres of one. Nine in
+Bras Basah failed that test and were skipped as sign gantries.
+
+**Two things this round got right that are worth copying:**
+
+- **The surveyed position is not nudged.** `erpGantry` pushes itself 18m clear of
+  the carriageway, which was correct while its position came from a rule. A
+  gantry's whole purpose is to span the carriageway, so a surveyed one skips
+  that: pushing real data to the kerb is taking a fact and making it wrong.
+- **But the LEGS are not surveyed.** LTA's line spans the CHARGED LANES and the
+  road is often wider — a bus lane, a slip road, a junction flare — so legs
+  planted at span/2 + 1.2 put six of thirty columns in live traffic. The centre
+  and bearing are kept exactly; only the leg reach, which was always a
+  construction detail, searches outward until clear, and builds nothing if nine
+  metres is not enough. **Keep what is surveyed, adjust only what never was.**
+
+P1b then jumped 135 to 179 because the antenna heads and the amber panel are now
+over carriageways — which is what they are FOR. They join the exemption list
+beside the traffic signal heads and the direction gantries, with the reason
+written, and the legs deliberately do NOT. Net effect: Orchard's P1b ratchet
+tightens **135 -> 124** and the region's **234 -> 211**, because fifteen surveyed
+gantries with clear legs are cleaner than the two invented ones they replaced.
+
+Ledger: **19 of 28 feature classes real, up from 18.**
+
 ## Other data sources: tested, and mostly a dead end. Do not redo this.
 
 The 917 guessed building heights are the biggest remaining accuracy gap, so the
