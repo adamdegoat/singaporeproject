@@ -233,9 +233,10 @@ function dressStreet(data, axis) {
   // ---- real crossings from OpenStreetMap ----
   // OSM has a node for every pedestrian crossing. Placing them every 190m was
   // an invention; this is the actual street.
-  let realCrossings = 0;
+  let realCrossings = 0, tactilePads = 0;
+  const tactileT = [];
   for (const c of (dataRef.crossings || [])) {
-    const [cx, cz] = c;
+    const [cx, cz, tp] = c;
     // find the nearest point on the axis and the local direction there
     let bi = 0, bd = Infinity, bt = 0;
     for (let i = 0; i < pts.length - 1; i++) {
@@ -272,6 +273,23 @@ function dressStreet(data, axis) {
       // above the carriageway surface, which is drawn at 0.055
       zebraT.push([bx, 0.075, bz, ba + Math.PI / 2]);
     }
+    // TACTILE PAVING at both kerbs. OSM tags it on 34% of crossing nodes here
+    // and it is on essentially every modern Singapore crossing -- the yellow
+    // studded pad you stand on at the kerb. Nothing read the tag until
+    // data/unused.py enumerated what the map carries.
+    //
+    // Placed at the kerb line either side, not at the crossing centre: the pad
+    // is where the pavement meets the road, which is what makes it read as a
+    // kerb ramp rather than a yellow patch in the middle of the tarmac.
+    if (tp) {
+      for (const sgn of [-1, 1]) {
+        const px = ox + nx2 * sgn * (half + 0.55), pz2 = oz + nz2 * sgn * (half + 0.55);
+        if (window.__onRoad && window.__onRoad(px, pz2, -0.3)) continue;
+        tactileT.push([px, 0.09, pz2, ang2 + Math.PI / 2]);
+        tactilePads++;
+      }
+    }
+
     // arclength for the pedestrian-signal logic
     let arc = 0;
     for (let i = 0; i < bi; i++) arc += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
@@ -280,6 +298,7 @@ function dressStreet(data, axis) {
     realCrossings++;
   }
   window.__realCrossings = realCrossings;
+  window.__tactilePads = tactilePads;
 
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
   const p3 = new THREE.Vector3(), s3 = new THREE.Vector3(1, 1, 1);
@@ -307,6 +326,12 @@ function dressStreet(data, axis) {
     p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   emit(new THREE.PlaneGeometry(0.62, axis.w), MAT.white, zebraT, (r) => {
+    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
+    e.set(-Math.PI / 2, r[3], 0, 'YXZ');
+    q.setFromEuler(e);
+  });
+  // the tactile pad: a 1.2m by 0.9m yellow panel laid flat at the kerb
+  emit(new THREE.PlaneGeometry(1.2, 0.9), MAT.tactile, tactileT, (r) => {
     p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
     e.set(-Math.PI / 2, r[3], 0, 'YXZ');
     q.setFromEuler(e);

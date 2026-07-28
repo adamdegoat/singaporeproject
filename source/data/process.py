@@ -352,7 +352,13 @@ def main():
                 trees.append([round(x, 1), round(z, 1)])
             elif hw == "crossing":
                 x, z = proj(e["lat"], e["lon"])
-                crossings.append([round(x, 1), round(z, 1)])
+                # TACTILE PAVING: the yellow studded pad at the kerb. 34% of
+                # crossing nodes in this district say whether it is there, and
+                # in Singapore it is on essentially every modern crossing, so
+                # its absence read as wrong to anyone who has stood on one. A
+                # third element means "the map says yes".
+                tp = 1 if tags.get("tactile_paving") == "yes" else 0
+                crossings.append([round(x, 1), round(z, 1), tp])
             elif hw == "traffic_signals":
                 x, z = proj(e["lat"], e["lon"])
                 signals.append([round(x, 1), round(z, 1)])
@@ -464,6 +470,15 @@ def main():
                 b["hs"] = hsrc          # height provenance, for the accuracy ledger
             if podium:
                 b["pod"] = podium       # researched podium height, read by the recipe
+            # A SURVEYED COLOUR BEATS A HASHED ONE, the same way a surveyed
+            # material already does. 29 buildings in Bras Basah carry
+            # `building:colour` and 29 carry `roof:colour`, and both were being
+            # overridden by a hash of the footprint -- which is a deterministic
+            # way of saying "at random".
+            for _src, _dst in (("building:colour", "col"), ("roof:colour", "rcol")):
+                _v = (tags.get(_src) or "").strip()
+                if _v:
+                    b[_dst] = _v
             # WHAT A BUILDING LOOKS LIKE, from the map rather than from a hash.
             #
             # The facade family was chosen by hashing the footprint, which is a
@@ -535,8 +550,42 @@ def main():
                 if tags.get(tk):
                     r["turns"] = tags[tk]
                     break
+            # SIDEWALK, both schemas. `sidewalk=left/right/both/no` is the old
+            # one and was already read; `sidewalk:left=`/`sidewalk:right=` is
+            # the current one and was not, so 356 ways in Bras Basah had their
+            # footway information ignored while kerbs were assumed on both
+            # sides. Found by data/unused.py, not by anybody noticing.
             if tags.get("sidewalk"):
                 r["sidewalk"] = tags["sidewalk"]
+            else:
+                # `separate` is NOT `yes`. It means the footway is mapped as its
+                # own way elsewhere, so this carriageway has no kerbside
+                # pavement -- which is how the old `sidewalk=separate` value has
+                # always been read here, and how C1 exempts Mount Sophia from
+                # needing kerbs. Treating it as "there is a pavement on the
+                # left" put Mount Sophia back in the check and failed the gate.
+                _l, _r2 = tags.get("sidewalk:left"), tags.get("sidewalk:right")
+                _b = tags.get("sidewalk:both")
+                if _b == "yes":
+                    r["sidewalk"] = "both"
+                elif _l == "yes" and _r2 == "yes":
+                    r["sidewalk"] = "both"
+                elif _l == "yes":
+                    r["sidewalk"] = "left"
+                elif _r2 == "yes":
+                    r["sidewalk"] = "right"
+                elif "separate" in (_l, _r2, _b):
+                    r["sidewalk"] = "separate"
+                elif _l == "no" and _r2 == "no":
+                    r["sidewalk"] = "no"
+                elif _b == "no":
+                    r["sidewalk"] = "no"
+            # WHAT THE ROAD IS MADE OF. 61% of ways carry it and nothing read it
+            # until data/unused.py went looking: 293 ways in this district are
+            # paving stones, concrete, cobblestone or sett and every one was
+            # drawn as asphalt. Eighth instance of real data present and unused.
+            if tags.get("surface"):
+                r["surface"] = tags["surface"]
             r["ws"] = wsrc
             if tags.get("name"):
                 r["n"] = tags["name"]

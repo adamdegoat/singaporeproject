@@ -1,7 +1,7 @@
 // Build the street from real OSM geometry: extruded footprints, road ribbons,
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, rng } from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, rng } from './tex.js';
 import { recipeFor, hasShopfront, shophouse } from './landmarks.js';
 
 export const TEX = {
@@ -95,6 +95,10 @@ export const MAT = {
   trim: new THREE.MeshStandardMaterial({ color: PAL.trim, roughness: 0.8 }),
   white: new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.85 }),
   yellow: new THREE.MeshStandardMaterial({ color: PAL.yellow, roughness: 0.85 }),
+  tactile: new THREE.MeshStandardMaterial({ map: texTactile(), roughness: 0.72 }),
+  // the two surfaces OSM names that are neither asphalt nor our pavement slab
+  unitPave: new THREE.MeshStandardMaterial({ map: texPaving(), color: 0x9a9184, roughness: 0.92 }),
+  roadConc: new THREE.MeshStandardMaterial({ map: texConcrete(0x9d9a94, 0.6), roughness: 0.93 }),
   metal: new THREE.MeshStandardMaterial({ color: 0x8b8f93, roughness: 0.5, metalness: 0.4 }),
   darkMetal: new THREE.MeshStandardMaterial({ color: 0x3b3f44, roughness: 0.6, metalness: 0.3 }),
   glass: new THREE.MeshStandardMaterial({ color: 0x53616d, roughness: 0.14, metalness: 0.18 }),
@@ -133,6 +137,16 @@ const LMAT = {
   warmStone: new THREE.MeshStandardMaterial({ map: texConcrete(0xb2a48f, 0.5), roughness: 0.85 }),
   jadeRoof: new THREE.MeshStandardMaterial({ color: 0x2f5f4a, roughness: 0.45, metalness: 0.2 }),
   clayTile: new THREE.MeshStandardMaterial({ color: 0x9c5a44, roughness: 0.82 }),
+  // a roof at its surveyed colour, cached so a terrace of them is one material
+  roofTint(css) {
+    this._rt = this._rt || new Map();
+    if (!this._rt.has(css)) {
+      const m = new THREE.MeshStandardMaterial({ color: 0x9c5a44, roughness: 0.82 });
+      try { m.color = new THREE.Color(css); } catch (e) { /* a bad tag is not a crash */ }
+      this._rt.set(css, m);
+    }
+    return this._rt.get(css);
+  },
   awning(b) {
     let h = 0;
     for (const [x, z] of b.p) h = (h * 29 + ((x * 9) | 0) + ((z * 7) | 0)) | 0;
@@ -323,6 +337,19 @@ function scaleUV(geo, sx, sy) {
 
 // one shared material per facade texture, built lazily
 const sharedMats = new Map();
+// A facade family texture tinted to a surveyed colour. Cached per
+// texture+colour so a street of the same colour is still one material.
+const tintedMats = new Map();
+function tintedMat(tex, rough, metal, css) {
+  const key = tex.uuid + '|' + css;
+  if (!tintedMats.has(key)) {
+    const m = new THREE.MeshStandardMaterial({ map: tex, roughness: rough, metalness: metal });
+    try { m.color = new THREE.Color(css); } catch (e) { /* an unparseable tag is not a crash */ }
+    tintedMats.set(key, m);
+  }
+  return tintedMats.get(key);
+}
+
 function sharedMat(tex, rough, metal) {
   if (!sharedMats.has(tex)) {
     sharedMats.set(tex, new THREE.MeshStandardMaterial({
@@ -494,7 +521,13 @@ export function buildBuildings(world, data) {
     const fs = (window.__facadeSrc = window.__facadeSrc || {});
     fs[fam.src] = (fs[fam.src] || 0) + 1;
     const wallTex = pick(fam.pool);
-    const mat = sharedMat(wallTex, fam.rough, fam.metal);
+    // A SURVEYED COLOUR BEATS A HASHED ONE. `building:colour` is on 29
+    // footprints here and was being overridden by a facade family picked from a
+    // hash, which is the same mistake `building:material` already fixed once:
+    // "a hash was overriding a surveyed fact". Tinting the family's texture
+    // keeps the window pattern and takes the real hue.
+    const mat = b.col ? tintedMat(wallTex, fam.rough, fam.metal, b.col)
+                      : sharedMat(wallTex, fam.rough, fam.metal);
     const per = perimeter(pts);
     const h = b.h;
     // Landmarks are podium + tower, which is what the Orchard skyline is made of
@@ -783,7 +816,7 @@ function polyLen(pts) {
 }
 
 export function buildRoads(world, data) {
-  const roadGeos = [], paveGeos = [];
+  const roadGeos = [], paveGeos = [], unitPaveGeos = [], concGeos = [];
   let mainAxis = null, bestLen = Infinity;
   for (const r of data.roads) {
     const isPath = r.k === 'footway' || r.k === 'pedestrian';
@@ -794,7 +827,21 @@ export function buildRoads(world, data) {
     const y = isPath ? 0.02 : 0.055 + seed * 0.0012;
     const g = ribbon(r.p, r.w, y);
     if (!g.attributes.position || g.attributes.position.count === 0) continue;
-    (isPath ? paveGeos : roadGeos).push(g);
+    // WHAT IT IS MADE OF, from the map. `surface` is on 61% of ways here and
+    // nothing read it until data/unused.py enumerated the extract: 293 ways in
+    // Orchard alone are paving stones, concrete, cobblestone or sett and every
+    // one was drawn as asphalt. Eighth instance of real data present and unused.
+    //
+    // Only three buckets, because that is all the difference a rider can see at
+    // speed: bituminous, pale slab, and small unit paving.
+    const sf = (r.surface || '').toLowerCase();
+    let bucket = isPath ? paveGeos : roadGeos;
+    if (sf) {
+      if (/paving_stones|sett|cobblestone/.test(sf)) bucket = unitPaveGeos;
+      else if (/concrete/.test(sf)) bucket = concGeos;
+      else if (/asphalt|paved|tarmac/.test(sf)) bucket = isPath ? paveGeos : roadGeos;
+    }
+    bucket.push(g);
     if (/orchard road/i.test(r.n || '') && polyLen(r.p) > 120) {
       let near = Infinity;
       for (const [x, z] of r.p) near = Math.min(near, x * x + z * z);
@@ -831,6 +878,8 @@ export function buildRoads(world, data) {
   };
   merge(roadGeos, MAT.asphalt, 'roadSurface');
   merge(paveGeos, MAT.paving, 'pavementSurface');
+  merge(unitPaveGeos, MAT.unitPave, 'roadSurface');
+  merge(concGeos, MAT.roadConc, 'roadSurface');
   return mainAxis;
 }
 

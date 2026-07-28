@@ -1327,6 +1327,12 @@ window.__auditWorld = async function auditWorld() {
 
   /* ================= A: accuracy ================= */
   {
+    // NOTE: this is the narrow, in-browser half of the question. It checks that
+    // the layers we DID carry are actually being built. It cannot see a tag
+    // that never made it into the scene file at all, and that is where all
+    // seven of this project's "real data present but unused" bugs lived --
+    // a hand-typed list of three items cannot find the tag nobody listed.
+    // `data/unused.py` enumerates the raw extract instead and runs in deploy.sh.
     const unused = [];
     if ((data.crossings || []).length && !window.__realCrossings) unused.push('crossings');
     if ((data.mrt || []).length && !window.__realMrt) unused.push('mrt');

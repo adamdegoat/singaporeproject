@@ -257,6 +257,31 @@ export function texGranitePanel() {
   return finish(c, [1, 1]);
 }
 
+// The yellow tactile paving pad at a kerb ramp: raised studs in a grid, which
+// is what makes it read as tactile rather than as a painted yellow rectangle.
+// Its own RNG stream, so adding it does not move anything else in the world.
+export function texTactile() {
+  const S = 128, [c, x] = cvs(S);
+  const r2 = rng(0x74616374);            // "tact"
+  x.fillStyle = '#d8a52a'; x.fillRect(0, 0, S, S);
+  for (let i = 0; i < 700; i++) {
+    const v = (r2() * 2 - 1) * 16;
+    x.fillStyle = `rgba(${216 + v},${165 + v},${42 + v},${0.2 + r2() * 0.3})`;
+    x.fillRect(r2() * S, r2() * S, 1 + r2() * 2, 1 + r2() * 2);
+  }
+  const n = 6, sp = S / n;
+  for (let iy = 0; iy < n; iy++)
+    for (let ix = 0; ix < n; ix++) {
+      const cx2 = ix * sp + sp / 2, cy = iy * sp + sp / 2, rad = sp * 0.27;
+      const g = x.createRadialGradient(cx2 - rad * 0.3, cy - rad * 0.3, 0, cx2, cy, rad);
+      g.addColorStop(0, '#f2c65a');
+      g.addColorStop(1, '#a97c14');
+      x.fillStyle = g;
+      x.beginPath(); x.arc(cx2, cy, rad, 0, Math.PI * 2); x.fill();
+    }
+  return finish(c, [1, 1]);
+}
+
 // dark polished granite with narrow vertical window slots (Ngee Ann City)
 export function texGranite() {
   // Ngee Ann City is clad in "African Red" polished granite, which reads far

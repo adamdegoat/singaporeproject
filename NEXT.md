@@ -662,6 +662,59 @@ stands) and a raycast at eye height correctly hits it. Both are right. It is a
 grade artefact, not a shopfront defect, and it is written here rather than tuned
 away.
 
+## The check that was supposed to catch all of this, and didn't
+
+After the median bug the question was not "is that fixed" but "why did 36 checks
+miss it, and what else is like it". The answer is that **A2, "real data present
+but unused", read a hand-typed list of three items** — crossings, mrt, shops —
+and passed at zero through all seven instances of the pattern it is named after.
+A list of what to look for cannot find the thing nobody thought to list. The
+accuracy ledger had exactly this disease and was fixed by reading the scene file
+instead; A2 never was.
+
+**`data/unused.py` enumerates the raw extract and runs in deploy.sh.** Every tag
+above 5% of its element class must be one of three things: carried into the
+scene file, in `IGNORED` with a reason, or in `DEFERRED` with a reason. A tag in
+none of them fails the gate. Silence is impossible, which matters because the
+failure mode is always a tag nobody thought about.
+
+It found **24 unread tags in Orchard and 36 in Bras Basah** on the first run.
+What that turned into:
+
+- **`surface`** — 61% of ways, and 293 of them are paving stones, concrete,
+  cobblestone or sett while every single one was drawn as asphalt. Roads now
+  sort into three buckets, which is all a rider can tell apart at speed.
+- **`sidewalk:left` / `sidewalk:right` / `sidewalk:both`** — the CURRENT OSM
+  schema, on 356 ways in Bras Basah. We read only the old `sidewalk=` form, so
+  those streets had their footway information ignored and got kerbs on both
+  sides by default. Sidewalk coverage went 404 ways to 880.
+- **`tactile_paving`** — 34% of crossing nodes in Orchard, 62% in Bras Basah.
+  The yellow studded pad at the kerb, which is on essentially every modern
+  Singapore crossing and is exactly the sort of thing whose absence reads wrong
+  to someone who has stood on one. Drawn at both kerbs of a crossing, not at its
+  centre, so it reads as a kerb ramp rather than a yellow patch in the road.
+- **`building:colour` and `roof:colour`** — 33 and 51 footprints with a SURVEYED
+  colour that a hash of the footprint was overriding. Same mistake
+  `building:material` already fixed once: "a hash was overriding a surveyed
+  fact".
+
+**And I got `separate` wrong on the way**, which is worth recording because it
+is a data-meaning bug rather than a code bug. `sidewalk:left=separate` does NOT
+mean there is a pavement on the left; it means the footway is mapped as its own
+way elsewhere, so this carriageway has no kerbside pavement. Reading it as "yes"
+put Mount Sophia back into C1 and failed the gate — which is the gate doing its
+job, since C1's own comment has said for weeks that Mount Sophia correctly has
+no kerbs.
+
+**Still DEFERRED, printed on every run so they cannot go quiet:** `maxspeed`
+(1,254 ways carry a real limit and traffic speed is invented), `lanes:forward` /
+`lanes:backward` (546 ways, exact split inferred), bus lanes (`busway:*`,
+`lanes:bus` — Singapore's red bus lanes, very visible, markings work),
+`route_ref` (the real bus numbers at each stop), `crossing:island` (pedestrian
+refuges we do not build), `crossing:markings`, `kerb`, `shelter` / `bench` /
+`bin` (OSM says WHICH stops have them; we decide by frontage width), and
+`addr:housenumber` / `addr:street`.
+
 ## The median down the middle of a one-way street
 
 **The user found it by riding, and asked whether Orchard Road has a divider.**

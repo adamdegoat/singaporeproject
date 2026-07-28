@@ -858,11 +858,16 @@ export function shophouse(api, b) {
   }
   if (pitched) {
     const rad = Math.min(3.4, ob.halfShort * (0.5 + variant * 0.09));
+    // A SURVEYED ROOF COLOUR beats the default clay. `roof:colour` is tagged on
+    // 29 footprints in Bras Basah, which is conservation shophouse country, and
+    // it was being carried into the scene file and then ignored -- which is the
+    // same sin as not carrying it at all.
+    const roofMat = b.rcol ? api.mat.roofTint(b.rcol) : tile;
     const rg = new THREE.CylinderGeometry(rad, rad, span * 1.02, 3, 1, false);
     rg.rotateZ(Math.PI / 2);
     rg.rotateY(-ob.ang);
     rg.translate(ob.cx, b.h + rad * 0.30, ob.cz);
-    api.merge(rg, tile, cx0, cz0);
+    api.merge(rg, roofMat, cx0, cz0);
     // gable ends, so a row is read as separate houses rather than one long shed
     for (const sgn of [-1, 1]) {
       const gx = ob.cx + ob.ux * sgn * (span / 2), gz = ob.cz + ob.uz * sgn * (span / 2);
