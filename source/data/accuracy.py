@@ -94,8 +94,10 @@ def build_ledger(d):
          "type default by footprint area",
          "OSM tags cover the rest; needs hand entry or imagery"),
         (f"building appearance ({len(B) - massed})",
-         "facade family chosen by footprint hash",
-         "research each, or accept as background fabric"),
+         "facade family from era and material where the map says, hash elsewhere",
+         "247 of 532 generic facades now come from start_date or "
+         "building:material; the rest is still a hash. Research each, or accept "
+         "as background fabric"),
         (f"road widths ({len(R) - widths} of {len(R)})",
          "inferred from lane count, or a default per road class",
          f"only {widths} roads carry an OSM width tag; the rest needs imagery"),

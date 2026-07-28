@@ -30,16 +30,61 @@ const STONE = [
 // same between reloads.
 const PUNCHED = [texPunched(0xa8a091), texPunched(0xbdb3a0), texPunched(0x938c82)];
 const BALCONY = [texBalcony(0xc6bda9), texBalcony(0xada596)];
+// WHAT A BUILDING IS MADE OF, FROM THE MAP.
+//
+// This used to hash the footprint and pick a family from the remainder, which is
+// a deterministic way of saying "at random": the 1928 shophouse and the 2015
+// office tower next door had the same chance of coming out as mirrored glass.
+//
+// Three real signals, in order of how much they actually say:
+//
+//   `building:material`  rare (28 buildings) but it is an ANSWER. A hash was
+//                        overriding a surveyed fact.
+//   `start_date`         467 buildings, 24%, and never read until 2026-07-28.
+//                        Era predicts appearance better than anything else at
+//                        riding speed. Singapore's building stock has hard
+//                        visual eras: masonry shophouses and colonial blocks
+//                        before the war, plain concrete with punched windows
+//                        through the 60s and 70s, balconied slabs in the 80s
+//                        and early 90s, and curtain-wall glass after that.
+//   footprint hash       still the fallback, for the 73% the map says nothing
+//                        about. A guess is fine when it is labelled a guess.
 function familyFor(b) {
   let h = 0;
   for (const [x, z] of b.p) h = (h * 31 + ((x * 7) | 0) + ((z * 13) | 0)) | 0;
   h = Math.abs(h);
-  if (b.a > 1400 || b.k) return { pool: CURTAINS, rough: 0.34, metal: 0.08 };
+
+  // a surveyed material beats everything, including the size rule below
+  const mat = (b.mat || '').toLowerCase();
+  if (mat) {
+    if (/glass|curtain/.test(mat)) return { pool: CURTAINS, rough: 0.32, metal: 0.10, src: 'mat' };
+    if (/metal|steel|aluminium|aluminum/.test(mat)) return { pool: CURTAINS, rough: 0.42, metal: 0.22, src: 'mat' };
+    if (/brick|stone|granite|marble|sandstone/.test(mat)) return { pool: STONE, rough: 0.88, metal: 0, src: 'mat' };
+    if (/concrete|cement|plaster|render/.test(mat)) return { pool: PUNCHED, rough: 0.88, metal: 0, src: 'mat' };
+  }
+
+  // a big footprint or a landmark is a podium or a mall, and those are glazed
+  // whatever year they went up
+  if (b.a > 1400 || b.k) return { pool: CURTAINS, rough: 0.34, metal: 0.08, src: mat ? 'mat' : 'size' };
+
+  // era
+  const yr = b.yr;
+  if (yr) {
+    if (yr <= 1945) return { pool: STONE, rough: 0.9, metal: 0, src: 'yr' };
+    if (yr <= 1978) return { pool: PUNCHED, rough: 0.88, metal: 0, src: 'yr' };
+    // the balconied slab is the 80s and early 90s; a hash inside the era keeps
+    // a street of them from being one repeated building
+    if (yr <= 1995) return (h % 3 === 0)
+      ? { pool: PUNCHED, rough: 0.84, metal: 0, src: 'yr' }
+      : { pool: BALCONY, rough: 0.8, metal: 0, src: 'yr' };
+    return { pool: CURTAINS, rough: 0.36, metal: 0.08, src: 'yr' };
+  }
+
   const pickN = h % 100;
-  if (pickN < 34) return { pool: PUNCHED, rough: 0.86, metal: 0.0 };
-  if (pickN < 52) return { pool: BALCONY, rough: 0.8, metal: 0.0 };
-  if (pickN < 74) return { pool: STONE, rough: 0.88, metal: 0.0 };
-  return { pool: CURTAINS, rough: 0.36, metal: 0.06 };
+  if (pickN < 34) return { pool: PUNCHED, rough: 0.86, metal: 0.0, src: 'hash' };
+  if (pickN < 52) return { pool: BALCONY, rough: 0.8, metal: 0.0, src: 'hash' };
+  if (pickN < 74) return { pool: STONE, rough: 0.88, metal: 0.0, src: 'hash' };
+  return { pool: CURTAINS, rough: 0.36, metal: 0.06, src: 'hash' };
 }
 
 export const MAT = {
@@ -423,6 +468,10 @@ export function buildBuildings(world, data) {
       continue;
     }
     const fam = familyFor(b);
+    // provenance, so the accuracy ledger can say how many facades are a real
+    // answer and how many are still a hash
+    const fs = (window.__facadeSrc = window.__facadeSrc || {});
+    fs[fam.src] = (fs[fam.src] || 0) + 1;
     const wallTex = pick(fam.pool);
     const mat = sharedMat(wallTex, fam.rough, fam.metal);
     const per = perimeter(pts);

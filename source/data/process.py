@@ -450,6 +450,30 @@ def main():
                 b["k"] = 1
             if hsrc != "guess":
                 b["hs"] = hsrc          # height provenance, for the accuracy ledger
+            # WHAT A BUILDING LOOKS LIKE, from the map rather than from a hash.
+            #
+            # The facade family was chosen by hashing the footprint, which is a
+            # deterministic way of saying "at random". Meanwhile the extracts
+            # carry `start_date` on 552 buildings — 27% — and nothing had ever
+            # read it. Era predicts appearance better than anything else at
+            # riding speed: a 1970s Singapore commercial block, an 80s hotel and
+            # a 2015 glass tower are not mistakable for one another, and we were
+            # assigning between them by coin flip.
+            #
+            # `building:colour` and `building:material` are rarer (about 2%) but
+            # they are an ANSWER where they exist, and a hash was overriding it.
+            yr = tags.get("start_date") or ""
+            m = re.match(r"^(\d{4})", str(yr).strip())
+            if m:
+                y = int(m.group(1))
+                if 1800 < y <= 2030:
+                    b["yr"] = y
+            for tk, key_out in (("building:material", "mat"),
+                                ("building:colour", "col"),
+                                ("roof:shape", "rs")):
+                v = tags.get(tk)
+                if v:
+                    b[key_out] = str(v)[:16]
             # A roof structure is a canopy with no walls: large and low is what
             # it IS, not a bad height. Flagged so the "no squat big footprint"
             # check does not report a 2,122 m2 covered area from 1930 as a
