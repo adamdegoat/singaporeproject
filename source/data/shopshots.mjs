@@ -49,8 +49,14 @@ for (let i = 0; i < bays.length; i++) {
   const off = (i % 2 ? 1 : -1) * 2.4;
   const tx = -b.nz, tz = b.nx;
   const cx = b.x + b.nx * 9 + tx * off, cz = b.z + b.nz * 9 + tz * off;
-  await page.evaluate(([x, y, z, ax, ay, az]) => window.__cam(x, y, z, ax, ay, az, 44),
-    [cx, b.y + 1.65, cz, b.x, b.y + 1.5, b.z]);
+  // Eye height off the GROUND under the camera, not off the bay's sill. The
+  // sill is measured from the building's footing, which is sunk 0.9m and sits
+  // at the lowest ground under the whole footprint — on a slope that put the
+  // camera under the pavement and the frame looked like the shops were buried.
+  await page.evaluate(([x, z, ax, az, ay]) => {
+    const g = window.__terrain ? window.__terrain.at(x, z) : 0;
+    window.__cam(x, g + 1.65, z, ax, ay, az, 44);
+  }, [cx, cz, b.x, b.z, b.y + 1.5]);
   await page.waitForTimeout(420);
   const file = `${OUT}/${String(i + 1).padStart(2, '0')}.jpg`;
   await page.screenshot({ path: file, type: 'jpeg', quality: 88 });

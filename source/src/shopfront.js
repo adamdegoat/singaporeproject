@@ -28,7 +28,7 @@
 // Text only, neutral typeface, no brand marks: this labels a place the way a
 // map labels it.
 import * as THREE from '../lib/three.module.js';
-import { Merger, onCarriageway, footingY } from './city.js';
+import { Merger, onCarriageway, groundAt, footingY } from './city.js';
 import { SignAtlas } from './tex.js';
 
 /* ---------------- what a kind of shop looks like ---------------- */
@@ -73,16 +73,17 @@ const KIND_DEFAULT = { sign: '#33383d', light: BRIGHT, lit: 0.60 };
 function styleOf(k) { return KIND[k] || KIND_DEFAULT; }
 
 /* ---------------- geometry profiles ---------------- */
-// Heights are measured from the building's own footing, not from the ground
-// under each bay, because that is the datum the ground-floor band and its
-// awning trim already use. Measured from local ground instead they would drift
-// out of the band wherever the street slopes, and Plaza Singapura spans
-// fourteen metres of grade.
+// Heights are measured from the PAVEMENT IN FRONT OF EACH BAY — see the note in
+// emitBay. They were measured from the building's footing first, to match the
+// ground-floor band, and that buried Plaza Singapura's shopfronts 1.5m under
+// the pavement: its footprint spans fourteen metres of grade and the footing
+// takes the lowest ground under all of it.
 //
-// GROUND is the 0.9m the footing is sunk by, so B below is nominal pavement.
+// GROUND is the 0.9m a footing is sunk by, used only as a floor on how far a
+// bay may sit below its building.
 const GROUND = 0.9;
 // big: the band is 5.4m tall with its awning trim at 5.3 above the footing, so
-// nothing may reach past 4.4 above nominal ground.
+// on level ground nothing here reaches past 4.4.
 const BIG = { riser: 0.52, head: 3.86, fascia: 3.94, fasciaH: 0.44, depth: 0.34 };
 // shophouse: the ground floor is 4.2m from the footing with its trim at 3.86,
 // so the whole shopfront has 2.96m to live in. A five-foot-way is that tight.
@@ -495,7 +496,7 @@ export function buildShopfronts(world, data, axes) {
   }
 
   function emitBay(r, i, n, bw, tenant) {
-    const { prof, off, ux, uz, nx, nz, base } = r;
+    const { prof, off, ux, uz, nx, nz } = r;
     const s = (i + 0.5) * bw;
     const px = r.a[0] + ux * s, pz = r.a[1] + uz * s;
     const fx = px + nx * off, fz = pz + nz * off;
@@ -529,6 +530,24 @@ export function buildShopfronts(world, data, axes) {
     for (const dv of [1.2, 2.4]) {
       if (index.at(fx + nx * dv, fz + nz * dv)) return false;
     }
+
+    // The bay stands on the PAVEMENT IN FRONT OF IT, not on the building's
+    // footing.
+    //
+    // Everything else about a building is measured from the footing, which is
+    // the lowest ground under the whole footprint sunk 0.9m, and that is right
+    // for masonry: on a slope the uphill end is buried and nobody can tell.
+    // A shopfront is the one part of a building that meets the ground where a
+    // person is standing. Datumed to the footing, Plaza Singapura's bays sat
+    // 1.5m below the pavement in front of them — its footprint spans fourteen
+    // metres of grade — and the glass was a strip at ankle height. This is the
+    // same distinction as the ride: the height a thing is DRAWN at and the
+    // height a thing STANDS on are two different numbers.
+    //
+    // Floored at 1.5m below the run's footing so a hole in the heightfield
+    // cannot drop one bay through the floor while its neighbours stay put.
+    const gy = groundAt(fx + nx * 1.0, fz + nz * 1.0) - 0.06;
+    const base = Math.max(gy, r.base - 1.5);
 
     const yaw = Math.atan2(nx, nz);
     const wInner = bw - 0.22;
