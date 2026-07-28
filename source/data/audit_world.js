@@ -61,7 +61,13 @@ window.__auditWorld = async function auditWorld() {
       // there by SKIPPING bays whose corners land in a carriageway rather than
       // by loosening anything: one point per bay was tested while a bay is up
       // to eight metres wide.
-      P1b: 234, T1: 11,
+      // P1b 234 -> 211 and T1 11 -> 10 on the day the ERP gantries stopped
+      // being placed by rule. A ratchet's budget is the best figure reached so
+      // far, and replacing two invented gantries per axis with fifteen surveyed
+      // ones — legs searched outward until clear, overhead parts exempt with
+      // the reason written — left the world measurably cleaner than the
+      // numbers it inherited.
+      P1b: 211, T1: 10,
       // proportional to a world with 1,932 buildings and 4,392 roads
       // P4 333 -> 360 and P1b 177 -> 179 on the day the Civic District landmarks
       // got real massing. Both are consequences of that, not new defects:
@@ -359,7 +365,29 @@ window.__auditWorld = async function auditWorld() {
         || (o.geometry.type === 'CylinderGeometry' && dim(gp0.radiusTop, 0.13))   // gantry post
         || (o.geometry.type === 'BoxGeometry' && (gp0.width || 0) > 14
             && (gp0.height || 0) < 5 && (gp0.depth || 0) > 2.5)                   // overhead bridge deck
-        || (o.geometry.type === 'CylinderGeometry' && (gp0.radiusTop || 0) > 10);  // ION's shell over its forecourt
+        || (o.geometry.type === 'CylinderGeometry' && (gp0.radiusTop || 0) > 10)   // ION's shell over its forecourt
+        // The ERP gantry itself. Its antenna heads read the tag on a car
+        // passing UNDER them and its amber panel tells that car what it is
+        // about to be charged: a gantry that does not span the carriageway is
+        // not a gantry. These were never exempt because until the surveyed LTA
+        // positions arrived on 2026-07-28 the gantries were pushed off the road
+        // by the same fallback that was hiding them from this check.
+        //
+        // The LEGS are deliberately NOT exempt. They are the one part that must
+        // stand clear, and erpGantry now searches its leg reach outward until
+        // they do — six of thirty were in live traffic when the span came
+        // straight from the survey, because LTA's line spans the charged lanes
+        // and the road is often wider.
+        || (o.geometry.type === 'BoxGeometry' && dim(gp0.width, 0.62)
+            && dim(gp0.height, 0.3) && dim(gp0.depth, 0.85))                     // ERP antenna head
+        || (o.geometry.type === 'BoxGeometry' && dim(gp0.width, 2.4)
+            && dim(gp0.height, 0.9) && dim(gp0.depth, 0.12))                     // ERP amber panel
+        || (o.geometry.type === 'BoxGeometry' && dim(gp0.width, 0.4)
+            && dim(gp0.height, 0.4) && dim(gp0.depth, 0.75))                     // ERP camera housing
+        || (o.geometry.type === 'BoxGeometry' && dim(gp0.height, 0.85)
+            && dim(gp0.depth, 0.55) && (gp0.width || 0) > 8)                     // ERP main beam
+        || (o.geometry.type === 'BoxGeometry' && dim(gp0.height, 0.28)
+            && dim(gp0.depth, 0.32) && (gp0.width || 0) > 8);                    // ERP service beam
       if (OVERHEAD) return;
       const gp = o.geometry.parameters || {};
       const dims = [gp.radiusTop, gp.width, gp.height, gp.depth]
@@ -384,7 +412,11 @@ window.__auditWorld = async function auditWorld() {
     // are now measured as doing so. The check got more accurate; the world did
     // not get worse. Verified by running this same audit against the previous
     // scene file, which still reports 97.
-    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 135,
+    // 135 -> 124: the ERP gantries moved from two per axis at chosen
+    // arclengths to LTA's surveyed positions, with their legs searched outward
+    // until clear and only their genuinely-overhead parts exempt. The world got
+    // cleaner than the number it inherited, so the number follows it down.
+    add('P1b', 'structure in a carriageway (ratchet, target 0)', 'BLOCKER', n, 124,
         Object.entries(bad).sort((a, b) => b[1] - a[1]).slice(0, 6)
           .map(([k, v2]) => `${v2}x ${k}`).join('  ') || 'none', ex);
   }

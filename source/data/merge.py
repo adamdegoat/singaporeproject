@@ -263,7 +263,7 @@ def main():
         print(f"  {layer:<10} {before:>5} -> {len(out[layer]):>5}  "
               f"({before - len(out[layer])} duplicates across the seam)")
 
-    point_layers = ["trees", "crossings", "signals", "busstops", "mrt", "taxis", "shops"]
+    point_layers = ["trees", "crossings", "signals", "busstops", "mrt", "taxis", "shops", "gantries"]
     for layer in point_layers:
         groups = [s.get(layer, []) for s in scenes]
         before = sum(len(g) for g in groups)

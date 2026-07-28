@@ -151,6 +151,11 @@ def main():
     raw = fetch(d, a.force)
     out = process(d, raw)
     print(f"  scene: {out} ({os.path.getsize(out)/1024:.0f} KB)")
+    # The surveyed ERP gantries, which come from LTA rather than from Overpass
+    # and so are a separate step. They were placed by rule at two invented
+    # arclengths until 2026-07-28; see data/gantries.py.
+    subprocess.run([sys.executable, os.path.join(HERE, "gantries.py"), d["id"]], check=False)
+
     print(f"\nNext: python3 check.py {d['id']}")
 
 

@@ -47,6 +47,13 @@ def build_ledger(d):
         (f"bus stops ({n('busstops')})", "OSM highway=bus_stop, with names"),
         (f"MRT entrances ({n('mrt')})", "OSM railway=subway_entrance, with exit letters"),
         (f"taxi ranks ({n('taxis')})", "OSM amenity=taxi"),
+        # Moved out of INVENTED on 2026-07-28. The old line read "NOT MAPPED in
+        # OSM here (checked barrier=toll_booth): needs imagery" and it was
+        # wrong: LTA publishes every gantry in Singapore on data.gov.sg as a
+        # surveyed LINE across the carriageway, so the position, the bearing and
+        # the span are all real. Checking one tag in one source is not checking.
+        (f"ERP gantries ({n('gantries')})",
+         "LTA Gantry layer, data.gov.sg, cross-checked against OSM toll=yes"),
         (f"street trees ({n('trees')})", "OSM natural=tree and tree_row"),
         (f"overhead bridges ({n('bridges')})", "OSM footway + bridge=yes"),
         (f"covered walkways ({n('covered')})", "OSM footway + covered=yes"),
@@ -79,8 +86,6 @@ def build_ledger(d):
         (f"road widths ({len(R) - widths} of {len(R)})",
          "inferred from lane count, or a default per road class",
          f"only {widths} roads carry an OSM width tag; the rest needs imagery"),
-        ("ERP gantries", "2, placed at chosen arclengths",
-         "NOT MAPPED in OSM here (checked barrier=toll_booth): needs imagery"),
         ("street lamps", "at intervals along each road",
          "NOT MAPPED in OSM here (checked highway=street_lamp)"),
         ("pedestrian railings", "continuous along both kerbs",

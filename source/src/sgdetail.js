@@ -22,10 +22,36 @@ function yawMesh(geo, mat, x, y, z, ang) {
 /* ---------------- ERP gantry ---------------- */
 // Two portal legs, a deep beam, the antenna heads and the camera box. Nothing
 // else on a Singapore road looks like this.
-function erpGantry(world, px, pz, ang, width) {
+function erpGantry(world, px, pz, ang, width, surveyed = false) {
   const g = new THREE.Group();
   const steel = MAT.metal, dark = MAT.darkMetal;
-  const half = width / 2 + 1.2;
+
+  // THE SPAN IS SURVEYED. THE LEG REACH IS NOT.
+  //
+  // LTA's line spans the CHARGED LANES, and a road is often wider than that —
+  // a bus lane, a slip road, the flare into a junction. Planting the legs at a
+  // fixed span/2 + 1.2 put 6 of 30 columns in live traffic. So the centre and
+  // the bearing, which are real data, are kept exactly, and the only number
+  // that was ever a construction detail is searched outward until both legs
+  // stand clear. If nine metres of reach is not enough, nothing is built:
+  // a failed search must skip, never fall back to the value it was asked to fix.
+  let half = width / 2 + 1.2;
+  if (window.__onRoad) {
+    const legClear = (h) => ![-1, 1].every((sgn) => {
+      const lx = px + Math.cos(ang) * sgn * h, lz = pz - Math.sin(ang) * sgn * h;
+      return !window.__onRoad(lx, lz, 0);
+    });
+    if (legClear(half)) {
+      let found = 0;
+      for (let h = half + 0.4; h <= width / 2 + 9; h += 0.4) {
+        if (!legClear(h)) { found = h; break; }
+      }
+      if (!found) return;
+      half = found;
+    }
+  }
+  // the beam has to reach whatever the legs did
+  width = Math.max(width, half * 2 - 2.4);
 
   for (const sgn of [-1, 1]) {
     g.add(yawMesh(new THREE.CylinderGeometry(0.22, 0.28, 7.4, 10), steel, sgn * half, 3.7, 0, 0));
@@ -51,11 +77,18 @@ function erpGantry(world, px, pz, ang, width) {
     0, 8.1, 0.1, 0);
   g.add(panel);
 
-  // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
-  // carriageway rather than dropping a shelter into the traffic
-  const mv2 = window.__pushClear ? window.__pushClear(px, pz, -0.6, 18) : [px, pz];
-  if (!mv2) return;
-  const [px2, pz2] = mv2;
+  // A SURVEYED gantry is not nudged. Every other structure here is pushed clear
+  // of the carriageway, because its position came from a rule and a rule can put
+  // it in the traffic. A gantry's whole job is to span the carriageway, and its
+  // position now comes from LTA's own line across it: pushing that one 18m to
+  // the kerb would take real data and make it wrong. Its legs stand at
+  // width/2 + 1.2, which is outside the road by construction.
+  let px2 = px, pz2 = pz;
+  if (!surveyed) {
+    const mv2 = window.__pushClear ? window.__pushClear(px, pz, -0.6, 18) : [px, pz];
+    if (!mv2) return;
+    [px2, pz2] = mv2;
+  }
   g.position.set(px2, groundAt(px2, pz2), pz2);
   g.rotation.y = ang;
   world.add(g);
@@ -322,6 +355,21 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   }
   window.__realBridges = realBridges;
 
+  // The real ERP gantries, from LTA's published layer.
+  //
+  // Placed here rather than in the axis walk because a gantry belongs to a
+  // carriageway, not to the district's main street: three of the ten in this
+  // region span Orchard Turn, Killiney Road and Clemenceau Avenue. Built once
+  // for the whole scene, so the flag stops it being drawn twice when the region
+  // has two axes.
+  if (!window.__erpDone) {
+    window.__erpDone = true;
+    for (const g of (data.gantries || [])) {
+      erpGantry(world, g.p[0], g.p[1], g.a, g.w, true);
+      window.__realErp = (window.__realErp || 0) + 1;
+    }
+  }
+
   const pts = axis.p, half = axis.w / 2;
   const stats = { erp: 0, bridges: realBridges, banners: 0, medianPlants: 0, roofSigns: 0, banners2: 0, mrt: realMrt };
 
@@ -355,8 +403,11 @@ export function buildSgDetail(world, axis, data, isBlocked) {
       }
 
       // one ERP gantry and two pedestrian bridges along the stretch
-      if (acc === 300) { erpGantry(world, px, pz, ang, axis.w); stats.erp++; }
-      if (acc === 700) { erpGantry(world, px, pz, ang, axis.w); stats.erp++; }
+      // ERP gantries are no longer placed here. They used to go in at arclengths
+      // 300 and 700 with the axis's own width, which are three invented numbers
+      // per gantry. LTA publishes every one of them as a surveyed line across
+      // the carriageway, so the position, the bearing AND the span are real now
+      // — see the block after this loop, and data/gantries.py.
 
     }
   }
