@@ -923,6 +923,62 @@ const found = await page.evaluate(() => {
     report('D31', 'tenant fascias facing no street at all', bad);
   }
 
+  /* D32  a body part that is not on its body.
+     A pedestrian is fourteen InstancedMeshes sharing a slot index, so a single
+     mistake in which slot a part is written to detaches it and leaves it
+     standing on the pavement on its own. Two comparison frames showed a dark
+     block lying near a walker; nothing measures this, because every check so
+     far has treated a pedestrian as a POSITION rather than as an assembly. */
+  {
+    const m4 = new T.Matrix4(), p4 = new T.Vector3();
+    const q4 = new T.Quaternion(), s4 = new T.Vector3();
+    // where each drawn person is, by slot
+    const at = [];
+    const parts = [];
+    sc.traverse((o) => {
+      if (!o.isInstancedMesh) return;
+      const g = o.geometry, pr = g.parameters || {};
+      const sig = `${g.type}(${[pr.radiusTop, pr.width, pr.height, pr.depth, pr.radius]
+        .filter((v) => v != null).map((v) => +v.toFixed(2)).join(',')})`;
+      // the torso is the trunk of a walker and nothing else in the world uses
+      // this capsule
+      // The signature was guessed twice and both guesses reported "0 walkers
+      // drawn" — which looks exactly like a clean world. Enumerate the meshes
+      // and read it: CapsuleGeometry carries `radius` and `height`, and the
+      // shared builder orders them height then radius.
+      if (sig === 'CapsuleGeometry(0.34,0.13)') {
+        for (let i = 0; i < o.count; i++) {
+          o.getMatrixAt(i, m4); m4.decompose(p4, q4, s4);
+          p4.applyMatrix4(o.matrixWorld);
+          at[i] = [p4.x, p4.z];
+        }
+      }
+      parts.push([sig, o]);
+    });
+    const bad = [];
+    if (at.length) {
+      for (const [sig, o] of parts) {
+        if (!/Box|Sphere|Capsule|Cylinder/.test(sig)) continue;
+        // Only parts indexed BY PERSON. The bag has its own slot counter now
+        // (a bagless walker used to have one drawn at y=-9999 every frame), so
+        // its index i is a different i and comparing them would invent
+        // findings.
+        if (o.count !== at.length) continue;
+        let far = 0, worst = 0;
+        for (let i = 0; i < Math.min(o.count, at.length); i++) {
+          if (!at[i]) continue;
+          o.getMatrixAt(i, m4); m4.decompose(p4, q4, s4);
+          p4.applyMatrix4(o.matrixWorld);
+          const d = Math.hypot(p4.x - at[i][0], p4.z - at[i][1]);
+          if (d > 1.2) { far++; if (d > worst) worst = d; }
+        }
+        if (far) bad.push(`${sig}: ${far} of ${o.count} more than 1.2m from their torso, worst ${worst.toFixed(1)}m`);
+      }
+    }
+    report('D32', 'pedestrian parts detached from their pedestrian', bad,
+           `${at.length} walkers drawn`);
+  }
+
   /* D23 DELETED.
    *
    * It counted how many distinct geometry signatures shared a square metre and

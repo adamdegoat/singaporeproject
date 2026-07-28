@@ -7,15 +7,15 @@ hash-verified live.
 
 Live: https://adamdegoat.github.io/singaporeproject/ — **two districts**, Orchard
 Road and Bras Basah, merged into one region you can ride between. 1,918
-buildings, 4,392 roads, 43fps at 844x390 dpr2, ~4s to load.
+buildings, 4,392 roads, 38fps at 844x390 dpr2, ~5s to load.
 
 Everything green:
 
 | gate | what it covers | state |
 |---|---|---|
-| `node data/audit_run.mjs` | 32 snapshot checks, per scene | pass, both scenes |
+| `node data/audit_run.mjs` | 36 snapshot checks, per scene | pass, both scenes |
 | `node data/behaviour.mjs` | 5 checks on how things MOVE | pass, both scenes |
-| `SG_SCENE=world node data/defects.mjs` | 21 exploratory classes | 0 findings |
+| `SG_SCENE=world node data/defects.mjs` | 29 exploratory classes | 5, all D26, diagnosed below |
 | `node test/ride.test.mjs` | the ride model, no browser | 18 pass |
 | `python3 data/check.py <id>` | the data gate, per district | pass, both |
 
@@ -25,9 +25,10 @@ outlives its script holds two CPU cores indefinitely.
 
 Done and from real data: layout, road widths from lane tags, one-way traffic,
 terrain under every road, 671 crossings, bus stops, signals, MRT exits with their
-real exit letters, 3,624 glazed shopfront bays carrying 252 named tenants at the
-floor OSM puts them on, the Angsana avenue, 460 pedestrians, collision built from
-the drawn geometry, and about two dozen buildings with a researched design.
+real exit letters, 3,398 glazed shopfront bays carrying 257 named tenants at the
+floor OSM puts them on, the Angsana avenue, 2,200 pedestrians and 90 vehicles,
+collision built from the drawn geometry, and about two dozen buildings with a
+researched design.
 
 **What is NOT done**, in the order worth doing:
 
@@ -62,7 +63,7 @@ Two things were wrong with that, and neither could be seen in a single frame:
   `cuisine` (473), `brand` (469), `name:zh` (177) and `addr:unit` were sitting
   there too — `#01-15` is Singapore's way of writing the same floor number.
 
-Now: **3,624 glazed bays over 20.4km of frontage, 252 of them a named tenant**,
+Now: **3,398 glazed bays over 19.1km of frontage, 257 of them a named tenant**,
 with `name:zh` on the fascia where OSM has it. A bay is a lit panel, a bright
 ceiling strip, a counter, a door, glass 34cm proud of it with real reveals, a
 stall riser, mullions and a fascia. A tenant qualifies only if OSM puts it on the
