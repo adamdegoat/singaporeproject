@@ -102,7 +102,12 @@ def build_ledger(d):
          "inferred from lane count, or a default per road class",
          f"only {widths} roads carry an OSM width tag; the rest needs imagery"),
         ("pedestrian railings", "continuous along both kerbs",
-         "OSM barrier=fence/guard_rail where mapped"),
+         "VERIFIED unmapped 2026-07-29, properly this time: Overpass over the "
+         "live bboxes for barrier=fence|railing|guard_rail|wall|handrail found "
+         "orchard 85 fence + 8 wall, brasbasah 11 + 15, and ZERO railing or "
+         "guard_rail anywhere -- the mapped ways are property boundaries, not "
+         "kerbside railings. This claim expires like the others: re-run the "
+         "query before trusting it next year"),
         (f"pavement widths, and sides on the other {len(R) - sw_tagged} roads",
          "fixed offset from the kerb, assumed both sides where untagged",
          "no OSM tag records pavement WIDTH; sides are now real where tagged"),

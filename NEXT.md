@@ -64,6 +64,47 @@ NOTE, still true: three meshes are named `roadSurface` (asphalt at colour
 #ffffff-with-dark-map, unit-paving #9a9184, concrete). Filter by material
 colour, not by the first name match. That cost an hour twice.
 
+## Also landed 2026-07-29, same session
+
+- **Facade textures are mapped at real metre sizes EVERYWHERE.** The generic
+  path multiplied metre UVs by metres (windows at 10/metre, averaging to flat
+  colour); the tall-tower branch never scaled at all. Constant 1/(tile metres)
+  now, autoUV() applies each material's `userData.tile` inside slab/extrude/
+  merge so no recipe can forget, and an explicit uvMetres overrides by RATIO.
+  Verified with landmark.mjs: Wisma Atria went from flat colour to a readable
+  curtain wall.
+- **A roof is not a facade**: flattenRoofUV() collapses extrude cap UVs to one
+  spandrel texel; the aerial frame no longer shows window grids lying flat.
+- **THE RED BUS LANES ARE IN.** Stitched per (street, side, width) into
+  continuous runs (108 sub-30m fragments join their neighbours), one ribbon
+  per run at 0.068 -- above every carriageway seed, below every marking, so
+  dashes and arrows paint ON the red. Drawn red, not tinted: tinting the grey
+  asphalt map topped out at maroon (texAsphalt takes a base colour now). No
+  bridge decks. Polish left: break runs at junction mouths; the inner edge
+  steps where a street's width changes.
+- **Every texture has its own RNG stream** (the granite-panel rule, applied
+  file-wide; parameterised textures fold args into the seed). Cost the
+  sanctioned one-time reshuffle: W2 +2 per water scene, a crowd slot's shoes
+  snapshotted at the imprecise Boat Quay bank -- no live walker is wet at any
+  settled moment (measured 0 of 2,200 at t=0/6/14s) and spawn + walk-out
+  guards now refuse water, so it cannot recur for a real reason.
+- **The Centrepoint is built** (recipe wins its solo comparison): ~30m from
+  storey math, dark mullioned curtain wall, the red gridded feature panel
+  with the elliptical window on the Orchard face, white Cuppage skin.
+- **orchardCentral placed its pockets and roof garden at ABSOLUTE y** -- the
+  slab-vs-footing trap again, found because the aerial vet frame showed seven
+  topiary balls hovering 30m over Somerset. All from footingY now, and bushes
+  are rejected outside the FOOTPRINT (the oriented box lies; same as the fins).
+- **Pedestrian railings verified unmapped, properly**: Overpass for five
+  barrier values over the live bboxes -- 85 fence + 8 wall in Orchard, zero
+  railing/guard_rail anywhere. The mapped ways are property boundaries. The
+  claim is dated in accuracy.py and expires like the others.
+- **Next accuracy candidate, not started:** derive the street-tree species
+  mix and spacing STATISTICS from trees.sg (cheeaun/sgtreesdata scrape is
+  (c) NParks -- statistics are defensible, shipping their coordinates is not)
+  and vary the side-street trees accordingly. Also: C8 reads 97% -- the
+  STANDARD.md ratchet table was stale in both directions and is rewritten.
+
 ## Next after that
 
 1. **D26 at 6 and D36 at 3** in `defects.mjs` -- both diagnosed and documented

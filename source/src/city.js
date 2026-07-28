@@ -1,8 +1,8 @@
 // Build the street from real OSM geometry: extruded footprints, road ribbons,
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, rng } from './tex.js';
-import { recipeFor, hasShopfront, shophouse, autoUV } from './landmarks.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, texCentrepointPanel, rng } from './tex.js';
+import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV } from './landmarks.js';
 
 export const TEX = {
   asphalt: texAsphalt(),
@@ -187,6 +187,12 @@ const LMAT = {
     return shopHouseMats.get(col);
   },
 };
+// The Centrepoint (recipe): dark tinted curtain wall in a strong mullion
+// grid, and the red feature panel drawn as one tile (mapped per-slab by the
+// recipe, so no default tile here).
+LMAT.darkCurtain = new THREE.MeshStandardMaterial({ map: texCurtain(0x39424c, 0x262b30), roughness: 0.30, metalness: 0.18 });
+LMAT.centrePanel = new THREE.MeshStandardMaterial({ map: texCentrepointPanel(), roughness: 0.55 });
+LMAT.darkCurtain.userData.tile = [26, 28];
 LMAT.granite.userData.tile = [26, 26];
 LMAT.granitePanel.userData.tile = [3.8, 3.2];
 LMAT.towerGlass.userData.tile = [26, 38.4];
@@ -614,11 +620,12 @@ export function buildBuildings(world, data) {
       const inset = pts.map(([x, z]) => [c[0] + (x - c[0]) * 0.62, c[1] + (z - c[1]) * 0.62]);
       const tower = extrude(inset, h - podium, mat, podium);
       scaleUV(tower.geometry, 1 / 26, 1 / 28);
+      flattenRoofUV(tower.geometry);           // a roof is not a facade
       world.add(tower);
       stats.tall++;
     } else {
       const cB = centroid(pts);
-      merger.add(scaleUV(extrudeGeo(pts, h), 1 / 26, 1 / 28), mat, cB[0], cB[1]);
+      merger.add(flattenRoofUV(scaleUV(extrudeGeo(pts, h), 1 / 26, 1 / 28)), mat, cB[0], cB[1]);
       // parapet cap so roofs are not a raw extruded edge
       if (h > 8) {
         const c = centroid(pts);

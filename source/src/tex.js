@@ -471,6 +471,45 @@ export function texShophouse(base) {
   return finish(c, [1, 1]);
 }
 
+// The Centrepoint's street-facing feature panel: red gridded cladding about
+// three storeys tall with an ELLIPTICAL window cut into it -- the one element
+// people remember the building by. Research 2026-07-28 (report in NEXT.md).
+// Drawn as ONE tile spanning the whole panel; map it with uvMetres(mesh, w, h)
+// of the slab it skins or the ellipse repeats like wallpaper.
+export function texCentrepointPanel() {
+  const r2 = rng(0x63747074);                                        // "ctpt"
+  const S = 512, [c, x] = cvs(S);
+  // red cladding, gently mottled so it reads as panels rather than paint
+  x.fillStyle = '#a63428'; x.fillRect(0, 0, S, S);
+  for (let i = 0; i < 2600; i++) {
+    const v = (r2() * 2 - 1) * 14;
+    x.fillStyle = `rgba(${166 + v},${52 + v},${40 + v},${0.15 + r2() * 0.3})`;
+    x.fillRect(r2() * S, r2() * S, 1 + r2() * 2.4, 1 + r2() * 2.4);
+  }
+  // cladding grid: the strong rectilinear seam pattern
+  x.fillStyle = 'rgba(64,20,16,0.75)';
+  const gx = 8, gy = 6;
+  for (let i = 0; i <= gx; i++) x.fillRect(i * (S / gx) - 1.5, 0, 3, S);
+  for (let j = 0; j <= gy; j++) x.fillRect(0, j * (S / gy) - 1.5, S, 3);
+  // the elliptical window, upper-centre, tinted glass with a sky sheen
+  const ex = S * 0.5, ey = S * 0.42, rx = S * 0.30, ry = S * 0.24;
+  x.fillStyle = '#232a31';
+  x.beginPath(); x.ellipse(ex, ey, rx + 5, ry + 5, 0, 0, Math.PI * 2); x.fill();  // reveal
+  x.fillStyle = '#2f3d4a';
+  x.beginPath(); x.ellipse(ex, ey, rx, ry, 0, 0, Math.PI * 2); x.fill();
+  const g = x.createLinearGradient(ex - rx, ey - ry, ex + rx, ey + ry);
+  g.addColorStop(0, 'rgba(214,230,242,0.5)');
+  g.addColorStop(0.55, 'rgba(214,230,242,0.08)');
+  g.addColorStop(1, 'rgba(214,230,242,0)');
+  x.fillStyle = g;
+  x.beginPath(); x.ellipse(ex, ey, rx, ry, 0, 0, Math.PI * 2); x.fill();
+  // mullions across the ellipse, so it reads as glazing not a hole
+  x.fillStyle = 'rgba(30,34,38,0.8)';
+  for (let i = -2; i <= 2; i++) x.fillRect(ex + i * (rx / 2.5) - 1.5, ey - ry, 3, ry * 2);
+  x.fillRect(ex - rx, ey - 1.5, rx * 2, 3);
+  return finish(c, [1, 1]);
+}
+
 export function texLeaves() {
   const r2 = rng(0x6c656166);                                        // "leaf"
   const rand = (a, b) => a + r2() * (b - a);

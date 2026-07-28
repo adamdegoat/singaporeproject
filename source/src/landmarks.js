@@ -116,6 +116,23 @@ export function uvMetresExtruded(mesh, mH, mV) {
   return mesh;
 }
 
+// A ROOF IS NOT A FACADE. An extruded mass carries its wall texture on its
+// cap faces too, so from the air every roof showed a window grid lying flat --
+// invisible from the saddle, glaring in the vantage sheet's aerial frame.
+// Collapsing the cap's UVs to one spandrel texel (u 0.5, v 0.10 of the tile)
+// renders it as the texture's flat band colour: no new material, no extra
+// draw call, and the parapet trim already gives the edge a line.
+export function flattenRoofUV(meshOrGeo) {
+  const geo = meshOrGeo.isMesh ? meshOrGeo.geometry : meshOrGeo;
+  const uv = geo.attributes.uv, n = geo.attributes.normal;
+  if (!uv || !n) return meshOrGeo;
+  for (let i = 0; i < uv.count; i++) {
+    if (n.getY(i) > 0.9) uv.setXY(i, 0.5, 0.10);
+  }
+  uv.needsUpdate = true;
+  return meshOrGeo;
+}
+
 // The default texture scale for everything a recipe builds, applied inside
 // slab(), api.extrude and api.merge so no recipe can forget it. Each material
 // carries its tile size in metres (userData.tile, set beside the material);
@@ -130,7 +147,9 @@ export function autoUV(mesh, mat) {
   if (!m || !m.map) return mesh;
   const tile = (m.userData && m.userData.tile) || [12, 12];
   const boxy = geo.type === 'BoxGeometry';
-  return boxy ? uvMetres(mesh, tile[0], tile[1]) : uvMetresExtruded(mesh, tile[0], tile[1]);
+  const r = boxy ? uvMetres(mesh, tile[0], tile[1]) : uvMetresExtruded(mesh, tile[0], tile[1]);
+  if (!boxy) flattenRoofUV(geo);
+  return r;
 }
 
 // a box placed in the footprint's own frame
@@ -1038,33 +1057,52 @@ function wheelockPlace(api, b) {
 function orchardCentral(api, b) {
   const ob = orientedBox(b.p);
   const glass = api.mat.towerGlass, stone = api.mat.paleStone;
+  // EVERY y BELOW IS FROM g0. This recipe placed its pockets at y=12..50 and
+  // its roof bushes at b.h+2 ABSOLUTE while the ground here is ~24m up -- the
+  // slab-vs-footing trap this file documents for Lucky Plaza and Ngee Ann,
+  // hit again. The aerial vet frame showed seven topiary balls hovering 30m
+  // over Somerset in open sky; they were this roof garden, 22m below its own
+  // roof and thrown clear of the walls by oriented-box offsets an irregular
+  // plan does not contain.
+  const g0 = api.footingY(b.p);
   api.world.add(api.extrude(b.p, b.h, glass));
-  // recessed pockets carved out of the facade
+  // recessed pockets carved out of the facade. The facade is found by walking
+  // from the centroid toward the street until the walk leaves the FOOTPRINT --
+  // the oriented box's face is open air for this plan, and hanging the
+  // verandahs on it left three floor plates floating in the sky beside the
+  // building (the aerial vet frame's "dark chips").
   const sw = streetward(api, ob);
+  let fc = 0;
+  while (fc < 80 && pointInRing(ob.cx + sw.nx * fc, ob.cz + sw.nz * fc, b.p)) fc += 0.5;
   for (let k = 0; k < 5; k++) {
-    const y = 12 + k * 9.5;
-    if (y > b.h - 8) break;
+    const y = g0 + 12 + k * 9.5;
+    if (y > g0 + b.h - 8) break;
     const rec = new THREE.Mesh(
       new THREE.BoxGeometry(Math.min(20, ob.halfLong * 0.9), 4.2, 3.4),
       new THREE.MeshStandardMaterial({ color: 0x2c3339, roughness: 0.6 }));
-    rec.position.set(ob.cx + sw.nx * (ob.halfShort - 0.6), y, ob.cz + sw.nz * (ob.halfShort - 0.6));
+    rec.position.set(ob.cx + sw.nx * (fc - 1.6), y, ob.cz + sw.nz * (fc - 1.6));
     rec.rotation.y = Math.atan2(sw.nx, sw.nz);
     api.world.add(rec);
     // the verandah slab that pokes out of each pocket
     const sh = new THREE.Mesh(new THREE.BoxGeometry(Math.min(20, ob.halfLong * 0.9), 0.35, 4.6), stone);
-    sh.position.set(ob.cx + sw.nx * (ob.halfShort + 0.9), y - 2.0, ob.cz + sw.nz * (ob.halfShort + 0.9));
+    sh.position.set(ob.cx + sw.nx * (fc + 0.7), y - 2.0, ob.cz + sw.nz * (fc + 0.7));
     sh.rotation.y = Math.atan2(sw.nx, sw.nz);
     sh.castShadow = true; api.world.add(sh);
   }
-  // landscaped roof deck
+  // landscaped roof deck: bushes ON the deck, and only where the deck is --
+  // a random point in the oriented box is tested against the FOOTPRINT
   api.world.add(api.extrude(api.grow(b.p, 1.02), 1.0, stone, b.h));
-  for (let k = 0; k < 7; k++) {
+  let planted = 0;
+  for (let tries = 0; tries < 30 && planted < 7; tries++) {
+    const bx = ob.cx + rand(-ob.halfLong * 0.6, ob.halfLong * 0.6);
+    const bz = ob.cz + rand(-ob.halfShort * 0.6, ob.halfShort * 0.6);
+    if (!pointInRing(bx, bz, b.p)) continue;
     const bush = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 6),
       new THREE.MeshLambertMaterial({ color: 0x3f5c33 }));
-    bush.position.set(ob.cx + rand(-ob.halfLong * 0.6, ob.halfLong * 0.6), b.h + 2.0,
-                      ob.cz + rand(-ob.halfShort * 0.6, ob.halfShort * 0.6));
+    bush.position.set(bx, g0 + b.h + 1.9, bz);
     bush.scale.y = 0.7; bush.castShadow = true;
     api.world.add(bush);
+    planted++;
   }
 }
 
@@ -1617,7 +1655,59 @@ function crystalMesh(api, b) {
   }
 }
 
+// The Centrepoint. Researched 2026-07-28 (agent report; sources in NEXT.md)
+// plus Wikipedia 2026-07-29: opened Nov 1983, 6 retail storeys and 2
+// basements, a FULL-PLOT SLAB rather than tower-on-podium, 66 apartments on
+// floors 4-7 of the rear block, white-painted concrete on the Cuppage
+// elevation. The street face is the one element people name it by: a red
+// gridded cladding panel about three storeys tall with an ELLIPTICAL window,
+// over a recessed ground floor under a flat canopy soffit. Height is NOT
+// published anywhere found; 6 retail floors at 4.6m plus plant is ~30m, used
+// here instead of the mapped 20.4 the way other recipes carry their own
+// researched figures.
+function theCentrepoint(api, b) {
+  const ob = orientedBox(b.p);
+  const H = Math.max(b.h, 30);
+  const g0 = api.footingY(b.p);
+  // recessed ground floor, then the slab in dark tinted curtain wall
+  api.world.add(api.extrude(api.grow(b.p, 0.965), 5.0, api.mat.darkCurtain));
+  api.world.add(api.extrude(api.grow(b.p, 1.035), 0.55, api.mat.trim, 5.0));   // canopy soffit line
+  api.world.add(api.extrude(b.p, H - 5.4, api.mat.darkCurtain, 5.4));
+  api.world.add(api.extrude(api.grow(b.p, 1.008), 0.8, api.mat.conc, H));      // parapet
+  // the red panel, hung proud of the facade that faces Orchard Road: walk
+  // from the centroid toward the street until the walk leaves the footprint,
+  // which is the facade -- the oriented box lies for a plan this irregular
+  // (pattern recorded for Lucky Plaza's fins and the church roof)
+  const sw = streetward(api, ob);
+  let f = 0;
+  while (f < 80 && pointInRing(ob.cx + sw.nx * f, ob.cz + sw.nz * f, b.p)) f += 0.5;
+  const px = ob.cx + sw.nx * (f + 0.45), pz = ob.cz + sw.nz * (f + 0.45);
+  if (!onCarriageway(px, pz, 0.3)) {
+    const panelW = 24, panelH = 13.5;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(panelW, panelH, 0.6), api.mat.centrePanel);
+    m.position.set(px, g0 + 6.2 + panelH / 2, pz);
+    m.rotation.y = Math.atan2(sw.nx, sw.nz);
+    m.castShadow = true; m.receiveShadow = true;
+    uvMetres(m, panelW, panelH);              // ONE tile over the panel: the ellipse must not repeat
+    api.world.add(m);
+  }
+  // the Cuppage elevation is white-painted concrete: a pale skin on the rear
+  // face, found the same way in the opposite direction
+  let r = 0;
+  while (r < 80 && pointInRing(ob.cx - sw.nx * r, ob.cz - sw.nz * r, b.p)) r += 0.5;
+  const rx = ob.cx - sw.nx * (r - 0.1), rz = ob.cz - sw.nz * (r - 0.1);
+  if (!onCarriageway(rx, rz, 0.3)) {
+    const skin = new THREE.Mesh(new THREE.BoxGeometry(ob.halfLong * 1.2, H - 6, 0.4), api.mat.paleStone);
+    skin.position.set(rx, g0 + 5.4 + (H - 6) / 2, rz);
+    skin.rotation.y = Math.atan2(sw.nx, sw.nz);
+    skin.castShadow = false; skin.receiveShadow = true;
+    autoUV(skin, api.mat.paleStone);
+    api.world.add(skin);
+  }
+}
+
 export const RECIPES = [
+  [/the centrepoint|^centrepoint/i, theCentrepoint],
   [/raffles city|swissotel|fairmont singapore|westin plaza/i, rafflesCity],
 
   // THESE THREE ARE WIRED UP, and the comment that used to sit here said the
@@ -1687,7 +1777,7 @@ export const RECIPES = [
   // footprint, which is how Plaza Singapura and The Centrepoint — two of the
   // malls people actually name when they describe Orchard Road — ended up as
   // generic blocks. 197 of the 264 named buildings had no recipe at all.
-  [/plaza singapura|the centrepoint|centrepoint|the cathay|orchard gateway|holland/i,
+  [/plaza singapura|the cathay|orchard gateway|holland/i,
    glassBoxPodiumTower],
   // hotels whose names do not contain the word "hotel", so the pattern above
   // never matched them

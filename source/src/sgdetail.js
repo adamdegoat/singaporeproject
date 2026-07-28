@@ -6,6 +6,7 @@
 import * as THREE from '../lib/three.module.js';
 import { R, rand, pick, chance, rng, SignAtlas } from './tex.js';
 import { MAT, groundAt, Merger } from './city.js';
+import { recipeFor } from './landmarks.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d,
                    0xcf6b3a, 0x2b2f33, 0xa8324f, 0x3d6f8f];
@@ -708,9 +709,22 @@ export function buildSgDetail(world, axis, data, isBlocked) {
       stats.nameSigns = (stats.nameSigns || 0) + 1;
     }
 
+    // A ROOFTOP SIGN NEEDS A ROOF EDGE UNDER IT. This box sits on the
+    // footprint's street edge at b.h -- which is only where the roof IS for a
+    // building drawn as a plain full-footprint extrude. The tall generic path
+    // insets its tower to 62% of the footprint, and a bespoke recipe draws
+    // whatever massing it researched, so their signs floated in open sky
+    // beside the towers: 332 boards up to 80m, the "dark chips" in the
+    // vantage sheet's aerial frame. chance() is still drawn FIRST so the
+    // shared placement stream is undisturbed -- a filter must not reshuffle
+    // the world (see the texture-RNG note in tex.js).
     if (b.h > 34 && chance(0.55)) {
-      roofSign.push([mx + (oX / oL) * 0.6, b.h + 2.2, mz + (oZ / oL) * 0.6, ang + Math.PI / 2,
-        Math.min(16, bl * 0.4)]);
+      const insetTower = b.k && b.h > 70;
+      const bespoke = !!recipeFor(b.n);
+      if (!insetTower && !bespoke) {
+        roofSign.push([mx + (oX / oL) * 0.6, b.h + 2.2, mz + (oZ / oL) * 0.6, ang + Math.PI / 2,
+          Math.min(16, bl * 0.4)]);
+      }
     }
     if (b.h > 14 && bl > 12 && chance(0.7)) {
       const vx2 = mx + (oX / oL) * 1.1, vz2 = mz + (oZ / oL) * 1.1;
