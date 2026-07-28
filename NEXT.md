@@ -97,6 +97,23 @@ file:
 - **S7 first tested every bay at the awning's reach**, and only a tenanted F&B
   bay has an awning: 445 failures against geometry that does not exist. Each bay
   records its own reach.
+- **The bays were datumed to the building's footing and Plaza Singapura's sat
+  1.5m under the pavement.** A footing is the lowest ground under the WHOLE
+  footprint, sunk 0.9m, which is right for masonry — on a slope the uphill end
+  is buried and nobody can tell. A shopfront is the one part of a building that
+  meets the ground where a person is standing, so it takes the pavement in front
+  of each bay. Same family as the bike sitting at terrain height while the
+  tarmac is drawn 5.5cm above it: **the height a thing is DRAWN at and the height
+  a thing STANDS on are two different numbers.**
+
+  This one is worth dwelling on because no check caught it and no check could
+  have: every gate was green, the count was right, S9 measures the profile's own
+  internal height and a buried bay has a perfectly good one. It was found by
+  fixing the CAMERA in `shopshots.mjs`, which had the same bug — the eye was set
+  from the bay's sill rather than from the ground, so the harness was buried
+  alongside the thing it was photographing and the two errors cancelled. A vet
+  tool that shares a datum with the thing it is vetting cannot see that datum
+  being wrong.
 
 `data/shopshots.mjs` is the vet loop for this: it stands a person 9m in front of
 bays that were actually built and photographs them. Three rounds of it fixed a
