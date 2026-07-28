@@ -808,6 +808,15 @@ def main():
             # drawn as asphalt. Eighth instance of real data present and unused.
             if tags.get("surface"):
                 r["surface"] = tags["surface"]
+            # WHAT KIND of footway. `footway=crossing` is the pedestrian crossing
+            # drawn as a WAY across the carriageway, and there are 155 of them in
+            # Orchard alone. Drawn as pavement -- which is what every footway got
+            # -- each one lays a beige band straight over the tarmac, which is
+            # what the user saw as "yellow patches on the roads" and as lane
+            # lines cutting out. The zebra itself already comes from the crossing
+            # NODES, so the way is pure duplication.
+            if tags.get("footway"):
+                r["fw"] = tags["footway"]
             # A BRIDGE DECK IS NOT THE GROUND. Carried so terrain.py can refuse
             # to sample elevation on it: the Benjamin Sheares Bridge crosses
             # Marina Bay about 30m up, and sampling its deck as ground put a 53m

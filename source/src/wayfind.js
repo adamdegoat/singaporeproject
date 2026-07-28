@@ -283,10 +283,63 @@ export class Wayfinder {
       close.addEventListener('click', shut);
       close.addEventListener('touchstart', shut, { passive: false });
     }
-    // tapping the map itself closes it too, so there is no hunting for a button
+    // THE OPEN MAP NO LONGER CLOSES ON TAP.
+    //
+    // It used to, "so there is no hunting for a button" -- which meant the very
+    // first touch aimed AT the map dismissed it, and the map could therefore
+    // never be zoomed or moved. A full-screen map you cannot zoom is a picture.
+    // It closes on the Close button and on M; the map itself pinches and drags.
+    this.zoom = 1; this.panX = 0; this.panZ = 0;
     if (this.bigMap) {
-      this.bigMap.addEventListener('click', shut);
-      this.bigMap.addEventListener('touchstart', shut, { passive: false });
+      let pt = null, startD = 0, startZ = 1, sx = 0, sy = 0, spx = 0, spz = 0;
+      const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+      const redraw = () => { if (this._last) this._drawBig(this._last); };
+      this.bigMap.addEventListener('touchstart', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const t = e.touches;
+        if (t.length === 2) { pt = 'pinch'; startD = dist(t) || 1; startZ = this.zoom; }
+        else { pt = 'pan'; sx = t[0].clientX; sy = t[0].clientY; spx = this.panX; spz = this.panZ; }
+      }, { passive: false });
+      this.bigMap.addEventListener('touchmove', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const t = e.touches;
+        if (pt === 'pinch' && t.length === 2) {
+          this.zoom = Math.max(1, Math.min(8, startZ * (dist(t) / startD)));
+        } else if (pt === 'pan' && t.length === 1) {
+          this.panX = spx + (t[0].clientX - sx);
+          this.panZ = spz + (t[0].clientY - sy);
+        }
+        redraw();
+      }, { passive: false });
+      this.bigMap.addEventListener('touchend', (e) => { e.stopPropagation(); pt = null; });
+      // and a wheel, for anyone on a laptop
+      this.bigMap.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        this.zoom = Math.max(1, Math.min(8, this.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+        redraw();
+      }, { passive: false });
+      // dragging with a mouse pans
+      let md = false;
+      this.bigMap.addEventListener('mousedown', (e) => {
+        md = true; sx = e.clientX; sy = e.clientY; spx = this.panX; spz = this.panZ;
+      });
+      addEventListener('mousemove', (e) => {
+        if (!md) return;
+        this.panX = spx + (e.clientX - sx); this.panZ = spz + (e.clientY - sy); redraw();
+      });
+      addEventListener('mouseup', () => { md = false; });
+    }
+    const zin = document.getElementById('zoomin');
+    const zout = document.getElementById('zoomout');
+    const bump = (f) => (e) => {
+      if (e) { e.preventDefault(); e.stopPropagation(); }
+      this.zoom = Math.max(1, Math.min(8, this.zoom * f));
+      if (this._last) this._drawBig(this._last);
+    };
+    for (const [el, f] of [[zin, 1.5], [zout, 1 / 1.5]]) {
+      if (!el) continue;
+      el.addEventListener('click', bump(f));
+      el.addEventListener('touchstart', bump(f), { passive: false });
     }
     addEventListener('keydown', (e) => { if (e.code === 'KeyM') this.setOpen(!this.open); });
   }
@@ -335,6 +388,9 @@ export class Wayfinder {
   /* ---------- the close-up ---------- */
 
   _drawSmall(S) {
+    // which street you are on, so the minimap can say so in colour as well as
+    // the sentence under it
+    this._lastStreet = this._street(S);
     const g = this.mapCtx, W = this.map.width;
     const REACH = 130;                          // metres from the centre to an edge
     const k = (W / 2) / REACH;                  // pixels per metre
@@ -372,12 +428,27 @@ export class Wayfinder {
       b.p.forEach(([x, z], i) => (i ? g.lineTo(x, z) : g.moveTo(x, z)));
       g.closePath(); g.fill(); g.stroke();
     }
-    // the main street on top, so it is always findable
-    g.strokeStyle = 'rgba(255,214,150,0.85)';
-    g.lineWidth = 2.4 / k;
-    g.beginPath();
-    this.axis.p.forEach(([x, z], i) => (i ? g.lineTo(x, z) : g.moveTo(x, z)));
-    g.stroke();
+    // THE MAIN STREETS, all of them, on top so they are findable.
+    //
+    // This drew ONE amber line -- the primary axis -- which in a three-district
+    // region means Orchard Road is highlighted and Bras Basah Road and Bayfront
+    // Avenue are not. A single unexplained yellow line down one street is a
+    // question, not a wayfinding aid, and that is exactly how it was read.
+    //
+    // Every main street is drawn now, and the one you are ON is drawn brighter
+    // and thicker, which is what makes the colour mean something: it is you.
+    const axes = (this.data.axes && this.data.axes.length)
+      ? this.data.axes : [this.axis];
+    const onName = (this._lastStreet || '').toLowerCase();
+    for (const ax of axes) {
+      if (!ax || !ax.p) continue;
+      const mine = onName && (ax.n || '').toLowerCase() === onName;
+      g.strokeStyle = mine ? 'rgba(255,214,150,0.95)' : 'rgba(255,214,150,0.40)';
+      g.lineWidth = (mine ? 3.2 : 1.8) / k;
+      g.beginPath();
+      ax.p.forEach(([x, z], i) => (i ? g.lineTo(x, z) : g.moveTo(x, z)));
+      g.stroke();
+    }
     g.restore();
 
     // you, always dead centre and always pointing up
@@ -432,9 +503,11 @@ export class Wayfinder {
 
     const { mnx, mxx, mnz, mxz } = this.bounds;
     const pad = 30 * dpr;
-    const k = Math.min((W - pad * 2) / (mxx - mnx), (H - pad * 2) / (mxz - mnz));
-    const ox = (W - (mxx - mnx) * k) / 2 - mnx * k;
-    const oz = (H - (mxz - mnz) * k) / 2 - mnz * k;
+    // zoom and pan, so the map can actually be read at street level
+    const zoom = this.zoom || 1;
+    const k = Math.min((W - pad * 2) / (mxx - mnx), (H - pad * 2) / (mxz - mnz)) * zoom;
+    const ox = (W - (mxx - mnx) * k) / 2 - mnx * k + (this.panX || 0) * dpr;
+    const oz = (H - (mxz - mnz) * k) / 2 - mnz * k + (this.panZ || 0) * dpr;
     const X = (x) => x * k + ox, Z = (z) => z * k + oz;
 
     g.lineCap = 'round'; g.lineJoin = 'round';

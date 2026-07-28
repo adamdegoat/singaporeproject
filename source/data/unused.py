@@ -80,7 +80,7 @@ IGNORED = {
     "barrier":         "read where mapped as a railing",
     "service":         "sub-class of a service road; all service roads look alike",
     "junction":        "roundabout handling is geometric, from the way itself",
-    "footway":         "sidewalk-vs-crossing sub-class; both come from the node layer",
+
     "public_transport": "schema tag; the thing itself is highway=bus_stop",
     "traffic_signals:sound":     "audio cue for the visually impaired; no audio cue is modelled",
     "traffic_signals:vibration": "tactile cue on the button; not visible",
@@ -167,7 +167,7 @@ def audit(did):
         "sidewalk:left": "sidewalk", "sidewalk:right": "sidewalk",
         "sidewalk:both": "sidewalk",
         "building:colour": "col", "roof:colour": "rcol",
-        "min_height": "mh",
+        "min_height": "mh", "footway": "fw",
     }
 
     groups = collections.defaultdict(lambda: [0, collections.Counter()])

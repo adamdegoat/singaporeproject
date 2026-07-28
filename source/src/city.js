@@ -852,6 +852,13 @@ export function buildRoads(world, data) {
   const roadGeos = [], paveGeos = [], unitPaveGeos = [], concGeos = [];
   let mainAxis = null, bestLen = Infinity;
   for (const r of data.roads) {
+    // A CROSSING IS NOT A PAVEMENT. `footway=crossing` is the pedestrian
+    // crossing mapped as a way THROUGH the carriageway; surfacing it drew a
+    // pale band across the road at every crossing -- 155 of them in Orchard --
+    // and the lane markings vanished under them. The zebra comes from the
+    // crossing nodes, so this way carries no information we do not already
+    // draw.
+    if (r.fw === 'crossing') continue;
     const isPath = r.k === 'footway' || r.k === 'pedestrian';
     // Ways overlap where they meet, and two carriageways at exactly the same
     // height speckle. A stable sub-centimetre offset per road, derived from its

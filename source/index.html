@@ -11,10 +11,6 @@
   #hud{position:fixed;left:calc(8px + env(safe-area-inset-left));bottom:8px;
     font:11px/1.35 ui-monospace,Menlo,monospace;color:#e4e9ee;
     background:rgba(10,14,18,.6);padding:6px 8px;border-radius:3px;pointer-events:none}
-  #help{position:fixed;right:calc(10px + env(safe-area-inset-right));top:10px;
-    font:12px/1.5 ui-monospace,Menlo,monospace;color:#e4e9ee;text-align:right;
-    background:rgba(10,14,18,.55);padding:8px 10px;border-radius:4px;pointer-events:none}
-  #help b{font-weight:600;color:#ffd9a8}
   /* landscape only: the controls assume two thumbs on the short edges */
   #rotate{position:fixed;inset:0;display:none;place-items:center;text-align:center;
     background:#12161b;color:#e8e2d4;font:15px/1.6 ui-monospace,Menlo,monospace;
@@ -29,12 +25,12 @@
      map does not have to be decoded to know where you are */
   #place small{display:block;font-weight:500;font-size:11px;letter-spacing:.02em;
     opacity:.72;margin-top:2px}
-  #map{position:fixed;left:calc(10px + env(safe-area-inset-left));top:10px;
+  #map{position:fixed;right:calc(10px + env(safe-area-inset-right));top:10px;
     width:124px;height:124px;border-radius:8px;pointer-events:auto;
     box-shadow:0 2px 10px rgba(0,0,0,.4)}
   /* sits INSIDE the map rather than under it: outside, it was a grey caption
      floating over the street with nothing obviously attaching it to the map */
-  #maphint{position:fixed;left:calc(10px + env(safe-area-inset-left));top:112px;
+  #maphint{position:fixed;right:calc(10px + env(safe-area-inset-right));top:112px;
     width:124px;text-align:center;
     font:600 9px/1 ui-sans-serif,system-ui,Helvetica,Arial;letter-spacing:.1em;
     text-transform:uppercase;color:rgba(240,235,222,.62);pointer-events:none;
@@ -45,8 +41,8 @@
   /* the rest of the interface is not just dimmed behind the map, it is gone:
      a control legend and a frame counter showing through a map make it
      unreadable, and none of it is usable while the map is up */
-  body.mapopen #hud,body.mapopen #help,body.mapopen #place,body.mapopen #map,
-  body.mapopen #maphint,body.mapopen #modebtn,body.mapopen #soundbtn,
+  body.mapopen #hud,body.mapopen #place,body.mapopen #map,
+  body.mapopen #maphint,body.mapopen #modebtn,
   body.mapopen #stick,body.mapopen #lookhint{display:none}
   #bigmap{position:absolute;inset:0;width:100%;height:100%}
   #bigclose{position:absolute;right:calc(12px + env(safe-area-inset-right));
@@ -58,17 +54,21 @@
     font:500 11px/1.6 ui-sans-serif,system-ui,Helvetica,Arial;
     color:rgba(240,235,222,.62);pointer-events:none}
   #bigkey b{color:#ffd696;font-weight:600}
+  /* The open map used to close on any tap, so it could not be zoomed at all:
+     the first touch aimed at the map dismissed it. It closes on the Close
+     button now, and the map itself pinches and drags. */
+  #bigzoom{position:absolute;right:calc(12px + env(safe-area-inset-right));
+    top:64px;display:flex;flex-direction:column;gap:8px}
+  #bigzoom button{width:44px;height:44px;font:600 20px/1 ui-sans-serif,system-ui,Helvetica,Arial;
+    color:#12161b;background:#e8ddc6;border:0;border-radius:22px;
+    box-shadow:0 2px 8px rgba(0,0,0,.35)}
+  #bigzoom button:active{background:#cfc4ad}
   #modebtn{position:fixed;right:calc(10px + env(safe-area-inset-right));
     bottom:calc(12px + env(safe-area-inset-bottom));
     font:600 13px/1 ui-sans-serif,system-ui,-apple-system,Helvetica,Arial;
     letter-spacing:.03em;color:#12161b;background:#e8ddc6;border:0;
     padding:12px 18px;border-radius:22px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
-  #modebtn:active,#soundbtn:active{background:#cfc4ad}
-  #soundbtn{position:fixed;right:calc(10px + env(safe-area-inset-right));
-    bottom:calc(58px + env(safe-area-inset-bottom));
-    font:600 12px/1 ui-sans-serif,system-ui,-apple-system,Helvetica,Arial;
-    letter-spacing:.03em;color:#12161b;background:#ded3bd;border:0;
-    padding:9px 15px;border-radius:20px;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+  #modebtn:active{background:#cfc4ad}
   #stick{position:fixed;left:38px;bottom:38px;width:108px;height:108px;
     border-radius:50%;border:2px solid rgba(232,221,198,.5);
     background:rgba(12,16,20,.28);display:none;pointer-events:none}
@@ -81,7 +81,7 @@
     font:600 12px/1.4 ui-sans-serif,system-ui,Helvetica,Arial;
     color:rgba(240,235,222,.28);letter-spacing:.14em;text-transform:uppercase}
   #lookhint.on{display:flex}
-  @media (orientation:portrait){ #rotate{display:grid} #help,#place,#map,#maphint,#big,#modebtn,#soundbtn,#stick,#lookhint{display:none} }
+  @media (orientation:portrait){ #rotate{display:grid} #place,#map,#maphint,#big,#modebtn,#stick,#lookhint{display:none} }
 </style>
 <canvas id="c"></canvas>
 <div id="rotate"><div><span>&#8635;</span>Turn your phone sideways<br><small style="opacity:.6">this rides in landscape</small></div></div>
@@ -91,18 +91,15 @@
 <div id="big">
   <canvas id="bigmap"></canvas>
   <button id="bigclose" type="button">Close</button>
-  <div id="bigkey"><b>&#9679;</b> you &middot; the wedge is the way you are facing</div>
+  <div id="bigkey"><b>&#9679;</b> you &middot; the wedge is the way you are facing<br>
+    <span style="opacity:.75">pinch or drag to zoom &middot; Close when done</span></div>
+  <div id="bigzoom">
+    <button id="zoomin" type="button">+</button>
+    <button id="zoomout" type="button">&minus;</button>
+  </div>
 </div>
 <div id="hud">loading Orchard…</div>
-<div id="help">
-  <b>hold left side</b> throttle<br>
-  <b>hold lower left</b> brake<br>
-  <b>hold brake stopped</b> reverse<br>
-  <b>drag right side</b> steer<br>
-  <span style="opacity:.65">keys: A/D · W · S · E to get off</span>
-</div>
 <div id="stick"><div id="knob"></div></div>
 <div id="lookhint">drag to look</div>
-<button id="soundbtn" type="button">Sound on</button>
 <button id="modebtn" type="button">Get off</button>
 <script type="module" src="./src/main.js"></script>

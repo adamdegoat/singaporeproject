@@ -1375,6 +1375,53 @@ window.__auditWorld = async function auditWorld() {
           : `lane ${laneW.toFixed(1)}m, storeys within 2.6-5.2m, nothing sub-door`, problems);
   }
 
+  /* P9: a road marking painted where there is no road.
+   *
+   * Markings are laid out from the AXIS at a lateral offset while the tarmac is
+   * drawn per WAY at that way's own width -- two sources for the same edge. The
+   * axis carries one width for a whole street, and Orchard Road's ways run from
+   * 7.0m to 25.0m, so wherever the street narrowed the lines were painted past
+   * the kerb onto the pavement. From the saddle that reads as pale patches in
+   * the road and as stretches with no lines at all, which is exactly how it was
+   * reported. Nothing measured it; this does.
+   */
+  {
+    const MARKSIG = new Set(['PlaneGeometry(0.14,1)', 'PlaneGeometry(0.12,2)',
+                             'PlaneGeometry(0.1,2)', 'PlaneGeometry(0.28,3.2)',
+                             'PlaneGeometry(0.92,0.9)', 'PlaneGeometry(0.62,1)']);
+    const roadMeshes = [];
+    sc.traverse((o) => { if (o.name === 'roadSurface') roadMeshes.push(o); });
+    const rc2 = new T.Raycaster();
+    let marks = 0, offTar = 0; const exP9 = [];
+    if (roadMeshes.length) {
+      const m4b = new T.Matrix4(), vb = new T.Vector3();
+      sc.traverse((o) => {
+        if (!o.isInstancedMesh) return;
+        const pr2 = o.geometry.parameters || {};
+        const sig2 = `${o.geometry.type}(${[pr2.width, pr2.height]
+          .filter((q) => q != null).map((q) => +q.toFixed(2)).join(',')})`;
+        if (!MARKSIG.has(sig2)) return;
+        // one in four, because a raycast per marking over 29,000 of them is the
+        // slowest thing in this audit and the answer does not need every one
+        for (let i = 0; i < o.count; i += 4) {
+          o.getMatrixAt(i, m4b);
+          vb.setFromMatrixPosition(m4b).applyMatrix4(o.matrixWorld);
+          if (vb.y < -900) continue;
+          marks++;
+          const gy = terr ? terr.at(vb.x, vb.z) : 0;
+          rc2.set(new T.Vector3(vb.x, gy + 5, vb.z), new T.Vector3(0, -1, 0));
+          if (!rc2.intersectObjects(roadMeshes, false)[0]) {
+            offTar++;
+            if (exP9.length < 6) exP9.push(`${sig2} off the tarmac at ${vb.x | 0},${vb.z | 0}`);
+          }
+        }
+      });
+    }
+    const pct9 = marks ? +(100 * offTar / marks).toFixed(1) : 0;
+    add('P9', 'road markings painted off the tarmac', 'MAJOR', pct9, 2.0,
+        `${offTar} of ${marks} sampled markings`, exP9);
+  }
+
   /* ================= W: water =================
    * A new subsystem gets its checks BEFORE it gets content, because you cannot
    * find a defect class you have not named. Water is the first thing in this

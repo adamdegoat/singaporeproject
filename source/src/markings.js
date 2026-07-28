@@ -37,8 +37,21 @@ function dry(list) {
   return list.filter((r) => !window.__inWater(r[0], r[2]));
 }
 
+// A ROAD MARKING BELONGS ON THE ROAD.
+//
+// Markings are laid out from the axis at a lateral offset, and the tarmac is
+// drawn per way at that way's own width -- two different sources for the same
+// edge. Measured: 483 of 28,967 markings were painted past the kerb, onto the
+// pavement, which is what "yellow patches on the road" and "lines cut off" both
+// look like from the saddle. The local-width probe above fixes most of it; this
+// guarantees the rest, by asking the SAME road index the tarmac comes from.
+function onTarmac(list) {
+  if (!window.__onRoad) return list;
+  return list.filter((r) => window.__onRoad(r[0], r[2], 0.15));
+}
+
 function emitFlat(world, list, w, l, mat) {
-  list = dry(list);
+  list = onTarmac(dry(list));
   if (!list.length) return 0;
   const geo = new THREE.PlaneGeometry(w, l);
   const im = new THREE.InstancedMesh(geo, mat, list.length);
@@ -88,8 +101,59 @@ export function axisSpec(axis, data = {}) {
   return { count, laneW, half, oneway, centres, ways: ways.length, tagged, owTagged };
 }
 
+// THE STREET IS NOT ONE WIDTH.
+//
+// `axis.w` is a single number for the whole street, and the markings were laid
+// out from it, but Orchard Road's own ways run from 7.0m to 25.0m: 39 at 18.2m,
+// ten at 14.8m, and a handful at 7m, 8m, 11.4m, 21.6m and 25m. The TARMAC is
+// drawn per way at that way's width, so wherever the road narrows the markings
+// were painted metres beyond the kerb -- lane lines lying on the pavement, and
+// stretches of road with no lines on them at all because the ones that belonged
+// there had been thrown outside it.
+//
+// This returns the width of the real way NEAREST a point, so the markings and
+// the tarmac are taken from the same source and cannot disagree.
+function widthProbe(axis, data) {
+  const name = (axis.n || '').toLowerCase();
+  const segs = [];
+  for (const r of (data.roads || [])) {
+    if ((r.n || '').toLowerCase() !== name) continue;
+    for (let i = 0; i < r.p.length - 1; i++) segs.push([r.p[i], r.p[i + 1], r.w || axis.w, !!r.bridge]);
+  }
+  if (!segs.length) return () => ({ w: axis.w, bridge: false });
+  const CELL = 60;
+  const grid = new Map();
+  for (const sg of segs) {
+    const [a, b] = sg;
+    for (let gx = Math.floor(Math.min(a[0], b[0]) / CELL); gx <= Math.floor(Math.max(a[0], b[0]) / CELL); gx++)
+      for (let gz = Math.floor(Math.min(a[1], b[1]) / CELL); gz <= Math.floor(Math.max(a[1], b[1]) / CELL); gz++) {
+        const k = gx + ',' + gz;
+        if (!grid.has(k)) grid.set(k, []);
+        grid.get(k).push(sg);
+      }
+  }
+  return (x, z) => {
+    let best = axis.w, bestBr = false, bd = Infinity;
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dz = -1; dz <= 1; dz++) {
+        const list = grid.get((Math.floor(x / CELL) + dx) + ',' + (Math.floor(z / CELL) + dz));
+        if (!list) continue;
+        for (const [a, b, w, br] of list) {
+          const vx = b[0] - a[0], vz = b[1] - a[1];
+          const L2 = vx * vx + vz * vz;
+          const t = L2 < 1e-9 ? 0 : Math.max(0, Math.min(1, ((x - a[0]) * vx + (z - a[1]) * vz) / L2));
+          const d = (x - (a[0] + vx * t)) ** 2 + (z - (a[1] + vz * t)) ** 2;
+          if (d < bd) { bd = d; best = w; bestBr = br; }
+        }
+      }
+    return { w: best, bridge: bestBr };
+  };
+}
+
 export function buildMarkings(world, axis, data = {}) {
-  const pts = axis.p, half = axis.w / 2;
+  const pts = axis.p;
+  const widthAt = widthProbe(axis, data);
+  let half = axis.w / 2;
   const dash = [], edge = [], yellowL = [], stopL = [], arrowShaft = [], arrowHead = [];
 
   const spec = axisSpec(axis, data);
@@ -117,6 +181,22 @@ export function buildMarkings(world, axis, data = {}) {
 
     for (let t = 0; t < len; t += 1, acc++) {
       const px = x1 + ux * t, pz = z1 + uz * t;
+      // the width of the real carriageway HERE, not the street's average
+      const wh = widthAt(px, pz);
+      // A BRIDGE DECK IS NOT AT GROUND LEVEL, and markings are placed at
+      // groundAt(): on the causeways across Marina Bay they end up under the
+      // deck. The per-road loop already skips bridges; the AXIS walk did not,
+      // and Bayfront Avenue crosses two.
+      if (wh.bridge) continue;
+      half = wh.w / 2;
+      const dividers2 = [];
+      for (let i2 = 1; i2 < laneCount; i2++) {
+        const off2 = -half + i2 * ((half * 2) / laneCount);
+        if (!spec.oneway && Math.abs(off2) < 1.6) continue;
+        dividers2.push(off2);
+      }
+      dividers.length = 0;
+      for (const d2 of dividers2) dividers.push(d2);
 
       // dashed lane dividers: 3m mark, 6m gap, at the real lane positions
       if (acc % 9 < 3) {

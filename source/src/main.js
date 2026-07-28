@@ -404,9 +404,19 @@ let terrain = new Terrain(null);
 let mode = 'ride';                 // 'ride' | 'walk'
 const sound = new Sound();
 window.__sound = sound;   // so the audio path can be verified, not assumed
-// browsers will not start audio without a gesture
+// BROWSERS WILL NOT START AUDIO WITHOUT A GESTURE, and these listeners have to
+// see the gesture FIRST.
+//
+// They were registered in the bubble phase, and the ride controls call
+// stopPropagation() on touchstart so a thumb on the throttle never reached
+// them: audio simply did not start. Opening the map DID work, because that
+// touch lands on a different element which does not stop the event -- which is
+// exactly the symptom reported, "no volume until I toggle the map".
+//
+// Capture phase, on the document, so nothing downstream can swallow the unlock.
 for (const ev of ['touchstart', 'touchend', 'pointerdown', 'mousedown', 'keydown', 'click']) {
-  addEventListener(ev, () => { sound.start(); sound.poke(); }, { passive: true });
+  document.addEventListener(ev, () => { sound.start(); sound.poke(); },
+                            { passive: true, capture: true });
 }
 let camYaw = 0, camPitch = 0.16;   // free look, walk mode
 const walker = newWalker();
@@ -719,24 +729,10 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
 
 if (TOUCH) attachTouch(canvas);
 attachMouse(canvas);
-{
-  const sbtn = document.getElementById('soundbtn');
-  if (sbtn) {
-    // The label used to read "Sound on" while the sound was already on, so the
-    // first tap muted the ride and it looked like audio was broken. The button
-    // now says what the tap will DO.
-    const label = () => { sbtn.textContent = sound.muted ? 'Sound on' : 'Mute'; };
-    const tap = (e) => {
-      e.preventDefault(); e.stopPropagation();
-      sound.start();
-      sound.setMuted(!sound.muted);
-      label();
-    };
-    label();
-    sbtn.addEventListener('click', tap);
-    sbtn.addEventListener('touchstart', tap, { passive: false });
-  }
-}
+// NO MUTE BUTTON. Sound is on and stays on; a phone already has a volume
+// control and a hardware switch, and a mute button that says the wrong thing is
+// worse than none -- this one used to read "Sound on" while the sound was
+// already on, so the first tap silenced the ride and looked like a bug.
 {
   const btn = document.getElementById('modebtn');
   if (btn) {
@@ -1068,7 +1064,7 @@ window.__cam = (x, y, z, tx, ty, tz, fov) => {
 // Hide the interface so a frame can be compared against a photograph without a
 // minimap and a control legend sitting on top of it.
 window.__ui = (on) => {
-  for (const id of ['hud', 'help', 'place', 'map', 'modebtn', 'soundbtn', 'stick', 'lookhint']) {
+  for (const id of ['hud', 'place', 'map', 'maphint', 'modebtn', 'stick', 'lookhint']) {
     const el = document.getElementById(id);
     if (el) el.style.visibility = on ? '' : 'hidden';
   }

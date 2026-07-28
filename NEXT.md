@@ -665,6 +665,53 @@ stands) and a raycast at eye height correctly hits it. Both are right. It is a
 grade artefact, not a shopfront defect, and it is written here rather than tuned
 away.
 
+## The interface, and three bugs found by riding it on a phone
+
+- **Audio did not start.** The unlock listeners were on `window` in the BUBBLE
+  phase, and the ride controls call `stopPropagation()` on touchstart, so a
+  thumb on the throttle never reached them. Opening the map DID work, because
+  that touch lands on a different element -- which is exactly how it was
+  reported: "no volume until I toggle the map". They are on `document` in the
+  CAPTURE phase now, where nothing downstream can swallow them.
+- **The open map closed on any tap**, "so there is no hunting for a button" --
+  which meant the first touch aimed AT the map dismissed it and it could never
+  be zoomed. It pinches, drags and has +/- buttons now, and closes only on Close
+  or M. A full-screen map you cannot zoom is a picture.
+- **The mute button is gone.** It used to read "Sound on" while the sound was
+  already on, so the first tap silenced the ride and looked like a fault. A
+  phone has a volume rocker.
+
+Also: the control legend is gone and the minimap moved to the top right.
+
+**The minimap's yellow line was one unexplained stripe.** It drew the PRIMARY
+axis only, so in a three-district region Orchard Road was highlighted and Bras
+Basah Road and Bayfront Avenue were not. All main streets are drawn now, and the
+one you are ON is brighter and thicker -- which is what makes the colour mean
+something.
+
+## Markings painted where there is no road
+
+Reported as "yellow patches on the roads" and "road lines cut off, sometimes no
+lines at all". Both are the same defect and it is not a gap in the tarmac --
+measured, **0% of the axis lacks tarmac**.
+
+`axis.w` is ONE number for a whole street, and markings were laid out from it,
+but the tarmac is drawn per way at that way's own width. Orchard Road's ways run
+**7.0m to 25.0m**: 39 at 18.2m, ten at 14.8m, and singles at 7m, 8m, 11.4m,
+21.6m and 25m. Wherever the street narrowed, the lines were painted metres past
+the kerb onto the pavement -- and the stretches that looked unmarked were road
+whose markings had been thrown outside it.
+
+Markings now take the width of the real way NEAREST each point, so they and the
+tarmac come from the same source. Two more followed: a guard that refuses to
+emit a marking the road index does not agree is on a road, and skipping the axis
+walk over BRIDGE sections, whose deck is not at ground level (the per-road loop
+already skipped bridges; the axis walk did not, and Bayfront Avenue crosses two).
+
+**P9 is the new check** -- "road markings painted off the tarmac", by raycast
+against the drawn road mesh. It went 1.7% to **0% on every scene**. Nothing had
+ever measured this.
+
 ## Marina Bay, and the first water
 
 Chosen over Chinatown deliberately: it is the skyline everyone recognises, and
