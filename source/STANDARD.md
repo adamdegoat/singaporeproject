@@ -206,13 +206,15 @@ the deploy. A ratchet is not a pass — the district does not meet the standard
 until the target is reached, and the open number is stated plainly rather than
 hidden behind a green tick.
 
-Open ratchets:
+Open ratchets (re-measured 2026-07-29 — this table had gone stale in BOTH
+directions, which is exactly what the ledger section below warns about):
 
-| id | baseline | target | what it is |
+| id | state | target | what it is |
 |---|---|---|---|
-| T1 | 11 | 0 | Obstructions a rider would hit, seen from the traversal side. Was scoped to instanced props only and reported zero while building corners and landmark columns stood across carriageways — the same backlog P1b counts. Falls as P1b falls. |
-| C8 | 6% | 70% | Only 6 of 48 mapped bus stops carry a shelter and 14 of 61 signals a head. Cause: `buildFurniture` matches them against the main axis alone and discards anything more than 60m from it, so every stop and signal on a side street is thrown away. Placing them network-wide lifted coverage to 90% but pushed 58 more shelters into carriageways, because the shelter is 8.8m by 2.8m and a side-street pavement will not take it. Both numbers have to rise together. |
-| P1b | 286 | 0 | Landmark and facade structure standing in carriageways. The spawn-point pillars were seven of these; the rest are tower masses and facade elements placed by recipe from a footprint's oriented bounding box, which for an irregular plan lies outside the building. |
+| T1 | **CLOSED at 0** (orchard, marinabay, world; brasbasah 1) | 0 | Obstructions a rider would hit. The last "merged tile over Orchard Boulevard" finding was the road surface itself — a bridge deck — and the drawn surfaces are exempt by name now, same as P1b. |
+| C8 | **97%, target exceeded** | 70% | The 6% era was `buildFurniture` matching stops/signals against the main axis alone; `nearestOnAnyRoad` fixed it network-wide with the pavement-fit test intact. |
+| P1b | 1 (marinabay: an unnamed 227m tower footprint over Marina View Link) | 0 | Landmark and facade structure standing in carriageways. Closed at 0 on 2026-07-28; Marina Bay reopened it at one. |
+| P8 | marinabay 19, world 6, others 0 | 0 | Ground through the carriageway, measured against the DRAWN terrain across the full width since 2026-07-29. Residuals are path-edge slivers, diagnosed in NEXT.md. |
 
 ## Regression
 

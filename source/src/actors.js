@@ -357,8 +357,15 @@ export class Crowd {
         sVal = R() * this.paths[pi].len;
         off = side * (half0 + (pi === 0 ? rand(3.2, 10.5) : rand(1.4, 3.4)));
         const [wx, wz] = where(pi, sVal, off);
-        // not in the traffic, not inside anyone else, not inside a wall
+        // not in the traffic, not inside anyone else, not inside a wall --
+        // and not in the river. Water was missing from this list for as long
+        // as the list existed, and the texture-RNG cutover proved it: the
+        // reshuffled sequence stood one walker in the Singapore River at Boat
+        // Quay, shoes and hands showing above the surface. A spawn test that
+        // omits a refusal the world knows about is a defect waiting for the
+        // right random number.
         if (window.__onRoad && window.__onRoad(wx, wz, -0.8)) continue;
+        if (window.__inWater && window.__inWater(wx, wz)) continue;
         if (!freeAt(wx, wz)) continue;
         if (this.isBlocked && this.isBlocked(wx, wz)) continue;
         take(wx, wz);
@@ -691,11 +698,19 @@ export class Crowd {
         }
       }
       // and the reactive test stays as a backstop, for anything the buckets
-      // cannot see (a walker mid-cross, a path end, a bucket boundary)
-      if (!pr.crossing && window.__onRoad && ((i + tick) & 7) === 0
-          && window.__onRoad(x, z, -0.8)) {
+      // cannot see (a walker mid-cross, a path end, a bucket boundary).
+      // Water joined the test with the spawn fix -- but the correction runs
+      // the OTHER way: a walker on the tarmac steps away from the centreline,
+      // a walker in the river steps back toward it. Pushing outward for both
+      // would walk the wet one deeper, which is a fallback worse than the
+      // defect -- pattern #1 in NEXT.md.
+      if (!pr.crossing && ((i + tick) & 7) === 0) {
         const sgn = pr.off >= 0 ? 1 : -1;
-        pr.offWant = Math.min(26, Math.abs(pr.off) + 3.0) * sgn;
+        if (window.__onRoad && window.__onRoad(x, z, -0.8)) {
+          pr.offWant = Math.min(26, Math.abs(pr.off) + 3.0) * sgn;
+        } else if (window.__inWater && window.__inWater(x, z)) {
+          pr.offWant = Math.max(1.2, Math.abs(pr.off) - 3.0) * sgn;
+        }
       }
       if (pr.offWant !== undefined) {
         const step = 1.1 * dt;                     // slower than the walk itself

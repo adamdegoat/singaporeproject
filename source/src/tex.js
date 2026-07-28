@@ -55,17 +55,32 @@ function finish(c, repeat, srgb = true) {
   t.anisotropy = 4;
   return t;
 }
-function grain(x, n, amt, size) {
+// EVERY TEXTURE HAS ITS OWN RANDOM STREAM since 2026-07-29. They all used to
+// draw from the module-level `R` -- the same seeded sequence every placement
+// decision in city.js, street.js, actors.js, shopfront.js, markings.js,
+// wayfind.js and sgdetail.js consumes -- so retouching ANY texture reshuffled
+// street furniture across two districts (measured: T1 10 -> 13 from a granite
+// panel, findings 1.5km from the building). texGranitePanel wrote the rule; it
+// now applies to the whole file: a texture must not be able to move a bus
+// stop. Parameterised textures fold their arguments into the seed so variants
+// do not clone each other's mottling. Cutting the file over cost the sanctioned
+// ONE-TIME world reshuffle recorded in NEXT.md.
+function grain(x, n, amt, size, rr = R) {
   for (let i = 0; i < n; i++) {
-    const g = (R() * 2 - 1) * amt;
+    const g = (rr() * 2 - 1) * amt;
     x.fillStyle = `rgba(${g > 0 ? 255 : 0},${g > 0 ? 255 : 0},${g > 0 ? 255 : 0},${Math.abs(g) / 255})`;
-    x.fillRect((R() * size) | 0, (R() * size) | 0, 1 + ((R() * 2) | 0), 1 + ((R() * 2) | 0));
+    x.fillRect((rr() * size) | 0, (rr() * size) | 0, 1 + ((rr() * 2) | 0), 1 + ((rr() * 2) | 0));
   }
 }
 
-export function texAsphalt() {
+export function texAsphalt(base = PAL.asphalt) {
+  // The base parameter exists for the red bus lane: TINTING the grey asphalt
+  // map can never read as red paint, because the tint multiplies a ~30%-
+  // luminance texture -- 0xd97a55 came out near-black. Red asphalt has to be
+  // DRAWN red.
+  const r2 = rng(0x61737068 ^ base), rand = (a, b) => a + r2() * (b - a);   // "asph"
   const S = 256, [c, x] = cvs(S);
-  x.fillStyle = hex(PAL.asphalt); x.fillRect(0, 0, S, S);
+  x.fillStyle = hex(base); x.fillRect(0, 0, S, S);
   for (let i = 0; i < 5200; i++) {
     const v = rand(-24, 24);
     x.fillStyle = `rgba(${128 + v},${128 + v},${130 + v},${rand(0.05, 0.24)})`;
@@ -83,6 +98,7 @@ export function texAsphalt() {
 
 // Orchard's pavement is the big patterned granite-look slab, not small pavers
 export function texPaving() {
+  const r2 = rng(0x70617669), rand = (a, b) => a + r2() * (b - a);   // "pavi"
   const S = 256, [c, x] = cvs(S);
   x.fillStyle = hex(PAL.paver); x.fillRect(0, 0, S, S);
   const n = 3, s = S / n;
@@ -97,11 +113,12 @@ export function texPaving() {
       x.fillRect(ix * s + rand(2, s - 3), iy * s + rand(2, s - 3), rand(1, 2.4), rand(1, 2.4));
     }
   }
-  grain(x, 2600, 18, S);
+  grain(x, 2600, 18, S, r2);
   return finish(c, [1, 1]);
 }
 
 export function texConcrete(base, dirt = 0.55) {
+  const r2 = rng(0x636f6e63 ^ base ^ ((dirt * 255) | 0)), rand = (a, b) => a + r2() * (b - a);
   const S = 256, [c, x] = cvs(S);
   x.fillStyle = hex(base); x.fillRect(0, 0, S, S);
   for (let i = 0; i < 24; i++) {
@@ -118,13 +135,14 @@ export function texConcrete(base, dirt = 0.55) {
     g.addColorStop(1, 'rgba(54,48,40,0)');
     x.fillStyle = g; x.fillRect(sx, sy, w, h);
   }
-  grain(x, 4800, 24, S);
+  grain(x, 4800, 24, S, r2);
   return finish(c, [1, 1]);
 }
 
 // Curtain wall: horizontal spandrel bands with vertical mullions. Orchard is
 // mostly made of this, so it does a lot of the recognition work.
 export function texCurtain(glassHex, mullionHex, floors = 8) {
+  const r2 = rng(0x63757274 ^ glassHex ^ mullionHex ^ floors), rand = (a, b) => a + r2() * (b - a);
   const S = 256, [c, x] = cvs(S);
   const fh = S / floors;
   x.fillStyle = hex(glassHex); x.fillRect(0, 0, S, S);
@@ -152,6 +170,7 @@ export function texCurtain(glassHex, mullionHex, floors = 8) {
 // Ground floor: tall glazing with a warm interior behind it. This is the band
 // the eye actually reads at street level.
 export function texShopfront() {
+  const r2 = rng(0x73686f70), rand = (a, b) => a + r2() * (b - a);   // "shop"
   const S = 256, [c, x] = cvs(S);
   x.fillStyle = '#2f3438'; x.fillRect(0, 0, S, S);
   const bays = 6, bw = S / bays;
@@ -174,7 +193,7 @@ export function texShopfront() {
   }
   x.fillStyle = '#3a3f43'; x.fillRect(0, 0, S, 16);        // fascia
   x.fillStyle = '#5b5554'; x.fillRect(0, S - 46, S, 46);   // plinth
-  grain(x, 1800, 16, S);
+  grain(x, 1800, 16, S, r2);
   return finish(c, [1, 1]);
 }
 
@@ -324,6 +343,7 @@ export function texWater() {
 export function texGranite() {
   // Ngee Ann City is clad in "African Red" polished granite, which reads far
   // redder than the brown-grey I first used.
+  const r2 = rng(0x6772616e), rand = (a, b) => a + r2() * (b - a);   // "gran"
   const S = 256, [c, x] = cvs(S);
   x.fillStyle = '#7d4f42'; x.fillRect(0, 0, S, S);
   for (let i = 0; i < 4200; i++) {
@@ -349,6 +369,7 @@ export function texGranite() {
 
 // smooth tower glazing, lighter and bluer than the podium curtain wall
 export function texTowerGlass() {
+  const r2 = rng(0x746f7772), rand = (a, b) => a + r2() * (b - a);   // "towr"
   const S = 256, [c, x] = cvs(S);
   x.fillStyle = '#8ea6b8'; x.fillRect(0, 0, S, S);
   const floors = 12, fh = S / floors;
@@ -371,6 +392,7 @@ export function texTowerGlass() {
 
 // 1970s-80s Orchard: punched window openings in a concrete frame, no curtain wall
 export function texPunched(base) {
+  const r2 = rng(0x70756e63 ^ base), rand = (a, b) => a + r2() * (b - a);   // "punc"
   const S = 256, [c, x] = cvs(S);
   x.fillStyle = hex(base); x.fillRect(0, 0, S, S);
   for (let i = 0; i < 3600; i++) {
@@ -392,12 +414,13 @@ export function texPunched(base) {
     x.fillStyle = 'rgba(150,142,128,0.55)';
     x.fillRect(0, r * rh + rh * 0.74, S, rh * 0.16);
   }
-  grain(x, 2400, 18, S);
+  grain(x, 2400, 18, S, r2);
   return finish(c, [1, 1]);
 }
 
 // balconied residential: recessed slots with a rail line
 export function texBalcony(base) {
+  const r2 = rng(0x62616c63 ^ base);                                 // "balc"
   const S = 256, [c, x] = cvs(S);
   x.fillStyle = hex(base); x.fillRect(0, 0, S, S);
   const rows = 9, rh = S / rows, cols = 5, cw = S / cols;
@@ -411,12 +434,13 @@ export function texBalcony(base) {
     x.fillStyle = 'rgba(206,200,186,0.85)';
     x.fillRect(0, r * rh + rh * 0.66, S, rh * 0.2);
   }
-  grain(x, 2000, 16, S);
+  grain(x, 2000, 16, S, r2);
   return finish(c, [1, 1]);
 }
 
 // Shophouse frontage: painted plaster, tall shuttered windows, a moulded band
 export function texShophouse(base) {
+  const r2 = rng(0x73687068 ^ base), rand = (a, b) => a + r2() * (b - a);   // "shph"
   const S = 256, [c, x] = cvs(S);
   x.fillStyle = hex(base); x.fillRect(0, 0, S, S);
   for (let i = 0; i < 2600; i++) {
@@ -443,11 +467,14 @@ export function texShophouse(base) {
     x.fillStyle = 'rgba(150,142,128,0.35)';
     x.fillRect(0, f * fh + fh * 0.87, S, fh * 0.03);
   }
-  grain(x, 1500, 14, S);
+  grain(x, 1500, 14, S, r2);
   return finish(c, [1, 1]);
 }
 
 export function texLeaves() {
+  const r2 = rng(0x6c656166);                                        // "leaf"
+  const rand = (a, b) => a + r2() * (b - a);
+  const pick = (arr) => arr[(r2() * arr.length) | 0];
   const S = 128, [c, x] = cvs(S);
   x.clearRect(0, 0, S, S);
   const g = x.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
@@ -459,7 +486,7 @@ export function texLeaves() {
   for (let i = 0; i < 460; i++) {
     const px = rand(0, S), py = rand(0, S);
     const d = Math.hypot(px - S / 2, py - S / 2) / (S / 2);
-    if (d > 0.99 || R() < d * d * 0.9) continue;
+    if (d > 0.99 || r2() < d * d * 0.9) continue;
     x.save(); x.translate(px, py); x.rotate(rand(0, Math.PI * 2));
     x.fillStyle = hex(pick(cols));
     x.globalAlpha = rand(0.5, 1);

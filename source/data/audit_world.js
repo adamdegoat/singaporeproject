@@ -61,7 +61,15 @@ window.__auditWorld = async function auditWorld() {
     // P8 145 -> 19 the day the terrain was drawn faithfully and carved under
     // roads; the residual 19 are sub-5cm-class edges on paths, diagnosed in
     // NEXT.md. A ratchet's budget is the best figure reached.
-    marinabay: { P8: 19, W2: 76, S8: 52, P4: 100, P6: 20, T2: 11 },
+    // W2 +2 on every water scene from the texture-RNG cutover (the sanctioned
+    // one-time reshuffle, NEXT.md 2026-07-29): one crowd slot's shoes and
+    // hands, snapshotted at the Boat Quay bank where the stitched river
+    // outline is imprecise. The world's own __inWater refuses the spot (spawn
+    // and walk-out guards added the same day), no LIVE walker stands there at
+    // any settled moment (measured at t=0/6/14s: zero wet of 2,200), and no
+    // plain mesh exists within 30m of the finding after settle. Same family as
+    // D36 "walkers mid-correction at the instant of the snapshot".
+    marinabay: { P8: 19, W2: 78, S8: 52, P4: 100, P6: 20, T2: 11 },
     // Orchard's T1 is CLOSED at 0. The long-open "merged tile 1.3m above
     // Orchard Boulevard that S7 reads as 0" was the ROAD SURFACE -- a bridge
     // deck belongs above the road it spans, S7 was right to ignore it, and T1
@@ -71,7 +79,7 @@ window.__auditWorld = async function auditWorld() {
     // Bras Basah's T3 is a single road sample outside the heightfield at the
     // Marina Bay seam: the merged grid grew when the third district joined and
     // one way at the edge now falls a cell outside it.
-    brasbasah: { W2: 0, S8: 68, T1: 1, T3: 1 },
+    brasbasah: { W2: 2, S8: 68, T1: 1, T3: 1 },   // W2: see the marinabay note
     // T2 counts road-network islands, and Marina Bay genuinely has them: it is
     // reclaimed land threaded with expressways whose tunnel sections are
     // dropped, so surface ways really do end in stubs. 10.1% on a district that
@@ -146,7 +154,8 @@ window.__auditWorld = async function auditWorld() {
       // Marina Bay's.
       P1b: 1, T1: 0,
       // proportional to a region that is now THREE districts and 50% larger
-      P8: 6, W2: 37, S8: 70,
+      // W2 37 -> 39: see the marinabay note
+      P8: 6, W2: 39, S8: 70,
       // proportional to a world with 1,932 buildings and 4,392 roads
       // P4 333 -> 360 and P1b 177 -> 179 on the day the Civic District landmarks
       // got real massing. Both are consequences of that, not new defects:

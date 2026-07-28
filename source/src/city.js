@@ -98,7 +98,10 @@ export const MAT = {
   tactile: new THREE.MeshStandardMaterial({ map: texTactile(), roughness: 0.72 }),
   // the red bus lane, tinted asphalt rather than paint: it is a coloured
   // surface course, so it keeps the tarmac texture and changes hue
-  busLane: new THREE.MeshStandardMaterial({ map: TEX.asphalt, color: 0xa8574a, roughness: 0.93 }),
+  // Red asphalt DRAWN red (see texAsphalt): tinting the grey map topped out
+  // at maroon-brown however bright the tint. Vetted against the eye-level
+  // shots, not the swatch: LTA's full-day bus lane red, weathered.
+  busLane: new THREE.MeshStandardMaterial({ map: texAsphalt(0x9e3d2c), roughness: 0.93 }),
   // Marina Reservoir is fresh water held behind a barrage, not open sea: it
   // reads green-grey and fairly still, not blue. Low roughness so it picks up
   // the environment map the sky already provides, which is what makes it read
@@ -958,38 +961,6 @@ export function buildRoads(world, data) {
     //
     // Only three buckets, because that is all the difference a rider can see at
     // speed: bituminous, pale slab, and small unit paving.
-    // SINGAPORE'S BUS LANES ARE RED. 274 ways carry the tag, and a red kerbside
-    // lane is one of the most recognisable things about a street here -- the
-    // sort of detail whose absence a Singaporean notices without being able to
-    // say why. Drawn as a tinted ribbon inside the kerb, on the side OSM says.
-    // THE BUS LANE IS WRITTEN AND DELIBERATELY NOT DRAWN.
-    //
-    // `r.bus` is real, carried from 274 ways, and Singapore's red kerbside bus
-    // lanes are one of the most recognisable things about its streets. But OSM
-    // splits a street into fragments -- 108 of those 274 ways are under 30m --
-    // and drawn per way the result is isolated red patches a few metres long
-    // that read as STAINS on the tarmac, not as a lane. Filtering to ways over
-    // 30m did not fix it; the patches are still patches. Verified by rendering
-    // it, then rendering without it: the road is cleaner without.
-    //
-    // Same rule as the three landmark recipes held back for looking worse than
-    // the generic family. The difference is that this comment matches the code,
-    // which the landmark one did not -- it claimed those recipes were
-    // unreferenced while they sat in the live array.
-    //
-    // To finish it: merge the tagged ways of a street into continuous runs
-    // FIRST, the way process.py stitches Orchard Road's 28 fragments into one
-    // centreline, then lay one ribbon per run.
-    const DRAW_BUS_LANES = false;
-    let busLen = 0;
-    if (r.bus) for (let i = 0; i < r.p.length - 1; i++)
-      busLen += Math.hypot(r.p[i + 1][0] - r.p[i][0], r.p[i + 1][1] - r.p[i][1]);
-    if (DRAW_BUS_LANES && r.bus && busLen >= 30 && !isPath && (r.w || 0) > 6) {
-      const laneW = Math.min(3.6, r.w * 0.28);
-      const off = (r.bus === 'left' ? -1 : 1) * (r.w / 2 - laneW / 2);
-      const bg = ribbonOffset(r.p, laneW, 0.058 + seed * 0.0012, off, !!r.bridge);
-      if (bg && bg.attributes.position && bg.attributes.position.count) busGeos.push(bg);
-    }
     const sf = (r.surface || '').toLowerCase();
     let bucket = isPath ? paveGeos : roadGeos;
     if (sf) {
@@ -1002,6 +973,61 @@ export function buildRoads(world, data) {
       let near = Infinity;
       for (const [x, z] of r.p) near = Math.min(near, x * x + z * z);
       if (near < bestLen) { bestLen = near; mainAxis = r; }
+    }
+  }
+
+  // SINGAPORE'S BUS LANES ARE RED, and they are finally drawn. 274 ways carry
+  // `r.bus`, and per way they rendered as isolated red stains because OSM
+  // fragments a street -- 108 of the 274 are under 30m. The finish written in
+  // this file's own comment for a year: merge a street's tagged ways into
+  // continuous RUNS first, the way process.py stitches Orchard Road's 28
+  // fragments into one centreline, then lay ONE ribbon per run and keep only
+  // runs a lane long. Runs are keyed by street name, side, width and bridge
+  // flag, chained where endpoints meet within 1.5m.
+  //
+  // The surface sits at 0.068: above every carriageway (0.055..0.0608 with
+  // the per-way seed) and below every marking (0.075 up), so the dashes and
+  // arrows paint ON the red lane the way they do on the street.
+  {
+    const groups = new Map();
+    for (const r of data.roads) {
+      if (!r.bus || r.k === 'footway' || r.k === 'pedestrian' || (r.w || 0) <= 6) continue;
+      // no bus lane on a bridge deck: a merged run would take ONE deck height
+      // across ways that each chose their own, and a red ribbon floating over
+      // (or sunk under) the deck is worse than its absence
+      if (r.bridge) continue;
+      const k = `${r.n || '?'}|${r.bus}|${r.w}`;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(r.p.map((q) => [q[0], q[1]]));
+    }
+    const J = 1.5;
+    const near2 = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 <= J * J;
+    for (const [k, chains] of groups) {
+      const [, side, wStr] = k.split('|');
+      const w = +wStr;
+      // chain fragments end-to-end until nothing joins
+      let merged = true;
+      while (merged) {
+        merged = false;
+        outer: for (let i = 0; i < chains.length; i++) {
+          for (let j = i + 1; j < chains.length; j++) {
+            const a = chains[i], b = chains[j];
+            let joined = null;
+            if (near2(a[a.length - 1], b[0])) joined = a.concat(b.slice(1));
+            else if (near2(b[b.length - 1], a[0])) joined = b.concat(a.slice(1));
+            else if (near2(a[a.length - 1], b[b.length - 1])) joined = a.concat(b.slice(0, -1).reverse());
+            else if (near2(a[0], b[0])) joined = a.slice(1).reverse().concat(b);
+            if (joined) { chains.splice(j, 1); chains[i] = joined; merged = true; break outer; }
+          }
+        }
+      }
+      for (const run of chains) {
+        if (polyLen(run) < 30) continue;         // a patch is not a lane
+        const laneW = Math.min(3.6, w * 0.28);
+        const off = (side === 'left' ? -1 : 1) * (w / 2 - laneW / 2);
+        const bg = ribbonOffset(run, laneW, 0.068, off, false);
+        if (bg && bg.attributes.position && bg.attributes.position.count) busGeos.push(bg);
+      }
     }
   }
   const merge = (geos, mat, name) => {
