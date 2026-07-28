@@ -662,6 +662,64 @@ stands) and a raycast at eye height correctly hits it. Both are right. It is a
 grade artefact, not a shopfront defect, and it is written here rather than tuned
 away.
 
+## The median down the middle of a one-way street
+
+**The user found it by riding, and asked whether Orchard Road has a divider.**
+It does not: it is one-way, five lanes, all going the same direction, and there
+is nothing to divide. We were drawing **506 kerbs, 221 shrubs and 29 palms down
+the middle of it** — 43% of every piece of median furniture in the world.
+
+The cause was `oneway=` read wrongly for the FOURTH time. `dualSegs` collected
+any one-way primary/secondary/trunk/tertiary way and called it a dual
+carriageway; Orchard Road is a one-way primary, so it matched ITSELF at distance
+zero and `hasMedianAt` (a 26m radius) returned true for all 2,586m. The comment
+above it claimed the opposite — "only where the street is actually a dual
+carriageway" — so this is the second place in two days where the file documented
+a rule it was not enforcing.
+
+**A dual carriageway is a PAIR**: two one-way ways of the same name running
+ANTI-PARALLEL within a few tens of metres. Measured against that: Orchard Road
+has 9 divided segments of 103, Bras Basah Road has 0, and River Valley Road
+(85/87), Killiney Road (82/88), Grange Road, Victoria Street, Hill Street,
+Paterson Road, Scotts Road and Middle Road genuinely are divided. The median now
+goes on the line BETWEEN the pair rather than on whichever street the axis
+happens to be — placing it at the axis point put planters in a live lane even
+where the division was real. Orchard went 756 pieces to 2.
+
+Three bugs of my own on the way, all previously recorded classes:
+
+- **It was placed twice.** `buildSgDetail` runs once per axis and the region has
+  two, and the new median is world-wide rather than axis-derived, so it was laid
+  down on top of itself: 768 kerbs where there should be 384, and P4 went to 710
+  against a budget of 360. The ERP gantries have carried a `__erpDone` flag for
+  this exact reason since the region shipped.
+- **Spacing by grid key rather than by distance** left kerbs centimetres apart.
+- **The jitter came off the shared PRNG**, so changing how many median plants
+  exist relocated street trees and pedestrians elsewhere in the district (D33
+  and D37 moved for no reason). Its own stream now, same as the granite texture.
+
+### What else the road data says that we still ignore
+
+Asked how many roads are wrong, so: measured against the raw extract, 3,256
+highway ways.
+
+| tag | ways | % | state |
+|---|---|---|---|
+| `surface` | 1,986 | 61% | **UNUSED.** 293 ways are paving_stones, concrete, cobblestone or sett and every one is drawn as asphalt |
+| `lanes` | 1,671 | 51% | used |
+| `oneway` | 1,491 | 46% | used |
+| `name` | 1,355 | 42% | used |
+| `maxspeed` | 1,254 | 39% | **UNUSED.** 50/60/40/15 km/h are tagged; traffic speed is invented |
+| `turn:lanes` | 608 | 19% | used |
+| `lanes:forward`/`backward` | 546 | 17% | **UNUSED.** exact directional split; we infer it |
+| `sidewalk` | 404 | 12% | used |
+| `tunnel` | 113 | 3% | handled — only 5 footway tunnels still surface |
+| `width` | 3 | 0% | all three are on footpaths, so every carriageway width is inferred |
+
+So: **centrelines and layout are surveyed and right. Widths are inferred and
+always were. Surface, speed limit and directional lane split are real data
+sitting unread — the fifth, sixth and seventh instances of that pattern.**
+
 ## The crowd, and a position that was not where anyone was
 
 `positions()` recomputed each walker from `pr.off` alone and ignored `shift`,

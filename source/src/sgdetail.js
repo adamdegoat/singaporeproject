@@ -4,7 +4,7 @@
 //
 // No brand marks anywhere: signage is colour and form only.
 import * as THREE from '../lib/three.module.js';
-import { R, rand, pick, chance, SignAtlas } from './tex.js';
+import { R, rand, pick, chance, rng, SignAtlas } from './tex.js';
 import { MAT, groundAt, Merger } from './city.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d,
@@ -290,26 +290,57 @@ function mrtEntrance(world, px, pz, ang, label) {
 export function buildSgDetail(world, axis, data, isBlocked) {
   const atlas = new SignAtlas(THREE);
   const signs = new Merger();
-  // where is the street divided? one-way primary/secondary ways running as a
-  // pair are how OSM records a dual carriageway
-  const dualSegs = [];
+  // WHERE THE STREET IS ACTUALLY DIVIDED.
+  //
+  // This used to treat ANY one-way primary/secondary/trunk/tertiary way as a
+  // dual carriageway, then call it a median anywhere within 26m. Orchard Road
+  // is a one-way primary, so it matched ITSELF at distance zero and got a
+  // planted central divider down all 2,586m of it: 506 kerbs, 221 shrubs and 29
+  // palms, 43% of every piece of median furniture in the world, running down
+  // the middle of a five-lane street where every lane goes the same way. There
+  // is nothing to divide. The user found it by riding.
+  //
+  // A dual carriageway is a PAIR: two one-way ways of the same name running
+  // ANTI-PARALLEL a few tens of metres apart. Measured against that definition,
+  // Orchard Road has 9 divided segments out of 103 and Bras Basah Road has 0,
+  // while River Valley Road (85/87), Killiney Road (82/88), Grange Road,
+  // Victoria Street, Hill Street, Paterson Road and Scotts Road genuinely are
+  // divided along most of their length.
+  //
+  // Fourth time `oneway=` has been read wrongly: it sat unused while traffic
+  // spawned head-on, and now it has been over-read in the other direction.
+  //
+  // And the median goes BETWEEN the pair, not on either centreline. Placing it
+  // at the axis point put planters in a live lane even where the division was
+  // real.
+  const DUAL_K = ['primary', 'secondary', 'trunk', 'tertiary'];
+  const owSegs = [];
   for (const r of (data.roads || [])) {
-    if (!r.oneway) continue;
-    if (!['primary', 'secondary', 'trunk', 'tertiary'].includes(r.k)) continue;
-    for (let i = 0; i < r.p.length - 1; i++) dualSegs.push([r.p[i], r.p[i + 1]]);
-  }
-  const hasMedianAt = (x, z) => {
-    for (const [a, b] of dualSegs) {
-      const vx = b[0] - a[0], vz = b[1] - a[1];
-      const L2 = vx * vx + vz * vz;
-      let t = L2 < 1e-9 ? 0 : ((x - a[0]) * vx + (z - a[1]) * vz) / L2;
-      t = Math.max(0, Math.min(1, t));
-      const dx = x - (a[0] + vx * t), dz = z - (a[1] + vz * t);
-      if (dx * dx + dz * dz < 26 * 26) return true;
+    if (!r.oneway || !DUAL_K.includes(r.k)) continue;
+    const P = r.p;
+    for (let i = 0; i < P.length - 1; i++) {
+      const L = Math.hypot(P[i + 1][0] - P[i][0], P[i + 1][1] - P[i][1]);
+      if (L < 1) continue;
+      owSegs.push({ a: P[i], b: P[i + 1], ux: (P[i + 1][0] - P[i][0]) / L,
+                    uz: (P[i + 1][1] - P[i][1]) / L, n: r.n || null,
+                    mx: (P[i][0] + P[i + 1][0]) / 2, mz: (P[i][1] + P[i + 1][1]) / 2 });
     }
-    return false;
-  };
-  window.__dualSegs = dualSegs.length;
+  }
+  // the median line itself: the midpoint between each anti-parallel same-name pair
+  const medianPts = [];
+  for (const s1 of owSegs) {
+    if (!s1.n) continue;
+    for (const s2 of owSegs) {
+      if (s2.n !== s1.n) continue;
+      const d = Math.hypot(s1.mx - s2.mx, s1.mz - s2.mz);
+      if (d < 6 || d > 50) continue;
+      if (s1.ux * s2.ux + s1.uz * s2.uz > -0.7) continue;   // must oppose
+      medianPts.push([(s1.mx + s2.mx) / 2, (s1.mz + s2.mz) / 2,
+                      Math.atan2(s1.ux, s1.uz)]);
+      break;
+    }
+  }
+  window.__dualSegs = medianPts.length;
 
   // direction of the road nearest a point, so things placed off the main axis
   // are still square to the street they belong to
@@ -487,15 +518,6 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     for (let t = 0; t < len; t += 1, acc++) {
       const px = x1 + ux * t, pz = z1 + uz * t;
 
-      // Planted median only where the street is actually a dual carriageway.
-      // A continuous median down every metre was an invention; OSM maps the
-      // divided sections as one-way pairs, so that is what we follow.
-      if (hasMedianAt(px, pz)) {
-        if (acc % 3 === 0) medianKerb.push([px, 0.14, pz, ang]);
-        if (acc % 7 === 0) medianShrub.push([px + nx * rand(-0.45, 0.45), 0.72, pz + nz * rand(-0.45, 0.45), ang]);
-        if (acc % 46 === 0) medianPalm.push([px, 0, pz, ang]);
-      }
-
       // banners on the lamp columns
       if (acc % 34 === 8) {
         for (const sgn of [-1, 1]) {
@@ -530,6 +552,59 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   };
   const yaw = (r) => { p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
 
+  // The median, along the line BETWEEN each anti-parallel pair rather than
+  // along whichever street the axis happens to be. Deduped on a 3m grid because
+  // both halves of a pair contribute the same midpoint, and skipped wherever it
+  // would land in a drawn carriageway -- our widths are inferred from lane
+  // counts, so on a narrow pair the two halves can overlap the gap.
+  // ONCE FOR THE WHOLE SCENE, not once per axis.
+  //
+  // buildSgDetail runs per axis and the region has two (Orchard Road and Bras
+  // Basah Road). The old median was placed by walking the axis, so it was
+  // naturally per-axis; this one is derived from data.roads and is world-wide,
+  // so it was being laid down twice in exactly the same places -- 768 kerbs
+  // where there should be 384, and 298 of them reported by P4 as duplicates
+  // within 60cm. The ERP gantries have carried a __erpDone flag for this same
+  // reason since the region shipped.
+  if (!window.__medianDone) {
+    window.__medianDone = true;
+    // ITS OWN RANDOM STREAM. The jitter below used to come off the module-level
+    // PRNG that also drives tree, furniture and crowd placement, so changing
+    // how many median plants exist silently relocated things elsewhere in the
+    // district -- which is exactly what happened on the first run of this fix
+    // (D33 and D37 moved for no reason). Same lesson as the granite texture.
+    const mr = rng(0x6d656469);            // "medi"
+    const jit = () => (mr() - 0.5) * 0.9;
+    // A minimum SPACING in metres, not a grid key. Both halves of a pair give
+    // the same midpoint and consecutive segments give near-identical ones, so
+    // a 3m grid still left kerbs a few centimetres apart and P4 (duplicated
+    // props) went to 729 against a budget of 360. The kerb unit is 3m long, so
+    // that is the spacing.
+    const SPACING = 3.0;
+    const cell = new Map();
+    const farEnough = (x, z) => {
+      const gx = Math.floor(x / SPACING), gz = Math.floor(z / SPACING);
+      for (let i = -1; i <= 1; i++)
+        for (let j = -1; j <= 1; j++) {
+          const l = cell.get((gx + i) + ',' + (gz + j));
+          if (!l) continue;
+          for (const [px, pz] of l) if ((px - x) ** 2 + (pz - z) ** 2 < SPACING * SPACING) return false;
+        }
+      const k = gx + ',' + gz;
+      if (!cell.has(k)) cell.set(k, []);
+      cell.get(k).push([x, z]);
+      return true;
+    };
+    let mi = 0;
+    for (const [mx, mz, mang] of medianPts) {
+      if (window.__onRoad && window.__onRoad(mx, mz, -0.4)) continue;
+      if (!farEnough(mx, mz)) continue;
+      medianKerb.push([mx, 0.14, mz, mang]);
+      if (mi % 2 === 0) medianShrub.push([mx + jit(), 0.72, mz + jit(), mang]);
+      if (mi % 14 === 0) medianPalm.push([mx, 0, mz, mang]);
+      mi++;
+    }
+  }
   emit(new THREE.BoxGeometry(2.1, 0.34, 3.0), MAT.kerb, medianKerb, yaw);
   emit(new THREE.SphereGeometry(0.66, 7, 5),
     new THREE.MeshLambertMaterial({ color: 0x3f5c33 }), medianShrub, (r) => {
