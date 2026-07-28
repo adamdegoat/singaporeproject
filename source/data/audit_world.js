@@ -58,16 +58,21 @@ window.__auditWorld = async function auditWorld() {
     //   S8  52  fewer street-level tenants get a shopfront here than in Orchard,
     //           and that is correct: Marina Bay's retail is inside malls, not on
     //           a street frontage.
-    marinabay: { P8: 145, W2: 122, S8: 52, P4: 100, P6: 20, T2: 11 },
+    marinabay: { P8: 145, W2: 76, S8: 52, P4: 100, P6: 20, T2: 11 },
     // Orchard's T1 and S8 moved when the terrain filter and the water guards
     // landed: one piece of merged geometry over Orchard Boulevard now reaches
     // the band, and two tenants lost a frontage. Both are one-unit moves in a
     // district that was at 0 and 76, recorded rather than waved through.
-    orchard: { W2: 12, T1: 1, S8: 72 },
+    // Orchard's T1 is ONE sample: a 190k-vertex merged tile 1.3m above Orchard
+    // Boulevard. Merged tiles are out of pruneCarriageway's reach by design (it
+    // will not delete twenty buildings to remove one overhang) and S7, which
+    // asks the same question of shopfront bays, reads 0 -- so the two disagree
+    // and the disagreement is not resolved. Stated rather than tuned away.
+    orchard: { W2: 0, T1: 1, S8: 72 },
     // Bras Basah's T3 is a single road sample outside the heightfield at the
     // Marina Bay seam: the merged grid grew when the third district joined and
     // one way at the edge now falls a cell outside it.
-    brasbasah: { W2: 108, S8: 68, T1: 1, T3: 1 },
+    brasbasah: { W2: 0, S8: 68, T1: 1, T3: 1 },
     // T2 counts road-network islands, and Marina Bay genuinely has them: it is
     // reclaimed land threaded with expressways whose tunnel sections are
     // dropped, so surface ways really do end in stubs. 10.1% on a district that
@@ -138,7 +143,7 @@ window.__auditWorld = async function auditWorld() {
       // with no building within 40m. Target is still 0.
       P1b: 1, T1: 1,
       // proportional to a region that is now THREE districts and 50% larger
-      P8: 72, W2: 206, S8: 70,
+      P8: 72, W2: 37, S8: 70,
       // proportional to a world with 1,932 buildings and 4,392 roads
       // P4 333 -> 360 and P1b 177 -> 179 on the day the Civic District landmarks
       // got real massing. Both are consequences of that, not new defects:
@@ -469,6 +474,16 @@ window.__auditWorld = async function auditWorld() {
         || (o.geometry.type === 'CylinderGeometry' && dim(gp0.radiusTop, 0.13))   // gantry post
         || (o.geometry.type === 'BoxGeometry' && (gp0.width || 0) > 14
             && (gp0.height || 0) < 5 && (gp0.depth || 0) > 2.5)                   // overhead bridge deck
+        // THE PARAPET IS PART OF THE DECK. The deck spanning a carriageway is
+        // already exempt above -- that is what an overpass is -- but its
+        // handrail is 10cm deep and did not match the deck's own signature, so
+        // one footbridge over Sheares Avenue reported its two parapets and its
+        // roof edge as structure standing in the road. Exempting the deck and
+        // then reporting the railing bolted to it is not a finding, it is the
+        // same object described twice.
+        || (o.geometry.type === 'BoxGeometry' && (gp0.width || 0) > 14
+            && Math.abs((gp0.height || 0) - 1.05) < 0.01
+            && Math.abs((gp0.depth || 0) - 0.1) < 0.01)                          // bridge parapet
         || (o.geometry.type === 'CylinderGeometry' && (gp0.radiusTop || 0) > 10)   // ION's shell over its forecourt
         // The ERP gantry itself. Its antenna heads read the tag on a car
         // passing UNDER them and its amber panel tells that car what it is
@@ -1213,7 +1228,7 @@ window.__auditWorld = async function auditWorld() {
               for (const p of list)
                 if ((p.x - x) ** 2 + (p.z - z) ** 2 < 1.4 * 1.4) { hit = p; break; }
             }
-          if (hit) { blocked++; if (ex.length < 8) ex.push(`${hit.sig} on "${r.n || '(unnamed)'}" at ${Math.round(hit.x||0)},${Math.round(hit.z||0)}`); }
+          if (hit) { blocked++; if (ex.length < 8) ex.push(`${hit.sig} on "${r.n || '(unnamed)'}" at ${Math.round(hit.x||0)},${Math.round(hit.z||0)} y=${(hit.y||0).toFixed(1)} up=${(hit.y - (terr?terr.at(hit.x,hit.z):0)).toFixed(1)} [verts=${hit.o&&hit.o.geometry.attributes.position.count} col=${hit.o&&hit.o.material&&hit.o.material.color?hit.o.material.color.getHexString():'-'}]`); }
         }
       }
     }
@@ -1473,8 +1488,21 @@ window.__auditWorld = async function auditWorld() {
     // ground with grey massing and has no idea a reservoir is not empty ground.
     let inW = 0; const exW2 = [];
     if (wpolys.length) {
+      // A TREE ON THE BANK OVERHANGS THE WATER, and that is what a tree by a
+      // river does. W2 asks what has been BUILT in open water; a branch or a
+      // leaf card reaching out over it has not been. Only the TRUNK says where
+      // the tree stands, and D37 already checks trunks. Without this, freeing a
+      // few spatial reservations elsewhere in the district moved trees a metre
+      // and W2 went from 206 to 580 without anything being planted in the bay.
+      const OVERHANGS = new Set([
+        'CylinderGeometry(0.06,1)',      // branch
+        'PlaneGeometry(1,0.55)',         // leaf card
+        'IcosahedronGeometry(1)',        // canopy blob
+        'SphereGeometry(0.52)', 'SphereGeometry(0.66)',   // planter shrub
+      ]);
       for (const p of props) {
         if (p.y < -900) continue;
+        if (OVERHANGS.has(p.sig)) continue;
         if (!inWater(p.x, p.z)) continue;
         inW++;
         window.__w2sig = window.__w2sig || {};
@@ -1494,9 +1522,23 @@ window.__auditWorld = async function auditWorld() {
           vv2.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
           if (inWater(vv2.x, vv2.z)) hit++;
         }
-        // a bridge or a pier legitimately reaches over water; a building whose
-        // every sample is wet does not
-        if (hit >= 20) {
+        // A BRIDGE OVER THE BAY IS ENTIRELY OVER WATER BY DESIGN. The comment
+        // here already said a bridge legitimately reaches over water, and then
+        // the code counted it anyway: once Marina Bay landed, the Helix, the
+        // Jubilee and the Bayfront bridges and every piece of their decks,
+        // parapets, roofs and stair towers were reported, which was most of the
+        // 476. Matched by the same signatures P1b exempts, so the two checks
+        // cannot disagree about what a bridge is.
+        const gpw = o.geometry.parameters || {};
+        const isDeck = o.geometry.type === 'BoxGeometry'
+          && (gpw.width || 0) > 14
+          && ((gpw.height || 0) < 5 && (gpw.depth || 0) > 2.5
+              || Math.abs((gpw.height || 0) - 1.05) < 0.01);
+        const isBridgePart = o.geometry.type === 'BoxGeometry'
+          && (Math.abs((gpw.width || 0) - 2.6) < 0.01 || Math.abs((gpw.width || 0) - 2.2) < 0.01);
+        const isRail = o.geometry.type === 'CylinderGeometry'
+          && Math.abs((gpw.radiusTop || 0) - 0.055) < 0.01;
+        if (hit >= 20 && !isDeck && !isBridgePart && !isRail) {
           inW++;
           if (exW2.length < 6) exW2.push(`${o.geometry.type} entirely over water`);
         }

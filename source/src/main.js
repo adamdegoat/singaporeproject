@@ -299,9 +299,20 @@ function dressStreet(data, axis) {
       // road, and where a crossing sits on a bend — which is where junctions
       // are — one shared angle left the outer bars up to fifty degrees off
       // square. A zebra laid at an angle to the lane is not a zebra.
+      // THE ROAD INDEX KNOWS EVERY ROAD, the axis polyline only knows one.
+      //
+      // The bar angle was taken from the nearest segment of the axis being
+      // dressed, which is right on a straight street and wrong where the axis
+      // bends hard: Bayfront Avenue curves round the bay, and a crossing on the
+      // bend came out 32 degrees off square. roadDirAt answers with the
+      // direction of the actual carriageway at that exact point.
       let ba = ang2;
+      if (window.__roadDirAt) {
+        const rd2 = window.__roadDirAt(bx, bz);
+        if (rd2 && (rd2[0] || rd2[1])) ba = Math.atan2(rd2[0], rd2[1]);
+      }
       let bd2 = Infinity;
-      for (let k = 0; k < pts.length - 1; k++) {
+      for (let k = 0; window.__roadDirAt ? false : k < pts.length - 1; k++) {
         const [px1, pz1] = pts[k], [px2, pz2] = pts[k + 1];
         const vx3 = px2 - px1, vz3 = pz2 - pz1, L3 = vx3 * vx3 + vz3 * vz3 || 1;
         let t3 = ((bx - px1) * vx3 + (bz - pz1) * vz3) / L3;

@@ -106,9 +106,13 @@ function pedBridge(world, px, pz, ang, width) {
   // them stood in live traffic. The deck over the road is correct -- that is
   // what an overpass IS, and P1b exempts it by signature -- but a stair tower
   // is the part that meets the ground, and it belongs on a pavement.
-  const mv2 = window.__pushClear ? window.__pushClear(px, pz, -0.6, 18) : [px, pz];
-  if (!mv2) return false;
-  const [px2, pz2] = mv2;
+  // A BRIDGE IS NOT NUDGED. Its position is surveyed, and the caller has
+  // already checked that the MAPPED LINE crosses a carriageway or water. Running
+  // it through pushClear moved the deck up to 18m, which slid it off the very
+  // thing it was built to span: D15 reported three decks spanning nothing while
+  // the caller was satisfied, because the two were looking at different points.
+  // A bridge that cannot be built where it is should not be built elsewhere.
+  const px2 = px, pz2 = pz;
 
   const g = new THREE.Group();
   const ca = Math.cos(ang), sa = Math.sin(ang);
@@ -233,6 +237,14 @@ function mrtEntrance(world, px, pz, ang, label) {
   const shell = new THREE.Mesh(
     new THREE.CylinderGeometry(3.5, 3.5, 6.6, 16, 1, true, Math.PI * 0.08, Math.PI * 0.84),
     glassMat);
+  // Marked, so a check can find an MRT canopy by IDENTITY. D14 matched it by
+  // shape -- an open-ended cylinder of radius 1.6 to 3.2 -- which this shell
+  // (radius 3.5) never satisfied, so the check has never once looked at an MRT
+  // canopy. What it WAS reporting, once Marina Bay landed, were Supertree
+  // trunk sleeves and the observatory ring, which happen to fit that
+  // description. Pattern #6 in NEXT.md: a signature rule is exempt by omission
+  // until a new shape wanders into it.
+  shell.userData.mrtCanopy = true;
   shell.rotation.z = Math.PI / 2;
   shell.position.set(0, 2.5, 0);
   shell.castShadow = true;
@@ -472,11 +484,18 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     // Sampled ALONG the span, because the deck crosses the road between its
     // supports and its end points are on the pavement either side.
     {
+      // A BRIDGE MAY SPAN WATER. This rule was written when nothing in the
+      // project had water in it, so it demanded a CARRIAGEWAY underneath and
+      // rejected anything else -- which was right for a footway over a canal
+      // that OSM calls a bridge, and wrong the moment Marina Bay arrived. The
+      // Helix, the Jubilee and the Bayfront bridges all cross the bay and no
+      // road at all; D15 was reporting nine real bridges as spanning nothing.
       let spans = false;
       const L2 = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
       for (let t = 0; t <= L2 && !spans; t += 1.5) {
         const x = a[0] + (b[0] - a[0]) * (t / L2), z = a[1] + (b[1] - a[1]) * (t / L2);
         if (window.__onRoad && window.__onRoad(x, z, 0)) spans = true;
+        if (window.__inWater && window.__inWater(x, z)) spans = true;
       }
       if (!spans) continue;
     }

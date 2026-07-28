@@ -665,6 +665,65 @@ stands) and a raycast at eye height correctly hits it. Both are right. It is a
 grade artefact, not a shopfront defect, and it is written here rather than tuned
 away.
 
+## The defect loop after Marina Bay: 60 findings to 9
+
+Marina Bay took the exploratory hunt from 16 to 60. Working it down was mostly
+NOT fixing the world -- **five of the nine classes were the CHECK being wrong**,
+which is the same ratio this project has hit every time it has looked.
+
+The world was wrong three times:
+
+- **Bridges were nudged.** pedBridge ran its surveyed centre through pushClear,
+  which moved the deck up to 18m and slid it off the very thing it spans -- the
+  caller was satisfied because it tested the MAPPED line while D15 tested the
+  BUILT deck. A bridge's position is surveyed; it is not nudged.
+- **Museums were given retail glazing.** 21 shop bays on the ArtScience Museum,
+  whose whole form is ten unbroken white petals. artScienceMuseum, merlion and
+  singaporeFlyer joined NO_SHOPFRONT, and the never-shopfront word list gained
+  museum, memorial, observatory and supertree.
+- **A building floated.** footingY sampled only the vertices and the centroid,
+  so a dip along an 82m edge left 1.6m of daylight under Six Battery Road. It
+  walks the whole perimeter at 6m now, which is finer than the 35m heightfield
+  cell, so nothing can hide between two samples.
+
+The checks were wrong six times, and each is a named pattern from this file:
+
+- **D6 read `data.trees`** -- the OSM node list, the INPUT -- and reported four
+  trees the builder had already refused to plant. **Seventh instance** of "a
+  check that reads the source data instead of the built world is not a check."
+- **D14 had never once looked at an MRT canopy.** It matched an open-ended
+  cylinder of radius 1.6-3.2; the canopy is radius 3.5. It matched nothing for
+  months, then Marina Bay arrived and it started reporting **Supertree trunk
+  sleeves** instead. Pattern #6: a signature rule is exempt by omission until a
+  new shape wanders into it. Tagged by identity now.
+- **D15 sampled a 12m cross around the centre of a deck up to 88m long**, so
+  three real bridges "spanned nothing" because what they cross sits 24m out. It
+  samples along the deck's own bounding box now -- and accepts WATER, which the
+  rule pre-dated.
+- **D7 re-derived the footing with the OLD formula** (vertices and centroid,
+  sunk 0.5) while the builder had moved on to the perimeter sunk 0.9. A check
+  that re-derives what the builder computes has to be changed with it.
+- **D10 let a sky deck bury a tower.** SkyPark is 12,455 m2 at h=207 with
+  min_height 193, so on height alone it "contains" all three Marina Bay Sands
+  towers. process.py's own rule already skipped these; the probe did not.
+- **W2 counted tree branches and bridges.** A tree on the bank overhangs the
+  water -- that is what a tree by a river does -- and a bridge over the bay is
+  entirely over water by design. The comment in the code already said so and the
+  code counted them anyway. W2 went 580 to 0 on Orchard and Bras Basah.
+
+**P1b is back to 0 on every scene.** Its last finding was a footbridge PARAPET
+over Sheares Avenue: the deck is exempt as legitimately-overhead and its
+handrail, 10cm deep, did not match the deck's signature. Exempting a deck and
+then reporting the railing bolted to it is the same object described twice.
+
+**Still open and diagnosed, not tuned away:** D26 at 6 (a neighbour's fabric at
+eye level where the ground steps down between two buildings; both previous
+attempts to refuse those bays cost 78 and then 11 tenants for nothing), D36 at 3
+(walkers mid-walk-out at the instant of the snapshot, which is the correction
+working), and Orchard's T1 at 1 -- a 190k-vertex merged tile 1.3m above Orchard
+Boulevard, which pruneCarriageway will not touch by design and which S7 reads as
+0, so two checks disagree and the disagreement is unresolved.
+
 ## The interface, and three bugs found by riding it on a phone
 
 - **Audio did not start.** The unlock listeners were on `window` in the BUBBLE

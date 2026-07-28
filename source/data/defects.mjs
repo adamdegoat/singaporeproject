@@ -139,14 +139,35 @@ const found = await page.evaluate(() => {
     report('D5', 'bus stop poles standing inside a building', inBuilding);
   }
 
-  /* D6  trees standing inside buildings */
+  /* D6  trees standing inside buildings, AS DRAWN.
+     This read `data.trees` -- the OSM node list, which is the INPUT -- and so
+     reported trees the builder had already refused to plant: TreeField.add and
+     the place() test both reject a position inside a building, and every one of
+     the four it was reporting was in the ArtScience Museum or NS Square, both
+     of which arrived as new footprints in Marina Bay. Seventh time in this
+     project that a check has been found reading the input instead of the
+     output. It walks the trunks now, the same way D37 does. */
   {
     const bad = [];
-    for (const t of data.trees || []) {
-      const b = buildingAt(t[0], t[1]);
-      if (b) bad.push(`tree inside "${b.n || '(unnamed)'}" at ${t[0] | 0},${t[1] | 0}`);
-    }
-    report('D6', 'mapped trees standing inside a building', bad);
+    const m4d = new T.Matrix4(), pd = new T.Vector3();
+    const qd = new T.Quaternion(), sd = new T.Vector3();
+    sc.traverse((o) => {
+      if (!o.isInstancedMesh) return;
+      const pr = o.geometry.parameters || {};
+      if (o.geometry.type !== 'CylinderGeometry') return;
+      // a trunk: tapered, and the only instanced cylinder with this profile
+      if (!(pr.radiusBottom > 0.25 && pr.radiusBottom < 0.8 && pr.radiusTop < pr.radiusBottom)) return;
+      for (let i = 0; i < o.count; i++) {
+        o.getMatrixAt(i, m4d); m4d.decompose(pd, qd, sd);
+        pd.applyMatrix4(o.matrixWorld);
+        if (pd.y < -900) continue;
+        const b = buildingAt(pd.x, pd.z);
+        if (b && bad.length < 40) bad.push(`tree inside "${b.n || '(unnamed)'}" at ${pd.x | 0},${pd.z | 0}`);
+        else if (b) bad.push('');
+      }
+    });
+    report('D6', 'trees standing inside a building', bad.filter((q) => q !== '')
+      .concat(bad.filter((q) => q === '')));
   }
 
   /* D7  a building FLOATING: daylight under its base.
@@ -168,7 +189,27 @@ const found = await page.evaluate(() => {
       for (const [x, z] of b.p) base = Math.min(base, window.__terrain.at(x, z));
       let cx = 0, cz = 0;
       for (const q of b.p) { cx += q[0]; cz += q[1]; }
-      base = Math.min(base, window.__terrain.at(cx / b.p.length, cz / b.p.length)) - 0.5;
+      base = Math.min(base, window.__terrain.at(cx / b.p.length, cz / b.p.length));
+      // MIRROR footingY EXACTLY. This re-derived the footing from vertices and
+      // the centroid, sunk 0.5 -- which is what city.js used to do. The builder
+      // walks the whole perimeter now and sinks 0.9, so this check was
+      // measuring a building against a footing it no longer has and reporting
+      // daylight that is not there. A check that re-derives what the builder
+      // computes has to be changed with it, which is an argument for reading
+      // the drawn mesh instead; that is harder for merged tiles, so for now the
+      // two formulas are kept identical and this comment is the reason why.
+      for (let i2 = 0; i2 < b.p.length; i2++) {
+        const a2 = b.p[i2], b2 = b.p[(i2 + 1) % b.p.length];
+        const L2 = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]);
+        if (L2 < 6) continue;
+        const n2 = Math.min(24, Math.floor(L2 / 6));
+        for (let k2 = 1; k2 <= n2; k2++) {
+          const t2 = k2 / (n2 + 1);
+          base = Math.min(base, window.__terrain.at(a2[0] + (b2[0] - a2[0]) * t2,
+                                                    a2[1] + (b2[1] - a2[1]) * t2));
+        }
+      }
+      base -= 0.9;
       let gap = 0, at = null;
       for (let i = 0; i < b.p.length; i++) {
         const a = b.p[i], c = b.p[(i + 1) % b.p.length];
@@ -241,7 +282,12 @@ const found = await page.evaluate(() => {
         // there: 16 of the 28 this first reported were exactly that, including
         // The Atrium @ Orchard standing above Plaza Singapura. Only a mass that
         // is buried inside something at least as tall is invisible duplication.
-        if (o && o !== b && area(o.p) > area(b.p) * 1.05
+        // AND A MASS THAT STARTS IN THE AIR BURIES NOTHING. SkyPark is 12,455 m2
+        // at h=207 with min_height 193 -- a deck in the sky -- and it sits over
+        // all three Marina Bay Sands towers, so judged on height alone it
+        // "contains" them. process.py's own burial rule already skips these;
+        // this probe did not, and reported two of the three towers.
+        if (o && o !== b && !o.mh && area(o.p) > area(b.p) * 1.05
             && (o.h || 0) >= (b.h || 0)) inside++;
       }
       if (n >= 4 && inside / n > 0.8) {
@@ -332,10 +378,12 @@ const found = await page.evaluate(() => {
     const box = new T.Box3(), c3 = new T.Vector3();
     sc.traverse((o) => {
       if (!o.isMesh || o.isInstancedMesh) return;
-      const pr = o.geometry.parameters || {};
-      // the entrance canopy: a wide shallow arch
-      if (o.geometry.type !== 'CylinderGeometry') return;
-      if (!(pr.radiusTop > 1.6 && pr.radiusTop < 3.2 && (pr.openEnded || pr.thetaLength))) return;
+      // BY IDENTITY. The shape rule here (an open-ended cylinder of radius 1.6
+      // to 3.2) never matched the actual canopy, which is radius 3.5 -- so this
+      // check had never looked at an MRT entrance in its life. Once Marina Bay
+      // arrived it started matching Supertree trunk sleeves instead and
+      // reported seven of them as canopies inside a building.
+      if (!o.userData || !o.userData.mrtCanopy) return;
       box.setFromObject(o); box.getCenter(c3);
       const b2 = buildingAt(c3.x, c3.z);
       if (b2) bad.push(`an MRT canopy stands inside "${b2.n || '(unnamed)'}"`);
@@ -363,11 +411,25 @@ const found = await page.evaluate(() => {
       if (Math.abs((pr.depth || 0) - 2.6) > 0.01) return;
       box.setFromObject(o); box.getCenter(c3);
       if ((c3.y - window.__terrain.at(c3.x, c3.z)) < 3) return;   // not elevated
+      // SAMPLE ALONG THE DECK, not a fixed cross around its middle.
+      //
+      // This walked +/-12m in x and z from the centre, which is an arbitrary
+      // shape to compare against a deck that can be 88m long: three real
+      // bridges were reported as spanning nothing because what they cross sits
+      // 24m out, beyond the sample. The deck's own bounding box says how far to
+      // look.
+      //
+      // And OR WATER: the rule was written before the project had any, so it
+      // demanded a carriageway and would have failed the Helix, the Jubilee and
+      // the Bayfront bridges, which cross Marina Bay and no road at all.
+      const sz3 = box.getSize(new T.Vector3());
+      const halfLen = Math.max(sz3.x, sz3.z) / 2 + 4;
+      const along = sz3.x >= sz3.z ? [1, 0] : [0, 1];
       let spans = false;
-      for (let d = -12; d <= 12 && !spans; d += 1.5) {
-        for (const [ux, uz] of [[1, 0], [0, 1]]) {
-          if (window.__onRoad(c3.x + ux * d, c3.z + uz * d, 0)) { spans = true; break; }
-        }
+      for (let d = -halfLen; d <= halfLen && !spans; d += 2) {
+        const sx3 = c3.x + along[0] * d, sz4 = c3.z + along[1] * d;
+        if (window.__onRoad(sx3, sz4, 0)) spans = true;
+        else if (window.__inWater && window.__inWater(sx3, sz4)) spans = true;
       }
       if (!spans) bad.push(`a bridge deck at ${c3.x | 0},${c3.z | 0} spans no carriageway`);
     });

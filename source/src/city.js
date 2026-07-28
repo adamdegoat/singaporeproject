@@ -386,6 +386,23 @@ export function footingY(pts) {
   // and sample the middle too, in case a long edge dips between its ends
   const c = centroid(pts);
   lo = Math.min(lo, TERRAIN.at(c[0], c[1]));
+  // WALK THE PERIMETER, not just its corners. A vertex sample says nothing
+  // about the ground twenty metres along an edge, and D7 -- which walks the
+  // real perimeter -- found Six Battery Road with 1.6m of daylight under it
+  // after the terrain filter changed the ground around the CBD. Sampled every
+  // 6m, which is finer than the 35m heightfield cell, so nothing can dip
+  // between two samples that the grid itself could represent.
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (L < 6) continue;
+    const n = Math.min(24, Math.floor(L / 6));
+    for (let k = 1; k <= n; k++) {
+      const t = k / (n + 1);
+      const g = TERRAIN.at(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
+      if (g < lo) lo = g;
+    }
+  }
   // 0.9, the same sink as before, so a footprint on FLAT ground is seated exactly
   // where it always was and only sloped ones move. Changing both at once made
   // every building in the district 40cm higher for no reason and muddied what

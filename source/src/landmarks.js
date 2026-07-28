@@ -1664,13 +1664,19 @@ export const RECIPES = [
 // gallery and a concert hall do not have a row of shop awnings along the
 // pavement, and adding them was both wrong to look at and the source of 13
 // duplicated props where two civic frontages met.
-const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery, gothicChurch, colonialHotel]);
+// Recipes whose buildings never carry retail glazing. artScienceMuseum joined
+// on 2026-07-28: 21 shop bays were glazed onto a museum whose whole form is ten
+// unbroken white petals, which is the same mistake the Esplanade and the
+// National Gallery are already in this set for.
+const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery,
+                              gothicChurch, colonialHotel, artScienceMuseum,
+                              merlion, singaporeFlyer]);
 // Buildings that never have a shopfront whether or not a recipe knows them.
 // Maghain Aboth Synagogue has no recipe, so the set above let it through and it
 // was given a row of glazed retail bays. Only words that cannot be anything
 // else: "gallery" is Mandarin Gallery, a mall, and "court" is a block of flats.
 const NEVER_SHOPFRONT =
-  /synagogue|mosque|masjid|gurdwara|temple|cathedral|chapel|church|monastery|convent|cenotaph|parliament|embassy|high commission/i;
+  /synagogue|mosque|masjid|gurdwara|temple|cathedral|chapel|church|monastery|convent|cenotaph|parliament|embassy|high commission|museum|memorial|merlion|observatory|supertree/i;
 export function hasShopfront(name) {
   if (name && NEVER_SHOPFRONT.test(name)) return false;
   const fn = recipeFor(name);
