@@ -99,6 +99,87 @@ colour, not by the first name match. That cost an hour twice.
   barrier values over the live bboxes -- 85 fence + 8 wall in Orchard, zero
   railing/guard_rail anywhere. The mapped ways are property boundaries. The
   claim is dated in accuracy.py and expires like the others.
+### Overnight 2026-07-29: three landmarks researched by agent, two built
+
+Research was run by Opus 5 subagents against published sources. **All three
+reports corrected false premises in their own briefs**, which is the argument
+for researching before modelling rather than after:
+
+- **The Cathay — BUILT.** Gazetted National Monument (Cat 2, 2003); only the
+  PODIUM'S FRONT FACADE is protected, so it is a free-standing screen. The
+  vertical element is a **stepped ziggurat pylon**, broad and wall-like, NOT
+  the thin blade fin the brief assumed. Render is **Shanghai plaster**, pale
+  warm grey-cream — the widely-repeated "brown tiles" are a 1978 refacing that
+  was REMOVED. No cinema (closed 2022), no street corner: symmetrical onto
+  Cathay Forecourt, always seen across open paving. New build is a curved
+  glass drum, published at **40m**, about twice the screen's height.
+- **Liat Towers — BUILT.** **No curved corner** (nothing published or
+  photographed shows one). **Hermès is FOUR storeys**, not a shopfront — 670m2,
+  and RDAI's 2016 ivory ALUCOBOND shell ("Beige" + "Sparkling Ivory") wraps all
+  four and turns the corner. It is a 1979 building with a 2016 face, not a 1965
+  modernist tower. Tower signature is HORIZONTAL: a stone spandrel and a
+  recessed dark ribbon per floor with the slab edge **projecting as an eyebrow**.
+  The **bronze rider on the shop-box roof** is the #1 recognition cue (Singapore
+  is only the second store worldwide to carry it outside). Height UNPUBLISHED
+  in every source checked, so the mapped 45m stands — the recipe does NOT
+  invent one from the 21 storeys.
+- **313@Somerset — RESEARCHED, NOT BUILT.** Architect **Aedas** (not Broadway
+  Malyan, who did the later lobby). **NO FINS and no angled panels** — the
+  brief's premise was wrong. It is a strictly orthogonal flat grid of **fritted
+  glass panels, pale silvery grey-green**, ~2 courses per storey, scattered
+  with an **irregular field of small horizontal light slots** (1:4 to 1:5, at
+  randomised offsets, only on a subset of panels) — these are 1,500+ LED light
+  boxes, cool white, lighting by Speirs + Major. **7 above-grade storeys** (5
+  retail + 2 car park behind the same skin), not 8. Ground floor is a **recessed
+  colonnade of fat round columns** with a blue LED cove along the soffit.
+  Identifiers: the **magenta "313 @somerset" panel at L2**, the L5 **Sky Terrace
+  recessed slot** with hanging green columns and the "food republic" sign, and
+  the **LED media screen at L2, west end**. Frontages **95m Orchard / 70m
+  Somerset** are published; overall height is UNPUBLISHED (~35-40m derived).
+  To build it: a mosaic texture with its own RNG stream is the whole job.
+
+- **MacDonald House — BUILT.** National Monument No. 50 (10 Feb 2003) with the
+  EXTERIOR FACADE protected. The report caught a bad figure in circulation:
+  summaries calling it "79.5m, 17 storeys, first skyscraper in Southeast Asia"
+  have confused it with the CATHAY BUILDING. It is **10 storeys, completed 2
+  July 1949**, Reginald Eyre of Palmer & Turner for HSBC, site **140ft x 100ft
+  = 43m x 30m**, sand-faced red brick from Alexandra Brickworks, flat roof laid
+  with **green glazed Chinese tiles**. Height UNPUBLISHED, so the mapped 40m
+  stands. Cues: the only large red-brick high-rise on Orchard Road; rooftop
+  lettering; the white HSBC coat-of-arms centred on the brick; two full-height
+  white stair strips; the cream stone colonnade. Its own texture
+  (`texRedBrick`) maps one tile to one 3.9m bay by a 3.5m floor.
+- **Peranakan Place — BUILT.** Researched partly from **three dated Wikimedia
+  photographs (5 Apr 2024)**, because the written repaint history is mostly
+  uncited and the sources disagree. Corrections that changed the build: it is
+  **Chinese Baroque commercial shophouse, c.1902**, not vernacular Peranakan
+  ("Peranakan Place" is a 1984 rename); the ground floor is a true **ARCADE**
+  of round-headed arches on square fluted piers, not a five-foot way; Emerald
+  Hill Road was **pedestrianised in 1981** so there is no junction; the parapet
+  is an **open balustrade of dark bottle-green vase balusters** with the
+  terracotta roof visible THROUGH it. Published: 6 two-storey shophouses
+  fronting Orchard Road. Widths/heights UNPUBLISHED — the 24.8m frontage and
+  ~8.7m height are OSM-derived and photogrammetric, and are labelled as such
+  in the recipe rather than dressed up as survey. Two colourways exist (pink on
+  Orchard, near-white up the lane) and `texPeranakan(white)` carries both.
+- **A composition must be filtered as a SET.** MacDonald House has a ~4m
+  setback, so one of its two stair strips stood over the carriageway and
+  pruneCarriageway correctly deleted it — leaving its hood projecting 49m up
+  over nothing. Each strip now tests its own ground and takes its hood and
+  balcony with it. Same family as the taxi rank that kept its sign and lost
+  its rail, except the leftover here is the part that makes no sense alone.
+- **My own probe lied, the usual way.** The strip looked missing because the
+  probe capped its output at 30 meshes and the traversal order cut the rest.
+  Filter the probe, do not truncate it — "print the thing, not a number near
+  the thing" applies to the harness as much as to the world.
+
+- **D33 is scoped to what can be seen, and it is a measurement.** Overlapping
+  walkers existed only 816m-3.7km from the ride, NONE inside the 105m draw
+  range; riding onto one cleared it in four seconds while it was still behind
+  the camera. Separation runs at 120m against a 105m cull by design, and
+  running it for all 2,200 was measured at five frames a second. The far count
+  is PRINTED rather than dropped.
+
 - **Next accuracy candidate, not started:** derive the street-tree species
   mix and spacing STATISTICS from trees.sg (cheeaun/sgtreesdata scrape is
   (c) NParks -- statistics are defensible, shipping their coordinates is not)

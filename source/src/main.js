@@ -1064,6 +1064,11 @@ window.__drive = (throttle, steer, seconds) => {
 };
 // Put the ride at a point, facing a heading. The coverage sweep uses this to
 // visit every street in the district without reloading the world 300 times.
+// Where the ride is. The crowd's separation, dodge and draw culling are all
+// gated on distance from THIS point, so a check about any of them has to know
+// it -- D33 was measuring 2,200 walkers across three districts against a
+// behaviour that runs within 120m by design.
+window.__ridePos = () => [S.x, S.z];
 window.__teleport = (x, z, heading) => {
   S = newState(x, z, heading == null ? S.heading : heading);
   S.speed = 0;

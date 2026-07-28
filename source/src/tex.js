@@ -510,6 +510,132 @@ export function texCentrepointPanel() {
   return finish(c, [1, 1]);
 }
 
+// MacDonald House, 1949: sand-faced red brick from Alexandra Brickworks over a
+// concrete frame, with a strict grid of PUNCHED windows in white surrounds and
+// projecting sills. Researched 2026-07-29 -- NHB calls it the "iconic red
+// facade with white window frames", and the wall is brick-DOMINANT, so the
+// tile is mostly brick with one window in it rather than a window wall.
+// One tile = one structural bay: 3.9m wide by 3.5m floor to floor.
+export function texRedBrick() {
+  const r2 = rng(0x6d63646e);                                        // "mcdn"
+  const S = 256, [c, x] = cvs(S);
+  // brick field: medium-deep red with darker mottling, thin flush joints
+  x.fillStyle = '#9d4a38'; x.fillRect(0, 0, S, S);
+  const bh = S / 16, bw = S / 7;
+  for (let row = 0; row < 16; row++) {
+    for (let col = -1; col < 8; col++) {
+      const off = (row % 2) * bw * 0.5;
+      const v = (r2() * 2 - 1) * 16;
+      x.fillStyle = `rgb(${157 + v},${74 + v * 0.6},${56 + v * 0.5})`;
+      x.fillRect(col * bw + off + 0.7, row * bh + 0.7, bw - 1.4, bh - 1.4);
+    }
+  }
+  // the window: punched, white surround and a projecting sill
+  const ww = S * 0.34, wh = S * 0.46;
+  const wx = (S - ww) / 2, wy = S * 0.20;
+  x.fillStyle = '#efece4';                                   // surround
+  x.fillRect(wx - 5, wy - 5, ww + 10, wh + 10);
+  x.fillStyle = '#2f3841';                                   // glass, deep reveal
+  x.fillRect(wx, wy, ww, wh);
+  const g = x.createLinearGradient(wx, wy, wx + ww, wy + wh);
+  g.addColorStop(0, 'rgba(206,222,236,0.42)');
+  g.addColorStop(1, 'rgba(206,222,236,0.03)');
+  x.fillStyle = g; x.fillRect(wx, wy, ww, wh);
+  x.fillStyle = 'rgba(18,22,26,0.45)';                       // reveal shadow, head
+  x.fillRect(wx, wy, ww, wh * 0.10);
+  x.fillStyle = '#efece4';                                   // glazing bars
+  x.fillRect(wx + ww / 2 - 1.4, wy, 2.8, wh);
+  x.fillRect(wx, wy + wh * 0.47, ww, 2.4);
+  x.fillStyle = '#f6f3ec';                                   // projecting sill
+  x.fillRect(wx - 8, wy + wh + 4, ww + 16, 7);
+  x.fillStyle = 'rgba(60,30,24,0.35)';                       // its shadow
+  x.fillRect(wx - 8, wy + wh + 11, ww + 16, 4);
+  grain(x, 1400, 12, S, r2);
+  return finish(c, [1, 1]);
+}
+
+// PERANAKAN PLACE, 180 Orchard Road: the upper storey of the c.1902 Chinese
+// Baroque terrace. Researched 2026-07-29 against URA's Conservation Portal,
+// NLB Infopedia and three DATED Wikimedia photographs (5 Apr 2024) read for
+// the current paint, because the prose sources disagree and most of the
+// repaint history on Wikipedia is uncited.
+//
+// One tile is ONE BAY: two round-arched windows with sunburst fanlights and
+// cream louvred shutters, under a blush-pink wall, between fluted pilasters.
+// `white` swaps to the Emerald Hill colourway -- the frontage is pink and the
+// units running up the pedestrianised lane are near-white, which is a fact
+// about this terrace and not a variation worth randomising.
+export function texPeranakan(white = false) {
+  const r2 = rng(0x7065726e ^ (white ? 1 : 0));                      // "pern"
+  const S = 256, [c, x] = cvs(S);
+  const wall = white ? '#efe9df' : '#e3cdbd';                 // blush pink / near-white
+  const cream = '#f2ece0', sage = '#93a07a', shutter = '#ede9dc';
+  x.fillStyle = wall; x.fillRect(0, 0, S, S);
+  for (let i = 0; i < 1600; i++) {
+    const v = (r2() * 2 - 1) * 9;
+    x.fillStyle = `rgba(${226 + v},${205 + v},${189 + v},${0.10 + r2() * 0.18})`;
+    x.fillRect(r2() * S, r2() * S, 1 + r2() * 2, 1 + r2() * 2);
+  }
+  // two round-arched windows
+  for (const cx2 of [S * 0.30, S * 0.70]) {
+    const ww = S * 0.22, wh = S * 0.50, wy = S * 0.26;
+    const rr = ww / 2;
+    // sage archivolt, drawn as a fatter arch behind the opening
+    x.fillStyle = sage;
+    x.beginPath();
+    x.arc(cx2, wy + rr, rr + 5, Math.PI, 0); x.lineTo(cx2 + rr + 5, wy + wh);
+    x.lineTo(cx2 - rr - 5, wy + wh); x.closePath(); x.fill();
+    // cream reveal
+    x.fillStyle = cream;
+    x.beginPath();
+    x.arc(cx2, wy + rr, rr + 1.5, Math.PI, 0); x.lineTo(cx2 + rr + 1.5, wy + wh);
+    x.lineTo(cx2 - rr - 1.5, wy + wh); x.closePath(); x.fill();
+    // dark sash behind
+    x.fillStyle = '#4a3126';
+    x.beginPath();
+    x.arc(cx2, wy + rr, rr, Math.PI, 0); x.lineTo(cx2 + rr, wy + wh);
+    x.lineTo(cx2 - rr, wy + wh); x.closePath(); x.fill();
+    // the SUNBURST FANLIGHT in the arch head: white bars radiating from the
+    // springing, which is the detail that makes it read as 1902 and not as a
+    // plain arched window
+    x.strokeStyle = '#ffffff'; x.lineWidth = 1.6;
+    for (let k = 0; k <= 6; k++) {
+      const a = Math.PI + (k / 6) * Math.PI;
+      x.beginPath(); x.moveTo(cx2, wy + rr);
+      x.lineTo(cx2 + Math.cos(a) * rr, wy + rr + Math.sin(a) * rr); x.stroke();
+    }
+    x.beginPath(); x.arc(cx2, wy + rr, rr * 0.5, Math.PI, 0); x.stroke();
+    // cream louvred shutters, hung outside, one half-open
+    x.fillStyle = shutter;
+    const sw2 = ww * 0.42;
+    x.fillRect(cx2 - rr - 1, wy + rr, sw2, wh - rr);
+    x.fillRect(cx2 + rr + 1 - sw2, wy + rr, sw2, wh - rr);
+    x.strokeStyle = 'rgba(120,116,102,0.55)'; x.lineWidth = 1;
+    for (let ly = wy + rr + 3; ly < wy + wh - 2; ly += 3.4) {
+      x.beginPath(); x.moveTo(cx2 - rr - 1, ly); x.lineTo(cx2 - rr - 1 + sw2, ly); x.stroke();
+      x.beginPath(); x.moveTo(cx2 + rr + 1 - sw2, ly); x.lineTo(cx2 + rr + 1, ly); x.stroke();
+    }
+    // projecting sage sill
+    x.fillStyle = sage; x.fillRect(cx2 - rr - 7, wy + wh, (rr + 7) * 2, 6);
+  }
+  // full-height fluted pilasters at the party walls
+  x.fillStyle = cream;
+  x.fillRect(0, 0, S * 0.085, S); x.fillRect(S * 0.915, 0, S * 0.085, S);
+  x.strokeStyle = 'rgba(150,142,124,0.5)'; x.lineWidth = 1;
+  for (let k = 1; k < 4; k++) {
+    for (const px of [S * 0.085 * k / 4, S * 0.915 + S * 0.085 * k / 4]) {
+      x.beginPath(); x.moveTo(px, 0); x.lineTo(px, S); x.stroke();
+    }
+  }
+  // the moulded cornice on oval dentils, the strongest horizontal here
+  x.fillStyle = cream; x.fillRect(0, S * 0.855, S, S * 0.075);
+  x.fillStyle = sage; x.fillRect(0, S * 0.855, S, S * 0.016);
+  x.fillStyle = 'rgba(120,128,104,0.75)';
+  for (let k = 0; k < 14; k++) x.fillRect(k * (S / 14) + 3, S * 0.822, S / 14 - 6, S * 0.030);
+  grain(x, 900, 10, S, r2);
+  return finish(c, [1, 1]);
+}
+
 export function texLeaves() {
   const r2 = rng(0x6c656166);                                        // "leaf"
   const rand = (a, b) => a + r2() * (b - a);

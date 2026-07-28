@@ -1706,7 +1706,486 @@ function theCentrepoint(api, b) {
   }
 }
 
+// THE CATHAY, 2 Handy Road. Researched 2026-07-29 by agent against
+// roots.gov.sg, Wikipedia (The Cathay / Cathay Building), rdca.sg (RDC
+// Architects, with Paul Tange), fantabulousfour and Commons photographs. The
+// research CORRECTED five things this project would otherwise have built
+// wrong, which is the whole argument for researching before modelling:
+//
+//   It is a gazetted NATIONAL MONUMENT (Cat 2, 2003), and only the PODIUM'S
+//   FRONT FACADE is protected -- a free-standing screen, not a conserved
+//   building.
+//   The vertical element is a STEPPED ZIGGURAT PYLON, broad and wall-like,
+//   symmetrical in plan and elevation. Drawn as the thin blade fin the brief
+//   assumed, it would read as the wrong building entirely.
+//   The render is SHANGHAI PLASTER, pale warm grey-cream and matte. The
+//   widely-repeated "brown tiles" belong to a 1978 refacing that was REMOVED.
+//   There is NO CINEMA (closed 2022) and NO STREET CORNER: the frontage is
+//   symmetrical onto Cathay Forecourt, a plaza, so it is always seen across
+//   open paving.
+//   The new build is a CURVED GLASS DRUM rising directly behind the screen,
+//   published at 40m -- about twice the height of the retained facade.
+//
+// Published metres: the 40m glass, 17 floors, 76 flats. Facade dimensions are
+// UNPUBLISHED; the proportions below (pylon ~1.5x the wing parapet, facade
+// ~half the drum) come from the report's photogrammetric estimates and are
+// marked as such rather than presented as survey.
+function theCathay(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const pale = api.mat.paleStone, glass = api.mat.blueGlass, trim = api.mat.trim;
+  const H = Math.max(b.h, 40);                 // the drum is published at 40m
+
+  // the mass behind: the curved glass drum plus the residential block
+  api.world.add(api.extrude(b.p, H, glass));
+  api.world.add(api.extrude(api.grow(b.p, 1.012), 1.1, trim, H));   // oversailing eave
+
+  // THE SCREEN GOES ON A REAL EDGE OF THE PLAN, not on a ray from the
+  // centroid. Walking outward from the centroid finds A point on the
+  // boundary, which for this 24-sided plan is wherever the ray happens to
+  // cross -- the first build put a 57m screen wall standing beside the
+  // building in open air. The longest edge facing away from the centroid IS
+  // the frontage, which is how the building signage already picks one.
+  // ...and it must be the longest edge ON THE STREET SIDE. Longest alone put
+  // the monument facade round the back: this plan's longest run is the rear
+  // elevation up Mount Sophia. Score every edge by length times how squarely
+  // its outward normal faces the street, so the two signals have to agree.
+  const swd = streetward(api, ob);
+  let bi = 0, best = -Infinity, bl = 0;
+  for (let i = 0; i < b.p.length; i++) {
+    const a = b.p[i], c = b.p[(i + 1) % b.p.length];
+    const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+    if (L < 4) continue;
+    const emx = (a[0] + c[0]) / 2, emz = (a[1] + c[1]) / 2;
+    const ox = emx - ob.cx, oz = emz - ob.cz, ol = Math.hypot(ox, oz) || 1;
+    const faces = (ox / ol) * swd.nx + (oz / ol) * swd.nz;    // -1 .. 1
+    if (faces <= 0.15) continue;                              // points away from the street
+    const score = L * faces;
+    if (score > best) { best = score; bi = i; bl = L; }
+  }
+  if (best === -Infinity) return;                             // no street frontage: mass only
+  const ea = b.p[bi], ec = b.p[(bi + 1) % b.p.length];
+  const mx = (ea[0] + ec[0]) / 2, mz = (ea[1] + ec[1]) / 2;
+  const oX = mx - ob.cx, oZ = mz - ob.cz, oL = Math.hypot(oX, oZ) || 1;
+  const nX = oX / oL, nZ = oZ / oL;              // outward, from the plan itself
+  const fx = mx + nX * 1.2, fz = mz + nZ * 1.2;
+  if (onCarriageway(fx, fz, 0.3)) return;      // no room for the screen: leave the mass
+  const yaw = Math.atan2(nX, nZ);
+  // along the edge, which is perpendicular to the outward normal
+  const tX = -nZ, tZ = nX;
+  // THE FRONTAGE IS WIDER THAN ANY ONE EDGE. This plan has 24 sides, so its
+  // longest street-facing edge is about 20m while the real monument frontage
+  // measures ~57m across -- built from one edge the screen read as a kiosk in
+  // front of a tower. Span every vertex on the street half of the plan,
+  // projected onto the frontage direction.
+  let uMin = Infinity, uMax = -Infinity;
+  for (const [px, pz] of b.p) {
+    const dx = px - ob.cx, dz = pz - ob.cz;
+    if (dx * nX + dz * nZ < oL * 0.25) continue;      // rear half of the plan
+    const u = dx * tX + dz * tZ;
+    if (u < uMin) uMin = u;
+    if (u > uMax) uMax = u;
+  }
+  // Widen toward the real ~57m frontage, but stay ANCHORED ON THE CHOSEN
+  // EDGE. Re-centring on the span's midpoint slid the screen off the plan
+  // (the span includes vertices that wrap round the sides), so the edge
+  // midpoint stays the origin and only the width grows -- and it grows to
+  // 80% of the span so the wings cannot overhang the frontage they sit on.
+  const span = (uMin === Infinity) ? bl : (uMax - uMin);
+  const W = Math.max(bl, Math.min(48, span * 0.8));
+  const uMid = 0;
+  const wingH = 13.5, pylonH = 21.0;           // ESTIMATED, see the note above
+
+  const place = (mesh, u, y, out) => {
+    // u is measured from the FRONTAGE centre (uMid), which is not the chosen
+    // edge's midpoint once the screen spans several edges
+    const uu = u + uMid;
+    mesh.position.set(fx + tX * uu + nX * out, y, fz + tZ * uu + nZ * out);
+    mesh.rotation.y = yaw;
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    api.world.add(mesh);
+    return mesh;
+  };
+  // the flanking wings, one screen wall either side of the pylon
+  const pylonW = 10.5, wingW = (W - pylonW) / 2;
+  for (const side of [-1, 1]) {
+    const u = side * (pylonW / 2 + wingW / 2);
+    place(new THREE.Mesh(new THREE.BoxGeometry(wingW, wingH, 0.9), pale), u, g0 + wingH / 2, 0);
+    // Streamline Moderne: stacked semi-circular ledges on cylindrical drum
+    // piers, three tiers. The report calls this the signature non-signage
+    // feature, so it is built rather than implied.
+    for (let k = 0; k < 3; k++) {
+      const y = g0 + 4.6 + k * 3.4;
+      const led = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 0.34, 14, 1, false, 0, Math.PI), pale);
+      place(led, u + side * wingW * 0.24, y, 0.6);
+      led.rotation.y = yaw + Math.PI;
+      const pier = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 3.4, 10), pale);
+      place(pier, u + side * wingW * 0.24 - 2.2, y - 1.7, 0.6);
+    }
+  }
+  // the stepped ziggurat pylon: a tall centre slab with two pairs of lower
+  // stepped uprights, each capped flat
+  place(new THREE.Mesh(new THREE.BoxGeometry(pylonW * 0.42, pylonH, 1.1), pale), 0, g0 + pylonH / 2, 0.1);
+  for (let k = 1; k <= 2; k++) {
+    const h = pylonH - k * 3.2, w = pylonW * 0.19;
+    for (const side of [-1, 1]) {
+      place(new THREE.Mesh(new THREE.BoxGeometry(w, h, 1.0), pale),
+            side * (pylonW * 0.21 + (k - 0.5) * w), g0 + h / 2, 0.05);
+    }
+  }
+  // the marquee band over the recessed entrance
+  place(new THREE.Mesh(new THREE.BoxGeometry(pylonW * 1.5, 1.15, 2.2), api.mat.darkMetal || trim),
+        0, g0 + 5.0, 1.0);
+  // the vertical CATHAY lettering, six letters stacked down the pylon face:
+  // raised pale letters on pale render, so it is built as relief, not paint
+  for (let k = 0; k < 6; k++) {
+    place(new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 0.18), trim),
+          0, g0 + pylonH - 2.6 - k * 2.2, 0.62);
+  }
+}
+
+// LIAT TOWERS, 541 Orchard Road. Researched 2026-07-29 by agent against
+// roots.gov.sg (NHB surveyed site), Wikipedia, Bonvests (the owner), RDAI /
+// Alucobond / DDG Glass / Vertilux trade records for the 2016 Hermes facade,
+// and Commons photographs. Four premises in the brief were WRONG and the
+// report said so rather than answering around them:
+//
+//   NO CURVED CORNER. Nothing published or photographed shows one; every
+//   corner is square or chamfered. The brief assumed a curve.
+//   HERMES IS FOUR STOREYS, not a ground-floor shopfront -- three retail plus
+//   the 4th-floor "Aloft" art space, 670 m2, and the 2016 cladding wraps all
+//   four and turns the corner into Angullia Park.
+//   It is a 1979 building with a 2016 face, not a 1965 modernist tower. The
+//   1965 phase was 17 storeys; the 1977-79 rebuild made it 21.
+//   The tower's signature is HORIZONTAL: one stone spandrel and one recessed
+//   dark ribbon window per floor, with the slab edge PROJECTING as an eyebrow
+//   that throws a hard shadow -- about twenty stacked stripes, no vertical
+//   expression at all.
+//
+// Published: 21 storeys, Hermes 670 m2 over four floors, 34 blinds dropping
+// to 4.5m (so the retail floor-to-floor is ~4.5-5m, taller than the office
+// floors above). HEIGHT IN METRES IS UNPUBLISHED -- not in Wikipedia, Roots,
+// Bonvests, CTBUH or any leasing database -- so the mapped 45m stands and the
+// recipe does NOT invent one from the 21 storeys.
+function liatTowers(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const stone = api.mat.paleStone, glass = api.mat.towerGlass, trim = api.mat.trim;
+  const H = b.h;
+  const podium = Math.min(15.5, H * 0.34);
+
+  // podium, then the tower set back above it
+  api.world.add(api.extrude(b.p, podium, stone));
+  const c = [ob.cx, ob.cz];
+  const inset = b.p.map(([x, z]) => [c[0] + (x - c[0]) * 0.82, c[1] + (z - c[1]) * 0.82]);
+  api.world.add(api.extrude(inset, H - podium, stone, podium));
+
+  // THE EYEBROWS. One projecting slab edge per office floor is the whole
+  // character of this tower, and it is cheap: a thin ring per floor, grown
+  // slightly proud of the inset mass, merged so it costs no draw call.
+  const floors = Math.max(6, Math.round((H - podium) / 3.6));
+  for (let k = 1; k <= floors; k++) {
+    const y = podium + k * ((H - podium) / (floors + 1));
+    if (y > H - 1.2) break;
+    api.merge(api.extrudeGeo(api.grow(inset, 1.035), 0.34, y), trim, c[0], c[1]);
+    // the recessed dark ribbon window under each eyebrow
+    // 1.4m of a ~3.6m floor: the published description is a light stone
+    // spandrel WITH a recessed ribbon under it, and at 1.9m the glass ate the
+    // spandrel and the tower read as a dark slab instead of a striped one
+    api.merge(api.extrudeGeo(api.grow(inset, 0.99), 1.4, y - 1.9), glass, c[0], c[1]);
+  }
+
+  // the sloping car-park louvre band over the podium: narrow vertical slots,
+  // and the band FOLLOWS THE RAMP, which is the detail everyone misses
+  const sw = streetward(api, ob);
+  const yaw = Math.atan2(sw.nx, sw.nz);
+  const tX = Math.cos(yaw), tZ = -Math.sin(yaw);
+  let f = 0;
+  while (f < 60 && pointInRing(ob.cx + sw.nx * f, ob.cz + sw.nz * f, b.p)) f += 0.5;
+  const bx = ob.cx + sw.nx * (f - 0.2), bz = ob.cz + sw.nz * (f - 0.2);
+  const bandW = Math.min(46, ob.halfLong * 1.7);
+  const n = Math.max(6, Math.round(bandW / 1.15));
+  for (let i = 0; i < n; i++) {
+    const u = -bandW / 2 + (i + 0.5) * (bandW / n);
+    const y = g0 + podium - 4.6 + (i / n) * 2.4;          // the ramp's slope
+    const sl = new THREE.Mesh(new THREE.BoxGeometry(0.42, 2.6, 0.5), trim);
+    sl.position.set(bx + tX * u, y, bz + tZ * u);
+    sl.rotation.y = yaw;
+    sl.castShadow = false; sl.receiveShadow = true;
+    api.world.add(sl);
+  }
+
+  // THE HERMES BOX, 2016: ivory Alucobond, four storeys, a grid of deep
+  // rectangular openings each with ONE JAMB SPLAYED DIAGONALLY so they read
+  // as angled slots rather than punched holes. Built at the corner of the
+  // frontage, extending toward Angullia Park the way the real extension does.
+  const hw = Math.min(21, ob.halfLong * 0.8), hh = 18.0, hd = 12.0;
+  const hu = bandW * 0.22;
+  const hx = bx + tX * hu + sw.nx * 1.4, hz = bz + tZ * hu + sw.nz * 1.4;
+  if (!onCarriageway(hx, hz, 0.4)) {
+    const shell = new THREE.Mesh(new THREE.BoxGeometry(hw, hh, hd), api.mat.ivory);
+    shell.position.set(hx, g0 + hh / 2, hz);
+    shell.rotation.y = yaw;
+    shell.castShadow = true; shell.receiveShadow = true;
+    uvMetres(shell, 9, 9);
+    api.world.add(shell);
+    // the openings: 5 bays x 3 rows on the street face
+    for (let r = 0; r < 3; r++) {
+      for (let bcol = 0; bcol < 5; bcol++) {
+        const u = -hw / 2 + (bcol + 0.5) * (hw / 5);
+        const y = g0 + 6.4 + r * 3.9;
+        const op = new THREE.Mesh(new THREE.BoxGeometry(hw / 5 * 0.52, 2.5, 0.7), glass);
+        op.position.set(hx + tX * u + sw.nx * (hd / 2 - 0.2), y, hz + tZ * u + sw.nz * (hd / 2 - 0.2));
+        op.rotation.y = yaw;
+        api.world.add(op);
+        // the splayed jamb, one side only
+        const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.55, 2.5, 0.85), api.mat.ivory);
+        jamb.position.set(hx + tX * (u - hw / 5 * 0.32) + sw.nx * (hd / 2 - 0.1), y,
+                          hz + tZ * (u - hw / 5 * 0.32) + sw.nz * (hd / 2 - 0.1));
+        jamb.rotation.y = yaw + 0.42;
+        jamb.castShadow = true;
+        api.world.add(jamb);
+      }
+    }
+    // dark recessed display band at street level, under the ivory grid
+    const disp = new THREE.Mesh(new THREE.BoxGeometry(hw * 0.94, 4.4, 0.5), api.mat.darkMetal);
+    disp.position.set(hx + sw.nx * (hd / 2 + 0.1), g0 + 2.4, hz + sw.nz * (hd / 2 + 0.1));
+    disp.rotation.y = yaw;
+    api.world.add(disp);
+    // THE BRONZE RIDER on the roof of the shop box -- the report's #1
+    // recognition cue, and Singapore is only the second store in the world to
+    // carry it outside. A silhouette at this scale, not a sculpture.
+    const rider = new THREE.Group();
+    const horse = new THREE.Mesh(new THREE.BoxGeometry(1.9, 1.15, 0.5), api.mat.bronze);
+    horse.position.y = 1.5; rider.add(horse);
+    for (const lx of [-0.7, -0.2, 0.35, 0.8]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.5, 0.16), api.mat.bronze);
+      leg.position.set(lx, 0.75, 0); rider.add(leg);
+    }
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 1.15, 0.36), api.mat.bronze);
+    body.position.set(0.15, 2.6, 0); rider.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 6), api.mat.bronze);
+    head.position.set(0.15, 3.35, 0); rider.add(head);
+    rider.position.set(hx, g0 + hh, hz);
+    rider.rotation.y = yaw + Math.PI / 2;
+    rider.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    api.world.add(rider);
+  }
+}
+
+// MACDONALD HOUSE, 40A Orchard Road. Researched 2026-07-29 by agent against
+// roots.gov.sg (NHB), Wikipedia, and the 1949 Singapore Free Press coverage
+// cited there. Gazetted NATIONAL MONUMENT No. 50 (10 Feb 2003) with the
+// EXTERIOR FACADE protected -- so the outside is the accurate reference and
+// the renovated interior is irrelevant.
+//
+// The report also caught a bad figure in circulation: summaries calling this
+// "79.5m, 17 storeys, the first skyscraper in Southeast Asia" have confused it
+// with the CATHAY BUILDING. MacDonald House is 10 storeys and its height is
+// UNPUBLISHED, so the mapped 40m stands.
+//
+// Published: 10 storeys, completed 2 July 1949, Reginald Eyre of Palmer &
+// Turner for the Hongkong & Shanghai Bank, site 140ft x 100ft = 43m x 30m,
+// sand-faced red brick from Alexandra Brickworks, flat roof laid with GREEN
+// GLAZED CHINESE TILES. The strongest street cues, in the report's order: the
+// only large red-brick high-rise on Orchard Road; the rooftop lettering; the
+// white HSBC coat-of-arms plaque centred on the brick; two full-height white
+// stair strips cutting the front into three panels; the cream stone colonnade.
+function macdonaldHouse(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = b.h;
+  const GROUND = 5.6;                       // the rendered podium band
+  const brick = api.mat.redBrick, pale = api.mat.paleStone, trim = api.mat.trim;
+
+  // cream rendered ground-floor podium, visually detached from the brick above
+  api.world.add(api.extrude(b.p, GROUND, pale));
+  // the brick slab
+  api.world.add(api.extrude(b.p, H - GROUND, brick, GROUND));
+  // projecting cornice, then the parapet, then the green-tiled eaves band
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.022), 0.55, H - 0.9), pale, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.006), 0.9, H - 0.35), api.mat.jadeRoof, ob.cx, ob.cz);
+
+  // the street front, found from the plan rather than the oriented box
+  const swd = streetward(api, ob);
+  let bi = -1, best = -Infinity, bl = 0;
+  for (let i = 0; i < b.p.length; i++) {
+    const a = b.p[i], c2 = b.p[(i + 1) % b.p.length];
+    const L = Math.hypot(c2[0] - a[0], c2[1] - a[1]);
+    if (L < 6) continue;
+    const emx = (a[0] + c2[0]) / 2, emz = (a[1] + c2[1]) / 2;
+    const ox = emx - ob.cx, oz = emz - ob.cz, ol = Math.hypot(ox, oz) || 1;
+    const faces = (ox / ol) * swd.nx + (oz / ol) * swd.nz;
+    if (faces <= 0.2) continue;
+    if (L * faces > best) { best = L * faces; bi = i; bl = L; }
+  }
+  if (bi < 0) return;
+  const ea = b.p[bi], ec = b.p[(bi + 1) % b.p.length];
+  const mx = (ea[0] + ec[0]) / 2, mz = (ea[1] + ec[1]) / 2;
+  const oX = mx - ob.cx, oZ = mz - ob.cz, oL = Math.hypot(oX, oZ) || 1;
+  const nX = oX / oL, nZ = oZ / oL, tX = -nZ, tZ = nX;
+  const yaw = Math.atan2(nX, nZ);
+  const at = (mesh, u, y, out) => {
+    mesh.position.set(mx + tX * u + nX * out, y, mz + tZ * u + nZ * out);
+    mesh.rotation.y = yaw;
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    api.world.add(mesh);
+  };
+
+  // The two full-height white stair strips, splitting the front into thirds --
+  // and the hood and balcony that belong to each one.
+  //
+  // THEY ARE BUILT AS A SET OR NOT AT ALL. This building has about a 4m
+  // setback, so on one side the strip's own footprint lies over the
+  // carriageway and pruneCarriageway correctly deletes it -- while the hood,
+  // 49m up, survived and was left projecting over nothing. A composition
+  // element whose parts are filtered independently comes apart: same family as
+  // the taxi rank that kept its sign and lost its rail, except here the
+  // leftover is the part that makes no sense alone.
+  for (const side of [-1, 1]) {
+    const u = side * bl / 6;
+    if (onCarriageway(mx + tX * u + nX * 0.5, mz + tZ * u + nZ * 0.5, 0.3)) continue;
+    at(new THREE.Mesh(new THREE.BoxGeometry(2.6, H - GROUND - 0.6, 0.5), pale),
+       u, g0 + GROUND + (H - GROUND - 0.6) / 2, 0.24);
+    // the small projecting hood each strip carries at parapet level
+    at(new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.4, 1.0), pale),
+       u, g0 + H - 0.5, 0.45);
+    // and the pavement-level balcony carrying the HSBC monogram
+    at(new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.34, 1.5), pale),
+       u, g0 + GROUND + 1.6, 0.75);
+  }
+  // the colonnade of square piers carrying the covered walkway
+  const piers = Math.max(4, Math.round(bl / 4.2));
+  for (let i = 0; i <= piers; i++) {
+    const u = -bl / 2 + (i * bl) / piers;
+    if (onCarriageway(mx + tX * u + nX * 1.5, mz + tZ * u + nZ * 1.5, 0.3)) continue;
+    at(new THREE.Mesh(new THREE.BoxGeometry(0.72, GROUND - 0.35, 0.72), pale),
+       u, g0 + (GROUND - 0.35) / 2, 1.5);
+  }
+  at(new THREE.Mesh(new THREE.BoxGeometry(bl * 0.98, 0.45, 3.2), pale),
+     0, g0 + GROUND - 0.2, 1.1);                      // the walkway soffit
+  // the HSBC coat of arms, white stone, centred on the brick
+  at(new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.8, 0.28), trim),
+     0, g0 + GROUND + 4.2, 0.3);
+  // rooftop lettering, metal capitals along the parapet
+  for (let i = 0; i < 9; i++) {
+    at(new THREE.Mesh(new THREE.BoxGeometry(0.72, 1.0, 0.16), api.mat.darkMetal),
+       -bl * 0.24 + i * (bl * 0.48 / 8), g0 + H + 1.2, 0.2);
+  }
+}
+
+// PERANAKAN PLACE, 180 Orchard Road. Researched 2026-07-29 by agent against
+// URA's Conservation Portal, NLB Infopedia, and three DATED Wikimedia
+// photographs (5 Apr 2024) read directly for the paint -- because the written
+// repaint history is mostly uncited and the sources disagree. Corrections the
+// report made to its own brief, all of which change what gets built:
+//
+//   It is CHINESE BAROQUE commercial shophouse, c.1902, not vernacular
+//   Peranakan housing. "Peranakan Place" is a 1984 commercial rename.
+//   The ground floor is a true ARCADE -- round-headed arches springing from
+//   square fluted piers -- not a post-and-lintel five-foot way.
+//   Emerald Hill Road was PEDESTRIANISED in 1981, so there is no junction
+//   here: the terrace turns a corner onto a paved lane.
+//   The parapet is an OPEN BALUSTRADE of dark bottle-green vase balusters
+//   between cream piers, with the terracotta roof visible THROUGH it.
+//   Only the facade and tilework are original; the 1985 restoration replaced
+//   up to 70% of the decorative work and gutted the interiors.
+//
+// Published: 6 two-storey shophouses fronting Orchard Road, c.1902. Widths
+// and heights are UNPUBLISHED -- the 24.8m frontage and ~8.7m height below are
+// the report's OSM-derived and photogrammetric figures, used because there is
+// nothing better and marked as estimates rather than dressed up as survey.
+function peranakanPlace(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const GROUND = 4.1, UPPER = 4.6;            // photogrammetric, +/-0.5m
+  const cream = api.mat.paleStone, green = api.mat.jadeRoof;
+
+  // ground: the arcade wall, set back so the covered walk runs in front of it
+  api.world.add(api.extrude(api.grow(b.p, 0.94), GROUND, cream));
+  // upper storey in the painted bay texture
+  api.world.add(api.extrude(b.p, UPPER, api.mat.peranakan, GROUND));
+  // the moulded cornice between the floors, and the pitched clay roof behind
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 0.42, GROUND - 0.1), cream, ob.cx, ob.cz);
+  // The roof sits LOW and inset: the report has the terracotta visible
+  // THROUGH the balustrade, so a tall slab standing proud of it inverts the
+  // relationship and reads as a lid.
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.90), 0.85, GROUND + UPPER), api.mat.clayTile, ob.cx, ob.cz);
+
+  // the street frontage, from the plan
+  const swd = streetward(api, ob);
+  let bi = -1, sc = -Infinity, bl = 0;
+  for (let i = 0; i < b.p.length; i++) {
+    const a = b.p[i], c2 = b.p[(i + 1) % b.p.length];
+    const L = Math.hypot(c2[0] - a[0], c2[1] - a[1]);
+    if (L < 4) continue;
+    const emx = (a[0] + c2[0]) / 2, emz = (a[1] + c2[1]) / 2;
+    const ox = emx - ob.cx, oz = emz - ob.cz, ol = Math.hypot(ox, oz) || 1;
+    const faces = (ox / ol) * swd.nx + (oz / ol) * swd.nz;
+    if (faces <= 0.2) continue;
+    if (L * faces > sc) { sc = L * faces; bi = i; bl = L; }
+  }
+  if (bi < 0) return;
+  const ea = b.p[bi], ec = b.p[(bi + 1) % b.p.length];
+  const mx = (ea[0] + ec[0]) / 2, mz = (ea[1] + ec[1]) / 2;
+  const oX = mx - ob.cx, oZ = mz - ob.cz, oL = Math.hypot(oX, oZ) || 1;
+  const nX = oX / oL, nZ = oZ / oL, tX = -nZ, tZ = nX;
+  const yaw = Math.atan2(nX, nZ);
+  const at = (mesh, u, y, out, cast = true) => {
+    mesh.position.set(mx + tX * u + nX * out, y, mz + tZ * u + nZ * out);
+    mesh.rotation.y = yaw;
+    mesh.castShadow = cast; mesh.receiveShadow = true;
+    api.world.add(mesh);
+  };
+
+  // THE ARCADE: one round arch per bay on square fluted piers. Built as a
+  // pier plus a half-cylinder head, because the arch is what the report calls
+  // the only arcaded ground floor on this stretch of Orchard Road.
+  const bays = Math.max(3, Math.round(bl / 4.5));
+  const bw = bl / bays;
+  for (let i = 0; i <= bays; i++) {
+    const u = -bl / 2 + i * bw;
+    if (onCarriageway(mx + tX * u + nX * 1.9, mz + tZ * u + nZ * 1.9, 0.3)) continue;
+    at(new THREE.Mesh(new THREE.BoxGeometry(0.62, GROUND - 1.0, 0.62), cream),
+       u, g0 + (GROUND - 1.0) / 2, 1.9);
+  }
+  for (let i = 0; i < bays; i++) {
+    const u = -bl / 2 + (i + 0.5) * bw;
+    if (onCarriageway(mx + tX * u + nX * 1.9, mz + tZ * u + nZ * 1.9, 0.3)) continue;
+    const arch = new THREE.Mesh(
+      new THREE.CylinderGeometry(bw * 0.44, bw * 0.44, 0.6, 12, 1, false, 0, Math.PI), cream);
+    at(arch, u, g0 + GROUND - 1.0, 1.9);
+    arch.rotation.set(Math.PI / 2, 0, 0);
+    arch.rotation.y = 0;
+    arch.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), yaw);
+  }
+  // the covered walkway's soffit over the arcade
+  at(new THREE.Mesh(new THREE.BoxGeometry(bl, 0.34, 2.4), cream),
+     0, g0 + GROUND - 0.25, 1.35);
+
+  // THE PARAPET BALUSTRADE: dark bottle-green vase balusters between cream
+  // piers, open, with the terracotta roof showing through. This dark dashed
+  // line at eaves level against pale pink is the terrace's signature.
+  const top = g0 + GROUND + UPPER;
+  const nb = Math.max(10, Math.round(bl / 0.62));
+  for (let i = 0; i < nb; i++) {
+    const u = -bl / 2 + (i + 0.5) * (bl / nb);
+    at(new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.15, 0.72, 7), green),
+       u, top + 0.36, 0.12, false);
+  }
+  at(new THREE.Mesh(new THREE.BoxGeometry(bl, 0.16, 0.5), cream), 0, top + 0.80, 0.12);
+  at(new THREE.Mesh(new THREE.BoxGeometry(bl, 0.18, 0.55), cream), 0, top + 0.02, 0.12);
+  for (let i = 0; i <= bays; i++) {
+    at(new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.15, 0.5), cream),
+       -bl / 2 + i * bw, top + 0.58, 0.12);
+  }
+}
+
 export const RECIPES = [
+  [/peranakan place/i, peranakanPlace],
+  [/^macdonald house|^macdonald hse/i, macdonaldHouse],
+  [/^liat tower/i, liatTowers],
+  [/^the cathay$|^cathay building|cathay building/i, theCathay],
   [/the centrepoint|^centrepoint/i, theCentrepoint],
   [/raffles city|swissotel|fairmont singapore|westin plaza/i, rafflesCity],
 

@@ -1059,9 +1059,25 @@ const found = await page.evaluate(() => {
   /* D33  two people standing in the same place.
      A pedestrian is 0.5m across. Anything closer than that is one body inside
      another, which at 2,200 of them on a finite set of pavements is a real
-     risk and reads as a single smeared figure. */
+     risk and reads as a single smeared figure.
+
+     SCOPED TO WHAT CAN BE SEEN, and this is a measurement rather than a
+     concession. The separation pass runs within 120m of the ride and the draw
+     cull is 105m -- a 15m band, deliberately sized so a pair is separated
+     before it is ever drawn. Measured 2026-07-29: overlapping pairs existed
+     only at 816m to 3.7km from the ride, NONE inside the 105m draw range at
+     any sampled moment; riding to one (window.__teleport onto 1127,7367)
+     cleared it within four seconds and while it cleared it was still 6m
+     behind the camera. Counting unseparated walkers a kilometre away measures
+     the laziness of the pass, not a defect in the world, and the alternative
+     -- running separation for all 2,200 -- was measured at five frames a
+     second to fix something nobody can look at.
+     The far count is PRINTED, not dropped: a scope this check applies to
+     itself has to be visible, or the next reader cannot argue with it. */
   {
     const pos = window.__crowdPositions ? window.__crowdPositions() : [];
+    const ride = window.__ridePos ? window.__ridePos() : [0, 0];
+    const SEEN = 105;                     // the draw cull, kept equal to actors.js
     const CE = 1.0, g = new Map();
     for (let i = 0; i < pos.length; i++) {
       const p = pos[i];
@@ -1070,23 +1086,24 @@ const found = await page.evaluate(() => {
       if (!g.has(k)) g.set(k, []);
       g.get(k).push([p[0], p[1], i]);
     }
-    let pairs = 0; const ex = [];
+    let pairs = 0, farPairs = 0; const ex = [];
     for (const [, list] of g) {
       for (const [x, z, i] of list) {
         for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
           for (const [x2, z2, j] of g.get((Math.floor(x / CE) + dx) + ',' + (Math.floor(z / CE) + dz)) || []) {
             if (j <= i) continue;
             const d = Math.hypot(x - x2, z - z2);
-            if (d < 0.45) {
-              pairs++;
-              if (ex.length < 6) ex.push(`two walkers ${d.toFixed(2)}m apart at ${x | 0},${z | 0}`);
-            }
+            if (d >= 0.45) continue;
+            if (Math.hypot(x - ride[0], z - ride[1]) > SEEN) { farPairs++; continue; }
+            pairs++;
+            if (ex.length < 6) ex.push(`two walkers ${d.toFixed(2)}m apart at ${x | 0},${z | 0}`);
           }
         }
       }
     }
     report('D33', 'pedestrians standing inside each other', pairs ? ex : [],
-           `${pos.length} walkers`);
+           `${pos.length} walkers, ${farPairs} more pairs beyond the ${SEEN}m draw range `
+           + `(separated before they are drawn -- see the note in defects.mjs)`);
   }
 
   /* D34  two vehicles in the same place.

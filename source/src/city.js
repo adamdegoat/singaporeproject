@@ -1,7 +1,7 @@
 // Build the street from real OSM geometry: extruded footprints, road ribbons,
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, texCentrepointPanel, rng } from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, rng } from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV } from './landmarks.js';
 
 export const TEX = {
@@ -193,6 +193,21 @@ const LMAT = {
 LMAT.darkCurtain = new THREE.MeshStandardMaterial({ map: texCurtain(0x39424c, 0x262b30), roughness: 0.30, metalness: 0.18 });
 LMAT.centrePanel = new THREE.MeshStandardMaterial({ map: texCentrepointPanel(), roughness: 0.55 });
 LMAT.darkCurtain.userData.tile = [26, 28];
+// Liat Towers' 2016 Hermes shell: ALUCOBOND "Beige" + "Sparkling Ivory",
+// which reads as off-white ivory with a faint metallic sheen -- published by
+// the panel maker, so it is a surveyed colour, not a chosen one.
+LMAT.ivory = new THREE.MeshStandardMaterial({ map: texConcrete(0xe8e2d6, 0.18), roughness: 0.42, metalness: 0.10 });
+LMAT.bronze = new THREE.MeshStandardMaterial({ color: 0x6e5433, roughness: 0.45, metalness: 0.55 });
+LMAT.ivory.userData.tile = [9, 9];
+// MacDonald House: one tile is one 3.9m structural bay by a 3.5m floor
+LMAT.redBrick = new THREE.MeshStandardMaterial({ map: texRedBrick(), roughness: 0.88 });
+LMAT.redBrick.userData.tile = [3.9, 3.5];
+// Peranakan Place: one tile is ONE BAY -- ~4.5m wide by the ~4.6m upper
+// storey, from the OSM-derived 24.8m frontage over 6 units.
+LMAT.peranakan = new THREE.MeshStandardMaterial({ map: texPeranakan(false), roughness: 0.86 });
+LMAT.peranakanWhite = new THREE.MeshStandardMaterial({ map: texPeranakan(true), roughness: 0.86 });
+LMAT.peranakan.userData.tile = [4.5, 4.6];
+LMAT.peranakanWhite.userData.tile = [4.5, 4.6];
 LMAT.granite.userData.tile = [26, 26];
 LMAT.granitePanel.userData.tile = [3.8, 3.2];
 LMAT.towerGlass.userData.tile = [26, 38.4];
@@ -536,7 +551,8 @@ export function buildBuildings(world, data) {
     // terrain instead of on y=0. Without it every hand-placed piece floats or
     // sinks the moment its building is on a grade.
     groundAt: (x, z) => TERRAIN.at(x, z),
-    mat: { ...LMAT, trim: MAT.trim, conc: MAT.conc, paving: MAT.paving, metal: MAT.metal },
+    mat: { ...LMAT, trim: MAT.trim, conc: MAT.conc, paving: MAT.paving, metal: MAT.metal,
+           darkMetal: MAT.darkMetal },
   };
   // VET MODES. `?solo=<text>` builds only the buildings whose name contains
   // that text, and `?norecipe` forces every one of them through the generic
