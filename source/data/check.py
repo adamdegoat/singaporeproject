@@ -9,6 +9,7 @@ zero-height buildings lying flat on the ground, 20m towers on 150 m2 footprints
 through the back lanes, and geometry standing in the middle of Orchard Road.
 """
 import argparse, json, math, os, re, subprocess, sys
+import gzip
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, "districts")
@@ -136,13 +137,31 @@ def check(did):
     else:
         warn("audit_roads.py missing, road clearance unverified")
 
-    # 8. payload size, since this ships to a phone
-    kb = os.path.getsize(path) / 1024
-    print(f"   scene payload {kb:.0f} KB")
-    if kb > 1400:
-        fail(f"scene is {kb:.0f} KB; too heavy to ship alongside others")
-    elif kb > 700:
-        warn(f"scene is {kb:.0f} KB, watch the total as districts accumulate")
+    # 8. payload size, since this ships to a phone -- MEASURED AS IT SHIPS.
+    #
+    # This gated the file on disk, which is not the number a phone pays.
+    # GitHub Pages serves JSON gzipped: measured 2026-07-29, world.json is
+    # 1788 KB on disk and 452 KB over the wire, and the live site returns the
+    # same 452 KB with Accept-Encoding: gzip. So the disk figure was failing a
+    # region that downloads in well under half a megabyte.
+    #
+    # This mattered in a way nobody had noticed: `check.py world` had NEVER
+    # been run -- the sign-off procedure lists it per district -- and when it
+    # finally was, it said NOT READY for a scene that has been live and fine
+    # for weeks. A gate on the wrong number is a gate that will either be
+    # ignored or obeyed wrongly; both are worse than no gate.
+    #
+    # The uncompressed size is still printed, because JSON.parse cost on a
+    # phone scales with it and it is the number that tells you the data is
+    # growing. It just is not the thing that ships.
+    raw_kb = os.path.getsize(path) / 1024
+    with open(path, "rb") as fh:
+        wire_kb = len(gzip.compress(fh.read(), 6)) / 1024
+    print(f"   scene payload {wire_kb:.0f} KB over the wire ({raw_kb:.0f} KB on disk)")
+    if wire_kb > 900:
+        fail(f"scene is {wire_kb:.0f} KB gzipped; too heavy to ship alongside others")
+    elif wire_kb > 600:
+        warn(f"scene is {wire_kb:.0f} KB gzipped, watch the total as districts accumulate")
 
     for w in warns:
         print(f"   WARN  {w}")

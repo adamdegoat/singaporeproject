@@ -16,6 +16,9 @@ import { texStreetName } from './wayfind.js';
 // ever coplanar.
 const ROAD_Y = 0.055;
 const MARK = {
+  // dots sit BELOW the zebra layer: they are the same class of marking and
+  // sharing a height made every overlap a coplanar pair (P6 11 -> 50)
+  dots: ROAD_Y + 0.014,
   zebra: ROAD_Y + 0.020, dash: ROAD_Y + 0.026, yellow: ROAD_Y + 0.032,
   edge: ROAD_Y + 0.038, stop: ROAD_Y + 0.044, arrow: ROAD_Y + 0.050,
   arrowHead: ROAD_Y + 0.056,
@@ -50,8 +53,50 @@ function onTarmac(list) {
   return list.filter((r) => window.__onRoad(r[0], r[2], 0.15));
 }
 
+// TWO MARKINGS MAY NOT LIE ON THE SAME GROUND.
+//
+// `claim` is a single-cell hash -- Math.round(x/cell) -- so it thins markings
+// per cell but never guarantees a spacing: two points 18cm apart that straddle
+// a cell boundary both succeed. That was tolerable while dashes covered 3
+// metres in 9; at the real LTA proportion of 4 in 6 there are twice as many of
+// them, and every street seam where two axes dress the same tarmac started
+// producing pairs 2mm apart in height (P6 11 -> 41).
+//
+// Deduped here, at the point P6 measures, rather than by making `claim`
+// neighbourhood-aware: that would change every placement decision in the world
+// -- trees, lamps, kerbs, furniture -- and is a deliberate reshuffle owed its
+// own batch and its own re-baselining, not a side effect of painting lines.
+function dedupeFlat(list) {
+  // Checks the 3x3 CELL NEIGHBOURHOOD, not one cell. The first version of this
+  // function hashed a single rounded cell -- and so reproduced, exactly, the
+  // `claim` bug it was written to work around: two marks 18cm apart either
+  // side of a cell boundary hash differently and both survive. P6 measures a
+  // real distance, so the dedupe has to as well.
+  const CELL = 0.25, LIM = 0.18 * 0.18;
+  const grid = new Map();
+  const out = [];
+  for (const r of list) {
+    const cx = Math.round(r[0] / CELL), cz = Math.round(r[2] / CELL);
+    let dup = false;
+    for (let dx = -1; dx <= 1 && !dup; dx++)
+      for (let dz = -1; dz <= 1 && !dup; dz++) {
+        const list2 = grid.get((cx + dx) + ',' + (cz + dz));
+        if (!list2) continue;
+        for (const q of list2)
+          if (Math.abs(q[2] - r[1]) < 0.006
+              && (q[0] - r[0]) ** 2 + (q[1] - r[2]) ** 2 < LIM) { dup = true; break; }
+      }
+    if (dup) continue;
+    const k = cx + ',' + cz;
+    if (!grid.has(k)) grid.set(k, []);
+    grid.get(k).push([r[0], r[2], r[1]]);
+    out.push(r);
+  }
+  return out;
+}
+
 function emitFlat(world, list, w, l, mat) {
-  list = onTarmac(dry(list));
+  list = dedupeFlat(onTarmac(dry(list)));
   if (!list.length) return 0;
   const geo = new THREE.PlaneGeometry(w, l);
   const im = new THREE.InstancedMesh(geo, mat, list.length);
@@ -208,8 +253,16 @@ export function buildMarkings(world, axis, data = {}) {
       dividers.length = 0;
       for (const d2 of dividers2) dividers.push(d2);
 
-      // dashed lane dividers: 3m mark, 6m gap, at the real lane positions
-      if (acc % 9 < 3) {
+      // Dashed lane dividers at the real lane positions.
+      //
+      // LTA SDRE Ch.8 Type B, which is the standard lane line on every road in
+      // Singapore that is not an expressway: **100mm wide, 4m mark, 2m gap.**
+      // This was drawn 140mm wide with a 3m mark and a 6m GAP -- the inverse
+      // proportion -- so every street in the world read as sparse short ticks
+      // where the real thing is a long dash with a short break. It is the most
+      // repeated single marking in the district, so it was also the most
+      // repeated error. (Type B1, 10m/2m, is expressway only and we have none.)
+      if (acc % 6 < 4) {
         for (const off of dividers) {
           if (claim('dash', px + nx * off, pz + nz * off, 1.2))
             dash.push([px + nx * off, MARK.dash, pz + nz * off, ang]);
@@ -247,7 +300,7 @@ export function buildMarkings(world, axis, data = {}) {
   }
 
   let n = 0;
-  n += emitFlat(world, dash, 0.14, 1.0, WHITE);
+  n += emitFlat(world, dash, 0.10, 1.0, WHITE);   // LTA Type B is 100mm
   n += emitFlat(world, edge, 0.12, 2.0, WHITE);
   n += emitFlat(world, yellowL, 0.10, 2.0, YELLOW);
   n += emitFlat(world, stopL, 0.42, half * 0.92, WHITE);
@@ -472,6 +525,7 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
   // 35 on Orchard Road itself were being used. The other 465 are on the streets
   // running off it, which is exactly where you meet them when you turn a corner.
   let zebra = [];
+  const dots = [];          // signalised-crossing boundary squares
   const axisHalf = axis.w / 2;
   for (const c of (data.crossings || [])) {
     const [cx, cz] = c;
@@ -491,10 +545,38 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
     const ux = vx / L, uz = vz / L;
     const ox = a1[0] + vx * bt, oz = a1[1] + vz * bt;
     const ang = Math.atan2(ux, uz) + Math.PI / 2;
-    const bars = Math.max(3, Math.round(hw * 1.6));
-    for (let k = -bars; k <= bars; k += 2) {
-      if (claim('zebra', ox + ux * k * 0.42, oz + uz * k * 0.42, 0.5))
-        zebra.push([ox + ux * k * 0.42, MARK.zebra, oz + uz * k * 0.42, ang, hw * 2]);
+    // WHAT KIND OF CROSSING, from the map (process.py element 4):
+    //   0 unmarked -- nothing is painted, so paint nothing
+    //   1 signalised -- LTA SDRE TMM4: TWO DOTTED WHITE BOUNDARY LINES and no
+    //     bars, a 3m corridor (1.5m either side of the centreline), squares
+    //     200mm with 300mm gaps. This is most of Orchard Road and Bras Basah.
+    //   2 zebra -- the bars, which belong only on an UNSIGNALISED crossing
+    const kind = c.length > 4 ? c[4] : 1;
+    if (kind === 0) { sideCrossings++; continue; }
+    if (kind === 2) {
+      const bars = Math.max(3, Math.round(hw * 1.6));
+      for (let k = -bars; k <= bars; k += 2) {
+        if (claim('zebra', ox + ux * k * 0.42, oz + uz * k * 0.42, 0.5))
+          zebra.push([ox + ux * k * 0.42, MARK.zebra, oz + uz * k * 0.42, ang, hw * 2]);
+      }
+    } else {
+      // the two boundary lines, each a dotted run ACROSS the carriageway at
+      // +/-1.5m of the crossing centre
+      for (const side of [-1.5, 1.5]) {
+        const bx = ox + ux * side, bz = oz + uz * side;
+        const n = Math.max(4, Math.round((hw * 2) / 0.5));
+        for (let k = 0; k < n; k++) {
+          // 200mm square, 300mm gap = one mark per 500mm across the road
+          const f = -hw + (k + 0.5) * ((hw * 2) / n);
+          const px2 = bx - uz * f, pz2 = bz + ux * f;
+          // SAME CLAIM KEY as the axis pass in main.js. Two different keys
+          // meant the axis and the side streets could each paint the same
+          // junction's boundary line, and 40 squares per crossing made every
+          // one of those overlaps a coplanar pair (P6 11 -> 50).
+          if (claim('xdot', px2, pz2, 0.44))
+            dots.push([px2, MARK.dots, pz2, ang]);
+        }
+      }
     }
     sideCrossings++;
   }
@@ -511,6 +593,12 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
   };
   const yaw = (r) => { p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
   emit(new THREE.BoxGeometry(0.38, 0.3, 4.0), MAT.kerb, kerb, yaw);
+
+  // The signalised crossings' boundary squares: 200mm, flat, one instanced
+  // mesh for the whole district. There are far more of these than zebras --
+  // 416 signalised nodes against 33 zebras -- so this is now the marking a
+  // rider meets at almost every junction.
+  emitFlat(world, dots, 0.20, 0.20, WHITE);
 
   // one bar geometry, stretched per crossing to the width of its own road
   if (zebra.length) {

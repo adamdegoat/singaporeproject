@@ -5,6 +5,26 @@
 // out. See data/terrain.py.
 import * as THREE from '../lib/three.module.js';
 
+// How closely the drawn ground has to track the bilinear surface, in metres.
+//
+// 1.5cm, and it MUST stay there. It was relaxed to 3cm to buy triangles after
+// the street sweep failed F4, on the reasoning that carve() is what keeps the
+// ground out of the road so the surface itself could be coarser. Measured, that
+// reasoning is wrong: Marina Bay's P8 went 19 -> 24 at 3cm and 19 -> 21 at 2cm,
+// and sits exactly on its budget of 19 at 1.5cm. Marina Bay's DEM is the one
+// contaminated by tower roofs, so it has the least headroom anywhere and it is
+// the district that decides this number.
+//
+// The triangles were bought back by TILING instead, which costs no accuracy at
+// all: at the sweep's heaviest view the road surface went from 279k visible
+// triangles to 2.6k, and the terrain culls entirely.
+const TARGET = 0.015;
+// Terrain is emitted in tiles of this many grid cells so it FRUSTUM-CULLS.
+// One mesh spanning the district is never culled -- WORKFLOW.md records this
+// costing 51fps to 33 when building geometry was merged globally, and the same
+// trap caught the ground the moment subdivision made it big.
+const TILE = 3;                        // 3 x 35m cells ~ 105m, the merger's tile size
+
 export class Terrain {
   constructor(grid) {
     this.g = grid || null;
@@ -109,7 +129,7 @@ export class Terrain {
     const a = h[j * g.nx + i], b = h[j * g.nx + i + 1];
     const c = h[(j + 1) * g.nx + i], d = h[(j + 1) * g.nx + i + 1];
     const twist = Math.abs(a + d - b - c) / 4;
-    const need = Math.sqrt(twist / 0.015);
+    const need = Math.sqrt(twist / TARGET);
     for (const n of [1, 2, 3, 4, 6, 8, 12]) if (n >= need) return n;
     return 12;
   }
@@ -150,50 +170,65 @@ export class Terrain {
       m.receiveShadow = true;
       return m;
     }
-    // Adaptive grid: each cell subdivided per its twist, vertices welded on a
-    // 1/24-cell key so the surface is indexed and the normals smooth.
-    const verts = new Map();     // "qx,qz" -> index, q in 24ths of a cell
-    const pos = [], idx = [];
-    const vid = (qx, qz) => {
-      const k = qx + ',' + qz;
-      let id = verts.get(k);
-      if (id === undefined) {
-        id = pos.length / 3;
-        const x = g.x0 + (qx / 24) * g.cell, z = g.z0 + (qz / 24) * g.cell;
-        pos.push(x, this.vertexY(x, z), z);
-        verts.set(k, id);
-      }
-      return id;
-    };
-    for (let j = 0; j < g.nz - 1; j++) {
-      for (let i = 0; i < g.nx - 1; i++) {
-        const n = this.subdiv(i, j), q = 24 / n;
-        for (let sj = 0; sj < n; sj++) {
-          for (let si = 0; si < n; si++) {
-            const x0 = i * 24 + si * q, z0 = j * 24 + sj * q;
-            const v00 = vid(x0, z0), v10 = vid(x0 + q, z0);
-            const v01 = vid(x0, z0 + q), v11 = vid(x0 + q, z0 + q);
-            // KEEP IN STEP with atDrawn()
-            idx.push(v00, v01, v10, v10, v01, v11);
+    // Adaptive grid in SPATIAL TILES, each cell subdivided per its twist, and
+    // vertices welded on a 1/24-cell key so each tile is indexed and its
+    // normals are smooth.
+    //
+    // Tiles share their edge vertices by VALUE rather than by index -- two
+    // neighbouring tiles compute the same vertexY() at the same key, so the
+    // seam closes exactly even though each tile owns its own buffer. Normals
+    // are computed per tile, so a seam vertex has only its own tile's faces
+    // and its normal differs slightly across the join; on a ground plane lit
+    // by one sun that is invisible, and it is the price of culling.
+    const group = new THREE.Group();
+    group.name = 'terrainSurface';
+    for (let tj = 0; tj < g.nz - 1; tj += TILE) {
+      for (let ti = 0; ti < g.nx - 1; ti += TILE) {
+        const verts = new Map();   // "qx,qz" -> index within THIS tile
+        const pos = [], idx = [];
+        const vid = (qx, qz) => {
+          const k = qx + ',' + qz;
+          let id = verts.get(k);
+          if (id === undefined) {
+            id = pos.length / 3;
+            const x = g.x0 + (qx / 24) * g.cell, z = g.z0 + (qz / 24) * g.cell;
+            pos.push(x, this.vertexY(x, z), z);
+            verts.set(k, id);
+          }
+          return id;
+        };
+        const jEnd = Math.min(tj + TILE, g.nz - 1), iEnd = Math.min(ti + TILE, g.nx - 1);
+        for (let j = tj; j < jEnd; j++) {
+          for (let i = ti; i < iEnd; i++) {
+            const n = this.subdiv(i, j), q = 24 / n;
+            for (let sj = 0; sj < n; sj++) {
+              for (let si = 0; si < n; si++) {
+                const x0 = i * 24 + si * q, z0 = j * 24 + sj * q;
+                const v00 = vid(x0, z0), v10 = vid(x0 + q, z0);
+                const v01 = vid(x0, z0 + q), v11 = vid(x0 + q, z0 + q);
+                // KEEP IN STEP with atDrawn()
+                idx.push(v00, v01, v10, v10, v01, v11);
+              }
+            }
           }
         }
+        if (!idx.length) continue;
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setIndex(idx);
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, material);
+        // Every tile keeps the NAME, because the audit identifies the ground by
+        // it. P1b was reporting the heightfield as "structure in a carriageway"
+        // wherever the ground surfaces within 6cm of the tarmac -- the ground is
+        // not structure, and P8 owns that question. A rename here silently
+        // turns the ground back into structure for every check in the file.
+        mesh.name = 'terrainSurface';
+        mesh.receiveShadow = true;
+        group.add(mesh);
       }
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    geo.setIndex(idx);
-    geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, material);
-    // Named so the audit can tell the GROUND apart from structure standing on
-    // it. P1b was reporting the heightfield as "structure in a carriageway"
-    // wherever the ground surfaces within 6cm of the tarmac -- but the ground is
-    // not structure, and P8 ("ground standing through the carriageway") is the
-    // check that owns exactly that question and measures it properly, at 10 of
-    // a 60 budget. Two checks counting the same thing means fixing it twice and
-    // believing it once.
-    mesh.name = 'terrainSurface';
-    mesh.receiveShadow = true;
-    return mesh;
+    return group;
   }
 
   // a skirt beyond the sampled area, so the world does not end in a cliff

@@ -11,7 +11,36 @@ canopies, shophouse colonnades) because that geometry ignores roads entirely.
 import json, math, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SCENE = os.environ.get("SG_SCENE") or os.path.join(HERE, "orchard.json")
+
+# THE ARGUMENT WAS BEING IGNORED, and it is a sign-off step.
+#
+# This read SG_SCENE or fell back to orchard.json, and took no argv at all --
+# while STANDARD.md documents step 3 of signing off a district as
+# `python3 data/audit_roads.py <id>`. So running it for three districts ran it
+# against ORCHARD three times and printed three identical reports, which is
+# exactly what happened on 2026-07-29: the same four Selegie hotels came back
+# for orchard, brasbasah AND marinabay before anyone noticed the lists were
+# character-for-character equal.
+#
+# Same family as audit_world.js fetching ./data/orchard.json whatever the app
+# had loaded. A check that silently answers about the wrong world is worse than
+# no check, because it reports PASS for ground nobody has looked at.
+#
+# An id ("world", "brasbasah") or a path both work now, from argv or SG_SCENE,
+# and an id that does not resolve is a hard error rather than a silent default.
+def _resolve(v):
+    if not v:
+        return os.path.join(HERE, "orchard.json")
+    if os.path.sep in v or v.endswith(".json"):
+        return v
+    p = os.path.join(HERE, v + ".json")
+    if not os.path.exists(p):
+        sys.exit(f"audit_roads: no scene called {v!r} ({p} does not exist)")
+    return p
+
+_arg = next((a for a in sys.argv[1:] if not a.startswith("-")), None)
+SCENE = _resolve(_arg or os.environ.get("SG_SCENE"))
+print(f"== audit_roads {os.path.basename(SCENE)}")
 DATA = json.load(open(SCENE))
 
 HOTEL_RE = re.compile(r"hotel|hyatt|hilton|marriott|four seasons|pullman|voco|royal plaza|"

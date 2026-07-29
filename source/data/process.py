@@ -548,7 +548,39 @@ def main():
                 # and none was built, so every wide crossing read as an
                 # unbroken run of tarmac.
                 isl = 1 if tags.get("crossing:island") == "yes" else 0
-                crossings.append([round(x, 1), round(z, 1), tp, isl])
+                # WHAT THE CROSSING IS PAINTED LIKE, which is not one thing.
+                #
+                # Every crossing in this world was drawn as a ZEBRA. In
+                # Singapore that is wrong for most of them: LTA SDRE Ch.9
+                # (TMM4) marks a SIGNALISED crossing -- the red-man/green-man
+                # kind -- with two dotted white boundary lines and NO bars at
+                # all, and only an unsignalised crossing gets the bars. The
+                # extract says which: 416 nodes carry crossing=traffic_signals
+                # against 33 zebras, and 211 more say they are unmarked or
+                # carry crossing:markings=no. So the great majority of the
+                # street was painted with a marking that does not exist there.
+                #
+                # FIFTH instance of real data present and unused, after the
+                # crossings themselves, sidewalk=, oneway= and level=.
+                #
+                #   0 unmarked   1 signalised (dotted boundary lines)   2 zebra
+                cr = (tags.get("crossing") or "").lower()
+                mk = (tags.get("crossing:markings") or "").lower()
+                if cr == "traffic_signals" or tags.get("crossing:signals") == "yes":
+                    kind = 1
+                elif cr == "zebra" or mk.startswith("zebra"):
+                    kind = 2
+                elif cr == "unmarked" or mk == "no":
+                    kind = 0
+                elif mk == "dots":
+                    kind = 1
+                elif cr in ("marked", "uncontrolled") or mk == "yes":
+                    # marked but the map does not say how. Singapore's default
+                    # on a road with signals is the dotted pair; without, bars.
+                    kind = 1
+                else:
+                    kind = 1
+                crossings.append([round(x, 1), round(z, 1), tp, isl, kind])
             elif hw == "traffic_signals":
                 x, z = proj(e["lat"], e["lon"])
                 signals.append([round(x, 1), round(z, 1)])

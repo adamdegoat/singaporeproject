@@ -1053,9 +1053,37 @@ export function buildRoads(world, data) {
       }
     }
   }
+  // ONE MESH PER LAYER PER ~110m TILE, not one mesh per layer.
+  //
+  // These layers used to be a single mesh spanning the whole district, which
+  // is one draw call and never frustum-culls. That was a good trade while the
+  // road was a flat ribbon; it stopped being one when the ribbon gained
+  // cross-width strips and the tarmac reached 279k triangles, every one of
+  // them submitted from every camera position in the world. The street sweep
+  // caught it as F4, 2.74M triangles against a 1.6M budget.
+  //
+  // Same rule and same tile size as the building merger and the terrain, for
+  // the reason WORKFLOW.md already gives: merging globally defeats culling,
+  // and it cost 51fps to 33 the last time this project learned it.
+  const TILE = 110;
   const merge = (geos, mat, name) => {
     if (!geos.length) return;
-    // one draw call for the whole layer
+    const buckets = new Map();
+    for (const g of geos) {
+      const p = g.attributes.position;
+      if (!p || !p.count) continue;
+      // the ribbon's own midpoint decides its tile; a way longer than a tile
+      // simply lands in one of them, which is what the merger does too
+      let sx = 0, sz = 0;
+      for (let i = 0; i < p.count; i++) { sx += p.getX(i); sz += p.getZ(i); }
+      const k = Math.round(sx / p.count / TILE) + ',' + Math.round(sz / p.count / TILE);
+      if (!buckets.has(k)) buckets.set(k, []);
+      buckets.get(k).push(g);
+    }
+    for (const list of buckets.values()) mergeOne(list, mat, name);
+  };
+  const mergeOne = (geos, mat, name) => {
+    if (!geos.length) return;
     let total = 0;
     for (const g of geos) total += g.attributes.position.count;
     const pos = new Float32Array(total * 3), uv = new Float32Array(total * 2);

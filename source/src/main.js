@@ -236,7 +236,7 @@ function dressStreet(data, axis) {
   const dataRef = data;
   const pts = axis.p, half = axis.w / 2;
   const trees = new TreeField();
-  const kerbT = [], lampT = [], armT = [], headT = [], zebraT = [];
+  const kerbT = [], lampT = [], armT = [], headT = [], zebraT = [], dotT = [];
   const crossingS = [];
 
   let acc = 0;
@@ -292,7 +292,40 @@ function dressStreet(data, axis) {
     const ux2 = vx / L, uz2 = vz / L, nx2 = -uz2, nz2 = ux2;
     const ox = x1 + vx * bt, oz = z1 + vz * bt;
     const ang2 = Math.atan2(ux2, uz2);
-    for (let s2 = -3; s2 <= 3; s2++) {
+    // WHAT KIND OF CROSSING (process.py element 4). A SIGNALISED crossing in
+    // Singapore has no bars at all -- LTA SDRE TMM4 marks it with two dotted
+    // white boundary lines -- and 431 of Orchard's 500 crossing nodes are
+    // signalised against 13 zebras. Painting bars on all of them put a zebra
+    // at every junction on a street that has almost none.
+    //
+    // The side streets are handled by the same rule in markings.js; this is
+    // the main axis, which is dressed separately and would otherwise have gone
+    // on disagreeing with its own side roads about what a crossing looks like.
+    // ONLY THE PAINT DEPENDS ON THE KIND. The first version returned early
+    // here, which skipped the crossing REGISTRATION below -- so 431 of
+    // Orchard's 500 crossings stopped existing as crossings at all: no
+    // tactile paving, no refuge island, and the crowd had nowhere legitimate
+    // to step onto the road. A2 caught it as "real data present but unused",
+    // which is exactly what it had become.
+    const ckind = c.length > 4 ? c[4] : 1;
+    if (ckind === 1) {
+      // the two boundary lines, 1.5m either side of the crossing centre
+      for (const sideOff of [-1.5, 1.5]) {
+        const bx0 = ox + ux2 * sideOff, bz0 = oz + uz2 * sideOff;
+        let ba0 = ang2;
+        if (window.__roadDirAt) {
+          const rd0 = window.__roadDirAt(bx0, bz0);
+          if (rd0 && (rd0[0] || rd0[1])) ba0 = Math.atan2(rd0[0], rd0[1]);
+        }
+        const nsq = Math.max(4, Math.round(axis.w / 0.5));
+        for (let k = 0; k < nsq; k++) {
+          const f = -axis.w / 2 + (k + 0.5) * (axis.w / nsq);
+          if (claim('xdot', bx0 - uz2 * f, bz0 + ux2 * f, 0.44))
+            dotT.push([bx0 - uz2 * f, 0.069, bz0 + ux2 * f, ba0 + Math.PI / 2]);
+        }
+      }
+    }
+    for (let s2 = -3; ckind === 2 && s2 <= 3; s2++) {
       const bx = ox + ux2 * s2 * 1.3, bz = oz + uz2 * s2 * 1.3;
       // Each bar takes the street's direction AT ITS OWN POSITION, not at the
       // middle of the crossing. The bars spread nearly four metres along the
@@ -384,6 +417,24 @@ function dressStreet(data, axis) {
   });
   emit(new THREE.BoxGeometry(1.0, 0.2, 0.44), MAT.trim, headT, (r) => {
     p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+  });
+  // Same ground-sharing rule as markings.js: `claim` is a single-cell hash and
+  // lets near-boundary pairs through, so the axis pass drops any square that
+  // already has one within 20cm at the same height.
+  const dedupeFlatT = (list) => {
+    const seen = new Map(), out = [];
+    for (const r of list) {
+      const k = Math.round(r[0] / 0.2) + ',' + Math.round(r[2] / 0.2);
+      const y = seen.get(k);
+      if (y !== undefined && Math.abs(y - r[1]) < 0.006) continue;
+      seen.set(k, r[1]); out.push(r);
+    }
+    return out;
+  };
+  // signalised-crossing boundary squares: 200mm, LTA SDRE TMM4
+  emit(new THREE.PlaneGeometry(0.20, 0.20), MAT.white, dedupeFlatT(dotT), (r) => {
+    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
+    e.set(-Math.PI / 2, r[3], 0, 'YXZ'); q.setFromEuler(e);
   });
   emit(new THREE.PlaneGeometry(0.62, axis.w), MAT.white, zebraT, (r) => {
     p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);

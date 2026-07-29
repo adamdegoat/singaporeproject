@@ -173,6 +173,14 @@ for researching before modelling rather than after:
   Filter the probe, do not truncate it — "print the thing, not a number near
   the thing" applies to the harness as much as to the world.
 
+**Worth a look, not yet investigated:** comparison-sheet frame 12 (Dhoby Ghaut,
+the east end at Plaza Singapura) shows several large PALE UNTEXTURED BOXES in
+the middle ground. Frame 05 in the same run is healthy -- shopfronts, textured
+facades, bus lane, crowd -- so this is not a general facade regression. Most
+likely it is `buildSurround`'s deliberately featureless massing reaching closer
+to the camera than intended at the district edge, but it was NOT measured.
+Check whether those meshes are the surround or real buildings before assuming.
+
 ### THE ONE OPEN BUG, found and NOT fixed: D36, and it is user-visible
 
 **A pedestrian stands in the carriageway, right beside you, and stays there.**
