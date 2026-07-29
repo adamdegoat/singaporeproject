@@ -1,5 +1,27 @@
 # HANDOVER — state as of 2026-07-29 (late night)
 
+## LOD v1+v2 SHIPPED (this deploy): the heat lever that costs nothing visible.
+Two culls, both OFF in RAW/audit mode and via ?nolod, both ticked every 250ms
+only after the camera moves 8m: (1) consolidated tiles whose contents are all
+under 4m (kerbs, markings, furniture) hide beyond 500m — worth only ~7 draws
+(frustum culling already had them). (2) THE REAL ONE: per-instance distance
+culling of every STATIC InstancedMesh (trees/lamps/posts/stripes). Those sets
+span the region in one bounding sphere, so every leaf was vertex-shaded every
+frame in BOTH passes regardless of view. Compaction from a boot snapshot
+(matrices + instanceColor), radius by piece size (300/450/600m). Excluded BY
+MECHANISM: crowd (userData.crowdPart), traffic (frustumCulled=false), signal
+lensMesh (Signals addresses instances BY INDEX — compaction would move the
+green light). Placement hash is stored as a string at boot, so post-boot
+compaction cannot corrupt the determinism gate. MEASURED at spawn: 3161k ->
+2189k drawn tris (-31%), pixel-diff on/off at three orientations = 0.000%
+(FogExp2 0.0038 is ~3% transmittance at 500m — the cull ranges live inside
+the haze). Next LOD candidates if more heat relief is wanted: far building
+recipe detail, shophouse window rects, shadow-map draw distance.
+
+## Streaming decision (world5 measured): heap 527MB five-district merge =
+## NOT shippable as one load. Stream-first confirmed. Design in WORKFLOW.md;
+## per-district chunks emitted by merge.py is the next build step.
+
 ## OPEN, user-observed, mechanism identified: THE START HANG hits the whole
 ## world (pedestrians freeze too — user report), not just the controls. The
 ## boot warm-up renders ONE view; every tile entering the frustum for the

@@ -608,6 +608,15 @@ scene.add(bike);
 let S = newState(0, 0, 0);
 let ready = false, stats = {};
 let crowdSys = null, trafficSys = null, wayfinder = null, signals = null;
+// merged tiles of sub-4m detail, hidden beyond LOD_FAR (see the LOD pass)
+const LODT = [];
+const LOD_FAR = 500;
+// static instanced sets (trees, lamps, posts, stripes) with per-instance
+// distance culling — the sets span the whole region in one bounding sphere,
+// so without this every leaf in the world is vertex-shaded every frame, in
+// the main pass AND the shadow pass, no matter where the camera looks.
+const LODI = [];
+let lodLast = 0, lodX = 0, lodZ = 0;
 let terrain = new Terrain(null);
 let mode = 'ride';                 // 'ride' | 'walk'
 const sound = new Sound();
@@ -1018,6 +1027,48 @@ async function buildRegion(data) {
   stats.batched = cons.removed; stats.batches = cons.merged;
   stats.casters = shad.kept; stats.castersDropped = shad.dropped;
   stats.prunedFromRoads = pruned;
+
+  // LOD v1: a merged tile whose contents are all under 4m — kerb runs, road
+  // markings, bins, bollards, planters — subtends about a pixel at 500m and
+  // is usually behind six buildings anyway. Those tiles stop being drawn
+  // beyond that range (checked every ~250ms in the loop, not per frame).
+  // Buildings and anything tall never enter this list, so the skyline is
+  // untouchable. `?nolod` turns it off; RAW (audit) mode never batches, so
+  // audits and the determinism gate see every mesh exactly as before.
+  if (!RAW && !P.has('nolod')) {
+    const bb = new THREE.Box3();
+    world.traverse((o) => {
+      if (!o.isMesh || !o.userData.tileBatch) return;
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      bb.copy(o.geometry.boundingBox);
+      if (bb.max.y - bb.min.y >= 4) return;
+      if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+      LODT.push(o);
+    });
+    stats.lodTiles = LODT.length;
+
+    // Per-instance culling for the STATIC instanced sets. The fog is already
+    // near-opaque at these ranges (FogExp2 0.0038: ~17% visible at 350m, ~3%
+    // at 500m), so nothing here can be seen leaving. Excluded: the crowd and
+    // the traffic (they rewrite matrices every frame and cull themselves),
+    // and the signal lens mesh, whose instances the Signals system addresses
+    // BY INDEX — compaction would put the green light on the wrong pole.
+    world.traverse((o) => {
+      if (!o.isInstancedMesh) return;
+      if (o.userData.crowdPart || o.frustumCulled === false) return;
+      if (furniture.lensMesh && o === furniture.lensMesh) return;
+      if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+      const r = o.geometry.boundingSphere.radius;
+      const far = r < 0.5 ? 300 : r < 2 ? 450 : 600;
+      const n = o.count;
+      const src = o.instanceMatrix.array.slice(0, n * 16);
+      const col = o.instanceColor ? o.instanceColor.array.slice(0, n * 3) : null;
+      const px = new Float32Array(n), pz = new Float32Array(n);
+      for (let i = 0; i < n; i++) { px[i] = src[i * 16 + 12]; pz[i] = src[i * 16 + 14]; }
+      LODI.push({ o, src, col, n, px, pz, far });
+    });
+    stats.lodSets = LODI.length;
+  }
 
   window.__scene = scene; window.__camera = camera; window.__THREE = THREE;
   // Placement fingerprint for the determinism gate: a cheap rolling hash of
@@ -1485,6 +1536,36 @@ function loop(now) {
   // Shadows refresh EVERY frame again. The alternate-frame "optimisation"
   // made every pedestrian's shadow jerk behind them at half rate — the
   // "people glitching" the user reported. Half-size maps stay: invisible.
+
+  // LOD tick, every ~250ms: far tiles of small detail stop drawing. The
+  // distance is judged against the tile's bounding sphere EDGE, so a tile is
+  // only hidden once every piece of it is beyond LOD_FAR.
+  if ((LODT.length || LODI.length) && now - lodLast > 250
+      && Math.hypot(camera.position.x - lodX, camera.position.z - lodZ) > (lodLast ? 8 : -1)) {
+    lodLast = now;
+    const cx = lodX = camera.position.x, cz = lodZ = camera.position.z;
+    for (const o of LODT) {
+      const s = o.geometry.boundingSphere;
+      const d = Math.hypot(s.center.x - cx, s.center.z - cz) - s.radius;
+      o.visible = d < LOD_FAR;
+    }
+    // compact each static instanced set down to the instances within range
+    for (const L of LODI) {
+      const f2 = L.far * L.far;
+      const a = L.o.instanceMatrix.array, c = L.col ? L.o.instanceColor.array : null;
+      let k = 0;
+      for (let i = 0; i < L.n; i++) {
+        const dx = L.px[i] - cx, dz = L.pz[i] - cz;
+        if (dx * dx + dz * dz > f2) continue;
+        a.set(L.src.subarray(i * 16, i * 16 + 16), k * 16);
+        if (c) c.set(L.col.subarray(i * 3, i * 3 + 3), k * 3);
+        k++;
+      }
+      L.o.count = k;
+      L.o.instanceMatrix.needsUpdate = true;
+      if (c) L.o.instanceColor.needsUpdate = true;
+    }
+  }
 
   // The first ready frame was an 8.7s task while renderer.render was 1s of it:
   // the other 7.7s hid in the subsystem first-ticks below. Timed per call on

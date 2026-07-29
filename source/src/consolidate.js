@@ -142,6 +142,7 @@ export function consolidate(root) {
 
     const first = list[0];
     const mesh = new THREE.Mesh(geo, first.material);
+    mesh.userData.tileBatch = true;   // the LOD pass culls far tiles of small detail
     mesh.castShadow = first.castShadow;
     mesh.receiveShadow = first.receiveShadow;
     mesh.renderOrder = first.renderOrder;
