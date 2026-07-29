@@ -700,7 +700,21 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
   // it: it is a single-cell hash, so a pair either side of a cell boundary
   // both survive. P4 counts identical props within 60cm, so this measures the
   // same 60cm, over the 3x3 neighbourhood.
-  emit(new THREE.BoxGeometry(0.38, 0.3, 4.0), MAT.kerb, dedupeProps(kerb, 0.6), yaw);
+  // ...and NO KERB STANDS IN A TRAFFIC LANE. A side street's kerb run
+  // reaches its centreline node, which at a junction is inside the MAIN
+  // road's carriageway (the last Grange Road bar, sweep-2 frame 207). The
+  // -0.35 margin shrinks the road for the test, so kerbs sitting on the
+  // legitimate edge stay; only pieces genuinely in a lane are dropped.
+  // centre AND both ends: the surviving Grange bar had its centre 25cm
+  // outside the shrunken road while its 4m body crossed into the lane
+  const kerbClear = kerb.filter((r) => {
+    if (!window.__onRoad) return true;
+    for (const off of [0, 1.9, -1.9]) {
+      if (window.__onRoad(r[0] + Math.sin(r[3]) * off, r[2] + Math.cos(r[3]) * off, -0.3)) return false;
+    }
+    return true;
+  });
+  emit(new THREE.BoxGeometry(0.38, 0.3, 4.0), MAT.kerb, dedupeProps(kerbClear, 0.6), yaw);
 
   // The signalised crossings' boundary squares: 200mm, flat, one instanced
   // mesh for the whole district. There are far more of these than zebras --

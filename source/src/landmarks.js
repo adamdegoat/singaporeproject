@@ -305,8 +305,17 @@ function ionOrchard(api, b) {
   const ang = Math.atan2(sw.nx, sw.nz);
   const ex2 = ob.cx + sw.nx * ob.halfShort, ez2 = ob.cz + sw.nz * ob.halfShort;
   const reach = api.clearance ? Math.min(5, api.clearance.outward(ex2, ez2, sw.nx, sw.nz, 5, 22)) : 4;
-  const fx = ob.cx + sw.nx * (ob.halfShort + reach);
-  const fz = ob.cz + sw.nz * (ob.halfShort + reach);
+  // The shell's CENTER was clearance-checked but its 17m RADIUS never was,
+  // so the rim stood across Orchard Road as a grey wall swallowing cars
+  // (sweep-2 frames 072/111, probed). Walk the actual clear distance to the
+  // carriageway and pull the centre back so the rim stops a metre short —
+  // negative offsets are correct: the real canopy oversails the forecourt
+  // and the podium, not the road.
+  let clearD = 0;
+  while (clearD < 26 && !onCarriageway(ob.cx + sw.nx * (ob.halfShort + clearD), ob.cz + sw.nz * (ob.halfShort + clearD), 0.3)) clearD += 0.5;
+  const centerOff = Math.min(reach, clearD - 1 - 17);
+  const fx = ob.cx + sw.nx * (ob.halfShort + centerOff);
+  const fz = ob.cz + sw.nz * (ob.halfShort + centerOff);
   const shellMat = new THREE.MeshStandardMaterial({
     color: 0xb9c4c9, roughness: 0.28, metalness: 0.45, side: THREE.DoubleSide,
   });

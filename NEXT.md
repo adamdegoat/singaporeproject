@@ -285,8 +285,15 @@ whole sweep, confirming #9 with more frames:
     the way P9 should have caught — strengthen P9 with the fix).
 18. **[BAD] Plaza Singapura mass overhangs Edinburgh/Handy Rd with a clear
     air gap** (177/178) — rider passes under an unsupported slab.
-19. **[BAD] Kerb bars/slabs ON the carriageway at Grange Rd + Canning Walk**
-    (202 X-crossed bars, 207 slab on the yellows, 208, 211).
+19. **MOSTLY FIXED (10th deploy): median + kerb pieces verify against the
+    road index.** Three guards landed: median midpoints AND bar ends
+    (sgdetail.js), side-street 4m kerbs centre+ends (markings.js), crossing
+    2m kerbs centre+ends (main.js) — two kerb emitters shared one defect
+    and the first fix only guarded one. Probed clear at 202/211; 207 keeps
+    ONE bar that the index calls edge-legal (clear at −0.3) while it stands
+    on the junction's DRAWN overlap tarmac — the drawn-vs-indexed width
+    disagreement at junction mouths, a separate debt, not a placement bug.
+    ~~Kerb bars/slabs ON the carriageway at Grange Rd + Canning Walk~~
 20. [BAD] Floating: 171 shelter/gantry frame ends mid-air over the kerb;
     187 lamp luminaire detached from pole. 21. [minor] 169 voco frontage
     reads CHARCOAL not white from its callout frame — probe which face the

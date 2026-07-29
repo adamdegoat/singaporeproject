@@ -348,8 +348,16 @@ export function buildSgDetail(world, axis, data, isBlocked) {
       const d = Math.hypot(s1.mx - s2.mx, s1.mz - s2.mz);
       if (d < 6 || d > 50) continue;
       if (s1.ux * s2.ux + s1.uz * s2.uz > -0.7) continue;   // must oppose
-      medianPts.push([(s1.mx + s2.mx) / 2, (s1.mz + s2.mz) / 2,
-                      Math.atan2(s1.ux, s1.uz)]);
+      // THE MIDPOINT MUST NOT BE ON TARMAC. The pair test measures
+      // centreline distance and never subtracts the halves' widths, so two
+      // wide halves 15m apart have no physical gap and the median kerbs
+      // and slabs stood in the Grange Road traffic lanes (sweep-2 202/207/
+      // 208/211, probed: 0.38x0.3x4 kerb bars and a 2.1x0.34x3 slab at
+      // road height). A real median gap is the one place between two
+      // carriageways the road index calls clear.
+      const mmx = (s1.mx + s2.mx) / 2, mmz = (s1.mz + s2.mz) / 2;
+      if (window.__onRoad && window.__onRoad(mmx, mmz, -0.35)) continue;
+      medianPts.push([mmx, mmz, Math.atan2(s1.ux, s1.uz)]);
       break;
     }
   }
@@ -618,6 +626,13 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     let mi = 0;
     for (const [mx, mz, mang] of medianPts) {
       if (window.__onRoad && window.__onRoad(mx, mz, -0.4)) continue;
+      // the kerb bar is 4m LONG along the median — where the gap closes at
+      // a junction mouth, a clear midpoint can still put an END in the
+      // lane (the last Grange Road bar after the midpoint fix). Both ends
+      // must be clear too.
+      const ex3 = Math.sin(mang) * 2.1, ez3 = Math.cos(mang) * 2.1;
+      if (window.__onRoad && (window.__onRoad(mx + ex3, mz + ez3, -0.3)
+        || window.__onRoad(mx - ex3, mz - ez3, -0.3))) continue;
       if (!farEnough(mx, mz)) continue;
       medianKerb.push([mx, 0.14, mz, mang]);
       if (mi % 2 === 0) medianShrub.push([mx + jit(), 0.72, mz + jit(), mang]);

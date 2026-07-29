@@ -450,8 +450,19 @@ function dressStreet(data, axis) {
     kerbT.length = 0;
     for (const r of plain) kerbT.push(r);
   }
-  // same 60cm dedupe as the side-street kerbs, see markings.js
-  emit(new THREE.BoxGeometry(0.42, 0.3, 2.0), MAT.kerb, dedupeProps(kerbT, 0.6), (r) => {
+  // same 60cm dedupe as the side-street kerbs, see markings.js — and the
+  // same lane guard: centre AND both ends clear of the carriageway at a
+  // -0.3 margin, or the piece is not built (the last Grange Road bar was
+  // one of THESE 2m crossing kerbs, not the side-street 4m one — two
+  // emitters, one defect, and the first fix only guarded one of them)
+  const kerbT2 = kerbT.filter((r) => {
+    if (!window.__onRoad) return true;
+    for (const off of [0, 0.9, -0.9]) {
+      if (window.__onRoad(r[0] + Math.sin(r[3]) * off, r[2] + Math.cos(r[3]) * off, -0.3)) return false;
+    }
+    return true;
+  });
+  emit(new THREE.BoxGeometry(0.42, 0.3, 2.0), MAT.kerb, dedupeProps(kerbT2, 0.6), (r) => {
     p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   // THE LAMP POST, to LTA's published form.
