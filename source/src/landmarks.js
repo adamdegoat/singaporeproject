@@ -2709,7 +2709,13 @@ function macdonaldHouse(api, b) {
   const nX = oX / oL, nZ = oZ / oL, tX = -nZ, tZ = nX;
   const yaw = Math.atan2(nX, nZ);
   const at = (mesh, u, y, out) => {
-    mesh.position.set(mx + tX * u + nX * out, y, mz + tZ * u + nZ * out);
+    const px = mx + tX * u + nX * out, pz = mz + tZ * u + nZ * out;
+    // a facade piece must never stand in the road the frontage faces: the
+    // frontage edge CAN lie on the kerb line (Raffles Arcade after the
+    // streamed build handed it its own district axis), so every piece is
+    // checked at the audit's margin, not placed on faith
+    if (onCarriageway(px, pz, 0.25)) return;
+    mesh.position.set(px, y, pz);
     mesh.rotation.y = yaw;
     mesh.castShadow = true; mesh.receiveShadow = true;
     api.world.add(mesh);
@@ -2815,7 +2821,11 @@ function peranakanPlace(api, b) {
   const nX = oX / oL, nZ = oZ / oL, tX = -nZ, tZ = nX;
   const yaw = Math.atan2(nX, nZ);
   const at = (mesh, u, y, out, cast = true) => {
-    mesh.position.set(mx + tX * u + nX * out, y, mz + tZ * u + nZ * out);
+    const px = mx + tX * u + nX * out, pz = mz + tZ * u + nZ * out;
+    // see the guard note on the first at(): the frontage edge can lie on
+    // the kerb line, so no piece goes down without a carriageway check
+    if (onCarriageway(px, pz, 0.25)) return;
+    mesh.position.set(px, y, pz);
     mesh.rotation.y = yaw;
     mesh.castShadow = cast; mesh.receiveShadow = true;
     api.world.add(mesh);
@@ -3019,7 +3029,11 @@ function temasekShophouse(api, b) {
   if (!fr) return;
   const { mx, mz, nX, nZ, tX, tZ, yaw, bl } = fr;
   const at = (mesh, u, y, out, cast = true) => {
-    mesh.position.set(mx + tX * u + nX * out, y, mz + tZ * u + nZ * out);
+    const px = mx + tX * u + nX * out, pz = mz + tZ * u + nZ * out;
+    // see the guard note on the first at(): the frontage edge can lie on
+    // the kerb line, so no piece goes down without a carriageway check
+    if (onCarriageway(px, pz, 0.25)) return;
+    mesh.position.set(px, y, pz);
     mesh.rotation.y = yaw;
     mesh.castShadow = cast; mesh.receiveShadow = true;
     api.world.add(mesh);
@@ -3198,7 +3212,11 @@ function oneRafflesLink(api, b) {
   if (!fr) return;
   const { mx, mz, nX, nZ, tX, tZ, yaw, bl } = fr;
   const at = (mesh, u, y, out, cast = true) => {
-    mesh.position.set(mx + tX * u + nX * out, y, mz + tZ * u + nZ * out);
+    const px = mx + tX * u + nX * out, pz = mz + tZ * u + nZ * out;
+    // see the guard note on the first at(): the frontage edge can lie on
+    // the kerb line, so no piece goes down without a carriageway check
+    if (onCarriageway(px, pz, 0.25)) return;
+    mesh.position.set(px, y, pz);
     mesh.rotation.y = yaw;
     mesh.castShadow = cast; mesh.receiveShadow = true;
     api.world.add(mesh);
@@ -3261,7 +3279,11 @@ function rafflesArcade(api, b) {
   if (!fr) return;
   const { mx, mz, nX, nZ, tX, tZ, yaw, bl } = fr;
   const at = (mesh, u, y, out, cast = true) => {
-    mesh.position.set(mx + tX * u + nX * out, y, mz + tZ * u + nZ * out);
+    const px = mx + tX * u + nX * out, pz = mz + tZ * u + nZ * out;
+    // see the guard note on the first at(): the frontage edge can lie on
+    // the kerb line, so no piece goes down without a carriageway check
+    if (onCarriageway(px, pz, 0.25)) return;
+    mesh.position.set(px, y, pz);
     mesh.rotation.y = yaw;
     mesh.castShadow = cast; mesh.receiveShadow = true;
     api.world.add(mesh);
@@ -3343,7 +3365,11 @@ function smaHouse(api, b) {
   if (!fr) return;
   const { mx, mz, nX, nZ, tX, tZ, yaw, bl } = fr;
   const at = (mesh, u, y, out, cast = true) => {
-    mesh.position.set(mx + tX * u + nX * out, y, mz + tZ * u + nZ * out);
+    const px = mx + tX * u + nX * out, pz = mz + tZ * u + nZ * out;
+    // see the guard note on the first at(): the frontage edge can lie on
+    // the kerb line, so no piece goes down without a carriageway check
+    if (onCarriageway(px, pz, 0.25)) return;
+    mesh.position.set(px, y, pz);
     mesh.rotation.y = yaw;
     mesh.castShadow = cast; mesh.receiveShadow = true;
     api.world.add(mesh);
@@ -3400,7 +3426,11 @@ function nomadSingapore(api, b) {
   if (!fr) return;
   const { mx, mz, nX, nZ, tX, tZ, yaw, bl } = fr;
   const at = (mesh, u, y, out, cast = true) => {
-    mesh.position.set(mx + tX * u + nX * out, y, mz + tZ * u + nZ * out);
+    const px = mx + tX * u + nX * out, pz = mz + tZ * u + nZ * out;
+    // see the guard note on the first at(): the frontage edge can lie on
+    // the kerb line, so no piece goes down without a carriageway check
+    if (onCarriageway(px, pz, 0.25)) return;
+    mesh.position.set(px, y, pz);
     mesh.rotation.y = yaw;
     mesh.castShadow = cast; mesh.receiveShadow = true;
     api.world.add(mesh);

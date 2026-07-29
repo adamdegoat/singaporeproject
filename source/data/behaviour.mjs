@@ -50,7 +50,7 @@ const JUMP_MAX = 0.5;
 const browser = await chromium.launch({ args: ['--use-gl=angle'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 500 } });
 page.on('pageerror', (e) => console.log('  page error:', e.message));
-await page.goto(`http://localhost:8933/index.html?dpr=1&scene=${process.env.SG_SCENE || 'orchard'}`, { waitUntil: 'load' });
+await page.goto(`http://localhost:8933/index.html?dpr=1&nostream=1&scene=${process.env.SG_SCENE || 'orchard'}`, { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true', null, { timeout: 90000 });
 
 /* ---------- B1 and B2: sample the world moving ---------- */

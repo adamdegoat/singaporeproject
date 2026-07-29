@@ -13,7 +13,7 @@ const { chromium } = await import(
 const browser = await chromium.launch({ args: ['--disable-backgrounding-occluded-windows'] });
 async function hashOf(params) {
   const page = await (await browser.newContext({ viewport: { width: 844, height: 390 } })).newPage();
-  await page.goto(`${BASE}/?scene=${SCENE}&raw=1&${params}&cb=${Date.now()}`, { waitUntil: 'commit', timeout: 200000 });
+  await page.goto(`${BASE}/?scene=${SCENE}&raw=1&nostream=1&${params}&cb=${Date.now()}`, { waitUntil: 'commit', timeout: 200000 });
   await page.waitForFunction('window.__ready === true || window.__bootError', null, { timeout: 200000, polling: 100 });
   const h = await page.evaluate(() => window.__bootError ? 'BOOTERR' : window.__placementHash);
   await page.close();

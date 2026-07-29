@@ -18,9 +18,28 @@ compaction cannot corrupt the determinism gate. MEASURED at spawn: 3161k ->
 the haze). Next LOD candidates if more heat relief is wanted: far building
 recipe detail, shophouse window rects, shadow-map draw distance.
 
-## Streaming decision (world5 measured): heap 527MB five-district merge =
-## NOT shippable as one load. Stream-first confirmed. Design in WORKFLOW.md;
-## per-district chunks emitted by merge.py is the next build step.
+## STREAMING SHIPPED AND DEFAULT (this deploy). merge.py --stream emits a
+manifest + per-district chunk files (lossless partition, verified per layer);
+the app fetches ALL chunks at boot (bytes are cheap, building is not), boots
+ONLY the spawn district through the unchanged buildRegion, then streams the
+rest via addChunk() — same builders, chunk data, own THREE.Group, one private
+RNG stream per district. Measured real GPU: ready 17.5s -> 8.4s, remaining
+districts drain in ~4-6s of play, worst main-thread task ~215ms. Flat file
+remains: ?nostream, no-manifest scenes (audits per district), and fallback.
+THE SEAM LESSONS (each cost a gate refusal, all fixed):
+- chunks are DEDUPED, so a chunk build cannot see a neighbour's roads: boot
+  now indexes ROADIX/colGrid/water from the UNION; addChunk indexes nothing.
+- district chunks carry their OWN axis, so streetward/frontage decisions can
+  flip vs the merged build: every frame-recipe at() helper now carriageway-
+  checks each piece (Raffles Arcade pilasters stood on North Bridge Road).
+- audits/livecheck must WAIT FOR DRAIN (__streamState) or they judge a
+  half-built world (C8 read 60%).
+- setTimeout(0) yields are CLAMPED in occluded pages: MessageChannel yields,
+  time-gated to ~20ms slices (phones keep frame rate, harness stays fast).
+Still open for the island scale-up: unload behind the rider (heap plateau),
+world5 flip (needs unload first — 527MB all-built), per-subsystem Y() in
+dressing/shopfronts if 215ms tasks read on-device, proximity-triggered
+re-prioritisation mid-drain (queue is nearest-first at start only).
 
 ## OPEN, user-observed, mechanism identified: THE START HANG hits the whole
 ## world (pedestrians freeze too — user report), not just the controls. The

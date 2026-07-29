@@ -72,6 +72,19 @@ try {
       info.hud = await page.evaluate(() => (document.querySelector('#hud') || {}).textContent || '');
     } catch (e) { /* still loading after 15s: the assertion below fires */ }
   }
+  // streamed scenes keep building after ready; a healthy stream must DRAIN.
+  // 120s covers a phone-slow machine; the flat path has no __streamState and
+  // skips this entirely.
+  if (info.ready) {
+    const streaming = await page.evaluate(() => !!window.__streamState);
+    if (streaming) {
+      await page.waitForFunction(
+        'window.__streamState.pending.length === 0 && !window.__streamState.building',
+        null, { timeout: +(process.env.SG_STREAM_BUDGET || 600000), polling: 500 });
+      const st = await page.evaluate(() => window.__streamState.done.join(','));
+      console.log(`   streamed in: ${st}`);
+    }
+  }
   ready = info.ready;
 } catch (e) {
   errors.push('never became ready: ' + String(e.message).slice(0, 160));

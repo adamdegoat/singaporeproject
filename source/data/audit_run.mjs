@@ -26,6 +26,11 @@ await page.goto(`http://localhost:8933/?dpr=1&raw=1&scene=${process.env.SG_SCENE
 await page.waitForFunction('window.__ready === true || window.__bootError', null, { timeout: 120000 });
 const bootErr = await page.evaluate(() => window.__bootError || null);
 if (bootErr) { console.error('boot failed: ' + String(bootErr).slice(0, 300)); await browser.close(); process.exit(2); }
+// A streamed scene keeps building after __ready; auditing before the queue
+// drains judges a half-built world (C8 read 60% the day this was learned).
+await page.waitForFunction(
+  '!window.__streamState || (window.__streamState.pending.length === 0 && !window.__streamState.building)',
+  null, { timeout: +(process.env.SG_STREAM_BUDGET || 600000), polling: 500 });
 await page.waitForTimeout(1500);
 await page.addScriptTag({ content: readFileSync('data/audit_world.js', 'utf8') });
 const r = await page.evaluate(() => window.__auditWorld());

@@ -737,10 +737,19 @@ function bootDone() {
 // first district through the exact same buildRegion, then stream the rest in
 // cooperatively-yielding slices while the player rides. The flat file stays
 // the default and the audits' subject until the streamed path has soaked.
-if (P.has('stream')) {
+if (!P.has('nostream')) {
   fetch(`./data/${SCENE}.manifest.json`)
-    .then((r) => { if (!r.ok) throw new Error(`no manifest for ${SCENE}`); return r.json(); })
-    .then(buildStreamed).catch(bootFailed);
+    .then((r) => {
+      if (!r.ok) throw new Error('no-manifest');
+      return r.json().then(buildStreamed);
+    })
+    .catch((e) => {
+      // no manifest for this scene (single-district audit scenes) — the flat
+      // path is the fallback, not an error. A real boot failure inside
+      // buildStreamed still lands in bootFailed below.
+      if (String(e && e.message) !== 'no-manifest') return bootFailed(e);
+      return fetch(`./data/${SCENE}.json`).then((r) => r.json()).then(buildRegion).catch(bootFailed);
+    });
 } else {
   fetch(`./data/${SCENE}.json`).then((r) => r.json()).then(buildRegion).catch(bootFailed);
 }
@@ -787,7 +796,13 @@ async function addChunk(ch, id, Y) {
   let h = 0;
   for (const c of id) h = (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0;
   reseedPlacement(h);
-  const mk = (t) => { if (window.__streamState) window.__streamState.step = t; };
+  const mk = (t) => {
+    const st = window.__streamState;
+    if (!st) return;
+    const now = performance.now();
+    if (st.step) (st.times = st.times || []).push([id + ':' + st.step, Math.round(now - st._t)]);
+    st.step = t; st._t = now;
+  };
   const data = window.__data;
   for (const k of ['water', 'buildings', 'roads', 'bridges', 'covered', 'towers',
     'trees', 'crossings', 'signals', 'busstops', 'mrt', 'taxis', 'shops',
@@ -795,11 +810,10 @@ async function addChunk(ch, id, Y) {
     if (Array.isArray(ch[k]) && Array.isArray(data[k])) data[k].push(...ch[k]);
   }
   if (ch.axis && ch.axis.p && data.axes) data.axes.push(ch.axis);
-  mk('index');
-  indexBuildings(ch);                              // additive footprint grid
-  if (!P.has('nowater')) setWater((data.water || []).map((w) => w.p));
-  mk('roadix');
-  ROADIX = buildRoadIndex(data, data.axis || null); // union re-index
+  // NO re-indexing here: the boot indexed the whole region's roads,
+  // footprints and water from the union (a chunk build that could not see a
+  // neighbour's roads laid kerbs in Waterloo Close at the seam). The data
+  // arrays still grow so runtime probes see every loaded layer.
   await Y();
   const g = new THREE.Group();
   g.name = 'district:' + id;
@@ -855,10 +869,12 @@ async function addChunk(ch, id, Y) {
   if (SOLID) SOLID.build(g, (x, z) => terrain.at(x, z));
   await Y();
   mk('consolidate');
-  dedupeMaterials(world);
-  consolidate(g);
-  trimShadowCasters(g);
-  if (!P.has('nolod')) registerLod(world);
+  if (!P.has('raw')) {
+    dedupeMaterials(world);
+    consolidate(g);
+    trimShadowCasters(g);
+    if (!P.has('nolod')) registerLod(world);
+  }
 }
 
 // The streaming queue: one district at a time, nearest box first, yielding
@@ -873,7 +889,17 @@ async function streamRest(rest) {
   const chan = new MessageChannel();
   let wake = null;
   chan.port1.onmessage = () => { if (wake) { const w = wake; wake = null; w(); } };
-  const Y = () => new Promise((r) => { wake = r; chan.port2.postMessage(0); });
+  // Time-gated: a yield point only actually yields after ~20ms of real work,
+  // so a phone keeps its frame rate while the builders' fine-grained yield
+  // points stay cheap no-ops the rest of the time. The clock restarts AFTER
+  // the yield resolves, so time the browser spends rendering the interleaved
+  // frame is not billed to the next work slice.
+  let sliceT0 = performance.now();
+  const Y = () => {
+    if (performance.now() - sliceT0 < 20) return Promise.resolve();
+    return new Promise((r) => { wake = r; chan.port2.postMessage(0); })
+      .then(() => { sliceT0 = performance.now(); });
+  };
   const dist = (b) => {
     const cx = Math.max(b.box[0], Math.min(S.x, b.box[2]));
     const cz = Math.max(b.box[1], Math.min(S.z, b.box[3]));
@@ -893,6 +919,10 @@ async function streamRest(rest) {
     window.__streamState.done.push(next.id);
     window.__streamState.pending = window.__streamState.pending.filter((x) => x !== next.id);
     window.__streamState.building = null;
+  }
+  if (window.__stats && window.__data) {
+    window.__stats.buildings = window.__data.buildings.length;
+    window.__stats.roads = window.__data.roads.length;
   }
 }
 async function buildRegion(data, opts = {}) {
@@ -920,7 +950,7 @@ async function buildRegion(data, opts = {}) {
   terrain.carve(opts.carveRoads || data.roads || []);
   setTerrain(terrain);
   window.__terrain = terrain;
-  indexBuildings(data);
+  indexBuildings(opts.regionData || data);
 
   // The road index is built FIRST. Buildings carry structural pieces — entrance
   // canopies, colonnades, the tree columns under ION's shell — that are placed
@@ -928,7 +958,7 @@ async function buildRegion(data, opts = {}) {
   // they are created. Building it after buildBuildings meant every one of those
   // tests silently answered "not in a road", and 59 six-metre columns ended up
   // standing in the street, including the row you meet at the spawn point.
-  ROADIX = buildRoadIndex(data, data.axis || null);
+  ROADIX = buildRoadIndex(opts.regionData || data, data.axis || null);
   window.__onRoad = (x, z, m, ex) => ROADIX.onRoad(x, z, m || 0, ex || null);
   window.__nearestStreet = (x, z) => ROADIX.nearestName(x, z);
   // the direction of the carriageway under a point, so a check can ask whether
@@ -1009,7 +1039,7 @@ async function buildRegion(data, opts = {}) {
   // this. Water depends on nothing, so it goes first and every later guard is
   // live by the time it is consulted.
   const water = P.has('nowater') ? { water: 0, waterArea: 0 } : buildWater(world, data);
-  if (!P.has('nowater')) setWater((data.water || []).map((w) => w.p));
+  if (!P.has('nowater')) setWater(((opts.regionData || data).water || []).map((w) => w.p));
   bmark('setup+water');
 
   await bstep(0.09, `raising ${(data.buildings || []).length.toLocaleString()} buildings`);
