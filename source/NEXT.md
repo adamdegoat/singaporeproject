@@ -173,6 +173,43 @@ for researching before modelling rather than after:
   Filter the probe, do not truncate it — "print the thing, not a number near
   the thing" applies to the harness as much as to the world.
 
+### The dressing now covers the WHOLE district, and what that opened up
+
+2026-07-29: `REACH` in markings.js went **230m -> 1200m**, so every street in
+all three districts is dressed rather than a third of them. Measured before:
+Orchard 34% of its carriageway, Bras Basah 42%, Marina Bay 33% -- about 105km
+with no kerb, lamp, tree or name plate on it. Now 100/100/99%.
+
+The old 230m number predated instancing, `consolidate.js` tile batching, and
+the terrain/road tiling that landed the same day. The cost was MEASURED, not
+assumed: triangles 2.75M -> 3.47M at the sweep's heaviest view, and **draw
+calls 899 -> 906**, which is the number that matters.
+
+Found by riding streets nobody had ever looked at:
+
+- **Every name plate read BACKWARDS from one side.** A single plane with
+  `side: DoubleSide` shows the same texture mirrored from behind. Two
+  back-to-back faces now. There are 288 plates, so half of them were wrong.
+- **S2 was measuring to a street's nearest mapped VERTEX**, not to the street.
+  A sparsely-mapped straight road reads 19m away when it is 9m away, so
+  whichever of a parallel pair OSM mapped more finely always "won" -- all
+  three failures were dual carriageways (Eu Tong Sen/New Bridge, Raffles
+  Quay/Telegraph, Shenton Way/Boon Tat). Sixth instance in this file of two
+  measures of one fact, and the fifth time the CHECK was the wrong one.
+- **P4 went DOWN, 832 -> 668**, with three times the props, because the kerb
+  lists are deduped over a real 60cm neighbourhood instead of relying on
+  `claim` -- which is a single-cell hash and lets boundary-straddling pairs
+  through. That is worth knowing generally: `claim` thins per cell, it has
+  never guaranteed a spacing, and anything that needs one must measure.
+
+**NEXT, and it was tried and reverted:** side streets have kerbs, lamps, trees
+and plates but NO PAINT -- no double yellow, no centre line, 105km of it.
+Adding them as per-metre quads is wrong twice over: it took P6 from 17 to 1974,
+and it would emit on the order of 400,000 marks. A continuous line must be a
+RIBBON, one geometry per street, exactly as `ribbonOffset` already does for the
+red bus lanes in city.js. Do it that way, and skip service roads and anything
+under 5.5m wide -- a back lane with a painted centre line is wrong.
+
 **Worth a look, not yet investigated:** comparison-sheet frame 12 (Dhoby Ghaut,
 the east end at Plaza Singapura) shows several large PALE UNTEXTURED BOXES in
 the middle ground. Frame 05 in the same run is healthy -- shopfronts, textured

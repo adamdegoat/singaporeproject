@@ -556,10 +556,21 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
         const g = new THREE.Group();
         const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 6), MAT.metal);
         pole.position.y = 1.3; g.add(pole);
-        const plate = new THREE.Mesh(
-          new THREE.PlaneGeometry(1.5, 0.38),
-          new THREE.MeshBasicMaterial({ map: texStreetName(r.n), side: THREE.DoubleSide }));
-        plate.position.y = 2.5; g.add(plate);
+        // TWO BACK-TO-BACK FACES, not one DoubleSide plane.
+        //
+        // A DoubleSide plane shows the SAME texture from behind, which means
+        // mirrored lettering -- so every name plate in the world read
+        // backwards from one side, and with the dressing reach raised there
+        // are now 288 of them. A real plate is printed on both faces. Found by
+        // riding Tew Chew Street, which no camera had ever visited.
+        for (const face of [1, -1]) {
+          const plate = new THREE.Mesh(
+            new THREE.PlaneGeometry(1.5, 0.38),
+            new THREE.MeshBasicMaterial({ map: texStreetName(r.n) }));
+          plate.position.set(0, 2.5, 0.012 * face);
+          if (face < 0) plate.rotation.y = Math.PI;
+          g.add(plate);
+        }
         g.position.set(sx, groundAt(sx, sz), sz);
         g.rotation.y = Math.atan2(u0x, u0z) + Math.PI / 2;
         world.add(g);

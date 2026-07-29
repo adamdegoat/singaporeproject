@@ -151,11 +151,16 @@ export function buildSignage(world, axis, data, isBlocked) {
           const g = new THREE.Group();
           const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 6), MAT.metal);
           pole.position.y = 1.3; pole.castShadow = true; g.add(pole);
-          const plate = new THREE.Mesh(
-            new THREE.PlaneGeometry(1.5, 0.38),
-            new THREE.MeshBasicMaterial({ map: texStreetName(axis.n || 'Orchard Road'), side: THREE.DoubleSide })
-          );
-          plate.position.y = 2.5; g.add(plate);
+          // two back-to-back faces so the name reads correctly from both
+          // sides; a DoubleSide plane mirrors it (see markings.js)
+          for (const face of [1, -1]) {
+            const plate = new THREE.Mesh(
+              new THREE.PlaneGeometry(1.5, 0.38),
+              new THREE.MeshBasicMaterial({ map: texStreetName(axis.n || 'Orchard Road') }));
+            plate.position.set(0, 2.5, 0.012 * face);
+            if (face < 0) plate.rotation.y = Math.PI;
+            g.add(plate);
+          }
           said.push({ kind: 'plate', x: sx, z: sz, text: axis.n || 'Orchard Road' });
           g.position.set(sx, groundAt(sx, sz), sz);
           g.rotation.y = ang + Math.PI / 2;
