@@ -6,21 +6,61 @@ record: read it when you need the reasoning behind a rule, not before starting.
 ## Live and green
 
 Three districts merged into one region: **Orchard Road, Bras Basah, Marina Bay**.
-2,155 buildings, ~6,000 roads, 2.0M m2 of water, ~30fps at 844x390 dpr2.
+2,155 buildings, ~6,000 roads, 2.0M m2 of water. **EVERY STREET in all three
+districts is dressed** since 2026-07-29 -- 100% of Orchard and Bras Basah, 99%
+of Marina Bay, against 34/42/33% before.
 Deployed and hash-verified: https://adamdegoat.github.io/singaporeproject/
 
     node server.cjs                                  # dev server, :8933 -- START THIS FIRST
+    bash data/gates.sh [scene]                       # THE WHOLE SIGN-OFF IN ONE COMMAND
+    node data/livecheck.mjs [url]                    # does the DEPLOYED site run on a phone
     SG_SCENE=<id> node data/audit_run.mjs            # 40 checks; id = orchard|brasbasah|marinabay|world
     SG_SCENE=world node data/behaviour.mjs           # 5 checks on how things MOVE
     SG_SCENE=world node data/defects.mjs             # 35 exploratory classes (NOT a gate)
-    python3 data/unused.py                           # every OSM tag must be read/ignored/deferred
-    python3 data/check.py <id>                       # the data gate
+    python3 data/check.py <id>                       # the data gate -- RUN IT ON `world` TOO
+    python3 data/audit_roads.py <id>                 # analytic road overlap
     node test/ride.test.mjs                          # ride model, no browser
     SG_SCENE=<id> node data/patchprobe.mjs           # eye-level ray audit of the drawn road surface
     bash data/tidy.sh                                # ALWAYS after a batch
-    ./deploy.sh "message"                            # runs every gate, refuses to publish on regression
+    ./deploy.sh "message"                            # every gate + hash verify + LIVE CHECK
 
 All gates pass on all four scenes. Do not trust that sentence -- run them.
+`gates.sh` exists because two sign-off steps had never been run at all, and the
+awkward ones are the ones that get skipped.
+
+## THE TOP THREE, in order
+
+1. **Boot is ~28s at 844x390 dpr2, 561MB heap.** It loads, but that is slow on
+   a phone and it roughly doubled when the dressing reach went to 1200m. See
+   the MOBILE section below for two measurement traps and one reverted attempt.
+2. **Side streets have no PAINT.** 105km of them have kerbs, lamps, trees and
+   plates but no centre lines. Double yellows ARE done district-wide. Do the
+   rest as RIBBONS, one per street -- per-metre quads took P6 17 -> 1974.
+3. **~10 street-fronting buildings still have no recipe**, and the full sweep
+   contact sheet has never been reviewed frame by frame now that every street
+   is dressed. `shots/sweep/index.html`.
+
+## THE PATTERN THAT ACCOUNTS FOR FIVE BUGS TODAY
+
+**When two things describe one fact, the quantised one is wrong.** Every one of
+these was a check and a builder disagreeing, and in every case the fix was to
+make the coarse one measure in real units:
+
+  * S2 measured a plate's distance to a street's nearest mapped VERTEX, not to
+    the street -- so a sparsely mapped straight road "lost" to a finely mapped
+    parallel one. Every failure was a dual carriageway.
+  * `claim()` is a single-cell hash (`Math.round(x / cell)`), so two things 18cm
+    apart either side of a cell boundary BOTH survive. It has never guaranteed
+    a spacing. Anything that needs one must measure distance.
+  * The pedestrian band is quantised to whole metres over 32 bits, so a walker
+    at 18.3m read as "metre 18" and the band called it clear while standing on
+    tarmac -- and the band ran every frame while the live road test ran one in
+    eight, so the band always won.
+  * Vehicle spacing bucketed lanes by `Math.round(lane * 2)` while the check
+    calls anything within 2.6m the same lane, so a car and a bus in one lane
+    were never pushed apart.
+  * A signature allowlist keyed on geometry parameters silently revoked the
+    lamp arm's exemption the moment the arm changed shape.
 
 ## RESOLVED 2026-07-29: "yellow patches on the road" was the TERRAIN
 
@@ -189,10 +229,15 @@ individual lens meshes.
 **THE LESSON, and it is the important part: every gate passed while the live
 site was unusable.** 40/40 on four scenes, behaviour, ride, defects -- all
 green, all blind to it, because every one of them inspects a built scene and
-none of them renders a frame and looks for an exception. If you take one thing
-from this: **load the DEPLOYED site at 844x390 dpr2 and assert `__ready` AND an
-empty console before believing a deploy.** `/tmp/mobile.mjs` in this session
-did exactly that and found it in one run.
+none of them renders a frame and looks for an exception.
+
+**That gap is now closed.** `data/livecheck.mjs` loads the DEPLOYED url at
+844x390 dpr2, waits for `__ready` (polling on an interval, not rAF), lets it
+run 2.5s so the FRAME LOOP has to survive, and fails on any page exception,
+console error, or a HUD still reading "loading" after ready. `deploy.sh` runs
+it after the hash verification, so a deploy is not green until the site has
+actually run on a phone. Hashes prove the right bytes shipped; only this proves
+they work.
 
 **2. Boot is slow and is still open.** ~28s to ready at phone size, ~561MB
 heap. It roughly doubled when the dressing reach went 230m to 1200m. Tried and
