@@ -1333,7 +1333,11 @@ function driveCamera(dt) {
 const DPR_FORCE = parseFloat(P.get('dpr') || '0');
 // (declared BEFORE resize(): resize reads TIER_DPR at module init, and a
 // later `let` is a temporal-dead-zone crash — the second one today)
-let FPS_CAP = TOUCH ? (parseFloat(P.get('fps') || '0') || 30) : 0;
+// NO DEFAULT CAP. Capping every phone to 30 made a world that ran at 60
+// feel broken ("everything lagging" — the user, correctly). The cap now
+// exists only where it earns its keep: ?fps=N explicitly, or the adaptive
+// tier demoting a device that measured under 20fps anyway.
+let FPS_CAP = TOUCH ? (parseFloat(P.get('fps') || '0') || 0) : 0;
 // ADAPTIVE TIER: a phone that cannot hold ~20fps at the standard settings
 // demotes itself once — dpr 1.25, cap 24 — and remembers, so weaker phones
 // run cool and smooth without a settings screen. Verdict from the median of
@@ -1434,9 +1438,9 @@ function loop(now) {
   // ?fps=60 overrides for the phones that can take it.
   if (TOUCH && FPS_CAP && now - lastCapT < 1000 / FPS_CAP - 2) { requestAnimationFrame(loop); return; }
   lastCapT = now;
-  // shadows refresh every OTHER rendered frame on phones — between two 30fps
-  // frames the sun has not measurably moved
-  if (TOUCH) { shadowFlip = !shadowFlip; renderer.shadowMap.autoUpdate = shadowFlip; }
+  // Shadows refresh EVERY frame again. The alternate-frame "optimisation"
+  // made every pedestrian's shadow jerk behind them at half rate — the
+  // "people glitching" the user reported. Half-size maps stay: invisible.
 
   // The first ready frame was an 8.7s task while renderer.render was 1s of it:
   // the other 7.7s hid in the subsystem first-ticks below. Timed per call on
