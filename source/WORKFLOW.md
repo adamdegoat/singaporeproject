@@ -42,6 +42,41 @@ What this optimises: wall-clock (the laptop's browser runs are the scarce
 resource, not tokens), attribution (a red check points at one small batch),
 and durability (specs and triage live in files, not in a chat).
 
+## Streaming design (drafted 2026-07-29 while districts 4+5 fetched — the
+## "world comes up faster" architecture; implement when world5's measurement
+## demands it, which it almost certainly will)
+
+The app builds the whole region in one ~13s CPU pass and boots O(districts).
+The island is 83x the current load. The design that fixes both:
+
+1. **Boot ONE district — the spawn's — and nothing else.** Per-district scene
+   JSONs already exist and already gate individually. Boot cost becomes O(1):
+   roughly 5s CPU + warm-up, whatever the world grows to.
+2. **Stream neighbours at runtime, in idle slices.** When the rider is within
+   ~400m of a district boundary, fetch that district's JSON and run its build
+   CHUNKED over idle frames (~8ms budget per frame; a 4-5s district build
+   spreads over 10-20s of riding, invisible at 41.8 km/h ceiling). The
+   existing builders stay untouched; a scheduler wraps them per subsystem —
+   the per-axis loop is already conveniently step-shaped.
+3. **THE BLOCKER TO SOLVE FIRST, and it is RNG, not rendering:** placement
+   draws from the module-level seeded `R`, so build ORDER changes every
+   invented placement — lazy loading would reshuffle the world per ride.
+   Fix: seed a PRIVATE stream per district at district-build start (the
+   texture-stream rule, applied to placement). Costs one final sanctioned
+   reshuffle + re-baseline, and makes district builds order-independent
+   forever — which batch-baking also needs, so it is not throwaway.
+4. **Merge rules become runtime rules:** cross-district dedupe and heightfield
+   blending currently live in merge.py; the runtime loader needs the same two
+   (drop a neighbour's copy of shared buildings; blend terrain at the seam
+   band). Both are already written as algorithms — port, don't reinvent.
+5. **Unload behind the rider** past ~800m: dispose geometries, keep the
+   scene JSON cached. Heap then plateaus at ~3 districts regardless of world
+   size.
+6. **Gates:** livecheck gains a ride-across-a-seam scenario; the audits stay
+   per-district (they already are); add a determinism check — build district
+   A alone vs A-after-B, diff placements, must be byte-identical (this is
+   what the per-district RNG buys and the check that keeps it bought).
+
 ## Adding a district
 
 **1. Register it.** Add an entry to `data/districts.json`:

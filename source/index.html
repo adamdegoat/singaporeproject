@@ -42,7 +42,8 @@
      a control legend and a frame counter showing through a map make it
      unreadable, and none of it is usable while the map is up */
   body.mapopen #hud,body.mapopen #place,body.mapopen #map,
-  body.mapopen #maphint,body.mapopen #modebtn,
+  body.mapopen #maphint,body.mapopen #modebtn,body.mapopen #vehiclebtn,
+  body.mapopen #pedals,body.mapopen #steerhint,
   body.mapopen #stick,body.mapopen #lookhint{display:none}
   #bigmap{position:absolute;inset:0;width:100%;height:100%}
   #bigclose{position:absolute;right:calc(12px + env(safe-area-inset-right));
@@ -63,11 +64,18 @@
     color:#12161b;background:#e8ddc6;border:0;border-radius:22px;
     box-shadow:0 2px 8px rgba(0,0,0,.35)}
   #bigzoom button:active{background:#cfc4ad}
+  #vehiclebtn{position:fixed;right:calc(10px + env(safe-area-inset-right));
+    bottom:calc(52px + env(safe-area-inset-bottom));
+    font:600 11px/1 ui-sans-serif,-apple-system,Helvetica,Arial;
+    letter-spacing:.03em;color:#12161b;background:rgba(232,221,198,.88);border:0;
+    padding:8px 13px;border-radius:16px;box-shadow:0 1px 6px rgba(0,0,0,.3)}
+  #vehiclebtn:active{background:#cfc4ad}
+  @media (orientation:portrait){ #vehiclebtn{display:none} }
   #modebtn{position:fixed;right:calc(10px + env(safe-area-inset-right));
     bottom:calc(12px + env(safe-area-inset-bottom));
-    font:600 13px/1 ui-sans-serif,system-ui,-apple-system,Helvetica,Arial;
-    letter-spacing:.03em;color:#12161b;background:#e8ddc6;border:0;
-    padding:12px 18px;border-radius:22px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+    font:600 11px/1 ui-sans-serif,system-ui,-apple-system,Helvetica,Arial;
+    letter-spacing:.03em;color:#12161b;background:rgba(232,221,198,.88);border:0;
+    padding:8px 13px;border-radius:16px;box-shadow:0 1px 6px rgba(0,0,0,.3)}
   #modebtn:active{background:#cfc4ad}
   #stick{position:fixed;left:38px;bottom:38px;width:108px;height:108px;
     border-radius:50%;border:2px solid rgba(232,221,198,.5);
@@ -81,6 +89,33 @@
     font:600 12px/1.4 ui-sans-serif,system-ui,Helvetica,Arial;
     color:rgba(240,235,222,.28);letter-spacing:.14em;text-transform:uppercase}
   #lookhint.on{display:flex}
+  /* GHOST PEDALS: the ride controls are invisible zones, and a first-time
+     thumb has nothing to find. These are indications, not buttons — faint
+     cream outlines at the real zones, pointer-events none so the true touch
+     layer underneath stays the input; they brighten while pressed so the
+     press reads. Ride mode + touch only; the walk stick replaces them. */
+  #pedals{position:fixed;left:calc(14px + env(safe-area-inset-left));top:50%;
+    transform:translateY(-58%);display:none;flex-direction:column;gap:10px;
+    pointer-events:none;z-index:5}
+  #pedals.on{display:flex}
+  .pedal{width:58px;height:64px;border-radius:14px;
+    border:1.5px solid rgba(232,221,198,.20);background:rgba(12,16,20,.10);
+    display:grid;place-items:center;transition:border-color .12s,background .12s}
+  .pedal.hot{border-color:rgba(232,221,198,.55);background:rgba(232,221,198,.10)}
+  .pedal i{display:block;border:solid rgba(232,221,198,.34);border-width:0 2.5px 2.5px 0;
+    padding:5px;transform:rotate(-135deg);margin-top:6px}
+  .pedal.brakeface i{transform:rotate(45deg);margin-top:-6px}
+  .pedal.hot i{border-color:rgba(232,221,198,.8)}
+  #steerhint{position:fixed;right:calc(18px + env(safe-area-inset-right));top:50%;
+    transform:translateY(-50%);width:96px;height:26px;display:none;
+    pointer-events:none;z-index:5}
+  #steerhint.on{display:block}
+  #steertrack{position:absolute;left:0;right:0;top:50%;height:2px;margin-top:-1px;
+    background:rgba(232,221,198,.18);border-radius:1px}
+  #steerdot{position:absolute;left:50%;top:50%;width:12px;height:12px;
+    margin:-6px 0 0 -6px;border-radius:50%;background:rgba(232,221,198,.42);
+    transition:none}
+  @media (orientation:portrait){ #pedals,#steerhint{display:none !important} }
   @media (orientation:portrait){ #rotate{display:grid} #place,#map,#maphint,#big,#modebtn,#stick,#lookhint{display:none} }
   /* The boot screen. The build blocks the main thread for seconds at a time,
      and a static "loading" line reads as a crash — so boot yields between
@@ -127,6 +162,12 @@
   <div id="bootrow"><span id="bootlab">reading the map&hellip;</span><span id="bootpct"></span></div>
 </div></div>
 <div id="stick"><div id="knob"></div></div>
+<div id="pedals">
+  <div class="pedal" id="pedalgo"><i></i></div>
+  <div class="pedal brakeface" id="pedalstop"><i></i></div>
+</div>
+<div id="steerhint"><div id="steertrack"></div><div id="steerdot"></div></div>
 <div id="lookhint">drag to look</div>
+<button id="vehiclebtn" type="button">Car</button>
 <button id="modebtn" type="button">Get off</button>
 <script type="module" src="./src/main.js"></script>

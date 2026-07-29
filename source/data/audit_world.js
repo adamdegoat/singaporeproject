@@ -1302,6 +1302,12 @@ window.__auditWorld = async function auditWorld() {
       // it is traffic; a handrail 32m long is an overhead bridge crossing the
       // road; ION's shell reaches over its own forecourt. What is left is real.
       const gq = o.geometry.parameters || {};
+      // THE PLAYER'S OWN VEHICLE, by ANCESTRY, not by mesh name: the rig
+      // group is named playerRig but its parts are anonymous, and the
+      // car's bumper (1.7x0.14x0.18) slipped past the car-shaped exemption
+      // below and blocked marinabay's T1 the night the car landed — a
+      // rider cannot be an obstruction to the rider.
+      for (let anc = o; anc; anc = anc.parent) if (anc.name === 'playerRig') return;
       const widest = Math.max(gq.width || 0, gq.depth || 0, (gq.radiusTop || 0) * 2);
       if (widest > 12) return;                    // spans the carriageway by design
       if ((gq.radiusTop || 0) > 10) return;       // the shell over the forecourt

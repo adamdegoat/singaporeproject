@@ -3,7 +3,7 @@
 // Node without a browser.
 import * as THREE from '../lib/three.module.js';
 
-export { RIDE, newState, step, turnRadius } from './ride.js';
+export { RIDE, CAR, newState, step, turnRadius } from './ride.js';
 
 /* ================= model ================= */
 const BODY = 0x9fc4b8;      // classic pale mint
@@ -102,4 +102,39 @@ export function buildRider() {
     g.add(part(new THREE.SphereGeometry(0.05, 8, 7), skin, sx * 2.3, 1.09, 0.56));
   }
   return g;
+}
+
+
+// A compact car in the same procedural spirit: one friendly hatchback, warm
+// red over cream, wheels returned like the Vespa's so the loop spins them
+// the same way. The rider disappears inside — the windows are tinted enough
+// that no interior needs to exist.
+export function buildCar() {
+  const g = new THREE.Group();
+  const paint = new THREE.MeshStandardMaterial({ color: 0xb8453c, roughness: 0.32, metalness: 0.28 });
+  const trim = new THREE.MeshStandardMaterial({ color: 0xe8e2d2, roughness: 0.5 });
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x25282c, roughness: 0.85 });
+  const glassT = new THREE.MeshStandardMaterial({ color: 0x394650, roughness: 0.12, metalness: 0.2 });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xc6cace, roughness: 0.22, metalness: 0.85 });
+
+  // body: low box with a rounded-read cabin set back
+  g.add(part(new THREE.BoxGeometry(1.68, 0.52, 3.95), paint, 0, 0.58, 0));
+  g.add(part(new THREE.BoxGeometry(1.52, 0.46, 2.0), paint, 0, 1.06, -0.25));
+  // glass band around the cabin
+  g.add(part(new THREE.BoxGeometry(1.54, 0.34, 2.06), glassT, 0, 1.10, -0.25));
+  // bonnet step + cream bumpers
+  g.add(part(new THREE.BoxGeometry(1.6, 0.16, 0.5), paint, 0, 0.9, 1.55));
+  g.add(part(new THREE.BoxGeometry(1.7, 0.14, 0.18), trim, 0, 0.38, 1.98));
+  g.add(part(new THREE.BoxGeometry(1.7, 0.14, 0.18), trim, 0, 0.38, -1.98));
+  // headlights
+  g.add(part(new THREE.CylinderGeometry(0.09, 0.09, 0.06, 10), chrome, -0.55, 0.66, 1.99, Math.PI / 2));
+  g.add(part(new THREE.CylinderGeometry(0.09, 0.09, 0.06, 10), chrome, 0.55, 0.66, 1.99, Math.PI / 2));
+
+  const wheels = [];
+  for (const [wx, wz] of [[-0.78, 1.31], [0.78, 1.31], [-0.78, -1.31], [0.78, -1.31]]) {
+    const w = part(new THREE.CylinderGeometry(0.31, 0.31, 0.2, 14), rubber, wx, 0.31, wz, 0, 0, Math.PI / 2);
+    g.add(w);
+    wheels.push(w);
+  }
+  return { group: g, wheels };
 }

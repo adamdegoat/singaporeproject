@@ -28,6 +28,23 @@ export class Sound {
       src.connect(ctx.destination);
       src.start(0);
     } catch (e) { /* nothing to do; the graph below still gets built */ }
+    // THE iPHONE RINGER SWITCH mutes plain Web Audio: everything above can
+    // be correct and the phone stays silent because iOS treats page audio
+    // as "ambient", which the mute switch kills. A looping media ELEMENT
+    // started in the same gesture promotes the session to "playback", which
+    // the switch does not kill — the standard workaround, and the reason
+    // games make sound on a muted iPhone. The element itself is a
+    // one-sample silent wav; it exists only to hold the session open.
+    try {
+      const el = document.createElement('audio');
+      el.setAttribute('playsinline', '');
+      el.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+      el.loop = true;
+      el.volume = 0.02;
+      const p = el.play();
+      if (p && p.catch) p.catch(() => { /* will retry on the next gesture via poke() */ });
+      this._session = el;
+    } catch (e) { /* no media element support: web audio alone still works */ }
 
     this.master = ctx.createGain();
     this.master.gain.value = 0.0;
@@ -132,6 +149,12 @@ export class Sound {
   // call from any later gesture: cheap if already running
   poke() {
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+    // the playback-session element can be refused on the first gesture if
+    // the browser judged it too early; any later gesture retries for free
+    if (this._session && this._session.paused) {
+      const p = this._session.play();
+      if (p && p.catch) p.catch(() => { /* keep trying on future gestures */ });
+    }
   }
 
   setMuted(m) {

@@ -31,6 +31,15 @@
    "notes": "Continues Orchard west: Tanglin Mall, Forum, St Regis, the Botanic Gardens edge."
   },
   {
+   "id": "rivervalley",
+   "name": "River Valley / Clarke Quay",
+   "bbox": "1.2880,103.8280,1.2975,103.8460",
+   "axis": "river valley road",
+   "status": "building",
+   "notes": "The empty square the user pointed at on the map, 2026-07-29: the band between Orchard's south edge and the river. Clarke Quay, Robertson Quay's east end, UE Square, Fort Canning's west flank. Overlaps orchard (to 1.2975 over its 1.2965 south edge), chinatown (1.2880 under its 1.2895 north edge) and brasbasah (103.8460 over its 103.8450 west edge), so the region closes into one block with no seam holes.",
+   "queued_after": "chinatown"
+  },
+  {
    "id": "bugis",
    "name": "Bugis / Rochor",
    "bbox": "1.2960,103.8520,1.3030,103.8620",

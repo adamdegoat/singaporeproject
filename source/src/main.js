@@ -5,7 +5,7 @@ import { Terrain } from './terrain.js';
 import { dedupeMaterials, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
 import { Solid } from './solid.js';
-import { buildVespa, buildRider, newState, step, RIDE } from './vespa.js';
+import { buildVespa, buildRider, buildCar, newState, step, RIDE, CAR } from './vespa.js';
 import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
 import { axisSpec, buildMarkings, dressSideStreets, selectSideStreets, dedupeProps } from './markings.js';
@@ -563,6 +563,26 @@ function dressStreet(data, axis) {
 const vespa = buildVespa();
 const rider = buildRider();
 vespa.group.add(rider);
+// THE CAR, riding the exact same state and step() with its own numbers.
+// Both rigs live in the one `bike` group so every placement, collision and
+// camera line that says "bike" keeps working; the choice is which body is
+// visible and which parameter set the physics runs.
+const carRig = buildCar();
+carRig.group.visible = false;
+let vehicleKind = 'bike';
+let rideParams = RIDE;
+function setVehicle(kind) {
+  vehicleKind = kind === 'car' ? 'car' : 'bike';
+  rideParams = vehicleKind === 'car' ? CAR : RIDE;
+  carRig.group.visible = vehicleKind === 'car';
+  vespa.group.visible = vehicleKind === 'bike';
+  // in a car the rider sits behind tinted glass; on the bike he is the pilot
+  if (mode === 'ride') rider.visible = vehicleKind === 'bike';
+  try { localStorage.setItem('sg_vehicle', vehicleKind); } catch (e) { /* private mode */ }
+  const b = document.getElementById('vehiclebtn');
+  if (b) b.textContent = vehicleKind === 'bike' ? 'Car' : 'Bike';
+}
+window.__setVehicle = setVehicle;
 const bike = new THREE.Group();
 // Named so the audit can tell the PLAYER'S OWN VEHICLE apart from the world.
 // P1b was counting the scooter and its rider -- nine separate findings for the
@@ -574,6 +594,7 @@ const bike = new THREE.Group();
 // allowlist fails closed the moment a shape is retuned.
 bike.name = 'playerRig';
 bike.add(vespa.group);
+bike.add(carRig.group);
 scene.add(bike);
 
 let S = newState(0, 0, 0);
@@ -1047,6 +1068,19 @@ attachMouse(canvas);
     btn.addEventListener('click', tap);
     btn.addEventListener('touchstart', tap, { passive: false });
   }
+  const vbtn = document.getElementById('vehiclebtn');
+  if (vbtn) {
+    const tap = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (mode !== 'ride') return;               // choose from the saddle only
+      setVehicle(vehicleKind === 'bike' ? 'car' : 'bike');
+    };
+    vbtn.addEventListener('click', tap);
+    vbtn.addEventListener('touchstart', tap, { passive: false });
+  }
+  let saved = 'bike';
+  try { saved = localStorage.getItem('sg_vehicle') || 'bike'; } catch (e) { /* fine */ }
+  setVehicle(saved);
 }
 
 // Glass with nothing to reflect always looks like painted plastic. Render the
@@ -1104,10 +1138,29 @@ function toggleMode() {
     rider.visible = false;      // he is the one standing next to it now
     mode = 'walk';
   } else {
+    // THE VEHICLE COMES TO YOU. "Walk back within 6m" made walking a trap:
+    // wander a street away and the ride button silently did nothing. Now a
+    // far vehicle is SUMMONED to a clear spot beside the walker — fanned
+    // search, pavement preferred, and a failed search keeps the old rule
+    // rather than teleporting you into a wall (skip, never substitute).
     const d = Math.hypot(walker.x - S.x, walker.z - S.z);
-    if (d > 6) return;                       // must walk back to the scooter
+    if (d > 6) {
+      let placed = false;
+      for (const reach of [1.6, 2.4, 3.2]) {
+        for (let a = 0; a < Math.PI * 2 && !placed; a += Math.PI / 6) {
+          const nx2 = Math.cos(walker.heading + a), nz2 = -Math.sin(walker.heading + a);
+          const px2 = walker.x + nx2 * reach, pz2 = walker.z + nz2 * reach;
+          if (blocked(px2, pz2)) continue;
+          if (trafficSys && trafficSys.hits(px2, pz2, 1.2)) continue;
+          S.x = px2; S.z = pz2; S.heading = walker.heading; S.speed = 0;
+          placed = true;
+        }
+        if (placed) break;
+      }
+      if (!placed) return;                   // nowhere clear: walk closer
+    }
     walkerRig.group.visible = false;
-    rider.visible = true;
+    rider.visible = vehicleKind === 'bike';
     camInit = false;
     mode = 'ride';
   }
@@ -1177,7 +1230,8 @@ function driveCamera(dt) {
   const fwd = new THREE.Vector3(Math.sin(S.heading), 0, Math.cos(S.heading));
   const gy = terrain.at(S.x, S.z);
   const want = new THREE.Vector3(S.x, gy, S.z)
-    .addScaledVector(fwd, -5.8).add(new THREE.Vector3(0, 3.05, 0));
+    .addScaledVector(fwd, vehicleKind === 'car' ? -7.4 : -5.8)
+    .add(new THREE.Vector3(0, vehicleKind === 'car' ? 3.5 : 3.05, 0));
   want.y = Math.max(want.y, terrain.at(want.x, want.z) + 1.6);
   const aim = new THREE.Vector3(S.x, gy + 1.35, S.z).addScaledVector(fwd, 7.5);
   aim.y = terrain.at(aim.x, aim.z) + 1.35;
@@ -1192,8 +1246,11 @@ function driveCamera(dt) {
 
 /* ---------------- resize ---------------- */
 const DPR_FORCE = parseFloat(P.get('dpr') || '0');
+let appliedW = 0, appliedH = 0;
 function resize() {
   const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;
+  appliedW = w; appliedH = h;
   renderer.setPixelRatio(DPR_FORCE || Math.min(devicePixelRatio || 1, 2));
   renderer.setSize(w, h, false);
   camera.aspect = w / h; camera.updateProjectionMatrix();
@@ -1204,6 +1261,16 @@ function resize() {
   topCam.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
+// On a phone rotation the browser fires `resize` BEFORE the viewport
+// settles, so the canvas was sized from stale dimensions and the first
+// landscape after a portrait load rendered squeezed until a second
+// rotation re-fired the event with real numbers. The loop therefore checks
+// the ACTUAL canvas size every frame — two property reads — and re-sizes
+// the moment reality and the applied size disagree, whichever order the
+// browser delivers its events in.
+function resizeIfStale() {
+  if (canvas.clientWidth !== appliedW || canvas.clientHeight !== appliedH) resize();
+}
 resize();
 
 /* ---------------- loop ---------------- */
@@ -1215,6 +1282,7 @@ function loop(now) {
   // a real power draw — it pegged two CPU cores on this laptop — and on a phone
   // it is battery and heat for nothing.
   if (document.hidden) { requestAnimationFrame(loop); return; }
+  resizeIfStale();
 
   // Nothing renders until the world is ready. This mattered the moment boot
   // gained an await (the GPU warm-up below): rAF frames interleave with the
@@ -1281,9 +1349,9 @@ function loop(now) {
     }
 
     const px = S.x, pz = S.z;
-    step(S, dt, inp.throttle, inp.brake, inp.steer);
+    step(S, dt, inp.throttle, inp.brake, inp.steer, rideParams);
     // you cannot ride through a bus
-    if (trafficSys && trafficSys.hits(S.x, S.z, 0.55)) {
+    if (trafficSys && trafficSys.hits(S.x, S.z, vehicleKind === 'car' ? 0.95 : 0.55)) {
       S.x = px; S.z = pz;
       S.speed *= -0.12;                 // a small bounce, then stopped
       if (Math.abs(S.speed) < 0.4) S.speed = 0;
@@ -1303,9 +1371,14 @@ function loop(now) {
     // pitch into the slope, so a climb reads as a climb
     const fwdX = Math.sin(S.heading), fwdZ = Math.cos(S.heading);
     bike.rotation.x = -Math.atan(terrain.slopeAlong(S.x, S.z, fwdX, fwdZ, 3.5));
-    vespa.group.rotation.z = S.lean;
-    vespa.wheels[0].rotation.x = -S.wheel;
-    vespa.wheels[1].rotation.x = -S.wheel;
+    if (vehicleKind === 'bike') {
+      vespa.group.rotation.z = S.lean;
+      vespa.wheels[0].rotation.x = -S.wheel;
+      vespa.wheels[1].rotation.x = -S.wheel;
+    } else {
+      carRig.group.rotation.z = S.lean;          // CAR.leanMax keeps this a small roll
+      for (const w of carRig.wheels) w.rotation.x = -S.wheel * 0.68;
+    }
 
     // keep the shadow frustum on the rider, not the whole town
     sun.position.set(S.x + SUNDIR.x * 150, gy + SUNDIR.y * 150, S.z + SUNDIR.z * 150);

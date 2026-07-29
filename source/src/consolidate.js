@@ -43,6 +43,16 @@ function sig(m) {
 
 export function dedupeMaterials(root) {
   const canon = new Map();
+  // sig() builds a 25-field string; computed per MESH it ran 7,000+ times
+  // for ~1,200 distinct materials, a measurable slice of the boot's
+  // dedupe+consolidate second. A material's signature cannot change between
+  // meshes in one pass, so it is cached by uuid.
+  const sigCache = new Map();
+  const sigOf = (m) => {
+    let s = sigCache.get(m.uuid);
+    if (s === undefined) { s = sig(m); sigCache.set(m.uuid, s); }
+    return s;
+  };
   let before = new Set(), after = new Set();
   root.traverse((o) => {
     if (!o.isMesh && !o.isPoints && !o.isLine) return;
@@ -57,7 +67,7 @@ export function dedupeMaterials(root) {
     if (o.userData && o.userData.dyn) { after.add(m.uuid); return; }
     // instanceColor tints per instance, so those materials are not interchangeable
     if (o.isInstancedMesh && o.instanceColor) { after.add(m.uuid); return; }
-    const k = sig(m);
+    const k = sigOf(m);
     if (!canon.has(k)) canon.set(k, m);
     else o.material = canon.get(k);
     after.add(o.material.uuid);

@@ -322,8 +322,26 @@ whole sweep, confirming #9 with more frames:
     on the junction's DRAWN overlap tarmac — the drawn-vs-indexed width
     disagreement at junction mouths, a separate debt, not a placement bug.
     ~~Kerb bars/slabs ON the carriageway at Grange Rd + Canning Walk~~
-20. [BAD] Floating: 171 shelter/gantry frame ends mid-air over the kerb;
-    187 lamp luminaire detached from pole. 21. [minor] 169 voco: CLEARED — at full resolution the "charcoal wall" is
+20. [BAD] 171 RE-DIAGNOSED from the frame + probe: the "floating shelter
+    frame" is the covered walkway and it is FINE. The real defects at the
+    Lucky Plaza/Nutmeg spot: (a) the pedestrianised plaza renders as one
+    huge unmarked TEAL-SLATE apron (BufferGeometry col 7f929c — the paver/
+    concrete bucket colour, reads unreal at this scale); (b) a BLACK WEDGE
+    hole in the surface just ahead of the spawn (dark 2e2c2a geometry
+    showing through a triangulation gap where the plaza polygon meets the
+    road ribbon — same sliver class as frame 183). Fix = plaza surface
+    treatment + polygon seam, one batch with the surface-material pass. 187 lamp luminaire: FIXED (12th deploy) — arms and heads in
+    BOTH lamp systems grounded at their own offset position, metres off the
+    pole's ground beside a retaining wall; every part now grounds at the
+    POLE (main.js axis lamps r[5]/r[6], markings.js LTA lamps same).
+    The 058 Canning Rise salmon capsule: ELIMINATED so far — not a floating
+    crowd torso (0 of drawn torsos >2.5m up at the spot), not a bag
+    (0.22m box, too small), not a red-tinted foliage clump (no icosahedron
+    instanceColor outliers; possibly foliage has no instanceColor at all —
+    check that first next time). Next thread: it sits at canopy height near
+    (1427-1460, 7618-7654); ray THE BLOB itself from the frame-058 camera
+    with a tight fan aimed +0.3 rad right of heading, 60-130m, and read the
+    hit's instanceId + mesh directly. 21. [minor] 169 voco: CLEARED — at full resolution the "charcoal wall" is
     the dark-framed boutique arcade with legible tenant fascias (MB
     Jewellery, Mouawad, Breitling), exactly per research/voco.md; the
     reviewer read a thumbnail. Blank slabs 167/185/199 and the bare west
