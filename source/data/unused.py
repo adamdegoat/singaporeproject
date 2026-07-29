@@ -113,6 +113,15 @@ DEFERRED = {
     # state from unread: the bus lane is drawn behind a DRAW_BUS_LANES flag
     # that is off because per-fragment ribbons render as stains. See city.js.
     "busway": "carried as r.bus; drawing is written and switched off, see city.js",
+    # surfaced by River Valley 2026-07-29 — both real features waiting for
+    # their systems, not noise:
+    "residential": "building use; should eventually steer the facade family "
+                   "toward the balcony/condo look (River Valley is condo "
+                   "country) the way amenity should steer retail — same "
+                   "deferral class as amenity",
+    "maxheight": "height-restricted ways — River Valley's CTE underpasses. "
+                 "Nothing models clearance signage or low decks yet; when "
+                 "bridges get real clearances this is the source",
     "turn:lanes:forward":  "per-direction turn arrows; we use the undirected turn:lanes",
     "turn:lanes:backward": "same",
     "addr:housenumber":    "no building-number signage is modelled anywhere yet",

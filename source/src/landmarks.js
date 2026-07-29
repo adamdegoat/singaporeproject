@@ -182,7 +182,7 @@ function crown(api, ob, u, v, w, d, y0, mat) {
 // probed radially with the road index. The axis version below aims at the
 // district's main street, which put Emerald Hill's shophouse doors on the
 // Orchard-facing flanks of rows that front their own road.
-function localStreetward(ob) {
+function localStreetward(ob, walkways) {
   if (!window.__onRoad) return null;
   let best = null, bd = 1e9;
   for (let k = 0; k < 16; k++) {
@@ -195,7 +195,33 @@ function localStreetward(ob) {
       }
     }
   }
-  return best;
+  if (best) return best;
+  // PEDESTRIANISED streets carry no carriageway for the index to find —
+  // Emerald Hill's lower stretch since 1981 (it is in our own research
+  // notes). Fall back to the nearest walkable way's nearest point.
+  if (walkways && walkways.length) {
+    // nearest point on the SEGMENTS, not the vertices: a sparse polyline's
+    // nearest vertex sits far along the street, aiming the frontage down
+    // the row and putting every door on the end walls (measured: three
+    // invisible iterations before this line existed)
+    let wx = 0, wz = 0, wd = 1e9;
+    for (const w of walkways) {
+      for (let i = 0; i < w.p.length - 1; i++) {
+        const [x1, z1] = w.p[i], [x2, z2] = w.p[i + 1];
+        const dx = x2 - x1, dz = z2 - z1, L2 = dx * dx + dz * dz || 1;
+        let t = ((ob.cx - x1) * dx + (ob.cz - z1) * dz) / L2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const px = x1 + dx * t, pz = z1 + dz * t;
+        const d = (px - ob.cx) ** 2 + (pz - ob.cz) ** 2;
+        if (d < wd) { wd = d; wx = px; wz = pz; }
+      }
+    }
+    if (wd < 30 * 30) {
+      const L = Math.sqrt(wd) || 1;
+      return { nx: (wx - ob.cx) / L, nz: (wz - ob.cz) / L, dist: L };
+    }
+  }
+  return null;
 }
 
 // direction from the building centroid toward the nearest point on Orchard Road
@@ -1215,7 +1241,7 @@ export function shophouse(api, b) {
   // the mass, set back at the ground floor to leave a covered walkway.
   // Everything here shares a material, so it all goes through the merger:
   // 139 shophouses as loose meshes cost 850 draw calls on their own.
-  const sw = localStreetward(ob) || streetward(api, ob);
+  const sw = localStreetward(ob, api.walkways) || streetward(api, ob);
   api.merge(api.extrudeGeo(api.grow(b.p, 0.86), groundH), api.mat.warmStone, cx0, cz0);
   // metre UVs (see the UV RULE in city.js): texShophouse is 3 floors x 3 bays
   // per tile, so 1/8 x 1/11 is a 2.7m bay on a 3.7m floor

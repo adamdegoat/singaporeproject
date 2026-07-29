@@ -619,6 +619,9 @@ export function buildBuildings(world, data) {
     // See the UV RULE above; recipes were the last path still mapping windows
     // at whatever size the geometry happened to be.
     world, grow, axis: data.axis || null,
+    // walkable ways too, for frontages on pedestrianised streets (Emerald
+    // Hill since 1981) where the road index has nothing to point at
+    walkways: (data.roads || []).filter((r) => r.k === 'pedestrian' || r.k === 'footway'),
     extrude: (pts, h, mat, y0) => autoUV(extrude(pts, h, mat, y0), mat),
     extrudeGeo,
     scaleUV: (geo, sx, sy) => {
