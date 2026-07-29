@@ -262,8 +262,25 @@ Reviewer for 000-054 adds (10 BAD, 23 minor, 33 total), FOUR SYSTEMIC:
 15. **Lane dashes straight through junction mouths** (007/016/017/027/043
     + prior triage #6) — the axis/side-street per-metre marking system
     still has no junction gaps.
-16. **Red bus-lane paint fragmenting into detached polygons** (002/007/054
-    + sweep-1 tears) — the run-stitcher's junction pieces.
+16. **FIXED (11th deploy): bus-lane tears.** (a) ribbon()/ribbonOffset grew
+    a `noExt` flag — a subPoly-cut piece no longer extends its ends across
+    the bend it was cut at; (b) the lane's outer edge (sampled 0.5m INSIDE
+    the paint line — testing the exact edge against a shrunken index trims
+    EVERYTHING, first attempt went 108 meshes -> 4) verifies per-3m span
+    against the road index, and only verified spans >= 12m are laid.
+    Verified at the frame-090 spot: continuous band, clean square cut at
+    the junction gap, no triangles or floods. Bus geometry now 52 meshes /
+    7.3k verts (was 108/21.6k — the delta was the off-road flood paint).
+    ~~Red bus-lane paint fragmenting into detached polygons~~ (002/007/054
+    + sweep-1 tears; characterized on frame 090: ragged triangular end
+    mid-block, resume after) — the run-stitcher's junction pieces. FIX
+    APPROACH, next batch's opener: (a) the tears sit at subPoly cut points
+    where ribbonOffset's END EXTENSION (half*1.1) fans across a bend —
+    suppress the extension on cut ends (subPoly already lands exactly at
+    the junction gap edge, extending past it is what tears); (b) apply the
+    paint-verify pattern to the bus ribbon's OUTER edge (sample at 3m,
+    trim pieces whose edge leaves the carriageway); (c) the "inner edge
+    steps where width changes" polish from the original bus-lane note.
     Plus one-offs worth probing: 025 thick bare column at kerb; 030
     detached glazing panel; 005 slate-blue quad on carriageway; 009 black
     sphere on kerb; 012 near-black carriageway; blank near-field slabs
@@ -283,8 +300,15 @@ whole sweep, confirming #9 with more frames:
     edge vs painted yellow offset at that exact spot, then fix the paint to
     take each WAY's own drawn width (or clamp paint inside the drawn edge
     the way P9 should have caught — strengthen P9 with the fix).
-18. **[BAD] Plaza Singapura mass overhangs Edinburgh/Handy Rd with a clear
-    air gap** (177/178) — rider passes under an unsupported slab.
+18. **[BAD] Plaza Singapura overhang PART-DIAGNOSED: an ExtrudeGeometry
+    roofs the carriageway at 3.1m (frame 177 spot) and 5.9m (178, 40 ray
+    hits) while PS's footprint edge is 5-9m AWAY** — so it is an added
+    structure, most likely a covered-walkway/linkway span (street.js) drawn
+    WITHOUT its posts. Real Handy Rd linkways exist, so the fix is posts +
+    honest span heights, not deletion. Probe: scratchpad/psprobe2.mjs.
+    NOTE for frame-number hygiene: sweep.json row coords CHANGE each sweep
+    run — always resolve a reviewer's frame numbers against the sweep.json
+    THAT REVIEW SAW (this one cost a mis-aimed probe).
 19. **MOSTLY FIXED (10th deploy): median + kerb pieces verify against the
     road index.** Three guards landed: median midpoints AND bar ends
     (sgdetail.js), side-street 4m kerbs centre+ends (markings.js), crossing
@@ -295,10 +319,11 @@ whole sweep, confirming #9 with more frames:
     disagreement at junction mouths, a separate debt, not a placement bug.
     ~~Kerb bars/slabs ON the carriageway at Grange Rd + Canning Walk~~
 20. [BAD] Floating: 171 shelter/gantry frame ends mid-air over the kerb;
-    187 lamp luminaire detached from pole. 21. [minor] 169 voco frontage
-    reads CHARCOAL not white from its callout frame — probe which face the
-    camera sees (dark arcade + proud dark bands may dominate); blank slabs
-    167/185/199. West Tanglin zone (165/168) still bare expanses.
+    187 lamp luminaire detached from pole. 21. [minor] 169 voco: CLEARED — at full resolution the "charcoal wall" is
+    the dark-framed boutique arcade with legible tenant fascias (MB
+    Jewellery, Mouawad, Breitling), exactly per research/voco.md; the
+    reviewer read a thumbnail. Blank slabs 167/185/199 and the bare west
+    Tanglin expanses (165/168) remain open.
 CLEARED: Concorde raked slab (180), Artyzen tower (181) render fine.
 
 ## THE SWEEP REVIEW TRIAGE (2026-07-29, all 220 frames reviewed, 64 findings)

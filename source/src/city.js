@@ -884,7 +884,7 @@ function addShopfront(world, b, per, merger, clearance) {
 // somebody chose.
 // A ribbon laid parallel to a centreline but offset sideways, for a bus lane
 // that runs inside the kerb rather than down the middle.
-function ribbonOffset(pts, width, y, off, flat) {
+function ribbonOffset(pts, width, y, off, flat, noExt = false) {
   const moved = [];
   for (let i = 0; i < pts.length; i++) {
     const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
@@ -892,10 +892,10 @@ function ribbonOffset(pts, width, y, off, flat) {
     const L = Math.hypot(dx, dz) || 1;
     moved.push([pts[i][0] - (dz / L) * off, pts[i][1] + (dx / L) * off]);
   }
-  return ribbon(moved, width, y, flat);
+  return ribbon(moved, width, y, flat, noExt);
 }
 
-function ribbon(pts, width, y, flat = false) {
+function ribbon(pts, width, y, flat = false, noExt = false) {
   const g = new THREE.BufferGeometry();
   const pos = [], uv = [];
   let deck = 0;
@@ -951,11 +951,16 @@ function ribbon(pts, width, y, flat = false) {
     const L = Math.hypot(dx, dz) || 1;
     dir.push([dx / L, dz / L]);
   }
-  // push the two ends out past the node so junctions are covered
-  const EXT = half * 1.1;
-  p[0] = [p[0][0] - dir[0][0] * EXT, p[0][1] - dir[0][1] * EXT];
-  const dl = dir[dir.length - 1];
-  p[p.length - 1] = [p[p.length - 1][0] + dl[0] * EXT, p[p.length - 1][1] + dl[1] * EXT];
+  // push the two ends out past the node so junctions are covered — UNLESS
+  // the caller cut this piece to an exact arclength (a bus-lane junction
+  // gap): extending a cut end fans it across the bend it was cut at, which
+  // is the ragged red triangle in sweep-2 frame 090.
+  if (!noExt) {
+    const EXT = half * 1.1;
+    p[0] = [p[0][0] - dir[0][0] * EXT, p[0][1] - dir[0][1] * EXT];
+    const dl = dir[dir.length - 1];
+    p[p.length - 1] = [p[p.length - 1][0] + dl[0] * EXT, p[p.length - 1][1] + dl[1] * EXT];
+  }
 
   // per-vertex offset: segment normal at the ends, mitred bisector between
   const off = [];
@@ -1227,8 +1232,45 @@ export function buildRoads(world, data) {
     const laneW = Math.min(3.6, w * 0.28);
     const off = (side === 'left' ? -1 : 1) * (w / 2 - laneW / 2);
     for (const sub of pieces) {
-      const bg = ribbonOffset(sub, laneW, 0.068, off, false);
-      if (bg && bg.attributes.position && bg.attributes.position.count) busGeos.push(bg);
+      // THE OUTER EDGE VERIFIES ITSELF, in spans: sample the lane's outer
+      // edge every 3m against the road index and lay ribbon only over the
+      // arclength spans where it stays on tarmac. Whole-piece skipping
+      // threw away good lane with the bad; per-span keeps both honest.
+      // half a metre INSIDE the painted edge: the edge itself IS the road
+      // boundary, and testing the boundary against a shrunken index trims
+      // everything by construction (first attempt: 108 meshes -> 4)
+      const outerOff = off + Math.sign(off) * (laneW / 2 - 0.5);
+      const spans = [];
+      let spanStart = null;
+      const total3 = polyLen(sub);
+      for (let a = 0; a <= total3 + 1; a += 3) {
+        const aa = Math.min(a, total3);
+        // sample point + normal at arclength aa
+        let rem = aa, px = sub[0][0], pz = sub[0][1], nx3 = 0, nz3 = 0;
+        for (let i = 0; i < sub.length - 1; i++) {
+          const dx = sub[i + 1][0] - sub[i][0], dz = sub[i + 1][1] - sub[i][1];
+          const L3 = Math.hypot(dx, dz) || 1;
+          if (rem <= L3) {
+            px = sub[i][0] + dx * (rem / L3); pz = sub[i][1] + dz * (rem / L3);
+            nx3 = -dz / L3; nz3 = dx / L3;
+            break;
+          }
+          rem -= L3;
+        }
+        const ok = a <= total3
+          && (!window.__onRoad || window.__onRoad(px + nx3 * outerOff, pz + nz3 * outerOff, -0.05));
+        if (ok && spanStart === null) spanStart = aa;
+        if ((!ok || aa === total3) && spanStart !== null) {
+          if (aa - spanStart >= 12) spans.push([spanStart, aa]);
+          spanStart = null;
+        }
+      }
+      for (const [s0, s1] of spans) {
+        const piece = subPoly(sub, s0, s1);
+        if (!piece || piece.length < 2) continue;
+        const bg = ribbonOffset(piece, laneW, 0.068, off, false, true);
+        if (bg && bg.attributes.position && bg.attributes.position.count) busGeos.push(bg);
+      }
     }
   }
 
