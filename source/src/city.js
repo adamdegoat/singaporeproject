@@ -1,7 +1,7 @@
 // Build the street from real OSM geometry: extruded footprints, road ribbons,
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, rng } from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, rng } from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV } from './landmarks.js';
 
 export const TEX = {
@@ -102,7 +102,21 @@ export const MAT = {
   // Red asphalt DRAWN red (see texAsphalt): tinting the grey map topped out
   // at maroon-brown however bright the tint. Vetted against the eye-level
   // shots, not the swatch: LTA's full-day bus lane red, weathered.
-  busLane: new THREE.MeshStandardMaterial({ map: texAsphalt(0x9e3d2c), roughness: 0.93 }),
+  busLane: Object.assign(new THREE.MeshStandardMaterial({ map: texAsphalt(0x9e3d2c), roughness: 0.93 }), { name: 'busLane' }),
+  // The broken white centre line, LTA SDRE Ch.8 Type E: 150mm wide, 2.75m
+  // mark, 2.75m gap (RMS2, corroborated by RMS12's "2.75m/2.75m/5.5m" labels).
+  // NOT the 100mm 2m/4m pattern — that is Type B, the lane line between
+  // same-direction lanes, and the two differ in every dimension. The dash
+  // lives in the TEXTURE (see texCentreDash for why), so a whole street is
+  // one ribbon: v runs in units of the ribbon's 0.15m width, and repeat.y
+  // turns that into one 5.5m cycle. Alpha-tested opaque, not transparent, and
+  // the mip-averaged alpha (~1/2) sits near the test at distance, so the line
+  // softens far away instead of shimmering.
+  centreLine: (() => {
+    const t = texCentreDash(2.75, 2.75);
+    t.repeat.set(1, 0.15 / 5.5);
+    return Object.assign(new THREE.MeshStandardMaterial({ map: t, roughness: 0.85, alphaTest: 0.45 }), { name: 'centreLine' });
+  })(),
   // Marina Reservoir is fresh water held behind a barrage, not open sea: it
   // reads green-grey and fairly still, not blue. Low roughness so it picks up
   // the environment map the sky already provides, which is what makes it read
@@ -1002,6 +1016,7 @@ function polyLen(pts) {
 export function buildRoads(world, data) {
   const roadGeos = [], paveGeos = [], unitPaveGeos = [], concGeos = [], busGeos = [];
   const yellowGeos = [];
+  const centreGeos = [];
   let mainAxis = null, bestLen = Infinity;
   for (const r of data.roads) {
     // A CROSSING IS NOT A PAVEMENT. `footway=crossing` is the pedestrian
@@ -1054,11 +1069,18 @@ export function buildRoads(world, data) {
     // Skipped on service roads and anything under 5.5m: a driveway or a back
     // lane with double yellows down it is wrong, and OSM classes a lot of
     // hotel set-downs as service roads.
-    if (!isPath && r.k !== 'service' && r.k !== 'service_link' && (r.w || 0) >= 5.5) {
+    //
+    // ONLY BRIDGE ways are drawn here now, per way and flat at deck height —
+    // a stitched run would take one deck height across ways that each chose
+    // their own. Everything else moved to the streetRuns consumer below, so
+    // the yellows BREAK AT JUNCTION MOUTHS: drawn blindly per way they ran
+    // straight across every junction they met, which the centre-line vet
+    // frames caught the moment there was other paint to compare against.
+    if (!isPath && r.bridge && r.k !== 'service' && r.k !== 'service_link' && (r.w || 0) >= 5.5) {
       for (const sgn of [-1, 1]) {
         for (const inset of [0.45, 0.70]) {
           const off = sgn * (r.w / 2 - inset);
-          const yg = ribbonOffset(r.p, 0.10, 0.087, off, !!r.bridge);
+          const yg = ribbonOffset(r.p, 0.10, 0.087, off, true);
           if (yg && yg.attributes.position && yg.attributes.position.count) yellowGeos.push(yg);
         }
       }
@@ -1082,23 +1104,30 @@ export function buildRoads(world, data) {
   // The surface sits at 0.068: above every carriageway (0.055..0.0608 with
   // the per-way seed) and below every marking (0.075 up), so the dashes and
   // arrows paint ON the red lane the way they do on the street.
-  {
+  // The stitcher is shared with the centre lines below: chain a street's
+  // tagged ways into continuous runs (keyed by whatever `keyFn` returns —
+  // the key MUST begin with the street name, which the junction test reads
+  // back out), then slice out the stretches BETWEEN junction mouths.
+  //
+  // BREAK AT JUNCTION MOUTHS because paint stops at a side road and resumes
+  // past it — traffic turns through there. A line straight over every
+  // junction is the sort of thing a Singaporean reads as wrong without being
+  // able to say why. A junction is where a DIFFERENT named street's
+  // centreline passes close to the run, so it comes from the map rather than
+  // from a rule about spacing; the gap is the crossing street's own half
+  // width plus 2m.
+  const streetRuns = (wantFn, keyFn) => {
     const groups = new Map();
     for (const r of data.roads) {
-      if (!r.bus || r.k === 'footway' || r.k === 'pedestrian' || (r.w || 0) <= 6) continue;
-      // no bus lane on a bridge deck: a merged run would take ONE deck height
-      // across ways that each chose their own, and a red ribbon floating over
-      // (or sunk under) the deck is worse than its absence
-      if (r.bridge) continue;
-      const k = `${r.n || '?'}|${r.bus}|${r.w}`;
+      if (!wantFn(r)) continue;
+      const k = keyFn(r);
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k).push(r.p.map((q) => [q[0], q[1]]));
     }
     const J = 1.5;
     const near2 = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 <= J * J;
+    const out = [];
     for (const [k, chains] of groups) {
-      const [, side, wStr] = k.split('|');
-      const w = +wStr;
       // chain fragments end-to-end until nothing joins
       let merged = true;
       while (merged) {
@@ -1115,44 +1144,33 @@ export function buildRoads(world, data) {
           }
         }
       }
-    // BREAK THE LANE AT JUNCTION MOUTHS.
-    //
-    // A bus lane stops at a side road and resumes past it -- the red does not
-    // run across the mouth, because traffic turns through there. Ours ran
-    // straight over every junction it met, which is the sort of thing a
-    // Singaporean reads as wrong without being able to say why.
-    //
-    // A junction is where a DIFFERENT named street's centreline passes close
-    // to this run, so it comes from the map rather than from a rule about
-    // spacing. The gap is the crossing street's own half width plus 2m.
-    const junctionsNear = (run) => {
-      const cuts = [];
-      for (const r2 of data.roads) {
-        if (r2.k === 'footway' || r2.k === 'pedestrian') continue;
-        if ((r2.n || '?') === (k.split('|')[0])) continue;      // same street
-        for (const q of r2.p) {
-          let acc = 0;
-          for (let i = 0; i < run.length - 1; i++) {
-            const ax = run[i + 1][0] - run[i][0], az = run[i + 1][1] - run[i][1];
-            const L = Math.hypot(ax, az) || 1;
-            const t = Math.max(0, Math.min(1, ((q[0] - run[i][0]) * ax + (q[1] - run[i][1]) * az) / (L * L)));
-            const px = run[i][0] + ax * t, pz = run[i][1] + az * t;
-            if ((q[0] - px) ** 2 + (q[1] - pz) ** 2 < 3 * 3) {
-              cuts.push([acc + t * L, (r2.w || 6) / 2 + 2]);
-              break;
+      const name = k.split('|')[0];
+      const junctionsNear = (run) => {
+        const cuts = [];
+        for (const r2 of data.roads) {
+          if (r2.k === 'footway' || r2.k === 'pedestrian') continue;
+          if ((r2.n || '?') === name) continue;      // same street
+          for (const q of r2.p) {
+            let acc = 0;
+            for (let i = 0; i < run.length - 1; i++) {
+              const ax = run[i + 1][0] - run[i][0], az = run[i + 1][1] - run[i][1];
+              const L = Math.hypot(ax, az) || 1;
+              const t = Math.max(0, Math.min(1, ((q[0] - run[i][0]) * ax + (q[1] - run[i][1]) * az) / (L * L)));
+              const px = run[i][0] + ax * t, pz = run[i][1] + az * t;
+              if ((q[0] - px) ** 2 + (q[1] - pz) ** 2 < 3 * 3) {
+                cuts.push([acc + t * L, (r2.w || 6) / 2 + 2]);
+                break;
+              }
+              acc += L;
             }
-            acc += L;
           }
         }
-      }
-      return cuts.sort((a, b) => a[0] - b[0]);
-    };
+        return cuts.sort((a, b) => a[0] - b[0]);
+      };
 
       for (const run of chains) {
         if (polyLen(run) < 30) continue;         // a patch is not a lane
-        const laneW = Math.min(3.6, w * 0.28);
-        const off = (side === 'left' ? -1 : 1) * (w / 2 - laneW / 2);
-        // walk the run, emitting the stretches BETWEEN junction mouths
+        // walk the run, emitting the stretches between junction mouths
         const cuts = junctionsNear(run);
         const total = polyLen(run);
         const pieces = [];
@@ -1163,12 +1181,88 @@ export function buildRoads(world, data) {
           at = Math.max(at, b);
         }
         if (total > at + 12) pieces.push([at, total]);
+        const subs = [];
         for (const [from, to] of pieces) {
           const sub = subPoly(run, from, to);
-          if (!sub || sub.length < 2) continue;
-          const bg = ribbonOffset(sub, laneW, 0.068, off, false);
-          if (bg && bg.attributes.position && bg.attributes.position.count) busGeos.push(bg);
+          if (sub && sub.length >= 2) subs.push(sub);
         }
+        if (subs.length) out.push({ key: k, pieces: subs });
+      }
+    }
+    return out;
+  };
+
+  for (const { key, pieces } of streetRuns(
+    // no bus lane on a bridge deck: a merged run would take ONE deck height
+    // across ways that each chose their own, and a red ribbon floating over
+    // (or sunk under) the deck is worse than its absence
+    (r) => r.bus && r.k !== 'footway' && r.k !== 'pedestrian' && (r.w || 0) > 6 && !r.bridge,
+    (r) => `${r.n || '?'}|${r.bus}|${r.w}`
+  )) {
+    const [, side, wStr] = key.split('|');
+    const w = +wStr;
+    const laneW = Math.min(3.6, w * 0.28);
+    const off = (side === 'left' ? -1 : 1) * (w / 2 - laneW / 2);
+    for (const sub of pieces) {
+      const bg = ribbonOffset(sub, laneW, 0.068, off, false);
+      if (bg && bg.attributes.position && bg.attributes.position.count) busGeos.push(bg);
+    }
+  }
+
+  // THE BROKEN WHITE CENTRE LINE, on every two-way street wide enough to
+  // carry one. This was the last paint the side streets were missing: 105km
+  // of dressed street had kerbs, lamps, trees, plates and double yellows but
+  // bare tarmac down the middle. Same stitcher, same junction breaks as the
+  // bus lanes above.
+  //
+  // Who gets one: two-way (a one-way street has no opposing flow to divide —
+  // and OSM maps every dual carriageway as two one-way ways, so those are
+  // excluded by construction), a real carriageway kind (a service road is a
+  // driveway, a living street is shared space), at least 5.5m wide, not a
+  // bridge (a merged run would take one deck height across ways that each
+  // chose their own), and not one of the main axes, whose markings are built
+  // per-lane by markings.js. The 5.5m threshold is OURS, not LTA's: SDRE
+  // publishes no minimum width for omitting a centre line (checked March
+  // 2025 edition), so "two 2.75m lanes must physically fit" is the rule and
+  // it is labelled invented, not survey.
+  {
+    const axisNames = new Set(((data.axes && data.axes.length ? data.axes : []))
+      .map((a) => (a.n || '').toLowerCase()).filter(Boolean));
+    const CARRIAGEWAY = new Set(['primary', 'secondary', 'tertiary', 'trunk', 'residential', 'unclassified']);
+
+    // The double yellows, stitched and broken at junction mouths (see the
+    // bridge-only block in the road loop for why they moved here). Same
+    // streets they always had — one-way included, axes included — so the only
+    // change a rider sees is that the pair no longer runs across the mouth of
+    // a crossing street.
+    for (const { key, pieces } of streetRuns(
+      (r) => r.k !== 'footway' && r.k !== 'pedestrian' && r.k !== 'service' && r.k !== 'service_link'
+        && (r.w || 0) >= 5.5 && !r.bridge,
+      (r) => `${r.n || '?'}|${r.w}`
+    )) {
+      const w = +key.split('|')[1];
+      for (const sub of pieces) {
+        for (const sgn of [-1, 1]) {
+          for (const inset of [0.45, 0.70]) {
+            const off = sgn * (w / 2 - inset);
+            const yg = ribbonOffset(sub, 0.10, 0.087, off, false);
+            if (yg && yg.attributes.position && yg.attributes.position.count) yellowGeos.push(yg);
+          }
+        }
+      }
+    }
+
+    for (const { pieces } of streetRuns(
+      (r) => !r.oneway && CARRIAGEWAY.has(r.k) && (r.w || 0) >= 5.5 && !r.bridge
+        && !axisNames.has((r.n || '').toLowerCase()),
+      (r) => `${r.n || '?'}|${r.w}`
+    )) {
+      for (const sub of pieces) {
+        // 0.0815: above the bus lane's 0.068, below the double yellow's
+        // 0.087, and not equal to any other marking layer, so P6 has nothing
+        // coplanar to complain about
+        const cg = ribbon(sub, 0.15, 0.0815, false);
+        if (cg && cg.attributes.position && cg.attributes.position.count) centreGeos.push(cg);
       }
     }
   }
@@ -1237,6 +1331,7 @@ export function buildRoads(world, data) {
   // ("markings under the tarmac") and P9 ("markings off the tarmac") own them,
   // and so P1b does not read a painted line as structure in a carriageway.
   merge(yellowGeos, MAT.yellow, 'roadMarking');
+  merge(centreGeos, MAT.centreLine, 'roadMarking');
   return mainAxis;
 }
 
@@ -1575,15 +1670,27 @@ export function buildSurround(world, data, reach = 470) {
   // across a reservoir: without this, Marina Bay gets office blocks growing out
   // of the middle of it. Tested against the water polygons the same way the
   // core is tested against buildings.
-  const wetRings = (data.water || []).map((w) => w.p);
+  // Each ring carries its bounding box, checked before the vertex walk: this
+  // predicate runs 9 times per surviving cell over ~5,500 cells, and without
+  // the box it was 2.1s of the 2.3s this whole function cost — almost all of
+  // it spent proving that cells nowhere near Marina Bay are not in Marina Bay.
+  const wetRings = (data.water || []).map((w) => {
+    let a = 1e9, b = 1e9, c = -1e9, d = -1e9;
+    for (const p of w.p) {
+      if (p[0] < a) a = p[0]; if (p[0] > c) c = p[0];
+      if (p[1] < b) b = p[1]; if (p[1] > d) d = p[1];
+    }
+    return { ring: w.p, a, b, c, d };
+  });
   const inWater = (x, z) => {
-    for (const ring of wetRings) {
-      let c = false;
+    for (const { ring, a, b, c, d } of wetRings) {
+      if (x < a || x > c || z < b || z > d) continue;
+      let hit = false;
       for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
         const [xi, zi] = ring[i], [xj, zj] = ring[j];
-        if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+        if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) hit = !hit;
       }
-      if (c) return true;
+      if (hit) return true;
     }
     return false;
   };

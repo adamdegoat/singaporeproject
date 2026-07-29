@@ -23,6 +23,7 @@ const canvas = document.getElementById('c');
 
 /* ---------------- renderer ---------------- */
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+window.__renderer = renderer;   // probes read info.programs / info.memory
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
@@ -599,9 +600,38 @@ const BOOTT = [];
 let _bt = performance.now();
 const bmark = (name) => { const n = performance.now(); BOOTT.push([name, Math.round(n - _bt)]); _bt = n; };
 window.__boot = BOOTT;
-fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
+// The boot screen (#boot in index.html). The build blocks the main thread in
+// second-long stretches, and a static "loading" line through 13s of that
+// reads as a crash. Each step names the phase ABOUT to run and yields ONE
+// macrotask so the browser can paint the bar — setTimeout(0), never rAF,
+// which is throttled in a spawned window and would stall the gates. Skipped
+// when the page is hidden: background timers clamp to a second each and
+// nobody is watching.
+const BOOTUI = {
+  el: document.getElementById('boot'), fill: document.getElementById('bootfill'),
+  lab: document.getElementById('bootlab'), pct: document.getElementById('bootpct'),
+  sub: document.getElementById('bootsub'),
+};
+async function bstep(frac, label) {
+  if (!BOOTUI.el) return;
+  if (label) BOOTUI.lab.textContent = label;
+  const p = Math.round(frac * 100);
+  BOOTUI.fill.style.width = p + '%';
+  BOOTUI.pct.textContent = p + '%';
+  if (!document.hidden) await new Promise((r) => setTimeout(r, 0));
+}
+function bootDone() {
+  if (!BOOTUI.el) return;
+  BOOTUI.el.classList.add('off');
+  setTimeout(() => BOOTUI.el.remove(), 600);
+}
+fetch(`./data/${SCENE}.json`).then((r) => r.json()).then(async (data) => {
   BOOTT.push(['module-init+fetch', Math.round(performance.now())]);
   _bt = performance.now();
+  if (BOOTUI.sub && data.axes && data.axes.length) {
+    BOOTUI.sub.textContent = data.axes.map((a) => a.n).filter(Boolean).join(' · ');
+  }
+  await bstep(0.05, `reading the survey — ${(data.buildings || []).length.toLocaleString()} footprints`);
   terrain = new Terrain(data.terrain || null);
   // The ground gives way to the road. See carve() for why this exists; it must
   // happen before build() OR atDrawn() is used, so it is done at construction.
@@ -698,12 +728,15 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   // live by the time it is consulted.
   const water = P.has('nowater') ? { water: 0, waterArea: 0 } : buildWater(world, data);
   if (!P.has('nowater')) setWater((data.water || []).map((w) => w.p));
+  bmark('setup+water');
 
+  await bstep(0.09, `raising ${(data.buildings || []).length.toLocaleString()} buildings`);
   const bs = P.has('nobuild') ? { count: 0, tall: 0 } : buildBuildings(world, data);
   bmark('buildings');
   // one sweep over what the building pass just added, before any street
   // furniture exists, so the scope is exactly "buildings and landmarks"
   const pruned = pruneCarriageway(world, ROADIX.onRoad, (x, z) => terrain.at(x, z));
+  await bstep(0.23, `laying ${(data.roads || []).length.toLocaleString()} roads`);
   const fallbackAxis = buildRoads(world, data);
   bmark('roads');
   const axis = data.axis || fallbackAxis;
@@ -714,6 +747,7 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
 
   // the ground itself, from the heightfield
   const groundMat = new THREE.MeshStandardMaterial({ color: 0x9a9384, roughness: 0.95 });
+  await bstep(0.31, 'shaping the ground');
   world.add(terrain.build(groundMat));
   bmark('terrain');
   // no apron: it overlapped the heightfield and doubled the shading cost across
@@ -722,8 +756,10 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   // the city beyond the fetched box, so the district does not end in a plain
   // WATER BEFORE THE SURROUND, so the surround's grey massing can be kept out
   // of the bay rather than built across it.
+  await bstep(0.34, 'raising the skyline');
   const trees2 = P.has('notowers') ? { supertrees: 0 } : buildSupertrees(world, data);
   const surround = P.has('nosurround') ? 0 : buildSurround(world, data);
+  bmark('surround');
 
   // Collision is rasterised in TWO passes, and this is the first: the buildings,
   // the landmark massing and the distant surround, before a single piece of
@@ -750,6 +786,7 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   // the crowd, and SOLID is still built once at the end over everything, from
   // exactly the same geometry it always was.
   let WALLS = null, solidMs0 = 0;
+  await bstep(0.38, 'tracing the walls');
   if (!P.has('nosolid')) {
     const tS = performance.now();
     WALLS = new Solid();
@@ -757,6 +794,7 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
     solidMs0 = performance.now() - tS;
     window.__wallBefore = (x, z) => WALLS.at(x, z);
   }
+  bmark('walls-grid');
   const solidBefore = WALLS ? (x, z) => WALLS.at(x, z) : null;
   // the crowd gets footprints AND drawn walls, which is what stopped seven
   // pedestrian routes running through podiums
@@ -772,7 +810,9 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   // and the visible difference is almost all dressing.
   const axes = trimAxes((data.axes && data.axes.length ? data.axes : [axis]).filter(Boolean));
   let treeCount = 0;
+  await bstep(0.42, 'planting the Angsana avenue');
   if (!P.has('nofoliage')) for (const ax of axes) treeCount += dressStreet(data, ax);
+  bmark('dressStreet');
   const sideStreets = [];
   {
     const seen = new Set();
@@ -799,10 +839,13 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
       heading: it.heading, speed: +it.speed.toFixed(2), s: +it.s.toFixed(1),
     }));
   }
+  bmark('traffic');
   const furniture = {};
   let marks = 0; const side = {}; const sg = {}; const signage = {};
   const dressed = new Set();
+  let axi = 0;
   for (const ax of axes) {
+    await bstep(0.46 + 0.06 * Math.min(axi++, 2), `dressing ${ax.n || 'the streets'}`);
     if (!P.has('nofurniture')) {
       const f = buildFurniture(world, ax, place, data);
       for (const k of Object.keys(f)) {
@@ -815,11 +858,12 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
       for (const k of Object.keys(g)) signage[k] = (signage[k] || 0) + g[k];
     }
     if (!P.has('nomarks')) marks += buildMarkings(world, ax, data);
-      bmark('markings');
+      bmark('furniture+signage+markings');
     if (!P.has('noside')) {
       const t = dressSideStreets(world, data, ax, place, TreeField, dressed);
       for (const k of Object.keys(t)) side[k] = (side[k] || 0) + t[k];
     }
+    bmark('sideStreets');
     if (!P.has('nosg')) {
       const q = buildSgDetail(world, ax, data, place);
       bmark('sgdetail');
@@ -835,6 +879,7 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   // collision started being rasterised from the walls actually drawn. Now the
   // crowd is handed the same grid, so a route that goes through a wall is a
   // route it can see.
+  await bstep(0.66, 'waking the crowd');
   if (!P.has('nopeople') && axis) {
     // spread over the whole dressed network, not just the main street. Only the
     // few dozen in view are ever drawn, so a bigger population is nearly free.
@@ -867,12 +912,15 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
       crossDur: +(p.crossDur || 0).toFixed(2), speed: +p.speed.toFixed(2),
     }));
   }
+  bmark('crowd');
 
   // Once for the district, not once per axis: a shopfront belongs to a
   // building, and a building on a corner fronts two streets.
   const shopGroup = new THREE.Group();
   world.add(shopGroup);
+  await bstep(0.70, 'glazing the shopfronts');
   const shopf = P.has('noshops') ? {} : buildShopfronts(shopGroup, data, axes, solidBefore);
+  bmark('shopfronts');
 
   signals = new Signals(furniture.signals || [], furniture.lensMesh || null);
   window.__signalsSys = signals;
@@ -881,14 +929,13 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   window.__roadList = data.roads.filter((r) => r.k !== 'footway' && r.k !== 'pedestrian');
   const people = crowdSys ? crowdSys.people.length : 0;
 
-  buildEnvironment();
   stats = { surround, ...water, ...trees2, marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage, ...shopf };
-  ready = true;
   // one pass over the finished district: share identical materials, then batch
   // small static meshes per 110m tile. See consolidate.js.
   // Solidity is rasterised from the finished district and BEFORE the meshes are
   // batched: after batching, one mesh spans a 110m tile and its geometry no
   // longer says where its walls are.
+  await bstep(0.78, 'making the walls solid');
   if (!P.has('nosolid')) {
     const t0 = performance.now();
     SOLID = new Solid();
@@ -897,10 +944,13 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
     stats.solidMs = Math.round(solidMs0 + (performance.now() - t0));
     window.__solid = (x, z) => SOLID.at(x, z);
   }
+  bmark('solid-grid');
 
   const RAW = P.has('raw');       // audit mode: leave objects unbatched
+  await bstep(0.84, 'packing the city');
   const dedupe = RAW ? { before: 0, after: 0 } : dedupeMaterials(world);
   const cons = RAW ? { removed: 0, merged: 0 } : consolidate(world);
+  bmark('dedupe+consolidate');
   stats.matsBefore = dedupe.before; stats.matsAfter = dedupe.after;
   const shad = RAW ? { kept: 0, dropped: 0 } : trimShadowCasters(world);
   stats.batched = cons.removed; stats.batches = cons.merged;
@@ -909,10 +959,65 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
 
   window.__scene = scene; window.__camera = camera; window.__THREE = THREE;
   bmark('rest');
+
+  // GPU WARM-UP, and it must come AFTER consolidate. The first rendered frame
+  // used to be an 8.7s main-thread task — Metal shader translation plus the
+  // upload of 178MB of merged vertex data — sitting invisibly AFTER __ready,
+  // so every boot mark was green while the page sat frozen for nine more
+  // seconds. Worse, buildEnvironment() used to render the UNCONSOLIDATED
+  // scene, uploading the whole world once, only for consolidate() to rebuild
+  // every buffer and pay the upload again on frame one.
+  //
+  // Order now: compile every program in parallel (KHR_parallel_shader_compile,
+  // polls on setTimeout so a throttled rAF cannot hang it), then render the
+  // env cube from the merged scene, then one real frame from the boot camera —
+  // so __ready means what livecheck thinks it means: the next frame is cheap.
+  // Skipped in ?raw audit mode: the audits inspect the built scene and never
+  // render a frame, so warming the GPU for them would add the whole driver
+  // pipeline-compile (~15s headless) to every gate load for nothing.
+  if (!RAW) {
+    // `?bootgl` drains the GPU queue after each warm-up stage so the wait
+    // shows up against the stage that queued it, instead of as one anonymous
+    // stall at the end of the task.
+    const glFinish = P.has('bootgl') ? () => { renderer.getContext().finish(); bmark('gl-drain'); } : () => {};
+    await bstep(0.90, 'compiling shaders');
+    try { await renderer.compileAsync(scene, camera); } catch (e) { /* ext missing: first render compiles instead */ }
+    bmark('shader-compile');
+    glFinish();
+    await bstep(0.94, 'catching reflections');
+    buildEnvironment();
+    // assigning envMap flips USE_ENVMAP on the glass materials, which is a NEW
+    // program per variant — compile those in parallel too, or the warm render
+    // pays for them synchronously at first draw
+    try { await renderer.compileAsync(scene, camera); } catch (e) { /* same fallback */ }
+    bmark('shader-compile-env');
+    glFinish();
+    // The one stretch that can still freeze for seconds on a slow GPU — the
+    // first real frame uploads every merged buffer — so it is labelled and
+    // parked at 97% rather than left looking like a hang at an anonymous bar.
+    await bstep(0.97, 'first light');
+    driveCamera(0.016);
+    sky.position.copy(camera.position);
+    renderer.render(scene, camera);
+    bmark('gpu-warmup');
+    glFinish();
+  } else buildEnvironment();
+
+  await bstep(1, 'ready');
+  bootDone();
+  ready = true;
   if (P.has('boot')) console.log('BOOT ' + JSON.stringify(BOOTT));
   window.__ready = true;
   window.__stats = stats;
-}).catch((e) => { window.__bootError = (e && e.stack) || String(e); hud.textContent = 'boot failed: ' + e.message; console.error('BOOT', e); });
+}).catch((e) => {
+  window.__bootError = (e && e.stack) || String(e);
+  hud.textContent = 'boot failed: ' + e.message;
+  // The overlay STAYS on a failed boot and says so — fading it out over a
+  // dead black canvas would be the exact "looks crashed with no words" state
+  // this screen exists to prevent.
+  if (BOOTUI.lab) BOOTUI.lab.textContent = 'boot failed: ' + e.message;
+  console.error('BOOT', e);
+});
 
 if (TOUCH) attachTouch(canvas);
 attachMouse(canvas);
@@ -1096,6 +1201,19 @@ function loop(now) {
   // it is battery and heat for nothing.
   if (document.hidden) { requestAnimationFrame(loop); return; }
 
+  // Nothing renders until the world is ready. This mattered the moment boot
+  // gained an await (the GPU warm-up below): rAF frames interleave with the
+  // tail of boot, and an un-gated loop would render the half-warm scene —
+  // stalling on the very shader compiles the warm-up exists to overlap — and
+  // reportHud would overwrite the loading text with "0 fps".
+  if (!ready) { requestAnimationFrame(loop); return; }
+
+  // The first ready frame was an 8.7s task while renderer.render was 1s of it:
+  // the other 7.7s hid in the subsystem first-ticks below. Timed per call on
+  // that one frame so the cost has a name (`?boot=1`).
+  const FIRST = ready && window.__ff === undefined;
+  let fLast = FIRST ? performance.now() : 0;
+  const fmk = FIRST ? (n) => { const t = performance.now(); BOOTT.push(['f:' + n, Math.round(t - fLast)]); fLast = t; } : () => {};
   if (ready) {
     const inp = readInput(mode);
     if (input.toggleMode) { input.toggleMode = false; toggleMode(); }
@@ -1180,18 +1298,34 @@ function loop(now) {
     sun.target.updateMatrixWorld();
 
     clock += dt;
+    fmk('pre');
     if (signals) signals.update(clock);
+    fmk('signals');
     if (trafficSys) trafficSys.update(clock, dt, signals, S.x, S.z);
+    fmk('traffic');
     if (crowdSys) crowdSys.update(clock, dt, S.x, S.z, signals);
+    fmk('crowd');
     if (wayfinder) wayfinder.update(S, dt);
+    fmk('wayfind');
     sound.update(S.speed, 'ride', 0, 0, trafficSys ? trafficSys.nearest(S.x, S.z) : 999);
+    fmk('sound');
 
     driveCamera(dt);
+    fmk('camera');
   }
 
   const activeCam = CAM === 'top' ? topCam : camera;
   sky.position.copy(activeCam.position);      // keeps the dome inside the far plane
-  renderer.render(scene, activeCam);
+  // The first frame of the finished world compiles every shader and uploads
+  // every texture and geometry, synchronously. It was invisible to the boot
+  // marks — build "done" at 12s, page usable at 21s — so it is timed like a
+  // build phase, because it is one.
+  if (ready && window.__ff === undefined) {
+    const tF = performance.now();
+    renderer.render(scene, activeCam);
+    window.__ff = Math.round(performance.now() - tF);
+    BOOTT.push(['first-frame', window.__ff]);
+  } else renderer.render(scene, activeCam);
 
   frames++;
   if (now - t0 > 1000) reportHud(now);

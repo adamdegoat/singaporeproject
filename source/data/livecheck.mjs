@@ -55,6 +55,11 @@ try {
     hud: (document.querySelector('#hud') || {}).textContent || '',
     mem: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null,
   }));
+  // the loading overlay removes itself 600ms after ready; still standing
+  // means the page is stuck behind it even though the world came up
+  await page.waitForTimeout(1200);
+  const bootLeft = await page.evaluate(() => !!document.getElementById('boot'));
+  if (info.ready && bootLeft) errors.push('loading overlay still covering the page after ready');
   ready = info.ready;
 } catch (e) {
   errors.push('never became ready: ' + String(e.message).slice(0, 160));

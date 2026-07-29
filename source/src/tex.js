@@ -325,6 +325,30 @@ export function texGranitePanel() {
 // The yellow tactile paving pad at a kerb ramp: raised studs in a grid, which
 // is what makes it read as tactile rather than as a painted yellow rectangle.
 // Its own RNG stream, so adding it does not move anything else in the world.
+// A broken road line, with the DASH carried in the texture rather than the
+// geometry: painting dashes as one quad per mark put ~400,000 marks in the
+// world and took P6 from 17 to 1974, so a broken line is ONE ribbon whose
+// alpha map goes transparent in the gaps. One texture cycle is one mark plus
+// one gap; the ribbon's v coordinate runs in units of its own width, so the
+// material's repeat.y = width / (markM + gapM) makes the cycle real metres.
+// Alpha-tested opaque, never `transparent: true` (the foliage rule).
+// No RNG: a painted line has no mottling worth a stream.
+// Dimensions belong to the CALLER — LTA gives different mark/gap per line
+// type (SDRE Ch.8: centre line E 2.75/2.75, lane line B 2/4, expressway B1
+// 2/10), so nothing is hardcoded here.
+export function texCentreDash(markM, gapM) {
+  const c = document.createElement('canvas');
+  c.width = 8; c.height = 128;
+  const x = c.getContext('2d');
+  x.fillStyle = '#dedad0';               // MAT.white, weathered off-white
+  x.fillRect(0, 0, 8, Math.round(128 * (markM / (markM + gapM))));
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
 export function texTactile() {
   const S = 128, [c, x] = cvs(S);
   const r2 = rng(0x74616374);            // "tact"

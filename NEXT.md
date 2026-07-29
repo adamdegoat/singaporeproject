@@ -30,15 +30,94 @@ awkward ones are the ones that get skipped.
 
 ## THE TOP THREE, in order
 
-1. **Boot is ~28s at 844x390 dpr2, 561MB heap.** It loads, but that is slow on
-   a phone and it roughly doubled when the dressing reach went to 1200m. See
-   the MOBILE section below for two measurement traps and one reverted attempt.
-2. **Side streets have no PAINT.** 105km of them have kerbs, lamps, trees and
-   plates but no centre lines. Double yellows ARE done district-wide. Do the
-   rest as RIBBONS, one per street -- per-metre quads took P6 17 -> 1974.
-3. **~10 street-fronting buildings still have no recipe**, and the full sweep
+1. **The CPU build is ~10.7s of the boot; cut it next.** The boot work on
+   2026-07-29 (second session) fixed the structure — see THE BOOT, REOPENED
+   below — and what remains is honest CPU: buildings 1.1s, dedupe+consolidate
+   1.1s, solid grids 1.1s, shopfronts 0.9s, roads 0.8s, per-axis dressing
+   ~2.5s, module+fetch 0.6s. No single villain left; this is now a
+   many-small-cuts job. Fine-grained marks are in (`?boot=1`, `window.__boot`).
+2. **~10 street-fronting buildings still have no recipe**, and the full sweep
    contact sheet has never been reviewed frame by frame now that every street
    is dressed. `shots/sweep/index.html`.
+3. **The Dhoby Ghaut pale boxes are REAL BUILDINGS, not the surround.**
+   Comparison frame 12 re-examined: the untextured white boxes stand beside a
+   signalised junction with a zebra crossing INSIDE the district, next to a
+   teal stepped massing and a twin-spired recipe — the generic facade family
+   skipped them. Probe the meshes at that spot and find out why.
+
+## DONE 2026-07-29 (second session): side streets have their PAINT
+
+The old #2 is finished, and it grew a fix the vet frames demanded:
+
+- **Broken white centre lines on every two-way side street** ≥5.5m, real
+  carriageway kinds only, not bridges, not the axes (markings.js owns those).
+  ONE ribbon per street run with the dash in the TEXTURE (`texCentreDash`),
+  never per-mark quads — P6 stayed at baseline. Runs are stitched and broken
+  at junction mouths by `streetRuns()` in city.js, the machinery extracted
+  from the red bus lanes (whose output was verified byte-identical across the
+  refactor: 108 meshes, 21,612 verts, before and after).
+- **The SDRE research corrected the brief — again.** The "2m mark / 4m gap,
+  100mm" pattern everyone quotes is Type B, the LANE line between
+  same-direction lanes. The CENTRE line is Type E: **150mm wide, 2.75m mark,
+  2.75m gap** (SDRE Ch.8 RMS2, corroborated by RMS12's printed "2.75m/5.5m"
+  labels). They differ in every dimension. Also published: centre lines are
+  never yellow in Singapore; yellow is kerbside/bus/box only. UNPUBLISHED
+  (checked, not found): a minimum road width for having a centre line, and
+  where the centre line stops before a junction — our 5.5m threshold and
+  junction-mouth gaps are labelled invented.
+- **The double yellows now BREAK AT JUNCTION MOUTHS.** The first centre-line
+  vet frame (Wilkie Terrace) showed the yellows of a crossing street running
+  straight across the carriageway — they had been drawn blindly per way since
+  they landed, and there was never other paint to compare against. They are
+  stitched through the same `streetRuns()` now; only BRIDGE ways stay
+  per-way (flat at deck height — a merged run would take one deck height
+  across ways that each chose their own). Known cost: an isolated street
+  under 30m of total run gets no paint (the "a patch is not a lane" rule);
+  a T-junction clears the yellow on the kerb OPPOSITE the mouth too, which
+  real paint would keep.
+- **`consolidate()` quietly defeats the per-tile layer merging.** city.js
+  `merge()` buckets paint layers per 110m tile, but every layer mesh's ORIGIN
+  is (0,0) — geometry in world coords — so consolidate's tile key puts all
+  of them in one tile and re-merges each layer into ONE district-spanning
+  mesh (busLane: 108 raw meshes → 1 consolidated; centreLine the same). The
+  big surfaces escape only because >3000-vertex meshes are not bakeable.
+  Harmless for thin paint (33k verts), but worth knowing before trusting the
+  per-tile comment, and the reason a material-name probe "finds 1 mesh".
+
+## THE BOOT, REOPENED 2026-07-29 (second session): where the 28s actually went
+
+Measured 28.5s observable-ready at 844x390 dpr2 headless; the boot marks
+summed to 13s. The missing 15s taught three things:
+
+1. **`__ready` was set 9-15s before the page could paint.** The first
+   rendered frame of the finished world was one 8.7-15s main-thread task —
+   driver-level shader/pipeline compilation plus the upload of 178MB of
+   merged vertex buffers — and every boot mark was green before it started.
+   Worse, `buildEnvironment()` rendered the UNCONSOLIDATED scene (7k meshes),
+   uploading the whole world once, then `consolidate()` rebuilt every buffer
+   and paid the upload again on frame one.
+2. **Fixed structurally, not by hoping:** boot now ends with
+   `compileAsync` (parallel shader compile, polls on setTimeout so a
+   throttled rAF cannot hang it) → `buildEnvironment()` on the MERGED scene →
+   a second `compileAsync` for the USE_ENVMAP variants → one real warm frame
+   — all BEFORE `__ready` flips, so ready means what livecheck thinks it
+   means. First frame after ready: 28-88ms, was 8,700ms. The loop is gated on
+   `ready` (an un-gated loop would render the half-warm scene mid-await and
+   reportHud would overwrite the loading text). ?raw audit loads SKIP the
+   warm-up — they never render, and it would add ~15s to every gate.
+3. **The residual gap is the HARNESS, mostly.** Headless Playwright Chromium
+   renders on SwiftShader (software Vulkan) — `chrome://gpu` string confirms
+   it — and its Subzero JIT takes ~14s to compile the pipelines that a real
+   GPU driver also compiles but a phone does once. Trace signature:
+   `GLES2::ReadPixels → ImageHelper::readPixelsImpl - CPU Readback →
+   ContextVk::finishImpl`. A headed browser gets real Metal and shows the
+   same order of stall on this Intel iGPU. Do not chase that number; gate on
+   the marks and on real-device feel.
+
+Also cut: `buildSurround` 2.35s → 0.32s. The water test was 2.1s of it —
+`inWater` walked every vertex of every Marina Bay ring for 9 sample points ×
+5,478 cells; a per-ring bounding box now rejects almost all of them. Same
+cell count, no RNG calls touched, placement byte-identical.
 
 ## THE PATTERN THAT ACCOUNTS FOR FIVE BUGS TODAY
 
@@ -239,10 +318,11 @@ it after the hash verification, so a deploy is not green until the site has
 actually run on a phone. Hashes prove the right bytes shipped; only this proves
 they work.
 
-**2. Boot is slow and is still open.** ~28s to ready at phone size, ~561MB
-heap. It roughly doubled when the dressing reach went 230m to 1200m. Tried and
-reverted: dressing only 320m at boot and queueing the rest after first paint --
-it halved memory to 326MB but did NOT improve time-to-ready, and it plated
+**2. Boot is slow — SUPERSEDED, see "THE BOOT, REOPENED" near the top.** The
+28s was 13s CPU build + a hidden first-frame GPU stall that `__ready` never
+waited for; the structure is fixed and the remaining work is the CPU build.
+Kept from the first attempt: dressing only 320m at boot and queueing the rest
+halved memory to 326MB but did NOT improve time-to-ready, and it plated
 streets twice because `plated` is local to each `dressSideStreets` call.
 
 Measurement notes for the next attempt, both learned the hard way here:

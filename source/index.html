@@ -82,6 +82,27 @@
     color:rgba(240,235,222,.28);letter-spacing:.14em;text-transform:uppercase}
   #lookhint.on{display:flex}
   @media (orientation:portrait){ #rotate{display:grid} #place,#map,#maphint,#big,#modebtn,#stick,#lookhint{display:none} }
+  /* The boot screen. The build blocks the main thread for seconds at a time,
+     and a static "loading" line reads as a crash — so boot yields between
+     phases (see bstep in main.js) and this bar moves with named steps. The
+     track is drawn as a road: dark tarmac with faint lane dashes that the
+     cream fill drives over. pointer-events stays none so a bug here can
+     never brick the controls underneath. Sits UNDER #rotate (z 50). */
+  #boot{position:fixed;inset:0;z-index:45;display:grid;place-items:center;
+    background:#0b0d10;transition:opacity .45s ease;pointer-events:none}
+  #boot.off{opacity:0}
+  #boot .bwrap{width:min(420px,78vw)}
+  #bootword{font:600 16px/1 ui-sans-serif,system-ui,-apple-system,Helvetica,Arial;
+    letter-spacing:.34em;color:#e8ddc6;text-transform:uppercase;text-align:center}
+  #bootsub{font:500 10px/1.5 ui-sans-serif,system-ui,Helvetica,Arial;
+    letter-spacing:.14em;color:rgba(232,221,198,.5);text-transform:uppercase;
+    text-align:center;margin:7px 0 24px}
+  #bootbar{position:relative;height:5px;border-radius:3px;overflow:hidden;
+    background:repeating-linear-gradient(90deg,#161b20 0 16px,#232a31 16px 24px)}
+  #bootfill{position:absolute;left:0;top:0;bottom:0;width:0%;
+    background:#e8ddc6;border-radius:3px;transition:width .25s ease}
+  #bootrow{display:flex;justify-content:space-between;gap:12px;margin-top:10px;
+    font:11px/1.4 ui-monospace,Menlo,monospace;color:rgba(228,233,238,.72)}
 </style>
 <canvas id="c"></canvas>
 <div id="rotate"><div><span>&#8635;</span>Turn your phone sideways<br><small style="opacity:.6">this rides in landscape</small></div></div>
@@ -99,6 +120,12 @@
   </div>
 </div>
 <div id="hud">loading Orchard…</div>
+<div id="boot"><div class="bwrap">
+  <div id="bootword">Singapore</div>
+  <div id="bootsub">Orchard Road &middot; Bras Basah &middot; Marina Bay</div>
+  <div id="bootbar"><i id="bootfill"></i></div>
+  <div id="bootrow"><span id="bootlab">reading the map&hellip;</span><span id="bootpct"></span></div>
+</div></div>
 <div id="stick"><div id="knob"></div></div>
 <div id="lookhint">drag to look</div>
 <button id="modebtn" type="button">Get off</button>
