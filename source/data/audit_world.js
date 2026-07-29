@@ -426,7 +426,8 @@ window.__auditWorld = async function auditWorld() {
       if (o.name === 'terrainSurface') return;
       // ...and the road surface itself, for the same reason. A check called
       // "structure in a carriageway" was counting the carriageway.
-      if (o.name === 'roadSurface' || o.name === 'pavementSurface') return;
+      if (o.name === 'roadSurface' || o.name === 'pavementSurface'
+          || o.name === 'roadMarking') return;
       if (o.geometry.type === 'PlaneGeometry'
           && o.geometry.parameters.width > 500) return;     // ground fallback plane
       let hit = null, worstX = 0, worstZ = 0, minY = 1e9, maxY = -1e9, n = 0;
@@ -1261,7 +1262,11 @@ window.__auditWorld = async function auditWorld() {
       // on Oxley Rise by hitting the deck of Oxley Rise's own bridge. P8 and
       // T5 own every surface-vs-surface question; T1's job is what stands IN
       // the road, not the road itself.
-      if (/^(roadSurface|pavementSurface|terrainSurface|playerRig)$/.test(o.name)) return;
+      // roadMarking joined 2026-07-29 with the double yellow lines: a painted
+      // line lies ON the carriageway by definition, exactly as the tarmac
+      // does, and P7/P9 are the checks that own whether a marking is at the
+      // right height and on the road.
+      if (/^(roadSurface|pavementSurface|terrainSurface|roadMarking|playerRig)$/.test(o.name)) return;
       // The same reasoning the prop pass uses. A vehicle is not an obstruction,
       // it is traffic; a handrail 32m long is an overhead bridge crossing the
       // road; ION's shell reaches over its own forecourt. What is left is real.
@@ -1607,7 +1612,8 @@ window.__auditWorld = async function auditWorld() {
       sc.traverse((o) => {
         if (!o.isMesh || o.isInstancedMesh) return;
         if (o.name === 'waterSurface' || o.name === 'terrainSurface') return;
-        if (o.name === 'roadSurface' || o.name === 'pavementSurface') return;
+        if (o.name === 'roadSurface' || o.name === 'pavementSurface'
+          || o.name === 'roadMarking') return;
         for (let q = o; q; q = q.parent) if (q.name === 'playerRig') return;
         const pos = o.geometry.attributes.position;
         if (!pos) return;

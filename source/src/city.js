@@ -972,6 +972,7 @@ function polyLen(pts) {
 
 export function buildRoads(world, data) {
   const roadGeos = [], paveGeos = [], unitPaveGeos = [], concGeos = [], busGeos = [];
+  const yellowGeos = [];
   let mainAxis = null, bestLen = Infinity;
   for (const r of data.roads) {
     // A CROSSING IS NOT A PAVEMENT. `footway=crossing` is the pedestrian
@@ -1004,6 +1005,35 @@ export function buildRoads(world, data) {
       else if (/asphalt|paved|tarmac/.test(sf)) bucket = isPath ? paveGeos : roadGeos;
     }
     bucket.push(g);
+
+    // THE DOUBLE YELLOW LINE, on every street that has one.
+    //
+    // LTA SDRE Ch.8 Type I: two continuous yellow lines, 100mm each with a
+    // 150mm gap, meaning no parking at any time. It is the single most
+    // characteristic marking on a Singapore street and until now only the
+    // three main axes had it -- so the 105km of side street opened up by the
+    // dressing reach was bare tarmac from kerb to kerb.
+    //
+    // Built HERE, as ribbons merged per tile, for two reasons. A continuous
+    // line is a ribbon: painting it as one quad per metre put ~400,000 marks
+    // in the world and took P6 from 17 to 1974, because each pair then counts
+    // as coplanar props. And this loop already has the way's own width and
+    // the tile bucketing, so the lines cannot disagree with the tarmac about
+    // where the kerb is -- the mistake that put markings on the pavement the
+    // first time round.
+    //
+    // Skipped on service roads and anything under 5.5m: a driveway or a back
+    // lane with double yellows down it is wrong, and OSM classes a lot of
+    // hotel set-downs as service roads.
+    if (!isPath && r.k !== 'service' && r.k !== 'service_link' && (r.w || 0) >= 5.5) {
+      for (const sgn of [-1, 1]) {
+        for (const inset of [0.45, 0.70]) {
+          const off = sgn * (r.w / 2 - inset);
+          const yg = ribbonOffset(r.p, 0.10, 0.087, off, !!r.bridge);
+          if (yg && yg.attributes.position && yg.attributes.position.count) yellowGeos.push(yg);
+        }
+      }
+    }
     if (/orchard road/i.test(r.n || '') && polyLen(r.p) > 120) {
       let near = Infinity;
       for (const [x, z] of r.p) near = Math.min(near, x * x + z * z);
@@ -1126,6 +1156,10 @@ export function buildRoads(world, data) {
   merge(unitPaveGeos, MAT.unitPave, 'roadSurface');
   merge(concGeos, MAT.roadConc, 'roadSurface');
   merge(busGeos, MAT.busLane, 'roadSurface');
+  // The double yellow lines. Named as a marking rather than a surface so P7
+  // ("markings under the tarmac") and P9 ("markings off the tarmac") own them,
+  // and so P1b does not read a painted line as structure in a carriageway.
+  merge(yellowGeos, MAT.yellow, 'roadMarking');
   return mainAxis;
 }
 
