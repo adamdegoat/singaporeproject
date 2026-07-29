@@ -308,7 +308,7 @@ function dressStreet(data, axis) {
     // to step onto the road. A2 caught it as "real data present but unused",
     // which is exactly what it had become.
     const ckind = c.length > 4 ? c[4] : 1;
-    if (ckind === 1) {
+    if (ckind === 1 && claim('xing', ox, oz, 4.0)) {
       // the two boundary lines, 1.5m either side of the crossing centre
       for (const sideOff of [-1.5, 1.5]) {
         const bx0 = ox + ux2 * sideOff, bz0 = oz + uz2 * sideOff;
@@ -320,8 +320,7 @@ function dressStreet(data, axis) {
         const nsq = Math.max(4, Math.round(axis.w / 0.5));
         for (let k = 0; k < nsq; k++) {
           const f = -axis.w / 2 + (k + 0.5) * (axis.w / nsq);
-          if (claim('xdot', bx0 - uz2 * f, bz0 + ux2 * f, 0.44))
-            dotT.push([bx0 - uz2 * f, 0.069, bz0 + ux2 * f, ba0 + Math.PI / 2]);
+          dotT.push([bx0 - uz2 * f, 0.069, bz0 + ux2 * f, ba0 + Math.PI / 2]);
         }
       }
     }
@@ -476,8 +475,18 @@ function dressStreet(data, axis) {
     }
     return out;
   };
-  // signalised-crossing boundary squares: 200mm, LTA SDRE TMM4
-  emit(new THREE.PlaneGeometry(0.20, 0.20), MAT.white, dedupeFlatT(dotT), (r) => {
+  // Signalised-crossing boundary squares: 200mm, LTA SDRE TMM4.
+  //
+  // FILTERED TO THE TARMAC, like every marking in markings.js is. The axis
+  // pass emits through a different helper that never had that guard, so a
+  // boundary line laid across a junction ran on past the kerb and over the
+  // pavement, and a cluster of crossings at one junction read as scatter
+  // across the whole road rather than as lines. Same defect the lane markings
+  // already had once, fixed there and not here -- a guard belongs at every
+  // emit point or at none.
+  const onRoadOnly = (list) => (window.__onRoad
+    ? list.filter((r) => window.__onRoad(r[0], r[2], 0.15)) : list);
+  emit(new THREE.PlaneGeometry(0.20, 0.20), MAT.white, dedupeFlatT(onRoadOnly(dotT)), (r) => {
     p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
     e.set(-Math.PI / 2, r[3], 0, 'YXZ'); q.setFromEuler(e);
   });

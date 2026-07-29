@@ -560,6 +560,16 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
           zebra.push([ox + ux * k * 0.42, MARK.zebra, oz + uz * k * 0.42, ang, hw * 2]);
       }
     } else {
+      // CLAIM THE CROSSING, NOT EACH SQUARE.
+      //
+      // Claiming per square with a 0.44m cell thinned the lines at RANDOM --
+      // `claim` is a grid hash, so two squares 0.5m apart sometimes land in
+      // one cell and one is dropped. A dotted line with holes punched in it
+      // at irregular intervals reads as scatter across the tarmac, which is
+      // exactly what a junction looked like. The line is already regularly
+      // spaced by construction; the only thing claim is needed for is to stop
+      // the axis pass and the side-street pass both painting one crossing.
+      if (!claim('xing', ox, oz, 4.0)) { sideCrossings++; continue; }
       // the two boundary lines, each a dotted run ACROSS the carriageway at
       // +/-1.5m of the crossing centre
       for (const side of [-1.5, 1.5]) {
@@ -569,12 +579,7 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
           // 200mm square, 300mm gap = one mark per 500mm across the road
           const f = -hw + (k + 0.5) * ((hw * 2) / n);
           const px2 = bx - uz * f, pz2 = bz + ux * f;
-          // SAME CLAIM KEY as the axis pass in main.js. Two different keys
-          // meant the axis and the side streets could each paint the same
-          // junction's boundary line, and 40 squares per crossing made every
-          // one of those overlaps a coplanar pair (P6 11 -> 50).
-          if (claim('xdot', px2, pz2, 0.44))
-            dots.push([px2, MARK.dots, pz2, ang]);
+          dots.push([px2, MARK.dots, pz2, ang]);
         }
       }
     }

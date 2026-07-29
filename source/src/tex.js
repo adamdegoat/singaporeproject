@@ -97,8 +97,54 @@ export function texAsphalt(base = PAL.asphalt) {
 }
 
 // Orchard's pavement is the big patterned granite-look slab, not small pavers
+// ORCHARD ROAD'S FOOTPATH IS GRANITE, and it is specified.
+//
+// URA's Orchard Road Mall Paving Design Guidelines (Annex D), researched
+// 2026-07-29: the base paving is FLAMED MID-GREY GRANITE, "654 Medium Grey",
+// laid as CONTINUOUS 450mm STRIPS RUNNING PARALLEL TO THE KERB, in random
+// lengths of 300, 600 and 900mm with the joints of adjacent rows offset by
+// 150mm. Contrast bands in flamed black or white granite reinforce the rhythm
+// of the tree spacing. The Somerset stretch east of Grange Road drops the
+// contrast banding and is mid-grey throughout.
+//
+// This was a generic 3x3 slab of warm beige pavers -- the wrong material, the
+// wrong colour, the wrong module and the wrong direction. On the widest
+// pavement in Singapore that is a lot of screen area to get wrong.
+//
+// One tile is 1.8m x 1.8m: four 450mm strips across, with the long axis of the
+// strips running along the tile so the run follows the kerb when it is mapped.
 export function texPaving() {
   const r2 = rng(0x70617669), rand = (a, b) => a + r2() * (b - a);   // "pavi"
+  const S = 256, [c, x] = cvs(S);
+  // flamed mid-grey granite: cool, not the warm beige this used to be
+  x.fillStyle = '#8e8d88'; x.fillRect(0, 0, S, S);
+  const rows = 4, rh = S / rows;                 // four 450mm strips per 1.8m tile
+  for (let r0 = 0; r0 < rows; r0++) {
+    // random 300/600/900 lengths, adjacent rows offset by 150mm (S/12)
+    let u = -(r0 % 2) * (S / 12);
+    while (u < S) {
+      const L = [S / 6, S / 3, S / 2][(r2() * 3) | 0];   // 300 / 600 / 900mm
+      const v = rand(-9, 8);
+      x.fillStyle = `rgb(${142 + v},${141 + v},${136 + v})`;
+      x.fillRect(u + 0.9, r0 * rh + 0.9, L - 1.8, rh - 1.8);
+      // flamed finish: fine light speckle, no polish
+      for (let k = 0; k < 90; k++) {
+        const g2 = rand(-26, 22);
+        x.fillStyle = `rgba(${150 + g2},${149 + g2},${144 + g2},${rand(0.15, 0.5)})`;
+        x.fillRect(u + rand(2, Math.max(3, L - 3)), r0 * rh + rand(2, rh - 3),
+                   rand(1, 2.2), rand(1, 2.2));
+      }
+      u += L;
+    }
+  }
+  grain(x, 1500, 12, S, r2);
+  return finish(c, [1, 1]);
+}
+
+// the old generic paver, kept for the unit-paving surface OSM tags on service
+// roads and lanes, which is small block paving and not Orchard's granite
+export function texPaverBlock() {
+  const r2 = rng(0x70766b31), rand = (a, b) => a + r2() * (b - a);
   const S = 256, [c, x] = cvs(S);
   x.fillStyle = hex(PAL.paver); x.fillRect(0, 0, S, S);
   const n = 3, s = S / n;

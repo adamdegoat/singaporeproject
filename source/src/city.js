@@ -1,7 +1,7 @@
 // Build the street from real OSM geometry: extruded footprints, road ribbons,
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, rng } from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, rng } from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV } from './landmarks.js';
 
 export const TEX = {
@@ -89,7 +89,8 @@ function familyFor(b) {
 
 export const MAT = {
   asphalt: new THREE.MeshStandardMaterial({ map: TEX.asphalt, roughness: 0.95 }),
-  paving: new THREE.MeshStandardMaterial({ map: TEX.paving, roughness: 0.9 }),
+  // Orchard's granite is 1.8m per tile, so the pavement maps at a real size
+  paving: new THREE.MeshStandardMaterial({ map: TEX.paving, roughness: 0.88 }),
   kerb: new THREE.MeshStandardMaterial({ color: PAL.kerb, roughness: 0.86 }),
   conc: new THREE.MeshStandardMaterial({ map: texConcrete(PAL.conc, 0.7), roughness: 0.92 }),
   trim: new THREE.MeshStandardMaterial({ color: PAL.trim, roughness: 0.8 }),
@@ -110,7 +111,7 @@ export const MAT = {
     map: texWater(), color: 0x8fa9a8, roughness: 0.16, metalness: 0.34,
   }),
   // the two surfaces OSM names that are neither asphalt nor our pavement slab
-  unitPave: new THREE.MeshStandardMaterial({ map: texPaving(), color: 0x9a9184, roughness: 0.92 }),
+  unitPave: new THREE.MeshStandardMaterial({ map: texPaverBlock(), color: 0x9a9184, roughness: 0.92 }),
   roadConc: new THREE.MeshStandardMaterial({ map: texConcrete(0x9d9a94, 0.6), roughness: 0.93 }),
   // LTA SDRE Ch.11 BUS5 publishes the bus-stop colour scheme outright, so
   // these are surveyed values rather than chosen ones. RAL 6027 on the back
