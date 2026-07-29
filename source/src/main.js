@@ -1098,6 +1098,22 @@ async function buildRegion(data) {
       driveCamera(0.016);
     }
     bmark('warmup-spin');
+    // SIM PRE-ROLL: two seconds of crowd + traffic + signal ticks behind the
+    // loading bar. Their first real ticks lazily build clear-masks and
+    // spacing structures — CPU spikes that used to land in the player's
+    // first seconds (user report: still very laggy at start even after the
+    // GPU spin; pedestrians frozen implicates the sim side too).
+    await bstep(0.99, 'waking the street');
+    if (crowdSys || trafficSys) {
+      for (let k = 0; k < 120; k++) {
+        const tSim = k * 0.0166;
+        if (signals) signals.update(tSim);
+        if (trafficSys) trafficSys.update(tSim, 0.0166, signals, S.x, S.z);
+        if (crowdSys) crowdSys.update(tSim, 0.0166, S.x, S.z, signals);
+        if ((k & 15) === 0) await bstep(0.99, 'waking the street');
+      }
+    }
+    bmark('sim-preroll');
     glFinish();
   } else buildEnvironment();
 
@@ -1376,10 +1392,17 @@ resize();
 
 /* ---------------- loop ---------------- */
 let last = performance.now(), frames = 0, t0 = last, fps = 0, lastCoolT = 0;
+// frames >200ms in the first 10s after ready — the number the user's
+// screenshot carries so "still laggy" becomes measurable (shows as jN)
+let jankCount = 0, jankWindowEnd = 0;
 let lastCapT = 0, shadowFlip = true;
 
 function loop(now) {
   const rawDt = (now - last) / 1000;
+  if (ready) {
+    if (!jankWindowEnd) jankWindowEnd = now + 10000;
+    else if (now < jankWindowEnd && rawDt > 0.2) jankCount++;
+  }
   const dt = Math.min(0.05, rawDt); last = now;
 
   // Stop rendering entirely when the page is not visible. A 60fps WebGL loop is
@@ -1573,7 +1596,8 @@ function reportHud(now) {
     fps = Math.round((frames * 1000) / (now - t0)); frames = 0; t0 = now;
     const dpr = renderer.getPixelRatio();
     const px = Math.round(canvas.clientWidth * dpr) + 'x' + Math.round(canvas.clientHeight * dpr);
-    const stamp = typeof __BUILD_STAMP__ !== 'undefined' ? __BUILD_STAMP__ : 'dev';
+    const stamp = (typeof __BUILD_STAMP__ !== 'undefined' ? __BUILD_STAMP__ : 'dev')
+      + (jankCount ? ' j' + jankCount : '');
     hud.textContent =
       `${stamp} · ${fps} fps · ${px} @dpr${dpr} · ${(renderer.info.render.triangles / 1000) | 0}k tris · ` +
       `${renderer.info.render.calls} draws · ` +

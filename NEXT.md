@@ -347,8 +347,10 @@ Reviewer for 000-054 adds (10 BAD, 23 minor, 33 total), FOUR SYSTEMIC:
     steps where width changes" polish from the original bus-lane note.
     Plus one-offs worth probing: 025 thick bare column at kerb; 030
     detached glazing panel; 005 slate-blue quad on carriageway; 009 black
-    sphere on kerb; 012 near-black carriageway; blank near-field slabs
-    (013/025/026/031/042/052 — generic facade skipping small frontages?).
+    sphere on kerb; blank near-field slabs (013/025/026/031/042/052 —
+    generic facade skipping small frontages?). 012 CLEARED: a tower's hard
+    shadow; only nuance is shadowed ASPHALT crushes near-black while
+    pavement keeps tone — a someday hemisphere-light lift, not a defect.
 
 Reviewer for 165-219 adds (13 BAD, 9 minor). THE BIGGEST ENGINE BUG of the
 whole sweep, confirming #9 with more frames:
@@ -364,8 +366,18 @@ whole sweep, confirming #9 with more frames:
     edge vs painted yellow offset at that exact spot, then fix the paint to
     take each WAY's own drawn width (or clamp paint inside the drawn edge
     the way P9 should have caught — strengthen P9 with the fix).
-18. **[BAD] Plaza Singapura overhang FULLY DIAGNOSED, fix designed (half a
-    session, do when fresh):** the roads genuinely pass THROUGH PS's single
+18. **RESOLVED AS REALITY (four diagnostic layers): the PS "overhang" is
+    the mall's real SERVICE PASSAGE.** Definitive probe: both sweep points
+    are INSIDE PS's ring and the ways under them are UNNAMED SERVICE ways
+    (w=6) — a basement/loading passage running under the building, which
+    the splitter CORRECTLY leaves alone (splitting would carve a fake
+    canyon through a real mall). Remaining is PRESENTATION polish, not
+    correctness: give under-building service passages a proper soffit and
+    side walls so the underside stops reading as raw geometry; optionally
+    exclude under-building service ways from the sweep's rideable stops.
+    Superseded plan below kept for the method record.
+    ~~[BAD] Plaza Singapura overhang FULLY DIAGNOSED, fix designed (half a
+    session, do when fresh):~~ the roads genuinely pass THROUGH PS's single
     mapped footprint (OSM outlines the mall including its over-road link),
     the extrude therefore roofs the carriageway at 3.1/5.9m, and it DODGES
     pruneCarriageway via the `pos.count > 6000` merged-tile guard — while
@@ -403,9 +415,11 @@ whole sweep, confirming #9 with more frames:
     (0.22m box, too small), not a red-tinted foliage clump (no icosahedron
     instanceColor outliers; possibly foliage has no instanceColor at all —
     check that first next time). Next thread: it sits at canopy height near
-    (1427-1460, 7618-7654); ray THE BLOB itself from the frame-058 camera
-    with a tight fan aimed +0.3 rad right of heading, 60-130m, and read the
-    hit's instanceId + mesh directly. 21. [minor] 169 voco: CLEARED — at full resolution the "charcoal wall" is
+    (1427-1460, 7618-7654); ray THE BLOB itself — TRIED, fourth probe
+    empty: it is warm only in TEXTURE (mapped materials report white), so
+    colour hunting is blind. NEXT: bisect by subsystem — screenshot the
+    frame-058 camera with ?nofoliage / ?nosigns / ?nofurniture and see
+    which flag removes it; two shots name the builder. 21. [minor] 169 voco: CLEARED — at full resolution the "charcoal wall" is
     the dark-framed boutique arcade with legible tenant fascias (MB
     Jewellery, Mouawad, Breitling), exactly per research/voco.md; the
     reviewer read a thumbnail. Blank slabs 167/185/199 and the bare west
