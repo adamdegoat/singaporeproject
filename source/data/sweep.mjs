@@ -20,7 +20,14 @@ const args = process.argv.slice(2);
 const stride = Number((args.find((a) => a.startsWith('--stride')) || '').split('=')[1] || 90);
 const wantShots = args.includes('--shots');
 const OUT = 'shots/sweep';
-const BUDGET = { worstFps: 30, medianFps: 45, calls: 900 };
+// Re-baselined 2026-07-29: the old 900/1.6M predated three ACCEPTED costs —
+// full-district dressing (2.75M -> 3.47M tris, 899 -> 906 draws, measured in
+// NEXT.md), the terrain twist subdivision + road cross-strips from the
+// yellow-patches fix (~+100k tris), and the paint layers (~+22k tris, +1
+// draw per layer). Worst view measured 934 draws / 3.64M tris the day of the
+// re-baseline; margins are thin ON PURPOSE so growth is a decision, not a
+// drift. Draw calls are the number that matters on this fill-rate-bound GPU.
+const BUDGET = { worstFps: 30, medianFps: 45, calls: 960, tris: 3_800_000 };
 
 mkdirSync(OUT, { recursive: true });
 const data = JSON.parse(readFileSync('data/orchard.json', 'utf8'));
@@ -136,7 +143,7 @@ const check = (id, name, value, budget, cmp) => {
 // are the budget; the frame rate is reported as indicative and confirmed at
 // the worst spots in a focused browser.
 check('F3', 'worst draws', worstCalls, BUDGET.calls, '<');
-check('F4', 'worst tris',  Math.max(...rows.map((r) => r.tris)), 1600000, '<');
+check('F4', 'worst tris',  Math.max(...rows.map((r) => r.tris)), BUDGET.tris, '<');
 
 console.log(`\n   render target     ${rows[0].px} at dpr ${rows[0].dpr}`);
 console.log(`   stops visited     ${rows.length}`);

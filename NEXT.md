@@ -39,11 +39,37 @@ awkward ones are the ones that get skipped.
 2. **~10 street-fronting buildings still have no recipe**, and the full sweep
    contact sheet has never been reviewed frame by frame now that every street
    is dressed. `shots/sweep/index.html`.
-3. **The Dhoby Ghaut pale boxes are REAL BUILDINGS, not the surround.**
-   Comparison frame 12 re-examined: the untextured white boxes stand beside a
-   signalised junction with a zebra crossing INSIDE the district, next to a
-   teal stepped massing and a twin-spired recipe — the generic facade family
-   skipped them. Probe the meshes at that spot and find out why.
+3. **The Dhoby Ghaut pale boxes are the SCHOOL OF THE ARTS (SOTA).** Traced
+   by raycasting the drawn meshes from the frame-12 camera and naming the
+   footprints under the hits: the volumes are SOTA (named in OSM, h=50,
+   ~7,500 m2) drawn by the generic concrete family — textured up close, flat
+   white at distance. Research for a recipe is delegated (WOHA, 2009, the
+   two-strata green-mesh building); build it when the report lands, under the
+   usual rule: worse than the generic family = not wired up. Probe gotcha
+   that cost a round: scene-file buildings carry their name in `n`, not
+   `name` — a probe reading `.name` calls every building unnamed.
+
+## DONE 2026-07-29 (second session): the LOADING SCREEN
+
+The user reported the page "looks like a crash" while loading — a static
+"loading Orchard…" line through 13+ blocked seconds. `#boot` in index.html is
+a full-screen overlay: SINGAPORE wordmark, the district names read from
+`data.axes`, and a road-styled progress bar (cream fill over a lane-dash
+track) that steps through ~18 NAMED phases with real counts ("raising 2,155
+buildings", "dressing Bras Basah Road"). The rules that made it work:
+
+- **Each step yields ONE macrotask (`setTimeout(0)`), never rAF** — rAF is
+  throttled in a spawned window and would stall every gate. Skipped when
+  `document.hidden` (background timers clamp to 1s each).
+- **The stretch that still freezes on a slow GPU is labelled** — "first
+  light" parked at 97% — because a labelled pause reads as work and an
+  anonymous full bar reads as a hang.
+- **A failed boot KEEPS the overlay** and writes the error into it; fading
+  out over a dead black canvas would recreate the exact state this exists to
+  prevent.
+- livecheck now fails a deploy if the overlay is still standing 1.2s after
+  ready. Deployed and live-verified same day, all gates green (exploratory
+  findings 8 → 6).
 
 ## DONE 2026-07-29 (second session): side streets have their PAINT
 
@@ -118,6 +144,65 @@ Also cut: `buildSurround` 2.35s → 0.32s. The water test was 2.1s of it —
 `inWater` walked every vertex of every Marina Bay ring for 9 sample points ×
 5,478 cells; a per-ring bounding box now rejects almost all of them. Same
 cell count, no RNG calls touched, placement byte-identical.
+
+## THE SWEEP REVIEW TRIAGE (2026-07-29, all 220 frames reviewed, 64 findings)
+
+First frame-by-frame review ever run (four agents over `shots/sweep/`).
+Findings are CLAIMS until probed — two spot-checks already confirmed real
+(Canning Rise rides into the National Museum massing; Istana-stretch rider on
+a brown slab). Ordered vehicle-first. Frame numbers refer to this sweep run.
+
+1. **Things standing IN traffic lanes** — hedge pads (001, 044, 047), stray
+   raised slabs on Grange/Bukit Timah (205, 207, 209), dark lumps (203).
+   P1/P1b are green, so whatever these are is either name-exempt, classed as
+   service-road, or placed by a path the checks don't cover. Probe first.
+2. **Red bus-lane overlay tears on the prime stretch** (~16 frames: ragged
+   triangular edges 067/076/077, mid-lane gaps 075/102, multi-lane flooding
+   090/093, orphan patch mid-junction 103, worst 105). Known polish debt in
+   the bus-lane section plus something new — the flooding needs a look.
+3. **Roads running through/under buildings** (130 museum, 172 Orchard Link
+   through Hilton, 177/178 Plaza Singapura underside roofs the road, 155
+   Concorde, 161 Istana wall, 045 Scotts dead-end). Some are probably REAL
+   under-building service ways (covered=yes / building_passage — grep the
+   raw OSM before calling them defects: the sweep may just be riding roads
+   a rider can genuinely not see down), some are oversized recipe massing.
+4. **Paint where no tarmac is** (166, 170, 181, 218, 115, 118, 120, 025):
+   yellows/dashes on bare terrain. Our invented widths vs the drawn ribbon —
+   also the P9 check clearly cannot see it; strengthen P9 while fixing.
+5. **Dual-carriageway INNER yellows read as a centre line** (026, 040, 189,
+   191 + systemic list in the 000-054 report). Each one-way half paints
+   kerbside pairs at both its edges; the two inner pairs meet mid-tarmac.
+   SDRE: yellow is kerbside-only, centre treatments are white. The dual-pair
+   detection already exists (sgdetail medianPts / __dualSegs) — skip the
+   yellow on the paired side.
+6. **Junction-mouth paint from the AXIS system** (055, 056, 095, 098, 002,
+   007): markings.js dashes/edges run across side-road mouths — the same
+   defect streetRuns just fixed for the side-street paint, still present in
+   the per-metre axis system. Teach claim()/emit the junction gaps, or move
+   axis lane lines to ribbons too.
+7. **The western Orchard/Tanglin stretch (frames 165-170) is an unfinished
+   zone**: unmarked ribbon road, no kerbs, markings on bare ground, zero
+   life. Looks like it predates several systems. Needs its own pass.
+8. **ION's podium reads as a flat grey wall at eye level** (072) on the
+   busiest frame of the whole street; also 101 dark-olive slab on the
+   Boulevard. Facade/texture, not geometry.
+9. One-offs, probe then fix or dismiss: floating pink ellipsoid (058), grey
+   ledge at head height over Kramat Lane (059), salmon wedge (085/094),
+   floating box (145), black slab prop (176), rod on pavement (195), tilted
+   pole (065), kerb X-cross (202), Cairnhill Circle sub-vehicle neck (214),
+   faded zebra (157), terrain seams (038/212), sliver spikes (171, 183),
+   white arcs in sky (071), car clipping ION (111).
+10. **Centre-line "gaps" reported widely** (062 Tanglin, 185 Ardmore, 193
+    Wilkie, many in 116-164) — DO NOT paint blindly: much of this is the
+    rule working (one-way, <5.5m, <30m runs, service). Audit analytically:
+    list two-way ≥5.5m carriageway streets with no centre ribbon, then
+    decide. Note the unnamed-street case: `'?'`-keyed runs group ALL unnamed
+    ways of one width together and never junction-break against each other.
+11. Sweep metadata: rows 111+ carry street "(unnamed)" — the reviewers had
+    to read the HUD. Fix sweep.mjs's street field.
+
+Already fixed the same day: the axis lane dash was Type C (4m/2m, the
+junction-approach pattern) down every street — now Type B 2m/4m per RMS1.
 
 ## THE PATTERN THAT ACCOUNTS FOR FIVE BUGS TODAY
 
@@ -537,8 +622,16 @@ that file. Verified: B1 2.73 m/s, B3 0, 40/40 on orchard and world.
 3. **Streaming and LOD before any fourth district.** The app loads the whole
    region at once. Measured: the island is 158,682 OSM buildings, ~83x what is
    loaded now. The plan and the numbers are in the expansion section below.
-4. Still deferred, low yield: `addr:housenumber`/`addr:street`,
-   `crossing:markings`, `kerb`, `roof:material`, `amenity`, `turn:lanes:*`.
+4. **`turn:lanes` — PROMOTED from the deferred list 2026-07-29.** The user's
+   stated mode of exploration is BY VEHICLE, which re-weights road-layer
+   accuracy above facade minutiae, and 1,466 ways carry turn-lane data that
+   is real, surveyed, and unread (the recurring pattern). Painted turn
+   arrows at junction approaches, from the tags, on the lane centres
+   axisSpec already computes. SDRE research note: lane lines invert to Type
+   C (4m mark / 2m gap) on signalised approaches, "generally 7 to 10
+   markings" — published, in the research report from 2026-07-29.
+5. Still deferred, low yield: `addr:housenumber`/`addr:street`,
+   `crossing:markings`, `kerb`, `roof:material`, `amenity`.
 
 ## How this project works, in four rules
 

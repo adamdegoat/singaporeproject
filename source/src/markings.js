@@ -304,14 +304,17 @@ export function buildMarkings(world, axis, data = {}) {
 
       // Dashed lane dividers at the real lane positions.
       //
-      // LTA SDRE Ch.8 Type B, which is the standard lane line on every road in
-      // Singapore that is not an expressway: **100mm wide, 4m mark, 2m gap.**
-      // This was drawn 140mm wide with a 3m mark and a 6m GAP -- the inverse
-      // proportion -- so every street in the world read as sparse short ticks
-      // where the real thing is a long dash with a short break. It is the most
-      // repeated single marking in the district, so it was also the most
-      // repeated error. (Type B1, 10m/2m, is expressway only and we have none.)
-      if (acc % 6 < 4) {
+      // LTA SDRE Ch.8 Type B, the standard lane line on every non-expressway
+      // road: **100mm wide, 2m MARK, 4m GAP** (RMS1, figures pixel-verified
+      // against the sheet by the 2026-07-29 research pass). This block once
+      // drew 3m/6m, was then "fixed" to 4m mark / 2m gap — which is Type C,
+      // the INVERTED pattern LTA reserves for signalised junction approaches
+      // ("generally 7 to 10 markings" before the stop line) — so every street
+      // carried the junction-approach line down its whole length. The most
+      // repeated marking in the district has now been wrong in both
+      // directions; the figures above are from the published sheet, not from
+      // memory. (Type B1, 2m/10m, is expressway only and we have none.)
+      if (acc % 6 < 2) {
         for (const off of dividers) {
           if (claim('dash', px + nx * off, pz + nz * off, 1.2))
             dash.push([px + nx * off, MARK.dash, pz + nz * off, ang]);
