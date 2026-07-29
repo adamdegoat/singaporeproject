@@ -16,6 +16,23 @@ capture-phase gesture hook; any touch restores full rate). Gate saves
 tonight: a TDZ crash (updateHelp above its consts) and the car-bumper
 blocker both refused before publish.
 
+## Late-night round two, all LIVE:
+TRUTHFUL PEDALS (the real zones: whole left half split at 62% height —
+divider drawn AT the split, glyphs centred in the true zones; v1 boxes
+matched nothing). THERMAL LADDER: dpr 1.5 + 30fps riding cap (?fps
+overrides) + half-size alternate-frame shadows + 24fps idle + 0 hidden.
+DRIVE-OFF FIX: dt clamps to 0.05 while early-jank frames run seconds
+apart, so sim time crawled and full throttle read as dead — the pure ride
+model now SUB-STEPS through real elapsed time (bounded 0.24s). AUDIO
+DIAGNOSIS SHIPPED: soft two-note chime on actual unlock (own gain, master-
+independent) + ?audiodebug HUD line + state hardening — next session's
+verdict: chime-no-engine = mapping, no-chime = session. ADAPTIVE TIER:
+phones median <20fps over first 8s demote once to dpr 1.25/cap 24,
+remembered in localStorage (sg_tier). TDZ count for the day: THREE
+(updateHelp, and TIER_DPR read by resize() at module init) — declare
+before module-init callers, the file now says so twice.
+QUALITY-TIER SPEC + tidy discipline written into WORKFLOW.md.
+
 ## EXPANSION: chinatown (Chinatown/Raffles Place) is DATA-COMPLETE —
 map + opentopodata terrain (76m relief; open-elevation was fetched FIRST
 by mistake and rewritten — CHECK THE PIN before fetching, the log prints

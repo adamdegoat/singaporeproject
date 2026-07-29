@@ -45,6 +45,9 @@ done
 hr "behaviour"
 SG_SCENE=world node data/behaviour.mjs 2>&1 | tail -1
 
+echo "== determinism (streaming prerequisite)"
+node data/determinism.mjs || exit 1
+
 hr "exploratory defects (not a gate)"
 SG_SCENE=world node data/defects.mjs 2>&1 | grep -E "FOUND|findings" | sed 's/^/  /'
 

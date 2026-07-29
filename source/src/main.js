@@ -1,5 +1,5 @@
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, rand, pick, chance } from './tex.js';
+import { PAL, R, reseedPlacement, rand, pick, chance } from './tex.js';
 import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, buildSurround, buildWater, buildSupertrees } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
@@ -670,7 +670,24 @@ function bootDone() {
   BOOTUI.el.classList.add('off');
   setTimeout(() => BOOTUI.el.remove(), 600);
 }
-fetch(`./data/${SCENE}.json`).then((r) => r.json()).then(async (data) => {
+// The build body is a NAMED function now — the first structural step of the
+// streaming design in WORKFLOW.md: a per-district loader will call this per
+// district slice. Behaviour of the legacy whole-region path is unchanged;
+// it simply calls the function once with the merged region.
+fetch(`./data/${SCENE}.json`).then((r) => r.json()).then(buildRegion).catch(bootFailed);
+async function buildRegion(data) {
+  // Streaming prerequisite, testable today: `?reseed` pins the placement
+  // stream to a seed derived from the scene name at the START of the build,
+  // and `?burn=N` deliberately consumes N draws first. With reseed, a burnt
+  // and an unburnt build must produce the IDENTICAL world — that is the
+  // order-independence the district loader needs, and data/determinism.mjs
+  // gates it by fingerprint.
+  if (P.has('burn')) { const n = +P.get('burn') || 0; for (let i = 0; i < n; i++) R(); }
+  if (P.has('reseed')) {
+    let hsh = 0;
+    for (const ch of SCENE) hsh = (Math.imul(hsh, 31) + ch.charCodeAt(0)) >>> 0;
+    reseedPlacement(hsh);
+  }
   BOOTT.push(['module-init+fetch', Math.round(performance.now())]);
   _bt = performance.now();
   if (BOOTUI.sub && data.axes && data.axes.length) {
@@ -1003,6 +1020,24 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then(async (data) => {
   stats.prunedFromRoads = pruned;
 
   window.__scene = scene; window.__camera = camera; window.__THREE = THREE;
+  // Placement fingerprint for the determinism gate: a cheap rolling hash of
+  // every instanced matrix in the world. Two builds that placed everything
+  // identically hash identically; one relocated bench does not.
+  {
+    let h1 = 0x9e3779b9;
+    const m4 = new THREE.Matrix4();
+    scene.traverse((o) => {
+      if (!o.isInstancedMesh) return;
+      for (let i = 0; i < o.count; i++) {
+        o.getMatrixAt(i, m4);
+        const e2 = m4.elements;
+        for (let k = 12; k < 15; k++) {
+          h1 = (Math.imul(h1 ^ Math.round(e2[k] * 100), 2654435761)) >>> 0;
+        }
+      }
+    });
+    window.__placementHash = h1.toString(16);
+  }
   bmark('rest');
 
   // GPU WARM-UP, and it must come AFTER consolidate. The first rendered frame
@@ -1054,7 +1089,8 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then(async (data) => {
   if (P.has('boot')) console.log('BOOT ' + JSON.stringify(BOOTT));
   window.__ready = true;
   window.__stats = stats;
-}).catch((e) => {
+}
+function bootFailed(e) {
   window.__bootError = (e && e.stack) || String(e);
   hud.textContent = 'boot failed: ' + e.message;
   // The overlay STAYS on a failed boot and says so — fading it out over a
@@ -1062,7 +1098,7 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then(async (data) => {
   // this screen exists to prevent.
   if (BOOTUI.lab) BOOTUI.lab.textContent = 'boot failed: ' + e.message;
   console.error('BOOT', e);
-});
+}
 
 if (TOUCH) attachTouch(canvas);
 attachMouse(canvas);

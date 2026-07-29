@@ -12,7 +12,16 @@ export function rng(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-export const R = rng(19870219);
+// THE PLACEMENT STREAM IS SWAPPABLE — the streaming prerequisite. Every
+// invented placement in the world draws from here; with a module-level
+// stream, BUILD ORDER is baked into every decision and a lazily-loaded
+// district would reshuffle the city per ride. reseedPlacement(districtSeed)
+// at the start of each district's build makes districts order-independent.
+// UNTIL it is called, the stream and its seed are exactly what they always
+// were, so the legacy whole-region build is byte-identical.
+let _placement = rng(19870219);
+export function reseedPlacement(seed) { _placement = rng(seed >>> 0 || 19870219); }
+export const R = () => _placement();
 export const rand = (a, b) => a + R() * (b - a);
 export const pick = (arr) => arr[(R() * arr.length) | 0];
 export const chance = (p) => R() < p;
