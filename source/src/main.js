@@ -1297,7 +1297,8 @@ let last = performance.now(), frames = 0, t0 = last, fps = 0, lastCoolT = 0;
 let lastCapT = 0, shadowFlip = true;
 const FPS_CAP = TOUCH ? (parseFloat(P.get('fps') || '0') || 30) : 0;
 function loop(now) {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const rawDt = (now - last) / 1000;
+  const dt = Math.min(0.05, rawDt); last = now;
 
   // Stop rendering entirely when the page is not visible. A 60fps WebGL loop is
   // a real power draw — it pegged two CPU cores on this laptop — and on a phone
@@ -1390,7 +1391,22 @@ function loop(now) {
     }
 
     const px = S.x, pz = S.z;
-    step(S, dt, inp.throttle, inp.brake, inp.steer, rideParams);
+    // SUB-STEP THE PHYSICS THROUGH JANK. dt is clamped to 0.05, so on a
+    // phone whose first seconds after ready run at a few fps, six real
+    // seconds advanced the sim by a fraction of one — full throttle read
+    // as "cannot drive off, wait a while". The ride model is pure and
+    // cheap, so it runs as many <=50ms slices as the REAL elapsed time
+    // needs (bounded, so a background tab does not fast-forward);
+    // everything else keeps the clamped dt and merely slow-mos through
+    // the jank, which is cosmetic.
+    {
+      let realDt = Math.min(0.24, rawDt);
+      while (realDt > 0.0001) {
+        const slice = Math.min(0.05, realDt);
+        step(S, slice, inp.throttle, inp.brake, inp.steer, rideParams);
+        realDt -= slice;
+      }
+    }
     // you cannot ride through a bus
     if (trafficSys && trafficSys.hits(S.x, S.z, vehicleKind === 'car' ? 0.95 : 0.55)) {
       S.x = px; S.z = pz;

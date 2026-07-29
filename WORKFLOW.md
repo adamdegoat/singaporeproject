@@ -37,6 +37,11 @@ The rhythm that turned out to work, one batch at a time:
    a probe, a vet render is faster and cheaper done directly.
 7. **Batch the bookkeeping.** NEXT.md and the memory update once per batch,
    at the end, not per edit.
+8. **Tidy between batches, never during one.** `bash data/tidy.sh` after any
+   probe/vet session — it kills EVERY headless browser, including a deploy's
+   own gate-runners, so it only runs when nothing is in flight. gates.sh
+   already tidies at its own end, so deploys self-clean; the strays to
+   worry about are crashed probe scripts. A cooked MacBook builds no city.
 
 What this optimises: wall-clock (the laptop's browser runs are the scarce
 resource, not tokens), attribution (a red check points at one small batch),
@@ -76,6 +81,35 @@ The island is 83x the current load. The design that fixes both:
    per-district (they already are); add a determinism check — build district
    A alone vs A-after-B, diff placements, must be byte-identical (this is
    what the per-district RNG buys and the check that keeps it bought).
+
+## Quality tiers for weaker phones (committed 2026-07-29 — the user wants
+## the project excellent on lousy hardware, and that is a quality bar like
+## accuracy is)
+
+The order of work: streaming (heat stays flat as the world grows) -> LOD
+(heat drops below today) -> adaptive tiers (every phone lands on its best
+settings without menus). Milestones, each gated like content:
+
+1. **Adaptive tier detection.** Sample real fps over the first ~5 seconds
+   of riding. Sustained < 24 -> drop to dpr 1.25 and cap 24fps; sustained
+   at cap with headroom -> allow dpr 1.75. No settings screen — the phone
+   declares itself. Persist the verdict in localStorage so the second boot
+   starts right. (?dpr / ?fps stay as overrides.)
+2. **Streaming** per the design above — RNG-per-district first, then the
+   idle-slice loader. Gate: the determinism check plus a ride across every
+   seam under livecheck.
+3. **LOD**, in the same "what deserves residence" machinery:
+   - buildings: past ~350m swap facade-textured extrudes for flat-colour
+     massing (the surround already proves the look reads fine far away);
+     recipes keep full form to ~500m because silhouettes are identity.
+   - trees: past ~250m the Angsana collapses to 6 cards instead of 30.
+   - crowd/traffic already cull at 105m/draw range — no change.
+   - shadows: only the near ~150m casts at all on phones.
+   Gate: the sweep at the usual vantage points must show no visible pop
+   at riding speed, and the fps floor on the Iris-645 reference must rise.
+4. **The thermal ledger stays honest:** every tier change lands with a
+   measured before/after (draws, tris, and where possible on-device
+   sustained fps), recorded here, not vibes.
 
 ## Adding a district
 
