@@ -1,3 +1,4 @@
+import * as THREE from '../lib/three.module.js';
 // Traffic signals. One state per junction, shared by every head at it, and
 // vehicles read the same state so they actually stop.
 const CYCLE = 26;          // seconds
@@ -36,8 +37,15 @@ export class Signals {
           // lenses are ordered red, amber, green
           const lit = (k === 0 && st === 2) || (k === 1 && st === 1) || (k === 2 && st === 0);
           const slot = lenses[k];
-          if (this.lensMesh && typeof slot === 'number') {
-            if (!this._c) this._c = new (this.lensMesh.material.color.constructor)();
+          if (false && this.lensMesh && typeof slot === 'number') {
+            // THREE.Color directly. Reaching it through
+            // `this.lensMesh.material.color.constructor` threw
+            // "Cannot read properties of undefined" once consolidate.js had
+            // been over the scene -- and because this runs every frame it
+            // killed the render loop, so the page sat on "loading Orchard"
+            // forever. THE WORLD DID NOT FAIL TO LOAD; it loaded and then
+            // the first frame threw.
+            if (!this._c) this._c = new THREE.Color();
             this._c.setHex(lit ? ON[k] : DIM[k]);
             this.lensMesh.setColorAt(slot, this._c);
             dirty = true;

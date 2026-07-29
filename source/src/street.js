@@ -349,7 +349,6 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
   // traffic lights. Each junction shares one signal state, keyed by its
   // distance along the street, so vehicles can look it up.
   const signals = new Map();     // arclength -> {lenses:[red,amber,green], phase}
-  const lensSlots = [];          // [x, z, lateral, height, fwd, yaw, k] per lens
   for (const [lx, lz, ang, sgn, atS] of lightAt) {
     const g = new THREE.Group();
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 5.4, 8), MAT.darkMetal);
@@ -361,23 +360,30 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     // 4.3m double-decker plus margin, and the green lens sat at 4.64m. A real
     // signal head over a bus route hangs higher than this did.
     box.position.set(-2.9 * sgn, 5.35, 0); box.castShadow = true; g.add(box);
-    // THE LENSES ARE INSTANCED, one mesh for the whole district.
+    // Individual lens meshes, flagged dyn so consolidate.js leaves them alone.
     //
-    // They were three individual meshes per head, each with its own material,
-    // because they are repainted every frame and `consolidate.js` must not
-    // bake them -- correct, but it meant every signal cost three draw calls.
-    // Once the dressing reach covered the whole district that came to 129 of
-    // them at the sweep's heaviest view, the single biggest block of draws in
-    // the frame and the reason F3 went over budget at 936.
+    // These were instanced into one mesh to save 129 draw calls, and it broke
+    // the live site: the reference handed to Signals was not a working
+    // InstancedMesh by the time the first frame ran, so setColorAt threw EVERY
+    // FRAME, which killed the render loop and left the page sitting on
+    // "loading Orchard" forever. The world loaded fine; the first frame threw.
     //
-    // One InstancedMesh with per-instance colour does the same job in one
-    // draw: signals.js writes setColorAt instead of material.emissive. Slots
-    // are handed out here and the index is what gets stored on the junction.
+    // Reverted rather than patched around, because a broken world is worse
+    // than 129 draw calls. To retry: resolve the mesh BY NAME inside
+    // Signals.update rather than holding a reference across build, and verify
+    // at PHONE SIZE on the deployed site before trusting it -- the local gates
+    // all passed while this was broken.
     const lenses = [];
     for (let k = 0; k < 3; k++) {
-      const slot = lensSlots.length;
-      lensSlots.push([lx, lz, -2.9 * sgn, 5.63 - k * 0.27, 0.16, ang, k]);
-      lenses.push(slot);
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.1, 10),
+        new THREE.MeshStandardMaterial({
+          color: [0x5a1f18, 0x5a441a, 0x1b3f27][k],
+          emissive: 0x000000, emissiveIntensity: 1.0,
+        }));
+      lens.position.set(-2.9 * sgn, 5.63 - k * 0.27, 0.16);
+      lens.userData.dyn = true;    // repainted every frame; must not be baked
+      g.add(lens);
+      lenses.push(lens);
     }
   // real OSM coordinate, often mapped on the kerb line: nudge it clear of the
   // carriageway rather than dropping a shelter into the traffic
@@ -389,39 +395,6 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
 
     if (!signals.has(atS)) signals.set(atS, { s: atS, lenses: [], phase: signals.size * 5.5 });
     signals.get(atS).lenses.push(lenses);
-  }
-
-  // Build the one lens mesh now that every slot is known. It is flagged
-  // userData.dyn so consolidate.js leaves it alone -- the same contract the
-  // individual lenses had, for the same reason.
-  let lensMesh = null;
-  if (lensSlots.length) {
-    lensMesh = new THREE.InstancedMesh(
-      new THREE.CircleGeometry(0.1, 10),
-      new THREE.MeshStandardMaterial({ emissive: 0xffffff, emissiveIntensity: 1.0 }),
-      lensSlots.length);
-    const lm = new THREE.Matrix4(), lp = new THREE.Vector3(),
-          lq = new THREE.Quaternion(), le = new THREE.Euler(), ls = new THREE.Vector3(1, 1, 1);
-    const lc = new THREE.Color();
-    lensSlots.forEach((sl, i) => {
-      const [sx0, sz0, lat, hgt, fwd, yaw0, k] = sl;
-      const c = Math.cos(yaw0), sn = Math.sin(yaw0);
-      const wx = sx0 + c * lat + sn * fwd, wz = sz0 - sn * lat + c * fwd;
-      // HEIGHT ABOVE THE GROUND UNDER THE LENS, not under its pole. The head
-      // hangs 2.9m out over the carriageway, and where the street falls away
-      // that is a different ground level -- twelve lenses came out under the
-      // 4.8m bus clearance on the slopes at Finlayson Green and Raffles Quay
-      // while measuring fine at their own posts. Same family as the bike sat
-      // at terrain height while the tarmac is drawn 5.5cm above it.
-      lp.set(wx, Math.max(groundAt(sx0, sz0), groundAt(wx, wz)) + hgt, wz);
-      le.set(0, yaw0, 0); lq.setFromEuler(le);
-      lm.compose(lp, lq, ls);
-      lensMesh.setMatrixAt(i, lm);
-      lensMesh.setColorAt(i, lc.setHex([0x5a1f18, 0x5a441a, 0x1b3f27][k]));
-    });
-    if (lensMesh.instanceColor) lensMesh.instanceColor.needsUpdate = true;
-    lensMesh.userData.dyn = true;
-    world.add(lensMesh);
   }
 
   // taxi stands: the yellow-topped rank sign, a queue rail, and a waiting cab
@@ -571,7 +544,6 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     realBusStops: realCount.busstops,
     realSignals: realCount.signals,
     realTaxis: realCount.taxis,
-    lensMesh,
     taxiStands: taxiAt.length,
     ranksWithNoCab: noCabAtRank,
     ranksWithNoRail: noRailAtRank,

@@ -277,6 +277,17 @@ so they are all in `this.items`. Two threads worth pulling:
   * The enforcement runs BEFORE integration by design (the comment owns that
     one-frame lag). Confirm it is actually REACHED for these items -- print
     from inside the loop, not from `__trafficState` afterwards.
+
+    **Tried, and the harness defeated it.** Instrumenting `Traffic.update` and
+    the enforcement block and reading the log after 900ms returned ZERO calls
+    to either -- while the vehicles demonstrably move and B2 measures 12 m/s.
+    The spawned browser's animation loop is throttled (WORKFLOW.md: "a window
+    launched by a script sits behind the terminal and is throttled whatever
+    flags are passed"), so the probe was watching a world that was not
+    ticking. Any instrumentation of the per-frame loop has to run in a FOCUSED
+    browser, or drive the tick manually from the probe -- call
+    `trafficSys.update(t, dt, ...)` in a loop from `page.evaluate` and read the
+    log from that, rather than waiting on rAF.
   * **Recycling assigns `s` without looking at the others**: `spread = EDGE +
     ((it.i * 53) % 260)`, and its own comment says it "keeps the fleet apart
     without needing to look at where the others are". Indices differing by 5

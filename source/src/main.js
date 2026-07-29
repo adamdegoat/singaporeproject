@@ -774,6 +774,11 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
     // Five lanes one way carrying 21 vehicles over 2,586m is a road at 4am.
     trafficSys = new Traffic(axis, 78, 12, axis && axisSpec(axis, data));
     trafficSys.build(world, trafficSys.path.nearestS(S.x, S.z));
+    // The system itself, so a probe can DRIVE the tick instead of waiting on
+    // requestAnimationFrame -- a spawned browser is throttled and its loop may
+    // not run at all, which made an attempt to instrument the vehicle spacing
+    // report zero calls to a function that demonstrably runs.
+    window.__trafficSys = trafficSys;
     window.__trafficPositions = () => (trafficSys.items || []).map(() => 1);
     // Where every vehicle actually is, which nothing could ask before. A fleet
     // of 21 spaced over 2,586m could not collide with itself by accident; 90
@@ -857,6 +862,7 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   const shopf = P.has('noshops') ? {} : buildShopfronts(shopGroup, data, axes, solidBefore);
 
   signals = new Signals(furniture.signals || [], furniture.lensMesh || null);
+  window.__signalsSys = signals;
   if (axis) wayfinder = new Wayfinder(data, axis);
   window.__axis = axis;
   window.__roadList = data.roads.filter((r) => r.k !== 'footway' && r.k !== 'pedestrian');
