@@ -112,6 +112,17 @@ export const MAT = {
   // the two surfaces OSM names that are neither asphalt nor our pavement slab
   unitPave: new THREE.MeshStandardMaterial({ map: texPaving(), color: 0x9a9184, roughness: 0.92 }),
   roadConc: new THREE.MeshStandardMaterial({ map: texConcrete(0x9d9a94, 0.6), roughness: 0.93 }),
+  // LTA SDRE Ch.11 BUS5 publishes the bus-stop colour scheme outright, so
+  // these are surveyed values rather than chosen ones. RAL 6027 on the back
+  // rest is the one a Singaporean recognises without being able to say why.
+  busGrey:   new THREE.MeshStandardMaterial({ color: 0x4e5452, roughness: 0.62 }), // RAL 7012
+  busRoof:   new THREE.MeshStandardMaterial({ color: 0x8a9597, roughness: 0.55 }), // RAL 7045
+  busSoffit: new THREE.MeshStandardMaterial({ color: 0xe7ebda, roughness: 0.8 }),  // RAL 9002
+  busBench:  new THREE.MeshStandardMaterial({ color: 0x6b716c, roughness: 0.6 }),  // RAL 7004
+  busRest:   new THREE.MeshStandardMaterial({ color: 0x81c0a8, roughness: 0.6 }),  // RAL 6027
+  hiVis:     new THREE.MeshStandardMaterial({ color: 0xe4e132, roughness: 0.45 }),
+  // painted kerb: instance-coloured black/white, see main.js
+  kerbPaint: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }),
   metal: new THREE.MeshStandardMaterial({ color: 0x8b8f93, roughness: 0.5, metalness: 0.4 }),
   darkMetal: new THREE.MeshStandardMaterial({ color: 0x3b3f44, roughness: 0.6, metalness: 0.3 }),
   glass: new THREE.MeshStandardMaterial({ color: 0x53616d, roughness: 0.14, metalness: 0.18 }),

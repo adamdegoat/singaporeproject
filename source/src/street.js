@@ -295,20 +295,53 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     if (rec && rec.sh === 0) continue;
     shelters++;
 
+    // THE SHELTER, AT LTA'S PUBLISHED COLOURS AND DIMENSIONS.
+    //
+    // Researched 2026-07-29 against LTA SDRE Ch.11 (BUS1-BUS5), whose drawing
+    // BUS5 specifies the scheme outright -- this is not a palette anyone had
+    // to choose:
+    //   column, rafter, fascia   RAL 7012 basalt grey
+    //   roof panel top           RAL 7045 grey
+    //   roof panel underside     RAL 9002 off-white
+    //   bench                    RAL 7004 signal grey
+    //   BACK REST                RAL 6027 light green
+    // The light-green backrest is the detail a Singaporean spots instantly and
+    // nothing else on the street uses that colour. The shelter is 3m deep in
+    // 3m-long modules, structural clear height 3.0m, and the roof panel is
+    // flat aluminium honeycomb -- not the curved canopy this had.
     const g = new THREE.Group();
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.16, 3.1), MAT.trim);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(9.0, 0.14, 3.0), MAT.busRoof);
     roof.position.y = 3.0; roof.castShadow = true; g.add(roof);
+    const soffit = new THREE.Mesh(new THREE.BoxGeometry(8.9, 0.05, 2.9), MAT.busSoffit);
+    soffit.position.y = 2.92; g.add(soffit);
+    const fascia = new THREE.Mesh(new THREE.BoxGeometry(9.0, 0.26, 0.06), MAT.busGrey);
+    fascia.position.set(0, 2.88, 1.5); g.add(fascia);
     for (let k = 0; k < 4; k++) {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 3.0, 8), MAT.metal);
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 3.0, 0.12), MAT.busGrey);
       post.position.set(-4.1 + k * 2.7, 1.5, 1.35); post.castShadow = true; g.add(post);
     }
     const back = new THREE.Mesh(new THREE.BoxGeometry(8.8, 1.7, 0.08), MAT.glass);
     back.position.set(0, 1.95, -1.4); g.add(back);
-    const bench = new THREE.Mesh(new THREE.BoxGeometry(7.4, 0.09, 0.46), MAT.metal);
-    bench.position.set(0, 0.62, -1.1); bench.castShadow = true; g.add(bench);
+    // one bench per 3m module, cantilevered, with the light-green back rest
+    for (let k = -1; k <= 1; k++) {
+      const bench = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.09, 0.42), MAT.busBench);
+      bench.position.set(k * 2.9, 0.62, -1.05); bench.castShadow = true; g.add(bench);
+      const rest = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.34, 0.07), MAT.busRest);
+      rest.position.set(k * 2.9, 0.92, -1.26); g.add(rest);
+    }
+    // the illuminated route-number panel
     const panel = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.5, 0.1),
       new THREE.MeshStandardMaterial({ color: 0x27313a, roughness: 0.3 }));
     panel.position.set(4.4, 1.7, -1.0); g.add(panel);
+    // SAFETY BOLLARDS AT 3m CENTRES along the kerb line, painted to match the
+    // shelter column (RAL 7012) with a reflective band at the top -- SDRE
+    // BUS5 again, and they are on every bus stop in Singapore.
+    for (let k = -1; k <= 1; k++) {
+      const bol = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 1.0, 8), MAT.busGrey);
+      bol.position.set(k * 3.0, 0.5, 2.05); bol.castShadow = false; g.add(bol);
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.13, 8), MAT.hiVis);
+      band.position.set(k * 3.0, 0.92, 2.05); g.add(band);
+    }
     g.position.set(bx2, groundAt(bx2, bz2), bz2); g.rotation.y = ang;
     world.add(g);
   }

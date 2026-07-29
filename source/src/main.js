@@ -405,6 +405,51 @@ function dressStreet(data, axis) {
   // Every one of these is placed relative to the ground, not to y=0. Orchard
   // climbs about 34m over its length, and these were authored flat: the audit
   // found 5,804 props buried, some 34.6m under the hill.
+  // SINGAPORE KERBS ARE PAINTED BLACK AND WHITE, in alternating bands, and
+  // the extents are published (LTA SDRE Ch.3, KER2-KER3): 70m back from a
+  // junction, 15m either side of a bus bay, 50m back from the tangent point of
+  // a curve. Plain grey kerb runs between those stretches. It is one of the
+  // most characteristic things about a Singapore street and the world had none
+  // of it -- every kerb was the same unpainted concrete.
+  //
+  // Junctions are taken from the signal positions, which are surveyed, rather
+  // than from a guess about where a junction is.
+  {
+    // straight from the surveyed layers in the scene file: signals mark
+    // junctions, bus stops mark bays
+    const junc = [];
+    for (const sg of (data.signals || [])) junc.push([sg[0], sg[1]]);
+    for (const st of (data.busstops || [])) junc.push([st.p ? st.p[0] : st[0], st.p ? st.p[1] : st[1]]);
+    const near = (x, z) => {
+      for (const [jx, jz] of junc) {
+        const d2 = (x - jx) ** 2 + (z - jz) ** 2;
+        if (d2 < 70 * 70) return true;
+      }
+      return false;
+    };
+    const painted = [], plain = [];
+    let band = 0;
+    for (const r of kerbT) (near(r[0], r[2]) ? painted : plain).push(r);
+    // alternating bands: each kerb segment is 2m, so a pair of segments is
+    // about the 1m-ish rhythm you see, read at riding speed
+    const cc2 = new THREE.Color();
+    if (painted.length) {
+      const im = new THREE.InstancedMesh(new THREE.BoxGeometry(0.42, 0.3, 2.0), MAT.kerbPaint, painted.length);
+      painted.forEach((r, i) => {
+        p3.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]);
+        e.set(0, r[3], 0); q.setFromEuler(e);
+        m.compose(p3, q, s3); im.setMatrixAt(i, m);
+        // alternate along the run, keyed off position so the pattern is stable
+        band = (Math.round(r[0] * 0.5) + Math.round(r[2] * 0.5)) & 1;
+        im.setColorAt(i, cc2.setHex(band ? 0x2b2b2b : 0xe8e6de));
+      });
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+      im.castShadow = false; im.receiveShadow = true;
+      world.add(im);
+    }
+    kerbT.length = 0;
+    for (const r of plain) kerbT.push(r);
+  }
   emit(new THREE.BoxGeometry(0.42, 0.3, 2.0), MAT.kerb, kerbT, (r) => {
     p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });

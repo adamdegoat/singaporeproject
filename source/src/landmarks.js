@@ -2485,7 +2485,147 @@ function frontage(api, ob, ring) {
   return { mx, mz, nX, nZ, tX: -nZ, tZ: nX, yaw: Math.atan2(nX, nZ), bl };
 }
 
+// ONE RAFFLES LINK, 1 Raffles Link. Researched 2026-07-29 by agent against
+// KPF's own project page, Gammon (main contractor), Meinhardt (engineer) and
+// photographs. It is in MARINA CENTRE, not Bras Basah as the brief assumed.
+//
+// Published: Kohn Pedersen Fox with Liang Peddle Thorp, completed 2000 for
+// Hongkong Land, 30,800 m2, a near-column-free 48,000 sq ft floor plate. KPF
+// call it a deliberately LOW HORIZONTAL SLAB in a city where "most office
+// buildings are towers", with "a static barrel dome on the west and a dynamic
+// triangular louvred roof on the east". Storey count conflicts across sources
+// (six or seven); photographs reconcile it as six glazed office levels over a
+// stone base. Height UNPUBLISHED, so the mapped 40m stands.
+//
+// The recognition is the WHITE STEEL EXOSKELETON standing proud of the glass,
+// with horizontal louvre blades at every floor -- the shading, not the glazing,
+// is what you read.
+function oneRafflesLink(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = b.h, BASE = 7.0;
+  const glass = api.mat.towerGlass, stone = api.mat.warmStone, white = api.mat.trim;
+
+  api.world.add(api.extrude(b.p, BASE, stone));            // the granite base
+  api.world.add(api.extrude(b.p, H - BASE, glass, BASE));  // the glazed slab
+  // the shallow curved roof edge, and the sawtooth of triangular rooflights
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 0.7, H), white, ob.cx, ob.cz);
+
+  const fr = frontage(api, ob, b.p);
+  if (!fr) return;
+  const { mx, mz, nX, nZ, tX, tZ, yaw, bl } = fr;
+  const at = (mesh, u, y, out, cast = true) => {
+    mesh.position.set(mx + tX * u + nX * out, y, mz + tZ * u + nZ * out);
+    mesh.rotation.y = yaw;
+    mesh.castShadow = cast; mesh.receiveShadow = true;
+    api.world.add(mesh);
+  };
+  // THE EXOSKELETON: square vertical fins about one structural bay apart,
+  // crossed by a transom at each floor, standing clear of the glass line.
+  const bays = Math.max(6, Math.round(bl / 7.5));
+  for (let i = 0; i <= bays; i++) {
+    const u = -bl / 2 + (i * bl) / bays;
+    at(new THREE.Mesh(new THREE.BoxGeometry(0.5, H - BASE + 1.2, 0.5), white),
+       u, g0 + BASE + (H - BASE) / 2, 0.75);
+  }
+  const floors = Math.max(4, Math.round((H - BASE) / 4.2));
+  for (let k = 0; k <= floors; k++) {
+    const y = g0 + BASE + k * ((H - BASE) / floors);
+    at(new THREE.Mesh(new THREE.BoxGeometry(bl, 0.32, 0.42), white), 0, y, 0.75, false);
+    // the horizontal louvre blade / light shelf spanning between the fins
+    if (k < floors)
+      at(new THREE.Mesh(new THREE.BoxGeometry(bl, 0.09, 0.95), white), 0, y + 0.55, 0.62, false);
+  }
+  // the projecting entrance canopy over the drop-off
+  at(new THREE.Mesh(new THREE.BoxGeometry(bl * 0.3, 0.45, 4.2), white), 0, g0 + 5.4, 2.2);
+}
+
+// RAFFLES ARCADE, 328 North Bridge Road. Researched 2026-07-29 by agent, and
+// the finding that matters is that it is NOT what it looks like:
+//
+//   It is a 1991 BLOCK, built new in the S$160m restoration by Architects 61,
+//   in matching Neo-Renaissance idiom -- not 1899 fabric. Its address is 328
+//   North Bridge Road, not 1 Beach Road (that is the hotel's). Refitted, not
+//   demolished, by Aedas in 2017-19.
+//
+// So the monument is the hotel behind it; this wing is a street wall that
+// reads as part of it. Published: three storeys, opened November 1991 with 65
+// shops, the Raffles Hotel Museum and Jubilee Hall. Height UNPUBLISHED.
+//
+// Photographed, not published: brilliant white painted plaster; GIANT-ORDER
+// fluted Corinthian pilasters spanning levels 2-3; each bay a deeply RECESSED
+// loggia so the elevation reads as shadow behind a white frame; dark
+// bottle-green turned balustrades; a continuous ground-level ARCADE of round
+// arches on square piers; an open balustraded parapet with no visible roof.
+function rafflesArcade(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const GROUND = 5.4, UPPER = 8.6, H = GROUND + UPPER;
+  const white = api.mat.trim, green = api.mat.jadeRoof, plaster = api.mat.paleStone;
+
+  // the block, set back so the ground-floor arcade stands in front of it
+  api.world.add(api.extrude(api.grow(b.p, 0.965), GROUND, plaster));
+  api.world.add(api.extrude(b.p, UPPER, plaster, GROUND));
+  // the moulded frieze at first-floor level, the strongest horizontal here
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.035), 0.5, GROUND - 0.2), white, ob.cx, ob.cz);
+  // the open balustraded parapet: no pitched roof is visible on this wing
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.025), 0.3, H), white, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.02), 0.22, H + 1.05), white, ob.cx, ob.cz);
+
+  const fr = frontage(api, ob, b.p);
+  if (!fr) return;
+  const { mx, mz, nX, nZ, tX, tZ, yaw, bl } = fr;
+  const at = (mesh, u, y, out, cast = true) => {
+    mesh.position.set(mx + tX * u + nX * out, y, mz + tZ * u + nZ * out);
+    mesh.rotation.y = yaw;
+    mesh.castShadow = cast; mesh.receiveShadow = true;
+    api.world.add(mesh);
+  };
+  const bays = Math.max(5, Math.round(bl / 6.5));
+  const bw = bl / bays;
+  // THE GROUND ARCADE: round arches on square piers, forming the covered
+  // five-foot way. Nothing glazed ever meets the kerb on this frontage.
+  for (let i = 0; i <= bays; i++) {
+    const u = -bl / 2 + i * bw;
+    if (onCarriageway(mx + tX * u + nX * 2.4, mz + tZ * u + nZ * 2.4, 0.3)) continue;
+    at(new THREE.Mesh(new THREE.BoxGeometry(0.8, GROUND - 1.1, 0.8), white),
+       u, g0 + (GROUND - 1.1) / 2, 2.4);
+  }
+  for (let i = 0; i < bays; i++) {
+    const u = -bl / 2 + (i + 0.5) * bw;
+    if (onCarriageway(mx + tX * u + nX * 2.4, mz + tZ * u + nZ * 2.4, 0.3)) continue;
+    const arch = new THREE.Mesh(
+      new THREE.CylinderGeometry(bw * 0.42, bw * 0.42, 0.75, 14, 1, false, 0, Math.PI), white);
+    at(arch, u, g0 + GROUND - 1.1, 2.4);
+    arch.rotation.set(Math.PI / 2, 0, 0);
+    arch.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), yaw);
+  }
+  at(new THREE.Mesh(new THREE.BoxGeometry(bl, 0.42, 2.9), white), 0, g0 + GROUND - 0.35, 1.6);
+  // GIANT-ORDER fluted Corinthian pilasters spanning the two upper levels,
+  // with the recessed green-balustraded loggia between each pair
+  for (let i = 0; i <= bays; i++) {
+    const u = -bl / 2 + i * bw;
+    at(new THREE.Mesh(new THREE.BoxGeometry(1.0, UPPER - 0.8, 0.42), white),
+       u, g0 + GROUND + (UPPER - 0.8) / 2, 0.32);
+    at(new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.6, 0.6), white),
+       u, g0 + GROUND + UPPER - 0.65, 0.36);       // the foliate capital
+  }
+  for (let i = 0; i < bays; i++) {
+    const u = -bl / 2 + (i + 0.5) * bw;
+    const nb = Math.max(4, Math.round(bw / 0.45));
+    for (let k = 0; k < nb; k++) {
+      const uu = u - bw * 0.36 + (k + 0.5) * (bw * 0.72 / nb);
+      at(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.8, 6), green),
+         uu, g0 + GROUND + 0.5, 0.30, false);
+    }
+    at(new THREE.Mesh(new THREE.BoxGeometry(bw * 0.76, 0.14, 0.4), white),
+       u, g0 + GROUND + 0.94, 0.30, false);
+  }
+}
+
 export const RECIPES = [
+  [/one raffles link/i, oneRafflesLink],
+  [/raffles arcade|raffles hotel arcade/i, rafflesArcade],
   [/temasek shophouse/i, temasekShophouse],
   [/caldwell house/i, caldwellHouse],
   [/^tong building/i, tongBuilding],
