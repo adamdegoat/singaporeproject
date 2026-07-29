@@ -593,7 +593,15 @@ let clock = 0;
 // The region: Orchard Road and Bras Basah, merged by data/merge.py. ?scene=orchard
 // still loads the single district, which is what the per-district gates want.
 const SCENE = (P.get('scene') || 'world').replace(/[^a-z0-9_-]/gi, '');
+// BOOT PHASE TIMING. `?boot=1` prints where the seconds go, because the first
+// three attempts at cutting a 29s mobile boot each optimised the wrong thing.
+const BOOTT = [];
+let _bt = performance.now();
+const bmark = (name) => { const n = performance.now(); BOOTT.push([name, Math.round(n - _bt)]); _bt = n; };
+window.__boot = BOOTT;
 fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
+  BOOTT.push(['module-init+fetch', Math.round(performance.now())]);
+  _bt = performance.now();
   terrain = new Terrain(data.terrain || null);
   // The ground gives way to the road. See carve() for why this exists; it must
   // happen before build() OR atDrawn() is used, so it is done at construction.
@@ -692,10 +700,12 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   if (!P.has('nowater')) setWater((data.water || []).map((w) => w.p));
 
   const bs = P.has('nobuild') ? { count: 0, tall: 0 } : buildBuildings(world, data);
+  bmark('buildings');
   // one sweep over what the building pass just added, before any street
   // furniture exists, so the scope is exactly "buildings and landmarks"
   const pruned = pruneCarriageway(world, ROADIX.onRoad, (x, z) => terrain.at(x, z));
   const fallbackAxis = buildRoads(world, data);
+  bmark('roads');
   const axis = data.axis || fallbackAxis;
   if (!data.axis && fallbackAxis) {
     // no stitched axis in the file, so re-index now that we have one
@@ -705,6 +715,7 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   // the ground itself, from the heightfield
   const groundMat = new THREE.MeshStandardMaterial({ color: 0x9a9384, roughness: 0.95 });
   world.add(terrain.build(groundMat));
+  bmark('terrain');
   // no apron: it overlapped the heightfield and doubled the shading cost across
   // the whole screen. The grid is padded 90m beyond the sampled roads already.
 
@@ -790,7 +801,7 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   }
   const furniture = {};
   let marks = 0; const side = {}; const sg = {}; const signage = {};
-  const dressed = new Set();      // side streets already done by an earlier axis
+  const dressed = new Set();
   for (const ax of axes) {
     if (!P.has('nofurniture')) {
       const f = buildFurniture(world, ax, place, data);
@@ -804,12 +815,14 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
       for (const k of Object.keys(g)) signage[k] = (signage[k] || 0) + g[k];
     }
     if (!P.has('nomarks')) marks += buildMarkings(world, ax, data);
+      bmark('markings');
     if (!P.has('noside')) {
       const t = dressSideStreets(world, data, ax, place, TreeField, dressed);
       for (const k of Object.keys(t)) side[k] = (side[k] || 0) + t[k];
     }
     if (!P.has('nosg')) {
       const q = buildSgDetail(world, ax, data, place);
+      bmark('sgdetail');
       for (const k of Object.keys(q)) sg[k] = (sg[k] || 0) + q[k];
     }
   }
@@ -895,6 +908,8 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   stats.prunedFromRoads = pruned;
 
   window.__scene = scene; window.__camera = camera; window.__THREE = THREE;
+  bmark('rest');
+  if (P.has('boot')) console.log('BOOT ' + JSON.stringify(BOOTT));
   window.__ready = true;
   window.__stats = stats;
 }).catch((e) => { window.__bootError = (e && e.stack) || String(e); hud.textContent = 'boot failed: ' + e.message; console.error('BOOT', e); });

@@ -425,7 +425,7 @@ export function selectSideStreets(data, axis, reach = 230) {
 // where 245 of the region's 333 duplicated props and most of its z-fighting
 // came from. The set is shared across the calls rather than rebuilt per axis,
 // because the whole point is what a PREVIOUS axis already did.
-export function dressSideStreets(world, data, axis, blockedIn, TreeField, done = null) {
+export function dressSideStreets(world, data, axis, blockedIn, TreeField, done = null, reachOverride = 0) {
   const trees = new TreeField();
   const kerb = [], lamp = [], lampArm = [];
   let roads = 0, skipped = 0;
@@ -458,7 +458,10 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
   // instanced, before consolidate.js batched per tile, and before the terrain
   // and road surfaces were tiled -- so distant dressing now culls instead of
   // being submitted from every camera in the world.
-  const REACH = +(new URLSearchParams(location.search).get('reach')) || 1200;
+  // `reachOverride` lets the caller dress the near streets first and the rest
+  // after the first frame -- see the deferred pass in main.js.
+  const REACH = reachOverride
+    || +(new URLSearchParams(location.search).get('reach')) || 1200;
   const A = axis.p;
   const nearAxis = (x, z, reach = REACH) => {
     for (let i = 0; i < A.length - 1; i++) {

@@ -1012,20 +1012,35 @@ export class Traffic {
     // Sorted per (direction, lane) and pushed forward until each gap clears the
     // two half-lengths plus a car's worth of daylight.
     {
-      const LEN = VLEN;
-      const lanes = new Map();
+      // SAME LATERAL RULE AS THE CHECK, not a quantised lane key.
+      //
+      // This bucketed by `Math.round(it.lane * 2)`, so a car and a bus in one
+      // lane could hash to different buckets and never be spaced apart -- and
+      // D34 calls anything within 2.6m laterally the same lane. That is why
+      // the check reported eight overlaps on a freshly built world: they are
+      // the BUILD-TIME positions. The running enforcement resolves them within
+      // a frame or two (verified by driving 120 ticks manually: zero
+      // overlaps), so this was never visible to a rider -- but the first frame
+      // should still be clean, and a defect probe should not have to know that
+      // the world needs a few frames before it is true.
+      const LEN = VLEN, LANE_SAME = 2.6;
+      const byDir = new Map();
       for (const it of this.items) {
-        const k = it.dir + ',' + Math.round(it.lane * 2);
-        let list = lanes.get(k);
-        if (!list) { list = []; lanes.set(k, list); }
+        const k = String(it.dir);
+        let list = byDir.get(k);
+        if (!list) { list = []; byDir.set(k, list); }
         list.push(it);
       }
-      for (const [, list] of lanes) {
+      for (const [, list] of byDir) {
         list.sort((a, b) => a.s - b.s);
         for (let k = 1; k < list.length; k++) {
-          const a = list[k - 1], b = list[k];
-          const need = (LEN[a.kind] + LEN[b.kind]) / 2 + 4.0;
-          if (b.s - a.s < need) b.s = a.s + need;
+          const b = list[k];
+          for (let m = 1; m <= 6 && k - m >= 0; m++) {
+            const a = list[k - m];
+            if (Math.abs(a.lane - b.lane) > LANE_SAME) continue;
+            const need = (LEN[a.kind] + LEN[b.kind]) / 2 + 4.0;
+            if (b.s - a.s < need) b.s = a.s + need;
+          }
         }
       }
     }

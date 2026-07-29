@@ -173,6 +173,41 @@ for researching before modelling rather than after:
   Filter the probe, do not truncate it — "print the thing, not a number near
   the thing" applies to the harness as much as to the world.
 
+
+### MOBILE: it stopped loading, and what that taught
+
+Reported 2026-07-29: the world sat on "loading Orchard" on a phone. Two
+separate problems, and only the first was fatal.
+
+**1. A per-frame exception killed the render loop.** The traffic-signal lenses
+had been instanced into one mesh to save 129 draw calls; the reference handed
+to `Signals` was not a usable InstancedMesh by the time the first frame ran, so
+`setColorAt` threw EVERY FRAME. The world built fine and `__ready` was true --
+the HUD simply never got repainted past its loading text. Reverted to
+individual lens meshes.
+
+**THE LESSON, and it is the important part: every gate passed while the live
+site was unusable.** 40/40 on four scenes, behaviour, ride, defects -- all
+green, all blind to it, because every one of them inspects a built scene and
+none of them renders a frame and looks for an exception. If you take one thing
+from this: **load the DEPLOYED site at 844x390 dpr2 and assert `__ready` AND an
+empty console before believing a deploy.** `/tmp/mobile.mjs` in this session
+did exactly that and found it in one run.
+
+**2. Boot is slow and is still open.** ~28s to ready at phone size, ~561MB
+heap. It roughly doubled when the dressing reach went 230m to 1200m. Tried and
+reverted: dressing only 320m at boot and queueing the rest after first paint --
+it halved memory to 326MB but did NOT improve time-to-ready, and it plated
+streets twice because `plated` is local to each `dressSideStreets` call.
+
+Measurement notes for the next attempt, both learned the hard way here:
+
+  * `page.waitForFunction` polls on rAF by DEFAULT, and rAF is throttled in a
+    spawned browser -- pass `polling: 100` or you are timing the poller.
+  * When inserting timing marks by string search, `buildShopfronts(` and
+    `consolidate(` match their IMPORT lines first. Three marks landed there and
+    produced numbers that meant nothing.
+
 ### The dressing now covers the WHOLE district, and what that opened up
 
 2026-07-29: `REACH` in markings.js went **230m -> 1200m**, so every street in
