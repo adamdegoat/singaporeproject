@@ -121,8 +121,9 @@ def dedupe_polys(groups, key_area=True, tol=8.0, area_tol=0.12):
     return out
 
 
-def dedupe_points(groups, tol=4.0):
-    """Same idea for the point layers: crossings, signals, stops, entrances."""
+def dedupe_points_gi(groups, tol=4.0):
+    """Same idea for the point layers: crossings, signals, stops, entrances.
+    Returns (group-index, item) pairs so --stream can partition the keeps."""
     CELL = 20.0
     grid = {}
     out = []
@@ -130,7 +131,7 @@ def dedupe_points(groups, tol=4.0):
         for it in items:
             pts = as_pts(it)
             if not pts:
-                out.append(it); continue
+                out.append((gi, it)); continue
             x, z = centroid(pts)
             k = (int(x // CELL), int(z // CELL))
             dup = False
@@ -146,7 +147,7 @@ def dedupe_points(groups, tol=4.0):
             if dup:
                 continue
             grid.setdefault(k, []).append((x, z, gi))
-            out.append(it)
+            out.append((gi, it))
     return out
 
 
@@ -235,7 +236,8 @@ def merge_terrain(ts, cover=None):
 def main():
     if len(sys.argv) < 4:
         sys.exit("usage: merge.py <out-id> <district> <district> [...]")
-    out_id, ids = sys.argv[1], sys.argv[2:]
+    out_id = sys.argv[1]
+    ids = [a for a in sys.argv[2:] if not a.startswith("--")]
     scenes = [load(i) for i in ids]
 
     origins = {(s["origin"]["lat"], s["origin"]["lon"]) for s in scenes}
@@ -265,16 +267,23 @@ def main():
     # surfaces that z-fight. P6 caught it.
     out["water"] = []
     _wseen = set()
-    for sc in scenes:
+    _water_by = {}
+    for si, sc in enumerate(scenes):
         for w in sc.get("water", []):
             k = (round(w["p"][0][0]), round(w["p"][0][1]), len(w["p"]), w.get("a"))
             if k in _wseen:
                 continue
             _wseen.add(k)
             out["water"].append(w)
+            _water_by.setdefault(si, []).append(w)
     if out["water"]:
         print(f"  {'water':<10} {len(out['water']):>5}  "
               f"({sum(w.get('a', 0) for w in out['water']):,} m2, not deduped by design)")
+
+    # chunks[i] collects district i's share of every deduped layer, so
+    # --stream can write per-district files that sum EXACTLY to the flat
+    # merge — same dedupe, same keeps, just partitioned by who contributed.
+    chunks = [dict() for _ in scenes]
 
     poly_layers = ["buildings", "roads", "bridges", "covered"]
     for layer in poly_layers:
@@ -283,16 +292,23 @@ def main():
         kept = dedupe_polys(groups, key_area=(layer == "buildings"),
                             tol=8.0 if layer == "buildings" else 5.0)
         out[layer] = [it for _, it in kept]
+        for gi, it in kept:
+            chunks[gi].setdefault(layer, []).append(it)
         print(f"  {layer:<10} {before:>5} -> {len(out[layer]):>5}  "
               f"({before - len(out[layer])} duplicates across the seam)")
 
     point_layers = ["trees", "crossings", "signals", "busstops", "mrt", "taxis", "shops", "gantries", "lamps"]
     # towers carry a height and a radius, so they are dicts rather than points
     out["towers"] = [t for sc in scenes for t in sc.get("towers", [])]
+    for si, sc in enumerate(scenes):
+        chunks[si]["towers"] = list(sc.get("towers", []))
     for layer in point_layers:
         groups = [s.get(layer, []) for s in scenes]
         before = sum(len(g) for g in groups)
-        out[layer] = dedupe_points(groups, tol=3.0)
+        kept = dedupe_points_gi(groups, tol=3.0)
+        out[layer] = [it for _, it in kept]
+        for gi, it in kept:
+            chunks[gi].setdefault(layer, []).append(it)
         print(f"  {layer:<10} {before:>5} -> {len(out[layer]):>5}  "
               f"({before - len(out[layer])} duplicates across the seam)")
 
@@ -320,6 +336,48 @@ def main():
     path = os.path.join(HERE, f"{out_id}.json")
     json.dump(out, open(path, "w"), separators=(",", ":"))
     print(f"  wrote {path} ({os.path.getsize(path)/1024:.0f} KB)")
+
+    if "--stream" in sys.argv:
+        # Per-district chunk files + a manifest, for the runtime loader. The
+        # flat file above keeps being written and stays the gates' subject;
+        # these are the SAME keeps partitioned by contributing district, so
+        # per-layer chunk counts must sum exactly to the flat file's counts.
+        print(f"\n== stream chunks")
+        mani = {
+            "origin": out["origin"],
+            "terrain": out["terrain"],
+            "axisFullLength": out["axisFullLength"],
+            "districts": [],
+        }
+        for si, did in enumerate(ids):
+            ch = chunks[si]
+            ch["water"] = _water_by.get(si, [])
+            ch["axis"] = scenes[si].get("axis")
+            t = scenes[si].get("terrain") or {}
+            box = [t.get("x0", 0), t.get("z0", 0),
+                   t.get("x0", 0) + (t.get("nx", 1) - 1) * t.get("cell", 0),
+                   t.get("z0", 0) + (t.get("nz", 1) - 1) * t.get("cell", 0)]
+            fn = f"{out_id}.d.{did}.json"
+            json.dump(ch, open(os.path.join(HERE, fn), "w"), separators=(",", ":"))
+            mani["districts"].append({"id": did, "file": fn,
+                                      "box": [round(v, 1) for v in box]})
+            print(f"  {did:<12} {os.path.getsize(os.path.join(HERE, fn))/1024:>5.0f} KB  "
+                  f"box {box[2]-box[0]:.0f}x{box[3]-box[1]:.0f}m")
+        # the partition must LOSE nothing: every layer's chunk counts sum to
+        # the flat file's count, or the loader would ship a thinner world
+        for layer in (["water", "towers", "buildings", "roads", "bridges", "covered"]
+                      + ["trees", "crossings", "signals", "busstops", "mrt",
+                         "taxis", "shops", "gantries", "lamps"]):
+            flat_n = len(out.get(layer, []))
+            chunk_n = sum(len(c.get(layer, [])) for c in chunks)
+            if flat_n != chunk_n:
+                sys.exit(f"  FAIL {layer}: flat {flat_n} != chunks {chunk_n} — "
+                         f"the partition lost or duplicated items")
+        mp = os.path.join(HERE, f"{out_id}.manifest.json")
+        json.dump(mani, open(mp, "w"), separators=(",", ":"))
+        print(f"  wrote {mp} ({os.path.getsize(mp)/1024:.0f} KB)  "
+              f"partition verified lossless")
+
     print(f"\nNext: point the app at data/{out_id}.json")
 
 

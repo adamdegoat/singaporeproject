@@ -142,6 +142,9 @@ function place(x, z) {
 // podiums, canopies, colonnades and the covered walkway are placed by recipe
 // and never had a footprint. See solid.js.
 let SOLID = null;
+// the boot build's WALLS grid, exposed so streamed chunks can extend it —
+// Solid is an unbounded hash grid, so build(group) on it is purely additive
+let WALLSREF = null;
 // WATER IS SOLID, as far as anything that travels on wheels or feet is
 // concerned. A scooter does not drive onto a reservoir and a pedestrian does
 // not stroll across one, and without this the bay is a 300m hole you fall into
@@ -608,6 +611,11 @@ scene.add(bike);
 let S = newState(0, 0, 0);
 let ready = false, stats = {};
 let crowdSys = null, trafficSys = null, wayfinder = null, signals = null;
+// Signals instances for streamed-in districts; the boot one stays `signals`
+const extraSignals = [];
+// side streets already dressed, shared between the boot build and every
+// streamed chunk so a street crossing a seam is never dressed twice
+const dressedStreets = new Set();
 // merged tiles of sub-4m detail, hidden beyond LOD_FAR (see the LOD pass)
 const LODT = [];
 const LOD_FAR = 500;
@@ -617,6 +625,46 @@ const LOD_FAR = 500;
 // the main pass AND the shadow pass, no matter where the camera looks.
 const LODI = [];
 let lodLast = 0, lodX = 0, lodZ = 0;
+// instanced meshes the LOD must never compact: the Signals system addresses
+// its lens instances BY INDEX, so compaction would move the green light
+const lodExclude = new Set();
+
+// Collect LOD candidates under `root`: consolidated tiles of sub-4m detail
+// (hidden beyond LOD_FAR) and static instanced sets (per-instance culling —
+// they span the region in one bounding sphere, so without this every leaf is
+// vertex-shaded every frame in the main AND shadow passes, whatever the
+// view). The fog is near-opaque at the cull ranges (FogExp2 0.0038: ~17%
+// visible at 350m, ~3% at 500m), so nothing is seen leaving. Excluded by
+// mechanism: crowd (userData.crowdPart), traffic (frustumCulled=false),
+// lodExclude (index-addressed sets). Safe to call again after a streamed
+// chunk: userData.lodRegistered keeps entries unique.
+function registerLod(root) {
+  const bb = new THREE.Box3();
+  root.traverse((o) => {
+    if (!o.isMesh || !o.userData.tileBatch || o.userData.lodRegistered) return;
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    bb.copy(o.geometry.boundingBox);
+    if (bb.max.y - bb.min.y >= 4) return;
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    o.userData.lodRegistered = true;
+    LODT.push(o);
+  });
+  root.traverse((o) => {
+    if (!o.isInstancedMesh || o.userData.lodRegistered) return;
+    if (o.userData.crowdPart || o.frustumCulled === false) return;
+    if (lodExclude.has(o)) return;
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    const r = o.geometry.boundingSphere.radius;
+    const far = r < 0.5 ? 300 : r < 2 ? 450 : 600;
+    const n = o.count;
+    const src = o.instanceMatrix.array.slice(0, n * 16);
+    const col = o.instanceColor ? o.instanceColor.array.slice(0, n * 3) : null;
+    const px = new Float32Array(n), pz = new Float32Array(n);
+    for (let i = 0; i < n; i++) { px[i] = src[i * 16 + 12]; pz[i] = src[i * 16 + 14]; }
+    o.userData.lodRegistered = true;
+    LODI.push({ o, src, col, n, px, pz, far });
+  });
+}
 let terrain = new Terrain(null);
 let mode = 'ride';                 // 'ride' | 'walk'
 const sound = new Sound();
@@ -683,8 +731,171 @@ function bootDone() {
 // streaming design in WORKFLOW.md: a per-district loader will call this per
 // district slice. Behaviour of the legacy whole-region path is unchanged;
 // it simply calls the function once with the merged region.
-fetch(`./data/${SCENE}.json`).then((r) => r.json()).then(buildRegion).catch(bootFailed);
-async function buildRegion(data) {
+//
+// ?stream=1 takes the manifest path instead: fetch every district chunk up
+// front (bytes are cheap; BUILDING is what stalls a phone), boot ONLY the
+// first district through the exact same buildRegion, then stream the rest in
+// cooperatively-yielding slices while the player rides. The flat file stays
+// the default and the audits' subject until the streamed path has soaked.
+if (P.has('stream')) {
+  fetch(`./data/${SCENE}.manifest.json`)
+    .then((r) => { if (!r.ok) throw new Error(`no manifest for ${SCENE}`); return r.json(); })
+    .then(buildStreamed).catch(bootFailed);
+} else {
+  fetch(`./data/${SCENE}.json`).then((r) => r.json()).then(buildRegion).catch(bootFailed);
+}
+
+async function buildStreamed(mani) {
+  if (BOOTUI.sub) BOOTUI.sub.textContent = mani.districts.map((d) => d.id).join(' · ');
+  const chunks = await Promise.all(mani.districts.map((d) =>
+    fetch(`./data/${d.file}`).then((r) => {
+      if (!r.ok) throw new Error(`no chunk ${d.file}`);
+      return r.json();
+    })));
+  // the ground and the surround must know the WHOLE region at boot: the
+  // heightfield mesh is built once, and grey massing must never stand where
+  // a later chunk will build the real buildings
+  const LAYERS = ['water', 'buildings', 'roads', 'bridges', 'covered', 'towers',
+    'trees', 'crossings', 'signals', 'busstops', 'mrt', 'taxis', 'shops',
+    'gantries', 'lamps'];
+  const regionData = { origin: mani.origin, water: [], buildings: [], roads: [] };
+  for (const ch of chunks) for (const k of LAYERS) {
+    if (!Array.isArray(ch[k])) continue;
+    if (!regionData[k]) regionData[k] = [];
+    regionData[k].push(...ch[k]);
+  }
+  const spawn = chunks[0];
+  spawn.terrain = mani.terrain;
+  spawn.axisFullLength = mani.axisFullLength;
+  spawn.axes = spawn.axis && spawn.axis.p ? [spawn.axis] : [];
+  const rest = mani.districts.slice(1).map((d, i) => ({ id: d.id, box: d.box, ch: chunks[i + 1] }));
+  await buildRegion(spawn, {
+    carveRoads: regionData.roads,
+    regionData,
+    streamRest: rest,
+  });
+}
+
+// Build one streamed district into the live world. Every step is the same
+// system the boot build uses, pointed at the chunk's own data, into the
+// chunk's own group — with the shared pictures (collision, road index,
+// water, walls, solid) EXTENDED first so every placement guard already sees
+// the union. `Y` yields to the frame loop between slices.
+async function addChunk(ch, id, Y) {
+  // one private placement stream per district: build order can never
+  // reshuffle the world (the determinism gate proved this property)
+  let h = 0;
+  for (const c of id) h = (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0;
+  reseedPlacement(h);
+  const mk = (t) => { if (window.__streamState) window.__streamState.step = t; };
+  const data = window.__data;
+  for (const k of ['water', 'buildings', 'roads', 'bridges', 'covered', 'towers',
+    'trees', 'crossings', 'signals', 'busstops', 'mrt', 'taxis', 'shops',
+    'gantries', 'lamps']) {
+    if (Array.isArray(ch[k]) && Array.isArray(data[k])) data[k].push(...ch[k]);
+  }
+  if (ch.axis && ch.axis.p && data.axes) data.axes.push(ch.axis);
+  mk('index');
+  indexBuildings(ch);                              // additive footprint grid
+  if (!P.has('nowater')) setWater((data.water || []).map((w) => w.p));
+  mk('roadix');
+  ROADIX = buildRoadIndex(data, data.axis || null); // union re-index
+  await Y();
+  const g = new THREE.Group();
+  g.name = 'district:' + id;
+  world.add(g);
+  mk('water');
+  if (!P.has('nowater')) buildWater(g, ch);
+  if (!P.has('notowers')) buildSupertrees(g, ch);
+  await Y();
+  mk('buildings');
+  if (!P.has('nobuild')) await buildBuildings(g, ch, Y);
+  mk('prune');
+  pruneCarriageway(g, ROADIX.onRoad, (x, z) => terrain.at(x, z));
+  await Y();
+  mk('roads');
+  await buildRoads(g, ch, Y);
+  await Y();
+  // the walls picture grows BEFORE the dressing and the shopfronts consult it
+  mk('walls');
+  if (WALLSREF) WALLSREF.build(g, (x, z) => terrain.at(x, z));
+  await Y();
+  const ax = ch.axis && ch.axis.p ? trimAxes(data.axes)[data.axes.length - 1] : null;
+  if (ax) {
+    mk('dress');
+    if (!P.has('nofoliage')) dressStreet(ch, ax);
+    await Y();
+    let f = {};
+    mk('furniture');
+    if (!P.has('nofurniture')) f = buildFurniture(g, ax, place, ch);
+    await Y();
+    mk('signage');
+    if (!P.has('nosigns')) buildSignage(g, ax, ch, place);
+    await Y();
+    mk('markings');
+    if (!P.has('nomarks')) buildMarkings(g, ax, ch);
+    await Y();
+    mk('side');
+    if (!P.has('noside')) dressSideStreets(g, ch, ax, place, TreeField, dressedStreets);
+    await Y();
+    mk('sg');
+    if (!P.has('nosg')) buildSgDetail(g, ax, ch, place);
+    await Y();
+    if (f.signals && f.signals.length) {
+      const es = new Signals(f.signals, f.lensMesh || null);
+      if (f.lensMesh) lodExclude.add(f.lensMesh);
+      extraSignals.push(es);
+    }
+  }
+  const solidBefore = WALLSREF ? (x, z) => WALLSREF.at(x, z) : null;
+  mk('shops');
+  if (!P.has('noshops')) buildShopfronts(g, ch, ax ? [ax] : [], solidBefore);
+  await Y();
+  mk('solid');
+  if (SOLID) SOLID.build(g, (x, z) => terrain.at(x, z));
+  await Y();
+  mk('consolidate');
+  dedupeMaterials(world);
+  consolidate(g);
+  trimShadowCasters(g);
+  if (!P.has('nolod')) registerLod(world);
+}
+
+// The streaming queue: one district at a time, nearest box first, yielding
+// to the frame loop roughly every slice so the ride never freezes. State on
+// window so a harness can wait for completion.
+async function streamRest(rest) {
+  // MessageChannel, not setTimeout: timers are clamped to a second or more
+  // in occluded pages (every headless harness, any backgrounded phone tab),
+  // which turned a 3s chunk build into a minute of sleeping between slices.
+  // A port message is an unthrottled macrotask — the frame loop still gets
+  // its turn between slices, which is the whole point of yielding.
+  const chan = new MessageChannel();
+  let wake = null;
+  chan.port1.onmessage = () => { if (wake) { const w = wake; wake = null; w(); } };
+  const Y = () => new Promise((r) => { wake = r; chan.port2.postMessage(0); });
+  const dist = (b) => {
+    const cx = Math.max(b.box[0], Math.min(S.x, b.box[2]));
+    const cz = Math.max(b.box[1], Math.min(S.z, b.box[3]));
+    return Math.hypot(cx - S.x, cz - S.z);
+  };
+  window.__streamState = { pending: rest.map((r) => r.id), building: null, done: [] };
+  const queue = [...rest];
+  while (queue.length) {
+    queue.sort((a, b) => dist(a) - dist(b));
+    const next = queue.shift();
+    window.__streamState.building = next.id;
+    try {
+      await addChunk(next.ch, next.id, Y);
+    } catch (e) {
+      console.error('stream chunk ' + next.id, e);
+    }
+    window.__streamState.done.push(next.id);
+    window.__streamState.pending = window.__streamState.pending.filter((x) => x !== next.id);
+    window.__streamState.building = null;
+  }
+}
+async function buildRegion(data, opts = {}) {
   // Streaming prerequisite, testable today: `?reseed` pins the placement
   // stream to a seed derived from the scene name at the START of the build,
   // and `?burn=N` deliberately consumes N draws first. With reseed, a burnt
@@ -706,7 +917,7 @@ async function buildRegion(data) {
   terrain = new Terrain(data.terrain || null);
   // The ground gives way to the road. See carve() for why this exists; it must
   // happen before build() OR atDrawn() is used, so it is done at construction.
-  terrain.carve(data.roads || []);
+  terrain.carve(opts.carveRoads || data.roads || []);
   setTerrain(terrain);
   window.__terrain = terrain;
   indexBuildings(data);
@@ -802,13 +1013,13 @@ async function buildRegion(data) {
   bmark('setup+water');
 
   await bstep(0.09, `raising ${(data.buildings || []).length.toLocaleString()} buildings`);
-  const bs = P.has('nobuild') ? { count: 0, tall: 0 } : buildBuildings(world, data);
+  const bs = P.has('nobuild') ? { count: 0, tall: 0 } : await buildBuildings(world, data);
   bmark('buildings');
   // one sweep over what the building pass just added, before any street
   // furniture exists, so the scope is exactly "buildings and landmarks"
   const pruned = pruneCarriageway(world, ROADIX.onRoad, (x, z) => terrain.at(x, z));
   await bstep(0.23, `laying ${(data.roads || []).length.toLocaleString()} roads`);
-  const fallbackAxis = buildRoads(world, data);
+  const fallbackAxis = await buildRoads(world, data);
   bmark('roads');
   const axis = data.axis || fallbackAxis;
   if (!data.axis && fallbackAxis) {
@@ -829,7 +1040,7 @@ async function buildRegion(data) {
   // of the bay rather than built across it.
   await bstep(0.34, 'raising the skyline');
   const trees2 = P.has('notowers') ? { supertrees: 0 } : buildSupertrees(world, data);
-  const surround = P.has('nosurround') ? 0 : buildSurround(world, data);
+  const surround = P.has('nosurround') ? 0 : buildSurround(world, opts.regionData || data);
   bmark('surround');
 
   // Collision is rasterised in TWO passes, and this is the first: the buildings,
@@ -862,6 +1073,7 @@ async function buildRegion(data) {
     const tS = performance.now();
     WALLS = new Solid();
     WALLS.build(world, (x, z) => terrain.at(x, z));
+    WALLSREF = WALLS;
     solidMs0 = performance.now() - tS;
     window.__wallBefore = (x, z) => WALLS.at(x, z);
   }
@@ -913,7 +1125,7 @@ async function buildRegion(data) {
   bmark('traffic');
   const furniture = {};
   let marks = 0; const side = {}; const sg = {}; const signage = {};
-  const dressed = new Set();
+  const dressed = dressedStreets;
   let axi = 0;
   for (const ax of axes) {
     await bstep(0.46 + 0.06 * Math.min(axi++, 2), `dressing ${ax.n || 'the streets'}`);
@@ -1036,37 +1248,9 @@ async function buildRegion(data) {
   // untouchable. `?nolod` turns it off; RAW (audit) mode never batches, so
   // audits and the determinism gate see every mesh exactly as before.
   if (!RAW && !P.has('nolod')) {
-    const bb = new THREE.Box3();
-    world.traverse((o) => {
-      if (!o.isMesh || !o.userData.tileBatch) return;
-      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
-      bb.copy(o.geometry.boundingBox);
-      if (bb.max.y - bb.min.y >= 4) return;
-      if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
-      LODT.push(o);
-    });
+    if (furniture.lensMesh) lodExclude.add(furniture.lensMesh);
+    registerLod(world);
     stats.lodTiles = LODT.length;
-
-    // Per-instance culling for the STATIC instanced sets. The fog is already
-    // near-opaque at these ranges (FogExp2 0.0038: ~17% visible at 350m, ~3%
-    // at 500m), so nothing here can be seen leaving. Excluded: the crowd and
-    // the traffic (they rewrite matrices every frame and cull themselves),
-    // and the signal lens mesh, whose instances the Signals system addresses
-    // BY INDEX — compaction would put the green light on the wrong pole.
-    world.traverse((o) => {
-      if (!o.isInstancedMesh) return;
-      if (o.userData.crowdPart || o.frustumCulled === false) return;
-      if (furniture.lensMesh && o === furniture.lensMesh) return;
-      if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
-      const r = o.geometry.boundingSphere.radius;
-      const far = r < 0.5 ? 300 : r < 2 ? 450 : 600;
-      const n = o.count;
-      const src = o.instanceMatrix.array.slice(0, n * 16);
-      const col = o.instanceColor ? o.instanceColor.array.slice(0, n * 3) : null;
-      const px = new Float32Array(n), pz = new Float32Array(n);
-      for (let i = 0; i < n; i++) { px[i] = src[i * 16 + 12]; pz[i] = src[i * 16 + 14]; }
-      LODI.push({ o, src, col, n, px, pz, far });
-    });
     stats.lodSets = LODI.length;
   }
 
@@ -1203,6 +1387,7 @@ async function buildRegion(data) {
       for (let k = 0; k < 120; k++) {
         const tSim = k * 0.0166;
         if (signals) signals.update(tSim);
+        for (const es of extraSignals) es.update(tSim);
         if (trafficSys) trafficSys.update(tSim, 0.0166, signals, S.x, S.z);
         if (crowdSys) crowdSys.update(tSim, 0.0166, S.x, S.z, signals);
         if ((k & 15) === 0) await bstep(0.99, 'waking the street');
@@ -1218,6 +1403,7 @@ async function buildRegion(data) {
   if (P.has('boot')) console.log('BOOT ' + JSON.stringify(BOOTT));
   window.__ready = true;
   window.__stats = stats;
+  if (opts.streamRest && opts.streamRest.length) streamRest(opts.streamRest);
 }
 function bootFailed(e) {
   window.__bootError = (e && e.stack) || String(e);
@@ -1612,6 +1798,8 @@ function loop(now) {
       sun.target.updateMatrixWorld();
       clock += dt;
       if (signals) signals.update(clock);
+    for (const es of extraSignals) es.update(clock);
+      for (const es of extraSignals) es.update(clock);
       if (trafficSys) trafficSys.update(clock, dt, signals, walker.x, walker.z);
       if (crowdSys) crowdSys.update(clock, dt, walker.x, walker.z, signals);
       if (wayfinder) wayfinder.update(walker, dt);

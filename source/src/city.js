@@ -608,7 +608,7 @@ function grow(pts, f) {
   });
 }
 
-export function buildBuildings(world, data) {
+export async function buildBuildings(world, data, Y = null) {
   const stats = { count: 0, tall: 0, bespoke: 0 };
   const merger = new Merger();
   const clearance = new Clearance(data.roads, data.axis);
@@ -654,7 +654,10 @@ export function buildBuildings(world, data) {
   const SOLO = (VP.get('solo') || '').toLowerCase();
   const NORECIPE = VP.has('norecipe');
 
+  let _yi = 0;
   for (const b of data.buildings) {
+    // cooperative yield for the runtime streamer; null during boot
+    if (Y && (++_yi & 15) === 0) await Y();
     const pts = b.p;
     if (pts.length < 3) continue;
     if (SOLO && !((b.n || '').toLowerCase().includes(SOLO))) continue;
@@ -1073,12 +1076,14 @@ function polyLen(pts) {
   return d;
 }
 
-export function buildRoads(world, data) {
+export async function buildRoads(world, data, Y = null) {
   const roadGeos = [], paveGeos = [], unitPaveGeos = [], concGeos = [], busGeos = [];
   const yellowGeos = [];
   const centreGeos = [];
   let mainAxis = null, bestLen = Infinity;
+  let _yi = 0;
   for (const r of data.roads) {
+    if (Y && (++_yi & 31) === 0) await Y();
     // A CROSSING IS NOT A PAVEMENT. `footway=crossing` is the pedestrian
     // crossing mapped as a way THROUGH the carriageway; surfacing it drew a
     // pale band across the road at every crossing -- 155 of them in Orchard --
@@ -1252,6 +1257,7 @@ export function buildRoads(world, data) {
     return out;
   };
 
+  if (Y) await Y();
   for (const { key, pieces } of streetRuns(
     // no bus lane on a bridge deck: a merged run would take ONE deck height
     // across ways that each chose their own, and a red ribbon floating over
@@ -1332,6 +1338,7 @@ export function buildRoads(world, data) {
     // streets they always had — one-way included, axes included — so the only
     // change a rider sees is that the pair no longer runs across the mouth of
     // a crossing street.
+    if (Y) await Y();
     for (const { key, pieces } of streetRuns(
       (r) => r.k !== 'footway' && r.k !== 'pedestrian' && r.k !== 'service' && r.k !== 'service_link'
         && (r.w || 0) >= 5.5 && !r.bridge,
@@ -1373,6 +1380,7 @@ export function buildRoads(world, data) {
       }
     }
 
+    if (Y) await Y();
     for (const { pieces } of streetRuns(
       (r) => !r.oneway && CARRIAGEWAY.has(r.k) && (r.w || 0) >= 5.5 && !r.bridge
         && !axisNames.has((r.n || '').toLowerCase()),
@@ -1447,6 +1455,7 @@ export function buildRoads(world, data) {
   merge(paveGeos, MAT.paving, 'pavementSurface');
   merge(unitPaveGeos, MAT.unitPave, 'roadSurface');
   merge(concGeos, MAT.roadConc, 'roadSurface');
+  if (Y) await Y();
   merge(busGeos, MAT.busLane, 'roadSurface');
   // The double yellow lines. Named as a marking rather than a surface so P7
   // ("markings under the tarmac") and P9 ("markings off the tarmac") own them,
