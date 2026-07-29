@@ -309,6 +309,13 @@ window.__auditWorld = async function auditWorld() {
     // right to shout; the lesson is that a signature allowlist fails OPEN for
     // new shapes and fails CLOSED for changed ones, and only the second is safe.
     'CylinderGeometry(0.06,1)',     // tree branch inside that canopy
+    // The traffic-signal LENS. It used to be three individual meshes per head
+    // and so was invisible to the prop checks entirely; instancing them into
+    // one mesh on 2026-07-29 (129 draw calls down to one, which is what took
+    // F3 back under budget) made them props for the first time and 1,413
+    // appeared over carriageways. A signal head hangs over the road because
+    // that is what it is for -- the same reason the arm above it is exempt.
+    'CircleGeometry(0.1)',          // traffic signal lens, over the junction
     'CylinderGeometry(0.07,2.4)',   // lamp arm, reaches over the carriageway
     // The lamp arm became a CURVE on 2026-07-29 -- LTA's standard bracket is a
     // single smooth curved arm, not the straight cantilever this world had --
@@ -352,7 +359,11 @@ window.__auditWorld = async function auditWorld() {
     'CapsuleGeometry(0.34,0.13)', 'CapsuleGeometry(0.1,0.12)',
     'BoxGeometry(0.11,0.07,0.25)', 'SphereGeometry(0.05)',
     'SphereGeometry(0.1)', 'SphereGeometry(0.11)', 'CylinderGeometry(0.05,0.1)',
-    'BoxGeometry(0.22,0.26,0.1)']);
+    'BoxGeometry(0.22,0.26,0.1)',
+    // red, amber and green are 27cm apart on one head, so a signal is three
+    // "duplicates" by construction -- the same reason a person's two shoes are
+    // in this list
+    'CircleGeometry(0.1)']);
 
   let sky = null;
   sc.traverse((o) => {

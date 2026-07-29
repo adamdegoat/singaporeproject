@@ -970,6 +970,28 @@ function ribbon(pts, width, y, flat = false) {
 }
 
 
+// The stretch of a polyline between two arclengths, with the cut ends
+// interpolated so a bus lane that stops at a junction stops exactly there
+// rather than at the nearest mapped vertex.
+function subPoly(pts, from, to) {
+  const out = [];
+  let acc = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const ax = pts[i + 1][0] - pts[i][0], az = pts[i + 1][1] - pts[i][1];
+    const L = Math.hypot(ax, az) || 1;
+    const segA = acc, segB = acc + L;
+    if (segB >= from && segA <= to) {
+      const t0 = Math.max(0, (from - segA) / L), t1 = Math.min(1, (to - segA) / L);
+      const p0 = [pts[i][0] + ax * t0, pts[i][1] + az * t0];
+      const p1 = [pts[i][0] + ax * t1, pts[i][1] + az * t1];
+      if (!out.length) out.push(p0);
+      out.push(p1);
+    }
+    acc = segB;
+  }
+  return out;
+}
+
 function polyLen(pts) {
   let d = 0;
   for (let i = 0; i < pts.length - 1; i++)
@@ -1093,12 +1115,60 @@ export function buildRoads(world, data) {
           }
         }
       }
+    // BREAK THE LANE AT JUNCTION MOUTHS.
+    //
+    // A bus lane stops at a side road and resumes past it -- the red does not
+    // run across the mouth, because traffic turns through there. Ours ran
+    // straight over every junction it met, which is the sort of thing a
+    // Singaporean reads as wrong without being able to say why.
+    //
+    // A junction is where a DIFFERENT named street's centreline passes close
+    // to this run, so it comes from the map rather than from a rule about
+    // spacing. The gap is the crossing street's own half width plus 2m.
+    const junctionsNear = (run) => {
+      const cuts = [];
+      for (const r2 of data.roads) {
+        if (r2.k === 'footway' || r2.k === 'pedestrian') continue;
+        if ((r2.n || '?') === (k.split('|')[0])) continue;      // same street
+        for (const q of r2.p) {
+          let acc = 0;
+          for (let i = 0; i < run.length - 1; i++) {
+            const ax = run[i + 1][0] - run[i][0], az = run[i + 1][1] - run[i][1];
+            const L = Math.hypot(ax, az) || 1;
+            const t = Math.max(0, Math.min(1, ((q[0] - run[i][0]) * ax + (q[1] - run[i][1]) * az) / (L * L)));
+            const px = run[i][0] + ax * t, pz = run[i][1] + az * t;
+            if ((q[0] - px) ** 2 + (q[1] - pz) ** 2 < 3 * 3) {
+              cuts.push([acc + t * L, (r2.w || 6) / 2 + 2]);
+              break;
+            }
+            acc += L;
+          }
+        }
+      }
+      return cuts.sort((a, b) => a[0] - b[0]);
+    };
+
       for (const run of chains) {
         if (polyLen(run) < 30) continue;         // a patch is not a lane
         const laneW = Math.min(3.6, w * 0.28);
         const off = (side === 'left' ? -1 : 1) * (w / 2 - laneW / 2);
-        const bg = ribbonOffset(run, laneW, 0.068, off, false);
-        if (bg && bg.attributes.position && bg.attributes.position.count) busGeos.push(bg);
+        // walk the run, emitting the stretches BETWEEN junction mouths
+        const cuts = junctionsNear(run);
+        const total = polyLen(run);
+        const pieces = [];
+        let at = 0;
+        for (const [d, gap] of cuts) {
+          const a = d - gap, b = d + gap;
+          if (a > at + 12) pieces.push([at, a]);   // under 12m is not a lane
+          at = Math.max(at, b);
+        }
+        if (total > at + 12) pieces.push([at, total]);
+        for (const [from, to] of pieces) {
+          const sub = subPoly(run, from, to);
+          if (!sub || sub.length < 2) continue;
+          const bg = ribbonOffset(sub, laneW, 0.068, off, false);
+          if (bg && bg.attributes.position && bg.attributes.position.count) busGeos.push(bg);
+        }
       }
     }
   }

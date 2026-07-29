@@ -856,7 +856,7 @@ fetch(`./data/${SCENE}.json`).then((r) => r.json()).then((data) => {
   world.add(shopGroup);
   const shopf = P.has('noshops') ? {} : buildShopfronts(shopGroup, data, axes, solidBefore);
 
-  signals = new Signals(furniture.signals || []);
+  signals = new Signals(furniture.signals || [], furniture.lensMesh || null);
   if (axis) wayfinder = new Wayfinder(data, axis);
   window.__axis = axis;
   window.__roadList = data.roads.filter((r) => r.k !== 'footway' && r.k !== 'pedestrian');

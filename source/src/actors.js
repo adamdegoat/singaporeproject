@@ -678,7 +678,24 @@ export class Crowd {
       // PREDICTIVE: the measured clear offset for where this walker is now, so
       // it starts stepping out before the carriageway reaches it. Costs one
       // array lookup per person per frame, not a road query.
-      if (!pr.crossing) {
+      // IS THE WALKER ON A ROAD RIGHT NOW, by the live index rather than by the
+      // precomputed band. Asked once here and used by both corrections below.
+      //
+      // The clearMask block runs EVERY frame and the reactive test below runs
+      // one frame in eight, so whenever they disagreed the mask won -- and the
+      // mask is quantised to WHOLE METRES (`k = Math.round(Math.abs(pr.off))`,
+      // 32 bits), so a walker at 18.3m reads as "metre 18" and the mask can
+      // call that clear while the road index says tarmac. Traced: walker 497
+      // sat on a carriageway drifting outward at 0.07 m/s, which is the mask
+      // nudging it toward the next whole metre it believes is clear, over and
+      // over. Same quantisation-versus-reality family as the street-name plate
+      // measured to a vertex and `claim`'s single-cell hash.
+      //
+      // So the live answer wins: if we are ON a road, skip the band correction
+      // entirely and let the reactive probe below choose the direction.
+      const onRoadNow = !pr.crossing && near < 140 && window.__onRoad
+        ? window.__onRoad(x, z, -0.8) : false;
+      if (!pr.crossing && !onRoadNow) {
         const arr = this.clearMask && this.clearMask[pr.pi];
         if (arr) {
           const nb = arr.length >> 1;
@@ -724,9 +741,13 @@ export class Crowd {
       // a walker in the river steps back toward it. Pushing outward for both
       // would walk the wet one deeper, which is a fallback worse than the
       // defect -- pattern #1 in NEXT.md.
-      if (!pr.crossing && ((i + tick) & 7) === 0) {
+      // Staggered one in eight normally -- a road query per person per frame
+      // costs three frames a second -- but NOT when the walker is already on a
+      // carriageway. Standing in traffic is the thing this exists to fix, so
+      // it corrects every frame until it is out.
+      if (!pr.crossing && (onRoadNow || ((i + tick) & 7) === 0)) {
         const sgn = pr.off >= 0 ? 1 : -1;
-        if (window.__onRoad && window.__onRoad(x, z, -0.8)) {
+        if (onRoadNow || (window.__onRoad && window.__onRoad(x, z, -0.8))) {
           // WALK WHICHEVER WAY ACTUALLY LEAVES THE ROAD.
           //
           // This only ever walked OUTWARD, away from the walker's own path. On
