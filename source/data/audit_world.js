@@ -100,6 +100,19 @@ window.__auditWorld = async function auditWorld() {
     // (same mechanism as marinabay's 11). S8 40: Robertson/UE Square
     // frontage is condo podium, day-one figure.
     rivervalley: { C7: 33, T2: 11, S8: 40 },
+    // Bugis enters 2026-07-30, day one. P1b 2: the Bugis+ generic-family
+    // bands overhang Victoria Street where the footprint meets the kerb —
+    // the building needs its recipe (the crystal-mesh facade), queued in
+    // the landmark wave; the ratchet may go down and never up. C1 1: one
+    // Victoria St service stub has no kerbable side. S8 67 day-one; T2 9.5:
+    // Rochor canal + bbox-edge stubs, same mechanism as marinabay's.
+    bugis: { P1b: 2, C1: 1, S8: 67, T2: 10 },
+    // Robertson enters 2026-07-30. C6 1: the mrt layer is VERIFIED absent
+    // (Overpass live: 0 elements in the box; Great World TEL sits just past
+    // the east edge inside rivervalley) — declared in districts.json, same
+    // fact check.py warns on. S8 73 day-one (condo podium frontage).
+    // T2 6.2: the river bank + Kim Seng bbox edge end in real stubs.
+    robertson: { C6: 1, S8: 73, T2: 7 },
     // T2 counts road-network islands, and Marina Bay genuinely has them: it is
     // reclaimed land threaded with expressways whose tunnel sections are
     // dropped, so surface ways really do end in stubs. 10.1% on a district that

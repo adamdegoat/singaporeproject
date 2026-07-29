@@ -1,4 +1,66 @@
-# HANDOVER — state as of 2026-07-29 (late night)
+# HANDOVER — state as of 2026-07-30 (overnight session, user asleep)
+
+## DISTRICT REVIEW TRIAGE (6 Opus agents, 274 frames of chinatown+rivervalley
+## sweeps, 2026-07-30 ~03:20). Frames archived in the session scratchpad
+## (sweep-chinatown/, sweep-rivervalley/ + their sweep.json for coords).
+FIXED SAME NIGHT:
+- WALKERS TORN APART (orphan leg/shoe clusters, floating torsos — both new
+  districts AND orchard): per-instance LOD compaction corrupted what the GPU
+  drew while CPU matrices stayed provably coherent. Instance-LOD is now
+  OPT-IN (?ilod) until the GPU-side mechanism is understood; tile-LOD stays.
+  Repro: scene=chinatown, teleport 1758.7,8936.8,1.1, settle 6s.
+  FLOATING TREE CANOPIES were the same bug (trunk r<0.5 culled at 300m,
+  canopy r>=2 at 600m — composite objects torn by radius-dependent ranges).
+  ANY future instance-LOD must cull composites as UNITS at ONE range.
+- CHINATOWN HAD NO RIVER (Boat Quay dry): the original fetch silently lost
+  the water layer (expect= allows empty water) and cached it. topup.py water
+  + rebuild; 7 polys / 1.97M m2 now. When a layer CAN be empty, check the
+  neighbour district agrees before trusting the cache.
+- Red awning wedges buried in pavements / floating over carriageways
+  (many chinatown frames): shopfront awning base sanity added — must hang
+  2.2-6.5m above LOCAL ground; skip, never substitute.
+- Lamp-post banners hanging IN Victoria Street (bugis P1): banners now
+  guarded at the point they HANG (offset included), not the column point.
+- Wayfinder header read "Orchard Road" everywhere (primary-axis fallback):
+  big line now names the street under you; minimap/names refresh per chunk.
+- Sweep tool itself audited the wrong district (hardcoded orchard.json —
+  the check-reads-the-input disease): now reads SG_SCENE's scene file.
+STILL OPEN, BY MECHANISM (worst first):
+1. CONSERVATION SHOPHOUSE GROUND FLOORS read as blank slabs with detached
+   door rectangles across Amoy/Telok Ayer/Duxton/Club/Smith/Tanjong Pagar —
+   the shophouse fabric heuristic (a<520, h<=20, p<=64) misses Chinatown's
+   larger/taller conserved rows, so they get the generic family. Needs the
+   heuristic widened (conservation streets are DATA — building age/levels)
+   + five-foot-way colonnade.
+2. LANDMARK RECIPE WAVE, chinatown+CBD+quays: Buddha Tooth Relic Temple,
+   Sri Mariamman, Thian Hock Keng, Lau Pa Sat (currently skeleton frames),
+   People's Park Complex (wrong colour, blank), Maxwell Food Centre
+   (renders as giant green slab OVER the carriageway — investigate its
+   footprint/height tags first, may be a data bug not a recipe gap),
+   Bugis+ (P1b ratchet 2: generic bands overhang Victoria St), OCBC/UOB/
+   MBFC glass towers (read as black voids at street level).
+3. VEHICLE-LIKE SLABS blocking lanes in reviews (green/red/gold, no wheels
+   visible) — several are probably REAL buses/lorries shot at rest by the
+   sweep (traffic frozen mid-frame), but 144's 15-vehicle overlapping
+   pileup at Maxwell needs a look at spawn spacing/taxi ranks in new
+   districts.
+4. ROAD SURFACE patchwork navy-vs-grey (RV canyons; also 143/148/156
+   chinatown) — tower-shadowed asphalt crushing near-black (known
+   hemisphere-lift item) PLUS possible mixed surface buckets per way.
+5. Kerb/median FRAGMENT CHAINS standing in lanes (141/146/153 chinatown,
+   078/094/097 RV) — median bar + kerb runs at junction mouths in the new
+   districts; the kerbClear end-sampling may need the full piece length.
+6. Terrain pokes through tarmac at spots (029/052/089 chinatown; 054/056
+   RV); road stubs ending in bare terrain at bbox edges (merged world
+   fills most — verify per spot against world, not the standalone scene).
+7. Esplanade Drive: rider sinks under the BRIDGE deck when teleported
+   (074-077) — surfaceAt vs bridge decks; affects sweeps, maybe real rides.
+8. Pedestrians walking IN traffic lanes (116 chinatown; 059 RV) — crowd
+   path selection in new districts.
+9. Camera-under-building sweep stops (108/109/113) — sweep should skip
+   stops under overhead decks (PS service-passage class).
+
+# Earlier handover (2026-07-29 late night) below
 
 ## LOD v1+v2 SHIPPED (this deploy): the heat lever that costs nothing visible.
 Two culls, both OFF in RAW/audit mode and via ?nolod, both ticked every 250ms

@@ -70,8 +70,12 @@ export function buildSignage(world, axis, data, isBlocked) {
   // The cross streets, kept as geometry rather than as a list of names. A
   // gantry used to pick two names at random out of this list: it looked
   // perfect and pointed at streets that were nowhere near the junction.
+  // "not the street the gantry stands on" — by the AXIS'S OWN NAME, not a
+  // hardcoded /orchard road/: a South Bridge Road gantry must not offer
+  // South Bridge Road as a destination
+  const ownName = (axis.n || 'orchard road').toLowerCase();
   const crossWays = data.roads.filter(
-    (r) => r.n && !/orchard road/i.test(r.n)
+    (r) => r.n && r.n.toLowerCase() !== ownName
         && r.k !== 'footway' && r.k !== 'pedestrian');
 
   // nearest named street on each side of a point, out to `reach`
@@ -197,15 +201,7 @@ export class Wayfinder {
   constructor(data, axis) {
     this.data = data;
     this.axis = axis;
-    // named buildings with a centroid, for the readout and the labels
-    this.places = [];
-    for (const b of data.buildings) {
-      if (!b.n) continue;
-      let x = 0, z = 0;
-      for (const p of b.p) { x += p[0]; z += p[1]; }
-      this.places.push({ n: b.n, x: x / b.p.length, z: z / b.p.length, a: b.a || 0 });
-    }
-    this.places.sort((a, b) => b.a - a.a);
+    this.refresh();
 
     this.current = ''; this.currentWhere = '';
     this.el = document.getElementById('place');
@@ -219,9 +215,27 @@ export class Wayfinder {
     this._t = 0;
     this._last = null;
 
+    this._wireTap();
+  }
+
+  // Re-derive everything that was snapshotted from `data`. The streamed
+  // loader GROWS the data arrays after boot, and a wayfinder that indexed
+  // only the spawn district showed an empty minimap and no mall names in
+  // every district that arrived later. Called at construction and again
+  // after each chunk lands.
+  refresh() {
+    const data = this.data;
+    // named buildings with a centroid, for the readout and the labels
+    this.places = [];
+    for (const b of data.buildings) {
+      if (!b.n) continue;
+      let x = 0, z = 0;
+      for (const p of b.p) { x += p[0]; z += p[1]; }
+      this.places.push({ n: b.n, x: x / b.p.length, z: z / b.p.length, a: b.a || 0 });
+    }
+    this.places.sort((a, b) => b.a - a.a);
     this.bounds = this._bounds(data);
     this._grid = this._index(data);
-    this._wireTap();
   }
 
   _bounds(data) {
@@ -593,14 +607,23 @@ export class Wayfinder {
       const d = Math.hypot(p.x - S.x, p.z - S.z) - Math.min(60, Math.sqrt(p.a) * 0.5);
       if (d < bestD) { bestD = d; best = p; }
     }
-    const label = best && bestD < 90 ? `Outside ${best.n}` : (this.axis.n || 'Orchard Road');
+    // The big line is where you ARE: a named building when one is close,
+    // otherwise the street under you. It used to fall back to the PRIMARY
+    // AXIS name, so riding South Bridge Road two kilometres from Orchard
+    // still read "Orchard Road" in large type over the correct street in
+    // small type — confidently wrong, in a five-district world.
+    const street = this._street(S);
+    const nearBld = best && bestD < 90;
+    const label = nearBld ? `Outside ${best.n}` : (street || this.axis.n || 'Singapore');
     if (label !== this.current && this.el) {
       this.current = label;
       this.el.firstChild.nodeValue = label;
     }
     if (this.whereEl) {
       const ahead = this._ahead(S);
-      const where = `${this._street(S)} · heading ${this._compass(S.heading)}`
+      // when the big line already names the street, the small line does not
+      // repeat it
+      const where = (nearBld ? `${street} · ` : '') + `heading ${this._compass(S.heading)}`
         + (ahead ? ` toward ${ahead.n}` : '');
       if (where !== this.currentWhere) { this.currentWhere = where; this.whereEl.textContent = where; }
     }

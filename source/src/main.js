@@ -649,6 +649,14 @@ function registerLod(root) {
     o.userData.lodRegistered = true;
     LODT.push(o);
   });
+  // Per-instance compaction is OPT-IN (?ilod) until its GPU-side corruption
+  // is understood: with it on, walkers rendered with orphaned leg/shoe
+  // clusters (CPU matrices PROVEN coherent — the corruption is in what the
+  // GPU drew), and composite trees tore apart because trunk (r<0.5 → 300m)
+  // and canopy (r≥2 → 600m) left at different ranges. Repro: scene=chinatown,
+  // teleport 1758.7,8936.8,1.1, settle 6s, look at the pavement. Tile LOD
+  // above is unaffected and stays on.
+  if (!P.has('ilod')) return;
   root.traverse((o) => {
     if (!o.isInstancedMesh || o.userData.lodRegistered) return;
     if (o.userData.crowdPart || o.frustumCulled === false) return;
@@ -813,7 +821,13 @@ async function addChunk(ch, id, Y, rec = {}) {
       'gantries', 'lamps']) {
       if (Array.isArray(ch[k]) && Array.isArray(data[k])) data[k].push(...ch[k]);
     }
-    if (ch.axis && ch.axis.p && data.axes) data.axes.push(ch.axis);
+    if (ch.axis && ch.axis.p && data.axes) {
+      // tagged with the OWNING district: two districts can carry the same
+      // street as their axis (River Valley Road spans rivervalley AND
+      // robertson), and a name lookup would bind the wrong geometry
+      ch.axis.did = id;
+      data.axes.push(ch.axis);
+    }
     rec.pushed = true;
   }
   // NO re-indexing here: the boot indexed the whole region's roads,
@@ -841,7 +855,7 @@ async function addChunk(ch, id, Y, rec = {}) {
   if (WALLSREF) WALLSREF.build(g, (x, z) => terrain.at(x, z));
   await Y();
   const ax = ch.axis && ch.axis.p
-    ? (trimAxes(data.axes).find((t) => t.n === ch.axis.n) || null) : null;
+    ? (trimAxes(data.axes).find((t) => t.did === id) || null) : null;
   if (ax) {
     mk('dress');
     if (!P.has('nofoliage')) dressStreet(ch, ax, g);
@@ -887,6 +901,7 @@ async function addChunk(ch, id, Y, rec = {}) {
     trimShadowCasters(g);
     if (!P.has('nolod')) registerLod(world);
   }
+  if (wayfinder) wayfinder.refresh();   // minimap + names learn the new district
   rec.group = g;
 }
 

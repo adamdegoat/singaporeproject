@@ -783,7 +783,15 @@ export function buildShopfronts(world, data, axes, wallAt) {
       // Orchard's P1b ratchet, which is a gate, so it is worth fixing.
       const awnClear = st.awning && prof === BIG && [-bw * 0.48, 0, bw * 0.48].every((du) => {
         const ax = fx + ux * du + nx * 1.55, az = fz + uz * du + nz * 1.55;
-        return !onCarriageway(ax, az, 0) && streets.dist(ax, az) > 0.8;
+        if (onCarriageway(ax, az, 0) || streets.dist(ax, az) <= 0.8) return false;
+        // and it must HANG like an awning: between head height and first
+        // storey above the LOCAL ground. On Chinatown's hills a bay whose
+        // footing sat below the street put the red sheet in the pavement,
+        // and a flipped frontage floated one mid-air over the carriageway —
+        // the district reviews photographed both. Skip, never substitute.
+        const gAt = groundAt(ax, az);
+        const awnY = base + prof.fascia - 0.14;
+        return awnY - gAt > 2.2 && awnY - gAt < 6.5;
       });
       if (awnClear) {
         // A 9cm slab read as a plank stuck to the wall. An awning is a sloped

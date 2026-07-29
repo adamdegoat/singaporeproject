@@ -30,7 +30,11 @@ const OUT = 'shots/sweep';
 const BUDGET = { worstFps: 30, medianFps: 45, calls: 960, tris: 3_800_000 };
 
 mkdirSync(OUT, { recursive: true });
-const data = JSON.parse(readFileSync('data/orchard.json', 'utf8'));
+// the SAME scene the page will load — this was hardcoded to orchard.json,
+// and a chinatown sweep teleported through orchard coordinates inside a
+// chinatown world: 220 frames of empty terrain, measured and budgeted.
+// The check-reads-the-input disease, again.
+const data = JSON.parse(readFileSync(`data/${process.env.SG_SCENE || 'world'}.json`, 'utf8'));
 
 // one stop every `stride` metres along every carriageway, plus the main axis
 function stops() {
@@ -96,7 +100,9 @@ const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message.slice(0, 200)));
 
-await page.goto('http://localhost:8933/?dpr=2&touch=1', { waitUntil: 'load' });
+// SG_SCENE picks the district (flat path — single-district scenes have no
+// manifest); streamall makes a manifest scene build fully before the sweep
+await page.goto(`http://localhost:8933/?dpr=2&touch=1&streamall=1&scene=${process.env.SG_SCENE || 'world'}`, { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true || window.__bootError',
                            null, { timeout: 120000 });
 const bootErr = await page.evaluate(() => window.__bootError || null);

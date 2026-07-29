@@ -43,10 +43,10 @@
   {
    "id": "bugis",
    "name": "Bugis / Rochor",
-   "bbox": "1.2960,103.8520,1.3030,103.8620",
+   "bbox": "1.2955,103.8520,1.3040,103.8640",
    "axis": "victoria street",
-   "status": "planned",
-   "notes": "Shophouse-heavy, so the shophouse recipe should carry most of it."
+   "status": "building",
+   "notes": "Kampong Glam + Bugis + Rochor: Sultan Mosque, Haji Lane, Arab Street, Bugis Junction, Beach Road shophouse spine. East edge 103.8640 takes the whole Arab Street quarter; west overlaps brasbasah (103.8520 < its 103.8560 east edge) so the seam closes. Expanded from the planned box 2026-07-30 overnight, user asked for 1-2 more districts."
   },
   {
    "id": "chinatown",
@@ -71,6 +71,16 @@
    "axis": "bras basah road",
    "status": "live",
    "notes": "Continues east from where Orchard Road ends at Handy Road. Fort Canning, the National Museum, SMU, Bras Basah, Bencoolen, Waterloo Street, up to Raffles Hotel and City Hall. Chosen because the street physically hands over here, so the seam needs no invention, and because it looks nothing like Orchard: low colonial civic buildings and open green instead of a canyon of malls. LIVE since 2026-07; registry said planned until 2026-07-29."
+  },
+  {
+   "id": "robertson",
+   "name": "Robertson Quay / Great World",
+   "bbox": "1.2880,103.8180,1.2985,103.8310",
+   "axis": "river valley road",
+   "status": "building",
+   "notes": "The west continuation the rivervalley entry promised: Great World, Zion Road, Robertson Quay, Kim Seng. East edge 103.8310 overlaps rivervalley (its west is 103.8280) so River Valley Road runs unbroken across the seam. Registered 2026-07-30 overnight.",
+   "partialMainStreet": "deliberate: this takes the MIDDLE 1.3km of River Valley Road's 4.9km; the east 1.6km lives in rivervalley and the far west (Kim Seng to Delta) waits for a future district. Decided 2026-07-30.",
+   "noMrt": "verified live against Overpass 2026-07-30 (topup.py mrt: 0 elements): no station or entrance sits inside this box. Great World (TEL) is at ~103.832, just past the east edge, inside rivervalley's coverage."
   }
  ]
 }

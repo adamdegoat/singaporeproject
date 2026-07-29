@@ -550,7 +550,17 @@ export function buildSgDetail(world, axis, data, isBlocked) {
       if (acc % 34 === 8) {
         for (const sgn of [-1, 1]) {
           const bx = px + nx * (half + 0.4) * sgn, bz = pz + nz * (half + 0.4) * sgn;
-          if (!isBlocked(bx, bz)) bannerT.push([bx + nx * 0.28 * sgn, 5.4, bz + nz * 0.28 * sgn, ang]);
+          // building test alone let banners hang IN Victoria Street: the
+          // nominal kerb line (half+0.4) is inside the tarmac wherever the
+          // real carriageway runs wider than the tagged width. A banner
+          // belongs on a lamp column, and no lamp stands in a live lane.
+          if (isBlocked(bx, bz)) continue;
+          // test where the banner actually HANGS (0.28 further out), not
+          // where its column stands — the 0.28 was exactly the difference
+          // between passing the guard and hanging over the lane
+          const hx = bx + nx * 0.28 * sgn, hz = bz + nz * 0.28 * sgn;
+          if (window.__onRoad && window.__onRoad(hx, hz, -0.3)) continue;
+          bannerT.push([hx, 5.4, hz, ang]);
         }
       }
 

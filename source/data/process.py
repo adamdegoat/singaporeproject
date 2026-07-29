@@ -7,12 +7,22 @@ OSM heights are unreliable here (Hilton is tagged 2 levels but 90m), so the
 landmarks that carry recognition get hand-set heights and the rest fall back to
 floor count, then to a per-type default.
 """
-import json, math, os, re
+import json, math, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # Driven by build_district.py via the environment so one code path serves every
 # district; the defaults keep a bare `python3 process.py` working on Orchard.
+#
+# A positional argument is REFUSED, loudly. `python3 process.py bugis` used to
+# ignore the word "bugis" and silently reprocess Orchard — overwriting a good
+# scene file with whatever the local raw cache held (2026-07-30, recovered
+# from the deployed copy). Same disease audit_roads.py had: a tool that
+# ignores its argument gets trusted with arguments.
+if len(sys.argv) > 1:
+    sys.exit(f"process.py takes no district argument (got {sys.argv[1:]}).\n"
+             f"Use: python3 build_district.py <id>   (it drives process.py "
+             f"via SG_RAW/SG_OUT/SG_AXIS env vars)")
 RAW_PATH = os.environ.get("SG_RAW") or os.path.join(HERE, "raw.json")
 OUT_PATH = os.environ.get("SG_OUT") or os.path.join(HERE, "orchard.json")
 AXIS_NAME = os.environ.get("SG_AXIS") or "orchard road"
@@ -208,6 +218,11 @@ LANDMARKS = {
     "chevron house":          {"h": 152},
     "marina one":             {"h": 200},   # architect figure; CTBUH says 225.5 — conflict recorded
     "lau pa sat":             {"h": 14},    # 1-storey market + clock lantern; UNPUBLISHED, height class only
+    # Maxwell Food Centre carried h=20 out of the extract — a 20m slab where
+    # a single-storey 1986 hawker shed stands (sweep review 2026-07-30 saw
+    # "a giant slab consuming half the frame"). Ridge height UNPUBLISHED;
+    # height class only, like Lau Pa Sat.
+    "maxwell food center":    {"h": 8},
     "fullerton hotel":        {"h": 37},    # Wikidata, low confidence
     # ---- Marina Bay, researched 2026-07-28 --------------------------------
     #

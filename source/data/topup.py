@@ -24,6 +24,9 @@ LAYERS = {
               'way["waterway"~"^(riverbank|dock|canal|river|stream)$"]({bbox});'
               'rel["waterway"="riverbank"]({bbox});'),
     "coast": 'way["natural"="coastline"]({bbox});',
+    "mrt": ('node["railway"="subway_entrance"]({bbox});'
+            'node["railway"="station"]({bbox});'
+            'way["railway"="subway_entrance"]({bbox});'),
     "buildrel": 'rel["building"]({bbox});',
 }
 

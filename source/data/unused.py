@@ -81,6 +81,10 @@ IGNORED = {
     "barrier":         "read where mapped as a railing",
     "service":         "sub-class of a service road; all service roads look alike",
     "junction":        "roundabout handling is geometric, from the way itself",
+    "parking:condition:left:vehicles":
+        "who may park in the marked bays (Bugis surfaced it, 2026-07-30); no "
+        "parked-vehicle system reads bay eligibility yet — the double yellows "
+        "already carry the no-parking fact that shows on the street",
 
     "public_transport": "schema tag; the thing itself is highway=bus_stop",
     "traffic_signals:sound":     "audio cue for the visually impaired; no audio cue is modelled",

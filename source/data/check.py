@@ -127,6 +127,24 @@ def check(did):
     }
     print("   real map positions: " + ", ".join(f"{k} {len(v)}" for k, v in layers.items()))
     missing = [k for k, v in layers.items() if not v]
+    # A verified absence is a fact, not a fetch failure: Robertson Quay has
+    # no MRT entrance INSIDE its box (checked live against Overpass, 0
+    # elements). The declaration lives in districts.json with the evidence;
+    # an UNDECLARED empty layer still fails, because the far more common
+    # cause is a silently-dropped fetch part (Chinatown's whole river was
+    # lost exactly that way the same night).
+    try:
+        reg = json.load(open(os.path.join(HERE, "districts.json")))
+        ent = next((x for x in reg["districts"] if x["id"] == did), {})
+    except Exception:
+        ent = {}
+    DECL = {"crossings": "noCrossings", "signals": "noSignals",
+            "busstops": "noBusstops", "mrt": "noMrt"}
+    for k in list(missing):
+        note = ent.get(DECL[k])
+        if note:
+            warn(f"{k} verified absent: {str(note)[:70]}…")
+            missing.remove(k)
     if missing:
         fail("no real positions for: " + ", ".join(missing)
              + " — these would be placed at invented intervals. Refetch with --force.")
