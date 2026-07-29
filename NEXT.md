@@ -177,11 +177,14 @@ cell count, no RNG calls touched, placement byte-identical.
 
 Reviewer for 055-109 (others pending at time of writing — append their
 findings here as they land):
-1. **[BAD] Left-kerb marking stack z-fights across ~28 Orchard frames**
-   (068, 073-098, worst 074/090/098): double yellow + white edge line + red
-   bus-lane edge shredding into stipple. The axis marking heights collide
-   where the bus lane runs — check MARK heights vs busGeos 0.068 vs yellows
-   0.087 vs edge line, at the LEFT kerb specifically.
+1. **[BAD] Left-kerb z-fight DIAGNOSED, fix is a deletion: TWO yellow
+   systems paint the axis kerbs at the IDENTICAL height 0.087.**
+   markings.js MARK.yellow = ROAD_Y 0.055 + 0.032 (per-metre emitFlat
+   quads, lines ~327-332) and city.js streetRuns ribbon yellows (0.087) —
+   coplanar along the whole axis, hence the 28-frame stipple. DELETE the
+   markings.js kerbside double-yellow emit (yellowL) and keep the ribbons
+   (junction-broken + self-verifying). Same lesson as the double-drawn
+   kerbs in the old notes: two systems, one fact.
 2. **[BAD] 072 ION area: huge flat untextured grey mass cuts diagonally
    across the red bus lane and left carriageway, half-swallowing two cars.**
    Same object as the old "ION facade" finding but it INTERSECTS THE ROAD —
@@ -215,7 +218,15 @@ fine; ERP gantry legs on verge; "tilted" facades are FOV distortion; tan
 junction wedges are landscaped splitter islands.
 
 Reviewer for 000-054 adds (10 BAD, 23 minor, 33 total), FOUR SYSTEMIC:
-13. **[BAD] BROKEN PEDESTRIAN RIG — hands and shoes detach from the body**
+13. **FIXED same evening (8th deploy): the rig's hands/shoes swung with
+    OPPOSITE SIGN to their limb rotations.** R_x by θ moves a point L below
+    the pivot to z = −L·sinθ; all four extremity constants opposed that, so
+    at full gait a hand sat ~46cm from its arm tip and a shoe ~63cm from
+    its leg. actors.js put() extremity offsets now derived from the limb
+    angles. Verified by derivation + behaviour gate; visual confirmation
+    rides on the next sweep. Probes eliminated: slot indexing and per-part
+    counts are consistent; the affected pedestrians were ordinary walkers.
+    ~~[BAD] BROKEN PEDESTRIAN RIG — hands and shoes detach from the body~~
     (016 arms rotated off torso; 032/037/050/053/054). PRIME SUSPECT, not
     yet verified: the crowd packs VISIBLE instances to the front of the
     buffer and sets .count (the culling fix in the hard-won notes), and the
@@ -223,9 +234,18 @@ Reviewer for 000-054 adds (10 BAD, 23 minor, 33 total), FOUR SYSTEMIC:
     per entity index, or everyone swaps clothes" — if any LIMB part (hand
     spheres, shoes, forearms) writes its matrix by ENTITY index while the
     body writes by SLOT, limbs belong to a different pedestrian than the
-    body they float near. Check every setMatrixAt call in the crowd path in
-    actors.js for index-vs-slot consistency; fix is one indexing pass. The
-    kerbside-paint guard from #17 is IN and deployed same evening.
+    body they float near. INVESTIGATED, suspects ELIMINATED: put() in
+    actors.js writes every part at the same packed slot (line ~849) and
+    part.count is set uniformly from `slot` for all parts (line ~899) — no
+    index or count mismatch in the main walker path. NEXT THREADS: (a) the
+    detached-limb pedestrians in frames 016/032/037 may come from a
+    DIFFERENT writer — a seated/waiting pose path, the crossing pose, or a
+    bench/bus-stop sitter — find which pose those frames show and grep for
+    a second matrix writer; (b) the arm ROTATION pivots about the box
+    centre while hands translate kinematically — at extreme `walk` values
+    (teleport time-jump?) they could visually separate; check whether
+    sweep teleports produce outsized `walk`. The kerbside-paint guard from
+    #17 is IN and deployed same evening (7th deploy of 2026-07-29).
 14. **Buildings perched on blank plinth walls or sunk, ground floors
     buried/cut** (010 Emerald Hill both rows on ~3m wall, 015 sunk block,
     029/038/040/041/051) — footingY-on-slope family, but Emerald Hill is a

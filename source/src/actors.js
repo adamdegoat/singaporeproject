@@ -858,11 +858,18 @@ export class Crowd {
       put(this.armR, 0.19, 1.20, 0, -walk * 0.62);
       put(this.legL, -0.085, 0.52, 0, -walk * 0.72);
       put(this.legR, 0.085, 0.52, 0, walk * 0.72);
-      // feet swing with the legs, hands with the arms
-      put(this.shoeL, -0.085, 0.06, 0.02 - walk * 0.30);
-      put(this.shoeR, 0.085, 0.06, 0.02 + walk * 0.30);
-      put(this.handL, -0.205, 0.99, walk * 0.27);
-      put(this.handR, 0.205, 0.99, -walk * 0.27);
+      // Feet swing with the legs, hands with the arms — MATCHED TO THE LIMB
+      // ROTATION, not merely "some swing". R_x by θ moves a point L below
+      // the pivot to z = -L·sin(θ). legL pitches by -walk·0.72 with its shoe
+      // ~0.46 below the pivot → shoe z = +0.46·sin(0.72·walk) ≈ +0.33·walk;
+      // armL pitches +walk·0.62 with the hand ~0.30 below → −0.19·walk. The
+      // old constants had the OPPOSITE SIGN on all four, so at full gait a
+      // hand floated ~46cm from its arm tip and a shoe ~63cm from its leg —
+      // the "detached hands and shoes" every sweep-2 reviewer photographed.
+      put(this.shoeL, -0.085, 0.06, 0.02 + walk * 0.33);
+      put(this.shoeR, 0.085, 0.06, 0.02 - walk * 0.33);
+      put(this.handL, -0.205, 0.99, -walk * 0.19);
+      put(this.handR, 0.205, 0.99, walk * 0.19);
       // Bags get their OWN slot counter. Parking a bagless person's bag at
       // y=-9999 does not cull it — the GPU draws every instance up to .count,
       // which is the lesson already written down for the crowd itself and not
