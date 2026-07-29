@@ -261,8 +261,12 @@ function dressStreet(data, axis) {
         }
         if (acc % 34 === 0 && kerbOK && claim('lamp', kx, kz, 6)) {
           lampT.push([kx, 4.5, kz, 0]);
-          armT.push([kx - nx * 1.1 * sgn, 8.9, kz - nz * 1.1 * sgn, ang, sgn]);
-          headT.push([kx - nx * 2.3 * sgn, 8.75, kz - nz * 2.3 * sgn, ang]);
+          // parts carry the POLE's anchor: each used to take the ground at
+          // its OWN offset position, and on a steep street with a retaining
+          // wall the ground 2.3m out differs by metres — the luminaire on
+          // Leonie Hill floated free of its pole (sweep-2 frame 187)
+          armT.push([kx - nx * 1.1 * sgn, 8.9, kz - nz * 1.1 * sgn, ang, sgn, kx, kz]);
+          headT.push([kx - nx * 2.3 * sgn, 8.75, kz - nz * 2.3 * sgn, ang, kx, kz]);
         }
         if (acc % 2 === 0 && kerbOK && claim('kerb', kx, kz)) kerbT.push([kx, 0.15, kz, ang]);
       }
@@ -488,7 +492,7 @@ function dressStreet(data, axis) {
     p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); q.identity();
   });
   emit(new THREE.CylinderGeometry(0.07, 0.07, 2.4, 6), MAT.galv, armT, (r) => {
-    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
+    p3.set(r[0], groundAt(r[5], r[6]) + r[1], r[2]);
     e.set(0, r[3], Math.PI / 2 - 0.2 * r[4]); q.setFromEuler(e);
   });
   // THE BRACKET ARM stays a straight cantilever for now.
@@ -505,7 +509,7 @@ function dressStreet(data, axis) {
   // existing anchor and yaw place it unchanged. The pole below is already
   // right: octagonal, continuously tapered, bare hot-dip galvanised.
   emit(new THREE.BoxGeometry(1.0, 0.2, 0.44), MAT.trim, headT, (r) => {
-    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+    p3.set(r[0], groundAt(r[4], r[5]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   // Same ground-sharing rule as markings.js: `claim` is a single-cell hash and
   // lets near-boundary pairs through, so the axis pass drops any square that

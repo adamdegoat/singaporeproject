@@ -300,15 +300,19 @@ whole sweep, confirming #9 with more frames:
     edge vs painted yellow offset at that exact spot, then fix the paint to
     take each WAY's own drawn width (or clamp paint inside the drawn edge
     the way P9 should have caught — strengthen P9 with the fix).
-18. **[BAD] Plaza Singapura overhang PART-DIAGNOSED: an ExtrudeGeometry
-    roofs the carriageway at 3.1m (frame 177 spot) and 5.9m (178, 40 ray
-    hits) while PS's footprint edge is 5-9m AWAY** — so it is an added
-    structure, most likely a covered-walkway/linkway span (street.js) drawn
-    WITHOUT its posts. Real Handy Rd linkways exist, so the fix is posts +
-    honest span heights, not deletion. Probe: scratchpad/psprobe2.mjs.
-    NOTE for frame-number hygiene: sweep.json row coords CHANGE each sweep
-    run — always resolve a reviewer's frame numbers against the sweep.json
-    THAT REVIEW SAW (this one cost a mis-aimed probe).
+18. **[BAD] Plaza Singapura overhang FULLY DIAGNOSED, fix designed (half a
+    session, do when fresh):** the roads genuinely pass THROUGH PS's single
+    mapped footprint (OSM outlines the mall including its over-road link),
+    the extrude therefore roofs the carriageway at 3.1/5.9m, and it DODGES
+    pruneCarriageway via the `pos.count > 6000` merged-tile guard — while
+    the walkway builder (street.js, box roofs at 3.35m) is innocent. Whole-
+    mesh removal would delete the mall, so the RIGHT fix is data-layer, in
+    process.py: where a ring ENCIRCLES/crosses a carriageway corridor,
+    SPLIT it into polygons either side and emit an explicit bridge-deck
+    slab over the corridor at >= 4.7m soffit. Covers the P5 trio in one
+    move. NOTE for frame-number hygiene: sweep.json row coords change each
+    sweep run — resolve a reviewer's frames against the sweep.json THAT
+    REVIEW SAW (one mis-aimed probe already paid for this).
 19. **MOSTLY FIXED (10th deploy): median + kerb pieces verify against the
     road index.** Three guards landed: median midpoints AND bar ends
     (sgdetail.js), side-street 4m kerbs centre+ends (markings.js), crossing

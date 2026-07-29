@@ -791,13 +791,15 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
       // whichever side of the lamp the road is on is the side the arm reaches
       const sgn2 = window.__onRoad && window.__onRoad(lx + nx2 * 4, lz + nz2 * 4, 0) ? -1 : 1;
       lamp.push([lx, 3.6, lz, ang2]);
-      lampArm.push([lx - nx2 * 0.9 * sgn2, 7.0, lz - nz2 * 0.9 * sgn2, ang2, sgn2]);
+      // the arm grounds at the POLE (lx, lz), not at its own offset — the
+      // Leonie Hill floating-luminaire class
+      lampArm.push([lx - nx2 * 0.9 * sgn2, 7.0, lz - nz2 * 0.9 * sgn2, ang2, sgn2, lx, lz]);
     }
   }
 
   emit(new THREE.CylinderGeometry(0.09, 0.13, 7.2, 8), MAT.metal, lamp, yaw);
   emit(new THREE.BoxGeometry(0.9, 0.16, 0.4), MAT.trim, lampArm, (r) => {
-    p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+    p.set(r[0], groundAt(r[5], r[6]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   const treeCount = trees.build(world);
   return { sideRoads: roads, sideSkipped: skipped, sideTrees: treeCount,

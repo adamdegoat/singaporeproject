@@ -40,11 +40,11 @@
   },
   {
    "id": "chinatown",
-   "name": "Chinatown / Telok Ayer",
-   "bbox": "1.2790,103.8410,1.2860,103.8500",
+   "name": "Chinatown / Raffles Place",
+   "bbox": "1.2790,103.8410,1.2895,103.8530",
    "axis": "south bridge road",
-   "status": "planned",
-   "notes": "Densest shophouse fabric in the city; good test of the terrace variants."
+   "status": "building",
+   "notes": "Densest shophouse fabric in the city plus the Raffles Place CBD and the river's south bank. Widened 2026-07-29 before first build: the planned box stopped 250m short of Bras Basah in latitude and merely TOUCHED Marina Bay at 103.8500 with zero overlap -- the exact seam-hole the marinabay note documents. Now overlaps Bras Basah (to 1.2895, across the river at Boat Quay where the bridges already land) and Marina Bay (to 103.8530). This is the user's 'expand south' district: the map stops being one long line here."
   },
   {
    "id": "marinabay",
