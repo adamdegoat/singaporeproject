@@ -1867,6 +1867,220 @@ function theCathay(api, b) {
 // floors above). HEIGHT IN METRES IS UNPUBLISHED -- not in Wikipedia, Roots,
 // Bonvests, CTBUH or any leasing database -- so the mapped 45m stands and the
 // recipe does NOT invent one from the 21 storeys.
+// VOCO ORCHARD (ex-Hilton Singapore), 581 Orchard Road. research/voco.md.
+// White slab, 26 storeys published (metres unpublished, mapped 80 kept): a
+// deep egg-crate grid of recessed dark window bays — NOT balconies — blank
+// sheer end walls, top two floors stepped back under a heavy double white
+// fascia, and the gold Henderson relief-mural band over the 2-storey arcade.
+function vocoOrchard(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const white = api.mat.paintedWhite, dark = api.mat.darkCurtain;
+  const H = b.h, podium = 9;
+  const c = [ob.cx, ob.cz];
+
+  // podium: boutique glazing at street, the gold mural band above it
+  api.world.add(api.extrude(api.grow(b.p, 0.99), 5.0, dark));
+  api.world.add(api.extrude(b.p, podium - 5.0, api.mat.bronzeRelief, 5.0));
+
+  // slab in white with the egg-crate carried by per-floor dark inset bands
+  // crossed by white mullion ribs — reads as the waffle at street distance
+  api.world.add(api.extrude(b.p, H - podium, white, podium));
+  const crownY = H - 7.0;
+  const floors = 17, fh = (crownY - podium) / floors;
+  for (let k = 0; k < floors; k++) {
+    // PROUD of the white wall (1.006), not sunk inside it (0.985 buried the
+    // whole egg-crate and the slab rendered as a blank monolith)
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.006), fh * 0.55, podium + k * fh), dark, c[0], c[1]);
+  }
+  const sw = streetward(api, ob);
+  const yaw = Math.atan2(sw.nx, sw.nz);
+  const tX = Math.cos(yaw), tZ = -Math.sin(yaw);
+  let fd = 0;
+  while (fd < 60 && pointInRing(ob.cx + sw.nx * fd, ob.cz + sw.nz * fd, b.p)) fd += 0.5;
+  const span = Math.min(ob.halfLong * 1.7, 70);
+  const nRib = Math.max(10, Math.round(span / 3.4));
+  for (let i = 0; i <= nRib; i++) {
+    const u = -span / 2 + i * (span / nRib);
+    for (const s of [1, -1]) {
+      const rx = ob.cx + tX * u + sw.nx * s * (fd - 0.15), rz = ob.cz + tZ * u + sw.nz * s * (fd - 0.15);
+      if (!pointInRing(rx - sw.nx * s * 1.2, rz - sw.nz * s * 1.2, b.p)) continue;
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.5, crownY - podium, 0.55), white);
+      rib.position.set(rx, g0 + podium + (crownY - podium) / 2, rz);
+      rib.rotation.y = yaw;
+      rib.castShadow = false; rib.receiveShadow = true;
+      api.world.add(rib);
+    }
+  }
+  // the crown: stepped-back top band under a double oversailing fascia
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.93), 5.4, crownY), dark, c[0], c[1]);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.015), 0.8, H - 1.6), white, c[0], c[1]);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.015), 0.8, H - 0.2), white, c[0], c[1]);
+}
+
+// FORUM THE SHOPPING MALL, 583 Orchard Road. research/forum.md. One dark
+// blue-green mirror-glass complex (podium AND 17-storey tower, h=56 derived)
+// with THE white postmodern arch portal — frame, fanlight arch, clock ring,
+// gold FORUM band — proud of the glass at the centre of the frontage.
+function forumMall(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const navy = api.mat.navyGlass, white = api.mat.paintedWhite;
+  const H = b.h, podium = 17;
+  const c = [ob.cx, ob.cz];
+
+  api.world.add(api.extrude(b.p, podium, navy));
+  const inset = b.p.map(([x, z]) => [c[0] + (x - c[0]) * 0.72, c[1] + (z - c[1]) * 0.72]);
+  api.world.add(api.extrude(inset, H - podium, navy, podium));
+  api.merge(api.extrudeGeo(api.grow(inset, 1.01), 0.9, H), api.mat.trim, c[0], c[1]);
+
+  // the arch portal, centred on the street frontage
+  const sw = streetward(api, ob);
+  const yaw = Math.atan2(sw.nx, sw.nz);
+  let fd = 0;
+  while (fd < 60 && pointInRing(ob.cx + sw.nx * fd, ob.cz + sw.nz * fd, b.p)) fd += 0.5;
+  const px = ob.cx + sw.nx * (fd + 0.6), pz = ob.cz + sw.nz * (fd + 0.6);
+  if (!onCarriageway(px, pz, 0.5)) {
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(13, podium - 1, 1.4), white);
+    frame.position.set(px, g0 + (podium - 1) / 2, pz);
+    frame.rotation.y = yaw;
+    frame.castShadow = true;
+    api.world.add(frame);
+    // the arch: a white half-cylinder lying in the portal top
+    const arch = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, 1.5, 20, 1, false, 0, Math.PI), white);
+    arch.position.set(px + sw.nx * 0.2, g0 + podium - 5.4, pz + sw.nz * 0.2);
+    arch.rotation.z = Math.PI / 2;
+    arch.rotation.y = yaw + Math.PI / 2;
+    api.world.add(arch);
+    // clock ring: a dark torus-read disc centred in the arch
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 1.9, 0.35, 18), api.mat.darkMetal);
+    ring.position.set(px + sw.nx * 0.75, g0 + podium - 6.2, pz + sw.nz * 0.75);
+    ring.rotation.x = Math.PI / 2;
+    ring.rotation.y = yaw;
+    api.world.add(ring);
+    // gold FORUM band across the portal
+    const band = new THREE.Mesh(new THREE.BoxGeometry(9.5, 1.2, 0.3), api.mat.goldSign);
+    band.position.set(px + sw.nx * 0.75, g0 + podium - 9.6, pz + sw.nz * 0.75);
+    band.rotation.y = yaw;
+    api.world.add(band);
+  }
+}
+
+// PALAIS RENAISSANCE, 390 Orchard Road. research/palais.md. 17 storeys
+// published, metres not; 55 kept flagged. Beige waffle tower with three
+// barrel-capped crown bays; the Orchard podium face is the 2008 suspended
+// GLASS VEIL (blue, leaning, with the PALAiS supergraphic band).
+function palaisRenaissance(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = b.h, podium = 20;
+  const c = [ob.cx, ob.cz];
+
+  api.world.add(api.extrude(api.grow(b.p, 0.99), 6.0, api.mat.darkCurtain));
+  api.world.add(api.extrude(b.p, podium - 6.0, api.mat.palaisWaffle, 6.0));
+  const inset = b.p.map(([x, z]) => [c[0] + (x - c[0]) * 0.74, c[1] + (z - c[1]) * 0.74]);
+  api.world.add(api.extrude(inset, H - podium, api.mat.palaisWaffle, podium));
+  // the three barrel crown bays
+  const sw = streetward(api, ob);
+  const yaw = Math.atan2(sw.nx, sw.nz);
+  const tX = Math.cos(yaw), tZ = -Math.sin(yaw);
+  for (const u of [-9, 0, 9]) {
+    // on the STREET-facing roof edge, not the parapet centre where the
+    // first render hid them entirely
+    const bx = ob.cx + tX * u * 0.6 + sw.nx * ob.halfShort * 0.34;
+    const bz = ob.cz + tZ * u * 0.6 + sw.nz * ob.halfShort * 0.34;
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 7.5, 16, 1, false, 0, Math.PI), api.mat.paleStone);
+    barrel.position.set(bx, g0 + H + 0.3, bz);
+    barrel.rotation.z = Math.PI / 2;
+    barrel.rotation.y = yaw + Math.PI / 2;
+    barrel.castShadow = true;
+    api.world.add(barrel);
+  }
+  // the veil: a leaning blue glass sheet proud of the Orchard face with the
+  // white supergraphic band (the lettering itself is polish debt)
+  let fd = 0;
+  while (fd < 60 && pointInRing(ob.cx + sw.nx * fd, ob.cz + sw.nz * fd, b.p)) fd += 0.5;
+  // flush against the podium face — the leaned version floated free of the
+  // wall and read as a billboard standing in the forecourt
+  // centre the veil on the REAL face span, scanned in the ob frame — the
+  // centroid's street projection sat beside this small irregular plan and
+  // hung the veil off the corner
+  let sMin = 1e9, sMax = -1e9;
+  for (let d2 = -ob.halfLong - 1; d2 <= ob.halfLong + 1; d2 += 0.5) {
+    if (pointInRing(ob.cx + tX * d2 + sw.nx * (fd - 1.5), ob.cz + tZ * d2 + sw.nz * (fd - 1.5), b.p)) {
+      if (d2 < sMin) sMin = d2; if (d2 > sMax) sMax = d2;
+    }
+  }
+  const uMid = (sMin + sMax) / 2, faceW = Math.max(8, sMax - sMin - 2);
+  const vx = ob.cx + tX * uMid + sw.nx * (fd + 0.45), vz = ob.cz + tZ * uMid + sw.nz * (fd + 0.45);
+  if (!onCarriageway(vx, vz, 0.5)) {
+    const veil = new THREE.Mesh(new THREE.BoxGeometry(Math.min(34, faceW), podium - 6.5, 0.35), api.mat.blueGlass);
+    veil.position.set(vx, g0 + 6.0 + (podium - 6.5) / 2, vz);
+    veil.rotation.y = yaw;
+    veil.castShadow = false;
+    api.world.add(veil);
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(Math.min(26, faceW * 0.8), 2.2, 0.2), api.mat.paintedWhite);
+    strip.position.set(vx + sw.nx * 0.35, g0 + podium * 0.62, vz + sw.nz * 0.35);
+    strip.rotation.y = yaw;
+    api.world.add(strip);
+  }
+}
+
+// ORCHARD RENDEZVOUS HOTEL, 1 Tanglin Road. research/orchard-rendezvous.md.
+// 17 storeys published (h=55 kept, a fallback within 3m of Emporis' own
+// estimate). Pale peach slab with a dark flat eave cap; the junction corner
+// is a ~5-tier terracotta wedding cake; terracotta porte-cochere + turret.
+function orchardRendezvous(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const peach = api.mat.peachStucco, tile = api.mat.clayTile;
+  const H = b.h;
+  const c = [ob.cx, ob.cz];
+
+  // the slab, peach, with recessed dark window bands and the dark eave cap
+  api.world.add(api.extrude(b.p, H, peach));
+  const floors = 13, fh = (H - 16) / floors;
+  for (let k = 0; k < floors; k++) {
+    // proud of the stucco (the voco lesson: sunk bands render as a monolith)
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.006), fh * 0.42, 16 + k * fh), api.mat.darkCurtain, c[0], c[1]);
+  }
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 0.9, H), api.mat.darkMetal, c[0], c[1]);
+
+  // the tiered corner: stepped peach drums wrapped in terracotta eave bands,
+  // at the frontage corner nearest the junction
+  const sw = streetward(api, ob);
+  const yaw = Math.atan2(sw.nx, sw.nz);
+  const tX = Math.cos(yaw), tZ = -Math.sin(yaw);
+  let fd = 0;
+  while (fd < 60 && pointInRing(ob.cx + sw.nx * fd, ob.cz + sw.nz * fd, b.p)) fd += 0.5;
+  let ce = 0;
+  for (let d2 = 0; d2 <= ob.halfLong + 1; d2 += 0.5) {
+    if (pointInRing(ob.cx + tX * d2 + sw.nx * (fd - 6), ob.cz + tZ * d2 + sw.nz * (fd - 6), b.p)) ce = d2;
+  }
+  const kx = ob.cx + tX * (ce - 7) + sw.nx * (fd - 7), kz = ob.cz + tZ * (ce - 7) + sw.nz * (fd - 7);
+  if (!onCarriageway(kx, kz, 0.5)) {
+    for (let t = 0; t < 5; t++) {
+      const r = 13 - t * 2.1, y = t * 3.6, th = 3.2;
+      const drum = new THREE.Mesh(new THREE.CylinderGeometry(r, r, th, 22), peach);
+      drum.position.set(kx, g0 + y + th / 2, kz);
+      drum.receiveShadow = true;
+      api.world.add(drum);
+      const eave = new THREE.Mesh(new THREE.CylinderGeometry(r + 0.8, r + 1.1, 0.7, 22), tile);
+      eave.position.set(kx, g0 + y + th + 0.35, kz);
+      eave.castShadow = true;
+      api.world.add(eave);
+    }
+    // the turret: small drum + pyramidal terracotta roof
+    const tur = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 4.5, 14), peach);
+    tur.position.set(kx, g0 + 5 * 3.6 + 2.25, kz);
+    api.world.add(tur);
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(3.2, 2.8, 14), tile);
+    cone.position.set(kx, g0 + 5 * 3.6 + 4.5 + 1.4, kz);
+    cone.castShadow = true;
+    api.world.add(cone);
+  }
+}
+
 // SCHOOL OF THE ARTS (SOTA), 1 Zubir Said Drive. research/sota.md. 56m/10
 // floors (CTBUH). Two strata: the "Backdrop" podium (~26m, leaning brown
 // piers, three-grey striped fascia) and the "Blank Canvas" — THREE parallel
@@ -3132,6 +3346,10 @@ export const RECIPES = [
   [/pullman singapore orchard/i, pullmanOrchard],
   [/^shaw house/i, shawHouse],
   [/school of the arts/i, sota],
+  [/voco orchard/i, vocoOrchard],
+  [/forum the shopping|^the forum$/i, forumMall],
+  [/palais renaissance/i, palaisRenaissance],
+  [/orchard rendezvous/i, orchardRendezvous],
   [/^sma house|^mdis house/i, smaHouse],
   [/nomad singapore|faber house/i, nomadSingapore],
   [/one raffles link/i, oneRafflesLink],

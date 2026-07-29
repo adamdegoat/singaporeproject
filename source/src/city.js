@@ -245,6 +245,13 @@ LMAT.sotaRibbons = new THREE.MeshStandardMaterial({ map: texSotaRibbons(), rough
 LMAT.sotaRibbons.userData.tile = [10, 32];
 // SOTA's leaning piers: rough warm-brown board-marked concrete
 LMAT.boardConc = new THREE.MeshStandardMaterial({ map: texConcrete(0x8e7a71, 0.5), roughness: 0.9 });
+// batch 2 (research/voco.md, forum.md, palais.md, orchard-rendezvous.md)
+LMAT.bronzeRelief = new THREE.MeshStandardMaterial({ map: texConcrete(0xa97f3c, 0.55), roughness: 0.5, metalness: 0.45 });
+LMAT.navyGlass = new THREE.MeshStandardMaterial({ map: texCurtain(0x24404a, 0x121c22), roughness: 0.16, metalness: 0.3 });
+LMAT.navyGlass.userData.tile = [22, 24];
+LMAT.peachStucco = new THREE.MeshStandardMaterial({ map: texConcrete(0xe6c0a2, 0.24), roughness: 0.8 });
+LMAT.palaisWaffle = new THREE.MeshStandardMaterial({ map: texPunched(0xd8c2a8), roughness: 0.7 });
+LMAT.palaisWaffle.userData.tile = [12, 12];
 LMAT.goldSign = new THREE.MeshStandardMaterial({ color: 0xc9a23f, emissive: 0x8a6a1c, emissiveIntensity: 0.55, roughness: 0.35, metalness: 0.6 });
 LMAT.bronze = new THREE.MeshStandardMaterial({ color: 0x6e5433, roughness: 0.45, metalness: 0.55 });
 LMAT.ivory.userData.tile = [9, 9];

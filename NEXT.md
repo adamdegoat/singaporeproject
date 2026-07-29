@@ -36,7 +36,19 @@ awkward ones are the ones that get skipped.
    1.1s, solid grids 1.1s, shopfronts 0.9s, roads 0.8s, per-axis dressing
    ~2.5s, module+fetch 0.6s. No single villain left; this is now a
    many-small-cuts job. Fine-grained marks are in (`?boot=1`, `window.__boot`).
-2. **Recipe batch 1 BUILT 2026-07-29 (third session): all five.** Research
+2. **Recipe batch 2 BUILT same session: voco Orchard (egg-crate slab, bronze
+   mural band, double-fascia crown), Forum (navy glass + white arch portal
+   w/ clock ring + gold band), Palais Renaissance (waffle tower, glass veil
+   on the scanned face span), Orchard Rendezvous (peach slab, terracotta
+   5-tier corner cake + turret; h stays 55 ≈ Emporis est). Forum height
+   40→56 derived (17 storeys). All four judged > generic. POLISH DEBT:
+   Palais barrels not street-visible + veil lettering missing; Forum glass
+   should read darker/near-black; voco vertical waffle ribs only on street
+   face; bands wrap end walls that should be blank. Lesson that repeated
+   TWICE: a band merged at grow(<1) sits INSIDE its parent extrude and
+   renders invisible — proud bands are grow(1.006).
+
+3. **Recipe batch 1 BUILT 2026-07-29 (third session): all five.** Research
    specs live in `research/*.md` (sota, far-east-shopping-centre, concorde,
    pullman, shaw-house) — every report corrected premises, four of five
    mapped heights were wrong (SOTA 50→56 published, FESC 75→51 derived [75

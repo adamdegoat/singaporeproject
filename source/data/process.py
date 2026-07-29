@@ -79,7 +79,10 @@ LANDMARKS = {
     "palais renaissance":     {"h": 55},
     "hilton singapore orchard": {"h": 152},   # VERIFIED taller of two towers
     "grand hyatt":            {"h": 60},
-    "forum":                  {"h": 40},
+    # Research 2026-07-29 (research/forum.md): published 17 storeys (1986,
+    # RSP); no metre height anywhere. 40 was our guess and reads short —
+    # 17 x 3.3 = 56, labelled derived.
+    "forum":                  {"h": 56},
     "orchard central":        {"h": 56},   # VERIFIED 12 storeys
 
     # Researched 2026-07-28, for the buildings that FRONT A MAIN STREET and
@@ -125,6 +128,10 @@ LANDMARKS = {
     "concorde hotel":         {"h": 30},
     "york hotel":             {"h": 60},
     "goodwood park":          {"h": 18},
+    # "Orchard Parade" is NOT a building any more — the hotel is Orchard
+    # Rendezvous (research/orchard-rendezvous.md); this key only ever matched
+    # stale POI names. Kept solely so an old scene file cannot resurrect a
+    # 3.4m default; same figure as the hotel.
     "orchard parade":         {"h": 55},
     "liat towers":            {"h": 40},
     "the heeren":             {"h": 60},
@@ -152,7 +159,7 @@ LANDMARKS = {
     "design orchard":         {"h": 14},
     "pacific plaza":          {"h": 46},
     "orchard building":       {"h": 45},
-    "forum the shopping":     {"h": 40},
+    "forum the shopping":     {"h": 56},   # same building, same derivation
     "pan pacific":            {"h": 58},
     "scotts 27":              {"h": 60},
     "shaw tower":             {"h": 60},
