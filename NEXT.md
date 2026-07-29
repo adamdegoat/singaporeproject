@@ -204,8 +204,17 @@ Reviewer for 110-164 adds (5 BAD, 8 minor):
    134/135/139/142/164; 161's brown carriageway strip is the same family —
    the axis paints the carriageway while the drawn surface there is another
    material/offset). One fix, many frames.
-10. **[BAD] 111 = the 072 ION mass confirmed from the other side**: huge
-   featureless pale-grey slab at the kerb, base along the carriageway.
+10. **[BAD] ION mass DIAGNOSED (072/111): the canopy shell's CENTER is
+   clearance-checked but its 17m RADIUS is not.** landmarks.js
+   ionOrchard(): the half-open CylinderGeometry(17, 17, ~74m) is centred at
+   `halfShort + reach` with reach capped at 5 by clearance.outward — but
+   the rim extends 17m further, over the kerb and carriageway (probe: rays
+   from the frame-072 camera hit it 83x at 8m, colour b9c4c9). FIX drafted:
+   walk the clear distance from the footprint edge to the carriageway and
+   set centerOff = min(reach, clearD − 1 − 17) — negative is fine, the
+   canopy then hugs the podium the way the real one oversails the forecourt
+   not the road. Apply after the in-flight deploy lands (never edit src
+   mid-gate: the working tree ships).
 11. **[BAD] 130 National Museum renders as a featureless grey box against
    Canning Rise** — the recipe exists; find out why it did not apply (name
    match? suppressed? pruned?).

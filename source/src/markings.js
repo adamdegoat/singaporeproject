@@ -327,15 +327,13 @@ export function buildMarkings(world, axis, data = {}) {
             edge.push([px + nx * (half - 0.55) * sgn, MARK.edge, pz + nz * (half - 0.55) * sgn, ang]);
         }
       }
-      // double yellow along the kerb — no parking, and unmistakably local
-      if (acc % 2 === 0) {
-        for (const sgn of [-1, 1]) {
-          if (claim('yellow', px + nx * (half - 0.12) * sgn, pz + nz * (half - 0.12) * sgn, 1.2)) {
-            yellowL.push([px + nx * (half - 0.12) * sgn, MARK.yellow, pz + nz * (half - 0.12) * sgn, ang]);
-            yellowL.push([px + nx * (half - 0.34) * sgn, MARK.yellow, pz + nz * (half - 0.34) * sgn, ang]);
-          }
-        }
-      }
+      // The kerbside double yellow is NOT painted here any more. Since
+      // 2026-07-29 the streetRuns ribbons in city.js own the yellows on
+      // EVERY street including the axes — junction-broken and verified
+      // against the road index — and both systems painted the axis kerbs
+      // at the identical 0.087, which z-fought as a stipple across ~28
+      // frames of the Orchard sweep. Two systems, one fact: the ribbons
+      // won. (yellowL stays declared for anything else that emits it.)
       // stop line and a straight-ahead arrow before each crossing
       if (acc % 190 === 24) {
         for (const sgn of [-1, 1]) {
