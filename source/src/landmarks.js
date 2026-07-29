@@ -2305,7 +2305,189 @@ function alongRing(p, t, grow, ob) {
   return null;
 }
 
+// TEMASEK SHOPHOUSE, 28 Orchard Road. Researched 2026-07-29 by agent against
+// URA's Conservation Portal (archived), the PMO launch release, Indesign,
+// and dated photographs. Corrections it made to its own brief: it is NOT on a
+// corner (mid-block, next to MacDonald House); it launched 3 June 2019, not
+// 2020; it is a URA-CONSERVED building, not a National Monument; and the
+// address covers a 1928 block, not the ornate Dutch-gabled No. 22 beside it.
+//
+// Published: 3 storeys, built 1928, Westerhout & Oman, 2,316 m2 GFA.
+// HEIGHT IS UNPUBLISHED and the OSM tag says 40m -- which is MacDonald House's
+// number copied onto a three-storey shophouse, and the report says in as many
+// words not to use it. Storey math gives ~18m: a double-height five-foot way,
+// two upper floors and a stepped parapet.
+function temasekShophouse(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const GROUND = 6.0, F2 = 6.0, F3 = 3.7, PARA = 2.0;
+  const H = GROUND + F2 + F3;
+  const render = api.mat.paleStone, trim = api.mat.trim, dark = api.mat.darkMetal;
+
+  api.world.add(api.extrude(b.p, H, render));
+  // the stepped Art Deco parapet, and the flat roof terrace behind it
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.015), PARA * 0.55, H), trim, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.99), PARA, H), trim, ob.cx, ob.cz);
+  // the bold projecting main cornice, and the secondary one over the walkway
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.05), 0.5, H - 0.6), trim, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.04), 0.4, GROUND - 0.4), trim, ob.cx, ob.cz);
+
+  const fr = frontage(api, ob, b.p);
+  if (!fr) return;
+  const { mx, mz, nX, nZ, tX, tZ, yaw, bl } = fr;
+  const at = (mesh, u, y, out, cast = true) => {
+    mesh.position.set(mx + tX * u + nX * out, y, mz + tZ * u + nZ * out);
+    mesh.rotation.y = yaw;
+    mesh.castShadow = cast; mesh.receiveShadow = true;
+    api.world.add(mesh);
+  };
+  // THE DEEP DOUBLE-HEIGHT FIVE-FOOT WAY, which is the restoration's most
+  // cited move: square rendered piers at the pavement edge, the shopfront
+  // line set back behind them.
+  const piers = Math.max(4, Math.round(bl / 5.0));
+  for (let i = 0; i <= piers; i++) {
+    const u = -bl / 2 + (i * bl) / piers;
+    if (onCarriageway(mx + tX * u + nX * 3.2, mz + tZ * u + nZ * 3.2, 0.3)) continue;
+    at(new THREE.Mesh(new THREE.BoxGeometry(0.85, GROUND - 0.5, 0.85), render),
+       u, g0 + (GROUND - 0.5) / 2, 3.2);
+  }
+  at(new THREE.Mesh(new THREE.BoxGeometry(bl, 0.5, 3.6), render), 0, g0 + GROUND - 0.3, 1.7);
+  // black-framed shopfront glazing, recessed behind the piers
+  at(new THREE.Mesh(new THREE.BoxGeometry(bl * 0.94, GROUND - 1.2, 0.3), dark),
+     0, g0 + (GROUND - 1.2) / 2, 0.35, false);
+
+  // TWO PROJECTING END PAVILIONS, each carrying a PAIR of two-storey
+  // giant-order engaged columns in a deep recess, and a projecting central
+  // pier between the recessed loggia bays.
+  const colH = F2 + F3 - 0.8;
+  for (const side of [-1, 1]) {
+    const u0 = side * bl * 0.40;
+    at(new THREE.Mesh(new THREE.BoxGeometry(bl * 0.17, H - GROUND, 1.1), render),
+       u0, g0 + GROUND + (H - GROUND) / 2, 0.5);
+    for (const d of [-1, 1]) {
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, colH, 10), trim);
+      at(col, u0 + d * bl * 0.05, g0 + GROUND + colH / 2, 0.95);
+      // the simplified Corinthian capital
+      at(new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.5, 1.1), trim),
+         u0 + d * bl * 0.05, g0 + GROUND + colH + 0.25, 0.95);
+    }
+  }
+  at(new THREE.Mesh(new THREE.BoxGeometry(bl * 0.10, H - GROUND, 0.9), render),
+     0, g0 + GROUND + (H - GROUND) / 2, 0.45);
+  // the 2nd-storey open balcony with its turned-baluster balustrade, and the
+  // recessed 3rd-storey loggia above it
+  for (const [y, dep] of [[g0 + GROUND + 0.1, 1.5], [g0 + GROUND + F2 + 0.1, 1.1]]) {
+    at(new THREE.Mesh(new THREE.BoxGeometry(bl * 0.62, 0.3, dep), trim), 0, y, 0.9);
+    const nb = Math.max(10, Math.round(bl * 0.62 / 0.5));
+    for (let i = 0; i < nb; i++) {
+      const u = -bl * 0.31 + (i + 0.5) * (bl * 0.62 / nb);
+      at(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.10, 0.75, 6), trim),
+         u, y + 0.53, 0.9, false);
+    }
+    at(new THREE.Mesh(new THREE.BoxGeometry(bl * 0.62, 0.12, dep * 0.8), trim), 0, y + 0.95, 0.9);
+  }
+  // the oval cartouche medallions between the 2nd-storey windows
+  for (let i = -2; i <= 2; i++) {
+    at(new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), trim),
+       i * bl * 0.11, g0 + GROUND + F2 * 0.72, 0.62);
+  }
+}
+
+// CALDWELL HOUSE, inside CHIJMES, 30 Victoria Street. Researched 2026-07-29 by
+// agent against roots.gov.sg (NHB), Wikipedia and dated photographs.
+//
+// The report carries an explicit WARNING worth keeping: AI-generated
+// encyclopedia pages describe this building with "a pedimented portico with
+// sturdy Doric columns" and "verandas wrapping the structure". Photographs and
+// NHB both contradict that -- the ornament is "simple and subdued, with DORIC
+// PILASTERS INSTEAD OF DETACHED COLUMNS", and no open verandah survives. So
+// the recipe builds pilasters flat against the wall and no portico at all.
+//
+// Published: 2 storeys, built 1840-41, George Drumgoole Coleman, National
+// Monument gazetted 26 Oct 1990 jointly with the CHIJ Chapel, with the WHOLE
+// FABRIC protected rather than just the facade. Height UNPUBLISHED; the OSM
+// tag of 24m is impossible for two storeys and is not used.
+//
+// The two things that identify it: a two-storey SEMICIRCULAR ROTUNDA bay on
+// the front -- nothing else in the compound has a curved plan -- and a
+// prominent JACK ROOF, the raised ventilating clerestory over a terracotta
+// hipped roof.
+function caldwellHouse(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const F = 4.6, H = F * 2;
+  const cream = api.mat.paleStone, white = api.mat.trim, tile = api.mat.clayTile;
+
+  api.world.add(api.extrude(b.p, H, cream));
+  // string course between the floors, and the bracketed cornice above
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.02), 0.28, F - 0.14), white, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.045), 0.55, H - 0.25), white, ob.cx, ob.cz);
+  // the hipped terracotta roof, then THE JACK ROOF above its ridge
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 1.5, H + 0.3), tile, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.52), 0.9, H + 1.8), cream, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.58), 0.7, H + 2.7), tile, ob.cx, ob.cz);
+
+  const fr = frontage(api, ob, b.p);
+  if (!fr) return;
+  const { mx, mz, nX, nZ, tX, tZ, yaw } = fr;
+  // THE ROTUNDA: a half-round two-storey drum on the front, three window bays
+  // per floor between flat pilasters, capped by a curved entablature and a low
+  // flat parapet -- the drum reads flat-roofed, unlike the tiled roof behind.
+  const R = Math.min(5.2, ob.halfShort * 0.75);
+  const drum = new THREE.Mesh(
+    new THREE.CylinderGeometry(R, R, H, 20, 1, false, 0, Math.PI), cream);
+  drum.position.set(mx + nX * (R * 0.45), g0 + H / 2, mz + nZ * (R * 0.45));
+  drum.rotation.y = yaw + Math.PI;
+  drum.castShadow = true; drum.receiveShadow = true;
+  api.world.add(drum);
+  const cap = new THREE.Mesh(
+    new THREE.CylinderGeometry(R * 1.09, R * 1.09, 0.55, 20, 1, false, 0, Math.PI), white);
+  cap.position.set(mx + nX * (R * 0.45), g0 + H - 0.1, mz + nZ * (R * 0.45));
+  cap.rotation.y = yaw + Math.PI;
+  cap.castShadow = true;
+  api.world.add(cap);
+  // DORIC PILASTERS, flat against the drum -- not detached columns
+  for (let k = 0; k <= 4; k++) {
+    const a = Math.PI * (k / 4);
+    const px = mx + nX * (R * 0.45) - Math.cos(a + yaw) * R * 0.99;
+    const pz = mz + nZ * (R * 0.45) + Math.sin(a + yaw) * R * 0.99;
+    const pil = new THREE.Mesh(new THREE.BoxGeometry(0.55, H - 0.6, 0.28), white);
+    pil.position.set(px, g0 + (H - 0.6) / 2, pz);
+    pil.rotation.y = yaw - a;
+    pil.castShadow = true;
+    api.world.add(pil);
+  }
+}
+
+// The street frontage of a plan: the longest edge whose outward normal faces
+// the street, with the along-edge and outward unit vectors. Every recipe that
+// puts something ON a facade needs this, and each was deriving it slightly
+// differently -- the oriented box lies for an irregular plan, and a ray from
+// the centroid lands on an arbitrary edge.
+function frontage(api, ob, ring) {
+  const swd = streetward(api, ob);
+  let bi = -1, best = -Infinity, bl = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], c = ring[(i + 1) % ring.length];
+    const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+    if (L < 4) continue;
+    const emx = (a[0] + c[0]) / 2, emz = (a[1] + c[1]) / 2;
+    const ox = emx - ob.cx, oz = emz - ob.cz, ol = Math.hypot(ox, oz) || 1;
+    const faces = (ox / ol) * swd.nx + (oz / ol) * swd.nz;
+    if (faces <= 0.15) continue;
+    if (L * faces > best) { best = L * faces; bi = i; bl = L; }
+  }
+  if (bi < 0) return null;
+  const ea = ring[bi], ec = ring[(bi + 1) % ring.length];
+  const mx = (ea[0] + ec[0]) / 2, mz = (ea[1] + ec[1]) / 2;
+  const oX = mx - ob.cx, oZ = mz - ob.cz, oL = Math.hypot(oX, oZ) || 1;
+  const nX = oX / oL, nZ = oZ / oL;
+  return { mx, mz, nX, nZ, tX: -nZ, tZ: nX, yaw: Math.atan2(nX, nZ), bl };
+}
+
 export const RECIPES = [
+  [/temasek shophouse/i, temasekShophouse],
+  [/caldwell house/i, caldwellHouse],
   [/^tong building/i, tongBuilding],
   [/nco club/i, ncoClub],
   [/peranakan place/i, peranakanPlace],
