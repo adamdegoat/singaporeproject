@@ -17,7 +17,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-SCENES=${1:-"orchard brasbasah marinabay world"}
+SCENES=${1:-"orchard brasbasah marinabay chinatown rivervalley world"}
 FAILED=0
 
 hr() { printf '\n== %s\n' "$1"; }

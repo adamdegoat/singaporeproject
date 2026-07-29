@@ -84,6 +84,22 @@ window.__auditWorld = async function auditWorld() {
     // Marina Bay seam: the merged grid grew when the third district joined and
     // one way at the edge now falls a cell outside it.
     brasbasah: { W2: 2, S8: 68, T1: 1, T3: 1 },   // W2: see the marinabay note
+    // Districts 4+5 enter the audit set 2026-07-30, day one of their
+    // existence, with ratchets AT the day-one measurement. These may go
+    // down and never up.
+    // Chinatown S8 64: dense hawker/temple frontage where many mapped
+    // tenants sit inside conserved shophouses whose ground floors are the
+    // doors-and-shutters fabric, not glazed bays. Target stays 76.
+    chinatown: { S8: 64 },
+    // River Valley C7 33: the district DELIBERATELY takes the east 1.6km of
+    // a 4.9km road (declared partialMainStreet in districts.json; the west
+    // belongs to a future Robertson Quay district). C7 measures against the
+    // street's full real extent, so 33% IS the design, not a defect.
+    // T2 10.3: the Singapore River threads the district and the partial
+    // main street ends at the bbox — surface ways genuinely end in stubs
+    // (same mechanism as marinabay's 11). S8 40: Robertson/UE Square
+    // frontage is condo podium, day-one figure.
+    rivervalley: { C7: 33, T2: 11, S8: 40 },
     // T2 counts road-network islands, and Marina Bay genuinely has them: it is
     // reclaimed land threaded with expressways whose tunnel sections are
     // dropped, so surface ways really do end in stubs. 10.1% on a district that

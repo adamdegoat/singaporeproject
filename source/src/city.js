@@ -1576,9 +1576,17 @@ export class TreeField {
         const r = rad * rand(0.26, 0.42);
         // spread them down through the crown, not just under its skin, so the
         // limbs below the leaf shell sit in foliage instead of in daylight
-        p.set(x + Math.cos(a) * rr,
-              gy + crownTop - domeDepth * (t * t * 0.8 + rand(0.05, 0.55)) - r * 0.30,
-              z + Math.sin(a) * rr);
+        const bx = x + Math.cos(a) * rr, bz = z + Math.sin(a) * rr;
+        let by = gy + crownTop - domeDepth * (t * t * 0.8 + rand(0.05, 0.55)) - r * 0.30;
+        // foliage that hangs OVER a carriageway clears the traffic envelope
+        // the audit judges (9m): one small Clarke Quay tree put a blob 7m
+        // over the road. Clamping the single offending blob (not lifting
+        // whole crowns) keeps the avenue's look untouched.
+        if (window.__onRoad && by - gy < 9.2 + r * 0.52
+            && window.__onRoad(bx, bz, -0.2)) {
+          by = gy + 9.2 + r * 0.52;
+        }
+        p.set(bx, by, bz);
         q.identity(); sc.set(r, r * 0.52, r);
         m.compose(p, q, sc); blobs.setMatrixAt(li++, m);
       }
