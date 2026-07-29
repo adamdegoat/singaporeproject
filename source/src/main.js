@@ -1060,6 +1060,16 @@ async function buildRegion(data) {
     // shows up against the stage that queued it, instead of as one anonymous
     // stall at the end of the task.
     const glFinish = P.has('bootgl') ? () => { renderer.getContext().finish(); bmark('gl-drain'); } : () => {};
+    // The extended warm-up (spin + ride-out checkpoints) is for REAL GPUs.
+    // The gate harness renders on SwiftShader, where those extra frames cost
+    // tens of seconds and time the livecheck out — and a software renderer
+    // has no driver pipelines to warm anyway.
+    let softGPU = false;
+    try {
+      const gl = renderer.getContext();
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      softGPU = dbg ? /swiftshader|llvmpipe|software/i.test(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : false;
+    } catch (e) { /* unknown GPU: treat as real */ }
     await bstep(0.90, 'compiling shaders');
     try { await renderer.compileAsync(scene, camera); } catch (e) { /* ext missing: first render compiles instead */ }
     bmark('shader-compile');
@@ -1086,7 +1096,7 @@ async function buildRegion(data) {
     // even the pedestrians stand still). Six renders around the spawn make
     // the neighbourhood GPU-resident before the player can move; the
     // bstep yields let the browser breathe between them.
-    {
+    if (!softGPU) {
       const eyeY = terrain.at(S.x, S.z) + 2.0;
       for (let sp = 0; sp < 6; sp++) {
         const a2 = (sp / 6) * Math.PI * 2;
@@ -1094,6 +1104,35 @@ async function buildRegion(data) {
         camera.lookAt(S.x + Math.sin(a2) * 60, eyeY + 4, S.z + Math.cos(a2) * 60);
         renderer.render(scene, camera);
         await bstep(0.97 + sp * 0.004, 'first light');
+      }
+      driveCamera(0.016);
+    }
+    // RIDE-OUT CHECKPOINTS (real GPUs only): the spin warms the spawn circle, but the first
+    // 10-20 seconds of riding show geometry nobody warmed (user-measured:
+    // "after 10 to 20 seconds after driving off then ok"). Render from
+    // points 150m and 300m down the axis BOTH ways, looking both along and
+    // back, so the first half-minute of road is GPU-resident before the
+    // bar finishes.
+    if (!softGPU && axis && axis.p.length > 1) {
+      const sIdx = (() => {
+        let best = 0, bd = Infinity;
+        for (let i = 0; i < axis.p.length; i++) {
+          const d2 = (axis.p[i][0] - S.x) ** 2 + (axis.p[i][1] - S.z) ** 2;
+          if (d2 < bd) { bd = d2; best = i; }
+        }
+        return best;
+      })();
+      const ptAt = (steps) => axis.p[Math.max(0, Math.min(axis.p.length - 1, sIdx + steps))];
+      for (const steps of [-12, -6, 6, 12]) {
+        const q = ptAt(steps);
+        const qy = terrain.at(q[0], q[1]) + 2.2;
+        for (const look of [1, -1]) {
+          const q2 = ptAt(steps + look * 4);
+          camera.position.set(q[0], qy, q[1]);
+          camera.lookAt(q2[0], qy + 3, q2[1]);
+          renderer.render(scene, camera);
+        }
+        await bstep(0.985, 'first light');
       }
       driveCamera(0.016);
     }
