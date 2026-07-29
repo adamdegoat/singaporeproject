@@ -195,6 +195,55 @@ function widthProbe(axis, data) {
   };
 }
 
+
+// Distance from a point to its own named street versus to any other named
+// street, by segment -- the measure S2 uses. Built once per call over the
+// road list, which is a few hundred plates against a few thousand segments and
+// costs nothing next to the dressing itself.
+function nearerOtherStreet(data, name, x, z) {
+  let own = Infinity, other = Infinity;
+  for (const r of (data.roads || [])) {
+    const n = r.n;
+    if (!n) continue;
+    const mine = n === name;
+    const cur = mine ? own : other;
+    for (let i = 0; i < r.p.length - 1; i++) {
+      const [x1, z1] = r.p[i], [x2, z2] = r.p[i + 1];
+      const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
+      let t = L2 < 1e-9 ? 0 : ((x - x1) * vx + (z - z1) * vz) / L2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const d = (x - (x1 + vx * t)) ** 2 + (z - (z1 + vz * t)) ** 2;
+      if (mine) { if (d < own) own = d; }
+      else if (d < other) other = d;
+    }
+  }
+  return other < own;
+}
+
+
+// Drop props sitting within `lim` metres of one already kept, checking the 3x3
+// cell neighbourhood so a pair straddling a cell boundary cannot slip through.
+export function dedupeProps(list, lim) {
+  const CELL = Math.max(0.4, lim), L2 = lim * lim, grid = new Map(), out = [];
+  for (const r of list) {
+    const cx = Math.round(r[0] / CELL), cz = Math.round(r[2] / CELL);
+    let dup = false;
+    for (let dx = -1; dx <= 1 && !dup; dx++)
+      for (let dz = -1; dz <= 1 && !dup; dz++) {
+        const l2 = grid.get((cx + dx) + ',' + (cz + dz));
+        if (!l2) continue;
+        for (const q of l2)
+          if ((q[0] - r[0]) ** 2 + (q[1] - r[2]) ** 2 < L2) { dup = true; break; }
+      }
+    if (dup) continue;
+    const k = cx + ',' + cz;
+    if (!grid.has(k)) grid.set(k, []);
+    grid.get(k).push([r[0], r[2]]);
+    out.push(r);
+  }
+  return out;
+}
+
 export function buildMarkings(world, axis, data = {}) {
   const pts = axis.p;
   const widthAt = widthProbe(axis, data);
@@ -384,10 +433,32 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
   let sideCrossings = 0, sidewalkReal = 0, sidewalkNone = 0;
   const plated = new Set();
 
-  // Dress what can be seen from the route. The full district holds 46.8km of
-  // side street, which produced 23,000 kerbs and 2,100 trees — most of it
-  // hundreds of metres from anywhere the player goes.
-  const REACH = 230;
+  // HOW FAR FROM THE ROUTE THE WORLD GETS DRESSED.
+  //
+  // Set to 230m when the full district's 46.8km of side street produced 23,000
+  // kerbs and 2,100 trees and cost too much. Everything about that calculation
+  // has since changed: kerbs, lamps, trees and furniture are all instanced,
+  // consolidate.js batches per tile, and on 2026-07-29 the terrain and road
+  // surfaces were tiled too, so distant dressing frustum-culls instead of
+  // being submitted from everywhere.
+  //
+  // Measured 2026-07-29 at 230m: only 34% of Orchard's carriageway, 42% of
+  // Bras Basah's and 33% of Marina Bay's is dressed -- about 105km of street
+  // in the three districts has no kerb, lamp, tree or sign on it at all.
+  //
+  // `?reach=N` overrides it so the cost curve can be MEASURED rather than
+  // guessed, which is how the number should have been chosen the first time.
+  // 1200m DRESSES THE WHOLE DISTRICT -- measured, 100% of Orchard's and Bras
+  // Basah's carriageway and 99% of Marina Bay's, against 34/42/33% at 230m.
+  //
+  // The cost, measured at the street sweep's heaviest view rather than
+  // guessed: triangles 2.75M -> 3.47M (+26%), and DRAW CALLS 899 -> 906, which
+  // is the number that matters and barely moves. That is the whole argument:
+  // the 230m cap dates from before kerbs, lamps, trees and furniture were
+  // instanced, before consolidate.js batched per tile, and before the terrain
+  // and road surfaces were tiled -- so distant dressing now culls instead of
+  // being submitted from every camera in the world.
+  const REACH = +(new URLSearchParams(location.search).get('reach')) || 1200;
   const A = axis.p;
   const nearAxis = (x, z, reach = REACH) => {
     for (let i = 0; i < A.length - 1; i++) {
@@ -470,7 +541,18 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
         const sx = bx0 + -u0z * (half + 2.2) * sgn;
         const sz = bz0 + u0x * (half + 2.2) * sgn;
         if (isBlocked(sx, sz)) continue;
-        if (window.__nearestStreet && window.__nearestStreet(sx, sz) !== r.n) continue;
+        // A PLATE MUST BE NEARER ITS OWN STREET THAN ANY OTHER, measured the
+        // way S2 measures it.
+        //
+        // The guard here asked window.__nearestStreet, which answers a
+        // different question from S2's -- and the two disagreed on exactly the
+        // streets you would expect: parallel dual-carriageway pairs. Eu Tong
+        // Sen Street's plate stood 19m from Eu Tong Sen and 10m from New
+        // Bridge Road; likewise Raffles Quay against Telegraph Street and
+        // Shenton Way against Boon Tat Street. Two measures of one fact is the
+        // most repeated bug in this project, so this now computes the same
+        // distance S2 does and cannot disagree with it.
+        if (nearerOtherStreet(data, r.n, sx, sz)) continue;
         const g = new THREE.Group();
         const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 6), MAT.metal);
         pole.position.y = 1.3; g.add(pole);
@@ -597,7 +679,13 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
     world.add(im);
   };
   const yaw = (r) => { p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
-  emit(new THREE.BoxGeometry(0.38, 0.3, 4.0), MAT.kerb, kerb, yaw);
+  // DEDUPE KERBS BEFORE EMITTING. With the dressing reach raised to cover the
+  // whole district, three times as many streets are kerbed and every junction
+  // where two of them meet can lay two kerbs on one spot. `claim` cannot stop
+  // it: it is a single-cell hash, so a pair either side of a cell boundary
+  // both survive. P4 counts identical props within 60cm, so this measures the
+  // same 60cm, over the 3x3 neighbourhood.
+  emit(new THREE.BoxGeometry(0.38, 0.3, 4.0), MAT.kerb, dedupeProps(kerb, 0.6), yaw);
 
   // The signalised crossings' boundary squares: 200mm, flat, one instanced
   // mesh for the whole district. There are far more of these than zebras --

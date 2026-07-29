@@ -8,7 +8,7 @@ import { Solid } from './solid.js';
 import { buildVespa, buildRider, newState, step, RIDE } from './vespa.js';
 import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
-import { axisSpec, buildMarkings, dressSideStreets, selectSideStreets } from './markings.js';
+import { axisSpec, buildMarkings, dressSideStreets, selectSideStreets, dedupeProps } from './markings.js';
 import { buildSgDetail } from './sgdetail.js';
 import { buildShopfronts } from './shopfront.js';
 import { Signals } from './signals.js';
@@ -449,7 +449,8 @@ function dressStreet(data, axis) {
     kerbT.length = 0;
     for (const r of plain) kerbT.push(r);
   }
-  emit(new THREE.BoxGeometry(0.42, 0.3, 2.0), MAT.kerb, kerbT, (r) => {
+  // same 60cm dedupe as the side-street kerbs, see markings.js
+  emit(new THREE.BoxGeometry(0.42, 0.3, 2.0), MAT.kerb, dedupeProps(kerbT, 0.6), (r) => {
     p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   emit(new THREE.CylinderGeometry(0.11, 0.16, 9.0, 8), MAT.metal, lampT, (r) => {

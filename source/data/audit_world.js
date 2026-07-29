@@ -171,7 +171,13 @@ window.__auditWorld = async function auditWorld() {
       // by one whenever nearby geometry changes shape. Verified by listing what
       // it reports: hotels, Orchard Central and Tang Plaza, none of them the new
       // recipes.
-      P4: 822, P6: 45,
+      // P4 822 -> 668 and P6 45 -> its measured figure on the day the dressing
+      // reach went 230m -> 1200m and the whole district got kerbed, lamped and
+      // treed instead of a third of it. Three times the props and FEWER
+      // duplicates, because the kerb lists are now deduped over a real 60cm
+      // neighbourhood instead of relying on `claim`, which is a single-cell
+      // hash and lets boundary-straddling pairs through.
+      P4: 668, P6: 45,
     },
   };
   const add = (id, name, severity, count, budget, detail, examples) => {
@@ -1011,15 +1017,44 @@ window.__auditWorld = async function auditWorld() {
     // Near a junction several streets are within reach of one pole. The plate is
     // only wrong if a street other than the one it names is strictly closer.
     const plates = (window.__signage || []).filter((s) => s.kind === 'plate');
+    // DISTANCE TO THE STREET, NOT TO ITS NEAREST MAPPED VERTEX.
+    //
+    // This measured the closest POINT IN THE VERTEX LIST, which is a different
+    // quantity: a long straight way is mapped with few vertices, so the road
+    // can be 9m away while its nearest vertex is 19m away, and a finely mapped
+    // neighbour then wins on a comparison that has nothing to do with where
+    // the roads actually are. Every failure it produced was a parallel
+    // dual-carriageway pair -- Eu Tong Sen against New Bridge Road, Raffles
+    // Quay against Telegraph Street, Shenton Way against Boon Tat Street --
+    // and in all three the plate was measurably nearer its OWN street once
+    // measured to the segment: 8.8m against 11.0m, 13.8m against 15.0m, 11.8m
+    // against 15.6m.
+    //
+    // Sixth instance in this file of two measures of one fact disagreeing, and
+    // the fifth time the CHECK was the one that was wrong. markings.js now
+    // uses segment distance to place the plate, so the two agree by
+    // construction.
     const distTo = (name, x, z) => {
       const e = name === (axis.n || 'Orchard Road')
         ? { pts: axis.p } : streets.get(name);
       if (!e) return Infinity;
       let bd = Infinity;
-      for (const q of e.pts) {
-        const d = (q[0] - x) ** 2 + (q[1] - z) ** 2;
+      const pts = e.pts;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+        const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
+        // a vertex list can jump between disjoint ways of the same name, so a
+        // segment longer than 120m is not a real run and is measured endwise
+        if (L2 > 120 * 120) {
+          bd = Math.min(bd, (x - x1) ** 2 + (z - z1) ** 2, (x - x2) ** 2 + (z - z2) ** 2);
+          continue;
+        }
+        let t = L2 < 1e-9 ? 0 : ((x - x1) * vx + (z - z1) * vz) / L2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const d = (x - (x1 + vx * t)) ** 2 + (z - (z1 + vz * t)) ** 2;
         if (d < bd) bd = d;
       }
+      if (pts.length === 1) bd = (pts[0][0] - x) ** 2 + (pts[0][1] - z) ** 2;
       return Math.sqrt(bd);
     };
     const wrong = [];
