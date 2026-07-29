@@ -89,7 +89,9 @@ scene.add(sky);
 
 const sun = new THREE.DirectionalLight(0xfff0d6, 2.6);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+// phones carry half the shadow texels: at 1.5x render density the extra
+// resolution is invisible and the pass is the documented frame-cost hog
+sun.shadow.mapSize.set(TOUCH ? 1024 : 2048, TOUCH ? 1024 : 2048);
 sun.shadow.camera.left = -95; sun.shadow.camera.right = 95;
 sun.shadow.camera.top = 95; sun.shadow.camera.bottom = -95;
 sun.shadow.camera.near = 1; sun.shadow.camera.far = 460;
@@ -1292,6 +1294,8 @@ resize();
 
 /* ---------------- loop ---------------- */
 let last = performance.now(), frames = 0, t0 = last, fps = 0, lastCoolT = 0;
+let lastCapT = 0, shadowFlip = true;
+const FPS_CAP = TOUCH ? (parseFloat(P.get('fps') || '0') || 30) : 0;
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
 
@@ -1318,6 +1322,15 @@ function loop(now) {
     if (parked && now - lastCoolT < 41) { requestAnimationFrame(loop); return; }
     lastCoolT = now;
   }
+  // RIDING FRAME CAP, phones only: 30fps. The heat the user still felt was
+  // sustained full-rate rendering — the cap halves every per-frame cost at
+  // a smoothness loss that reads fine from a saddle. Desktop stays uncapped;
+  // ?fps=60 overrides for the phones that can take it.
+  if (TOUCH && FPS_CAP && now - lastCapT < 1000 / FPS_CAP - 2) { requestAnimationFrame(loop); return; }
+  lastCapT = now;
+  // shadows refresh every OTHER rendered frame on phones — between two 30fps
+  // frames the sun has not measurably moved
+  if (TOUCH) { shadowFlip = !shadowFlip; renderer.shadowMap.autoUpdate = shadowFlip; }
 
   // The first ready frame was an 8.7s task while renderer.render was 1s of it:
   // the other 7.7s hid in the subsystem first-ticks below. Timed per call on

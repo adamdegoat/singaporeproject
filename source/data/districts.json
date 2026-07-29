@@ -50,10 +50,10 @@
   {
    "id": "chinatown",
    "name": "Chinatown / Raffles Place",
-   "bbox": "1.2790,103.8410,1.2895,103.8530",
+   "bbox": "1.2740,103.8410,1.2900,103.8560",
    "axis": "south bridge road",
    "status": "building",
-   "notes": "Densest shophouse fabric in the city plus the Raffles Place CBD and the river's south bank. Widened 2026-07-29 before first build: the planned box stopped 250m short of Bras Basah in latitude and merely TOUCHED Marina Bay at 103.8500 with zero overlap -- the exact seam-hole the marinabay note documents. Now overlaps Bras Basah (to 1.2895, across the river at Boat Quay where the bridges already land) and Marina Bay (to 103.8530). This is the user's 'expand south' district: the map stops being one long line here."
+   "notes": "Densest shophouse fabric in the city plus the Raffles Place CBD and the river's south bank. Widened 2026-07-29 before first build: the planned box stopped 250m short of Bras Basah in latitude and merely TOUCHED Marina Bay at 103.8500 with zero overlap -- the exact seam-hole the marinabay note documents. Now overlaps Bras Basah (to 1.2895, across the river at Boat Quay where the bridges already land) and Marina Bay (to 103.8530). This is the user's 'expand south' district: the map stops being one long line here. BBOX WIDENED AGAIN 2026-07-29 after the CTBUH research: the first widened box cut the Asia Square block at 1.2790 and stopped short of the Marina Blvd row; now holds Guoco (tallest in SG), Frasers Tower and the MBFC frontage. Requires --force refetch."
   },
   {
    "id": "marinabay",

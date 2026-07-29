@@ -164,6 +164,51 @@ LANDMARKS = {
     "scotts 27":              {"h": 60},
     "shaw tower":             {"h": 60},
 
+    # ---- CBD / Chinatown, researched 2026-07-29 (research/cbd-heights.md,
+    # CTBUH architectural heights; naming traps documented there) -----------
+    "uob plaza one":          {"h": 280, "key": True},
+    "uob plaza 2":            {"h": 162},
+    "uob plaza":              {"h": 280, "key": True},
+    "republic plaza":         {"h": 276, "key": True},
+    "capitaspring":           {"h": 276, "key": True},
+    "capitagreen":            {"h": 242, "key": True},
+    "one raffles place":      {"h": 278, "key": True},   # T1; T2 209.6 shares the name
+    "overseas union bank":    {"h": 278, "key": True},
+    "guoco tower":            {"h": 284, "key": True},
+    "tanjong pagar centre":   {"h": 284, "key": True},
+    "one raffles quay":       {"h": 245},   # NORTH; south tower is 139.9 and needs a part split
+    "ocean financial":        {"h": 245, "key": True},
+    "the sail":               {"h": 245, "key": True},
+    "central park tower":     {"h": 215},
+    "ioi central boulevard":  {"h": 245},   # WEST; east is ~16 floors unpublished
+    "frasers tower":          {"h": 231},
+    "asia square tower 1":    {"h": 229, "key": True},
+    "asia square tower 2":    {"h": 222, "key": True},
+    "asia square":            {"h": 229, "key": True},
+    "marina bay suites":      {"h": 227},
+    "one shenton":            {"h": 214},
+    "ocbc centre":            {"h": 198, "key": True},   # OSM said 16
+    "ocbc bank":              {"h": 198, "key": True},   # the footprint carries the bank name
+    "singapore land tower":   {"h": 190},   # CTBUH; Wikipedia's 213 unverified
+    "sgx centre":             {"h": 187},
+    "18 robinson":            {"h": 180},
+    "hitachi tower":          {"h": 179},
+    "16 collyer quay":        {"h": 179},
+    "state courts":           {"h": 178},   # the 2019 tower
+    "pickering operations":   {"h": 177},
+    "maybank tower":          {"h": 175},
+    "sia building":           {"h": 176},
+    "robinson 77":            {"h": 176},
+    "six battery road":       {"h": 174},
+    "samsung hub":            {"h": 172},
+    "bank of china":          {"h": 168},
+    "hong leong finance":     {"h": 158},
+    "myp centre":             {"h": 157},   # weakly published (ex-Emporis)
+    "one george street":      {"h": 153},
+    "chevron house":          {"h": 152},
+    "marina one":             {"h": 200},   # architect figure; CTBUH says 225.5 — conflict recorded
+    "lau pa sat":             {"h": 14},    # 1-storey market + clock lantern; UNPUBLISHED, height class only
+    "fullerton hotel":        {"h": 37},    # Wikidata, low confidence
     # ---- Marina Bay, researched 2026-07-28 --------------------------------
     #
     #   THE 280m AVIATION CEILING is the single most important fact here. One
