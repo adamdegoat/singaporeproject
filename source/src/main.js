@@ -620,8 +620,9 @@ window.__sound = sound;   // so the audio path can be verified, not assumed
 // exactly the symptom reported, "no volume until I toggle the map".
 //
 // Capture phase, on the document, so nothing downstream can swallow the unlock.
+let lastGestureT = performance.now();
 for (const ev of ['touchstart', 'touchend', 'pointerdown', 'mousedown', 'keydown', 'click']) {
-  document.addEventListener(ev, () => { sound.start(); sound.poke(); },
+  document.addEventListener(ev, () => { lastGestureT = performance.now(); sound.start(); sound.poke(); },
                             { passive: true, capture: true });
 }
 let camYaw = 0, camPitch = 0.16;   // free look, walk mode
@@ -1263,7 +1264,11 @@ function resize() {
   const w = canvas.clientWidth, h = canvas.clientHeight;
   if (!w || !h) return;
   appliedW = w; appliedH = h;
-  renderer.setPixelRatio(DPR_FORCE || Math.min(devicePixelRatio || 1, 2));
+  // Phones render at 1.5x, not 2x: the world is fill-rate bound, so this is
+  // ~44% fewer pixels — the single biggest thermal lever — for a sharpness
+  // cost that is hard to see at phone size. ?dpr= still overrides for
+  // screenshots and the reference-platform checks.
+  renderer.setPixelRatio(DPR_FORCE || Math.min(devicePixelRatio || 1, TOUCH ? 1.5 : 2));
   renderer.setSize(w, h, false);
   camera.aspect = w / h; camera.updateProjectionMatrix();
   const a = w / h;
@@ -1286,7 +1291,7 @@ function resizeIfStale() {
 resize();
 
 /* ---------------- loop ---------------- */
-let last = performance.now(), frames = 0, t0 = last, fps = 0;
+let last = performance.now(), frames = 0, t0 = last, fps = 0, lastCoolT = 0;
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
 
@@ -1302,6 +1307,17 @@ function loop(now) {
   // stalling on the very shader compiles the warm-up exists to overlap — and
   // reportHud would overwrite the loading text with "0 fps".
   if (!ready) { requestAnimationFrame(loop); return; }
+
+  // IDLE COOLDOWN, phones only: parked and untouched for six seconds, the
+  // render drops to ~24fps. A phone reading the street name was working
+  // exactly as hard as one at full tilt, which is where the heat the user
+  // felt came from. Any touch snaps it back to full rate instantly — the
+  // gesture listener stamps lastGestureT before this check runs again.
+  if (TOUCH && now - lastGestureT > 6000) {
+    const parked = mode === 'ride' ? Math.abs(S.speed) < 0.15 : walker.speed < 0.05;
+    if (parked && now - lastCoolT < 41) { requestAnimationFrame(loop); return; }
+    lastCoolT = now;
+  }
 
   // The first ready frame was an 8.7s task while renderer.render was 1s of it:
   // the other 7.7s hid in the subsystem first-ticks below. Timed per call on
