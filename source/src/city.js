@@ -122,6 +122,13 @@ export const MAT = {
   busBench:  new THREE.MeshStandardMaterial({ color: 0x6b716c, roughness: 0.6 }),  // RAL 7004
   busRest:   new THREE.MeshStandardMaterial({ color: 0x81c0a8, roughness: 0.6 }),  // RAL 6027
   hiVis:     new THREE.MeshStandardMaterial({ color: 0xe4e132, roughness: 0.45 }),
+  // LTA street lighting: the pole is BARE HOT-DIP GALVANISED STEEL, not
+  // painted -- a dull spangled silver-grey, lighter and less saturated than
+  // the darker metal used for signal poles and railings. Published in the
+  // Public Street Lighting System Guidelines, so it is a surveyed finish.
+  galv:      new THREE.MeshStandardMaterial({ color: 0xa8adb0, roughness: 0.42, metalness: 0.55 }),
+  // the retro-reflective pole number label: white numerals on Pantone 187c red
+  poleLabel: new THREE.MeshStandardMaterial({ color: 0xa6192e, roughness: 0.5 }),
   // painted kerb: instance-coloured black/white, see main.js
   kerbPaint: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }),
   metal: new THREE.MeshStandardMaterial({ color: 0x8b8f93, roughness: 0.5, metalness: 0.4 }),

@@ -310,6 +310,15 @@ window.__auditWorld = async function auditWorld() {
     // new shapes and fails CLOSED for changed ones, and only the second is safe.
     'CylinderGeometry(0.06,1)',     // tree branch inside that canopy
     'CylinderGeometry(0.07,2.4)',   // lamp arm, reaches over the carriageway
+    // The lamp arm became a CURVE on 2026-07-29 -- LTA's standard bracket is a
+    // single smooth curved arm, not the straight cantilever this world had --
+    // and it is built as three short segments. Rebuilding it silently revoked
+    // the exemption above and 36 arm sections appeared as props in the
+    // carriageway, which is precisely the failure mode the note above this
+    // line predicted for CHANGED shapes. The arm still reaches over the road
+    // because that is what a street light does.
+    'CylinderGeometry(0.05,0.9)',   // curved lamp bracket, lower segment
+    'CylinderGeometry(0.05,1)',     // curved lamp bracket, middle segment
     'BoxGeometry(1,0.2,0.44)',      // lamp head on the end of that arm
     'BoxGeometry(0.9,0.16,0.4)',    // side-street lamp head
     'CylinderGeometry(0.07,3.2)',   // covered walkway post at a crossing point

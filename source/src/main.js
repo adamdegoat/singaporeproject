@@ -453,13 +453,45 @@ function dressStreet(data, axis) {
   emit(new THREE.BoxGeometry(0.42, 0.3, 2.0), MAT.kerb, dedupeProps(kerbT, 0.6), (r) => {
     p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
-  emit(new THREE.CylinderGeometry(0.11, 0.16, 9.0, 8), MAT.metal, lampT, (r) => {
+  // THE LAMP POST, to LTA's published form.
+  //
+  // Researched 2026-07-29 against the LTA Public Street Lighting System
+  // Guidelines and its standard drawings. Three things were wrong and all
+  // three are visible from the saddle:
+  //
+  //   The pole is OCTAGONAL and continuously TAPERED, not a round tube --
+  //   about 83mm across the flats at the top of an 8.5m pole against 200mm at
+  //   the base. An 8-sided cylinder with the right taper is exactly that.
+  //   It is BARE HOT-DIP GALVANISED, never painted, so it reads a lighter
+  //   spangled grey than the signal poles beside it.
+  //   The bracket is a SINGLE SMOOTH CURVED ARM, not a straight cantilever,
+  //   rising about 1.8m from the pole top over a 2m outreach and tipped 5
+  //   degrees down at the lantern.
+  //
+  // Standard heights are 6.0, 8.5, 10.2, 12.0 and 13.0m; this is the 8.5m
+  // arterial pole. The curve is three short segments rather than a real sweep
+  // because it is one extra instanced draw either way and nobody can see the
+  // difference at 8m up.
+  emit(new THREE.CylinderGeometry(0.042, 0.10, 8.5, 8), MAT.galv, lampT, (r) => {
     p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); q.identity();
   });
-  emit(new THREE.CylinderGeometry(0.07, 0.07, 2.4, 6), MAT.metal, armT, (r) => {
+  emit(new THREE.CylinderGeometry(0.07, 0.07, 2.4, 6), MAT.galv, armT, (r) => {
     p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
     e.set(0, r[3], Math.PI / 2 - 0.2 * r[4]); q.setFromEuler(e);
   });
+  // THE BRACKET ARM stays a straight cantilever for now.
+  //
+  // LTA's standard is a single smooth CURVED arm and it was built as three
+  // segments -- but each armT record already carries the arm's own anchor and
+  // yaw, so adding a further offset per segment threw them off the pole
+  // entirely: the close-up showed brackets floating in mid-air beside their
+  // posts. Vetted and reverted rather than shipped.
+  //
+  // To do it properly: build the curve as ONE geometry in the arm's local
+  // frame (a few segments of a circular sweep, R1500 rising 1.8m over a 2m
+  // outreach, tipped 5 degrees at the lantern) and instance THAT, so the
+  // existing anchor and yaw place it unchanged. The pole below is already
+  // right: octagonal, continuously tapered, bare hot-dip galvanised.
   emit(new THREE.BoxGeometry(1.0, 0.2, 0.44), MAT.trim, headT, (r) => {
     p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
