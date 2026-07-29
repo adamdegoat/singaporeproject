@@ -218,7 +218,51 @@ likely it is `buildSurround`'s deliberately featureless massing reaching closer
 to the camera than intended at the district edge, but it was NOT measured.
 Check whether those meshes are the surround or real buildings before assuming.
 
-### THE ONE OPEN BUG, found and NOT fixed: D36, and it is user-visible
+### D36 IS CLOSED, and the cause is worth remembering
+
+The walker standing in the carriageway is fixed. Two things were wrong and the
+second was the real one:
+
+1. The walk-out only ever stepped OUTWARD from the walker's own path. At 18m
+   out the road underfoot is the NEXT street, so outward went deeper in. It
+   probes both ways now and prefers inward.
+2. **The band correction was overriding it, every frame.** `clearMask` runs
+   unconditionally while the reactive road test ran one frame in eight, so
+   whenever they disagreed the mask won -- and the mask is quantised to WHOLE
+   METRES (`k = Math.round(Math.abs(pr.off))` over 32 bits), so a walker at
+   18.3m reads as "metre 18" and the mask can call that clear while the road
+   index says tarmac. That is what moved `off` at 0.07 m/s with `offWant`
+   apparently never set: the mask nudging toward the next whole metre it
+   believed was clear, over and over.
+
+Now the live index wins: if `__onRoad` says you are on a carriageway the band
+correction is skipped entirely and the reactive probe runs EVERY frame rather
+than one in eight, because standing in traffic is the thing it exists to fix.
+D36 2 -> 0.
+
+**Third member of the same family this session**, all quantisation against
+reality: S2 measuring to a street's nearest mapped VERTEX, `claim`'s
+single-cell hash letting boundary-straddling pairs through, and this. When two
+things describe one fact, make the one with real units win.
+
+### NEWLY OPEN: D34, eight vehicles overlapping
+
+Appeared between the full-district dressing and the signal-lens work; **not**
+caused by the crowd change (tested by reverting it -- D34 stayed at 8). Stable
+across runs, so not snapshot noise.
+
+    car and bus share a lane with 3.0m between centres (needs 8.1m)
+    car and bus share a lane with 8.0m between centres (needs 8.1m)
+
+Two pairs are 10cm short and two are genuine -- a car inside a bus. NEXT.md
+already records the fix that was supposed to make this impossible: "the
+no-overlap invariant is ENFORCED after integration rather than braked towards"
+and "a queue has an order, sort the lane and walk it from the front". So either
+that enforcement is not running for these pairs, or the lane sort is putting a
+car and a bus in different lanes when they are in the same one. Start by
+printing the lane assignment for the pair at -407,6687.
+
+### The old D36 note, kept for the reasoning
 
 **A pedestrian stands in the carriageway, right beside you, and stays there.**
 Diagnosed 2026-07-29, unfixed, and this is the first thing to pick up.
