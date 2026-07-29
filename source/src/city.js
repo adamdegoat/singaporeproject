@@ -244,6 +244,8 @@ LMAT.shawGranite = new THREE.MeshStandardMaterial({ map: texConcrete(0xd6d3cb, 0
 LMAT.sotaRibbons = new THREE.MeshStandardMaterial({ map: texSotaRibbons(), roughness: 0.8 });
 LMAT.sotaRibbons.userData.tile = [10, 32];
 // SOTA's leaning piers: rough warm-brown board-marked concrete
+LMAT.darkTimber = new THREE.MeshStandardMaterial({ color: 0x3f3128, roughness: 0.8 });
+LMAT.shutterGreen = new THREE.MeshStandardMaterial({ color: 0x39544a, roughness: 0.75 });
 LMAT.boardConc = new THREE.MeshStandardMaterial({ map: texConcrete(0x8e7a71, 0.5), roughness: 0.9 });
 // batch 2 (research/voco.md, forum.md, palais.md, orchard-rendezvous.md)
 LMAT.bronzeRelief = new THREE.MeshStandardMaterial({ map: texConcrete(0xa97f3c, 0.55), roughness: 0.5, metalness: 0.45 });

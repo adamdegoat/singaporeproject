@@ -146,7 +146,8 @@ def split_ring_by_road(building, roads, min_inside=8.0):
     for p in keep:
         nb = dict(building)
         nb["p"] = p
-        result.append(nb)
+        nb["a"] = abs(_area(p))        # stale parent area misleads every
+        result.append(nb)              # downstream size classifier
     return result
 
 
@@ -191,6 +192,7 @@ def segment_terrace(building, seg_len=16.0, min_long=40.0, max_h=16.0, ratio=3.0
     for p in pieces:
         nb = dict(building)
         nb["p"] = p
+        nb["a"] = abs(_area(p))
         result.append(nb)
     return result
 

@@ -38,8 +38,14 @@ node test/ride.test.mjs 2>&1 | tail -1 || FAILED=1
 hr "world audit"
 for s in $SCENES; do
   printf '  %s: ' "$s"
-  SG_SCENE=$s node data/audit_run.mjs 2>&1 | grep -E "PASS +[0-9]+ checks|FAIL +[0-9]+ blocker|boot failed" | tail -1
-  SG_SCENE=$s node data/audit_run.mjs 2>&1 | grep -E "^   FAIL" | sed 's/^/      /' || true
+  # ONE run, both outputs. This used to run the audit TWICE — summary from
+  # the first, details from the second — so a load-sensitive check could
+  # fail run one and pass run two, refusing the deploy with a nameless
+  # "1 majors over budget" that no log anywhere could explain. It also paid
+  # every scene's audit twice.
+  _audit=$(SG_SCENE=$s node data/audit_run.mjs 2>&1)
+  echo "$_audit" | grep -E "PASS +[0-9]+ checks|FAIL +[0-9]+ blocker|boot failed" | tail -1
+  echo "$_audit" | grep -E "^   FAIL" | sed 's/^/      /' || true
 done
 
 hr "behaviour"

@@ -69,7 +69,11 @@ window.__auditWorld = async function auditWorld() {
     // any settled moment (measured at t=0/6/14s: zero wet of 2,200), and no
     // plain mesh exists within 30m of the finding after settle. Same family as
     // D36 "walkers mid-correction at the instant of the snapshot".
-    marinabay: { P8: 19, W2: 78, S8: 52, P4: 100, P6: 20, T2: 11 },
+    // W2 79: the 79th is a LAMP HEAD on a dry promenade pole reaching over
+    // the bay — which is what waterfront lamps do. It appeared when heads
+    // started grounding at their POLE (the Leonie Hill floating-luminaire
+    // fix); the head was always over the water, now it is counted honestly.
+    marinabay: { P8: 19, W2: 79, S8: 52, P4: 100, P6: 20, T2: 11 },
     // Orchard's T1 is CLOSED at 0. The long-open "merged tile 1.3m above
     // Orchard Boulevard that S7 reads as 0" was the ROAD SURFACE -- a bridge
     // deck belongs above the road it spans, S7 was right to ignore it, and T1

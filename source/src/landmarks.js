@@ -178,6 +178,26 @@ function crown(api, ob, u, v, w, d, y0, mat) {
   slab(api, ob, u, v, w * 0.55, d * 0.55, y0 + 1.2, 3.0, mat);
 }
 
+// direction from the building centroid toward the nearest CARRIAGEWAY —
+// probed radially with the road index. The axis version below aims at the
+// district's main street, which put Emerald Hill's shophouse doors on the
+// Orchard-facing flanks of rows that front their own road.
+function localStreetward(ob) {
+  if (!window.__onRoad) return null;
+  let best = null, bd = 1e9;
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2;
+    const dx = Math.cos(a), dz = Math.sin(a);
+    for (let m = 2; m <= 24; m += 1.5) {
+      if (window.__onRoad(ob.cx + dx * m, ob.cz + dz * m, 0)) {
+        if (m < bd) { bd = m; best = { nx: dx, nz: dz, dist: m }; }
+        break;
+      }
+    }
+  }
+  return best;
+}
+
 // direction from the building centroid toward the nearest point on Orchard Road
 function streetward(api, ob) {
   if (!api.axis) return { nx: 0, nz: 1, dist: 30 };
@@ -1195,7 +1215,7 @@ export function shophouse(api, b) {
   // the mass, set back at the ground floor to leave a covered walkway.
   // Everything here shares a material, so it all goes through the merger:
   // 139 shophouses as loose meshes cost 850 draw calls on their own.
-  const sw = streetward(api, ob);
+  const sw = localStreetward(ob) || streetward(api, ob);
   api.merge(api.extrudeGeo(api.grow(b.p, 0.86), groundH), api.mat.warmStone, cx0, cz0);
   // metre UVs (see the UV RULE in city.js): texShophouse is 3 floors x 3 bays
   // per tile, so 1/8 x 1/11 is a 2.7m bay on a 3.7m floor
@@ -1203,6 +1223,37 @@ export function shophouse(api, b) {
     1 / 8, 1 / 11), wall, cx0, cz0);
   api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 0.34, groundH - 0.34), trim, cx0, cz0);
   api.merge(api.extrudeGeo(api.grow(b.p, 1.04), 0.5, b.h), trim, cx0, cz0);
+
+  // THE GROUND FLOOR IS INHABITED. The set-back base rendered as a blank
+  // warmStone band, which the sweep reviewers read as a burying plinth
+  // (Emerald Hill, item 14c) — a shophouse ground floor is doors, shuttered
+  // windows and shadow. One door + shutters per bay, merged like everything
+  // else, each piece footing at its own ground so a terrace stepping down a
+  // hill steps its doorways with it.
+  {
+    const angF = Math.atan2(sw.nx, sw.nz);
+    const tX = Math.cos(angF), tZ = -Math.sin(angF);
+    let fd = 0;
+    while (fd < 40 && pointInRing(ob.cx + sw.nx * fd, ob.cz + sw.nz * fd, b.p)) fd += 0.4;
+    const face = fd * 0.86 + 0.06;          // just proud of the set-back wall
+    const span0 = ob.halfLong * 1.6;
+    const bays = Math.max(1, Math.round(span0 / 3.3));
+    for (let bi = 0; bi < bays; bi++) {
+      const u = -span0 / 2 + (bi + 0.5) * (span0 / bays);
+      const px = ob.cx + tX * u + sw.nx * face;
+      const pz = ob.cz + tZ * u + sw.nz * face;
+      if (!pointInRing(px - sw.nx * 1.2, pz - sw.nz * 1.2, b.p)) continue;
+      const isDoor = ((hh >> bi) & 1) === 0;
+      const w2 = isDoor ? 1.05 : 1.5, h2 = isDoor ? 2.5 : 1.7, y2 = isDoor ? 0 : 0.95;
+      const rect = [
+        [px - tX * w2 / 2 - sw.nx * 0.06, pz - tZ * w2 / 2 - sw.nz * 0.06],
+        [px + tX * w2 / 2 - sw.nx * 0.06, pz + tZ * w2 / 2 - sw.nz * 0.06],
+        [px + tX * w2 / 2 + sw.nx * 0.06, pz + tZ * w2 / 2 + sw.nz * 0.06],
+        [px - tX * w2 / 2 + sw.nx * 0.06, pz - tZ * w2 / 2 + sw.nz * 0.06],
+      ];
+      api.merge(api.extrudeGeo(rect, h2, y2), isDoor ? api.mat.darkTimber : api.mat.shutterGreen, ob.cx, ob.cz);
+    }
+  }
 
   // colonnade: columns on the street edge carrying the upper floors
   const ang = Math.atan2(sw.nx, sw.nz);

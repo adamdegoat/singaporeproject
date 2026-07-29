@@ -1555,8 +1555,9 @@ function reportHud(now) {
     fps = Math.round((frames * 1000) / (now - t0)); frames = 0; t0 = now;
     const dpr = renderer.getPixelRatio();
     const px = Math.round(canvas.clientWidth * dpr) + 'x' + Math.round(canvas.clientHeight * dpr);
+    const stamp = typeof __BUILD_STAMP__ !== 'undefined' ? __BUILD_STAMP__ : 'dev';
     hud.textContent =
-      `${fps} fps · ${px} @dpr${dpr} · ${(renderer.info.render.triangles / 1000) | 0}k tris · ` +
+      `${stamp} · ${fps} fps · ${px} @dpr${dpr} · ${(renderer.info.render.triangles / 1000) | 0}k tris · ` +
       `${renderer.info.render.calls} draws · ` +
       (mode === 'walk' ? 'on foot' : `${Math.abs(S.speed * 3.6) | 0} km/h${S.reversing ? ' R' : ''}`) +
       (stats.buildings ? ` · ${stats.buildings} buildings` : '');
