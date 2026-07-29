@@ -1080,6 +1080,24 @@ async function buildRegion(data) {
     sky.position.copy(camera.position);
     renderer.render(scene, camera);
     bmark('gpu-warmup');
+    // THE 360 SPIN. One warm view left every OTHER direction cold, and the
+    // first look around uploaded+compiled tiles on the spot — the start
+    // hang that froze the whole world for seconds on phones (user report:
+    // even the pedestrians stand still). Six renders around the spawn make
+    // the neighbourhood GPU-resident before the player can move; the
+    // bstep yields let the browser breathe between them.
+    {
+      const eyeY = terrain.at(S.x, S.z) + 2.0;
+      for (let sp = 0; sp < 6; sp++) {
+        const a2 = (sp / 6) * Math.PI * 2;
+        camera.position.set(S.x, eyeY, S.z);
+        camera.lookAt(S.x + Math.sin(a2) * 60, eyeY + 4, S.z + Math.cos(a2) * 60);
+        renderer.render(scene, camera);
+        await bstep(0.97 + sp * 0.004, 'first light');
+      }
+      driveCamera(0.016);
+    }
+    bmark('warmup-spin');
     glFinish();
   } else buildEnvironment();
 

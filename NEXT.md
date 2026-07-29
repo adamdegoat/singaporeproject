@@ -1,5 +1,15 @@
 # HANDOVER — state as of 2026-07-29 (late night)
 
+## OPEN, user-observed, mechanism identified: THE START HANG hits the whole
+## world (pedestrians freeze too — user report), not just the controls. The
+## boot warm-up renders ONE view; every tile entering the frustum for the
+## first time as the camera turns uploads+compiles on the spot — seconds of
+## hitching on a phone, then smooth forever. FIX: during "first light",
+## render a 360° spin (4-6 frames around spawn) so the whole neighbourhood
+## is GPU-resident before the player can move. The ride-physics SUB-STEP
+## (shipped) still covers residual jank. Verify on-device via the HUD build
+## stamp (shipped same night) before debugging any "still broken" report.
+
 ## The player-facing round, all LIVE and hash-verified:
 CAR OR BIKE (ride.js param sets RIDE/CAR, step(s,dt,t,b,s,P); car 18 m/s,
 buildCar in vespa.js; #vehiclebtn swaps from the saddle, localStorage
