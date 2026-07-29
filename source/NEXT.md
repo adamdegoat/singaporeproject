@@ -1,4 +1,32 @@
-# HANDOVER — state as of 2026-07-29
+# HANDOVER — state as of 2026-07-29 (late night)
+
+## The player-facing round, all LIVE and hash-verified:
+CAR OR BIKE (ride.js param sets RIDE/CAR, step(s,dt,t,b,s,P); car 18 m/s,
+buildCar in vespa.js; #vehiclebtn swaps from the saddle, localStorage
+remembers; playerRig exempt BY ANCESTRY in the audits — the car's bumper
+blocked marinabay T1 on its first gate run). SUMMONABLE VEHICLE (ride
+button fans a clear spot beside a far walker; skip-never-substitute).
+GHOST PEDALS (faint throttle/brake/steer indications, TOUCH+ride only,
+brighten on press). ROTATION FIX (per-frame stale-size check — rotate
+order can no longer squeeze the canvas). AUDIO: iPhone SILENT-SWITCH
+workaround (looping silent media element promotes the session to playback;
+retried per gesture in poke()). THERMAL: phones render dpr 1.5 and
+idle-cool to 24fps when parked+untouched 6s (lastGestureT stamps in the
+capture-phase gesture hook; any touch restores full rate). Gate saves
+tonight: a TDZ crash (updateHelp above its consts) and the car-bumper
+blocker both refused before publish.
+
+## EXPANSION: chinatown (Chinatown/Raffles Place) is DATA-COMPLETE —
+map + opentopodata terrain (76m relief; open-elevation was fetched FIRST
+by mistake and rewritten — CHECK THE PIN before fetching, the log prints
+the others' src) + unused-tag gate clean (crossing_ref → IGNORED with
+reason). CBD tower heights are ABSURDLY LOW in OSM (Asia Square 20 vs 229
+real) — an Opus research table is inbound; enter via process.py LANDMARKS
+before first render. rivervalley fetch in flight. Then: per-district
+gates, TEST merge as world5 (never straight into world.json), measure
+boot+heap, decide ship-now vs streaming-first (design in WORKFLOW.md).
+
+# (previous handover follows)
 
 Read this block, then `STANDARD.md`. Everything below the line is the historical
 record: read it when you need the reasoning behind a rule, not before starting.

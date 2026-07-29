@@ -94,13 +94,21 @@
      cream outlines at the real zones, pointer-events none so the true touch
      layer underneath stays the input; they brighten while pressed so the
      press reads. Ride mode + touch only; the walk stick replaces them. */
-  #pedals{position:fixed;left:calc(14px + env(safe-area-inset-left));top:50%;
-    transform:translateY(-58%);display:none;flex-direction:column;gap:10px;
-    pointer-events:none;z-index:5}
-  #pedals.on{display:flex}
-  .pedal{width:58px;height:64px;border-radius:14px;
+  /* The REAL ride zones: the whole left half, split at 62% of the screen
+     height — throttle above, brake below (input.js readInput). The ghosts
+     now tell that truth: a faint divider AT the split, and a glyph centred
+     in each true zone, instead of two decorative boxes that matched
+     nothing (the first version; the user pressed where they showed and
+     the input disagreed). */
+  #pedals{position:fixed;inset:0;display:none;pointer-events:none;z-index:5}
+  #pedals.on{display:block}
+  #powersplit{position:absolute;left:3%;width:38%;top:62%;height:0;
+    border-top:1.5px dashed rgba(232,221,198,.16)}
+  .pedal{position:absolute;width:54px;height:54px;border-radius:50%;
     border:1.5px solid rgba(232,221,198,.20);background:rgba(12,16,20,.10);
     display:grid;place-items:center;transition:border-color .12s,background .12s}
+  #pedalgo{left:9%;top:31%;transform:translate(-50%,-50%)}
+  #pedalstop{left:9%;top:81%;transform:translate(-50%,-50%)}
   .pedal.hot{border-color:rgba(232,221,198,.55);background:rgba(232,221,198,.10)}
   .pedal i{display:block;border:solid rgba(232,221,198,.34);border-width:0 2.5px 2.5px 0;
     padding:5px;transform:rotate(-135deg);margin-top:6px}
@@ -163,6 +171,7 @@
 </div></div>
 <div id="stick"><div id="knob"></div></div>
 <div id="pedals">
+  <div id="powersplit"></div>
   <div class="pedal" id="pedalgo"><i></i></div>
   <div class="pedal brakeface" id="pedalstop"><i></i></div>
 </div>
