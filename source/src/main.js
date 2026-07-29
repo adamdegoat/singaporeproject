@@ -1261,6 +1261,34 @@ function driveCamera(dt) {
 
 /* ---------------- resize ---------------- */
 const DPR_FORCE = parseFloat(P.get('dpr') || '0');
+// (declared BEFORE resize(): resize reads TIER_DPR at module init, and a
+// later `let` is a temporal-dead-zone crash — the second one today)
+let FPS_CAP = TOUCH ? (parseFloat(P.get('fps') || '0') || 30) : 0;
+// ADAPTIVE TIER: a phone that cannot hold ~20fps at the standard settings
+// demotes itself once — dpr 1.25, cap 24 — and remembers, so weaker phones
+// run cool and smooth without a settings screen. Verdict from the median of
+// the first eight one-second fps readings after ready; ?dpr/?fps overrides
+// win, and a saved verdict applies from the next boot's first frame.
+let TIER_DPR = 0;
+const tierFps = [];
+let tierDone = !TOUCH || !!P.get('fps') || !!P.get('dpr');
+try {
+  if (!tierDone && localStorage.getItem('sg_tier') === 'low') {
+    TIER_DPR = 1.25; FPS_CAP = 24; tierDone = true;
+  }
+} catch (e) { tierDone = tierDone || false; }
+function tierSample(f) {
+  if (tierDone) return;
+  tierFps.push(f);
+  if (tierFps.length < 8) return;
+  tierDone = true;
+  const s = [...tierFps].sort((a, b) => a - b);
+  if (s[4] < 20) {
+    TIER_DPR = 1.25; FPS_CAP = 24;
+    try { localStorage.setItem('sg_tier', 'low'); } catch (e) { /* fine */ }
+    resize();
+  }
+}
 let appliedW = 0, appliedH = 0;
 function resize() {
   const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -1270,7 +1298,7 @@ function resize() {
   // ~44% fewer pixels — the single biggest thermal lever — for a sharpness
   // cost that is hard to see at phone size. ?dpr= still overrides for
   // screenshots and the reference-platform checks.
-  renderer.setPixelRatio(DPR_FORCE || Math.min(devicePixelRatio || 1, TOUCH ? 1.5 : 2));
+  renderer.setPixelRatio(DPR_FORCE || TIER_DPR || Math.min(devicePixelRatio || 1, TOUCH ? 1.5 : 2));
   renderer.setSize(w, h, false);
   camera.aspect = w / h; camera.updateProjectionMatrix();
   const a = w / h;
@@ -1295,7 +1323,7 @@ resize();
 /* ---------------- loop ---------------- */
 let last = performance.now(), frames = 0, t0 = last, fps = 0, lastCoolT = 0;
 let lastCapT = 0, shadowFlip = true;
-const FPS_CAP = TOUCH ? (parseFloat(P.get('fps') || '0') || 30) : 0;
+
 function loop(now) {
   const rawDt = (now - last) / 1000;
   const dt = Math.min(0.05, rawDt); last = now;
@@ -1500,6 +1528,8 @@ function reportHud(now) {
       fps, tris: renderer.info.render.triangles, calls: renderer.info.render.calls,
       px, dpr, kmh: +(S.speed * 3.6).toFixed(1), mode, ...stats,
     };
+    if (ready) tierSample(fps);
+    if (P.has('audiodebug')) hud.textContent += ' · ' + sound.debugLine();
   }
 }
 requestAnimationFrame(loop);

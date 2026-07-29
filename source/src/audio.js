@@ -15,9 +15,10 @@ export class Sound {
   start() {
     if (this.ready) return;
     const C = window.AudioContext || window.webkitAudioContext;
-    if (!C) return;
+    if (!C) { this.state = 'no-webaudio'; return; }
     const ctx = new C();
     this.ctx = ctx;
+    this.state = 'starting';
     // iOS needs more than resume(): the context only truly unlocks once a
     // buffer has actually been played from inside the gesture.
     if (ctx.state === 'suspended') ctx.resume();
@@ -147,8 +148,41 @@ export class Sound {
   }
 
   // call from any later gesture: cheap if already running
+  // A SOFT TWO-NOTE CHIME the moment the session actually unlocks — played
+  // through its OWN gain straight to the destination, independent of the
+  // master (which ramps with the world and starts at zero), so hearing it
+  // proves the unlock beyond argument: chime-but-no-engine means the engine
+  // mapping; no chime means the session. Fires once.
+  chime() {
+    if (this._chimed || !this.ctx || this.ctx.state !== 'running') return;
+    this._chimed = true;
+    try {
+      const g = this.ctx.createGain();
+      g.gain.value = 0.16;
+      g.connect(this.ctx.destination);
+      for (const [f, t0, d] of [[660, 0, 0.12], [880, 0.13, 0.16]]) {
+        const o = this.ctx.createOscillator();
+        o.type = 'sine'; o.frequency.value = f;
+        const eg = this.ctx.createGain();
+        eg.gain.setValueAtTime(0.0001, this.ctx.currentTime + t0);
+        eg.gain.exponentialRampToValueAtTime(1, this.ctx.currentTime + t0 + 0.02);
+        eg.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + t0 + d);
+        o.connect(eg); eg.connect(g);
+        o.start(this.ctx.currentTime + t0); o.stop(this.ctx.currentTime + t0 + d + 0.02);
+      }
+    } catch (e) { /* the chime is diagnostic, never fatal */ }
+  }
+
+  // one line of truth for ?audiodebug
+  debugLine() {
+    return `audio ctx=${this.ctx ? this.ctx.state : 'none'} ready=${!!this.ready}`
+      + ` chimed=${!!this._chimed} session=${this._session ? (this._session.paused ? 'paused' : 'playing') : 'none'}`
+      + (this.master ? ` master=${this.master.gain.value.toFixed(2)}` : '');
+  }
+
   poke() {
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+    this.chime();
     // the playback-session element can be refused on the first gesture if
     // the browser judged it too early; any later gesture retries for free
     if (this._session && this._session.paused) {
