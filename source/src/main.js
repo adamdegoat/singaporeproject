@@ -237,7 +237,7 @@ function trimAxes(list, near = 26) {
   return kept;
 }
 
-function dressStreet(data, axis) {
+function dressStreet(data, axis, target = world) {
   if (!axis) return 0;
   const dataRef = data;
   const pts = axis.p, half = axis.w / 2;
@@ -409,7 +409,7 @@ function dressStreet(data, axis) {
     const im = new THREE.InstancedMesh(geo, mat, list.length);
     list.forEach((rec, i) => { fn(rec); m.compose(p3, q, s3); im.setMatrixAt(i, m); });
     im.castShadow = false; im.receiveShadow = true;   // keeps them out of the shadow pass
-    world.add(im);
+    target.add(im);
   };
   // Every one of these is placed relative to the ground, not to y=0. Orchard
   // climbs about 34m over its length, and these were authored flat: the audit
@@ -454,7 +454,7 @@ function dressStreet(data, axis) {
       });
       if (im.instanceColor) im.instanceColor.needsUpdate = true;
       im.castShadow = false; im.receiveShadow = true;
-      world.add(im);
+      target.add(im);
     }
     kerbT.length = 0;
     for (const r of plain) kerbT.push(r);
@@ -561,7 +561,7 @@ function dressStreet(data, axis) {
   });
 
   window.__crossings = crossingS;
-  return trees.build(world);
+  return trees.build(target);
 }
 
 /* ---------------- boot ---------------- */
@@ -790,9 +790,10 @@ async function buildStreamed(mani) {
 // chunk's own group — with the shared pictures (collision, road index,
 // water, walls, solid) EXTENDED first so every placement guard already sees
 // the union. `Y` yields to the frame loop between slices.
-async function addChunk(ch, id, Y) {
+async function addChunk(ch, id, Y, rec = {}) {
   // one private placement stream per district: build order can never
-  // reshuffle the world (the determinism gate proved this property)
+  // reshuffle the world (the determinism gate proved this property), and a
+  // REBUILD after an unload reproduces the identical district
   let h = 0;
   for (const c of id) h = (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0;
   reseedPlacement(h);
@@ -804,12 +805,17 @@ async function addChunk(ch, id, Y) {
     st.step = t; st._t = now;
   };
   const data = window.__data;
-  for (const k of ['water', 'buildings', 'roads', 'bridges', 'covered', 'towers',
-    'trees', 'crossings', 'signals', 'busstops', 'mrt', 'taxis', 'shops',
-    'gantries', 'lamps']) {
-    if (Array.isArray(ch[k]) && Array.isArray(data[k])) data[k].push(...ch[k]);
+  // the probe arrays grow ONCE per district — a rebuild after an unload
+  // must not double every layer
+  if (!rec.pushed) {
+    for (const k of ['water', 'buildings', 'roads', 'bridges', 'covered', 'towers',
+      'trees', 'crossings', 'signals', 'busstops', 'mrt', 'taxis', 'shops',
+      'gantries', 'lamps']) {
+      if (Array.isArray(ch[k]) && Array.isArray(data[k])) data[k].push(...ch[k]);
+    }
+    if (ch.axis && ch.axis.p && data.axes) data.axes.push(ch.axis);
+    rec.pushed = true;
   }
-  if (ch.axis && ch.axis.p && data.axes) data.axes.push(ch.axis);
   // NO re-indexing here: the boot indexed the whole region's roads,
   // footprints and water from the union (a chunk build that could not see a
   // neighbour's roads laid kerbs in Waterloo Close at the seam). The data
@@ -834,10 +840,11 @@ async function addChunk(ch, id, Y) {
   mk('walls');
   if (WALLSREF) WALLSREF.build(g, (x, z) => terrain.at(x, z));
   await Y();
-  const ax = ch.axis && ch.axis.p ? trimAxes(data.axes)[data.axes.length - 1] : null;
+  const ax = ch.axis && ch.axis.p
+    ? (trimAxes(data.axes).find((t) => t.n === ch.axis.n) || null) : null;
   if (ax) {
     mk('dress');
-    if (!P.has('nofoliage')) dressStreet(ch, ax);
+    if (!P.has('nofoliage')) dressStreet(ch, ax, g);
     await Y();
     let f = {};
     mk('furniture');
@@ -850,7 +857,11 @@ async function addChunk(ch, id, Y) {
     if (!P.has('nomarks')) buildMarkings(g, ax, ch);
     await Y();
     mk('side');
-    if (!P.has('noside')) dressSideStreets(g, ch, ax, place, TreeField, dressedStreets);
+    if (!P.has('noside')) {
+      const before = new Set(dressedStreets);
+      dressSideStreets(g, ch, ax, place, TreeField, dressedStreets);
+      rec.dressedDelta = [...dressedStreets].filter((r) => !before.has(r));
+    }
     await Y();
     mk('sg');
     if (!P.has('nosg')) buildSgDetail(g, ax, ch, place);
@@ -859,6 +870,7 @@ async function addChunk(ch, id, Y) {
       const es = new Signals(f.signals, f.lensMesh || null);
       if (f.lensMesh) lodExclude.add(f.lensMesh);
       extraSignals.push(es);
+      rec.signals = es;
     }
   }
   const solidBefore = WALLSREF ? (x, z) => WALLSREF.at(x, z) : null;
@@ -875,11 +887,42 @@ async function addChunk(ch, id, Y) {
     trimShadowCasters(g);
     if (!P.has('nolod')) registerLod(world);
   }
+  rec.group = g;
 }
 
-// The streaming queue: one district at a time, nearest box first, yielding
-// to the frame loop roughly every slice so the ride never freezes. State on
-// window so a harness can wait for completion.
+// Tear a streamed district back out of the world: the group's geometry is
+// disposed, its LOD entries dropped, its Signals stop ticking, and its side
+// streets leave the dressed set so a REBUILD dresses them again. What stays,
+// deliberately: the probe data arrays and the SOLID/colGrid/water pictures —
+// a rebuild is placement-identical (private RNG stream), so the stale cells
+// describe exactly what will stand there again, and collision that errs
+// toward "something is there" 1.6km away can never hurt the rider.
+function unloadChunk(rec) {
+  if (!rec.group) return;
+  const inG = new Set();
+  rec.group.traverse((o) => inG.add(o));
+  for (let i = LODT.length - 1; i >= 0; i--) if (inG.has(LODT[i])) LODT.splice(i, 1);
+  for (let i = LODI.length - 1; i >= 0; i--) if (inG.has(LODI[i].o)) LODI.splice(i, 1);
+  world.remove(rec.group);
+  rec.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+  if (rec.signals) {
+    const i = extraSignals.indexOf(rec.signals);
+    if (i >= 0) extraSignals.splice(i, 1);
+    rec.signals = null;
+  }
+  for (const r of rec.dressedDelta || []) dressedStreets.delete(r);
+  rec.dressedDelta = null;
+  rec.group = null;
+}
+
+// The streaming MANAGER, resident for the life of the page. Districts build
+// when the rider comes within NEAR metres of their main street and unload
+// past FAR — heap plateaus at what is around the rider, whatever the world
+// grows to. `?streamall` builds everything and stops (what the gates use:
+// an audit of a world that streams by proximity would judge whatever
+// happened to be loaded). Distances are measured to the district's AXIS,
+// not its bbox: the boxes deliberately overlap at every seam, so a bbox
+// distance would read 0 from anywhere and build the whole world at boot.
 async function streamRest(rest) {
   // MessageChannel, not setTimeout: timers are clamped to a second or more
   // in occluded pages (every headless harness, any backgrounded phone tab),
@@ -900,29 +943,55 @@ async function streamRest(rest) {
     return new Promise((r) => { wake = r; chan.port2.postMessage(0); })
       .then(() => { sliceT0 = performance.now(); });
   };
-  const dist = (b) => {
-    const cx = Math.max(b.box[0], Math.min(S.x, b.box[2]));
-    const cz = Math.max(b.box[1], Math.min(S.z, b.box[3]));
-    return Math.hypot(cx - S.x, cz - S.z);
-  };
-  window.__streamState = { pending: rest.map((r) => r.id), building: null, done: [] };
-  const queue = [...rest];
-  while (queue.length) {
-    queue.sort((a, b) => dist(a) - dist(b));
-    const next = queue.shift();
-    window.__streamState.building = next.id;
-    try {
-      await addChunk(next.ch, next.id, Y);
-    } catch (e) {
-      console.error('stream chunk ' + next.id, e);
+  const px = () => (mode === 'ride' ? S.x : walker.x);
+  const pz = () => (mode === 'ride' ? S.z : walker.z);
+  const axDist = (rec) => {
+    const pts = (rec.ch.axis && rec.ch.axis.p) || [];
+    let best = Infinity;
+    for (let i = 0; i < pts.length; i += 2) {
+      const d = (pts[i][0] - px()) ** 2 + (pts[i][1] - pz()) ** 2;
+      if (d < best) best = d;
     }
-    window.__streamState.done.push(next.id);
-    window.__streamState.pending = window.__streamState.pending.filter((x) => x !== next.id);
-    window.__streamState.building = null;
-  }
-  if (window.__stats && window.__data) {
-    window.__stats.buildings = window.__data.buildings.length;
-    window.__stats.roads = window.__data.roads.length;
+    return Math.sqrt(best);
+  };
+  const ALL = P.has('streamall');
+  const NEAR = 900, FAR = 1700;
+  const recs = rest.map((r) => ({ ...r, pushed: false, group: null, signals: null, dressedDelta: null }));
+  window.__streamState = { pending: recs.map((r) => r.id), building: null, done: [], unloads: 0 };
+  window.__streamRecs = recs;
+  const syncState = () => {
+    window.__streamState.pending = recs.filter((r) => !r.group).map((r) => r.id);
+    if (window.__stats && window.__data) {
+      window.__stats.buildings = window.__data.buildings.length;
+      window.__stats.roads = window.__data.roads.length;
+    }
+  };
+  for (;;) {
+    let cand = recs.filter((r) => !r.group);
+    if (!ALL) cand = cand.filter((r) => axDist(r) < NEAR);
+    if (cand.length) {
+      cand.sort((a, b) => axDist(a) - axDist(b));
+      const next = cand[0];
+      window.__streamState.building = next.id;
+      try {
+        await addChunk(next.ch, next.id, Y, next);
+        if (!window.__streamState.done.includes(next.id)) window.__streamState.done.push(next.id);
+      } catch (e) {
+        console.error('stream chunk ' + next.id, e);
+      }
+      window.__streamState.building = null;
+      syncState();
+      continue;
+    }
+    if (ALL) { syncState(); return; }   // drained: the gates' mode is done
+    for (const r of recs) {
+      if (r.group && axDist(r) > FAR) {
+        unloadChunk(r);
+        window.__streamState.unloads++;
+        syncState();
+      }
+    }
+    await new Promise((r) => setTimeout(r, 1500));
   }
 }
 async function buildRegion(data, opts = {}) {

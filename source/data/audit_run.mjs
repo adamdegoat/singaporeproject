@@ -21,7 +21,7 @@ page.setDefaultTimeout(120000);
 // SG_EXTRA appends query flags (?nofoliage, ?noshops...) so a check's count can
 // be attributed to one subsystem by building the world without it. Never used
 // by deploy.sh: the gate always runs the whole world.
-await page.goto(`http://localhost:8933/?dpr=1&raw=1&scene=${process.env.SG_SCENE || 'orchard'}`
+await page.goto(`http://localhost:8933/?dpr=1&raw=1&streamall=1&scene=${process.env.SG_SCENE || 'orchard'}`
   + (process.env.SG_EXTRA ? '&' + process.env.SG_EXTRA : ''), { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true || window.__bootError', null, { timeout: 120000 });
 const bootErr = await page.evaluate(() => window.__bootError || null);

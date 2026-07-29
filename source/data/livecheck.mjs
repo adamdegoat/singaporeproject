@@ -43,7 +43,10 @@ page.on('console', (m) => {
 const t0 = Date.now();
 let ready = false, info = {};
 try {
-  await page.goto(`${URL_BASE}/?cb=${Date.now()}`, { waitUntil: 'load', timeout: BUDGET_MS });
+  // streamall: by default districts build by rider proximity and the far
+  // ones legitimately never load — the check builds EVERYTHING so the drain
+  // assertion and the frame loop cover the whole world
+  await page.goto(`${URL_BASE}/?streamall=1&cb=${Date.now()}`, { waitUntil: 'load', timeout: BUDGET_MS });
   // POLL ON AN INTERVAL, not on requestAnimationFrame. waitForFunction defaults
   // to rAF polling and rAF is throttled in a spawned window, so the default
   // times the poller rather than the boot.
