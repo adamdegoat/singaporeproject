@@ -574,6 +574,12 @@ let rideParams = RIDE;
 function setVehicle(kind) {
   vehicleKind = kind === 'car' ? 'car' : 'bike';
   rideParams = vehicleKind === 'car' ? CAR : RIDE;
+  // a switch mid-corner froze the old body's bank into the new body: the
+  // lean state carries over but only the ACTIVE branch writes rotations,
+  // so the hidden rig kept its last roll forever. Reset all of it.
+  S.lean = 0;
+  vespa.group.rotation.z = 0;
+  carRig.group.rotation.z = 0;
   carRig.group.visible = vehicleKind === 'car';
   vespa.group.visible = vehicleKind === 'bike';
   // in a car the rider sits behind tinted glass; on the bike he is the pilot
@@ -1174,6 +1180,9 @@ const lookHintEl = document.getElementById('lookhint');
 function updateHelp() {
   if (stickEl) stickEl.classList.toggle('on', mode === 'walk');
   if (lookHintEl) lookHintEl.classList.toggle('on', mode === 'walk');
+  const ped = document.getElementById('pedals'), sh = document.getElementById('steerhint');
+  if (ped) ped.classList.toggle('on', mode === 'ride' && TOUCH);
+  if (sh) sh.classList.toggle('on', mode === 'ride' && TOUCH);
   const el = document.getElementById('help');
   if (!el) return;
   el.innerHTML = mode === 'ride'
@@ -1185,6 +1194,9 @@ function updateHelp() {
   const btn = document.getElementById('modebtn');
   if (btn) btn.textContent = mode === 'ride' ? 'Get off' : 'Ride';
 }
+// reflect the STARTING mode once everything the helper reads exists — called
+// above the const block it crashed the whole module in the temporal dead zone
+updateHelp();
 
 function walkCamera(dt) {
   // just above head height and offset to the shoulder, so the view forward is
@@ -1377,7 +1389,9 @@ function loop(now) {
       vespa.wheels[1].rotation.x = -S.wheel;
     } else {
       carRig.group.rotation.z = S.lean;          // CAR.leanMax keeps this a small roll
-      for (const w of carRig.wheels) w.rotation.x = -S.wheel * 0.68;
+      // full euler recompose: writing .x alone on a wheel pre-rolled about z
+      // runs through euler composition and visibly cocks the wheel
+      for (const w of carRig.wheels) w.rotation.set(-S.wheel * 0.68, 0, Math.PI / 2);
     }
 
     // keep the shadow frustum on the rider, not the whole town
@@ -1385,6 +1399,13 @@ function loop(now) {
     sun.target.position.set(S.x, gy, S.z);
     sun.target.updateMatrixWorld();
 
+    if (TOUCH) {
+      const pg = document.getElementById('pedalgo'), ps = document.getElementById('pedalstop');
+      if (pg) pg.classList.toggle('hot', inp.throttle > 0.05);
+      if (ps) ps.classList.toggle('hot', inp.brake > 0.05);
+      const sd = document.getElementById('steerdot');
+      if (sd) sd.style.transform = `translateX(${(inp.steer * 40).toFixed(1)}px)`;
+    }
     clock += dt;
     fmk('pre');
     if (signals) signals.update(clock);

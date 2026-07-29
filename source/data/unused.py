@@ -42,6 +42,7 @@ THRESHOLD = 0.05
 # line here is a decision and should look like one; leaving a tag out of both
 # this and the scene file is what the gate is for.
 IGNORED = {
+    "crossing_ref":   "UK-style duplicate of crossing=; the classifier reads crossing=, and both say 'zebra' about the same node",
     "highway":        "IS the road class; carried as `k`",
     "building":       "IS the building; carried by existing at all",
     "source":         "provenance of the OSM edit, not of the thing",
