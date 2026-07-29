@@ -2561,7 +2561,9 @@ function rafflesArcade(api, b) {
   const ob = orientedBox(b.p);
   const g0 = api.footingY(b.p);
   const GROUND = 5.4, UPPER = 8.6, H = GROUND + UPPER;
-  const white = api.mat.trim, green = api.mat.jadeRoof, plaster = api.mat.paleStone;
+  // "Uniform brilliant white painted plaster" -- paleStone is a grey concrete
+  // and rendered the whole wing the colour of a car park. Raffles is white.
+  const white = api.mat.trim, green = api.mat.jadeRoof, plaster = api.mat.trim;
 
   // the block, set back so the ground-floor arcade stands in front of it
   api.world.add(api.extrude(api.grow(b.p, 0.965), GROUND, plaster));
@@ -2623,7 +2625,131 @@ function rafflesArcade(api, b) {
   }
 }
 
+// SMA HOUSE, 20 Orchard Road -- the building the scene file calls "MDIS
+// House". Researched 2026-07-29 by agent, and the first finding is that the
+// NAME IS WRONG: there is no building called MDIS House, and MDIS has no
+// Orchard Road address at all (its campus is Stirling Road, moving to Changi
+// Road in 2027). MDIS was a TENANT here from 2002 to 2020, and the tenant's
+// name stuck to the building in the map data.
+//
+// What it actually is: the former MALAYAN MOTORS SHOWROOM, built for Wearne
+// Brothers by SWAN & MACLAREN, dated 1925 by roots.gov.sg and 1927 by the
+// heritage record. A showroom until 1980, then the Singapore Manufacturers'
+// Association (hence SMA House), gazetted for conservation in 2000, and since
+// September 2025 the No. 16 component of the expanded Temasek Shophouse.
+//
+// The scene file carries this footprint TWICE, at 10.2m and at 40m. A 40m
+// two-storey showroom is impossible, so the recipe builds its own height from
+// the storey count and ignores both.
+//
+// The elevation, from roots.gov.sg and the heritage record: a long low
+// horizontal block with a SCALLOP-SHAPED CENTRAL ARCH over a two-storey
+// projecting window bay, a continuous run of windows either side, and a
+// SCALLOPED SEMI-CIRCULAR GABLE AT EACH END of the roof -- three scalloped
+// events across the front. Shanghai plaster, so pale stone-toned render.
+function smaHouse(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = 10.5;                       // two showroom storeys, not the mapped 40
+  const render = api.mat.paleStone, white = api.mat.trim, glassM = api.mat.towerGlass;
+
+  api.world.add(api.extrude(b.p, H, render));
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 0.45, H - 0.5), white, ob.cx, ob.cz);
+
+  const fr = frontage(api, ob, b.p);
+  if (!fr) return;
+  const { mx, mz, nX, nZ, tX, tZ, yaw, bl } = fr;
+  const at = (mesh, u, y, out, cast = true) => {
+    mesh.position.set(mx + tX * u + nX * out, y, mz + tZ * u + nZ * out);
+    mesh.rotation.y = yaw;
+    mesh.castShadow = cast; mesh.receiveShadow = true;
+    api.world.add(mesh);
+  };
+  // the continuous showroom glazing at ground level
+  at(new THREE.Mesh(new THREE.BoxGeometry(bl * 0.92, 3.8, 0.3), glassM),
+     0, g0 + 2.2, 0.28, false);
+  // THE CENTRAL SCALLOP ARCH over a two-storey projecting window bay
+  const bayW = Math.min(7.5, bl * 0.26);
+  at(new THREE.Mesh(new THREE.BoxGeometry(bayW, H - 1.2, 1.0), render), 0, g0 + (H - 1.2) / 2, 0.5);
+  at(new THREE.Mesh(new THREE.BoxGeometry(bayW * 0.66, H - 3.4, 0.35), glassM),
+     0, g0 + 1.9 + (H - 3.4) / 2, 1.05, false);
+  const arch = new THREE.Mesh(
+    new THREE.CylinderGeometry(bayW * 0.5, bayW * 0.5, 0.9, 16, 1, false, 0, Math.PI), white);
+  at(arch, 0, g0 + H - 1.0, 0.55);
+  arch.rotation.set(Math.PI / 2, 0, 0);
+  arch.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), yaw);
+  // A SCALLOPED SEMI-CIRCULAR GABLE AT EACH END of the roof
+  for (const side of [-1, 1]) {
+    const gb = new THREE.Mesh(
+      new THREE.CylinderGeometry(bl * 0.11, bl * 0.11, 0.7, 14, 1, false, 0, Math.PI), white);
+    at(gb, side * bl * 0.40, g0 + H - 0.2, 0.35);
+    gb.rotation.set(Math.PI / 2, 0, 0);
+    gb.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), yaw);
+  }
+}
+
+// NOMAD SINGAPORE, 230 Orchard Road, on the former Faber House site.
+// Researched 2026-07-29 by agent against WOHA's own project page, UOL's media
+// releases and trade press. UNDER CONSTRUCTION: WOHA list completion April
+// 2026 and the opening has been pulled forward to late 2026, so by the date
+// this world represents the building stands.
+//
+// Published: WOHA for UOL, 18 storeys per WOHA and UOL's 2021 announcement,
+// 19 per UOL's 2025 release -- carried as a range, not resolved. 173 keys,
+// GFA 11,025 m2. Height in metres UNPUBLISHED, so the mapped 63m stands.
+//
+// The design move, and the only thing worth building: a CLIFF-LIKE VERDANT
+// VERTICAL LANDSCAPE set INTO the facade, with a FIFTEEN-STOREY WATERFALL in
+// the recess, threaded with pavilions and decks. It is a planted canyon carved
+// out of the street elevation, not a flat green wall, and WOHA designed it to
+// read as continuous with their Design Orchard terraces opposite. Cladding
+// material and panel module are UNPUBLISHED and are not invented here.
+function nomadSingapore(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = b.h;
+  const pale = api.mat.paleStone, glassM = api.mat.towerGlass, leaf = api.mat.jadeRoof;
+
+  api.world.add(api.extrude(b.p, H, glassM));
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.015), 0.6, H), pale, ob.cx, ob.cz);
+
+  const fr = frontage(api, ob, b.p);
+  if (!fr) return;
+  const { mx, mz, nX, nZ, tX, tZ, yaw, bl } = fr;
+  const at = (mesh, u, y, out, cast = true) => {
+    mesh.position.set(mx + tX * u + nX * out, y, mz + tZ * u + nZ * out);
+    mesh.rotation.y = yaw;
+    mesh.castShadow = cast; mesh.receiveShadow = true;
+    api.world.add(mesh);
+  };
+  // THE CANYON: a deep recess cut into the street face, dark inside so it
+  // reads as a void rather than as applied decoration
+  const cw = Math.min(11, bl * 0.36);
+  const top = g0 + H - 5;
+  at(new THREE.Mesh(new THREE.BoxGeometry(cw, H - 8, 1.2), api.mat.darkMetal),
+     bl * 0.10, g0 + 6 + (H - 8) / 2, 0.2, false);
+  // the waterfall itself, a pale sheet falling the height of the recess
+  at(new THREE.Mesh(new THREE.BoxGeometry(cw * 0.34, H - 10, 0.35), api.mat.glass),
+     bl * 0.10, g0 + 7 + (H - 10) / 2, 0.75, false);
+  // planting shelves stepping up the canyon, with pavilion decks between
+  const steps = Math.max(6, Math.round((H - 10) / 4.2));
+  for (let k = 0; k < steps; k++) {
+    const y = g0 + 7 + k * ((H - 10) / steps);
+    const u = bl * 0.10 + (k % 2 ? -1 : 1) * cw * 0.26;
+    at(new THREE.Mesh(new THREE.BoxGeometry(cw * 0.42, 0.34, 1.6), pale), u, y, 0.95);
+    at(new THREE.Mesh(new THREE.SphereGeometry(1.05, 8, 6), leaf), u, y + 0.9, 1.15, false);
+  }
+  // L5 sky terrace with the infinity pool that overlooks Orchard Road
+  at(new THREE.Mesh(new THREE.BoxGeometry(bl * 0.55, 0.4, 3.4), pale), -bl * 0.16, g0 + 19.5, 1.5);
+  at(new THREE.Mesh(new THREE.BoxGeometry(bl * 0.38, 0.3, 2.2), api.mat.water || api.mat.glass),
+     -bl * 0.16, g0 + 19.95, 1.6, false);
+  // the rooftop bar level
+  at(new THREE.Mesh(new THREE.BoxGeometry(bl * 0.5, 0.35, 2.6), pale), 0, g0 + H - 1.2, 1.0);
+}
+
 export const RECIPES = [
+  [/^sma house|^mdis house/i, smaHouse],
+  [/nomad singapore|faber house/i, nomadSingapore],
   [/one raffles link/i, oneRafflesLink],
   [/raffles arcade|raffles hotel arcade/i, rafflesArcade],
   [/temasek shophouse/i, temasekShophouse],
