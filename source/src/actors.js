@@ -727,7 +727,38 @@ export class Crowd {
       if (!pr.crossing && ((i + tick) & 7) === 0) {
         const sgn = pr.off >= 0 ? 1 : -1;
         if (window.__onRoad && window.__onRoad(x, z, -0.8)) {
-          pr.offWant = Math.min(26, Math.abs(pr.off) + 3.0) * sgn;
+          // WALK WHICHEVER WAY ACTUALLY LEAVES THE ROAD.
+          //
+          // This only ever walked OUTWARD, away from the walker's own path. On
+          // a narrow band that is right; at eighteen metres out it is not,
+          // because the road under the walker is no longer its own path's --
+          // it is the next street over, and stepping further from path 0 walks
+          // deeper into street 1. Traced frame by frame: walker 497 sat at
+          // off=-17.9 drifting to -18.3, on a carriageway the whole time, with
+          // the correction firing and achieving nothing. The spawn allows up
+          // to half-width + 10.5m, so a walker can legitimately start that far
+          // out and only meet the other road later as the geometry changes.
+          //
+          // So probe BOTH ways and take the one that is clear, preferring
+          // inward when both are, because inward is back toward its own
+          // pavement. Still a target for the rate-limited step below -- never
+          // a position change, which is the teleport this file has produced
+          // three times.
+          const at = (o) => {
+            const ox = cx + nx * o, oz = cz + nz * o;
+            return !window.__onRoad(ox, oz, -0.8);
+          };
+          const outward = Math.min(26, Math.abs(pr.off) + 3.0) * sgn;
+          const inward = Math.max(1.2, Math.abs(pr.off) - 3.0) * sgn;
+          if (at(inward)) pr.offWant = inward;
+          else if (at(outward)) pr.offWant = outward;
+          else {
+            // neither 3m step clears it: try further, inward first
+            const far = [-6, 6, -10, 10].map((d) =>
+              Math.max(1.2, Math.min(26, Math.abs(pr.off) + d)) * sgn);
+            const hit = far.find(at);
+            if (hit !== undefined) pr.offWant = hit;
+          }
         } else if (window.__inWater && window.__inWater(x, z)) {
           pr.offWant = Math.max(1.2, Math.abs(pr.off) - 3.0) * sgn;
         }

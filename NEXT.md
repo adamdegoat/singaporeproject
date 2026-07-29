@@ -243,15 +243,32 @@ What is ruled out, by measurement:
   * It is not the clear-mask being coarse -- though that WAS a real second
     defect and is now fixed (see below). Fixing it did not move D36.
 
-Where to go next: `pr.offWant` is set by the walk-out test and consumed by a
-rate-limited step on `pr.off`. The walker is not moving at anything like
-1.1 m/s, so either the test is not firing for this walker (check the
-`(i + tick) & 7` stagger against however far `tick` has advanced) or `pr.off`
-is being overwritten each frame by whatever recomputes the band. **Print
-pr.off, pr.offWant and the drawn position for ONE walker across consecutive
-frames** -- this file's own rule, print the thing rather than a number near
-it, and note that `__crowdState()` and `__crowdPositions()` do NOT report the
-same point, which is what made the first two probes disagree.
+**The frame-by-frame trace has now been run** (`/tmp/d36trace.mjs` pattern:
+teleport onto an offender, then print pr.off / pr.offWant / drawn / onRoad for
+that ONE walker across eight samples). Walker 497, on path 0:
+
+    f0 off=-17.92 s=1853.60 drawn=[1078.94,7351.02] onRoad=true dist=0
+    f7 off=-18.30 s=1853.07 drawn=[1078.56,7350.48] onRoad=true dist=1
+
+What that rules in and out:
+
+  * **The walker is EIGHTEEN METRES off its own path centreline.** Spawn allows
+    `half + rand(3.2, 10.5)`, so that is legal at spawn -- and it means the
+    carriageway it is standing on is NOT its own path's. That is why walking
+    "outward" never helped: outward from path 0 is deeper into street 1.
+    Fixed as far as it goes -- the correction now probes inward AND outward
+    and takes whichever is clear, preferring inward. D36 5 -> 3.
+  * **`offWant` is never observed set**, across eight samples 700ms apart.
+  * **`off` drifts steadily at about 0.07 m/s** (-17.92 to -18.30 over ~5s).
+    That is NOT the 1.1 m/s offWant step, and offWant being undefined every
+    time means something ELSE is moving `off`. Find that first: it is the
+    thread to pull. Candidates not yet checked -- the dodge/`shPrev` rate
+    limiter writing back into `off`, or the band recompute in the clearMask
+    block, or `off` being reassigned where the walker changes path.
+
+Note `__crowdState()` and `__crowdPositions()` do NOT report the same point --
+state is the base position, positions is base plus shift. Two probes disagreed
+over exactly that before the trace was written properly.
 
 **Fixed on the way past:** the dodge guard trusted a clearance mask
 precomputed at WHOLE-METRE offsets (`k2` is rounded and capped at 32), so a
