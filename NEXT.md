@@ -300,10 +300,19 @@ Reviewer for 000-054 adds (10 BAD, 23 minor, 33 total), FOUR SYSTEMIC:
     (teleport time-jump?) they could visually separate; check whether
     sweep teleports produce outsized `walk`. The kerbside-paint guard from
     #17 is IN and deployed same evening (7th deploy of 2026-07-29).
-14. **Buildings perched on blank plinth walls or sunk, ground floors
-    buried/cut** (010 Emerald Hill both rows on ~3m wall, 015 sunk block,
-    029/038/040/041/051) — footingY-on-slope family, but Emerald Hill is a
-    whole conservation street; deserves its own pass.
+14. **Emerald Hill: three causes, two FIXED, one left.** (a) polygon
+    surgery (data/split.py, in the pipeline + gates): road-through rings
+    split, terrace rows >40m segmented ~16m so footings step down slopes;
+    (b) LOW buildings (h<=16) now foot at their STREET-EDGE vertex
+    (streetFootingY in city.js) instead of the whole-footprint minimum —
+    the rear sinks into its own hill like real terraces. Walls measurably
+    shorter. (c) REMAINING: the visible "plinth" is the facade family
+    drawing a BLANK GROUND FLOOR on unnamed 6.8m terraces — they are not
+    classified as shophouses, so no five-foot way, no shutters, no base
+    treatment. NEXT: broaden the shophouse classifier (h<=9, row-piece
+    geometry, conservation-area streets by name list: Emerald Hill,
+    Peranakan Place lanes, Chinatown when it lands — that district is WHY
+    this matters at scale).
 15. **Lane dashes straight through junction mouths** (007/016/017/027/043
     + prior triage #6) — the axis/side-street per-metre marking system
     still has no junction gaps.

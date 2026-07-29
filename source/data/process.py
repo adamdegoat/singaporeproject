@@ -1463,6 +1463,52 @@ def main():
         _bset = {id(b) for b in _buried}
         buildings = [b for b in buildings if id(b) not in _bset]
 
+    # ---- POLYGON SURGERY (data/split.py, sweep-2 items 18 and 14) ----------
+    # Rings a carriageway runs THROUGH split into a piece per side (Plaza
+    # Singapura roofed Handy Road at 3m and dodged every prune; the CBD maps
+    # the same way), and long low terrace rows segment every ~16m so each
+    # piece takes its own footing on a slope (Emerald Hill's ground floors
+    # were buried behind a 3m plinth). A failed split keeps the original.
+    try:
+        from split import split_ring_by_road, segment_terrace
+        _split_road, _split_terrace = 0, 0
+        _out2 = []
+        for b in buildings:
+            # RECURSIVE ring-split: one cut removes only the LONGEST
+            # through-road, and a footprint two roads run through leaves both
+            # halves still straddling the second one — P5 counted the same
+            # two intrusions twice the day the surgery landed. Pieces go
+            # back in the queue until nothing runs through them (bounded).
+            queue = [b]
+            done_pieces = []
+            passes = 0
+            while queue and passes < 8:
+                cur = queue.pop()
+                pieces = split_ring_by_road(cur, roads)
+                if pieces:
+                    passes += 1
+                    queue.extend(pieces)
+                else:
+                    done_pieces.append(cur)
+            done_pieces.extend(queue)          # bound hit: keep remainder
+            if passes:
+                _split_road += 1
+                _out2.extend(done_pieces)
+                continue
+            segs = segment_terrace(b)
+            if segs:
+                _split_terrace += 1
+                _out2.extend(segs)
+                continue
+            _out2.append(b)
+        if _split_road or _split_terrace:
+            print(f"  polygon surgery: {_split_road} road-through rings split, "
+                  f"{_split_terrace} terrace rows segmented "
+                  f"({len(buildings)} -> {len(_out2)} footprints)")
+        buildings = _out2
+    except Exception as e:                     # surgery must never kill a build
+        print(f"  polygon surgery SKIPPED: {e}")
+
     # ---- FREE-STANDING TOWERS (the Supertrees) -----------------------------
     # OSM maps the Supertrees individually as `man_made=tower` with REAL
     # positions, while the Grove itself is only a garden polygon -- so the

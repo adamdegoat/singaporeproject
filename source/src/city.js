@@ -470,6 +470,31 @@ function sharedMat(tex, rough, metal) {
 // Seat on the LOWEST ground under the footprint instead. Nothing can then
 // float; the uphill end is buried deeper, which is what a building cut into a
 // slope actually looks like and is invisible from outside.
+// A LOW STREET-FACING BUILDING FOOTS AT ITS STREET EDGE. footingY takes the
+// lowest ground under the whole footprint, which is right for a tower on a
+// slope (bury the uphill side) and WRONG for a shophouse terrace that backs
+// onto falling ground: the rear's low point dragged the whole row down and
+// the street saw a 3m blank plinth where the five-foot way should meet the
+// pavement (Emerald Hill, sweep-2 #14 — segmentation could not fix it
+// because the fall is BEHIND the row, not along it). For those, foot at the
+// ground of the vertex nearest a carriageway and sink only 0.3: the rear
+// sinks into its own hill, which nobody can see and terraces genuinely do.
+export function streetFootingY(pts) {
+  if (!window.__nearestStreet || !window.__onRoad) return footingY(pts);
+  let best = null, bd = Infinity;
+  for (const [x, z] of pts) {
+    // distance to the nearest carriageway, probed coarsely by expanding rings
+    for (let m = 2; m <= 14; m += 3) {
+      if (window.__onRoad(x, z, m)) {
+        if (m < bd) { bd = m; best = [x, z]; }
+        break;
+      }
+    }
+  }
+  if (!best) return footingY(pts);
+  return TERRAIN.at(best[0], best[1]) - 0.3;
+}
+
 export function footingY(pts) {
   let lo = Infinity;
   for (const [x, z] of pts) {
@@ -503,13 +528,15 @@ export function footingY(pts) {
   return lo - 0.9;
 }
 
-// the raw geometry, without wrapping it in a Mesh
+// the raw geometry, without wrapping it in a Mesh. Low buildings (a
+// shophouse, not a tower) foot at their STREET EDGE — see streetFootingY.
 function extrudeGeo(pts, h, y0 = 0) {
   const geo = new THREE.ExtrudeGeometry(shapeFrom(pts), {
     depth: h, bevelEnabled: false, curveSegments: 1,
   });
   geo.rotateX(Math.PI / 2);
-  geo.translate(0, footingY(pts) + y0 + h, 0);
+  const foot = h <= 16 ? streetFootingY(pts) : footingY(pts);
+  geo.translate(0, foot + y0 + h, 0);
   return geo;
 }
 
