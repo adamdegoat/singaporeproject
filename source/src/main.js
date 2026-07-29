@@ -1096,9 +1096,14 @@ async function buildRegion(data) {
     // even the pedestrians stand still). Six renders around the spawn make
     // the neighbourhood GPU-resident before the player can move; the
     // bstep yields let the browser breathe between them.
-    if (!softGPU) {
+    // On a software renderer (the gate harness) the full spin costs over a
+    // minute, but skipping every warm render just moves that cost into the
+    // first loop frame, which freezes long enough to read as a dead loop —
+    // that was a real flake. One render pays the bill inside the loading
+    // bar on both kinds of GPU; only the EXTRA five are real-GPU-only.
+    {
       const eyeY = terrain.at(S.x, S.z) + 2.0;
-      for (let sp = 0; sp < 6; sp++) {
+      for (let sp = 0; sp < (softGPU ? 1 : 6); sp++) {
         const a2 = (sp / 6) * Math.PI * 2;
         camera.position.set(S.x, eyeY, S.z);
         camera.lookAt(S.x + Math.sin(a2) * 60, eyeY + 4, S.z + Math.cos(a2) * 60);

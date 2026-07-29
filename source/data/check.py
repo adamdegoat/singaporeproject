@@ -95,9 +95,23 @@ def check(did):
         L = sum(math.dist(ax["p"][i], ax["p"][i + 1]) for i in range(len(ax["p"]) - 1))
         cov = 100 * L / full
         print(f"   main street coverage: {L:.0f}m of {full:.0f}m ({cov:.0f}%)")
-        if cov < 85:
+        # A district may take part of a long street ON PURPOSE (River Valley
+        # Road runs 4.9km; the rest belongs to a future district). That is a
+        # decision, so it must be written down: a partialMainStreet reason in
+        # districts.json downgrades this to a warning. Silence still fails.
+        partial = None
+        try:
+            reg = json.load(open(os.path.join(HERE, "districts.json")))
+            partial = next((x.get("partialMainStreet") for x in reg["districts"]
+                            if x["id"] == did), None)
+        except Exception:
+            pass
+        if cov < 85 and partial:
+            warn(f"main street {cov:.0f}% covered, declared partial: {partial[:80]}…")
+        elif cov < 85:
             fail(f"district covers only {cov:.0f}% of its main street; "
-                 f"{full - L:.0f}m is outside the bbox")
+                 f"{full - L:.0f}m is outside the bbox. If this is deliberate, "
+                 f"say so: add partialMainStreet with a reason in districts.json")
     elif ax:
         warn("axisFullLength not recorded, so street coverage is unverified")
 

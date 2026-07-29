@@ -60,6 +60,18 @@ try {
   await page.waitForTimeout(1200);
   const bootLeft = await page.evaluate(() => !!document.getElementById('boot'));
   if (info.ready && bootLeft) errors.push('loading overlay still covering the page after ready');
+  // The HUD was sampled AT the ready instant, before the loop had drawn a
+  // single frame — on SwiftShader under load the first frame alone can take
+  // seconds, which read as a dead loop and produced a flaky refusal. Give the
+  // loop an honest window to prove itself: poll until the HUD text changes.
+  if (info.ready && /loading/i.test(info.hud || '')) {
+    try {
+      await page.waitForFunction(
+        () => !/loading/i.test((document.querySelector('#hud') || {}).textContent || ''),
+        null, { timeout: 15000, polling: 250 });
+      info.hud = await page.evaluate(() => (document.querySelector('#hud') || {}).textContent || '');
+    } catch (e) { /* still loading after 15s: the assertion below fires */ }
+  }
   ready = info.ready;
 } catch (e) {
   errors.push('never became ready: ' + String(e.message).slice(0, 160));

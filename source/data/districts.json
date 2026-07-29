@@ -37,7 +37,8 @@
    "axis": "river valley road",
    "status": "building",
    "notes": "The empty square the user pointed at on the map, 2026-07-29: the band between Orchard's south edge and the river. Clarke Quay, Robertson Quay's east end, UE Square, Fort Canning's west flank. Overlaps orchard (to 1.2975 over its 1.2965 south edge), chinatown (1.2880 under its 1.2895 north edge) and brasbasah (103.8460 over its 103.8450 west edge), so the region closes into one block with no seam holes.",
-   "queued_after": "chinatown"
+   "queued_after": "chinatown",
+   "partialMainStreet": "deliberate: River Valley Road runs ~4.9km from Hill Street out past Great World to Kim Seng; this district takes its EAST 1.6km to fill the empty square between Orchard and the river. The western reach belongs to a future Robertson Quay / Great World district. Decided 2026-07-29, not an accident of the bbox."
   },
   {
    "id": "bugis",

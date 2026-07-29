@@ -232,8 +232,9 @@ def added_geometry():
                 depth = min(13, room * 1.05)
                 out.append(("porte-cochere", name,
                             rect(ex + nx * depth / 2, ez + nz * depth / 2, 22, depth, nx, nz)))
+                apron_d = min(depth * 1.12, (room - 0.3) * 2 - depth)
                 out.append(("driveway apron", name,
-                            rect(ex + nx * depth / 2, ez + nz * depth / 2, 24, depth * 1.12, nx, nz)))
+                            rect(ex + nx * depth / 2, ez + nz * depth / 2, 24, apron_d, nx, nz)))
         # ION's canopy is a curved shell whose lowest point is about 12m up, and
         # the pedestrian bridges clear 6m. Overhead structures are not
         # obstructions, and bounding a curved shell as a flat rectangle

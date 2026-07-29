@@ -1213,7 +1213,11 @@ function hotel(api, b) {
         col.castShadow = true; api.world.add(col);
       }
     }
-    const apron = new THREE.Mesh(new THREE.BoxGeometry(24, 0.12, depth * 1.12), api.mat.paving);
+    // far edge stays inside the measured clearance: depth*1.12 centred at
+    // depth/2 reaches depth*1.06 ≈ room*1.11, which is IN the road when the
+    // forecourt is tight (Carlton City Hotel poked 0.1m into Tras Link)
+    const apronD = Math.min(depth * 1.12, (room - 0.3) * 2 - depth);
+    const apron = new THREE.Mesh(new THREE.BoxGeometry(24, 0.12, apronD), api.mat.paving);
     apron.position.set(px, 0.2, pz);
     apron.rotation.y = ang;
     apron.receiveShadow = true; api.world.add(apron);
