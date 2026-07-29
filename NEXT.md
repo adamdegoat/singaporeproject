@@ -254,13 +254,33 @@ across runs, so not snapshot noise.
     car and bus share a lane with 3.0m between centres (needs 8.1m)
     car and bus share a lane with 8.0m between centres (needs 8.1m)
 
-Two pairs are 10cm short and two are genuine -- a car inside a bus. NEXT.md
-already records the fix that was supposed to make this impossible: "the
-no-overlap invariant is ENFORCED after integration rather than braked towards"
-and "a queue has an order, sort the lane and walk it from the front". So either
-that enforcement is not running for these pairs, or the lane sort is putting a
-car and a bus in different lanes when they are in the same one. Start by
-printing the lane assignment for the pair at -407,6687.
+Two pairs are 10cm short and two are genuine -- a car inside a bus.
+
+**One real cause found and fixed, and it did NOT close the check.** The
+enforcement bucketed vehicles by `Math.round(it.lane * 2)`, a quantised key,
+while D34 calls anything within 2.6m laterally the same lane -- so a car at
+lane 1.0 and a bus at 2.4 were never enforced against each other. Fourth
+instance this session of a quantised description disagreeing with a measured
+one. It now groups by direction, sorts along travel, and applies the check's
+own 2.6m rule against the six vehicles ahead.
+
+**Still 8 after that, and here is the measurement to start from.** Three
+vehicles share lane 3.64, dir 1:
+
+    bus s=221  car s=218   gap 3.0, needs 8.06
+    bus s=221  car s=213   gap 8.0, needs 8.06
+
+The enforcement walks that lane leader-first and should push the car at 218
+back to 221 - 9.66. It does not. Only ONE Traffic instance exists (checked),
+so they are all in `this.items`. Two threads worth pulling:
+
+  * The enforcement runs BEFORE integration by design (the comment owns that
+    one-frame lag). Confirm it is actually REACHED for these items -- print
+    from inside the loop, not from `__trafficState` afterwards.
+  * **Recycling assigns `s` without looking at the others**: `spread = EDGE +
+    ((it.i * 53) % 260)`, and its own comment says it "keeps the fleet apart
+    without needing to look at where the others are". Indices differing by 5
+    land 5m apart, under the 8.06m a car and bus need.
 
 ### The old D36 note, kept for the reasoning
 

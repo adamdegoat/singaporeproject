@@ -1084,10 +1084,26 @@ export class Traffic {
     // Runs before integration, so it corrects last frame's positions — the same
     // one-frame lag the gait and the crowd separation already use.
     {
+      // "SAME LANE" MEANS THE SAME THING HERE AS IT DOES TO THE CHECK.
+      //
+      // This bucketed by `Math.round(it.lane * 2)`, a quantised key -- so a car
+      // at lane 1.0 and a bus at 2.4 landed in different buckets and were never
+      // enforced against each other, while D34 calls anything within 2.6m
+      // laterally the same lane and duly reported them 3.0m apart needing 8.1m.
+      // Two descriptions of one fact, and the quantised one was wrong: the
+      // FOURTH time this session, after the street-name plate measured to a
+      // vertex, `claim`'s single-cell hash, and the pedestrian band's
+      // whole-metre buckets.
+      //
+      // Grouped by DIRECTION only now, sorted along travel, and each vehicle is
+      // tested against the few ahead of it with the same 2.6m lateral rule the
+      // check uses. Sorting is O(n log n) on 45 vehicles a side and the inner
+      // walk is bounded, so this is cheaper than the map it replaces.
+      const LANE_SAME = 2.6, LOOK = 6;
       const lanes = this._lanes || (this._lanes = new Map());
       for (const [, list] of lanes) list.length = 0;
       for (const it of this.items) {
-        const k = it.dir + ',' + Math.round(it.lane * 2);
+        const k = String(it.dir);
         let list = lanes.get(k);
         if (!list) { list = []; lanes.set(k, list); }
         list.push(it);
@@ -1097,11 +1113,15 @@ export class Traffic {
         // leader first: furthest along in the direction of travel
         list.sort((a, b) => (b.s - a.s) * a.dir);
         for (let k = 1; k < list.length; k++) {
-          const lead = list[k - 1], back = list[k];
-          const stop = (VLEN[lead.kind] + VLEN[back.kind]) / 2 + 1.6;
-          if ((lead.s - back.s) * back.dir < stop) {
-            back.s = lead.s - back.dir * stop;
-            if (back.speed > 0) back.speed = 0;
+          const back = list[k];
+          for (let m = 1; m <= LOOK && k - m >= 0; m++) {
+            const lead = list[k - m];
+            if (Math.abs(lead.lane - back.lane) > LANE_SAME) continue;
+            const stop = (VLEN[lead.kind] + VLEN[back.kind]) / 2 + 1.6;
+            if ((lead.s - back.s) * back.dir < stop) {
+              back.s = lead.s - back.dir * stop;
+              if (back.speed > 0) back.speed = 0;
+            }
           }
         }
       }
