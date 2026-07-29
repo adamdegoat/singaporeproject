@@ -278,6 +278,11 @@ window.__auditWorld = async function auditWorld() {
     const g = o.geometry, pr = g.parameters || {};
     const sig = `${g.type}(${[pr.radiusTop, pr.width, pr.height, pr.depth, pr.radius]
       .filter((v) => v != null).map((v) => +v.toFixed(2)).join(',')})`;
+    // material identity rides SEPARATELY from sig: several exemption sets
+    // (CLUSTERED, ROAD_OK, MOUNTED, CANOPY...) match sig strings exactly, and
+    // appending the material there would silently revoke every one of them —
+    // the allowlist trap this file already documents. Only P4 reads .mat.
+    const matId = o.material ? (o.material.name || o.material.uuid.slice(0, 6)) : '';
     for (let i = 0; i < o.count; i++) {
       o.getMatrixAt(i, m4);
       v3.setFromMatrixPosition(m4).applyMatrix4(o.matrixWorld);
@@ -285,7 +290,7 @@ window.__auditWorld = async function auditWorld() {
       // extends rather than only where its origin is
       const sc3 = new T.Vector3();
       m4.decompose(new T.Vector3(), new T.Quaternion(), sc3);
-      props.push({ sig, x: v3.x, y: v3.y, z: v3.z, sy: sc3.y,
+      props.push({ sig, mat: matId, x: v3.x, y: v3.y, z: v3.z, sy: sc3.y,
                    flat: g.type === 'PlaneGeometry' });
     }
   });
@@ -741,17 +746,23 @@ window.__auditWorld = async function auditWorld() {
     let dup = 0; const ex = [];
     for (const p of props) {
       if (p.flat || CLUSTERED.has(p.sig)) continue;
+      // the P4 key includes the MATERIAL: a painted kerb section abutting a
+      // plain kerb section is the same box in two materials 60cm apart —
+      // correct furniture at every crossing mouth, not duplication. Material
+      // rides on p.mat rather than inside sig, because the exemption sets
+      // above match sig strings exactly.
+      const psig = p.sig + (p.mat ? '@' + p.mat : '');
       const cx = Math.floor(p.x), cz = Math.floor(p.z);
       let hit = false;
       for (let dx = -1; dx <= 1 && !hit; dx++)
         for (let dz = -1; dz <= 1 && !hit; dz++) {
-          const list = g2.get(p.sig + '|' + (cx + dx) + ',' + (cz + dz));
+          const list = g2.get(psig + '|' + (cx + dx) + ',' + (cz + dz));
           if (!list) continue;
           for (const q of list)
             if ((q[0] - p.x) ** 2 + (q[1] - p.z) ** 2 < NEAR * NEAR) { hit = true; break; }
         }
       if (hit) { dup++; ex.push(`${p.sig} at ${p.x | 0},${p.z | 0}`); }
-      const k = p.sig + '|' + cx + ',' + cz;
+      const k = psig + '|' + cx + ',' + cz;
       if (!g2.has(k)) g2.set(k, []);
       g2.get(k).push([p.x, p.z]);
     }

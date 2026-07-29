@@ -1867,6 +1867,385 @@ function theCathay(api, b) {
 // floors above). HEIGHT IN METRES IS UNPUBLISHED -- not in Wikipedia, Roots,
 // Bonvests, CTBUH or any leasing database -- so the mapped 45m stands and the
 // recipe does NOT invent one from the 21 storeys.
+// SCHOOL OF THE ARTS (SOTA), 1 Zubir Said Drive. research/sota.md. 56m/10
+// floors (CTBUH). Two strata: the "Backdrop" podium (~26m, leaning brown
+// piers, three-grey striped fascia) and the "Blank Canvas" — THREE parallel
+// 6-storey bars (depth ~14m, pitch ~28.5m, staggered ends, centre bar
+// longest) wearing the green ribbon curtain, fin-comb gable ends, dark glass
+// boxes bridging the slots. Bar dims are measured-from-plans, ±6%, labelled
+// derived; the split of 56 into 26+30 is measured from dated photos.
+function sota(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const white = api.mat.paintedWhite, ribbons = api.mat.sotaRibbons;
+  const H = b.h;                                    // 56 published
+  const podium = H * 0.46;                          // ~26m measured split
+  const c = [ob.cx, ob.cz];
+
+  // the Backdrop: dark plinth, white walls, striped fascia crown
+  api.world.add(api.extrude(api.grow(b.p, 0.99), 3.0, api.mat.darkCurtain));
+  api.world.add(api.extrude(b.p, podium - 7.0, white, 3.0));
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.005), 1.4, podium - 4.0), api.mat.paleStone, c[0], c[1]);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.005), 1.3, podium - 2.6), api.mat.warmStone, c[0], c[1]);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.005), 1.3, podium - 1.3), api.mat.darkCurtain, c[0], c[1]);
+
+  // leaning board-marked piers on the street faces
+  const sw = streetward(api, ob);
+  const yaw = Math.atan2(sw.nx, sw.nz);
+  const tX = Math.cos(yaw), tZ = -Math.sin(yaw);
+  let fd = 0;
+  while (fd < 70 && pointInRing(ob.cx + sw.nx * fd, ob.cz + sw.nz * fd, b.p)) fd += 0.5;
+  const pn = 6, span = Math.min(ob.halfLong * 1.5, 70);
+  for (let i = 0; i < pn; i++) {
+    const u = -span / 2 + (i + 0.5) * (span / pn) + (i % 2 ? 2.2 : -1.6);
+    const px = ob.cx + tX * u + sw.nx * (fd - 0.4), pz = ob.cz + tZ * u + sw.nz * (fd - 0.4);
+    if (onCarriageway(px, pz, 0.4)) continue;
+    if (!pointInRing(px - sw.nx * 1.6, pz - sw.nz * 1.6, b.p)) continue;
+    const pier = new THREE.Mesh(new THREE.BoxGeometry(2.3, podium - 6.5, 1.1), api.mat.boardConc);
+    pier.position.set(px, g0 + 3.0 + (podium - 6.5) / 2, pz);
+    pier.rotation.y = yaw;
+    pier.rotation.z = (i % 2 ? 1 : -1) * 0.16;      // the 10-20 degree lean
+    pier.castShadow = true;
+    api.world.add(pier);
+  }
+
+  // the Blank Canvas: three bars along the long axis, staggered at one end.
+  // slab() places boxes in the oriented-box frame: u along, v across.
+  const barH = H - podium, dep = Math.min(14, ob.halfShort * 0.42);
+  const pitch = Math.min(28.5, ob.halfShort * 0.9);
+  // Each bar is CONSTRAINED TO THE FOOTPRINT along its own centreline — the
+  // oriented box is the SITE's box and centring published lengths in it hung
+  // bar ends over Zubir Said Drive, where pruneCarriageway rightly ate them
+  // and left the gable panels floating. Scan the ring in the OB FRAME (the
+  // same mapping slab() uses), and pass g0 into every slab: slab y is
+  // ABSOLUTE, the orchardCentral trap.
+  const stag = [0.86, 1.0, 0.92];                    // centre bar projects
+  const obPt = (u, v) => [ob.cx + ob.ux * u - ob.uz * v, ob.cz + ob.uz * u + ob.ux * v];
+  for (let bi = 0; bi < 3; bi++) {
+    const v = (bi - 1) * pitch;
+    let uMin = 1e9, uMax = -1e9;
+    for (let d2 = -ob.halfLong - 2; d2 <= ob.halfLong + 2; d2 += 0.5) {
+      const [ux2, uz2] = obPt(d2, v);
+      if (pointInRing(ux2, uz2, b.p)) { if (d2 < uMin) uMin = d2; if (d2 > uMax) uMax = d2; }
+    }
+    if (uMax - uMin < 20) continue;
+    const flush = uMax - 1.0;
+    const L = (flush - (uMin + 1.0)) * stag[bi];
+    const u0 = flush - L / 2;
+    slab(api, ob, u0, v, L, dep, g0 + podium, barH, white);
+    // green ribbon curtain proud of both long faces
+    for (const s2 of [-1, 1]) {
+      slab(api, ob, u0, v + s2 * (dep / 2 + 0.18), L * 0.96, 0.14, g0 + podium + 0.5, barH - 1.6, ribbons);
+    }
+    // per-floor slab bands so the curtain hangs off real edges
+    for (let k = 1; k <= 6; k++) {
+      slab(api, ob, u0, v, L * 1.005, dep * 1.06, g0 + podium + k * (barH / 6) - 0.4, 0.42, white);
+    }
+    // fin-comb gable at the staggered (-u) end: glazed panel overshooting the
+    // roof, white frame, and the COMB — thin white uprights over the glass
+    slab(api, ob, u0 - L / 2 - 0.3, v, 0.5, dep * 0.9, g0 + podium, barH + 1.0, api.mat.blueGlass);
+    slab(api, ob, u0 - L / 2 - 0.42, v, 0.24, dep * 0.98, g0 + podium, barH + 1.2, white);
+    const fins = 9;
+    for (let fi = 0; fi < fins; fi++) {
+      const fv = v - dep * 0.42 + (fi + 0.5) * (dep * 0.84 / fins);
+      slab(api, ob, u0 - L / 2 - 0.55, fv, 0.18, 0.3, g0 + podium, barH + 1.3, white);
+    }
+  }
+  // dark glass boxes bridging the slots at mid height
+  for (const s of [-0.5, 0.5]) {
+    slab(api, ob, ob.halfLong * 0.18, s * pitch, 16, pitch - dep, g0 + podium + barH * 0.35, barH * 0.38, api.mat.darkCurtain);
+  }
+}
+
+// SHAW HOUSE, 350 Orchard Road x Scotts. research/shaw-house.md. Height
+// UNPUBLISHED anywhere (OSM says 0) — 90 kept as a flagged estimate. The
+// signature is the ~6-storey convex granite DRUM addressing the junction
+// diagonally, roof garden spilling over its parapet, over black columns and
+// a glazed base; the office slab rises set back behind with white spandrel /
+// blue-green ribbon banding.
+function shawHouse(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const granite = api.mat.shawGranite, glass = api.mat.blueGlass, white = api.mat.paintedWhite;
+  const H = b.h;
+  const podium = 24;                               // 6 storeys
+  const c = [ob.cx, ob.cz];
+
+  // podium on the footprint, granite, over a double-height glazed base
+  api.world.add(api.extrude(api.grow(b.p, 0.985), 6.5, api.mat.darkCurtain));
+  api.world.add(api.extrude(b.p, podium - 6.5, granite, 6.5));
+
+  // office slab set back above, banded: white spandrels / blue-green ribbons
+  const inset = b.p.map(([x, z]) => [c[0] + (x - c[0]) * 0.7, c[1] + (z - c[1]) * 0.7]);
+  const floors = Math.max(8, Math.round((H - podium) / 3.7));
+  const fh = (H - podium) / floors;
+  for (let k = 0; k < floors; k++) {
+    const y = podium + k * fh;
+    api.merge(api.extrudeGeo(inset, fh * 0.5, y + fh * 0.5), white, c[0], c[1]);
+    api.merge(api.extrudeGeo(api.grow(inset, 0.985), fh * 0.5, y), glass, c[0], c[1]);
+  }
+
+  // THE DRUM at the junction corner: the corner of the frontage nearest a
+  // second street. Approximated as a granite cylinder proud of the podium
+  // corner, with a dark recessed slot near its top, the SHAW fascia band,
+  // and greenery over the parapet.
+  const sw = streetward(api, ob);
+  const yaw = Math.atan2(sw.nx, sw.nz);
+  const tX = Math.cos(yaw), tZ = -Math.sin(yaw);
+  let fd = 0;
+  while (fd < 60 && pointInRing(ob.cx + sw.nx * fd, ob.cz + sw.nz * fd, b.p)) fd += 0.5;
+  // scan the frontage for the corner: last along-street point still inside
+  let ce = 0, cs = 1;
+  for (const s of [-1, 1]) {
+    let e2 = 0;
+    for (let d2 = 0; d2 <= ob.halfLong + 1; d2 += 0.5) {
+      if (pointInRing(ob.cx + tX * s * d2 + sw.nx * (fd - 3), ob.cz + tZ * s * d2 + sw.nz * (fd - 3), b.p)) e2 = d2;
+    }
+    if (e2 > ce) { ce = e2; cs = s; }
+  }
+  const dr = 11;                                   // drum radius
+  const dx = ob.cx + tX * cs * (ce - dr * 0.4) + sw.nx * (fd - dr * 0.45);
+  const dz = ob.cz + tZ * cs * (ce - dr * 0.4) + sw.nz * (fd - dr * 0.45);
+  const drumH = podium + 2.5;
+  if (!onCarriageway(dx, dz, 0.5)) {
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(dr, dr, drumH - 6.5, 28), granite);
+    drum.position.set(dx, g0 + 6.5 + (drumH - 6.5) / 2, dz);
+    drum.castShadow = true; drum.receiveShadow = true;
+    api.world.add(drum);
+    // glazed base under the drum with black columns
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(dr * 0.96, dr * 0.96, 6.5, 28), api.mat.darkCurtain);
+    base.position.set(dx, g0 + 3.25, dz);
+    api.world.add(base);
+    for (let a = 0; a < 6; a++) {
+      const th = yaw + (a / 6) * Math.PI * 2;
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 6.5, 10), api.mat.darkMetal || api.mat.darkCurtain);
+      col.position.set(dx + Math.sin(th) * dr * 0.82, g0 + 3.25, dz + Math.cos(th) * dr * 0.82);
+      api.world.add(col);
+    }
+    // the recessed dark slot near the drum top
+    const slot = new THREE.Mesh(new THREE.CylinderGeometry(dr * 1.005, dr * 1.005, 1.6, 28), api.mat.darkCurtain);
+    slot.position.set(dx, g0 + drumH - 4.2, dz);
+    api.world.add(slot);
+    // roof garden spilling over the parapet: a green ring
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(dr * 1.04, dr * 1.04, 1.1, 28), api.mat.jadeRoof);
+    ring.position.set(dx, g0 + drumH + 0.4, dz);
+    ring.castShadow = false;
+    api.world.add(ring);
+  }
+}
+
+// PULLMAN SINGAPORE ORCHARD, 270 Orchard Road. research/pullman.md. A dark
+// rectilinear prism, ~48m/14 storeys (Emporis, as Crown Prince Hotel) — NOT
+// 92m, NOT a diagrid: the "crystal" is a herringbone chevron EMBOSSED in
+// dark glass, so it is a texture on a plain box. 4-storey Knightsbridge
+// podium flush to the pavement with Apple's 36.5m clear-glass storefront and
+// thin white canopy; an 8-storey media wall over the podium on the Orchard
+// face.
+function pullmanOrchard(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const chev = api.mat.chevronGlass;
+  const H = b.h;
+  const podium = Math.min(16, H * 0.34);           // 4 storeys
+  const c = [ob.cx, ob.cz];
+
+  // one dark prism, podium and tower in the same skin (the real building
+  // reads as a single monolith), Apple's bright base cut into the front
+  api.world.add(api.extrude(b.p, H, chev));
+
+  const sw = streetward(api, ob);
+  const yaw = Math.atan2(sw.nx, sw.nz);
+  const tX = Math.cos(yaw), tZ = -Math.sin(yaw);
+  let fd = 0;
+  while (fd < 60 && pointInRing(ob.cx + sw.nx * fd, ob.cz + sw.nz * fd, b.p)) fd += 0.5;
+  const bx = ob.cx + sw.nx * (fd + 0.12), bz = ob.cz + sw.nz * (fd + 0.12);
+
+  // Apple storefront: published 36.5m of clear glass under a thin white
+  // stone canopy projecting 7.6m — capped here by what stays clear of the
+  // carriageway, because a published canopy and an invented road width can
+  // still disagree
+  const aw = Math.min(36.5, ob.halfLong * 1.4);
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(aw, 6.2, 0.6), api.mat.brightGlass);
+  glass.position.set(bx, g0 + 3.1, bz);
+  glass.rotation.y = yaw;
+  api.world.add(glass);
+  let reach = 7.6;
+  while (reach > 1.2 && onCarriageway(bx + sw.nx * reach, bz + sw.nz * reach, 0.4)) reach -= 0.4;
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(aw * 0.72, 0.35, reach), api.mat.paintedWhite);
+  canopy.position.set(bx + sw.nx * (reach / 2), g0 + 6.4, bz + sw.nz * (reach / 2));
+  canopy.rotation.y = yaw;
+  canopy.castShadow = true;
+  api.world.add(canopy);
+
+  // the media wall: 8 storeys of glowing panel over the podium, Orchard face
+  const mh = Math.min(H - podium - 1.5, 8 * 3.2);
+  const media = new THREE.Mesh(new THREE.BoxGeometry(Math.min(15, aw * 0.5), mh, 0.4), api.mat.mediaWall);
+  media.position.set(bx - tX * aw * 0.2, g0 + podium + mh / 2, bz - tZ * aw * 0.2);
+  media.rotation.y = yaw;
+  api.world.add(media);
+}
+
+// CONCORDE HOTEL, 100 Orchard Road. research/concorde.md. NOT a tower: 9
+// storeys (3-storey podium + hotel L4-9), and NOT curved in plan — a straight
+// slab parallel to the road whose SECTION rakes back: each hotel floor steps
+// away from Orchard like ship decks, every band edge trailing green. East
+// gable is a blank white gridded wall with the black logo panel — the first
+// thing a rider sees coming from Dhoby Ghaut. h=30 derived from storeys.
+function concordeHotel(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const white = api.mat.paintedWhite, dark = api.mat.darkCurtain;
+  const green = api.mat.canopyFringe || api.mat.paintedWhite;
+  const H = b.h;
+  const podium = Math.min(11, H * 0.37);           // 3 storeys
+  const c = [ob.cx, ob.cz];
+
+  // podium: dark glazed shopfront strip at street level, white tile above
+  api.world.add(api.extrude(api.grow(b.p, 0.985), 4.2, dark));
+  api.world.add(api.extrude(b.p, podium - 4.2, white, 4.2));
+
+  // the raked slab: six hotel floors, each inset a step further from the
+  // street side. The step is applied by shrinking toward a line BEHIND the
+  // centroid so only the street face retreats — shrinking to the centroid
+  // pulled all four faces in and made a ziggurat, which the real slab is not.
+  const sw = streetward(api, ob);
+  // distance from centroid to the street face, walked once — the rake CAPS
+  // vertices at a receding front plane. Translating the whole ring instead
+  // marched the rear face out over the neighbours and left the street face
+  // flush, which the first render showed.
+  let fd0 = 0;
+  while (fd0 < 80 && pointInRing(ob.cx + sw.nx * fd0, ob.cz + sw.nz * fd0, b.p)) fd0 += 0.5;
+  const floors = 6, fh = (H - podium) / floors;
+  for (let k = 0; k < floors; k++) {
+    const y = podium + k * fh;
+    const back = k * 1.15;                          // metres of step, per floor
+    const cap = fd0 - back;
+    const p2 = b.p.map(([x, z]) => {
+      const d = (x - ob.cx) * sw.nx + (z - ob.cz) * sw.nz;
+      if (d <= cap) return [x, z];
+      return [x - sw.nx * (d - cap), z - sw.nz * (d - cap)];
+    });
+    // white fascia band with the dark ribbon glazing recessed under it
+    api.merge(api.extrudeGeo(p2, fh * 0.42, y + fh * 0.58), white, c[0], c[1]);
+    api.merge(api.extrudeGeo(api.grow(p2, 0.985), fh * 0.58, y), dark, c[0], c[1]);
+    // trailing planting over each band edge, street side only: a slim green
+    // strip lying along the fascia, built with extrudeGeo like every other
+    // merged piece (a raw Box merged via a mesh matrix never rendered — the
+    // matrix was identity until updateMatrix, and the footing offset is
+    // extrudeGeo's job anyway)
+    {
+      const gx = ob.cx + sw.nx * (cap - 0.55), gz = ob.cz + sw.nz * (cap - 0.55);
+      const lx2 = -sw.nz, lz2 = sw.nx, hl = ob.halfLong * 0.8, dp = 0.3;
+      const strip = [
+        [gx - lx2 * hl - sw.nx * dp, gz - lz2 * hl - sw.nz * dp],
+        [gx + lx2 * hl - sw.nx * dp, gz + lz2 * hl - sw.nz * dp],
+        [gx + lx2 * hl + sw.nx * dp, gz + lz2 * hl + sw.nz * dp],
+        [gx - lx2 * hl + sw.nx * dp, gz - lz2 * hl + sw.nz * dp],
+      ];
+      api.merge(api.extrudeGeo(strip, 0.55, y + fh * 0.99), api.mat.jadeRoof, c[0], c[1]);
+    }
+  }
+
+  // the gable logo panels, one per slab end, proud of the end face. Anchored
+  // to the ORIENTED BOX extremes — a ring-walk from the centroid stopped at
+  // an interior notch of this 9,500m2 plan and hung the panel mid-roof — and
+  // kept below the raked top storey so it reads on the wall, not the sky.
+  const lx = -sw.nz, lz = sw.nx;                   // along-street direction
+  for (const s of [-1, 1]) {
+    // the oriented box of this irregular plan reaches past the walls (the
+    // documented ob trap) — scan for the LAST point inside the ring instead,
+    // which also steps over interior notches
+    let eEnd = 0;
+    for (let d2 = 0; d2 <= ob.halfLong + 1; d2 += 0.5) {
+      if (pointInRing(ob.cx + lx * s * d2, ob.cz + lz * s * d2, b.p)) eEnd = d2;
+    }
+    if (eEnd < 4) continue;
+    const ex = ob.cx + lx * s * (eEnd + 0.3);
+    const ez = ob.cz + lz * s * (eEnd + 0.3);
+    if (onCarriageway(ex, ez, 0.3)) continue;
+    const logo = new THREE.Mesh(new THREE.BoxGeometry(7.5, 2.4, 0.3), api.mat.darkMetal || dark);
+    logo.position.set(ex, g0 + podium + (H - podium) * 0.62, ez);
+    logo.rotation.y = Math.atan2(lx, lz);
+    api.world.add(logo);
+  }
+}
+
+// FAR EAST SHOPPING CENTRE, 545 Orchard Road. research/far-east-shopping-centre.md.
+// 1974, BEP Akitek. Everything painted white. 5-storey podium with rounded
+// vertical ribs over a recessed dark arcade; 10-storey office block above as
+// stacked white trays with dark recessed glass strips; curved corner blade
+// with gold Chinese characters at the Orchard/Angullia corner. h=51 is
+// DERIVED (15 storeys) — metres unpublished; the old 75 was the frontage
+// length mis-tagged as height.
+function farEastShopping(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const white = api.mat.paintedWhite, dark = api.mat.darkCurtain;
+  const H = b.h;
+  const podium = Math.min(19, H * 0.38);           // 5 storeys
+  const c = [ob.cx, ob.cz];
+
+  // podium: the full footprint, white, with a dark recessed arcade at street
+  // level (the shaded jeweller row) read as a 3.4m dark band under the mass
+  api.world.add(api.extrude(b.p, podium - 3.4, white, 3.4));
+  api.world.add(api.extrude(api.grow(b.p, 0.965), 3.4, dark));
+
+  // rounded vertical ribs along the street frontage — the podium signature.
+  // Thin white uprights proud of the wall; the bullnose cannot read at ride
+  // speed, the RHYTHM can.
+  const sw = streetward(api, ob);
+  const yaw = Math.atan2(sw.nx, sw.nz);
+  const tX = Math.cos(yaw), tZ = -Math.sin(yaw);
+  let f = 0;
+  while (f < 60 && pointInRing(ob.cx + sw.nx * f, ob.cz + sw.nz * f, b.p)) f += 0.5;
+  const bx = ob.cx + sw.nx * (f + 0.12), bz = ob.cz + sw.nz * (f + 0.12);
+  const bandW = Math.min(64, ob.halfLong * 1.8);
+  const nRib = Math.max(8, Math.round(bandW / 4.2));
+  for (let i = 0; i < nRib; i++) {
+    const u = -bandW / 2 + (i + 0.5) * (bandW / nRib);
+    const rx = bx + tX * u, rz = bz + tZ * u;
+    if (onCarriageway(rx, rz, 0.3)) continue;
+    // a rib must have podium wall behind it — the frontage line runs past
+    // the building's own corner and the overhang stood ribs on nothing
+    if (!pointInRing(rx - sw.nx * 1.6, rz - sw.nz * 1.6, b.p)) continue;
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(1.0, podium - 4.2, 0.5), white);
+    rib.position.set(rx, g0 + 3.4 + (podium - 4.2) / 2, rz);
+    rib.rotation.y = yaw;
+    rib.castShadow = false; rib.receiveShadow = true;
+    api.world.add(rib);
+  }
+
+  // office block: inset, stacked trays — thick white band, thin dark strip,
+  // ten repeats. The faceted-corner silhouette comes free from the inset
+  // footprint keeping the plan's own corner cuts.
+  const inset = b.p.map(([x, z]) => [c[0] + (x - c[0]) * 0.6, c[1] + (z - c[1]) * 0.6]);
+  const floors = 10, fh = (H - podium) / floors;
+  for (let k = 0; k < floors; k++) {
+    const y = podium + k * fh;
+    api.merge(api.extrudeGeo(inset, fh * 0.6, y + fh * 0.4), white, c[0], c[1]);
+    api.merge(api.extrudeGeo(api.grow(inset, 0.965), fh * 0.4, y), dark, c[0], c[1]);
+  }
+  // low stepped parapet
+  api.merge(api.extrudeGeo(api.grow(inset, 1.01), 1.1, H), white, c[0], c[1]);
+
+  // the corner blade: a curved white panel at the frontage end carrying the
+  // gold 遠東 characters — the most photographed identifier. A flat blade
+  // with an emissive gold strip reads correctly at street distance.
+  const cu = bandW / 2 + 1.2;
+  const cxp = bx + tX * cu, czp = bz + tZ * cu;
+  if (!onCarriageway(cxp, czp, 0.4)) {
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(3.2, podium + 6, 1.0), white);
+    blade.position.set(cxp, g0 + (podium + 6) / 2, czp);
+    blade.rotation.y = yaw + 0.5;
+    blade.castShadow = true;
+    api.world.add(blade);
+    const goldStrip = new THREE.Mesh(new THREE.BoxGeometry(1.1, podium + 1, 0.24), api.mat.goldSign);
+    goldStrip.position.set(cxp + sw.nx * 0.55, g0 + (podium + 6) / 2 + 1.4, czp + sw.nz * 0.55);
+    goldStrip.rotation.y = yaw + 0.5;
+    api.world.add(goldStrip);
+  }
+}
+
 function liatTowers(api, b) {
   const ob = orientedBox(b.p);
   const g0 = api.footingY(b.p);
@@ -2748,6 +3127,11 @@ function nomadSingapore(api, b) {
 }
 
 export const RECIPES = [
+  [/far east shopping/i, farEastShopping],
+  [/^concorde hotel/i, concordeHotel],
+  [/pullman singapore orchard/i, pullmanOrchard],
+  [/^shaw house/i, shawHouse],
+  [/school of the arts/i, sota],
   [/^sma house|^mdis house/i, smaHouse],
   [/nomad singapore|faber house/i, nomadSingapore],
   [/one raffles link/i, oneRafflesLink],

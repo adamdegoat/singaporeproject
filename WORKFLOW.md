@@ -9,6 +9,39 @@ rediscovery; nothing after it should.
 
 ---
 
+## The operating loop (written 2026-07-29, after auditing a day of it)
+
+The rhythm that turned out to work, one batch at a time:
+
+1. **Start from NEXT.md's top block.** Do not re-derive state.
+2. **Research runs one batch AHEAD of building.** Fire research agents for
+   the NEXT batch of landmarks while building the current one; the moment a
+   report lands, persist a compact build spec to `research/<name>.md` —
+   reports that live only in a conversation die with it. Prompts must
+   demand published figures, UNPUBLISHED labels, and explicit correction of
+   false premises; 9 of 9 reports so far corrected something, four of five
+   mapped heights were wrong.
+3. **Build with inline vets, not gates.** While coding: `landmark.mjs` solo
+   comparisons for recipes, targeted probe scripts for placement, one
+   screenshot per iteration. The gates stay untouched during building.
+4. **One deploy per batch, and deploy IS the gate.** `deploy.sh` runs the
+   whole suite internally and refuses to publish on a regression — running
+   `gates.sh` first and then deploying pays the same 10 minutes twice.
+   Reserve a bare `gates.sh` for diagnosing a failure someone already found.
+5. **Sweep-review after CONTENT batches only.** Regenerate
+   `data/sweep.mjs --shots` and fan review agents over the 220 frames after
+   changes a rider can see; skip it for infra/boot/tooling work. Findings
+   are CLAIMS: verify with a probe before fixing, and triage into NEXT.md
+   so they survive the session.
+6. **Agents for research and mass review; everything else inline.** A grep,
+   a probe, a vet render is faster and cheaper done directly.
+7. **Batch the bookkeeping.** NEXT.md and the memory update once per batch,
+   at the end, not per edit.
+
+What this optimises: wall-clock (the laptop's browser runs are the scarce
+resource, not tokens), attribution (a red check points at one small batch),
+and durability (specs and triage live in files, not in a chat).
+
 ## Adding a district
 
 **1. Register it.** Add an entry to `data/districts.json`:

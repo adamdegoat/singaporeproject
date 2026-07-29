@@ -349,6 +349,59 @@ export function texCentreDash(markM, gapM) {
   return t;
 }
 
+// Pullman Orchard's skin (research/pullman.md): dark tinted glass with a
+// herringbone of thin lighter chevron stripes EMBOSSED in the panels — a
+// printed texture in reality too, so a texture is the honest model. No RNG:
+// the weave is a regular fabric pattern.
+// SOTA's green curtain (research/sota.md): vertical ribbons of climbing
+// plants at deliberately irregular width and spacing — WOHA: "inspired by a
+// musical score" — ~51% coverage over pale concrete. Own RNG stream.
+export function texSotaRibbons() {
+  const S = 256, [c, x] = cvs(S);
+  const r2 = rng(0x736f7461);            // "sota"
+  x.fillStyle = '#e5e7e3'; x.fillRect(0, 0, S, S);
+  const greens = ['#90a151', '#7d9147', '#a8b95e', '#5c6f33'];
+  let u = 0;
+  while (u < S) {
+    const w = 8 + r2() * 34;             // 1-4m at ~10m tile
+    if (r2() < 0.62) {
+      x.fillStyle = greens[(r2() * greens.length) | 0];
+      x.fillRect(u, 0, w, S);
+      // ragged strand edges so the band reads as growth, not paint
+      x.fillStyle = 'rgba(229,231,227,0.5)';
+      for (let yy = 0; yy < S; yy += 9) {
+        if (r2() < 0.4) x.fillRect(u + w - 3, yy, 3, 5);
+        if (r2() < 0.4) x.fillRect(u, yy + 4, 2, 5);
+      }
+    }
+    u += w + 4 + r2() * 18;              // 0.5-2.5m gaps
+  }
+  return finish(c);
+}
+
+export function texChevron() {
+  const S = 256, [c, x] = cvs(S);
+  x.fillStyle = '#232930'; x.fillRect(0, 0, S, S);
+  x.strokeStyle = 'rgba(168,182,194,0.42)'; x.lineWidth = 3;
+  const col = 32;
+  for (let cx0 = 0; cx0 < S; cx0 += col) {
+    const dir = (cx0 / col) % 2 ? 1 : -1;
+    for (let yy = -col; yy < S + col; yy += col) {
+      x.beginPath();
+      x.moveTo(cx0, yy + (dir > 0 ? 0 : col));
+      x.lineTo(cx0 + col, yy + (dir > 0 ? col : 0));
+      x.stroke();
+    }
+  }
+  // faint panel joints so the box reads as curtain wall, not vinyl
+  x.strokeStyle = 'rgba(12,14,16,0.55)'; x.lineWidth = 2;
+  for (let p = 0; p <= S; p += 64) {
+    x.beginPath(); x.moveTo(p, 0); x.lineTo(p, S); x.stroke();
+    x.beginPath(); x.moveTo(0, p); x.lineTo(S, p); x.stroke();
+  }
+  return finish(c);
+}
+
 export function texTactile() {
   const S = 128, [c, x] = cvs(S);
   const r2 = rng(0x74616374);            // "tact"

@@ -63,8 +63,15 @@ LANDMARKS = {
     "tang plaza":             {"h": 118, "key": True},   # VERIFIED 33 storeys
     "tangs":                  {"h": 26,  "key": True},
     "singapore marriott":     {"h": 118, "key": True},   # VERIFIED, same tower
+    # Shaw House: height UNPUBLISHED anywhere (checked 2026-07-29,
+    # research/shaw-house.md — OSM even carries height=0), 22-storey complex
+    # per Shaw's own history. 90 stays as a FLAGGED ESTIMATE only. Shaw
+    # Centre behind it is published ~100m (SkyscraperPage, 1972).
     "shaw house":             {"h": 90},
-    "shaw centre":            {"h": 90},
+    "shaw centre":            {"h": 100},
+    # SOTA: CTBUH building 16766 publishes 56m / 10 floors; the OSM tag said
+    # 50 with no source. research/sota.md has the full build spec.
+    "school of the arts":     {"h": 56},
     "lucky plaza":            {"h": 85},
     "far east plaza":         {"h": 70},
     "paragon":                {"h": 78, "podium": 24},   # VERIFIED 6 retail + 20-storey tower
@@ -111,7 +118,11 @@ LANDMARKS = {
     "cairnhill nine":         {"h": 130, "key": True},
     "orchard gateway":        {"h": 45},
     "midpoint orchard":       {"h": 45},
-    "concorde hotel":         {"h": 70},
+    # Research 2026-07-29 (research/concorde.md): NOT a tower — 9 storeys
+    # total (3-storey podium, hotel L4-9, Mingtiandi sale particulars), and
+    # the OSM way carries no height tag at all, so the old 70 was our own
+    # invention. Metres UNPUBLISHED: 9 hotel storeys at ~3.3m.
+    "concorde hotel":         {"h": 30},
     "york hotel":             {"h": 60},
     "goodwood park":          {"h": 18},
     "orchard parade":         {"h": 55},
@@ -121,13 +132,22 @@ LANDMARKS = {
     # heights OSM had plainly wrong, or missing entirely
     "four seasons":           {"h": 68},
     "liat tower":             {"h": 45},
-    "far east shopping":      {"h": 75},
+    # Research 2026-07-29 (research/far-east-shopping-centre.md): the old 75
+    # was the building's published ORCHARD FRONTAGE LENGTH mis-read as height.
+    # Real massing 5-storey podium + 10-storey office block (roots.gov.sg +
+    # 2023 sale tender); metres UNPUBLISHED, so 15 storeys at the 3.4m
+    # `building:levels` rate. Must read LOWER than Wheelock next door.
+    "far east shopping":      {"h": 51},
     "international building": {"h": 58},
     "grand hyatt":            {"h": 70},
     "york hotel":             {"h": 68},
     "royal plaza on scotts":  {"h": 70},
     "voco orchard":           {"h": 80},
-    "pullman singapore":      {"h": 92},
+    # Research 2026-07-29 (research/pullman.md): Emporis lists the building
+    # (as Crown Prince Hotel, same address) at 47.63m estimated, 14 floors.
+    # The old 92 was roughly double reality. Key is the FULL name: the loose
+    # "pullman singapore" also caught Pullman Hill Street in Bras Basah.
+    "pullman singapore orchard": {"h": 48},
     "scotts square":          {"h": 150, "key": True},
     "design orchard":         {"h": 14},
     "pacific plaza":          {"h": 46},

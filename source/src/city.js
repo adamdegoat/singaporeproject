@@ -1,7 +1,7 @@
 // Build the street from real OSM geometry: extruded footprints, road ribbons,
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, rng } from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng } from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV } from './landmarks.js';
 
 export const TEX = {
@@ -230,6 +230,22 @@ LMAT.darkCurtain.userData.tile = [26, 28];
 // which reads as off-white ivory with a faint metallic sheen -- published by
 // the panel maker, so it is a surveyed colour, not a chosen one.
 LMAT.ivory = new THREE.MeshStandardMaterial({ map: texConcrete(0xe8e2d6, 0.18), roughness: 0.42, metalness: 0.10 });
+// FESC (research/far-east-shopping-centre.md): the whole 1974 complex is
+// painted white; the corner blade carries gold characters. SOTA/Concorde
+// share the white; the gold is FESC's alone.
+LMAT.paintedWhite = new THREE.MeshStandardMaterial({ map: texConcrete(0xe9e6df, 0.14), roughness: 0.62 });
+LMAT.chevronGlass = new THREE.MeshStandardMaterial({ map: texChevron(), roughness: 0.24, metalness: 0.2 });
+LMAT.chevronGlass.userData.tile = [8, 8];
+LMAT.mediaWall = new THREE.MeshStandardMaterial({ color: 0x1c2430, emissive: 0x7fa8ff, emissiveIntensity: 0.85, roughness: 0.35 });
+LMAT.brightGlass = new THREE.MeshStandardMaterial({ color: 0xdfe9ee, emissive: 0xcfd8b8, emissiveIntensity: 0.28, roughness: 0.12, metalness: 0.1 });
+// Shaw House's drum and podium: warm light-grey granite (#d8d5cf per the
+// dated photos) — texGranite is Ngee Ann's African Red and read maroon here
+LMAT.shawGranite = new THREE.MeshStandardMaterial({ map: texConcrete(0xd6d3cb, 0.22), roughness: 0.48, metalness: 0.08 });
+LMAT.sotaRibbons = new THREE.MeshStandardMaterial({ map: texSotaRibbons(), roughness: 0.8 });
+LMAT.sotaRibbons.userData.tile = [10, 32];
+// SOTA's leaning piers: rough warm-brown board-marked concrete
+LMAT.boardConc = new THREE.MeshStandardMaterial({ map: texConcrete(0x8e7a71, 0.5), roughness: 0.9 });
+LMAT.goldSign = new THREE.MeshStandardMaterial({ color: 0xc9a23f, emissive: 0x8a6a1c, emissiveIntensity: 0.55, roughness: 0.35, metalness: 0.6 });
 LMAT.bronze = new THREE.MeshStandardMaterial({ color: 0x6e5433, roughness: 0.45, metalness: 0.55 });
 LMAT.ivory.userData.tile = [9, 9];
 // MacDonald House: one tile is one 3.9m structural bay by a 3.5m floor

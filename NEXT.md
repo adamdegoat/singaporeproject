@@ -36,9 +36,25 @@ awkward ones are the ones that get skipped.
    1.1s, solid grids 1.1s, shopfronts 0.9s, roads 0.8s, per-axis dressing
    ~2.5s, module+fetch 0.6s. No single villain left; this is now a
    many-small-cuts job. Fine-grained marks are in (`?boot=1`, `window.__boot`).
-2. **~10 street-fronting buildings still have no recipe**, and the full sweep
-   contact sheet has never been reviewed frame by frame now that every street
-   is dressed. `shots/sweep/index.html`.
+2. **Recipe batch 1 BUILT 2026-07-29 (third session): all five.** Research
+   specs live in `research/*.md` (sota, far-east-shopping-centre, concorde,
+   pullman, shaw-house) — every report corrected premises, four of five
+   mapped heights were wrong (SOTA 50→56 published, FESC 75→51 derived [75
+   was the FRONTAGE], Concorde 70→30 [9 storeys, our own invention], Pullman
+   92→48 [Emporis]); process.py LANDMARKS updated, districts rebuilt, world
+   merged, data gates green. Recipes in landmarks.js: farEastShopping,
+   concordeHotel, pullmanOrchard, shawHouse, sota — each solo-judged a WIN
+   vs the generic family. New materials: paintedWhite, goldSign,
+   chevronGlass (texChevron), mediaWall, brightGlass, shawGranite,
+   sotaRibbons (texSotaRibbons, own RNG stream), boardConc. Traps re-hit
+   and dodged this session: slab() y is ABSOLUTE (pass g0+), the oriented
+   box reaches past irregular walls (scan the ring for real extents),
+   ribbonOffset ends float past slab ends. POLISH DEBT, honest list: SOTA
+   ribbons sparser than the real ~51% and its piers barely read; Pullman
+   media wall is a plain glow panel; Concorde gable logo is an unlabelled
+   dark box; the Concorde road-dead-end frame still needs re-checking in
+   the world (the building is now 30m so the loom is gone, but ride it).
+   Also fixed: SOTA/Concorde/FESC "pale box" triage item #8/#3 root causes.
 3. **The Dhoby Ghaut pale boxes are the SCHOOL OF THE ARTS (SOTA).** Traced
    by raycasting the drawn meshes from the frame-12 camera and naming the
    footprints under the hits: the volumes are SOTA (named in OSM, h=50,
