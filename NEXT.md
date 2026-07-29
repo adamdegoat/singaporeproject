@@ -173,6 +173,98 @@ Also cut: `buildSurround` 2.35s → 0.32s. The water test was 2.1s of it —
 5,478 cells; a per-ring bounding box now rejects almost all of them. Same
 cell count, no RNG calls touched, placement byte-identical.
 
+## SWEEP 2 TRIAGE (2026-07-29 evening, post-recipe-batches, Opus reviewers)
+
+Reviewer for 055-109 (others pending at time of writing — append their
+findings here as they land):
+1. **[BAD] Left-kerb marking stack z-fights across ~28 Orchard frames**
+   (068, 073-098, worst 074/090/098): double yellow + white edge line + red
+   bus-lane edge shredding into stipple. The axis marking heights collide
+   where the bus lane runs — check MARK heights vs busGeos 0.068 vs yellows
+   0.087 vs edge line, at the LEFT kerb specifically.
+2. **[BAD] 072 ION area: huge flat untextured grey mass cuts diagonally
+   across the red bus lane and left carriageway, half-swallowing two cars.**
+   Same object as the old "ION facade" finding but it INTERSECTS THE ROAD —
+   probe what mesh this is (P1b passes, so it is name-exempt or a surface).
+3. **[BAD] 100 Paterson Rd: paving slabs lying ON the carriageway over the
+   yellows.** 4. **[BAD] 058 Canning Rise: floating salmon capsule (was in
+   sweep 1 too).** 5. [minor] road slabs ending in hard edges vs terrain
+   (063/065/066); 6. [minor] white edge stripe off-carriageway (064);
+   7. [minor] covered-walkway canopy panels disjointed on the Boulevard
+   (101-106); 8. [minor] stray pale ellipsoid at Temasek Shophouse (090).
+CLEARED: all four batch-2 recipes read correctly and sit on the ground.
+
+Reviewer for 110-164 adds (5 BAD, 8 minor):
+9. **[BAD] THE ONE ENGINE BUG behind ~12 frames: markings painted on bare
+   ground beside/offset from the drawn asphalt**, worst on the Istana / west
+   Orchard stretch (115, 120, 121, plus thin recurrences 116/122/124/129/
+   134/135/139/142/164; 161's brown carriageway strip is the same family —
+   the axis paints the carriageway while the drawn surface there is another
+   material/offset). One fix, many frames.
+10. **[BAD] 111 = the 072 ION mass confirmed from the other side**: huge
+   featureless pale-grey slab at the kerb, base along the carriageway.
+11. **[BAD] 130 National Museum renders as a featureless grey box against
+   Canning Rise** — the recipe exists; find out why it did not apply (name
+   match? suppressed? pruned?).
+12. [minor] 132 Tang Plaza reads as a plain brown box from Nutmeg Rd;
+   129 Far East Plaza blank upper facade; 153 Scotts Square blank frontage
+   wall at kerb; 126 shophouse slab overhang; 113 Chee Guan Chiang flat
+   slab-at-grade.
+CLEARED by this reviewer: FESC, Shaw approach, Concorde approach seated
+fine; ERP gantry legs on verge; "tilted" facades are FOV distortion; tan
+junction wedges are landscaped splitter islands.
+
+Reviewer for 000-054 adds (10 BAD, 23 minor, 33 total), FOUR SYSTEMIC:
+13. **[BAD] BROKEN PEDESTRIAN RIG — hands and shoes detach from the body**
+    (016 arms rotated off torso; 032/037/050/053/054). PRIME SUSPECT, not
+    yet verified: the crowd packs VISIBLE instances to the front of the
+    buffer and sets .count (the culling fix in the hard-won notes), and the
+    notes already warn "per-instance colours must be written per SLOT, not
+    per entity index, or everyone swaps clothes" — if any LIMB part (hand
+    spheres, shoes, forearms) writes its matrix by ENTITY index while the
+    body writes by SLOT, limbs belong to a different pedestrian than the
+    body they float near. Check every setMatrixAt call in the crowd path in
+    actors.js for index-vs-slot consistency; fix is one indexing pass. The
+    kerbside-paint guard from #17 is IN and deployed same evening.
+14. **Buildings perched on blank plinth walls or sunk, ground floors
+    buried/cut** (010 Emerald Hill both rows on ~3m wall, 015 sunk block,
+    029/038/040/041/051) — footingY-on-slope family, but Emerald Hill is a
+    whole conservation street; deserves its own pass.
+15. **Lane dashes straight through junction mouths** (007/016/017/027/043
+    + prior triage #6) — the axis/side-street per-metre marking system
+    still has no junction gaps.
+16. **Red bus-lane paint fragmenting into detached polygons** (002/007/054
+    + sweep-1 tears) — the run-stitcher's junction pieces.
+    Plus one-offs worth probing: 025 thick bare column at kerb; 030
+    detached glazing panel; 005 slate-blue quad on carriageway; 009 black
+    sphere on kerb; 012 near-black carriageway; blank near-field slabs
+    (013/025/026/031/042/052 — generic facade skipping small frontages?).
+
+Reviewer for 165-219 adds (13 BAD, 9 minor). THE BIGGEST ENGINE BUG of the
+whole sweep, confirming #9 with more frames:
+17. **[BAD] "ROAD SURFACE MISSING" — PROBED, and the surfaces EXIST.**
+    Raycast down every centreline of Sophia/Fort Canning/Angullia/Handy/
+    Bukit Timah: 0 terrain hits, all roadSurface/markings/buildings
+    (`scratchpad/roadsurf.mjs` pattern). So the defect is the KERBSIDE
+    paint standing beyond a ribbon NARROWER than the `w` the paint uses —
+    a width disagreement, most likely where streetRuns chains ways of
+    differing widths into one run keyed `n|w` while the drawn ribbons vary
+    per way, or where a junction-gap subPoly cuts across a bend. NEXT STEP:
+    eye-level shot at frame 191's coords (Sophia Rd), measure drawn ribbon
+    edge vs painted yellow offset at that exact spot, then fix the paint to
+    take each WAY's own drawn width (or clamp paint inside the drawn edge
+    the way P9 should have caught — strengthen P9 with the fix).
+18. **[BAD] Plaza Singapura mass overhangs Edinburgh/Handy Rd with a clear
+    air gap** (177/178) — rider passes under an unsupported slab.
+19. **[BAD] Kerb bars/slabs ON the carriageway at Grange Rd + Canning Walk**
+    (202 X-crossed bars, 207 slab on the yellows, 208, 211).
+20. [BAD] Floating: 171 shelter/gantry frame ends mid-air over the kerb;
+    187 lamp luminaire detached from pole. 21. [minor] 169 voco frontage
+    reads CHARCOAL not white from its callout frame — probe which face the
+    camera sees (dark arcade + proud dark bands may dominate); blank slabs
+    167/185/199. West Tanglin zone (165/168) still bare expanses.
+CLEARED: Concorde raked slab (180), Artyzen tower (181) render fine.
+
 ## THE SWEEP REVIEW TRIAGE (2026-07-29, all 220 frames reviewed, 64 findings)
 
 First frame-by-frame review ever run (four agents over `shots/sweep/`).

@@ -1266,6 +1266,30 @@ export function buildRoads(world, data) {
       const w = +key.split('|')[1];
       for (const sub of pieces) {
         for (const sgn of [-1, 1]) {
+          // THE PAINT VERIFIES ITSELF against the road index before it is
+          // laid. A stitched run can cut a corner on a bendy street, so its
+          // offset line drifts off the drawn ribbon and the yellows land on
+          // bare ground (sweep-2 #17: Sophia Rd, west Orchard — measured,
+          // the ribbons were never missing, the paint had wandered). Sample
+          // the kerb line at 3m; if more than a fifth of it is off the
+          // carriageway, that side of that piece is not painted at all — a
+          // failed search skips, never substitutes.
+          const kerbOff = sgn * (w / 2 - 0.45);
+          let acc2 = 0, offRoad = 0, tot = 0;
+          for (let i = 0; i < sub.length - 1 && tot < 60; i++) {
+            const dx = sub[i + 1][0] - sub[i][0], dz = sub[i + 1][1] - sub[i][1];
+            const L = Math.hypot(dx, dz) || 1;
+            for (; acc2 < L; acc2 += 3) {
+              const t = acc2 / L;
+              const nx2 = -dz / L, nz2 = dx / L;
+              const px = sub[i][0] + dx * t + nx2 * kerbOff;
+              const pz = sub[i][1] + dz * t + nz2 * kerbOff;
+              tot++;
+              if (window.__onRoad && !window.__onRoad(px, pz, -0.05)) offRoad++;
+            }
+            acc2 -= L;
+          }
+          if (tot && offRoad / tot > 0.2) continue;
           for (const inset of [0.45, 0.70]) {
             const off = sgn * (w / 2 - inset);
             const yg = ribbonOffset(sub, 0.10, 0.087, off, false);
