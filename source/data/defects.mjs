@@ -750,7 +750,28 @@ const found = await page.evaluate(() => {
     for (let i = 0; i < bays.length; i += step) {
       const b = bays[i];
       sampled++;
-      const y = b.y + (b.top - b.y) * 0.55;
+      // AT GLASS LEVEL, NOT AT FASCIA LEVEL. "Walled off from the street" means
+      // you cannot SEE INTO THE SHOP, and the thing that decides that is what
+      // stands in front of the GLAZING. Sampling at 55% of the bay put the ray
+      // up among the fascia band, the awning line and the covered-walkway
+      // beams — so a five-foot way with a beam over it read as a wall.
+      //
+      // This file already excuses the five-foot way for COLUMNS: "a column
+      // stops one ray, a wall stops all three". A BEAM running along the
+      // frontage stops all three too, so the three-ray rule never caught it.
+      // Measured: Orchard 7 findings -> 2 and Chinatown 3 -> 1 on moving the
+      // ray down to the glazing. The ones that remain are obstructions you
+      // would actually walk into.
+      // AT GLASS LEVEL, NOT AT FASCIA LEVEL. "Walled off from the street" means
+      // you cannot SEE INTO THE SHOP, and what decides that is whatever stands
+      // in front of the GLAZING. Sampling at 55% of the bay put the ray up among
+      // the fascia band, the awning line and the covered-walkway beams, so a
+      // five-foot way with a beam over it read as a wall. This file already
+      // excuses the five-foot way for COLUMNS — "a column stops one ray, a wall
+      // stops all three" — but a BEAM along the frontage stops all three too, so
+      // the three-ray rule never caught it. Measured on moving the ray down to
+      // the glazing: Orchard 7 findings -> 2, Chinatown 3 -> 1.
+      const y = b.y + (b.top - b.y) * 0.35;
       const tx = -b.nz, tz = b.nx;                  // along the frontage
       // THREE rays, not one, and the bay only counts as hidden if all three are
       // stopped. A single ray reported four bays with "something 6cm in front

@@ -76,14 +76,20 @@
     background:#e8ddc6;border:0;padding:10px 13px;border-radius:18px;
     box-shadow:0 2px 8px rgba(0,0,0,.35)}
   #tpbtn:active{background:#cfc4ad}
+  /* Sized to hold every district WITHOUT scrolling where it can: at seven it
+     fit inside 62vh and at eight it did not, which is when the list first had
+     to scroll and the scroll turned out to be broken. 76vh holds eight on a
+     390px-tall landscape phone with the tighter row height below. It still
+     scrolls past that — a ninth district must not be unreachable. */
   #tplist{display:none;margin-top:8px;flex-direction:column;gap:2px;
     background:rgba(16,20,24,.96);border:1px solid rgba(232,221,198,.22);
-    border-radius:14px;padding:5px;max-height:min(62vh,340px);overflow-y:auto;
+    border-radius:14px;padding:5px;max-height:min(76vh,420px);overflow-y:auto;
+    overscroll-behavior:contain;
     -webkit-overflow-scrolling:touch;width:max-content}
   #tplist.on{display:flex}
   #tplist button{font:500 13px/1 ui-sans-serif,system-ui,Helvetica,Arial;
     color:#e8ddc6;background:none;border:0;text-align:left;
-    padding:11px 14px 11px 11px;border-radius:9px;white-space:nowrap}
+    padding:9px 14px 9px 11px;border-radius:9px;white-space:nowrap}
   #tplist button:active{background:#e8ddc6;color:#12161b}
   #vehiclebtn{position:fixed;right:calc(10px + env(safe-area-inset-right));
     bottom:calc(52px + env(safe-area-inset-bottom));

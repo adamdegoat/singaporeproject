@@ -235,6 +235,26 @@ export class Wayfinder {
     }
     this.places.sort((a, b) => b.a - a.a);
     this.bounds = this._bounds(data);
+    // THE MAP MUST COVER EVERY DISTRICT, NOT JUST THE BUILT ONES.
+    //
+    // `data` only ever holds districts that have STREAMED IN, and streaming
+    // only builds what is near you — so from Orchard, Little India (6km away)
+    // was not in the data, not inside these bounds, and therefore not on the
+    // map at any zoom. It was not too small to see; it was off the drawn area
+    // entirely. Meanwhile the teleport list reads the MANIFEST, so its name was
+    // there and the place was not, which is exactly as confusing as it sounds.
+    //
+    // The manifest knows every district's extent whether or not it is built, so
+    // the map's bounds come from there when it is available.
+    const recs = window.__streamRecs || [];
+    for (const r of recs) {
+      const b2 = r.box;
+      if (!b2 || b2.length !== 4) continue;
+      if (b2[0] < this.bounds.mnx) this.bounds.mnx = b2[0];
+      if (b2[2] > this.bounds.mxx) this.bounds.mxx = b2[2];
+      if (b2[1] < this.bounds.mnz) this.bounds.mnz = b2[1];
+      if (b2[3] > this.bounds.mxz) this.bounds.mxz = b2[3];
+    }
     this._grid = this._index(data);
   }
 
@@ -315,16 +335,41 @@ export class Wayfinder {
       if (!tplist) return;
       tplist.classList.remove('on');   // opens closed each time
       tplist.innerHTML = '';
+      // A TAP IS NOT A SCROLL, AND THIS LIST NOW SCROLLS.
+      //
+      // Every entry fired on TOUCHSTART with preventDefault, which is fine for
+      // a button you can always see and fatal for one in a scrolling list: a
+      // finger placed on an entry to drag the list teleported instead, and the
+      // map closed under it. It only became reachable when the eighth district
+      // pushed the list past 62vh — at seven it fit and never needed to scroll,
+      // so the bug shipped invisible. The user found it the first evening
+      // Little India existed, trying to reach Little India.
+      //
+      // So: remember where the finger went down, and only act on touchEND if it
+      // barely moved. Anything else is a scroll and is left alone — no
+      // preventDefault, or the list cannot move at all.
       for (const d of (window.__districts || [])) {
         const btn = document.createElement('button');
         btn.textContent = d.name;
-        const go = (e) => {
-          e.preventDefault(); e.stopPropagation();
+        const fire = () => {
           tplist.classList.remove('on');
           if (window.__teleportTo && window.__teleportTo(d.id)) this.setOpen(false);
         };
-        btn.addEventListener('click', go);
-        btn.addEventListener('touchstart', go, { passive: false });
+        btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); fire(); });
+        let tx = 0, ty = 0, tt = 0, moved = false;
+        btn.addEventListener('touchstart', (e) => {
+          const t = e.touches[0];
+          tx = t.clientX; ty = t.clientY; tt = Date.now(); moved = false;
+        }, { passive: true });
+        btn.addEventListener('touchmove', (e) => {
+          const t = e.touches[0];
+          if (Math.hypot(t.clientX - tx, t.clientY - ty) > 10) moved = true;
+        }, { passive: true });
+        btn.addEventListener('touchend', (e) => {
+          if (moved || Date.now() - tt > 700) return;   // that was a scroll
+          e.preventDefault(); e.stopPropagation();
+          fire();
+        }, { passive: false });
         tplist.appendChild(btn);
       }
     };
@@ -561,15 +606,78 @@ export class Wayfinder {
       b.p.forEach(([x, z], i) => (i ? g.lineTo(X(x), Z(z)) : g.moveTo(X(x), Z(z))));
       g.closePath(); g.fill();
     }
+
+    // DISTRICTS THAT HAVE NOT BEEN BUILT ARE STILL PART OF THE CITY. Boot
+    // fetches every chunk and builds only the near ones, so the geometry for
+    // Little India is sitting in memory while the map draws nothing there —
+    // which is why the teleport list offered a place the map could not show.
+    // Drawn dimmer than the built districts, because "not here yet" is honest
+    // and a blank rectangle is not.
+    {
+      const recs = window.__streamRecs || [];
+      g.strokeStyle = 'rgba(74,82,90,0.45)';
+      for (const r of recs) {
+        if (r.pushed || !r.ch || !Array.isArray(r.ch.roads)) continue;
+        for (const rd of r.ch.roads) {
+          if (rd.k === 'footway' || rd.k === 'pedestrian') continue;
+          g.lineWidth = Math.max(1, (rd.w || 7) * k * 0.7);
+          g.beginPath();
+          rd.p.forEach(([x, z], i) => (i ? g.lineTo(X(x), Z(z)) : g.moveTo(X(x), Z(z))));
+          g.stroke();
+        }
+      }
+      g.fillStyle = 'rgba(190,199,208,0.16)';
+      for (const r of recs) {
+        if (r.pushed || !r.ch || !Array.isArray(r.ch.buildings)) continue;
+        for (const b of r.ch.buildings) {
+          g.beginPath();
+          b.p.forEach(([x, z], i) => (i ? g.lineTo(X(x), Z(z)) : g.moveTo(X(x), Z(z))));
+          g.closePath(); g.fill();
+        }
+      }
+    }
     // (the amber axis line is gone from this map too — the user read the
     // highlighted street as a glitch on the minimap, and a real map should
     // highlight nothing but YOU. Same decision, both maps, 2026-07-30.)
+
+    // DISTRICT NAMES FIRST, and they always get their space. Reserving their
+    // boxes before the building labels means a district can never be crowded
+    // off its own map by a shopping centre — the user went looking for Little
+    // India on this map twice and found nothing, which is the failure this
+    // whole block exists to prevent.
+    const taken = [];
+    {
+      g.font = `700 ${Math.round(13 * dpr)}px ui-sans-serif,system-ui,Helvetica,Arial`;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      for (const d of (window.__districts || [])) {
+        const px2 = X(d.x), pz2 = Z(d.z);
+        const w = g.measureText(d.name).width + 14 * dpr, h = 18 * dpr;
+        if (px2 < 4 || px2 > W - 4 || pz2 < 4 || pz2 > H - 4) continue;
+        // NUDGE, DO NOT DROP. Bras Basah and Bugis overlap at this scale
+        // because their axis midpoints are 300m apart; dropping one would put
+        // us back to a district you cannot find on the map. Step vertically
+        // until clear, alternating up and down so a label stays near its own
+        // district rather than drifting off in one direction.
+        const hits = (bx, bz) => taken.some((t) => bx < t[0] + t[2] && bx + w > t[0]
+          && bz < t[1] + t[3] && bz + h > t[1]);
+        let ly = pz2;
+        for (let n2 = 1; n2 <= 6 && hits(px2 - w / 2, ly - h / 2); n2++) {
+          ly = pz2 + (n2 % 2 ? 1 : -1) * Math.ceil(n2 / 2) * (h + 3 * dpr);
+        }
+        taken.push([px2 - w / 2, ly - h / 2, w, h]);
+        g.fillStyle = 'rgba(16,20,24,0.55)';
+        g.beginPath();
+        g.roundRect(px2 - w / 2, ly - h / 2, w, h, 5 * dpr);
+        g.fill();
+        g.fillStyle = 'rgba(255,238,205,0.96)';
+        g.fillText(d.name, px2, ly);
+      }
+    }
 
     // Label the biggest places, and only as many as will not collide. A map
     // with forty overlapping labels is less readable than one with none.
     g.font = `600 ${Math.round(11 * dpr)}px ui-sans-serif,system-ui,Helvetica,Arial`;
     g.textAlign = 'left'; g.textBaseline = 'middle';
-    const taken = [];
     let placed = 0;
     for (const p of this.places) {
       if (placed >= 22) break;

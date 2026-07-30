@@ -1391,7 +1391,8 @@ def main():
         # more than one vertex gone — a single-shot repair left it broken and
         # the hunt kept reporting it.
         _ring = list(_b["p"])
-        for _pass in range(6):
+        _plateau = 0
+        for _pass in range(10):
             if not _self_crossing(_ring) or len(_ring) <= 4:
                 break
             _base = _crossings(_ring)
@@ -1402,7 +1403,26 @@ def main():
                 if _c < _bestC:
                     _bestC, _best = _c, _cand
             if _best is None:
-                break
+                # LOCAL MINIMUM, NOT A DEAD END. Only a STRICT improvement was
+                # accepted, so a ring where no single vertex helps but two
+                # together would was abandoned — two of them survive in Orchard
+                # and two in Chinatown, and a self-crossing ring breaks every
+                # point-in-polygon test built on it, collision included.
+                # Allow one sideways move (drop the vertex that leaves the
+                # count unchanged) so the search can step off the plateau.
+                # Safe by construction: the ring below is only COMMITTED if it
+                # ends up clean, so a plateau walk that leads nowhere costs
+                # nothing and the "do not mangle a real outline" rule holds.
+                if _plateau >= 2:
+                    break
+                _plateau += 1
+                for _k in range(len(_ring)):
+                    _cand = _ring[:_k] + _ring[_k + 1:]
+                    if _crossings(_cand) == _bestC:
+                        _best = _cand
+                        break
+                if _best is None:
+                    break
             _ring = _best
         if not _self_crossing(_ring):
             _b["p"] = _ring
@@ -1410,8 +1430,8 @@ def main():
         else:
             _left += 1
     if _fixed or _left:
-        print(f"  self-crossing footprints: {_fixed} repaired by dropping one vertex"
-              + (f", {_left} left alone (no single-vertex fix)" if _left else ""))
+        print(f"  self-crossing footprints: {_fixed} repaired by dropping vertices"
+              + (f", {_left} left alone (no clean ring found)" if _left else ""))
 
     # Drop a footprint that is buried inside a taller one.
     #
