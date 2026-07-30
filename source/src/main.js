@@ -613,6 +613,13 @@ let ready = false, stats = {};
 let crowdSys = null, trafficSys = null, wayfinder = null, signals = null;
 // Signals instances for streamed-in districts; the boot one stays `signals`
 const extraSignals = [];
+// Crowds for streamed-in districts — the boot crowd walks only the spawn
+// district's streets, and a Singapore street without people is "obviously
+// not Singapore" (the lesson that raised the crowd to 2,200 in the first
+// place applies to every district, not just the first). A district's crowd
+// ticks only while it is LOADED, and its meshes live in the district group
+// so an unload disposes them with everything else.
+const extraCrowds = [];
 // side streets already dressed, shared between the boot build and every
 // streamed chunk so a street crossing a seam is never dressed twice
 const dressedStreets = new Set();
@@ -649,18 +656,24 @@ function registerLod(root) {
     o.userData.lodRegistered = true;
     LODT.push(o);
   });
-  // Per-instance compaction is OPT-IN (?ilod) until its GPU-side corruption
-  // is understood: with it on, walkers rendered with orphaned leg/shoe
-  // clusters (CPU matrices PROVEN coherent — the corruption is in what the
-  // GPU drew), and composite trees tore apart because trunk (r<0.5 → 300m)
-  // and canopy (r≥2 → 600m) left at different ranges. Repro: scene=chinatown,
-  // teleport 1758.7,8936.8,1.1, settle 6s, look at the pavement. Tile LOD
-  // above is unaffected and stays on.
-  if (!P.has('ilod')) return;
+  // Per-instance compaction is ON — the heat answer: ~-30% GPU with zero
+  // visual change inside the haze. It spent half a day opt-in after the
+  // torn-walker episode; the evidence now: the failure matched a poisoned
+  // (non-finite) matrix in the OLD chinatown build, 14 crowded soak frames
+  // are clean since that district's rebuild, every scene scans NaN-free,
+  // and the compactor REFUSES non-finite instances so this path cannot
+  // carry the class again. Composites cull at ONE range (600m) so trunk
+  // and canopy leave together — the radius split tore trees apart.
+  // ?noilod disables for A/B.
+  if (P.has('noilod')) return;
+  // bisect hook for the GPU-corruption investigation: ?ilodn=K registers
+  // only the first K sets, so the culprit can be found by binary search
+  const ilodMax = P.has('ilodn') ? +P.get('ilodn') : Infinity;
   root.traverse((o) => {
     if (!o.isInstancedMesh || o.userData.lodRegistered) return;
     if (o.userData.crowdPart || o.frustumCulled === false) return;
     if (lodExclude.has(o)) return;
+    if (LODI.length >= ilodMax) return;
     if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
     const r = o.geometry.boundingSphere.radius;
     const far = r < 0.5 ? 300 : r < 2 ? 450 : 600;
@@ -915,6 +928,21 @@ async function addChunk(ch, id, Y, rec = {}) {
       extraSignals.push(es);
       rec.signals = es;
     }
+    if (!P.has('nopeople')) {
+      mk('crowd');
+      // population scales with the main street, same density class as the
+      // spawn district (2,200 over 2,586m); walkers beyond 105m cost no
+      // draws, and this crowd stops ticking the moment the district unloads
+      const pop = Math.min(1600, Math.max(500, Math.round((ch.axis.p.length * 28) * 0.6)));
+      const wb = WALLSREF ? (x2, z2) => blocked(x2, z2) || WALLSREF.at(x2, z2) : blocked;
+      const chunkSides = selectSideStreets(ch, ax);
+      const cr = new Crowd(ax, wb, pop, chunkSides);
+      cr.build(g);
+      if (window.__crossings) cr.setCrossings(window.__crossings);
+      extraCrowds.push(cr);
+      rec.crowd = cr;
+      await Y();
+    }
   }
   const solidBefore = WALLSREF ? (x, z) => WALLSREF.at(x, z) : null;
   mk('shops');
@@ -953,6 +981,11 @@ function unloadChunk(rec) {
     const i = extraSignals.indexOf(rec.signals);
     if (i >= 0) extraSignals.splice(i, 1);
     rec.signals = null;
+  }
+  if (rec.crowd) {
+    const i = extraCrowds.indexOf(rec.crowd);
+    if (i >= 0) extraCrowds.splice(i, 1);
+    rec.crowd = null;   // its meshes died with the group
   }
   for (const r of rec.dressedDelta || []) dressedStreets.delete(r);
   rec.dressedDelta = null;
@@ -1537,6 +1570,7 @@ async function buildRegion(data, opts = {}) {
         for (const es of extraSignals) es.update(tSim);
         if (trafficSys) trafficSys.update(tSim, 0.0166, signals, S.x, S.z);
         if (crowdSys) crowdSys.update(tSim, 0.0166, S.x, S.z, signals);
+        for (const c of extraCrowds) c.update(tSim, 0.0166, S.x, S.z, signals);
         if ((k & 15) === 0) await bstep(0.99, 'waking the street');
       }
     }
@@ -1949,6 +1983,7 @@ function loop(now) {
       for (const es of extraSignals) es.update(clock);
       if (trafficSys) trafficSys.update(clock, dt, signals, walker.x, walker.z);
       if (crowdSys) crowdSys.update(clock, dt, walker.x, walker.z, signals);
+      for (const c of extraCrowds) c.update(clock, dt, walker.x, walker.z, signals);
       if (wayfinder) wayfinder.update(walker, dt);
       sound.update(0, 'walk', walker.speed, walker.phase, trafficSys ? trafficSys.nearest(walker.x, walker.z) : 999);
       if (SPEC) driveCamera(dt); else walkCamera(dt);
@@ -2027,6 +2062,7 @@ function loop(now) {
     if (trafficSys) trafficSys.update(clock, dt, signals, S.x, S.z);
     fmk('traffic');
     if (crowdSys) crowdSys.update(clock, dt, S.x, S.z, signals);
+    for (const c of extraCrowds) c.update(clock, dt, S.x, S.z, signals);
     fmk('crowd');
     if (wayfinder) wayfinder.update(S, dt);
     fmk('wayfind');
@@ -2093,6 +2129,7 @@ window.__teleport = (x, z, heading) => {
   S = newState(x, z, heading == null ? S.heading : heading);
   S.speed = 0;
   if (crowdSys) crowdSys.update(clock, 0, S.x, S.z, signals);
+  for (const c of extraCrowds) c.update(clock, 0, S.x, S.z, signals);
   // Traffic is NOT rebuilt here: Traffic.build() creates a fresh set of
   // instanced meshes and adds them to the world, so calling it once per stop
   // leaked a whole fleet each time. Sixty stops into a sweep the scene was

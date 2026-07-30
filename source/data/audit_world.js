@@ -640,6 +640,23 @@ window.__auditWorld = async function auditWorld() {
     // cleaner than the number it inherited, so the number follows it down.
     // 286 -> 124 -> 56 -> 17 -> 0 over 2026-07-27/28. CLOSED: a plain BLOCKER
     // at zero now, not a ratchet. See the world override above.
+  {
+    // Non-finite instanced matrices. One NaN instance can corrupt how a
+    // driver batches EVERY instanced draw — the torn-walker episode of
+    // 2026-07-30 matched this class, and the LOD compactor now refuses
+    // such instances. This catches the SOURCE at gate time.
+    let bad = 0;
+    sc.traverse((o) => {
+      if (!o.isInstancedMesh) return;
+      const a2 = o.instanceMatrix.array;
+      for (let i = 0; i < o.count * 16; i++) {
+        if (!Number.isFinite(a2[i])) { bad++; break; }
+      }
+    });
+    add('P11', 'instanced meshes carrying non-finite matrices', 'BLOCKER', bad, 0,
+        bad ? `${bad} mesh(es) with NaN/Infinity elements` : 'none');
+  }
+
     add('P1b', 'structure in a carriageway', 'BLOCKER', n, 0,
         Object.entries(bad).sort((a, b) => b[1] - a[1]).slice(0, 6)
           .map(([k, v2]) => `${v2}x ${k}`).join('  ') || 'none', ex);
