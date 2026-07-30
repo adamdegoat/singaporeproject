@@ -1,3 +1,75 @@
+# TAKEOVER BRIEF — for the next lead (written 2026-07-30 ~14:40 SGT by Fable)
+# The user is handing the main loop to Opus 5. Read this, then the rest of
+# this file, then WORKFLOW.md and STANDARD.md. Everything below is law that
+# was paid for in gate refusals and user corrections — do not relearn it.
+
+## State at handover
+- LIVE: seven districts, streaming default (boot one district, proximity
+  builds, unload past 1.7km), instance-LOD ON (the heat answer; NaN-guarded,
+  P11 gate), district crowds, teleport dropdown, "Singapore World" branding,
+  10 landmark recipes (Buddha Tooth, Sri Mariamman, Lau Pa Sat, People's
+  Park, Thian Hock Keng, Sultan Mosque, UOB, OCBC, Republic Plaza — and Old
+  Hill Street Police Station QUEUED, see below).
+- IN FLIGHT: a deploy carrying the traffic side-graze slide fix (side
+  contact with cars slides like walls; head-on still stops). When it lands,
+  deploy the rainbow (Old Hill Street) batch — it is audited and ready in
+  the working tree.
+- The user's standing orders: POLISH FIRST (all 7 districts to Orchard
+  standard) before expanding; heat stays solved; keep grinding.
+
+## The operating rules (each one has a scar behind it)
+1. ./deploy.sh "msg" is the ONLY way to ship. It snapshots the tree at
+   launch — you may edit ANYTHING while it runs; your edits ship in the
+   NEXT deploy. One deploy at a time (they share $WORK and the Pages repo).
+2. The gates are law. A refusal names a real defect ~every time — diagnose
+   it, never lower a budget without a dated written reason in
+   audit_world.js. Ratchets go down, never up. Floors go up, never down.
+3. VET FROM THE RIDER'S SEAT before wiring any recipe. The bar: better
+   than the generic it replaces, judged from screenshots at street level.
+   Three failed vet rounds = PARK IT with a diagnosis comment and move on
+   (Clarke Quay is parked at round 3 — its next step is INSTRUMENT the
+   computed positions before placing anything).
+4. Research before building: launch an Opus research agent with the brief
+   pattern in research/*.md (metre figures quarantined and tagged, heights
+   never derived from storey counts, FALSE PREMISES corrected explicitly).
+   Bank the spec into research/ BEFORE building. Keep 2-3 ahead.
+5. Proof images sent to the user must be pixel-checked against their own
+   claim first (a clipped label shipped as "verified" once — he noticed).
+6. The user's taste: no yellow lines on maps (twice), compact UI that
+   hugs content, plain language, absolute honesty about failures. He finds
+   real bugs by riding — treat every report as真 (it has been, every time).
+7. Traps: shell cwd resets to /Users/ZY between commands (always cd or use
+   absolute paths); python heredoc edits MUST verify the write landed
+   (print a containment check after writing — two silent write-losses
+   today); ugrep needs -F for literal strings; SwiftShader inflates all
+   headless timings ~20x (never diagnose perf from headless numbers —
+   use the headed browser via receptionig's playwright).
+8. Sequence for a new district (when polish is done and the user says
+   expand): registry entry with overlap + reasons -> build_district.py ->
+   terrain --source opentopodata -> check.py (declared absences supported:
+   noMrt etc with live Overpass evidence) -> unused.py (decide every tag)
+   -> audit scene (day-one ratchets with reasons) -> merge --stream all
+   districts -> world audit -> deploy. deploy.sh + gates.sh already list
+   all seven scenes; add the new one to BOTH.
+
+## The queue, in order
+1. Land the in-flight deploy; deploy the Old Hill Street rainbow batch.
+2. CBD crown verification from across the water (build a vantage into
+   data/vantage.mjs rather than hunting cameras by hand — the canyon eats
+   free cameras; that lesson cost five rounds today).
+3. Clarke Quay round 3 (instrument first), then the riverside
+   canopies/Angels as props.
+4. Road-shadow patchwork (near-black asphalt in tower canyons — hemisphere
+   lift, visual change so vet at multiple times of day... there is no time
+   of day yet, so vet at multiple spots).
+5. Signal poles on elevated roads (heads float at deck height near
+   Cantonment; same family as the Esplanade bridge rider-sink item).
+6. Kerb fragment chains at new-district junction mouths.
+7. S8-doors metric fix (a recipe door in front of a bay should COUNT as
+   frontage, see triage item 0 below).
+8. Boat Quay river-row colour treatment; more CBD facades; then ASK THE
+   USER about expanding (Little India / civic core / Tiong Bahru).
+
 # HANDOVER — state as of 2026-07-30 (overnight session, user asleep)
 
 ## DISTRICT REVIEW TRIAGE (6 Opus agents, 274 frames of chinatown+rivervalley
@@ -48,8 +120,11 @@ STILL OPEN, BY MECHANISM (worst first):
    the GEOMETRY then yaw the mesh. Verify the gopuram edge-march lands on
    the South Bridge side. Wire up ONLY after a solo vet reads better than
    the generic. Also found while vetting: floating CircleGeometry pieces
-   ~20m up around (2371-2526, 10127-10224) — palm fronds without trunks,
-   pre-existing, add to the tree triage. Rest of the wave: Buddha Tooth Relic Temple,
+   ~20m up around (2371-2526, 10127-10224) — IDENTIFIED 2026-07-30 pm as
+   TRAFFIC SIGNAL HEADS (three stacked lenses) at elevated-road altitude
+   near the Cantonment viaducts; check signal pole grounding where roads
+   run on structure (groundAt vs deck height — same family as the
+   Esplanade bridge-deck rider sink). Rest of the wave: Buddha Tooth Relic Temple,
    Sri Mariamman, Thian Hock Keng, Lau Pa Sat (currently skeleton frames),
    People's Park Complex (wrong colour, blank), Maxwell Food Centre
    (renders as giant green slab OVER the carriageway — investigate its

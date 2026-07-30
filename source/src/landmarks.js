@@ -2403,6 +2403,55 @@ function republicPlaza(api, b) {
   }
 }
 
+
+// OLD HILL STREET POLICE STATION (MICA Building), 140 Hill Street — the
+// 1934 neoclassical block whose 927 louvred window shutters were painted
+// in rainbow colours for the 2000s MICA conversion; one of the most
+// photographed facades in Singapore, read from across the river at Clarke
+// Quay. The identity IS the shutters: cream walls, white surrounds, and
+// colour cycling window by window, most saturated on the upper floors.
+function oldHillStreet(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const cream = new THREE.MeshStandardMaterial({ color: 0xe8e0d4, roughness: 0.88 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xf7f4ec, roughness: 0.85 });
+  const base = new THREE.MeshStandardMaterial({ color: 0xcfc5b4, roughness: 0.9 });
+  const RAINBOW = [0xd9342b, 0xe8862c, 0xe5c02e, 0x4d9a4a, 0x3f6fb5, 0x7a4f9e];
+  const mats = RAINBOW.map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7 }));
+  const H = Math.min(30, b.h || 30);
+  // the body: arcade base, cream shaft, white parapet
+  api.world.add(api.extrude(b.p, 4.5, base, g0));
+  api.world.add(api.extrude(b.p, H - 6.5, cream, g0 + 4.5));
+  api.world.add(api.extrude(api.grow(b.p, 1.006), 2.0, white, g0 + H - 2.0));
+  // the rainbow shutters: window rows along every facade edge, colour
+  // cycling per window, five upper floors
+  let wi = 0;
+  for (let e = 0; e < b.p.length; e++) {
+    const a2 = b.p[e], c2 = b.p[(e + 1) % b.p.length];
+    const dx = c2[0] - a2[0], dz = c2[1] - a2[1];
+    const eL = Math.hypot(dx, dz);
+    if (eL < 6) continue;
+    const ux = dx / eL, uz = dz / eL;
+    const nx = -uz, nz = ux;
+    // outward test: step off the edge midpoint; if inside the ring, flip
+    const mx = (a2[0] + c2[0]) / 2 + nx * 1.2, mz = (a2[1] + c2[1]) / 2 + nz * 1.2;
+    const flip = pointInRing(mx, mz, b.p) ? -1 : 1;
+    const bays = Math.floor(eL / 3.2);
+    for (let k2 = 0; k2 < bays; k2++) {
+      const t = (k2 + 0.5) / bays;
+      const px = a2[0] + dx * t + nx * flip * 0.12;
+      const pz = a2[1] + dz * t + nz * flip * 0.12;
+      for (let fl = 0; fl < 5; fl++) {
+        const geo = new THREE.BoxGeometry(1.5, 2.1, 0.12);
+        geo.rotateY(Math.atan2(nx * flip, nz * flip));
+        geo.translate(px, g0 + 6.4 + fl * 4.4, pz);
+        api.merge(geo, mats[(wi + fl) % 6], ob.cx, ob.cz);
+      }
+      wi++;
+    }
+  }
+}
+
 // Raffles City. I.M. Pei: a nine-square plan carved away and rotated 45 degrees
 // so it angles back from the street instead of presenting a 600-foot broadside,
 // and towers that read cylindrical from one direction and rectangular from
@@ -4356,6 +4405,7 @@ export const RECIPES = [
   [/^uob plaza/i, uobPlaza],
   [/^ocbc bank$/i, ocbcCentre],
   [/^republic plaza$/i, republicPlaza],
+  [/^old hill street police station$/i, oldHillStreet],
   // PARKED 2026-07-30 midday after round 1: The Foundry's OSM footprint is
   // a chunky pentagon, not the 115x57 slab the research measured (the
   // research measured the ROOF outline from satellite; the ground footprint
@@ -4466,7 +4516,7 @@ const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery,
 // was given a row of glazed retail bays. Only words that cannot be anything
 // else: "gallery" is Mandarin Gallery, a mall, and "court" is a block of flats.
 const NEVER_SHOPFRONT =
-  /synagogue|mosque|masjid|gurdwara|temple|cathedral|chapel|church|monastery|convent|cenotaph|parliament|embassy|high commission|museum|memorial|merlion|observatory|supertree|lau pa sat|thian hock keng/i;
+  /synagogue|mosque|masjid|gurdwara|temple|cathedral|chapel|church|monastery|convent|cenotaph|parliament|embassy|high commission|museum|memorial|merlion|observatory|supertree|lau pa sat|thian hock keng|old hill street/i;
 export function hasShopfront(name) {
   if (name && NEVER_SHOPFRONT.test(name)) return false;
   const fn = recipeFor(name);
