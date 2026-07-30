@@ -1733,9 +1733,26 @@ export function buildSupertrees(world, data) {
   const canopyMat = new THREE.MeshStandardMaterial({
     color: 0x8d5a3c, roughness: 0.62, metalness: 0.28, side: THREE.DoubleSide,
   });
+  // a mapped "tower" INSIDE a building is that building's own structure —
+  // OSM tags the Sultan Mosque's four minarets as towers, and they rendered
+  // as Gardens by the Bay supertrees growing out of the prayer hall. A
+  // supertree stands in open ground, always.
+  const insideBuilding = (x2, z2) => {
+    for (const b of data.buildings || []) {
+      const p2 = b.p;
+      let hit = false;
+      for (let i2 = 0, j2 = p2.length - 1; i2 < p2.length; j2 = i2++) {
+        const xi = p2[i2][0], zi = p2[i2][1], xj = p2[j2][0], zj = p2[j2][1];
+        if (((zi > z2) !== (zj > z2)) && (x2 < ((xj - xi) * (z2 - zi)) / (zj - zi) + xi)) hit = !hit;
+      }
+      if (hit) return true;
+    }
+    return false;
+  };
   let n = 0;
   for (const t of list) {
     const [x, z] = t.p;
+    if (insideBuilding(x, z)) continue;
     const g0 = TERRAIN.at(x, z);
     const H = t.h, R = t.r;
     // the trunk: a flared column, wider at the base than the neck

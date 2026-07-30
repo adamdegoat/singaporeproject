@@ -2141,6 +2141,256 @@ function cqShophouses(api, b) {
   api.world.add(roof);
 }
 
+
+// SULTAN MOSQUE (Masjid Sultan), 3 Muscat Street — Denis Santry, 1932,
+// National Monument. Researched 2026-07-30 (research/sultanmosque-
+// cbdtrio.md). Corrections built in: the dome is 12.19m diameter with its
+// crown at 30.48m (the touristic "27m diameter, 36m high" is impossible);
+// FOUR minarets, not six, topping out BELOW the domes; the famous band is
+// glass BOTTLE ENDS at the dome NECK (a dark specular collar), not caps
+// over the surface; both domes are EQUAL; the facade is warm cream, not
+// white. The dome is a plump ogee bulb overhanging its drum — profile
+// from the research's lathe table.
+function sultanMosque(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const sw = streetward(api, ob);
+  const cream = new THREE.MeshStandardMaterial({ color: 0xede6d3, roughness: 0.85 });
+  const gold = new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: 0.30, metalness: 0.85 });
+  const bottle = new THREE.MeshStandardMaterial({ color: 0x1e1c1f, roughness: 0.15, metalness: 0.4 });
+  const drum = new THREE.MeshStandardMaterial({ color: 0xb08e82, roughness: 0.8 });
+  const stoneT = new THREE.MeshStandardMaterial({ color: 0x8c8578, roughness: 0.85 });
+  const trimG = new THREE.MeshStandardMaterial({ color: 0xc39b4e, roughness: 0.6, metalness: 0.3 });
+  const yawL = Math.atan2(ob.ux, ob.uz);
+  const xA = { x: Math.cos(yawL), z: -Math.sin(yawL) };
+  const at = (mesh, lx, y, lz, cast = true) => {
+    mesh.position.set(ob.cx + xA.x * lx + ob.ux * lz, y, ob.cz + xA.z * lx + ob.uz * lz);
+    mesh.castShadow = cast;
+    api.world.add(mesh);
+  };
+  const sDot = Math.sign(sw.nx * ob.ux + sw.nz * ob.uz) || 1;  // +lz toward the street?
+  // the massing rectangles, scaled to THIS footprint's oriented box
+  const L = ob.halfLong * 2, W = ob.halfShort * 2;
+  const main = new THREE.Mesh(new THREE.BoxGeometry(W * 0.72, 15.5, L * 0.70), cream);
+  main.rotation.y = yawL;
+  at(main, 0, g0 + 7.75, 0);
+  const entr = new THREE.Mesh(new THREE.BoxGeometry(W * 0.46, 18.5, L * 0.10), cream);
+  entr.rotation.y = yawL;
+  at(entr, 0, g0 + 9.25, sDot * L * 0.40);
+  const mihrab = new THREE.Mesh(new THREE.BoxGeometry(W * 0.24, 15.5, L * 0.10), cream);
+  mihrab.rotation.y = yawL;
+  at(mihrab, 0, g0 + 7.75, -sDot * L * 0.40);
+  // gold-ochre string courses on the entrance pavilion
+  for (const y2 of [12.6, 17.8]) {
+    const band = new THREE.Mesh(new THREE.BoxGeometry(W * 0.47, 0.5, L * 0.105), trimG);
+    band.rotation.y = yawL;
+    at(band, 0, g0 + y2, sDot * L * 0.40, false);
+  }
+  // merlon cresting: a thin toothed parapet ring, instanced as one strip
+  const cres = new THREE.Mesh(new THREE.BoxGeometry(W * 0.73, 0.8, L * 0.71), stoneT);
+  cres.rotation.y = yawL;
+  at(cres, 0, g0 + 15.9, 0, false);
+  // ONE DOME (equal pair): stepped base, drum collar, dark bottle band,
+  // gold ogee lathe, finial. R = 6.1m per the published 40ft.
+  const R = 6.1;
+  const domeAt = (lz) => {
+    const base = new THREE.Mesh(new THREE.BoxGeometry(14, 4.0, 14), cream);
+    base.rotation.y = yawL;
+    at(base, 0, g0 + 18.0, lz);
+    const dc = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.92, R * 0.845, 1.6, 24), drum);
+    at(dc, 0, g0 + 20.8, lz);
+    const bb = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.98, R * 0.92, 1.5, 24), bottle);
+    at(bb, 0, g0 + 22.35, lz);
+    // the researched ogee profile: (h/R, r/R) pairs
+    const prof = [[0, 0.98], [0.26, 1.0], [0.52, 0.99], [0.69, 0.95], [0.86, 0.88],
+                  [1.03, 0.79], [1.21, 0.61], [1.32, 0.42], [1.42, 0.001]];
+    const pts = prof.map(([h2, r2]) => new THREE.Vector2(r2 * R, h2 * R));
+    const dome = new THREE.Mesh(new THREE.LatheGeometry(pts, 24), gold);
+    at(dome, 0, g0 + 23.1, lz);
+    const fin = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.3, 3.4, 8), gold);
+    at(fin, 0, g0 + 33.0, lz);
+    // chhatris: four small gold-capped pavilions at the base corners
+    for (const [cx2, cz2] of [[-5.6, -5.6], [5.6, -5.6], [-5.6, 5.6], [5.6, 5.6]]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 1.6, 8), cream);
+      at(post, cx2, g0 + 20.6, lz + cz2);
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(1.05, 10, 8), gold);
+      cap.scale.y = 0.85;
+      at(cap, cx2, g0 + 22.1, lz + cz2);
+    }
+  };
+  domeAt(sDot * L * 0.30);
+  domeAt(-sDot * L * 0.30);
+  // four corner minarets: octagonal cream shafts, gallery ring, gold cap —
+  // tips BELOW the dome crowns (researched)
+  for (const [mu, mv] of [[-W * 0.36, L * 0.31], [W * 0.36, L * 0.31],
+                          [W * 0.36, -L * 0.31], [-W * 0.36, -L * 0.31]]) {
+    const px = ob.cx + xA.x * mu + ob.ux * mv, pz = ob.cz + xA.z * mu + ob.uz * mv;
+    if (onCarriageway(px, pz, 0.2)) continue;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.35, 22, 8), cream);
+    at(shaft, mu, g0 + 11, mv);
+    const gal = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 1.2, 8), stoneT);
+    at(gal, mu, g0 + 22.6, mv);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(1.25, 10, 8), gold);
+    cap.scale.y = 0.9;
+    at(cap, mu, g0 + 24.2, mv);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.16, 1.6, 6), gold);
+    at(tip, mu, g0 + 25.8, mv);
+  }
+}
+
+
+// THE CBD TRIO, researched 2026-07-30 (research/sultanmosque-cbdtrio.md).
+// The regulatory fact that shapes the skyline: UOB Plaza One, Republic
+// Plaza and One Raffles Place are ALL exactly 280m (the CBD cap from Paya
+// Lebar flight ops) — three flat-topped peaks at identical altitude,
+// distinguished only by crown and material. Research also corrected the
+// brief itself: the rotating-plan trick is REPUBLIC PLAZA's (Kurokawa),
+// not UOB's — Tange's UOB is a classical base-shaft-capital octagon with
+// blank chamfer piers and the great arched crown it shares with its
+// smaller twin.
+function uobPlaza(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const granite = new THREE.MeshStandardMaterial({ color: 0xc6c3bc, roughness: 0.75 });
+  const crownM = new THREE.MeshStandardMaterial({ color: 0xcdcac2, roughness: 0.75 });
+  const win = new THREE.MeshStandardMaterial({ color: 0x41505a, roughness: 0.35, metalness: 0.3 });
+  const voidM = new THREE.MeshStandardMaterial({ color: 0x20262e, roughness: 0.9 });
+  const H = Math.max(120, b.h || 280);
+  const isOne = H > 200;
+  const yawL = Math.atan2(ob.ux, ob.uz);
+  const R0 = Math.min(ob.halfShort, ob.halfLong) * 1.1;
+  // the shaft: stacked octagonal stages stepping IN as it rises (the
+  // steps bite the chamfers), dense punched-stone read = granite body with
+  // thin dark window bands
+  const stages = [[0, 0.30, 1.0], [0.30, 0.55, 0.95], [0.55, 0.78, 0.90], [0.78, 0.955, 0.85]];
+  for (const [f0, f1, wF] of stages) {
+    const oct = new THREE.Mesh(new THREE.CylinderGeometry(R0 * wF, R0 * wF, H * (f1 - f0), 8), granite);
+    oct.rotation.y = yawL + Math.PI / 8;
+    oct.position.set(ob.cx, g0 + H * (f0 + (f1 - f0) / 2), ob.cz);
+    oct.castShadow = true;
+    api.world.add(oct);
+    // window banding: a slightly inset dark octagon every ~8 floors
+    const bands = Math.max(4, Math.round((H * (f1 - f0)) / 12));
+    for (let k2 = 0; k2 < bands; k2++) {
+      const wb = new THREE.Mesh(new THREE.CylinderGeometry(R0 * wF * 1.004, R0 * wF * 1.004, 1.6, 8), win);
+      wb.rotation.y = yawL + Math.PI / 8;
+      wb.position.set(ob.cx, g0 + H * f0 + (k2 + 0.5) * (H * (f1 - f0) / bands), ob.cz);
+      api.world.add(wb);
+    }
+  }
+  // THE CROWN: cantilevered block wider than the top stage, a dark
+  // semi-elliptical arch on each main face, chamfer piers as square horns
+  const cw = R0 * 0.86;
+  const crown = new THREE.Mesh(new THREE.CylinderGeometry(cw, cw, H * 0.045, 8), crownM);
+  crown.rotation.y = yawL + Math.PI / 8;
+  crown.position.set(ob.cx, g0 + H * 0.978, ob.cz);
+  crown.castShadow = true;
+  api.world.add(crown);
+  for (let f = 0; f < 4; f++) {
+    const a2 = yawL + (f / 4) * Math.PI * 2;
+    const arch = new THREE.Mesh(new THREE.CircleGeometry(cw * 0.52, 18, 0, Math.PI), voidM);
+    arch.position.set(ob.cx + Math.sin(a2) * cw * 0.93, g0 + H * 0.955, ob.cz + Math.cos(a2) * cw * 0.93);
+    arch.rotation.y = a2;
+    api.world.add(arch);
+    const arch2 = arch.clone();
+    arch2.rotation.y = a2 + Math.PI;
+    api.world.add(arch2);
+  }
+}
+
+// OCBC CENTRE — I.M. Pei, 1976, 197.7m: two vast semicircular concrete
+// cores bracketing three DEEPLY RECESSED window bands at the researched
+// heights (the upper two verified to ~1m against OSM building:parts).
+function ocbcCentre(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const conc = new THREE.MeshStandardMaterial({ color: 0xbdb4a8, roughness: 0.88 });
+  const band = new THREE.MeshStandardMaterial({ color: 0x5a5c60, roughness: 0.45, metalness: 0.25 });
+  const H = 197.7;
+  const yawL = Math.atan2(ob.ux, ob.uz);
+  const xA = { x: Math.cos(yawL), z: -Math.sin(yawL) };
+  const at = (mesh, lx, y, lz) => {
+    mesh.position.set(ob.cx + xA.x * lx + ob.ux * lz, y, ob.cz + xA.z * lx + ob.uz * lz);
+    mesh.castShadow = true;
+    api.world.add(mesh);
+  };
+  const L = ob.halfLong * 2, W = Math.min(36.5, ob.halfShort * 2);
+  const coreW = L * 0.24;
+  // the two end cores: box + half-cylinder ends, full height, bare concrete
+  for (const sgn of [-1, 1]) {
+    const core = new THREE.Mesh(new THREE.BoxGeometry(W, H, coreW), conc);
+    core.rotation.y = yawL;
+    at(core, 0, g0 + H / 2, sgn * (L / 2 - coreW / 2));
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(W / 2, W / 2, H, 18, 1, false,
+      yawL, Math.PI), conc);
+    at(cap, 0, g0 + H / 2, sgn * (L / 2 - coreW / 2) + sgn * coreW / 2);
+  }
+  // three recessed bands at the RESEARCHED heights, set back behind the
+  // core plane so the concrete lips cast the shadow that makes it read
+  const midL = L - 2 * coreW;
+  for (const [y0, y1] of [[25, 78.6], [87, 133], [143, 189]]) {
+    const wb = new THREE.Mesh(new THREE.BoxGeometry(W * 0.86, y1 - y0, midL * 0.98), band);
+    wb.rotation.y = yawL;
+    at(wb, 0, g0 + (y0 + y1) / 2, 0);
+  }
+  // the plain concrete belts between and the parapet
+  for (const [y0, y1] of [[78.6, 87], [133, 143], [189, H]]) {
+    const belt = new THREE.Mesh(new THREE.BoxGeometry(W * 0.9, y1 - y0, midL), conc);
+    belt.rotation.y = yawL;
+    at(belt, 0, g0 + (y0 + y1) / 2, 0);
+  }
+}
+
+// REPUBLIC PLAZA — Kurokawa, 280m: the octagon whose long and short faces
+// TRADE PLACES as it rises (the plan appears to rotate 45 degrees between
+// street and crown — this is its identity, wrongly attributed to UOB by
+// the brief). Warm brown-rose granite + saturated teal ribbon glazing;
+// blunt flat crown; glazed atrium wedge cut into the Raffles Place corner.
+function republicPlaza(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const granite = new THREE.MeshStandardMaterial({ color: 0x8a736e, roughness: 0.6 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x2e7a96, roughness: 0.2, metalness: 0.5 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: 0.9 });
+  const H = 280;
+  const yawL = Math.atan2(ob.ux, ob.uz);
+  const R0 = Math.min(ob.halfShort, ob.halfLong) * 0.98;
+  // three stacked octagonal stages, each rotated 22.5 degrees from the
+  // last — the discrete steps that read as the 45-degree spiral
+  const stages = [[0, 0.38, 0], [0.38, 0.72, Math.PI / 8], [0.72, 0.985, Math.PI / 4]];
+  for (const [f0, f1, rot] of stages) {
+    const oct = new THREE.Mesh(new THREE.CylinderGeometry(R0 * 0.96, R0, H * (f1 - f0), 8), granite);
+    oct.rotation.y = yawL + rot;
+    oct.position.set(ob.cx, g0 + H * (f0 + (f1 - f0) / 2), ob.cz);
+    oct.castShadow = true;
+    api.world.add(oct);
+    // teal ribbon glazing bands
+    const bands = Math.max(3, Math.round((H * (f1 - f0)) / 24));
+    for (let k2 = 0; k2 < bands; k2++) {
+      const g2 = new THREE.Mesh(new THREE.CylinderGeometry(R0 * 1.002, R0 * 1.002, 2.2, 8), glass);
+      g2.rotation.y = yawL + rot;
+      g2.position.set(ob.cx, g0 + H * f0 + (k2 + 0.5) * (H * (f1 - f0) / bands), ob.cz);
+      api.world.add(g2);
+    }
+  }
+  // the two dark mechanical slots in the upper third + the blunt parapet
+  for (const fy of [0.80, 0.90]) {
+    const slot = new THREE.Mesh(new THREE.CylinderGeometry(R0 * 0.965, R0 * 0.965, 3.2, 8), dark);
+    slot.rotation.y = yawL + Math.PI / 4;
+    slot.position.set(ob.cx, g0 + H * fy, ob.cz);
+    api.world.add(slot);
+  }
+  // glazed atrium wedge at the base corner toward the street
+  const sw = streetward(api, ob);
+  const wx = ob.cx + sw.nx * R0 * 0.72, wz = ob.cz + sw.nz * R0 * 0.72;
+  if (!onCarriageway(wx, wz, 0.3)) {
+    const wedge = new THREE.Mesh(new THREE.CylinderGeometry(0.02, R0 * 0.34, 26, 4), glass);
+    wedge.rotation.y = Math.atan2(sw.nx, sw.nz) + Math.PI / 4;
+    wedge.position.set(wx, g0 + 13, wz);
+    api.world.add(wedge);
+  }
+}
+
 // Raffles City. I.M. Pei: a nine-square plan carved away and rotated 45 degrees
 // so it angles back from the street instead of presenting a 600-foot broadside,
 // and towers that read cylindrical from one direction and rectangular from
@@ -4090,6 +4340,10 @@ export const RECIPES = [
   [/^lau pa sat$/i, lauPaSat],
   [/^people's park complex$/i, peoplesPark],
   [/^thian hock keng$/i, thianHockKeng],
+  [/^masjid sultan$/i, sultanMosque],
+  [/^uob plaza/i, uobPlaza],
+  [/^ocbc bank$/i, ocbcCentre],
+  [/^republic plaza$/i, republicPlaza],
   // PARKED 2026-07-30 midday after round 1: The Foundry's OSM footprint is
   // a chunky pentagon, not the 115x57 slab the research measured (the
   // research measured the ROOF outline from satellite; the ground footprint

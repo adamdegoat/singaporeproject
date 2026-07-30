@@ -77,6 +77,17 @@ STILL OPEN, BY MECHANISM (worst first):
 9. Camera-under-building sweep stops (108/109/113) — sweep should skip
    stops under overhead decks (PS service-passage class).
 
+## AFTERNOON (post-mega-batch): instance-LOD LIVE at build 1300 (1769k vs
+2549k tris on the gate readout), Singapore World branding live, district
+crowds live. Sultan Mosque recipe (ogee lathe domes, bottle bands, four
+minarets) + supertree-in-building guard (OSM maps minarets as towers —
+they rendered as supertrees) queued behind the mosque deploy. CBD TRIO
+recipes (uobPlaza stages+arched crown, ocbcCentre with researched band
+heights 25-78.6/87-133/143-189, republicPlaza rotating octagon) WIRED and
+audited — crowns not yet visually verified (the CBD canyon eats every
+camera; verify from Marina Bay across the water in the world scene next
+session). Research bank: research/sultanmosque-cbdtrio.md joined the set.
+
 # Earlier handover (2026-07-29 late night) below
 
 ## LOD v1+v2 SHIPPED (this deploy): the heat lever that costs nothing visible.
