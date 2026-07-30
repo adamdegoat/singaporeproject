@@ -4407,6 +4407,7 @@ export const RECIPES = [
   [/^republic plaza$/i, republicPlaza],
   [/^old hill street police station$/i, oldHillStreet],
   [/bras basah complex/i, brasBasahComplex],
+  [/^tekka centre$/i, tekkaCentre],
   // PARKED 2026-07-30 midday after round 1: The Foundry's OSM footprint is
   // a chunky pentagon, not the 115x57 slab the research measured (the
   // research measured the ROOF outline from satellite; the ground footprint
@@ -4511,7 +4512,12 @@ export const RECIPES = [
 // National Gallery are already in this set for.
 const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery,
                               gothicChurch, colonialHotel, artScienceMuseum,
-                              merlion, singaporeFlyer]);
+                              merlion, singaporeFlyer,
+                              // Tekka Centre's ground floor is an OPEN market -- columns and
+                              // louvres, 284 wet stalls and 119 hawker stalls straight off the
+                              // pavement. Glazed retail bays are the wrong idiom for exactly the
+                              // reason lau pa sat is already in NEVER_SHOPFRONT below.
+                              tekkaCentre]);
 // Buildings that never have a shopfront whether or not a recipe knows them.
 // Maghain Aboth Synagogue has no recipe, so the set above let it through and it
 // was given a row of glazed retail bays. Only words that cannot be anything
@@ -4606,4 +4612,109 @@ function brasBasahComplex(api, b) {
       }
     }
   }
+}
+
+// Tekka Centre — the market podium on the Serangoon Road / Buffalo Road corner.
+// Researched 2026-07-30, research/tekka-centre.md.
+//
+// THREE THINGS THE GENERIC GETS WRONG, all from one cause: it reads h=10 as
+// "a 10m glazed commercial block", and that is not what this is.
+//   1. The ground floor is OPEN to the street for its full length. Wet market
+//      (284 stalls) AND hawker centre (119 stalls) are both at L1, behind
+//      nothing but columns and louvres — the widely repeated "hawker centre on
+//      the first floor" is wrong. A glazed shopfront band is the wrong idiom.
+//   2. It is PURPLE. #957D96 with yellow-ochre accents since Oct 2023; it was
+//      orange/yellow/teal 2009-2023 and teal/peach before 2008. OSM's
+//      building:colour=grey and roof:colour=cyan are BOTH wrong and the
+//      research flags them do-not-use. Every source that describes this
+//      building describes its colour — it is the recognisable feature.
+//   3. The barrel-vault roof, the feature everyone names, sits ~13m INBOARD of
+//      the Buffalo Road parapet behind flat deck and cannot be seen from the
+//      pavement at all. So it is built — 14 shallow vaults, 3.8m pitch, 17m
+//      run — but set in, and deliberately not the silhouette.
+//
+// NO HEIGHT IS PUBLISHED for any part of this complex. h=10 is OSM's own
+// untraceable tag; it is used here as a height CLASS for a two-storey podium,
+// not as a measurement, the same footing as lau pa sat in process.py.
+//
+// The four residential towers (661 = 23 storeys, 662 = 25, 663 = 21, 664 = 4,
+// HDB's own figures) are NOT built here. OSM maps none of them, and inventing
+// four tower footprints would put real buildings in guessed places — which is
+// a worse error than leaving them out. Logged in NEXT.md instead.
+function tekkaCentre(api, b) {
+  const ob = orientedBox(b.p);
+  const H = Math.max(8.5, Math.min(12.5, b.h || 10));
+  const L1 = H * 0.54;                       // market level, open to the street
+
+  const body = new THREE.MeshStandardMaterial({ color: 0x957d96, roughness: 0.88 });
+  const ochre = new THREE.MeshStandardMaterial({ color: 0xc08a2e, roughness: 0.8 });
+  const vaultM = new THREE.MeshStandardMaterial({ color: 0x4a544d, roughness: 0.7, metalness: 0.16 });
+  const shade = api.mat.conc;
+
+  // L2 — the sari and textile floor, solid, roller shutters set behind the line
+  api.merge(api.extrudeGeo(b.p, H - L1, L1), body, ob.cx, ob.cz);
+  // the ochre fascia band that runs the whole way round under it
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.015), 1.15, L1 - 0.2), ochre, ob.cx, ob.cz);
+  // parapet
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.008), 0.9, H - 0.9), body, ob.cx, ob.cz);
+  // L2 is not a blank wall. Behind the line it is a run of roller shutters
+  // over the sari and textile units, with louvre panels on the long Buffalo
+  // Road face -- so the level reads as a recessed dark band under a purple
+  // spandrel, not as one flat mass. Recessed rather than applied, because a
+  // shutter sits BEHIND its frame.
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.994), (H - L1) * 0.52, L1 + 1.15),
+    api.mat.darkMetal, ob.cx, ob.cz);
+
+  // L1 — NOT a wall. A shaded hall set back, the slab above carried on a
+  // colonnade standing at the property line.
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.955), L1, 0), shade, ob.cx, ob.cz);
+
+  // the coloured columns along the open market edge, walked round the real
+  // perimeter rather than round the oriented box, because this footprint is a
+  // 30-vertex polygon on a 38.7-degree grid and its box corners are not on it
+  const p = b.p;
+  const colGeo = [];
+  for (let i = 0; i < p.length; i++) {
+    const [x0, z0] = p[i], [x1, z1] = p[(i + 1) % p.length];
+    const dx = x1 - x0, dz = z1 - z0, len = Math.hypot(dx, dz);
+    const n = Math.max(1, Math.round(len / 6.4));
+    for (let k = 0; k < n; k++) {
+      const t = (k + 0.5) / n;
+      const cx = x0 + dx * t, cz = z0 + dz * t;
+      const g = new THREE.CylinderGeometry(0.34, 0.40, L1, 8);
+      g.translate(cx, api.groundAt(cx, cz) + L1 * 0.5, cz);
+      colGeo.push(g);
+    }
+  }
+  for (const g of colGeo) api.merge(g, ochre, ob.cx, ob.cz);
+
+  // the barrel vaults, INBOARD. 14 shallow lights at a 3.8m pitch running 17m,
+  // a 52m array, axes along the long side. Shallow: rise is [EST] in the
+  // research, so this is the flattest reading that still reads as a vault.
+  const RISE = 1.6, PITCH = 3.8, RUN = Math.min(17, ob.halfShort * 1.3);
+  const N = Math.min(14, Math.max(6, Math.floor((ob.halfLong * 1.05) / PITCH)));
+  const rad = ((PITCH * PITCH) / 4 + RISE * RISE) / (2 * RISE);
+  const roofY = api.groundAt(ob.cx, ob.cz) + H - 0.9;   // the deck, parapet rises 0.9 around it
+  for (let i = 0; i < N; i++) {
+    const u = (i - (N - 1) / 2) * PITCH;
+    const cx = ob.cx + u * ob.ux, cz = ob.cz + u * ob.uz;
+    const g = new THREE.CylinderGeometry(rad, rad, RUN, 9, 1, false);
+    g.rotateZ(Math.PI / 2);
+    g.rotateY(-ob.ang + Math.PI / 2);
+    g.translate(cx, roofY - (rad - RISE), cz);
+    api.merge(g, vaultM, ob.cx, ob.cz);
+  }
+
+  // the 10.5m entrance rotunda, put on the street side rather than guessed:
+  // streetward() points at the nearest point of the district axis, which for
+  // Little India IS Serangoon Road, and that is the end the MRT entrance and
+  // the quadrilingual sign are on.
+  const sw = streetward(api, ob);
+  const rx = ob.cx + sw.nx * (ob.halfLong * 0.62), rz = ob.cz + sw.nz * (ob.halfLong * 0.62);
+  const rg = new THREE.CylinderGeometry(5.25, 5.25, H + 1.4, 20);
+  rg.translate(rx, api.groundAt(rx, rz) + (H + 1.4) * 0.5, rz);
+  api.merge(rg, body, ob.cx, ob.cz);
+  const rc = new THREE.CylinderGeometry(5.6, 5.6, 0.7, 20);
+  rc.translate(rx, api.groundAt(rx, rz) + H + 1.4, rz);
+  api.merge(rc, ochre, ob.cx, ob.cz);
 }
