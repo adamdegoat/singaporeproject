@@ -26,6 +26,12 @@ FIXED SAME NIGHT:
 - Sweep tool itself audited the wrong district (hardcoded orchard.json —
   the check-reads-the-input disease): now reads SG_SCENE's scene file.
 STILL OPEN, BY MECHANISM (worst first):
+0. S8 vs DOORS metric conflict: buildShopfronts treats a recipe door in
+   front of a bay as an obstruction, so an honestly doors-and-shuttered
+   frontage counts as an unfronted tenant (chinatown -1, robertson -6 when
+   the ground floors became inhabited; floors adjusted with reasons).
+   Right fix: shopfront.js should read recipe doors as FRONTAGE — perhaps
+   via window.__shopBays-style registration of door rects at build time.
 1. CONSERVATION SHOPHOUSE GROUND FLOORS read as blank slabs with detached
    door rectangles across Amoy/Telok Ayer/Duxton/Club/Smith/Tanjong Pagar —
    the shophouse fabric heuristic (a<520, h<=20, p<=64) misses Chinatown's

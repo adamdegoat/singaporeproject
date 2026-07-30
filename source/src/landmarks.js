@@ -1266,10 +1266,45 @@ export function shophouse(api, b) {
     let fd = 0;
     while (fd < 40 && pointInRing(ob.cx + sw.nx * fd, ob.cz + sw.nz * fd, b.p)) fd += 0.4;
     const face = fd * 0.86 + 0.06;          // just proud of the set-back wall
-    const span0 = ob.halfLong * 1.6;
-    const bays = Math.max(1, Math.round(span0 / 3.3));
+    // Bays run ALONG THE STREET, so the span must be the footprint's extent
+    // in that direction — it was halfLong*1.6, and a conservation shophouse
+    // is a DEEP NARROW lot (6m frontage, 25m deep), so the bays scattered
+    // along the depth, failed the in-ring test, and whole terraces on Amoy
+    // and Telok Ayer kept blank ground floors (the 274-frame review's
+    // loudest finding). Project the ring instead.
+    let uMin = Infinity, uMax = -Infinity;
+    for (const [vx2, vz2] of b.p) {
+      const u2 = (vx2 - ob.cx) * tX + (vz2 - ob.cz) * tZ;
+      if (u2 < uMin) uMin = u2;
+      if (u2 > uMax) uMax = u2;
+    }
+    const uMid = (uMin + uMax) / 2;
+    const span0 = (uMax - uMin) * 0.90;
+    const bays = Math.max(1, Math.round(span0 / 3.0));
+    // the signboard band over the openings — the five-foot-way lintel that
+    // makes an inhabited ground floor read from across the street
+    {
+      const bx = ob.cx + tX * uMid + sw.nx * face, bz = ob.cz + tZ * uMid + sw.nz * face;
+      // centre AND both ends stay inside the lot, and no end hangs over a
+      // carriageway — a corner lot's projected frontage can run past the
+      // party wall (one band crossed into Hullet Road; the deploy refused)
+      const endOK = (sgn) => {
+        const ex2 = bx + tX * sgn * span0 / 2, ez2 = bz + tZ * sgn * span0 / 2;
+        return pointInRing(ex2 - sw.nx * 1.2, ez2 - sw.nz * 1.2, b.p)
+            && !onCarriageway(ex2, ez2, 0.2);
+      };
+      if (pointInRing(bx - sw.nx * 1.2, bz - sw.nz * 1.2, b.p) && endOK(1) && endOK(-1)) {
+        const rect2 = [
+          [bx - tX * span0 / 2 - sw.nx * 0.05, bz - tZ * span0 / 2 - sw.nz * 0.05],
+          [bx + tX * span0 / 2 - sw.nx * 0.05, bz + tZ * span0 / 2 - sw.nz * 0.05],
+          [bx + tX * span0 / 2 + sw.nx * 0.05, bz + tZ * span0 / 2 + sw.nz * 0.05],
+          [bx - tX * span0 / 2 + sw.nx * 0.05, bz - tZ * span0 / 2 + sw.nz * 0.05],
+        ];
+        api.merge(api.extrudeGeo(rect2, 0.55, 2.75), api.mat.darkTimber, ob.cx, ob.cz);
+      }
+    }
     for (let bi = 0; bi < bays; bi++) {
-      const u = -span0 / 2 + (bi + 0.5) * (span0 / bays);
+      const u = uMid - span0 / 2 + (bi + 0.5) * (span0 / bays);
       const px = ob.cx + tX * u + sw.nx * face;
       const pz = ob.cz + tZ * u + sw.nz * face;
       if (!pointInRing(px - sw.nx * 1.2, pz - sw.nz * 1.2, b.p)) continue;
@@ -1282,7 +1317,10 @@ export function shophouse(api, b) {
         [px - tX * w2 / 2 + sw.nx * 0.06, pz - tZ * w2 / 2 + sw.nz * 0.06],
       ];
       api.merge(api.extrudeGeo(rect, h2, y2), isDoor ? api.mat.darkTimber : api.mat.shutterGreen, ob.cx, ob.cz);
+      window.__shDoors = (window.__shDoors || 0) + 1;
     }
+    window.__shBays = (window.__shBays || 0) + bays;
+    window.__shHouses = (window.__shHouses || 0) + 1;
   }
 
   // colonnade: columns on the street edge carrying the upper floors

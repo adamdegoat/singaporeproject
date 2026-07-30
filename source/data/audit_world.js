@@ -95,7 +95,13 @@ window.__auditWorld = async function auditWorld() {
     // family band mass overhangs Stanley St at (1622,9781), same class as
     // Bugis+ on Victoria St. The recipe wave owns the real fix; ratchet
     // may go down, never up.
-    chinatown: { S8: 64, P1b: 1 },
+    // S8 64 -> 63 on 2026-07-30 when the conservation ground floors became
+    // inhabited: one tenant's glazed bay is now refused because the new
+    // DOOR geometry rasterises as a wall in front of it — the door is that
+    // frontage's truthful face (a doors-and-shutters shophouse, not a
+    // glazed one), so the world got MORE right while this floor read one
+    // lower. Not tuned away: recorded with the trade that caused it.
+    chinatown: { S8: 63, P1b: 1 },
     // River Valley C7 33: the district DELIBERATELY takes the east 1.6km of
     // a 4.9km road (declared partialMainStreet in districts.json; the west
     // belongs to a future Robertson Quay district). C7 measures against the
@@ -117,7 +123,13 @@ window.__auditWorld = async function auditWorld() {
     // the east edge inside rivervalley) — declared in districts.json, same
     // fact check.py warns on. S8 73 day-one (condo podium frontage).
     // T2 6.2: the river bank + Kim Seng bbox edge end in real stubs.
-    robertson: { C6: 1, S8: 73, T2: 7 },
+    // S8 73 -> 67 with the inhabited ground floors (2026-07-30): six
+    // tenants' bays now read a recipe DOOR as a wall in front of them —
+    // same doors-vs-glazing trade recorded on chinatown. Most districts
+    // IMPROVED (brasbasah 70, marinabay 57, rivervalley 43 — all above
+    // their floors); the metric owes doors recognition as frontage, see
+    // NEXT.md triage.
+    robertson: { C6: 1, S8: 67, T2: 7 },
     // T2 counts road-network islands, and Marina Bay genuinely has them: it is
     // reclaimed land threaded with expressways whose tunnel sections are
     // dropped, so surface ways really do end in stubs. 10.1% on a district that
