@@ -1113,7 +1113,9 @@ export class Traffic {
         s: avoidS + 55 + ((this.path.len - 110) / n) * i + rand(-6, 6),
         lane, dir, speed: base, base,
       });
-      col.setHex(pick(CAR_COLS));
+      const cc = pick(CAR_COLS);
+      this.items[this.items.length - 1].col = cc;   // follows a packed slot
+      col.setHex(cc);
       this.body.setColorAt(i, col); this.roof.setColorAt(i, col);
     }
     if (this.body.instanceColor) this.body.instanceColor.needsUpdate = true;
@@ -1122,7 +1124,9 @@ export class Traffic {
     const bcol = new THREE.Color();
     for (let i = 0; i < b; i++) {
       const { dir, lane } = this._assign(i, 'bus');
-      bcol.setHex(BUS_LIVERY[i % BUS_LIVERY.length]);
+      const bc = BUS_LIVERY[i % BUS_LIVERY.length];
+      this.items[this.items.length - 1].col = bc;
+      bcol.setHex(bc);
       this.busBody.setColorAt(i, bcol);
       const base = rand(6, 9);
       this.items.push({
@@ -1217,6 +1221,17 @@ export class Traffic {
   // playerX/playerZ are only used to decide where a vehicle may be recycled.
   update(time, dt, signals, playerX = 1e9, playerZ = 1e9) {
     const { _m: m, _q: q, _e: e, _p: p, _s: s, _tmp: tmp } = this;
+    // PACK WHAT IS DRAWN INTO THE FRONT OF THE BUFFER, exactly as the crowd
+    // does. Traffic never culled for drawing — the comment below says the
+    // player position is "only used to decide where a vehicle may be recycled"
+    // — and its meshes are frustumCulled=false, so every vehicle in every fleet
+    // was submitted every frame from every angle. That cost nothing when there
+    // was ONE fleet on the spawn axis; on 2026-07-30 every district got its
+    // own, so a phone was drawing 630 vehicles to look at about forty. The
+    // simulation still runs for all of them, which is what keeps a street busy
+    // when you arrive; only the DRAWING is culled.
+    let carSlot = 0, busSlot = 0;
+    const DRAW2 = 260 * 260;      // vehicles read further than pedestrians do
 
     // NO VEHICLE INSIDE ANOTHER, resolved per lane in the order they queue.
     //
@@ -1339,12 +1354,24 @@ export class Traffic {
       it.wx = x; it.wz = z; it.heading = heading;       // for collision queries
       e.set(0, heading, 0); q.setFromEuler(e);
 
+      const ddx = x - playerX, ddz = z - playerZ;
+      if (ddx * ddx + ddz * ddz > DRAW2) continue;    // simulated, not drawn
+      const si = it.kind === 'car' ? carSlot++ : busSlot++;
+      if (it.col !== undefined) {
+        this._cv = this._cv || new THREE.Color();
+        this._cv.setHex(it.col);
+        if (it.kind === 'car') {
+          if (this.body.instanceColor) { this.body.setColorAt(si, this._cv); this.roof.setColorAt(si, this._cv); }
+        } else if (this.busBody.instanceColor) {
+          this.busBody.setColorAt(si, this._cv);
+        }
+      }
       if (it.kind === 'car') {
         const gy = surfaceAt(x, z);
-        p.set(x, gy + 0.62, z); m.compose(p, q, s); this.body.setMatrixAt(it.i, m);
+        p.set(x, gy + 0.62, z); m.compose(p, q, s); this.body.setMatrixAt(si, m);
         p.set(x - ux * 0.35 * it.dir, gy + 1.14, z - uz * 0.35 * it.dir);
-        m.compose(p, q, s); this.roof.setMatrixAt(it.i, m);
-        m.compose(p, q, s); this.glaze.setMatrixAt(it.i, m);
+        m.compose(p, q, s); this.roof.setMatrixAt(si, m);
+        m.compose(p, q, s); this.glaze.setMatrixAt(si, m);
         for (let w = 0; w < 4; w++) {
           const along = (w < 2 ? 1.4 : -1.4) * it.dir;
           const across = (w % 2 ? 0.86 : -0.86);
@@ -1360,15 +1387,15 @@ export class Traffic {
           this._q2 = this._q2 || new THREE.Quaternion();
           this._q2.setFromEuler(e);
           m.compose(p, this._q2, s);
-          this.wheel.setMatrixAt(it.i * 4 + w, m);
+          this.wheel.setMatrixAt(si * 4 + w, m);
         }
       } else {
         const gyb = surfaceAt(x, z);
-        p.set(x, gyb + 1.55, z); m.compose(p, q, s); this.busBody.setMatrixAt(it.i, m);
-        p.set(x, gyb + 0.62, z); m.compose(p, q, s); this.busSkirt.setMatrixAt(it.i, m);
-        p.set(x, gyb + 2.05, z); m.compose(p, q, s); this.busGlaze.setMatrixAt(it.i, m);
+        p.set(x, gyb + 1.55, z); m.compose(p, q, s); this.busBody.setMatrixAt(si, m);
+        p.set(x, gyb + 0.62, z); m.compose(p, q, s); this.busSkirt.setMatrixAt(si, m);
+        p.set(x, gyb + 2.05, z); m.compose(p, q, s); this.busGlaze.setMatrixAt(si, m);
         p.set(x + ux * 5.95 * it.dir, gyb + 2.42, z + uz * 5.95 * it.dir);
-        m.compose(p, q, s); this.busBlind.setMatrixAt(it.i, m);
+        m.compose(p, q, s); this.busBlind.setMatrixAt(si, m);
         for (let w = 0; w < 4; w++) {
           const along = (w < 2 ? 3.6 : -3.6) * it.dir;
           const across = (w % 2 ? 1.2 : -1.2);
@@ -1378,13 +1405,27 @@ export class Traffic {
           this._q2 = this._q2 || new THREE.Quaternion();
           this._q2.setFromEuler(e);
           m.compose(p, this._q2, s);
-          this.busWheel.setMatrixAt(it.i * 4 + w, m);
+          this.busWheel.setMatrixAt(si * 4 + w, m);
         }
       }
     }
-    for (const part of [this.body, this.roof, this.glaze, this.wheel,
-      this.busBody, this.busSkirt, this.busGlaze, this.busBlind, this.busWheel]) {
+    // .count is what actually culls: the GPU draws every instance up to it,
+    // whatever the matrices say. Parking a far vehicle off-screen would have
+    // cost exactly as much as drawing it — the lesson already written down for
+    // the crowd.
+    for (const part of [this.body, this.roof, this.glaze,
+      this.busBody, this.busSkirt, this.busGlaze, this.busBlind]) {
       part.instanceMatrix.needsUpdate = true;
     }
+    this.body.count = this.roof.count = this.glaze.count = carSlot;
+    this.wheel.count = carSlot * 4;
+    this.busBody.count = this.busSkirt.count = this.busGlaze.count
+      = this.busBlind.count = busSlot;
+    this.busWheel.count = busSlot * 4;
+    this.wheel.instanceMatrix.needsUpdate = true;
+    this.busWheel.instanceMatrix.needsUpdate = true;
+    if (this.body.instanceColor) this.body.instanceColor.needsUpdate = true;
+    if (this.roof.instanceColor) this.roof.instanceColor.needsUpdate = true;
+    if (this.busBody.instanceColor) this.busBody.instanceColor.needsUpdate = true;
   }
 }
