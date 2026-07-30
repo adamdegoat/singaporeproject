@@ -384,3 +384,33 @@ happened to win their seam. Luck, not design.
 
 Same bug family as everything else in this file: two things describe one fact,
 and the one you did not update is the one that ships.
+
+## One frame is not evidence
+
+Three "defects" chased and disproved in a single session on 2026-07-31, all of
+them read off one screenshot:
+
+  - **"Orchard Road has no traffic."** It was the spawn clearance zone.
+    `Traffic.build(world, avoidS)` places its fleet from `avoidS + 55` over
+    `path.len - 110`, deliberately leaving ~110m clear around the player's spawn
+    so nothing materialises on top of the rider. The frame was taken AT the
+    spawn point. Raising density did not move the number and never would have.
+  - **"Vehicles are simulated but never drawn."** A probe found cars 19m away
+    that were absent from the frame. They were drawn; the two runs sampled
+    different moments, and the cars had moved. A second run with the count read
+    in the SAME page as the screenshot showed 31 within 260m and cars plainly
+    in shot.
+  - **"A sign is floating in the sky over Little India."** A lamp-post banner
+    whose thin dark pole disappeared against a dark tree canopy. Re-shooting the
+    same spot showed the bracket.
+
+The cost of each was several probes. The cheap check that would have settled all
+three in one step, and now goes first:
+
+    RE-SHOOT THE SAME SPOT, then probe in the SAME page as the screenshot.
+
+Frames sample one instant of a world where traffic moves, crowds move and
+streaming is still settling. A thing seen once is a hypothesis. This does not
+argue for ignoring what you see -- the gantry "blank sign" and the floating
+parapet were both spotted this way and both real -- only for confirming it
+before building a theory on top of it.

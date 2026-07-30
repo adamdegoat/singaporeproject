@@ -78,7 +78,34 @@ def as_pts(it):
 def dedupe_polys(groups, key_area=True, tol=8.0, area_tol=0.12):
     """One entry per real thing. Two footprints are the same thing when their
     centres are within `tol` metres and their areas agree; a hash grid keeps this
-    from being a comparison of every item against every other."""
+    from being a comparison of every item against every other.
+
+    TOLERANCE SCALES WITH THE BUILDING. A flat 8m missed 143 same-name pairs
+    across the seam, including Funan (8,918 and 8,866 m2, 24.6m apart), Old City
+    Hall, Bugis+, Peninsula Plaza and NAFA -- all sitting at a consistent ~11m
+    offset because the two district fetches happened at different times and OSM
+    had been edited in between. Two 8,900 m2 polygons 24m apart overlap by about
+    three quarters: that is one building drawn twice, z-fighting over its whole
+    surface and costing double.
+
+    Raising the flat tolerance is exactly what the note below says destroyed 301
+    real buildings, and it would do it again: "The Plaza" and "One Fullerton"
+    are genuine RUNS of similar units about 15m apart. The distinguishing fact
+    is SIZE -- 15m between 570 m2 units is a street, 15m between 8,900 m2
+    footprints is the same building twice. So the threshold is a fraction of the
+    footprint's own width, floored at the old 8m so nothing that used to be
+    caught stops being caught.
+
+    WHICH copy survives is first-come, deliberately. An earlier version of this
+    replaced the kept entry in place when a later copy carried better provenance
+    -- Robinson Suites is h=20 from a default in one district and h=159 from an
+    OSM tag in another. It wrote the replacement into a slot index recorded at
+    insert time, and that index did not survive contact with the real run: the
+    result was DUPLICATES, not upgrades. Two names came out twice, one at the
+    slot it was appended to and one at a slot it had overwritten.
+    A dedupe that can add entries is worse than one that keeps the wrong copy,
+    so this only ever drops. If provenance-aware keeping is wanted, order the
+    groups so the better district is passed first -- do not mutate `out`."""
     CELL = 30.0
     grid = {}
     out = []
@@ -103,7 +130,10 @@ def dedupe_polys(groups, key_area=True, tol=8.0, area_tol=0.12):
                         # this needed counting rather than eyeballing.
                         if oi == gi:
                             continue
-                        if math.hypot(cx - ox, cz - oz) > tol:
+                        lim = tol
+                        if a and oa:
+                            lim = max(tol, 0.35 * math.sqrt(min(a, oa)))
+                        if math.hypot(cx - ox, cz - oz) > lim:
                             continue
                         if key_area and a and oa:
                             if abs(a - oa) / max(a, oa) > area_tol:

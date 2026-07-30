@@ -260,6 +260,30 @@ LANDMARKS = {
     # guess.
     "national library":       {"h": 102.8, "key": True},
 
+    # ---- Beach Road, researched 2026-07-31 (research/authored-footprints.md).
+    # THREE TOWERS ON ONE BLOCK ALL STANDING AT 45m, from the same failure: OSM
+    # tags each of them height=0, the junk-tag guard correctly rejects it, and
+    # they fall through to TYPE_DEFAULT["office"] = 45. Duo Tower was 125m short.
+    #
+    # Why these ARE safe to set flat, when Keppel South Central and PARKROYAL
+    # Pickering were not: each of these towers has its PODIUM mapped as a
+    # SEPARATE record -- "Duo Galleria" (11,839 m2) beside "Duo Tower" (4,218),
+    # and "The Concourse" (4,775) beside "The Concourse Office Tower" (3,911).
+    # The polygon being overridden is the tower's own, not the whole site, which
+    # is exactly the distinction that made 200m wrong on Keppel's 137m-long
+    # site strip.
+    "duo tower":              {"h": 170, "key": True},
+    # DUO's widely published 186/170 are AMSL ELEVATIONS, not building heights;
+    # 170 is the architectural height above ground and reconciles to within ~9m
+    # of the AMSL figure. DUO Residences is absent from the data entirely -- it
+    # is tagged building:part, not building, so the fetch never sees it.
+    "the concourse office tower": {"h": 165, "key": True},   # 41 storeys
+    # ~108m over 24 storeys. Weaker than the two above -- the source is a storey
+    # count with an approximate metre figure rather than a first-party
+    # architectural height -- but 45m on a 24-storey monument is wrong by more
+    # than the uncertainty here.
+    "parkview square":        {"h": 108, "key": True},
+
     # People's Park Complex, 1 Park Road (1973, Design Partnership).
     # Researched 2026-07-31, research/chinatown-landmarks.md.
     # PUBLISHED 103 m: 31 storeys, 6 of podium plus a 25-storey slab. OSM tags
@@ -1895,27 +1919,56 @@ def main():
     # way and the relation trace the same outline without agreeing on where the
     # ring starts or which way it winds. The copy KEPT is the one that knows
     # more: a name beats no name, and a real height source beats a guess.
-    _seen = {}
-    _rank = {"named": 4, "override": 3, "osm": 2, "guess": 1}
+    # Matched on OVERLAP, not on an exact key. Rounding a centroid to 0.1m and
+    # an area to 1 m2 catches a way and a relation that trace the same ring
+    # exactly, and misses the far commoner case where they trace it ALMOST the
+    # same: "Tri-Ways" and "Kohnangkam" sit 0.0m apart with areas of 82 and 79
+    # m2 and both survived. Same rule merge.py uses across the seam -- a
+    # distance threshold that is a fraction of the footprint's own width, so a
+    # terrace of shophouses 6m apart is never touched while two copies of one
+    # building are.
+    _rank = {"named": 4, "authored": 4, "override": 3, "osm": 2, "guess": 1}
+    _keep = []
+    _cells = {}
+    _CELL = 40.0
     _dupes = 0
     for _b in buildings:
         _p = _b.get("p") or []
         if len(_p) < 3:
+            _keep.append(_b)
             continue
         _cx = sum(q[0] for q in _p) / len(_p)
         _cz = sum(q[1] for q in _p) / len(_p)
         _a = abs(sum(_p[i][0] * _p[(i + 1) % len(_p)][1] - _p[(i + 1) % len(_p)][0] * _p[i][1]
                      for i in range(len(_p)))) / 2
-        _k = (round(_cx, 1), round(_cz, 1), round(_a))
-        _score = (1 if _b.get("n") else 0, _rank.get(_b.get("hs"), 0), len(_b))
-        if _k not in _seen or _score > _seen[_k][0]:
-            if _k in _seen:
-                _dupes += 1
-            _seen[_k] = (_score, _b)
-        else:
+        _score = (1 if _b.get("n") else 0, _rank.get(_b.get("hs"), 0))
+        _kx, _kz = int(_cx // _CELL), int(_cz // _CELL)
+        _hit = -1
+        for _dx in (-1, 0, 1):
+            for _dz in (-1, 0, 1):
+                for (_ox, _oz, _oa, _slot) in _cells.get((_kx + _dx, _kz + _dz), ()):
+                    if not _oa or not _a:
+                        continue
+                    if abs(_a - _oa) / max(_a, _oa) > 0.12:
+                        continue
+                    if math.hypot(_cx - _ox, _cz - _oz) > 0.35 * math.sqrt(min(_a, _oa)):
+                        continue
+                    _hit = _slot
+                    break
+                if _hit >= 0:
+                    break
+            if _hit >= 0:
+                break
+        if _hit >= 0:
             _dupes += 1
+            _pk = _keep[_hit]
+            if _score > (1 if _pk.get("n") else 0, _rank.get(_pk.get("hs"), 0)):
+                _keep[_hit] = _b
+            continue
+        _cells.setdefault((_kx, _kz), []).append((_cx, _cz, _a, len(_keep)))
+        _keep.append(_b)
     if _dupes:
-        buildings = [v[1] for v in _seen.values()]
+        buildings = _keep
         print(f"  deduped {_dupes} coincident footprint(s) mapped twice by OSM")
 
     out = {
