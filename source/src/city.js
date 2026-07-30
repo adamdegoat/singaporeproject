@@ -80,11 +80,72 @@ function familyFor(b) {
     return { pool: CURTAINS, rough: 0.36, metal: 0.08, src: 'yr' };
   }
 
+  // A BUILDING WITH NO DATE LOOKS LIKE ITS NEIGHBOURS THAT HAVE ONE.
+  //
+  // The fallback was a fixed 34/18/22/26 split across punched, balcony, stone
+  // and curtain wall — the same mix in every district. Little India carries a
+  // date on 1% of the buildings a rider passes and Robertson Quay on none, so
+  // almost every frontage in those districts took that global hash: a
+  // pre-war shophouse street was dealt eighties balconies and curtain walls at
+  // the same rate as Marina Bay. The district's OWN dated buildings are a far
+  // better prior than a constant, and every district has some.
+  //
+  // Still INVENTED, and the ledger should keep saying so — this is a rule we
+  // chose, not a surveyed fact. It is just a rule informed by the street it is
+  // standing on instead of by nothing.
+  const mix = ERA_MIX;
   const pickN = h % 100;
+  if (mix) {
+    if (pickN < mix[0]) return { pool: STONE, rough: 0.9, metal: 0, src: 'era-mix' };
+    if (pickN < mix[1]) return { pool: PUNCHED, rough: 0.88, metal: 0, src: 'era-mix' };
+    if (pickN < mix[2]) return { pool: BALCONY, rough: 0.8, metal: 0, src: 'era-mix' };
+    return { pool: CURTAINS, rough: 0.36, metal: 0.08, src: 'era-mix' };
+  }
   if (pickN < 34) return { pool: PUNCHED, rough: 0.86, metal: 0.0, src: 'hash' };
   if (pickN < 52) return { pool: BALCONY, rough: 0.8, metal: 0.0, src: 'hash' };
   if (pickN < 74) return { pool: STONE, rough: 0.88, metal: 0.0, src: 'hash' };
   return { pool: CURTAINS, rough: 0.36, metal: 0.06, src: 'hash' };
+}
+
+// Cumulative percentage thresholds [pre-1945, ..1978, ..1995] for the district
+// being built, or null when too few of its buildings carry a date to say
+// anything. Set once per scene by buildBuildings.
+let ERA_MIX = null;
+export function setEraMix(buildings) {
+  const yrs = (buildings || []).map((b) => b.yr).filter((y) => y);
+  if (yrs.length < 25) {
+    // NO DATES AT ALL IS ITSELF INFORMATION-FREE, BUT THE FOOTPRINTS ARE NOT.
+    // Little India carries a date on eleven of 2,088 buildings and Robertson
+    // Quay on none, so the two districts that most needed a prior were the two
+    // that fell through to the global constant. What they DO have is shape: 90%
+    // of Little India's footprints are shophouse-sized (under 520 m2 and 20m),
+    // against 45% in Marina Bay. A quarter of small low buildings is a
+    // conservation quarter whatever OSM forgot to date, so let the plan say
+    // what the dates cannot. Interpolated rather than switched, so a district
+    // in between gets a mix in between.
+    const B2 = buildings || [];
+    if (B2.length < 60) { ERA_MIX = null; return null; }
+    let small = 0;
+    for (const b of B2) if (!b.k && (b.a || 0) < 520 && (b.h || 99) <= 20) small++;
+    const q = Math.max(0, Math.min(1, (small / B2.length - 0.45) / 0.45));  // 45%..90%
+    const pre = Math.round(10 + q * 45);          // 10% pre-war .. 55%
+    const mid = Math.round(10 + q * 4);
+    const bal = Math.round(20 + q * 5);
+    ERA_MIX = [pre, Math.min(94, pre + mid), Math.min(97, pre + mid + bal)];
+    return ERA_MIX;
+  }
+  let a = 0, b2 = 0, c = 0, d = 0;
+  for (const y of yrs) {
+    if (y <= 1945) a++; else if (y <= 1978) b2++; else if (y <= 1995) c++; else d++;
+  }
+  const n = yrs.length;
+  // Nothing is allowed to reach zero: a district with no dated tower should
+  // still put the occasional curtain wall on a big undated block, because the
+  // sample is what OSM happened to date, not a census.
+  const f = (v) => Math.max(6, Math.round((v / n) * 100));
+  const p1 = f(a), p2 = f(b2), p3 = f(c);
+  ERA_MIX = [p1, Math.min(94, p1 + p2), Math.min(97, p1 + p2 + p3)];
+  return ERA_MIX;
 }
 
 export const MAT = {
@@ -716,6 +777,8 @@ function grow(pts, f) {
 
 export async function buildBuildings(world, data, Y = null) {
   const stats = { count: 0, tall: 0, bespoke: 0 };
+  // the era prior for THIS district, from its own dated buildings
+  setEraMix(data.buildings);
   const merger = new Merger();
   const clearance = new Clearance(data.roads, data.axis);
   const api = {

@@ -119,6 +119,50 @@ def build_ledger(d):
     return real, inv
 
 
+def frontage_coverage(d, reach=45.0):
+    """The same question, asked only of the buildings you can SEE from the road.
+
+    Whole-district percentages answer the wrong question. This project's own
+    finish line is "every building visible from the road is the right height,
+    shape and material; everything unseen is honest background" — and Orchard
+    has 1,624 buildings of which only a few dozen front the street, so a 42%
+    height figure across all of them says almost nothing about whether the ride
+    looks right. Restricted to the frontage, the number becomes the one worth
+    working on.
+
+    Reach is 45m from the main axis centreline, the same figure used when
+    Orchard's frontages were counted by hand (68 of them).
+    """
+    import math
+    B = d.get("buildings", [])
+    ax = ((d.get("axis") or {}).get("p")) or []
+    if not ax:
+        return None
+    def near(b):
+        for x, z in b["p"]:
+            for i in range(len(ax) - 1):
+                ax1, az1 = ax[i]; ax2, az2 = ax[i + 1]
+                vx, vz = ax2 - ax1 if False else (ax2 - ax1), (az2 - az1)
+                l2 = vx * vx + vz * vz or 1.0
+                t = max(0.0, min(1.0, ((x - ax1) * vx + (z - az1) * vz) / l2))
+                dx = x - (ax1 + vx * t); dz = z - (az1 + vz * t)
+                if dx * dx + dz * dz <= reach * reach:
+                    return True
+        return False
+    front = [b for b in B if near(b)]
+    if not front:
+        return None
+    real_h = sum(1 for b in front if b.get("hs") in ("osm", "named"))
+    named = sum(1 for b in front if b.get("n"))
+    era = sum(1 for b in front if b.get("mat") or b.get("yr"))
+    return {
+        "total": len(front),
+        "heights": (real_h, len(front)),
+        "named": (named, len(front)),
+        "era": (era, len(front)),
+    }
+
+
 def coverage(d):
     """How much of each countable class is REAL, read out of the scene.
 
@@ -200,6 +244,21 @@ def main():
     tot_all = sum(t for _, _, t, _ in cov if t)
     if tot_all:
         print(f"   {'':36s} {tot_got:6d}/{tot_all:<6d} {100*tot_got/tot_all:3.0f}%  overall")
+
+    fc = frontage_coverage(d)
+    print()
+    if not fc:
+        print("   FRONTAGE: no axis in this scene, so nothing to measure against")
+    else:
+        print(f"   FRONTAGE — the {fc['total']} buildings within 45m of the main")
+        print("   street, which are the ones a rider actually sees. THIS is the")
+        print("   number the finish line is written against:")
+        for label, (got, tot) in (("heights from real data", fc["heights"]),
+                                  ("named", fc["named"]),
+                                  ("era or material known", fc["era"])):
+            bar = "#" * round(20 * got / tot)
+            print(f"   {'+' if got == tot else '-'} {label:34s} {got:6d}/{tot:<6d} "
+                  f"{100*got/tot:3.0f}%  {bar}")
 
 
 if __name__ == "__main__":
