@@ -293,7 +293,46 @@ function mrtEntrance(world, px, pz, ang, label) {
   // carriageway rather than dropping a shelter into the traffic
   const mv2 = window.__pushClear ? window.__pushClear(px, pz, -0.6, 18) : [px, pz];
   if (!mv2) return;
-  const [px2, pz2] = mv2;
+  let [px2, pz2] = mv2;
+
+  // CLEARING THE ORIGIN DOES NOT CLEAR THE STRUCTURE. An entrance is five
+  // metres wide with a railed balustrade standing at ±2.6m from its centre, and
+  // pushClear only ever moved the centre — so an entrance sitting neatly beside
+  // the kerb put its rail posts in the carriageway. Little India's day-one
+  // audit found six of them in BIRCH ROAD, which is exactly the finding that
+  // city.js already fixed for entrance-canopy posts: "the posts stand at the
+  // ends of that width, and clearance.outward only checked the projection
+  // straight out from the middle".
+  //
+  // Test where the rails ACTUALLY STAND, walk the whole thing further from the
+  // road if they are not clear, and if no offset works, build nothing. A failed
+  // search skips; it does not substitute.
+  const ca2 = Math.cos(ang), sa2 = Math.sin(ang);
+  const railsClear = (ox, oz) => {
+    if (!window.__onRoad) return true;
+    for (const lx of [-2.6, 2.6]) {
+      for (const lz of [-2.2, 0, 2.3]) {
+        const wx = ox + lx * ca2 + lz * sa2;
+        const wz = oz - lx * sa2 + lz * ca2;
+        if (window.__onRoad(wx, wz, 0.2)) return false;
+      }
+    }
+    return true;
+  };
+  if (!railsClear(px2, pz2)) {
+    // straight back from the road it was pushed off, which is the direction
+    // pushClear already chose for us
+    const bx = px2 - px, bz = pz2 - pz;
+    const bl = Math.hypot(bx, bz) || 0;
+    const ux2 = bl > 0.01 ? bx / bl : Math.sin(ang), uz2 = bl > 0.01 ? bz / bl : Math.cos(ang);
+    let placed = false;
+    for (const extra of [1.6, 2.8, 4.0, 5.4]) {
+      const cx2 = px2 + ux2 * extra, cz2 = pz2 + uz2 * extra;
+      if (railsClear(cx2, cz2)) { px2 = cx2; pz2 = cz2; placed = true; break; }
+    }
+    if (!placed) return;
+  }
+
   g.position.set(px2, groundAt(px2, pz2), pz2);
   g.rotation.y = ang;
   world.add(g);

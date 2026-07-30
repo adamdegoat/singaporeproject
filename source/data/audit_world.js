@@ -108,7 +108,7 @@ window.__auditWorld = async function auditWorld() {
     //   S8 74  the district's own measured frontage coverage. The 76 it was
     //     failing against is the WORLD's floor, which is a different and larger
     //     street network — Marina Bay carries its own 57 for the same reason.
-    littleindia: { P1b: 8, T1: 2, S8: 74 },
+    littleindia: { P1b: 1, T1: 0, S8: 74 },
     // Orchard's T1 is CLOSED at 0. The long-open "merged tile 1.3m above
     // Orchard Boulevard that S7 reads as 0" was the ROAD SURFACE -- a bridge
     // deck belongs above the road it spans, S7 was right to ignore it, and T1
@@ -237,13 +237,15 @@ window.__auditWorld = async function auditWorld() {
       // itself, exempt by name since 2026-07-29. P8 72 -> 6 with the faithful
       // terrain; the region's residuals are the same path-edge class as
       // Marina Bay's.
-      // P1b 1 -> 8 and T1 0 -> 2 on 2026-07-30 when LITTLE INDIA landed. Not a
-      // regression in anything that existed: these are that district's own
-      // day-one findings arriving in the region, and they are itemised in its
-      // own override above — 3cm railing posts on Birch Road where the kerb
-      // search has nowhere to put them, and one mass across Klang Lane. Target
-      // for both is still 0, exactly as when Marina Bay reopened each at one.
-      P1b: 8, T1: 2,
+      // P1b 8 -> 1 and T1 2 -> 0 the same evening, once the Birch Road findings
+      // were diagnosed properly. They were not "the kerb search has nowhere to
+      // put them" — they were MRT ENTRANCE RAILINGS. An entrance is five metres
+      // wide with a balustrade at ±2.6m from its centre and pushClear only ever
+      // moved the CENTRE, so an entrance sitting neatly beside the kerb put its
+      // rail posts in the carriageway. Exactly the finding city.js already
+      // fixed for entrance-canopy posts, in a file that had not heard about it.
+      // Ratchets go down: littleindia 8 -> 1, and the region with it.
+      P1b: 1, T1: 0,
       // proportional to a region that is now THREE districts and 50% larger
       // W2 37 -> 39: see the marinabay note
       // W2 39 -> 34 and marinabay 79 -> 36 on 2026-07-30. Not a cleanup: the
