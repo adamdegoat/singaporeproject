@@ -1041,8 +1041,27 @@ async function addChunk(ch, id, Y, rec = {}) {
       for (let i = 1; i < ax.p.length; i++) {
         alen += Math.hypot(ax.p[i][0] - ax.p[i - 1][0], ax.p[i][1] - ax.p[i - 1][1]);
       }
-      const cars = Math.max(18, Math.min(78, Math.round(alen / 33)));
-      const buses = Math.max(3, Math.min(12, Math.round(alen / 215)));
+      // MEASURED 2026-07-31. alen/33 capped at 78 gives Orchard's 3,850m axis
+      // one vehicle every 49m across the WHOLE road width and both directions,
+      // which is thin for an arterial; 25m is what a busy one reads as.
+      //
+      // WHAT PROMPTED THIS WAS A FALSE ALARM, and the correction is worth
+      // keeping. A rider's-eye frame down Orchard Road showed no vehicles at
+      // all, and a probe confirmed zero within 120m. That is not a density bug:
+      // Traffic.build() takes an `avoidS` and places its fleet from avoidS+55
+      // over path.len-110, deliberately leaving a ~110m clear zone around the
+      // player's SPAWN so nothing materialises on top of the rider. The frame
+      // was taken at the spawn point, so it photographed the clearance gap.
+      // Raising density did not change that number and never would have.
+      // The spacing change below stands on its own; the alarm did not.
+      //
+      // 25m spacing is what a busy arterial actually reads as. Cheap: traffic
+      // is ~1% of triangles after the 260m draw cull, and only what is near the
+      // rider is ever drawn. Vehicles are placed at path.len/n with +-6m of
+      // jitter, so at 25m nominal the closest pair sits ~13m apart against a
+      // ~4.5m car -- no overlap, which D34 gates anyway.
+      const cars = Math.max(24, Math.min(120, Math.round(alen / 25)));
+      const buses = Math.max(4, Math.min(16, Math.round(alen / 170)));
       const tr = new Traffic(ax, cars, buses, axisSpec(ax, ch));
       tr.build(g, 0);
       extraTraffic.push(tr);
@@ -1442,7 +1461,7 @@ async function buildRegion(data, opts = {}) {
   }
   if (!P.has('notraffic') && axis) {
     // Five lanes one way carrying 21 vehicles over 2,586m is a road at 4am.
-    trafficSys = new Traffic(axis, 78, 12, axis && axisSpec(axis, data));
+    trafficSys = new Traffic(axis, 120, 16, axis && axisSpec(axis, data));
     trafficSys.build(world, trafficSys.path.nearestS(S.x, S.z));
     // The system itself, so a probe can DRIVE the tick instead of waiting on
     // requestAnimationFrame -- a spawned browser is throttled and its loop may
@@ -2426,6 +2445,20 @@ window.__auditRoads = (step = 4) => {
 window.__crossers = () => (crowdSys ? crowdSys.people.filter((p) => p.crossing).length : 0);
 window.__sig = () => (signals ? signals.list.map((g) => signals.stateAt(g, clock)) : []);
 window.__traffic = () => (trafficSys ? trafficSys.items.map((i) => +i.speed.toFixed(2)) : []);
+// EVERY traffic system, not just the global one. `extraTraffic` is module-local
+// and holds one system per streamed district, so any probe that reads only
+// __trafficSys sees the world's traffic as a single axis and reports zero
+// vehicles near a rider who is standing next to four of them. That is exactly
+// what a density probe did on 2026-07-31 before this existed.
+window.__allTraffic = () => {
+  const out = [];
+  for (const t of [trafficSys, ...extraTraffic]) {
+    for (const it of (t && t.items) || []) {
+      out.push({ kind: it.kind, x: it.wx, z: it.wz, speed: it.speed });
+    }
+  }
+  return out;
+};
 window.__camYaw = () => camYaw;
 window.__mode = () => mode;
 window.__toggle = () => toggleMode();

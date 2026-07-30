@@ -3156,3 +3156,87 @@ ALSO OPEN, from the same briefs, none acted on yet:
   - The "18m gopuram / 600 deities" figure that circulates for
     Veeramakaliamman is fabricated — one unsourced site, echoed by aggregators.
     It is a conserved building, NOT a National Monument.
+
+## 2026-07-31 03:30 — six research briefs landed overnight; what is DONE and
+## what is still open
+
+DONE AND LIVE. LASALLE (26m, six blocks round a sail-covered canyon), Sim Lim
+Square (stepped inverted ziggurat), both gopurams, both mosques, the Warehouse
+Hotel godowns (9.5m, was a 20m default), Tekka Centre, Bras Basah Complex,
+Little India's HDB blocks at 23/25/21 storeys, People's Park Complex at its
+PUBLISHED 103m (OSM's 25 was the podium alone), OUE Downtown Tower 1 at 201m,
+MAS Building at 104m, National Library at 102.8m, UE Square tower at 91.6m, and
+One Pearl Bank authored from scratch because OSM has no footprint for it.
+
+### Deliberately NOT done, and why — these are traps, not oversights
+
+  - **Keppel South Central (200m, CTBUH drawing-verified)** and **PARKROYAL
+    COLLECTION Pickering (89m, CTBUH + WOHA)**. Both heights are good. Both OSM
+    polygons are SITE OUTLINES: Keppel's is 137 x 63m and no 200m tower has a
+    137m-long footprint; PARKROYAL's is 154 x 104m at 0.33 fill. Applying either
+    drops a monolith on the block. They need podium-plus-tower recipes, exactly
+    like brasBasahComplex. Until then the wrong default is wrong by LESS than
+    the "fix" would be.
+  - **Skywaters (299.7m published)**. Real figure, but the site is a crane —
+    the AXA Tower was demolished and the tower tops out 2028. Putting it up now
+    means putting up a building that is not there.
+  - **W Singapore - Marina View**. Tagged building=construction in OSM, 51
+    storeys, TOP ~2028, no acceptable metre height. The 18m default is closer to
+    what stands there than any tower height would be.
+  - **OUE Downtown (bare name)**. The 7,400 m2 polygon is the retail PODIUM and
+    its 20m is correct. Seven OSM objects share the "OUE Downtown" prefix; a
+    substring key would cap all seven at 201m, which is the UOB Plaza disaster
+    verbatim.
+
+### Open, ranked by how wrong the world currently looks
+
+  1. **Piccadilly Galleria** — called the biggest visual error of its batch. It
+     is the retail podium of PICCADILLY GRAND, 1/5 Northumberland Road, with
+     THREE 23-STOREY TOWERS on top. OSM put the retail name on the whole site.
+     We draw an 18m box.
+  2. **Golden Mile Complex** — the famous terraced "Batman building", PUBLISHED
+     89m, and it is ABSENT FROM OUR DATA ENTIRELY. authored.json candidate, but
+     it needs a measured footprint first.
+  3. **DUO** — DUO Residences (186m) and DUO Tower (170m) are both published and
+     both missing. The 12,037 m2 "Duo Galleria" polygon is the whole-site podium
+     they stand on. Do NOT set it to 186 or it becomes a 12,000 m2 slab: split
+     it first.
+  4. **One Sophia does not exist.** Peace Centre and Peace Mansion are
+     demolished; two 19-storey towers are under construction for ~2028. We
+     render a 30m building on an empty site. Model a hoarded construction site.
+     A stale "Peace Centre" POI string is still in orchard.json.
+  5. **Grand Park City Hall** is a 10-storey atrium hotel drawn at 55m — about
+     60% too tall. Same TYPE_DEFAULT["hotel"]=55 fallback produced Orchard
+     RendezVous's 55. Worth checking how many hotels sit on that number.
+  6. **The Furniture Mall** is the wrong name on the wrong building: 2 Kallang
+     Avenue is CT Hub; the footprint we render is the Beach Road podium of
+     PARKROYAL, and the mall itself ceased trading there in May 2012.
+
+### Detail available but unbuilt (research is written, recipes are not)
+
+  - **Bugis+**: crystal mesh is deep-drawn POLYCARBONATE, >3,000 hexagonal
+    faceted caps over >5,000 m2, ~1,900 lit by compact fluorescent. It covers
+    ONLY the curved block; the rectilinear block is a red/orange/charcoal
+    patchwork box. Published 40m atrium is the only anchor.
+  - **Bugis Junction**: FOUR preserved streets, not three -- Malay, Hylam, Bugis
+    AND Malabar -- crossing under a domed rotunda hub. Measured widths differ
+    per street (Hylam 13.1m, Malay 9.5m, Malabar 9.2m).
+  - **Raffles Hotel**: the portico is a 1989-91 REPRODUCTION. Beach Road upper
+    verandahs are GLAZED loggias; the open green-balustered ones face the
+    courtyards. No cupolas, no turrets. KEIM Royalan white, Aedas, 2019.
+  - **Buddha Tooth Relic Temple** already has a recipe. For whoever touches it:
+    there is NO external stupa or pagoda -- the gold stupa is interior, 4th
+    floor. The roof is an orchid garden with five timber pavilions, barrel tiles
+    #7D828B cool blue-grey, gold only on the eave rafter-cap row.
+  - **The Watermark / Rodyk Street godown row** is NEAR-BLACK with vermilion
+    joinery, against the Warehouse Hotel's flat white. Two committed schemes on
+    one reach of river; we now build the white one and not the black one.
+
+### Not a landmark problem
+
+  - **Traffic reads too thin.** A rider's-eye frame down Orchard Road at 03:00
+    had NO vehicles in view at all on a four-lane road. Traffic is generated per
+    district AXIS with cars = clamp(axisLen/33, 18, 78), so Orchard gets 78 over
+    3,850m -- one car every 49m, and a 260m draw radius makes that read as
+    empty. Measure before changing: the cost is ~1% of triangles after culling,
+    so density is cheap, but D34/D35 gate vehicle overlap and off-carriageway.
