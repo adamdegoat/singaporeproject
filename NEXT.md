@@ -3332,3 +3332,33 @@ The fix per site is the One Raffles Quay pattern:
 Step 2 is the one that needs research: a podium height per site, published if
 possible and a stated height CLASS if not. One Raffles Quay's podium is set at
 20m as an unpublished 3-storey class.
+
+## Site-swallows-tower: what is fixed and what is left
+
+FIXED 2026-07-31 (research/cbd-podiums.md). Seven towers restored:
+Asia Square 1 (229) and 2 (222), One Shenton 1 (214) and 2 (177.7), SGX Centre
+1 and 2 (187.3, mapped under CTBUH's former name "Unity Tower"), Court Tower
+(177.8). The Octagon dropped from a wrong 178 back to its real 80.
+The fix was SUBTRACTION at four of five sites -- OSM already held the right
+tower heights and the site key was overwriting them.
+
+Three specific traps found while doing it, all now commented in process.py:
+  - Asia Square was defined TWICE in the same dict literal, at 229 and 250, and
+    the later silently won. Its own comment said "NOT asia square: that name is
+    the site OUTLINE" while the key sat defined earlier in the same literal.
+  - Singapore Land Tower's KEY was the bug: two OSM ways share the name exactly
+    (48-storey tower and 4-storey podium), so no substring can separate them.
+    Deleting the key was the fix.
+  - "state courts" was matching the 1975 OCTAGON, a different still-standing
+    building, and rendering it 178m tall.
+
+STILL SWALLOWED, and why each is left alone:
+  - **One Raffles Place Tower 2** (3 fragments). CANNOT be fixed by lowering the
+    site: Tower 1 has NO FOOTPRINT in OSM at all, so the 280m site polygon IS
+    the OUB tower on screen and dropping it to a podium deletes a 280m landmark.
+    Authoring a Tower 1 footprint is the prerequisite. Do NOT add a flat
+    "tower 2" key either -- OSM has 209 and 179 on the two halves of its
+    SKILLION roof and one number would flatten the slope.
+  - **Paragon Medical (78), Far East Plaza Residence (70), Ascott Orchard (68)**
+    in Orchard. Same pattern as the CBD, unresearched. Each needs its site key
+    dropped to a podium height, which needs a podium figure per site.
