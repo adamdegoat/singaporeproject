@@ -4451,6 +4451,7 @@ export const RECIPES = [
   [/abdul gafoor/i, abdulGafoor],
   [/angullia/i, angullia],
   [/^the warehouse$/i, warehouseGodowns],
+  [/^golden mile complex$/i, goldenMileComplex],
   [/srinivasa perumal/i, perumalGopuram],
   // PARKED 2026-07-30 midday after round 1: The Foundry's OSM footprint is
   // a chunky pentagon, not the 115x57 slab the research measured (the
@@ -5658,4 +5659,90 @@ function warehouseGodowns(api, b) {
   // the rough grey granite rubble river wall in front of the group
   api.merge(api.extrudeGeo(rect(ob.midU, ob.midV + ob.halfShort * 1.30,
     ob.halfLong * 1.02, 0.5), 1.1), W.granite, ob.cx, ob.cz);
+}
+
+// Golden Mile Complex, 5001 Beach Road (1973, Design Partnership) — the
+// terraced "Batman building". Authored, not mapped: see data/authored.json.
+// Researched 2026-07-31, research/authored-footprints.md.
+//
+// IT WAS MISSING FROM THE WORLD FOR TWO INDEPENDENT REASONS, and either alone
+// would have hidden it. OSM way 47126585 exists but carries construction=yes
+// and NO building tag, so the fetch's way["building"] query never sees it; and
+// it sits east of the bugis bbox edge anyway. The most famous building on Beach
+// Road was simply absent.
+//
+// It is NOT demolished. URA gazetted it for conservation in Oct 2021 and that
+// was the condition of the 2022 en-bloc; it stands, gutted and hoarded, being
+// restored, with a 45-storey tower going up alongside for 2029. That tower is
+// NOT built here -- nothing about its footprint is measured.
+//
+// THE SECTION IS THE BUILDING. A flat slab of the right size in the right place
+// is still the wrong building: what everyone recognises is the stepped terrace
+// stack facing SE toward Nicoll Highway, against a sheer flat back wall on the
+// Beach Road side. Which of the two long faces is the front cannot be recovered
+// from a rectangle, so it is carried on the record as `ter` -- measured from a
+// perpendicular luminance profile, not assumed.
+//
+// The height is built at the architect's published 89m and the doubt is on the
+// record: 89 over 16 storeys is 5.56m a floor, which no residential-over-retail
+// building has. See data/authored.json h_src. For a 178 x 64m slab a height
+// error reads far less badly than a wrong orientation, which is why the
+// orientation got the measurement effort.
+const GMC_MAT = {
+  wall: new THREE.MeshStandardMaterial({ color: 0xbdb7a8, roughness: 0.88 }),
+  back: new THREE.MeshStandardMaterial({ color: 0x9b968a, roughness: 0.9 }),
+  deck: new THREE.MeshStandardMaterial({ color: 0xd6d1c4, roughness: 0.85 }),
+  glass: new THREE.MeshStandardMaterial({
+    color: 0x53707a, roughness: 0.26, metalness: 0.3,
+  }),
+};
+function goldenMileComplex(api, b) {
+  const ob = orientedBox(b.p);
+  const M = GMC_MAT;
+  const H = Math.max(40, b.h || 89);
+  const t = b.ter || {};
+  const LV = Math.max(6, t.levels || 16);
+  const FROM = Math.max(1, t.from || 4);
+  const STEP = t.step || 3.0;
+  const FL = H / LV;
+
+  // the measured SE-facing normal, or the box's own short axis if a future
+  // entry omits it
+  let nx = t.nx, nz = t.nz;
+  if (nx === undefined) { nx = -ob.uz; nz = ob.ux; }
+
+  // Work in the slab's own frame: `u` along the 178m length, `v` across the
+  // depth, with v = 0 at the BACK face and v growing toward the terraces.
+  const backX = ob.bx - nx * ob.halfShort, backZ = ob.bz - nz * ob.halfShort;
+  const ux = -nz, uz = nx;
+  const D = ob.halfShort * 2;
+  const HU = ob.halfLong;
+  const face = (v0, v1, y0, h, mat) => {
+    const ring = [
+      [backX + ux * -HU + nx * v0, backZ + uz * -HU + nz * v0],
+      [backX + ux * HU + nx * v0, backZ + uz * HU + nz * v0],
+      [backX + ux * HU + nx * v1, backZ + uz * HU + nz * v1],
+      [backX + ux * -HU + nx * v1, backZ + uz * -HU + nz * v1],
+    ];
+    api.merge(api.extrudeGeo(ring, h, y0), mat, ob.cx, ob.cz);
+  };
+
+  // 1. the podium: full depth, straight up, the retail levels everyone walks
+  face(0, D, 0, FL * FROM, M.wall);
+  // 2. THE TERRACE STACK. Each level above the podium is one step shallower, so
+  //    the SE face rakes back and the roofline of every floor is an open deck.
+  for (let i = FROM; i < LV; i++) {
+    const cut = Math.min(D * 0.62, (i - FROM + 1) * STEP);
+    const y = FL * i;
+    face(0, D - cut, y, FL, M.wall);
+    // the deck edge of the terrace below, projecting into the open air
+    face(D - cut, D - cut + Math.min(STEP, 2.4), y, 0.5, M.deck);
+    // glazing set back under the terrace above
+    face(D - cut - 1.2, D - cut - 0.2, y + FL * 0.15, FL * 0.62, M.glass);
+  }
+  // 3. THE BACK WALL: sheer, flat, full height, no terracing at all. It is what
+  //    Beach Road sees and it is the reason the building reads as a wedge.
+  face(-0.6, 0.6, 0, H, M.back);
+  // 4. the two-storey maisonette crown, so the top tread reads double height
+  face(0, D - Math.min(D * 0.62, (LV - FROM) * STEP), H, FL * 0.55, M.deck);
 }

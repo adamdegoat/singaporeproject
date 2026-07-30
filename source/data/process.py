@@ -1873,6 +1873,48 @@ def main():
             if _e.get("district") != DIST_ID:
                 continue
             _cx, _cz = proj(_e["lat"], _e["lon"])
+            if _e.get("shape") == "slab":
+                # a straight back face plus a depth: the simplest honest plan
+                # for a long slab block. Terracing, setbacks and anything else
+                # about its SECTION belong in the recipe, not in the footprint.
+                (_la0, _lo0), (_la1, _lo1) = _e["baseline"]
+                _x0, _z0 = proj(_la0, _lo0)
+                _x1, _z1 = proj(_la1, _lo1)
+                _dx, _dz = _x1 - _x0, _z1 - _z0
+                _L = math.hypot(_dx, _dz) or 1.0
+                # perpendicular, pointed at the side the building actually
+                # occupies -- checked against the stated centroid rather than
+                # assumed, because a normal's sign depends on vertex order
+                _nx, _nz = -_dz / _L, _dx / _L
+                _mx, _mz = (_x0 + _x1) / 2, (_z0 + _z1) / 2
+                _cxr, _czr = proj(_e["lat"], _e["lon"])
+                if (_cxr - _mx) * _nx + (_czr - _mz) * _nz < 0:
+                    _nx, _nz = -_nx, -_nz
+                _d = float(_e["depth"])
+                _ring = [(_x0, _z0), (_x1, _z1),
+                         (_x1 + _nx * _d, _z1 + _nz * _d),
+                         (_x0 + _nx * _d, _z0 + _nz * _d)]
+                _ar = abs(sum(_ring[_i][0] * _ring[(_i + 1) % 4][1]
+                              - _ring[(_i + 1) % 4][0] * _ring[_i][1] for _i in range(4))) / 2
+                _b = {"p": [[round(x, 1), round(z, 1)] for x, z in _ring],
+                      "h": _e["h"], "n": _e["n"], "hs": "authored", "a": round(_ar)}
+                if _e.get("key"):
+                    _b["key"] = 1
+                # Carry the measured facing direction with the building. A
+                # recipe can find the long axis of a rectangle on its own, but
+                # NOT which of the two long faces is the front -- and for a
+                # terraced slab that is the whole building. Golden Mile's
+                # terraces face SE, which was measured from a luminance profile,
+                # so it travels with the footprint instead of being re-guessed.
+                if _e.get("terrace"):
+                    _t = _e["terrace"]
+                    _b["ter"] = {"nx": round(_nx, 4), "nz": round(_nz, 4),
+                                 "step": _t.get("step_back", 3.0),
+                                 "from": _t.get("from_level", 4),
+                                 "levels": _t.get("levels", 16)}
+                buildings.append(_b)
+                _added += 1
+                continue
             if _e.get("shape") != "arc":
                 continue
             for _a0, _a1 in _e["arcs"]:
