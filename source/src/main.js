@@ -1952,7 +1952,20 @@ function driveCamera(dt) {
   camAim.lerp(aim, Math.min(1, dt * 6.0));
   camera.position.copy(camPos);
   camera.lookAt(camAim);
-  camera.fov = 58 + (S.speed / RIDE.vMax) * 12;
+  // SPEED WIDENS THE LENS, BUT NOT THIS MUCH. 58 to 70 degrees is a big pull
+  // back — at speed the street reads further away and smaller, which is the
+  // "too zoomed out when riding fast" the user asked about. Kept as a cue
+  // because some sense of speed in the lens is worth having, just a third of
+  // the old amount: 58 -> 63.
+  //
+  // AND IT DIVIDED BY THE BIKE'S TOP SPEED WHILE DRIVING THE CAR. RIDE.vMax is
+  // 11.6 m/s; CAR.vMax is 18.0. So a car at its own top speed scored a ratio of
+  // 1.55 and reached 76.6 degrees — the car was pulling back half again as hard
+  // as the bike and nobody had asked it to. `rideParams` is already the active
+  // vehicle's parameters, and the ratio is clamped so no future vehicle can
+  // walk past the end of the range either.
+  const spd = Math.min(1, Math.abs(S.speed) / ((rideParams && rideParams.vMax) || RIDE.vMax));
+  camera.fov = 58 + spd * 5;
   camera.updateProjectionMatrix();
 }
 
