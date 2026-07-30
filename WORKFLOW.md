@@ -414,3 +414,25 @@ streaming is still settling. A thing seen once is a hypothesis. This does not
 argue for ignoring what you see -- the gantry "blank sign" and the floating
 parapet were both spotted this way and both real -- only for confirming it
 before building a theory on top of it.
+
+## A long merged cylinder silently does not render
+
+Measured 2026-07-31 on Bugis Junction's glazed street vaults, by bisection:
+**34m draws, 45m draws, 60m draws, 92m does not, 141m does not.** No exception,
+no warning; the geometry is created, `api.merge` is called, and nothing appears.
+
+This is almost certainly the same failure that ate Mustafa Centre's wave-wing
+bulges, where a loop of extra geometry in one tile-and-material bucket made the
+BUILDING MASS stop rendering. Both were ruled out as: an exception (no
+pageerror), CylinderGeometry specifically (an extrudeGeo rebuild failed the same
+way), an attribute-length overflow in `Merger.flush`, and non-finite coordinates
+(the merger now drops those per-geometry and it changed nothing).
+
+Not understood. What is known:
+  - It is silent, so it will be mistaken for "my recipe didn't run".
+  - The cheap first test is to SHORTEN the piece or split it into segments.
+  - `Merger.add` keys buckets on `(tile of x,z | material)` with TILE = 110m, so
+    a suspect is a merged mesh whose extent greatly exceeds the tile it is
+    filed under. That is a hypothesis, not a finding.
+
+If you are chasing a recipe whose geometry will not appear, check this first.

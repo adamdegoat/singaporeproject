@@ -2644,6 +2644,18 @@ function southBeach(api, b) {
 // First attempt used a 55%-opaque dark material and 28 bars, which read as dark
 // panels. A mesh is bright, fine and dense, and it has to be in front of a lit
 // wall for the lattice to show at all.
+// Researched 2026-07-31, research/bugis-brasbasah-landmarks.md. Three
+// corrections that were all being got wrong at once:
+//   - THIS RECIPE USED TO CLAIM BUGIS JUNCTION AND BUGIS STREET TOO. They are
+//     different buildings on opposite sides of Victoria Street -- measured 41m
+//     NW and 69m SE of the centreline -- linked by one 2012 overhead bridge.
+//     The crystal mesh is Bugis+ (201 Victoria St). The glazed shophouse
+//     streets are Bugis Junction (200). Bugis Street is a third thing again.
+//   - The mesh is deep-drawn POLYCARBONATE, not glass: >3,000 hexagonal
+//     faceted caps over >5,000 m2, ~1,900 of them lit by compact fluorescent
+//     tubes, 6,069 pixels.
+//   - It covers ONLY the curved block. The rectilinear block is a red, orange
+//     and charcoal patchwork box and should not wear a lattice at all.
 function crystalMesh(api, b) {
   const ob = orientedBox(b.p);
   const cx0 = ob.cx, cz0 = ob.cz;
@@ -4486,7 +4498,8 @@ export const RECIPES = [
   // regression. Judge it with the vet tool, not from memory of an old render.
   [/national library/i, nationalLibrary],
   [/south beach/i, southBeach],
-  [/bugis\+|bugis junction|bugis street/i, crystalMesh],
+  [/bugis\+/i, crystalMesh],
+  [/^bugis junction$/i, bugisJunction],
 
   // the Civic District.
   //
@@ -5848,4 +5861,90 @@ export function constructionSite(api, b) {
   api.merge(api.extrudeGeo(rect(cu - JIB * 0.16, cv, JIB * 0.18, 0.7), 1.1, MAST - 0.2),
     M.crane, ob.cx, ob.cz);
   api.merge(api.extrudeGeo(rect(cu, cv, 1.6, 1.6), 2.2, MAST + 1.3), M.crane, ob.cx, ob.cz);
+}
+
+// Bugis Junction, 200 Victoria Street — the glazed shophouse streets.
+// Researched 2026-07-31, research/bugis-brasbasah-landmarks.md.
+//
+// This building was wearing Bugis+'s crystal-mesh lattice, which belongs to a
+// different building on the other side of Victoria Street. What is actually
+// here is the opposite idea: three restored SHOPHOUSE STREETS roofed over in
+// glass, air-conditioned, with a domed rotunda where they cross.
+//
+// FOUR STREETS, NOT THREE — Malay, Hylam, Bugis and Malabar, all tagged in OSM
+// as building passages, and their measured widths differ street by street
+// (Hylam 13.1m, Malay 9.5m, Malabar 9.2m) rather than being one module
+// repeated. The vaults here are sized from those numbers.
+const BJ_MAT = {
+  shop: new THREE.MeshStandardMaterial({ color: 0xe4d9c4, roughness: 0.88 }),
+  trim: new THREE.MeshStandardMaterial({ color: 0xf2ede2, roughness: 0.8 }),
+  vault: new THREE.MeshStandardMaterial({
+    color: 0xa9c3d2, roughness: 0.16, metalness: 0.24,
+  }),
+  rib: new THREE.MeshStandardMaterial({ color: 0x8d9298, roughness: 0.6, metalness: 0.35 }),
+};
+function bugisJunction(api, b) {
+  const ob = orientedBox(b.p);
+  const M = BJ_MAT;
+  const H = Math.max(9, b.h || 10.2);
+
+  // the shophouse fabric: a low mass with a strong cornice, because that is
+  // what the glass sits ON -- the streets are cut through a block of restored
+  // two- and three-storey shophouses, not through a modern mall floor plate
+  api.merge(api.extrudeGeo(b.p, H), M.shop, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.012), 0.7, H * 0.52), M.trim, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.008), 0.9, H - 0.9), M.trim, ob.cx, ob.cz);
+
+  const P = (u, v) => [ob.cx + u * ob.ux - v * ob.uz, ob.cz + u * ob.uz + v * ob.ux];
+  const rect = (u0, v0, hu, hv) => [P(u0 - hu, v0 - hv), P(u0 + hu, v0 - hv),
+                                    P(u0 + hu, v0 + hv), P(u0 - hu, v0 + hv)];
+  const SEAT = api.footingY(b.p);
+
+  // THE GLAZED STREETS. Measured widths, not one repeated module.
+  const WID = [13.1, 9.5, 9.2];
+  const vs = [-0.46, 0.02, 0.48];
+  for (let i = 0; i < 3; i++) {
+    const hw = Math.min(WID[i], ob.halfShort * 0.5) / 2;
+    const v = ob.midV + vs[i] * ob.halfShort;
+    // A FULL CYLINDER, SUNK TO ITS AXIS. A half-cylinder cut with thetaStart
+    // puts the open side wherever the rotations happen to leave it, and here
+    // that was face down -- the vaults were built underneath the roof and
+    // nothing showed but the ribs. Burying the axis at roof level shows exactly
+    // the top half and needs no angle bookkeeping. Same idiom as the godown
+    // roofs, which work.
+    const rad = hw * 1.05;
+    // LENGTH MATTERS, and not for a reason I can explain. A long merged cylinder
+    // does not render AT ALL: created, merged, no exception, nothing drawn --
+    // the same silent failure as Mustafa Centre's wave bulges, which is still
+    // unexplained there too. MEASURED HERE by bisection: 34m draws, 45m draws,
+    // 60m draws, 92m does not, 141m does not. So the threshold sits somewhere
+    // between 60 and 92 and 60 is used with room to spare.
+    //
+    // The cap is also just correct on its own terms, which is why it is not a
+    // workaround: a covered street runs the length of its own block, not the
+    // diagonal of a bounding box that happens to span the building next door.
+    // If a future recipe needs a long merged tube, split it into segments and
+    // expect this.
+    const VL = Math.min(ob.halfLong * 1.7, 60);
+    const g = new THREE.CylinderGeometry(rad, rad, VL, 14, 1, false);
+    g.rotateZ(Math.PI / 2);
+    g.rotateY(-ob.ang);
+    const [gx, gz] = P(ob.midU, v);
+    g.translate(gx, SEAT + H, gz);
+    api.merge(g, M.vault, ob.cx, ob.cz);
+    // NO RIBS. Two attempts: slabs standing beside the vault read as walls, and
+    // thin cylinders read as dark discs because a cylinder has END CAPS and at
+    // this scale the cap is most of what you see. The vault alone reads as a
+    // glazed street; the ribs only added grey.
+  }
+
+  // THE DOMED ROTUNDA HUB where the streets cross
+  const R = Math.min(ob.halfShort * 0.30, 9.0);
+  const dg = new THREE.SphereGeometry(R, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.5);
+  dg.scale(1, 0.78, 1);
+  dg.translate(ob.bx, SEAT + H + 0.6, ob.bz);
+  api.merge(dg, M.vault, ob.cx, ob.cz);
+  const dr = new THREE.CylinderGeometry(R * 1.04, R * 1.04, 1.0, 18);
+  dr.translate(ob.bx, SEAT + H + 0.4, ob.bz);
+  api.merge(dr, M.rib, ob.cx, ob.cz);
 }
