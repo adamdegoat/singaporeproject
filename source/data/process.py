@@ -229,6 +229,15 @@ LANDMARKS = {
     "marina one":             {"h": 200},   # architect figure; CTBUH says 225.5 — conflict recorded
     "lau pa sat":             {"h": 14},    # 1-storey market + clock lantern; UNPUBLISHED, height class only
 
+    # LASALLE College of the Arts, McNally campus. Researched 2026-07-31,
+    # research/lasalle-simlim.md. OSM carries building:levels=5 and the
+    # published storey count is SEVEN, so the 17m we had was 9-12m short.
+    # UNPUBLISHED: no metre figure exists for this building anywhere. 26m is the
+    # research's estimate for the TALLEST block, reached by two independent
+    # methods, class 25-30m. Here rather than in the recipe so the mass, the
+    # audit and the ledger all read one number.
+    "lasalle":                {"h": 26},
+
     # ---- Little India, researched 2026-07-30 (research/littleindia-temples.md,
     # research/sri-veeramakaliamman.md). NEITHER of these has a published height
     # in metres from ANY authoritative source -- both agents said so explicitly,

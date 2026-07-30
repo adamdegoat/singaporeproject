@@ -4423,6 +4423,8 @@ export const RECIPES = [
   [/^old hill street police station$/i, oldHillStreet],
   [/bras basah complex/i, brasBasahComplex],
   [/^tekka centre$/i, tekkaCentre],
+  [/lasalle/i, lasalle],
+  [/^sim lim square$/i, simLimSquare],
   // PARKED 2026-07-30 midday after round 1: The Foundry's OSM footprint is
   // a chunky pentagon, not the 115x57 slab the research measured (the
   // research measured the ROOF outline from satellite; the ground footprint
@@ -4532,7 +4534,10 @@ const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery,
                               // louvres, 284 wet stalls and 119 hawker stalls straight off the
                               // pavement. Glazed retail bays are the wrong idiom for exactly the
                               // reason lau pa sat is already in NEVER_SHOPFRONT below.
-                              tekkaCentre]);
+                              tekkaCentre,
+                              // LASALLE's ground floor is studios and a colonnade behind a
+                              // base flare, not a retail frontage.
+                              lasalle]);
 // Buildings that never have a shopfront whether or not a recipe knows them.
 // Maghain Aboth Synagogue has no recipe, so the set above let it through and it
 // was given a row of glazed retail bays. Only words that cannot be anything
@@ -4933,5 +4938,223 @@ function mustafaCentre(api, b) {
     const dg = new THREE.CylinderGeometry(R, R, top + 1.6, 20);
     dg.translate(ob.bx, SEAT + (top + 1.6) * 0.5, ob.bz);
     api.merge(dg, teal, ob.cx, ob.cz);
+  }
+}
+
+// LASALLE College of the Arts, McNally campus (RSP, 2007).
+// Researched 2026-07-31, research/lasalle-simlim.md.
+//
+// THE GENERIC GETS THIS AS WRONG AS IT IS POSSIBLE TO GET A BUILDING: it
+// extrudes the 9,285 m2 rhombus as ONE SOLID. The building is SIX separate
+// faceted blocks arranged around a carved internal canyon, and that void is its
+// entire identity. A slab here is not a coarse version of the building, it is
+// the opposite of it.
+//
+// Six things the research corrected, all load-bearing for what is built below:
+//   - Six blocks, not one, separated by SIX CONCAVE SCALLOPS about 3m deep at
+//     measured bearings, which is what makes the outside read as faceted.
+//   - Block heights are NOT uniform: tallest is the McNally/west block, at
+//     least two others sit at 0.62-0.70 of it.
+//   - The canyon is NOT open to the sky. A run of white tensile sails covers
+//     it, and from the street that white sail floating in a black slot is the
+//     hero element. Leaving it off would lose the building twice.
+//   - Canyon walls CORBEL OUT over the void as they rise, so the slot narrows
+//     upward, over a ground-floor colonnade of round white columns.
+//   - External faces are near-vertical (0-4 degrees) with a base flare.
+//   - OSM's own tags are wrong twice: building:levels=5 against a published 7,
+//     and building:colour #7B7F7A against a real base nearer #3C424A.
+//
+// The blocks are cut as SECTORS OF THE REAL FOOTPRINT rather than as boxes laid
+// over it. A box ring on a rhombus overhangs its corners and stands in the
+// street; a sector is bounded by the footprint's own edge, so it cannot.
+const LASALLE_MAT = {
+  skin: new THREE.MeshStandardMaterial({ color: 0x3c424a, roughness: 0.72 }),
+  panel: new THREE.MeshStandardMaterial({ color: 0x6b727b, roughness: 0.7 }),
+  sail: new THREE.MeshStandardMaterial({ color: 0xe8e6dc, roughness: 0.62 }),
+  canyon: new THREE.MeshStandardMaterial({
+    color: 0x6e7a70, roughness: 0.22, metalness: 0.22,
+  }),
+};
+function lasalle(api, b) {
+  const ob = orientedBox(b.p);
+  const H = Math.max(20, b.h || 26);
+  const SEAT = api.footingY(b.p);
+  const M = LASALLE_MAT;
+  const C = [ob.bx, ob.bz];
+
+  // where the footprint's own boundary sits along a ray from the centre
+  const edgeAt = (a) => {
+    const dx = Math.cos(a), dz = Math.sin(a);
+    let best = null;
+    for (let i = 0; i < b.p.length; i++) {
+      const [x0, z0] = b.p[i], [x1, z1] = b.p[(i + 1) % b.p.length];
+      const ex = x1 - x0, ez = z1 - z0;
+      const den = dx * ez - dz * ex;
+      if (Math.abs(den) < 1e-9) continue;
+      const t = ((x0 - C[0]) * ez - (z0 - C[1]) * ex) / den;
+      const u = ((x0 - C[0]) * dz - (z0 - C[1]) * dx) / den;
+      if (t > 0 && u >= 0 && u <= 1 && (best === null || t < best)) best = t;
+    }
+    return best === null ? Math.max(ob.halfLong, ob.halfShort) : best;
+  };
+  const at = (a, r) => [C[0] + Math.cos(a) * r, C[1] + Math.sin(a) * r];
+
+  // six sectors, with a gap at each joint: those gaps ARE the scallops
+  const N = 6, GAP = 0.085, INNER = 0.40;
+  // tallest first at the McNally/west block, then the measured spread
+  const HK = [1.00, 0.68, 0.90, 0.65, 0.86, 0.70];
+  const base0 = Math.atan2(-1, -0.35);              // west-ish, the McNally side
+
+  for (let i = 0; i < N; i++) {
+    const a0 = base0 + (i / N) * Math.PI * 2 + GAP;
+    const a1 = base0 + ((i + 1) / N) * Math.PI * 2 - GAP;
+    const ring = [];
+    const STEP = 10;
+    for (let k = 0; k <= STEP; k++) {
+      const a = a0 + (a1 - a0) * (k / STEP);
+      ring.push(at(a, edgeAt(a)));
+    }
+    // and back along the canyon face, which is what makes it a ring segment
+    for (let k = STEP; k >= 0; k--) {
+      const a = a0 + (a1 - a0) * (k / STEP);
+      ring.push(at(a, edgeAt(a) * INNER));
+    }
+    const top = H * HK[i];
+    api.merge(api.extrudeGeo(ring, top), M.skin, ob.cx, ob.cz);
+    // base flare: the cladding splays outward over the bottom 0.15H
+    api.merge(api.extrudeGeo(api.grow(ring, 1.012), H * 0.15), M.skin, ob.cx, ob.cz);
+    // The punched slots, LOOSELY BANDED TO FLOOR LEVELS, which is how the
+    // research describes them. Built as thin recessed bands rather than as
+    // individual openings: at any distance a rider ever sees this from, a band
+    // at each floor line is what the scattered slots actually read as, and a
+    // bare dark face reads as an untextured box. Six above-ground levels.
+    for (let f = 1; f <= 6; f++) {
+      const y = top * (f / 7) - top * 0.028;
+      if (y + top * 0.05 > top) break;
+      // PROUD, not inset. Inset by 0.4% they sat inside the mass and were
+      // invisible -- the block stayed a bare dark box. A band has to break the
+      // surface to read at all; the shadow line it throws is the detail.
+      api.merge(api.extrudeGeo(api.grow(ring, 1.006), top * 0.045, y),
+        f % 2 === 0 ? M.panel : M.skin, ob.cx, ob.cz);
+    }
+
+    // CANYON GLAZING, corbelling out over the void as it rises. Three stacked
+    // bands, each projecting further in than the one below, which is the
+    // narrowing-upward slot the research measured.
+    for (let k = 1; k <= 3; k++) {
+      const f = INNER - k * 0.035;
+      const band = [];
+      for (let q = 0; q <= STEP; q++) {
+        const a = a0 + (a1 - a0) * (q / STEP);
+        band.push(at(a, edgeAt(a) * f));
+      }
+      for (let q = STEP; q >= 0; q--) {
+        const a = a0 + (a1 - a0) * (q / STEP);
+        band.push(at(a, edgeAt(a) * (f + 0.030)));
+      }
+      const y0 = top * (0.22 + (k - 1) * 0.25);
+      api.merge(api.extrudeGeo(band, top * 0.20, y0), M.canyon, ob.cx, ob.cz);
+    }
+  }
+
+  // the ground-floor colonnade the canyon walls stand back behind
+  for (let i = 0; i < 22; i++) {
+    const a = base0 + (i / 22) * Math.PI * 2;
+    const [px, pz] = at(a, edgeAt(a) * (INNER + 0.045));
+    api.merge(api.extrudeGeo(
+      [[px - 0.4, pz - 0.4], [px + 0.4, pz - 0.4], [px + 0.4, pz + 0.4], [px - 0.4, pz + 0.4]],
+      H * 0.20), M.sail, ob.cx, ob.cz);
+  }
+
+  // THE TENSILE SAILS over the canyon: white, above the roofline, spanning the
+  // slot. Flat rather than saddle-shaped -- the silhouette from the street is a
+  // white plane floating in a dark slot, and that reads without the curvature.
+  const P = (u, v) => [ob.cx + u * ob.ux - v * ob.uz, ob.cz + u * ob.uz + v * ob.ux];
+  const rect = (u0, v0, hu, hv) => [P(u0 - hu, v0 - hv), P(u0 + hu, v0 - hv),
+                                    P(u0 + hu, v0 + hv), P(u0 - hu, v0 + hv)];
+  // SIZED TO THE SLOT, NOT TO THE SITE. The first version took its span from
+  // the footprint and produced 57m planks reaching past the blocks on both
+  // sides, hovering clear of every roof -- which reads as scaffolding over the
+  // building rather than a roof inside it. The canyon is 14-18m wide, and the
+  // sails sit just BELOW the tallest parapet so the slot still reads as a slot.
+  const span = Math.min(ob.halfShort, ob.halfLong) * INNER * 0.85;
+  for (let i = 0; i < 5; i++) {
+    const u = ob.midU + (i - 2) * (ob.halfLong * 0.22);
+    api.merge(api.extrudeGeo(rect(u, ob.midV, ob.halfLong * 0.075, span), 0.45,
+      H * (0.90 + (i % 2) * 0.05)), M.sail, ob.cx, ob.cz);
+  }
+  // the white stair core standing in the canyon
+  api.merge(api.extrudeGeo(rect(ob.midU + ob.halfLong * 0.20, ob.midV, 3.0, 3.0), H * 0.92),
+    M.sail, ob.cx, ob.cz);
+}
+
+// Sim Lim Square, 1 Rochor Canal Road. Researched 2026-07-31,
+// research/lasalle-simlim.md.
+//
+// THE PREMISE I BRIEFED WAS WRONG AND THE RESEARCH SAID SO FIRST. I expected a
+// signage band at the bottom with plain wall above -- the Mustafa assumption
+// again. It is not that. It is a FULL-HEIGHT DEEP-BLUE MIRROR-GLASS curtain
+// wall, and the banners are stuck onto the glass at whatever height a tenant
+// chose. The only non-glass is the warm pale-grey concrete: corner pylons and
+// an attic band.
+//
+// And it is not a simple block. It is a STEPPED INVERTED ZIGGURAT: every glazed
+// tray cantilevers forward about 1.0-1.2m over the one below and widens by
+// ~0.072 of the face width per storey, so the building leans out over its own
+// pavement as it rises. That overhang is the whole silhouette.
+//
+// Two more corrections worth keeping: there was NO 2018 repaint (dated photos
+// 2002-2025 show the same blue glass and oatmeal concrete; only the forecourt
+// air intakes changed colour), and there are NO car-park decks -- the car park
+// is underground at B2, so nothing on this building should read as a parking
+// deck. h=20.4 is the roof of the six retail storeys and is FINE; the corner
+// pylons and attic stand 1.19x higher, so capping everything at 20.4 loses
+// them. That ratio is measured and scale-free, which is why it is used here
+// rather than a metre figure -- no height is published for this building.
+const SIMLIM_MAT = {
+  glass: new THREE.MeshStandardMaterial({
+    color: 0x2b4a72, roughness: 0.16, metalness: 0.42,
+  }),
+  conc: new THREE.MeshStandardMaterial({ color: 0xa69f94, roughness: 0.82 }),
+  soffit: new THREE.MeshStandardMaterial({ color: 0x2a2c2e, roughness: 0.9 }),
+};
+function simLimSquare(api, b) {
+  const ob = orientedBox(b.p);
+  const H = Math.max(16, b.h || 20.4);
+  const M = SIMLIM_MAT;
+  const S = H / 6;                                   // six equal retail storeys
+
+  // 1. plinth: the full footprint, one storey, with its projecting canopy
+  api.merge(api.extrudeGeo(b.p, S), M.conc, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.022), 0.5, S - 0.5), M.conc, ob.cx, ob.cz);
+
+  // 2-3. the glazed box, and the trays that step OUT as they rise. Each tray is
+  //      a grown copy of the inset box, so the overhang follows the real plan
+  //      instead of a rectangle laid over it.
+  const inset = api.grow(b.p, 0.94);
+  for (let k = 1; k <= 5; k++) {
+    const out = 0.94 + 0.030 * (k - 1);              // ~1.0-1.2m per storey
+    const ring = api.grow(b.p, out);
+    const y0 = S * k;
+    api.merge(api.extrudeGeo(ring, S * 0.86, y0 + S * 0.14), M.glass, ob.cx, ob.cz);
+    // the dark recessed soffit under each tray, full depth of the step
+    api.merge(api.extrudeGeo(ring, S * 0.14, y0), M.soffit, ob.cx, ob.cz);
+  }
+  api.merge(api.extrudeGeo(inset, S * 0.9, S * 0.1), M.glass, ob.cx, ob.cz);
+
+  // 4. the attic band above the sixth storey
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.06), S * 0.34, H), M.conc, ob.cx, ob.cz);
+
+  // 5. corner pylons, standing 1.19H -- the measured ratio, not a guessed metre
+  const P = (u, v) => [ob.cx + u * ob.ux - v * ob.uz, ob.cz + u * ob.uz + v * ob.ux];
+  const rect = (u0, v0, hu, hv) => [P(u0 - hu, v0 - hv), P(u0 + hu, v0 - hv),
+                                    P(u0 + hu, v0 + hv), P(u0 - hu, v0 + hv)];
+  for (const su of [-1, 1]) {
+    for (const sv of [-1, 1]) {
+      // at the corners of the plan, not 90% of the way there: the attic band is
+      // grown to 1.06 and swallowed them whole at the shorter offset.
+      const u = ob.midU + su * ob.halfLong * 0.99, v = ob.midV + sv * ob.halfShort * 0.99;
+      api.merge(api.extrudeGeo(rect(u, v, 3.2, 4.2), H * 1.19), M.conc, ob.cx, ob.cz);
+    }
   }
 }
