@@ -3362,3 +3362,69 @@ STILL SWALLOWED, and why each is left alone:
   - **Paragon Medical (78), Far East Plaza Residence (70), Ascott Orchard (68)**
     in Orchard. Same pattern as the CBD, unresearched. Each needs its site key
     dropped to a podium height, which needs a podium figure per site.
+
+# ============================================================
+# MORNING SUMMARY — night of 2026-07-30/31
+# ============================================================
+
+Everything below was built, gated and deployed. All 42 checks pass on every
+district and on the merged world; the live check passes after every deploy.
+
+## Buildings that were WRONG and are now right
+
+  - **Seven CBD towers were invisible** and now stand: Asia Square 1 (229m) and
+    2 (222m), One Shenton 1 (214m) and 2 (177.7m), SGX Centre 1 and 2 (187.3m),
+    Court Tower (177.8m). Their site polygons were wearing tower heights, which
+    made the site enclose its own towers and a filter remove them.
+  - **People's Park Complex 25m -> 103m.** OSM's 25 is the podium tag on a
+    polygon covering the whole site; 78m of slab was simply missing.
+  - **Duo Tower 45m -> 170m**, Concourse Office Tower 45 -> 165, Parkview Square
+    45 -> 144. All three were at 45 because OSM tags them height=0.
+  - **OUE Downtown Tower 1 45m -> 201m**, MAS Building 20 -> 104, National
+    Library 90 -> 102.8, UE Square tower 85 -> 91.6, LASALLE 17 -> 26.
+  - **Little India's HDB blocks** now stand at 23/25/21 storeys instead of an
+    identical 40m default.
+  - **The Octagon** dropped from a wrong 178m to its real 80m -- the key
+    "state courts" was dressing a 1975 building as a 2019 one.
+  - **80 construction sites** draw as sites, not finished buildings. IR2 and NS
+    Square were 18m slabs over 32,610 and 28,118 m2 of Marina Bay.
+  - **One Sophia** is a construction site: Peace Centre is demolished.
+
+## Buildings that did not exist here at all
+
+  - **Raffles Hotel.** OSM maps it as a relation with wikidata and NO name, so
+    nothing could reach it. Named and given a colonial recipe.
+  - **Golden Mile Complex.** Missing for two independent reasons; authored and
+    terraced.
+  - **One Pearl Bank.** No OSM building at all; authored from a least-squares
+    circle fit.
+
+## New bespoke recipes
+
+Bras Basah Complex, Tekka Centre, LASALLE, Sim Lim Square, both Little India
+gopurams, Abdul Gafoor, Angullia, the Warehouse godowns, Bugis Junction,
+Golden Mile Complex, Raffles Hotel, and a generic construction site.
+Recipe coverage is now reported by the accuracy ledger: 20% of named buildings.
+
+## Engine and pipeline bugs fixed
+
+  - Named buildings under 520 m2 could never reach a recipe.
+  - A process.py override only reaches the world if EVERY overlapping district
+    scene is rebuilt -- LASALLE shipped at 17m from a stale scene through a
+    deploy that passed all gates.
+  - Seam dedupe now scales with footprint size; Funan, Old City Hall, Bugis+,
+    Peninsula Plaza and NAFA were each drawn twice.
+  - Coincident-footprint gate added to check.py, with a verified negative test.
+  - P7 judged every flat marking against the carriageway, so correct footway
+    markings read as buried.
+  - `__allTraffic` and `__allCrowd` debug hooks: both only ever saw the boot
+    district, which made every traffic and crowd measurement meaningless.
+
+## Known and deliberate
+
+  - A long merged cylinder silently does not render. Bisected: 60m draws, 92m
+    does not. Bucket-key hypothesis tested and ruled out. Unexplained.
+  - One Raffles Place must NOT be lowered to a podium: Tower 1 has no footprint,
+    so the site polygon IS the tower on screen.
+  - 10-20% of walkers stand still at any instant. That is correct -- they are
+    waiting at red pedestrian signals.
