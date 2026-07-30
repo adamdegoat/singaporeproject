@@ -346,7 +346,16 @@ window.__auditWorld = async function auditWorld() {
       // extends rather than only where its origin is
       const sc3 = new T.Vector3();
       m4.decompose(new T.Vector3(), new T.Quaternion(), sc3);
+      // BY MECHANISM, NOT BY SHAPE. Every pedestrian exemption below was a
+      // list of geometry parameters, and lengthening the leg capsule from 0.44
+      // to 0.587 (it was 15cm short of its own shoe) silently revoked all of
+      // them — three walkers mid-crossing appeared as blockers. That is the
+      // third time this file has been bitten by a signature allowlist: the
+      // tree branch, the lamp bracket, and now the crowd. The note at ROAD_OK
+      // already says a signature list "fails CLOSED for changed ones"; the
+      // answer is to stop describing a person by their measurements.
       props.push({ sig, mat: matId, x: v3.x, y: v3.y, z: v3.z, sy: sc3.y,
+                   crowd: !!o.userData.crowdPart,
                    flat: g.type === 'PlaneGeometry' });
     }
   });
@@ -463,6 +472,11 @@ window.__auditWorld = async function auditWorld() {
     const bad = {}, ex = [];
     for (const p of props) {
       if (p.flat) continue;
+      // A person on a crossing is a person, not a prop in the road. Exempt by
+      // what they ARE (userData.crowdPart, set on every part of every walker)
+      // rather than by a list of capsule dimensions that goes stale the moment
+      // the figure is retuned.
+      if (p.crowd) continue;
       if (ROAD_OK.has(p.sig)) {
         const up = terr ? p.y - terr.at(p.x, p.z) : 99;
         if (LOW_OK.has(p.sig) || up >= OVERHEAD_MIN) continue;
@@ -818,7 +832,10 @@ window.__auditWorld = async function auditWorld() {
     const NEAR = 0.6, g2 = new Map();
     let dup = 0; const ex = [];
     for (const p of props) {
-      if (p.flat || CLUSTERED.has(p.sig)) continue;
+      // Same mechanism rule as P1: a person carries two arms, two legs and
+      // two shoes within 60cm by construction, and that is a fact about
+      // being a person, not about the capsule they happen to be made of.
+      if (p.flat || p.crowd || CLUSTERED.has(p.sig)) continue;
       // the P4 key includes the MATERIAL: a painted kerb section abutting a
       // plain kerb section is the same box in two materials 60cm apart —
       // correct furniture at every crossing mouth, not duplication. Material
@@ -1296,6 +1313,23 @@ window.__auditWorld = async function auditWorld() {
         + `${st.shopsUpstairs || 0} not on the street floor, ${st.shopsInside || 0} in an atrium, `
         + `${st.shopsBackBlock || 0} off the built street network, ${st.shopsNoHost || 0} with no footprint`,
         []);
+  }
+
+  /* --- recipe coverage, REPORTED not gated --- */
+  // The main remaining lever on every district is bespoke massing, and the
+  // number was already being computed (`stats.bespoke`, incremented in
+  // city.js) and then thrown away. accuracy.py cannot answer this: it only
+  // sees the scene file, and whether a name matches a recipe is a fact about
+  // landmarks.js, knowable only with the world built. Ungated on purpose —
+  // a budget here would either be met by writing bad recipes or ignored.
+  {
+    const st = window.__stats || {};
+    const data = window.__data || {};
+    const named = (data.buildings || []).filter((b) => b.n).length;
+    add('R1', `named buildings with a bespoke recipe (of ${named} named)`,
+        'INFO', st.bespoke || 0, null,
+        `${st.bespoke || 0} of ${named} named buildings are drawn by a researched `
+        + `recipe; the rest take the generic facade family`, []);
   }
 
   {

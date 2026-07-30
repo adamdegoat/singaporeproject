@@ -119,6 +119,43 @@ def build_ledger(d):
     return real, inv
 
 
+def coverage(d):
+    """How much of each countable class is REAL, read out of the scene.
+
+    Only classes where the scene records provenance per feature belong here. A
+    class where every feature is invented by the same rule (railings, planters)
+    is a 0 that never moves and would only dilute the number; those stay in the
+    INVENTED list above where their fix is written down.
+    """
+    B = d.get("buildings", [])
+    R = d.get("roads", [])
+    hs = collections.Counter(b.get("hs", "guess") for b in B)
+    return [
+        ("building heights", hs["osm"] + hs["named"], len(B),
+         "OSM height/levels or a published figure"),
+        ("building facades", sum(1 for b in B if b.get("mat") or b.get("yr")), len(B),
+         "building:material or start_date steers the family; the rest is a hash"),
+        ("named buildings", sum(1 for b in B if b.get("n")), len(B),
+         "OSM name — an unnamed block behind the frontage is honest background"),
+        # `k` is the LANDMARK FLAG THE DATA CARRIES, not "this building has a
+        # bespoke recipe". Labelling it as recipe coverage reported brasbasah at
+        # 0 while it visibly has the National Gallery, CHIJMES, St Andrew's and
+        # the Esplanade — the ledger would have been lying in the one direction
+        # that matters, saying unfinished where the work is done. Real recipe
+        # coverage lives in `stats.bespoke` in city.js and is only knowable with
+        # the world built, so it belongs in the audit, not here.
+        ("landmark-flagged in the data", sum(1 for b in B if b.get("k")),
+         sum(1 for b in B if b.get("n")),
+         "OSM/hand-set landmark flag among the NAMED ones — NOT recipe coverage"),
+        ("road lane counts", sum(1 for r in R if r.get("lanes")), len(R),
+         "OSM lanes/turn:lanes; the rest defaults by road class"),
+        ("road widths", sum(1 for r in R if r.get("wtag")), len(R),
+         "OSM width — almost never tagged here, so this stays near zero"),
+        ("pavement sides", sum(1 for r in R if r.get("sidewalk")), len(R),
+         "OSM sidewalk=both/left/right/no"),
+    ]
+
+
 def main():
     did = sys.argv[1] if len(sys.argv) > 1 else "orchard"
     d, path = load(did)
@@ -138,6 +175,31 @@ def main():
     pct = 100 * len(real) / (len(real) + len(inv))
     print(f"   {len(real)}/{len(real)+len(inv)} feature classes come from real data ({pct:.0f}%).")
     print("   Anything under INVENTED is a known gap, not a finished feature.")
+
+    # THE CLASS RATIO ABOVE CANNOT TELL TWO DISTRICTS APART. It counts how many
+    # KINDS of thing are real, and the kinds are the same everywhere, so on
+    # 2026-07-30 all seven districts reported an identical 21/28 (75%) — a
+    # finished Orchard and a district built the night before scoring the same.
+    # A ledger that cannot distinguish done from new cannot answer "is it done",
+    # which is the one question it exists for.
+    #
+    # These are the classes where the scene itself knows how much is real, so
+    # they are counted per FEATURE and they move as a district is worked on.
+    print()
+    print("   COVERAGE, per feature rather than per class — this is the number")
+    print("   that separates a finished district from a new one:")
+    cov = coverage(d)
+    for name, got, tot, note in cov:
+        if not tot:
+            print(f"   . {name:34s}      -- none in this district ({note})")
+            continue
+        bar = "#" * round(20 * got / tot)
+        print(f"   {'+' if got == tot else '-'} {name:34s} {got:6d}/{tot:<6d} "
+              f"{100*got/tot:3.0f}%  {bar:<20s} {note}")
+    tot_got = sum(g for _, g, t, _ in cov if t)
+    tot_all = sum(t for _, _, t, _ in cov if t)
+    if tot_all:
+        print(f"   {'':36s} {tot_got:6d}/{tot_all:<6d} {100*tot_got/tot_all:3.0f}%  overall")
 
 
 if __name__ == "__main__":

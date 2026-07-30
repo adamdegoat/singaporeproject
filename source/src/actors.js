@@ -4,7 +4,7 @@
 // people cost about seven draw calls, and the walk cycle is just a matrix
 // rewrite per part per frame — cheap in JS, free on the GPU.
 import * as THREE from '../lib/three.module.js';
-import { R, rand, pick, chance } from './tex.js';
+import { R, rand, pick, chance, texFace } from './tex.js';
 import { groundAt, surfaceAt } from './city.js';
 
 /* ---------------- path helper along the street axis ---------------- */
@@ -96,8 +96,33 @@ export class Path {
 }
 
 /* ---------------- pedestrians ---------------- */
-const SKIN = [0x8d6b4e, 0xa8825e, 0x6f5138, 0xc39a72, 0x7d5c40];
-const HAIR = [0x1c1712, 0x2a211a, 0x120f0c, 0x3d2f22, 0x554438];
+// SKIN, WEIGHTED TO THE CITY THIS IS. The old list was five mid-to-dark
+// browns picked with equal probability, so every walker on Orchard Road read
+// as the same person and the crowd looked nothing like Singapore. Resident
+// population is about 74% Chinese, 13.5% Malay, 9% Indian and 3.4% other
+// (Singapore Department of Statistics), and Orchard Road in particular also
+// carries a heavy visitor share, so the paler end is weighted up a little
+// beyond the resident figure rather than matching it exactly. Entries are
+// repeated to weight the pick — the same trick the livery and facade pools
+// use — because a weighted draw here would need its own random stream and a
+// texture must not be able to move a bus stop.
+const SKIN = [
+  // East Asian, ~55% of the draw
+  0xefcdaa, 0xe8c39a, 0xe2b98f, 0xdcb185, 0xefcdaa, 0xe8c39a, 0xe2b98f,
+  0xdcb185, 0xf2d3b4, 0xd9ab7e, 0xefcdaa,
+  // Malay / Southeast Asian, ~15%
+  0xc79066, 0xbc8659, 0xc79066,
+  // South Asian, ~13%
+  0x9b7351, 0x8d6b4e, 0x7d5c40,
+  // paler visitors and Eurasians, ~17%
+  0xf5dcc4, 0xf0d2b6, 0xf5dcc4,
+];
+// Mostly black, because it is, with brown and a little grey so a crowd is not
+// all one age.
+const HAIR = [
+  0x1c1712, 0x1c1712, 0x120f0c, 0x120f0c, 0x2a211a, 0x2a211a, 0x1c1712,
+  0x3d2f22, 0x4a3a2b, 0x6b6259, 0x8c857c,
+];
 const TOPS = [
   0xc9553f, 0xe8e2d4, 0x2f4d6e, 0xd9c489, 0x8a8f96, 0x6d7f5a,
   0xb5a0c4, 0x3b4a52, 0xd58a6a, 0x4a6f74, 0xe0d2b8, 0x8c4a55,
@@ -282,16 +307,38 @@ export class Crowd {
       return im;
     };
     const lam = (c) => new THREE.MeshLambertMaterial(c ? { color: c } : {});
+    const scaleGeo = (g, gx, gy2, gz) => { g.scale(gx, gy2, gz); return g; };
 
     // proportions of a ~1.7m adult, not a bollard
-    this.head = mk(new THREE.SphereGeometry(0.105, 12, 10), lam());
-    this.hair = mk(new THREE.SphereGeometry(0.112, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.62), lam());
-    this.torso = mk(new THREE.CapsuleGeometry(0.125, 0.34, 4, 10), lam());
-    this.hips = mk(new THREE.CapsuleGeometry(0.115, 0.10, 3, 8), lam());
+    // The head carries the face map; every other skin part stays plain, so
+    // one texture serves the whole crowd and the per-instance skin colour
+    // still multiplies straight through it.
+    this.head = mk(new THREE.SphereGeometry(0.105, 16, 12),
+      new THREE.MeshLambertMaterial({ map: texFace() }));
+    // The cap ran to 0.62pi, which put the hairline 56% of the way down the
+    // head — over the brow and over the eyes, so a face drawn on the head was
+    // invisible no matter where it went. A hemisphere puts the hairline at
+    // about 40%, which is where a hairline is.
+    this.hair = mk(new THREE.SphereGeometry(0.112, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), lam());
+    // A PERSON IS WIDER THAN THEY ARE DEEP, AND HAS SHOULDERS. The torso was a
+    // capsule of radius 0.125 — 25cm across — while the arms hang at ±0.19,
+    // 38cm apart, so the arms floated 6.5cm clear of the body on each side and
+    // the figure read as a bollard with sticks. Scaling the GEOMETRY (once, at
+    // build) rather than the instance costs nothing per walker and no extra
+    // triangle: 39cm across the shoulders and 21cm front to back, which is an
+    // adult, and the arms now land ON the shoulder instead of beside it.
+    this.torso = mk(scaleGeo(new THREE.CapsuleGeometry(0.125, 0.34, 4, 10), 1.55, 1, 0.85), lam());
+    this.hips = mk(scaleGeo(new THREE.CapsuleGeometry(0.115, 0.10, 3, 8), 1.30, 1, 0.92), lam());
     this.armL = mk(new THREE.CapsuleGeometry(0.045, 0.40, 3, 7), lam());
     this.armR = mk(new THREE.CapsuleGeometry(0.045, 0.40, 3, 7), lam());
-    this.legL = mk(new THREE.CapsuleGeometry(0.058, 0.44, 3, 7), lam());
-    this.legR = mk(new THREE.CapsuleGeometry(0.058, 0.44, 3, 7), lam());
+    // THE LEGS WERE 15cm TOO SHORT AND IT SHOWED AS A HOLE AT THE ANKLE.
+    // A 0.44 capsule of radius 0.058 is 0.556 long and hung from the hip at
+    // 0.798 it ends at 0.242, while the shoe top sits at 0.095 — a gap that is
+    // there when the figure is STANDING STILL, and that opens into daylight
+    // the moment the leg swings. It read as scattered shoes with nobody
+    // standing in them. 0.587 + two radii reaches the ankle exactly.
+    this.legL = mk(new THREE.CapsuleGeometry(0.058, 0.587, 3, 7), lam());
+    this.legR = mk(new THREE.CapsuleGeometry(0.058, 0.587, 3, 7), lam());
     this.bag = mk(new THREE.BoxGeometry(0.22, 0.26, 0.10), lam());
     this.shoeL = mk(new THREE.BoxGeometry(0.11, 0.07, 0.25), lam(0x2b2723));
     this.shoeR = mk(new THREE.BoxGeometry(0.11, 0.07, 0.25), lam(0x2b2723));
@@ -833,15 +880,46 @@ export class Crowd {
       const sc = pr.scale;
       const gait = real ? ground : 0;
       const moving = gait > 0.1;
-      const walk = moving ? Math.sin(time * 5.2 * (gait / 1.3) + pr.phase) : 0;
-      const bob = moving ? Math.abs(Math.cos(time * 5.2 + pr.phase)) * 0.022 : 0;
+      // INTEGRATE THE STRIDE, DO NOT MULTIPLY BY THE CLOCK. This read
+      //     Math.sin(time * 5.2 * (gait / 1.3) + pr.phase)
+      // which scales the stride frequency by the CURRENT speed and then
+      // multiplies it by ABSOLUTE time — so the argument is time x k(t) when
+      // it has to be the integral of k. The derivative of that expression
+      // carries a `time * dk` term, so a walker whose speed wobbles by
+      // 0.01 m/s jumps 4 x time x 0.01 radians in one frame: harmless in the
+      // first seconds, twelve radians of jump five minutes in. That is the
+      // limbs "suddenly vibrating very fast" the user reported, and it gets
+      // worse the longer the page has been open, which is why it looks like it
+      // starts out of nowhere. A stride is a phase you accumulate, exactly
+      // like an odometer; the clock never appears in it.
+      //
+      // `pr.phase` starts as the random per-person offset it always was and is
+      // now that same phase carried forward, so nobody is in step with anybody.
+      // Guarded because an accumulator is unforgiving in a way an expression is
+      // not: one NaN dt and this person's phase is NaN for the rest of the
+      // session, which writes NaN matrices — the exact class the instance
+      // compactor now refuses outright. A bad frame must cost one frame.
+      if (moving && dt > 0 && dt < 1) pr.phase += dt * 5.2 * (gait / 1.3);
+      const walk = moving ? Math.sin(pr.phase) : 0;
+      // The bob is the same stride seen at twice the rate — one dip per foot
+      // fall — so it comes off the SAME accumulated phase. It used to run at a
+      // flat 5.2 rad/s off the clock, which meant it was only ever in step with
+      // the legs at exactly 1.3 m/s and drifted against them at every other
+      // speed, on top of carrying the same jump.
+      const bob = moving ? Math.abs(Math.cos(pr.phase)) * 0.022 : 0;
 
       // `at` is the write index, which is the person's packed slot for every
       // part they always have and the bag's own counter for the one they may not
+      // ONE GROUND FOR THE WHOLE BODY. Every part used to sample the terrain
+      // under ITSELF, so a walker striding over a kerb had their shoes on the
+      // road surface and their head on the pavement, and each part twitched
+      // independently as they crossed the step. A person stands on one spot.
+      const gy = surfaceAt(x, z);
+
       const put = (part, lx, ly, lz, rx, rz, at) => {
         // local offsets are in the walker's frame, then rotated into the street
         const wx = x + (nx * lx + ux * lz), wz = z + (nz * lx + uz * lz);
-        p.set(wx, surfaceAt(wx, wz) + ly * sc + bob, wz);
+        p.set(wx, gy + ly * sc + bob, wz);
         e.set(rx || 0, heading, rz || 0, 'YXZ');
         q.setFromEuler(e);
         s.set(sc, sc, sc);
@@ -854,22 +932,57 @@ export class Crowd {
       put(this.hair, 0, 1.635, 0.005);
       put(this.torso, 0, 1.22, 0);
       put(this.hips, 0, 0.94, 0);
-      put(this.armL, -0.19, 1.20, 0, walk * 0.62);
-      put(this.armR, 0.19, 1.20, 0, -walk * 0.62);
-      put(this.legL, -0.085, 0.52, 0, -walk * 0.72);
-      put(this.legR, 0.085, 0.52, 0, walk * 0.72);
-      // Feet swing with the legs, hands with the arms — MATCHED TO THE LIMB
-      // ROTATION, not merely "some swing". R_x by θ moves a point L below
-      // the pivot to z = -L·sin(θ). legL pitches by -walk·0.72 with its shoe
-      // ~0.46 below the pivot → shoe z = +0.46·sin(0.72·walk) ≈ +0.33·walk;
-      // armL pitches +walk·0.62 with the hand ~0.30 below → −0.19·walk. The
-      // old constants had the OPPOSITE SIGN on all four, so at full gait a
-      // hand floated ~46cm from its arm tip and a shoe ~63cm from its leg —
-      // the "detached hands and shoes" every sweep-2 reviewer photographed.
-      put(this.shoeL, -0.085, 0.06, 0.02 + walk * 0.33);
-      put(this.shoeR, 0.085, 0.06, 0.02 - walk * 0.33);
-      put(this.handL, -0.205, 0.99, -walk * 0.19);
-      put(this.handR, 0.205, 0.99, walk * 0.19);
+      // A LIMB HANGS FROM A JOINT.
+      //
+      // Every limb was positioned at a FIXED point and then rotated about its
+      // OWN CENTRE, which is not how a leg works. Pitching a thigh 41 degrees
+      // about its middle swings the top of it backwards out of the pelvis and
+      // the bottom forwards, so at full stride the two legs cross into an X
+      // hanging below a body they are visibly no longer joined to. The shoes
+      // were then placed by a hand-linearised forward offset (0.33 x walk) at
+      // a FIXED height, so they sat 25cm below and 15cm in front of the leg
+      // they belong to — scattered flat across the pavement with nobody
+      // standing on them. Two symptoms, one mistake.
+      //
+      // Both go away by hanging each part from its joint. For a part whose
+      // centre sits L below a joint, pitched by t about x:
+      //     centre = joint + R_x(t) . (0, -L, 0) = joint + (0, -L cos t, -L sin t)
+      // A foot then RISES by L(1 - cos t) as it swings, which is the thing
+      // that makes a walk read as a walk instead of a slide.
+      //
+      // The joint heights and lengths are chosen so that at t = 0 every part
+      // lands EXACTLY where it used to: hip 0.798 is the old leg top, shoulder
+      // 1.445 the old arm top. A standing figure is therefore unchanged and
+      // only the moving one is corrected.
+      const HIP_Y = 0.798, LEG_L = 0.3515, FOOT_L = 0.738;
+      const SHO_Y = 1.445, ARM_L = 0.245, HAND_L = 0.455;
+      const hang = (part, lx, jy, L, t, rot) =>
+        put(part, lx, jy - L * Math.cos(t), -L * Math.sin(t),
+            rot === undefined ? t : rot, 0);
+
+      // AMPLITUDE, AND IT SCALES WITH SPEED. 0.72 rad at the hip is 41 degrees
+      // each way — 82 degrees between the legs, which is not a walk, it is the
+      // splits, and it was applied at full size whether someone was strolling
+      // or hurrying. A walking gait is about 20 degrees of hip flexion and a
+      // little less at the shoulder. Tying the amplitude to how fast they are
+      // actually covering ground costs nothing and means a slow walker takes
+      // short steps, which is most of what makes a crowd read as a crowd
+      // rather than as one animation played by everybody.
+      const amp = Math.min(1, gait / 1.4);
+      const tL = -walk * 0.40 * amp, tR = walk * 0.40 * amp;   // legs, opposed
+      const aL = walk * 0.30 * amp, aR = -walk * 0.30 * amp;   // arms, counter-swung
+      hang(this.armL, -0.19, SHO_Y, ARM_L, aL);
+      hang(this.armR, 0.19, SHO_Y, ARM_L, aR);
+      hang(this.legL, -0.085, HIP_Y, LEG_L, tL);
+      hang(this.legR, 0.085, HIP_Y, LEG_L, tR);
+      // The foot hangs from the same hip and travels the whole leg length, but
+      // it does NOT pitch with the leg: an ankle keeps the sole roughly level,
+      // and a boot rotated 41 degrees reads as a broken foot. A third of the
+      // leg's angle is what a real stride shows.
+      hang(this.shoeL, -0.085, HIP_Y, FOOT_L, tL, tL * 0.3);
+      hang(this.shoeR, 0.085, HIP_Y, FOOT_L, tR, tR * 0.3);
+      hang(this.handL, -0.205, SHO_Y, HAND_L, aL);
+      hang(this.handR, 0.205, SHO_Y, HAND_L, aR);
       // Bags get their OWN slot counter. Parking a bagless person's bag at
       // y=-9999 does not cull it — the GPU draws every instance up to .count,
       // which is the lesson already written down for the crowd itself and not

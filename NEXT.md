@@ -85,13 +85,39 @@ shopfront band in city.js AND landmarks.js funnels through extrudeGeo, so the
 same split opened under every one of them on every sloped site in the world.
 It could never show on flat ground, which is why 41 green checks never saw it.
 
-FIXED — `FOOT`, a module-level datum set ONCE per building at the top of the
-builder loop, using the rule the mass already used (so **no mass moves**; only
-the pieces snap back onto their own building). extrudeGeo, extrude and
-`api.footingY` all read it. `api.footingY` now answers with the current
-building's seat rather than re-sampling whatever ring a recipe hands it —
-recipes pass grown and inset rings constantly and those sample different
-ground, which was a second way to get two seats for one building.
+FIXED, in two goes — and the first go was wrong in an instructive way.
+
+First attempt: ONE datum per building (`FOOT`), set once at the top of the
+builder loop from the rule the mass already used. The parapet stopped floating
+and no mass moved. **The gate refused it**: `S8 67/68` on brasbasah, a FLOOR,
+one street-level tenant short. Right diagnosis of the mechanism, wrong
+conclusion from it — putting the ground floor on the structural seat buried the
+shopfront band at the bottom of the hill BEHIND the building.
+
+A building on a slope has TWO honest datums, and the original bug was never
+that there were two. It was that the choice between them was made by the
+THICKNESS OF THE SLICE rather than by what the piece is:
+  FOOT    the structural seat, the lowest ground under the ring, so the mass
+          fills the fall and no daylight shows downhill. The roof is FOOT+h,
+          so everything that caps or stands on the roof measures from it.
+  STREET  where the building meets the pavement it fronts. Everything at
+          ground level measures from this, because a ground floor is at street
+          level by definition.
+Old Hill Street separates them by 13.2m. Seat the parapet on STREET and it
+floats over its own roof; seat the band on FOOT and it goes into the hill.
+
+extrudeGeo, extrude and `api.footingY` read FOOT; addShopfront lifts its band
+by `STREET - FOOT` rather than being given a second seat; `seatY(b)` and
+`streetY(b)` are exported so buildShopfronts — a later pass, long after both
+are back to null — cannot invent its own. `api.footingY` now answers with the
+current building's seat instead of re-sampling whatever ring a recipe hands it,
+which was a second route to two seats for one building.
+
+RESULT: S8 went UP in four districts and held in the other three — orchard
+72->73, brasbasah 68->69, rivervalley 40->43, marinabay 52->57, chinatown 63,
+bugis 67, robertson 67. At street level the band reaches tenants it could not
+reach from the bottom of the hill. All four floors raised with the reason
+written into audit_world.js; floors go up, never down.
 
 TWO MORE OF THE SAME FAMILY, found while fixing it, both confirmed by probe:
 - **Rooftop plant has never been visible, anywhere.** Plant boxes, stair
@@ -111,15 +137,40 @@ Verified: Old Hill Street generic frame has no sky slab and shows plant on the
 roof; Wisma Atria (flat ground, ground=26) is unchanged in massing and now
 shows its entrance canopy and glazed band at street level.
 
-STILL OPEN, named so it is not mistaken for fixed: on a steep footprint
-footingY takes the LOWEST ground, so Old Hill Street (12.6m of relief across
-one 21-vertex ring, Fort Canning's flank) is buried 12.6m on its uphill side
-and the lowest two shutter rows go underground. That is deliberate for a tower
-("bury the uphill side") and wrong at 2.5 storeys. The real answer is a plinth:
-seat at the STREET frontage and extrude the mass DOWN to the lowest ground so
-the roof stays at street+h and no daylight shows downhill. Not done — it
-changes every sloped silhouette in the world and every landmark recipe extrudes
-its own mass, so it needs its own batch and its own vet.
+THE PLINTH WAS INVESTIGATED AND DELIBERATELY NOT BUILT — the terrain under it
+is not good enough to build on. Measured against the source (opentopodata
+srtm30m, the dataset every district is pinned to) around Old Hill Street:
+    OHS high corner        23.0 m        OHS low corner       3.0 m
+    Hill Street outside    23.0 m        Fort Canning summit 37.0 m
+    Boat Quay riverside    17.0 m   <-- this is the SINGAPORE RIVER
+srtm30m is a SURFACE model and it is reading buildings: 17m of "ground" over
+open water, and Hill Street (really ~10m) at 23m. Our heightfield is a smoothed
+version of that, which is where OHS's 12.6m of relief across one 136x95m ring
+comes from. It is NOT one bad cell either — the twenty perimeter samples run
+8.2, 8.7, 11.4, 12.0, 12.5, 12.8, 13.1, 13.2, 13.7, 14.2, 14.7, 15.2, 15.4,
+15.4, 15.9, 17.2, 18.4, 18.5, 20.7, 20.8: a smooth ramp, so a robust statistic
+(10th percentile instead of the minimum) moves the seat 1.3m and fixes nothing.
+A plinth topping the mass out at STREET+h would make this 6-storey building
+50m tall on the strength of a dataset that thinks the river is 17m above sea
+level. Building it would be modelling the noise.
+
+So the real item is TERRAIN, not seating, and it is the same size as any other
+data-layer job: find a bare-earth or higher-resolution source for Singapore
+(SLA/OneMap publish one), pin every district to it as districts.json already
+requires, and rebuild. Until then the burial is a known, measured, honest
+consequence of the elevation data and should be described that way rather than
+papered over. Do not re-derive this — the numbers above are the evidence.
+
+STILL OPEN, named so it is not mistaken for fixed: the MASS is still seated at
+FOOT with its top at FOOT+h, so on a steep footprint the building is short by
+the fall as seen from the street — Old Hill Street (12.6m of relief across one
+21-vertex ring, Fort Canning's flank) loses 12.6m into its uphill side and the
+lowest two rows of rainbow shutters go underground. Correct answer is the
+plinth: top the mass out at STREET+h and extrude DOWN to FOOT, so the building
+is `h` tall as seen from the street it fronts and still fills the fall behind.
+Both numbers now exist per building, so it is a small change in city.js — but
+every landmark recipe extrudes its own mass from api.footingY and would need
+the same treatment or it will float by the drop. Its own batch, its own vet.
 
 ALSO THIS BATCH — **crown vantages, built not hunted** (queue item 2).
 `data/vantage.mjs` gains `kind: 'crown'`: candidate eyes are points on a real

@@ -890,3 +890,57 @@ export class SignAtlas {
 
   finish() { for (const p of this.pages) p.t.needsUpdate = true; return this.pages.length; }
 }
+
+// A FACE, so a person at arm's length is a person.
+//
+// Drawn into the head sphere's own UV rather than added as geometry: eyes as
+// instanced spheres would be two more InstancedMeshes and two more draw calls
+// for something you only ever see within a few metres, and the crowd is
+// already the heaviest instanced thing in the world. A map costs nothing —
+// the head material is Lambert with a per-instance colour, and the instance
+// colour MULTIPLIES the map, so a white field leaves every skin tone exactly
+// as it was and only the features darken.
+//
+// Placement: three.js SphereGeometry starts phi at -X, so u = 0.25 is +Z, and
+// +Z is the direction a walker faces (`heading` is atan2(vx, vz) applied as
+// the mesh's Y euler). The face therefore goes at one quarter across.
+export function texFace() {
+  const S = 256;
+  const [c, x] = cvs(S);
+  x.fillStyle = '#ffffff';
+  x.fillRect(0, 0, S, S);
+  const cx = S * 0.25;              // +Z, the way they walk
+  // v runs from the north pole down, and the sphere's middle band is where a
+  // face sits; the hair cap covers the top 38% so the brow starts below it.
+  // Canvas y = 0 is the top of the sphere (CanvasTexture flips, and the
+  // sphere's uv.y is 1 at the north pole), and the hair cap now ends about
+  // 40% down, so the brow goes just under it at 0.45.
+  const eyeY = S * 0.50, mouthY = S * 0.635;
+  const dx = S * 0.055;             // half the distance between the eyes
+  x.fillStyle = 'rgba(34,25,20,0.95)';
+  for (const s of [-1, 1]) {
+    x.beginPath();
+    x.ellipse(cx + s * dx, eyeY, S * 0.024, S * 0.016, 0, 0, Math.PI * 2);
+    x.fill();
+  }
+  // brows: a shade, not a line — at riding distance a hard brow reads as a scowl
+  x.fillStyle = 'rgba(58,42,32,0.50)';
+  for (const s of [-1, 1]) {
+    x.beginPath();
+    x.ellipse(cx + s * dx, eyeY - S * 0.046, S * 0.030, S * 0.010, 0, 0, Math.PI * 2);
+    x.fill();
+  }
+  // mouth, and a hint of shadow under the nose. Both kept light: the head is
+  // 21cm across and anything bolder becomes a clown at four metres.
+  x.strokeStyle = 'rgba(120,72,60,0.55)';
+  x.lineWidth = Math.max(1, S * 0.008);
+  x.beginPath();
+  x.moveTo(cx - S * 0.032, mouthY);
+  x.quadraticCurveTo(cx, mouthY + S * 0.014, cx + S * 0.032, mouthY);
+  x.stroke();
+  x.fillStyle = 'rgba(120,90,70,0.22)';
+  x.beginPath();
+  x.ellipse(cx, mouthY - S * 0.058, S * 0.014, S * 0.022, 0, 0, Math.PI * 2);
+  x.fill();
+  return finish(c, null);
+}
