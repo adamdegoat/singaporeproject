@@ -256,6 +256,20 @@ function dressStreet(data, axis, target = world) {
   const dataRef = data;
   const pts = axis.p, half = axis.w / 2;
   const trees = new TreeField();
+  // THE TREE FITS THE STREET IT STANDS ON. Every district's main axis was
+  // planted with a full-size Orchard Angsana — 16 to 27m across the crown —
+  // including Bayfront Avenue, a modern 11.4m boulevard by the bay, and South
+  // Bridge Road, a 14.8m conservation street of two-storey shophouses. On
+  // Orchard that avenue is right and is the whole character of the place; on a
+  // narrow street it buries the frontage the rider came to see.
+  //
+  // Scaled by the carriageway the data already carries, against Orchard's own
+  // 18.2m, so ORCHARD IS UNCHANGED at 1.0 and only narrower streets come down:
+  // South Bridge 0.81, Bayfront and River Valley 0.63. Floored at 0.6 because
+  // a street tree is still a tree, and it is a proportion, not a species
+  // change — the right long answer is that Bayfront's are palms, which needs
+  // a second tree model and belongs in its own batch.
+  const treeK = Math.max(0.6, Math.min(1.0, (axis.w || 18.2) / 18.2));
   const kerbT = [], lampT = [], armT = [], headT = [], zebraT = [], dotT = [];
   const crossingS = [];
 
@@ -275,7 +289,7 @@ function dressStreet(data, axis, target = world) {
         if (acc % 17 === (sgn > 0 ? 0 : 8)) {
           for (const off of [3.2, 2.2, 4.4]) {
             const tx = px + nx * (half + off) * sgn, tz = pz + nz * (half + off) * sgn;
-            if (!place(tx, tz) && claim('tree', tx, tz, 3.0)) { trees.add(tx, tz, rand(0.85, 1.15)); break; }
+            if (!place(tx, tz) && claim('tree', tx, tz, 3.0)) { trees.add(tx, tz, rand(0.85, 1.15) * treeK); break; }
           }
         }
         if (acc % 34 === 0 && kerbOK && claim('lamp', kx, kz, 6)) {

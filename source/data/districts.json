@@ -81,6 +81,15 @@
    "notes": "The west continuation the rivervalley entry promised: Great World, Zion Road, Robertson Quay, Kim Seng. East edge 103.8310 overlaps rivervalley (its west is 103.8280) so River Valley Road runs unbroken across the seam. Registered 2026-07-30 overnight.",
    "partialMainStreet": "deliberate: this takes the MIDDLE 1.3km of River Valley Road's 4.9km; the east 1.6km lives in rivervalley and the far west (Kim Seng to Delta) waits for a future district. Decided 2026-07-30.",
    "noMrt": "verified live against Overpass 2026-07-30 (topup.py mrt: 0 elements): no station or entrance sits inside this box. Great World (TEL) is at ~103.832, just past the east edge, inside rivervalley's coverage."
+  },
+  {
+   "id": "littleindia",
+   "name": "Little India / Farrer Park",
+   "bbox": "1.3030,103.8490,1.3140,103.8600",
+   "axis": "serangoon road",
+   "status": "planned",
+   "notes": "Serangoon Road from the Rochor end up past Farrer Park, with Race Course Road, Buffalo Road, Dunlop Street, Campbell Lane, Kerbau Road and the Tekka/Mustafa blocks. Chosen as the first expansion after the polish pass because it is the most recognisable quarter still missing and because it CLOSES A HOLE rather than reaching into empty map: it overlaps bugis (south edge 1.3030 under its 1.3040 north edge) and orchard (west edge 103.8490 under its 103.8505 east edge), so the region stays one block with no seam gap. Long side 1,224m, inside the ~1.2km Overpass ceiling the readme sets. Conservation shophouse country, so it exercises the shophouse path the way chinatown does rather than the tower path. STATUS planned until the scene file exists: deploy.sh and gates.sh both read this registry now, so a district listed before it is built would fail every deploy. Flip to 'building' the moment data/littleindia.json is written.",
+   "queued_after": "robertson"
   }
  ]
 }

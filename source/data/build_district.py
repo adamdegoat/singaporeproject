@@ -28,6 +28,62 @@ MIRRORS = [
 ]
 
 
+def order_mirrors():
+    """Put the mirrors that are actually answering TODAY at the front.
+
+    The order here was static, and on 2026-07-30 the first two were both dead:
+    every query paid 150s of timeout twice before reaching a mirror that
+    worked, so a fourteen-part district fetch spent over an hour purely
+    waiting. Which mirror is up is a fact about today, not a fact about this
+    file — so measure it once, with a query small enough to answer instantly,
+    and sort by what came back. Costs a few seconds and saves an hour.
+    """
+    probe = ('[out:json][timeout:10];node["highway"="bus_stop"]'
+             '(1.3040,103.8500,1.3050,103.8510);out;')
+    scored = []
+    for m in MIRRORS:
+        host = m.split("//")[1].split("/")[0]
+        t0 = time.time()
+        try:
+            req = urllib.request.Request(m, data=probe.encode(),
+                                         headers={"User-Agent": "sgproject/1.0"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                r.read()
+            dt = time.time() - t0
+            scored.append((dt, m))
+            print(f"  mirror {host:34s} ok  {dt:.1f}s", flush=True)
+        except urllib.error.HTTPError as e:
+            # A RATE LIMIT IS NOT A DEAD HOST. Overpass answers 429 (and
+            # sometimes 504) when you have been asking too often, which is
+            # exactly what a multi-part district fetch does — so the probe that
+            # was meant to find the working mirror declared the ONLY working
+            # mirror dead and gave up. Keep it in the ring, just at the back.
+            busy = e.code in (429, 502, 503, 504)
+            scored.append((60.0 if busy else 999.0, m))
+            print(f"  mirror {host:34s} {'BUSY' if busy else 'DOWN'} (HTTP {e.code})", flush=True)
+        except Exception as e:
+            scored.append((999.0, m))
+            print(f"  mirror {host:34s} DOWN ({type(e).__name__})", flush=True)
+    scored.sort()
+    if scored[0][0] > 900:
+        sys.exit("  ! every Overpass mirror is unreachable — try again later")
+    # DROP THE DEAD ONES ENTIRELY rather than rotating onto them. A mirror that
+    # did not answer a one-node probe will not answer a district query either,
+    # and every attempt on it costs a full 90s timeout: with three of four down
+    # and the survivor rate-limiting (HTTP 429 is normal on Overpass), each
+    # retry was paying 270s of dead air before trying the only host that works.
+    # Retrying the live mirror after a backoff is what rate limiting actually
+    # wants.
+    live = [m for dt, m in scored if dt < 900]
+    if live and scored[0][0] >= 60.0:
+        # everything alive is rate-limited: give it a moment before the
+        # real queries start, rather than burning attempts immediately
+        print('  all live mirrors are rate-limited — pausing 90s', flush=True)
+        time.sleep(90)
+    print(f"  using {len(live)} live mirror(s)", flush=True)
+    return live
+
+
 def district(did):
     for d in REG["districts"]:
         if d["id"] == did:
@@ -36,17 +92,18 @@ def district(did):
              + ", ".join(x["id"] for x in REG["districts"]))
 
 
-def fetch_part(bbox, body, label, attempts=8, expect=True):
+def fetch_part(bbox, body, label, attempts=8, expect=True, mirrors=None):
     """One Overpass query, retried across mirrors. Small pieces succeed where a
     single combined query times out — that is not optional, it is how this works."""
     q = f"[out:json][timeout:120];\n({body}\n);\nout geom;"
     for a in range(attempts):
-        mirror = MIRRORS[a % len(MIRRORS)]
+        ring = mirrors or MIRRORS
+        mirror = ring[a % len(ring)]
         host = mirror.split("//")[1].split("/")[0]
         try:
             req = urllib.request.Request(
                 mirror, data=q.encode(), headers={"User-Agent": "sgproject/1.0"})
-            with urllib.request.urlopen(req, timeout=150) as r:
+            with urllib.request.urlopen(req, timeout=90) as r:
                 data = json.loads(r.read().decode())
             n = len(data.get("elements", []))
             # A part returning zero must be loud. A silent empty once produced a
@@ -61,7 +118,9 @@ def fetch_part(bbox, body, label, attempts=8, expect=True):
             return data["elements"]
         except Exception as e:
             print(f"    {label:10s} attempt {a+1} failed on {host}: {type(e).__name__}", flush=True)
-            time.sleep(5 + a * 7)
+            # a short ring means we are retrying the SAME host, so back off
+            # properly instead of hammering a rate limiter
+            time.sleep((5 + a * 7) if len(ring) > 2 else (8 + a * 12))
     print(f"    {label:10s} GAVE UP", flush=True)
     return []
 
@@ -74,6 +133,7 @@ def fetch(d, force=False):
         print(f"  raw cache hit ({size:.0f} KB) — pass --force to refetch")
         return path
     bbox = d["bbox"]
+    ring = order_mirrors()
     parts = {
         # Relations too: 11 of Marina Bay's buildings are multipolygons,
         # among them the ArtScience Museum, The Shoppes, Victoria Theatre,
@@ -120,7 +180,8 @@ def fetch(d, force=False):
     merged, seen = [], set()
     empty = []
     for label, body in parts.items():
-        got = fetch_part(bbox, body, label, expect=label not in ("water", "coast", "towers"))
+        got = fetch_part(bbox, body, label, expect=label not in ("water", "coast", "towers"),
+                         mirrors=ring)
         if not got and label not in ("water", "coast", "towers", "taxi"):
             empty.append(label)
         for e in got:

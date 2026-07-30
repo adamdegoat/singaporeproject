@@ -17,7 +17,10 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-SCENES=${1:-"orchard brasbasah marinabay chinatown rivervalley bugis robertson world"}
+# Same one list as deploy.sh, read from the registry rather than typed here:
+# a district added in one place and missed in the other is how four of them
+# went ungated once already.
+SCENES=${1:-"$(python3 -c "import json,os,sys; h=os.path.dirname(os.path.abspath('$0')); print(' '.join(d['id'] for d in json.load(open(os.path.join(h,'districts.json')))['districts'] if (d.get('status') or '') not in ('planned',) and 'merged' not in (d.get('status') or '')))") world"}
 # the world scene streams SEVEN districts in SwiftShader during its audit —
 # the drain alone runs past the old 600s default. Forgetting to pass this
 # by hand refused an otherwise-green deploy on 2026-07-30.

@@ -78,9 +78,28 @@ for (const s of spots) {
   // first second after a teleport is a district that has not been built yet —
   // and a frame of that is a photograph of nothing, which has already been
   // mistaken for a defect once today.
-  await page.waitForFunction(
-    () => { const st = window.__streamState; return !st || !st.building; },
-    null, { polling: 500, timeout: 300000 });
+  // WAIT FOR THE ROAD TO EXIST, not for the streamer to be idle. `!st.building`
+  // is true both when nothing is building AND when nothing has STARTED, so this
+  // shot Victoria Street before bugis had loaded and produced a frame of bare
+  // terrain with no tarmac — which looks exactly like a catastrophic world bug
+  // and is not one. Same mistake as the crown vantages waiting on a ray that
+  // hit the terrain. Ask the question you actually mean: is the carriageway
+  // drawn under the camera?
+  await page.waitForFunction((sp) => {
+    const st = window.__streamState;
+    if (st && st.building) return false;
+    // Not by mesh name — consolidate() merges the district's meshes and the
+    // names do not survive it (the audit only sees them because it loads
+    // ?raw=1). The district RECORD is the honest signal: every chunk whose
+    // content box contains this point must have been built.
+    const recs = window.__streamRecs || [];
+    const covering = recs.filter((r) => {
+      const b2 = r.box;
+      return b2 && b2.length === 4
+        && sp.x >= b2[0] && sp.x <= b2[2] && sp.z >= b2[1] && sp.z <= b2[3];
+    });
+    return covering.every((r) => !!r.group);
+  }, s, { polling: 700, timeout: 300000 });
   await page.waitForTimeout(2500);
   const info = await page.evaluate((sp) => {
     // rider's seat: 1.4m, looking along the heading, slightly down the street
