@@ -297,22 +297,35 @@ export class Wayfinder {
       this.map.addEventListener('click', openIt);
       this.map.addEventListener('touchstart', openIt, { passive: false });
     }
-    // the district teleport bar: one pill per district, built fresh each
-    // open (districts stream in over time, so the list grows)
-    const tpbar = document.getElementById('tpbar');
+    // ONE small Teleport pill opening a dropdown list — the first version
+    // was a row of seven pills and covered the map on a phone. The list is
+    // rebuilt on every open because districts stream in over time.
+    const tpbtn = document.getElementById('tpbtn');
+    const tplist = document.getElementById('tplist');
+    const tpToggle = (e) => {
+      if (e) { e.preventDefault(); e.stopPropagation(); }
+      if (!tplist) return;
+      tplist.classList.toggle('on');
+    };
+    if (tpbtn) {
+      tpbtn.addEventListener('click', tpToggle);
+      tpbtn.addEventListener('touchstart', tpToggle, { passive: false });
+    }
     this._fillTpbar = () => {
-      if (!tpbar) return;
-      tpbar.innerHTML = '';
+      if (!tplist) return;
+      tplist.classList.remove('on');   // opens closed each time
+      tplist.innerHTML = '';
       for (const d of (window.__districts || [])) {
         const btn = document.createElement('button');
         btn.textContent = d.name;
         const go = (e) => {
           e.preventDefault(); e.stopPropagation();
+          tplist.classList.remove('on');
           if (window.__teleportTo && window.__teleportTo(d.id)) this.setOpen(false);
         };
         btn.addEventListener('click', go);
         btn.addEventListener('touchstart', go, { passive: false });
-        tpbar.appendChild(btn);
+        tplist.appendChild(btn);
       }
     };
     const close = document.getElementById('bigclose');
@@ -507,7 +520,7 @@ export class Wayfinder {
     g.beginPath(); g.moveTo(12, W - 16); g.lineTo(12 + bar, W - 16); g.stroke();
     g.font = '500 11px ui-sans-serif,system-ui,Helvetica,Arial';
     g.textAlign = 'left'; g.textBaseline = 'alphabetic';
-    g.fillText('50m', 12, W - 22);
+    g.fillText('scale 50 m', 12, W - 22);
   }
 
   /* ---------- the whole street ---------- */
@@ -594,8 +607,11 @@ export class Wayfinder {
     g.beginPath(); g.moveTo(bx, by); g.lineTo(bx + bar, by); g.stroke();
     g.fillStyle = 'rgba(240,235,222,0.7)';
     g.font = `500 ${Math.round(11 * dpr)}px ui-sans-serif,system-ui,Helvetica,Arial`;
-    g.textAlign = 'center'; g.textBaseline = 'alphabetic';
-    g.fillText('200 m', bx + bar / 2, by - 6 * dpr);
+    // RIGHT-ALIGNED to the bar's right end: centring a label wider than
+    // the bar pushed it off the screen edge and it shipped to the user's
+    // phone clipped. The text now grows leftwards over the map, never off.
+    g.textAlign = 'right'; g.textBaseline = 'alphabetic';
+    g.fillText('scale: this line = 200 m', bx + bar, by - 6 * dpr);
   }
 
   update(S, dt) {

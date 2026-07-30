@@ -2046,6 +2046,101 @@ function thianHockKeng(api, b) {
   at(rail, uC, g0 + 0.45 + 0.55, railZ, false);
 }
 
+
+// CLARKE QUAY BLOCKS, researched 2026-07-30 (research/thianhockkeng-
+// clarkequay.md). The finding that matters: after the 2022-24 works the
+// WAREHOUSES (Foundry, Cannery) are NOT pastel — cream walls, dark-green
+// and blue timber doors, dark grey-brown roofs, seven parallel gabled
+// ranges with reinstated jack-roof monitors. The PASTEL lives on the
+// shophouse blocks (Merchants' Court): one colour per ~7m bay from the
+// documented set, white trim, terracotta pantile roofs. Angels/bluebell
+// canopies are noted in NEXT.md as riverside props, not building fabric.
+function cqWarehouse(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const cream = new THREE.MeshStandardMaterial({ color: 0xf2efe6, roughness: 0.9 });
+  const roofM = new THREE.MeshStandardMaterial({ color: 0x4a4340, roughness: 0.9 });
+  const doorG = new THREE.MeshStandardMaterial({ color: 0x1f4a3e, roughness: 0.8 });
+  const doorB = new THREE.MeshStandardMaterial({ color: 0x2c6fbf, roughness: 0.8 });
+  const trim = new THREE.MeshStandardMaterial({ color: 0xf7f5ee, roughness: 0.85 });
+  const yawL = Math.atan2(ob.ux, ob.uz);
+  const xA = { x: Math.cos(yawL), z: -Math.sin(yawL) };
+  const at = (mesh, lx, y, lz, cast = true) => {
+    mesh.position.set(ob.cx + xA.x * lx + ob.ux * lz, y, ob.cz + xA.z * lx + ob.uz * lz);
+    mesh.castShadow = cast;
+    api.world.add(mesh);
+  };
+  // cream body to the tall-godown eave, white barge trim at the head
+  api.world.add(api.extrude(b.p, 8.5, cream, g0));
+  api.world.add(api.extrude(api.grow(b.p, 1.005), 0.4, trim, g0 + 8.2));
+  // parallel gabled ranges ACROSS the short axis: ridge prisms side by
+  // side, each with a raised jack-roof monitor slot
+  const W2 = ob.halfShort * 2, L2 = ob.halfLong * 2;
+  const ranges = Math.max(3, Math.round(L2 / 16));
+  const rw = (L2 * 0.94) / ranges;
+  for (let k = 0; k < ranges; k++) {
+    const lz = -L2 * 0.47 + (k + 0.5) * rw;
+    const g = new THREE.CylinderGeometry(0.02, 0.71, 1, 4);
+    g.rotateY(Math.PI / 4);
+    g.scale(W2 * 0.96, 3.5, rw * 0.96);
+    const roof = new THREE.Mesh(g, roofM);
+    roof.rotation.y = yawL;
+    at(roof, 0, g0 + 8.5 + 1.75, lz);
+    const jack = new THREE.Mesh(new THREE.BoxGeometry(W2 * 0.4, 1.1, rw * 0.3), roofM);
+    jack.rotation.y = yawL;
+    at(jack, 0, g0 + 12.2, lz);
+  }
+  // tall timber double doors along both long faces, alternating green/blue
+  for (const sgn of [-1, 1]) {
+    for (let k = 0; k < ranges; k++) {
+      const lz = -L2 * 0.47 + (k + 0.5) * rw;
+      const px = ob.cx + xA.x * sgn * W2 * 0.485 + ob.ux * lz;
+      const pz = ob.cz + xA.z * sgn * W2 * 0.485 + ob.uz * lz;
+      if (onCarriageway(px, pz, 0.15)) continue;
+      const d = new THREE.Mesh(new THREE.BoxGeometry(0.14, 4.2, 3.0), k % 3 === 1 ? doorB : doorG);
+      d.rotation.y = yawL;
+      at(d, sgn * W2 * 0.485, g0 + 2.1, lz, false);
+    }
+  }
+}
+
+function cqShophouses(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const PASTELS = [0xe9a8ab, 0x86d3c2, 0xf1ede1, 0xe5b63c, 0xbbd1ba, 0xafc8dc, 0xefc09b, 0xc9b6d4];
+  const trim = new THREE.MeshStandardMaterial({ color: 0xfbf9f4, roughness: 0.85 });
+  const tile = new THREE.MeshStandardMaterial({ color: 0xc25a31, roughness: 0.85 });
+  const yawL = Math.atan2(ob.ux, ob.uz);
+  const xA = { x: Math.cos(yawL), z: -Math.sin(yawL) };
+  // deterministic per-building colour stream (never the global placement one)
+  let hh = 0;
+  for (const [x, z] of b.p) hh = (hh * 31 + ((x * 7) | 0) + ((z * 13) | 0)) | 0;
+  // body: pastel segments along the long axis, one colour per ~7m bay
+  const L2 = ob.halfLong * 2, W2 = ob.halfShort * 2;
+  const bays = Math.max(3, Math.round(L2 / 7));
+  const bw = (L2 * 0.96) / bays;
+  for (let k = 0; k < bays; k++) {
+    const lz = -L2 * 0.48 + (k + 0.5) * bw;
+    const col = PASTELS[Math.abs(hh + k * 2654435761) % PASTELS.length];
+    const seg = new THREE.Mesh(new THREE.BoxGeometry(W2 * 0.92, 7.0, bw * 0.99),
+      new THREE.MeshStandardMaterial({ color: col, roughness: 0.9 }));
+    seg.rotation.y = yawL;
+    seg.position.set(ob.cx + ob.ux * lz, g0 + 3.5, ob.cz + ob.uz * lz);
+    seg.castShadow = true;
+    api.world.add(seg);
+  }
+  // white trim band + the continuous terracotta pantile roof
+  api.world.add(api.extrude(api.grow(b.p, 1.008), 0.5, trim, g0 + 6.6));
+  const g = new THREE.CylinderGeometry(0.05, 0.71, 1, 4);
+  g.rotateY(Math.PI / 4);
+  g.scale(W2 * 1.02, 3.2, L2 * 1.0);
+  const roof = new THREE.Mesh(g, tile);
+  roof.rotation.y = yawL;
+  roof.position.set(ob.cx, g0 + 7.0 + 1.6, ob.cz);
+  roof.castShadow = true;
+  api.world.add(roof);
+}
+
 // Raffles City. I.M. Pei: a nine-square plan carved away and rotated 45 degrees
 // so it angles back from the street instead of presenting a 600-foot broadside,
 // and towers that read cylindrical from one direction and rectangular from
@@ -3995,6 +4090,15 @@ export const RECIPES = [
   [/^lau pa sat$/i, lauPaSat],
   [/^people's park complex$/i, peoplesPark],
   [/^thian hock keng$/i, thianHockKeng],
+  // PARKED 2026-07-30 midday after round 1: The Foundry's OSM footprint is
+  // a chunky pentagon, not the 115x57 slab the research measured (the
+  // research measured the ROOF outline from satellite; the ground footprint
+  // differs), so the gabled ranges and doors placed off the oriented box
+  // land wrong, and the trim extrude caps the whole top white. Round 2:
+  // derive ranges from the RING extents (the buddhaTooth lesson), vet from
+  // the river, and only then wire. Recipes + research stay banked.
+  // [/^the foundry$|^the cannery$/i, cqWarehouse],
+  // [/^merchants' court$/i, cqShophouses],
 
   // THESE THREE ARE WIRED UP, and the comment that used to sit here said the
   // opposite: "WRITTEN AND NOT WIRED UP ... they stay here, unreferenced".

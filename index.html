@@ -64,14 +64,24 @@
     color:#12161b;background:#e8ddc6;border:0;border-radius:22px;
     box-shadow:0 2px 8px rgba(0,0,0,.35)}
   #bigzoom button:active{background:#cfc4ad}
-  /* district teleport pills along the top of the open map */
+  /* ONE small teleport pill that opens a dropdown list — a row of seven
+     pills covered the map on a phone (user feedback, 2026-07-30) */
   #tpbar{position:absolute;left:calc(12px + env(safe-area-inset-left));
-    top:12px;right:96px;display:flex;gap:8px;overflow-x:auto;z-index:3;
-    -webkit-overflow-scrolling:touch;padding-bottom:4px}
-  #tpbar button{flex:0 0 auto;font:600 12px/1 ui-sans-serif,system-ui,Helvetica,Arial;
-    letter-spacing:.03em;color:#e8ddc6;background:rgba(28,34,40,.92);
-    border:1px solid rgba(232,221,198,.25);padding:13px 14px;border-radius:22px}
-  #tpbar button:active{background:#e8ddc6;color:#12161b}
+    top:12px;z-index:3}
+  #tpbtn{font:600 11px/1 ui-sans-serif,system-ui,Helvetica,Arial;
+    letter-spacing:.05em;text-transform:uppercase;color:#12161b;
+    background:#e8ddc6;border:0;padding:10px 13px;border-radius:18px;
+    box-shadow:0 2px 8px rgba(0,0,0,.35)}
+  #tpbtn:active{background:#cfc4ad}
+  #tplist{display:none;margin-top:8px;flex-direction:column;gap:2px;
+    background:rgba(16,20,24,.96);border:1px solid rgba(232,221,198,.22);
+    border-radius:14px;padding:5px;max-height:min(62vh,340px);overflow-y:auto;
+    -webkit-overflow-scrolling:touch;width:max-content}
+  #tplist.on{display:flex}
+  #tplist button{font:500 13px/1 ui-sans-serif,system-ui,Helvetica,Arial;
+    color:#e8ddc6;background:none;border:0;text-align:left;
+    padding:11px 14px 11px 11px;border-radius:9px;white-space:nowrap}
+  #tplist button:active{background:#e8ddc6;color:#12161b}
   #vehiclebtn{position:fixed;right:calc(10px + env(safe-area-inset-right));
     bottom:calc(52px + env(safe-area-inset-bottom));
     font:600 11px/1 ui-sans-serif,-apple-system,Helvetica,Arial;
@@ -159,10 +169,13 @@
 <canvas id="map" width="248" height="248"></canvas>
 <div id="maphint">tap map</div>
 <div id="big">
-    <div id="tpbar"></div>
+    <div id="tpbar">
+      <button id="tpbtn">Teleport</button>
+      <div id="tplist"></div>
+    </div>
   <canvas id="bigmap"></canvas>
   <button id="bigclose" type="button">Close</button>
-  <div id="bigkey"><b>&#9679;</b> you &middot; the wedge is the way you are facing<br>
+  <div id="bigkey"><b>&#9679;</b> you<br>
     <span style="opacity:.75">pinch or drag to zoom &middot; Close when done</span></div>
   <div id="bigzoom">
     <button id="zoomin" type="button">+</button>
