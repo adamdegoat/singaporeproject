@@ -90,12 +90,14 @@ four CBD canyon spots AND three points on the Orchard axis, so the fix is not
 one that only works where the problem was: the canyon foreground is now a grey
 shadow instead of ink, and open Orchard is unchanged.
 
-NEW, SEEN WHILE VETTING: a BLANK BLACK PANEL hangs over Orchard Road at the
-axis midpoint (-116/462/1185, 7156 area) — an overhead sign board with no
-artwork on it. Not investigated. Likely a sign that missed its atlas page or a
-gantry board drawn before its texture; the sign atlas is the first place to
-look (`SignAtlas` in tex.js, 1,018 materials wrapping 58 textures into 2 atlas
-pages — a miss there produces exactly a black rectangle).
+RESOLVED, NOT A DEFECT — recorded because I wrote it up as one first. The dark
+panel over Orchard Road near the axis midpoint is the BACKER of a directional
+gantry, seen from eight metres away and almost directly underneath. From 20m
+and 50m back the same gantry reads correctly (green board, white text) and
+nothing hangs in the view. `face.rotation.y = ang + Math.PI` is right: the
+plane's normal ends up pointing back down the road at an approaching rider.
+No change made. If a future frame shows a blank board, check the CAMERA
+DISTANCE before the code — under a gantry you are supposed to see its back.
 
 # 2026-07-30 evening (Opus 5) — THE CBD DID NOT EXIST WHEN YOU STOOD IN IT
 

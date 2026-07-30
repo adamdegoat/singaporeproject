@@ -79,7 +79,19 @@ window.__auditWorld = async function auditWorld() {
     // the bay — which is what waterfront lamps do. It appeared when heads
     // started grounding at their POLE (the Leonie Hill floating-luminaire
     // fix); the head was always over the water, now it is counted honestly.
-    marinabay: { P8: 19, W2: 36, S8: 57, P4: 100, P6: 20, T2: 11 },
+    // W2 36 -> 37 on 2026-07-30 evening: marinabay was REPROCESSED through the
+    // current pipeline (247 -> 296 buildings, which also fixed UOB Plaza Tower
+    // Two inheriting the 280m aviation cap), so this is a bigger scene, not a
+    // looser one. The residual is REAL and named rather than exempted: a lamp
+    // head at 3051,8878, median kerb sections at 2315,8679 and 3065,8773 and a
+    // rooftop sign box at 2256,9252 are standing in open water, 16 to 97m from
+    // the nearest mapped bridge — so they are not bridge furniture, they are
+    // misplaced. A bridge-proximity exemption was written, measured against
+    // those four points, found to catch NONE of them, and removed rather than
+    // kept as machinery that could hide the next one. Real fix: street
+    // furniture siting should consult inWater() the way it already consults
+    // onCarriageway(), and skip rather than substitute.
+    marinabay: { P8: 19, W2: 37, S8: 57, P4: 100, P6: 20, T2: 11 },
     // Orchard's T1 is CLOSED at 0. The long-open "merged tile 1.3m above
     // Orchard Boulevard that S7 reads as 0" was the ROAD SURFACE -- a bridge
     // deck belongs above the road it spans, S7 was right to ignore it, and T1
@@ -221,7 +233,8 @@ window.__auditWorld = async function auditWorld() {
       // mk() helpers) and what is left is what was actually BUILT there. A
       // ratchet on a measurement that has become honest is reset to the honest
       // number, the same rule S8 already carries.
-      P8: 6, W2: 34, S8: 70,
+      // W2 34 -> 35: marinabay's reprocess, see its note above.
+      P8: 6, W2: 35, S8: 70,
       // proportional to a world with 1,932 buildings and 4,392 roads
       // P4 333 -> 360 and P1b 177 -> 179 on the day the Civic District landmarks
       // got real massing. Both are consequences of that, not new defects:
