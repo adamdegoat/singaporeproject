@@ -70,6 +70,33 @@
 8. Boat Quay river-row colour treatment; more CBD facades; then ASK THE
    USER about expanding (Little India / civic core / Tiong Bahru).
 
+# 2026-07-30 night (Opus 5) — ROAD SHADOW FIXED, AND A NEW TOOL TO LOOK WITH
+
+`data/streetshot.mjs` — rider's-eye frames at named spots (`canyon`,
+`orchard`, or bare `x,z,heading` triples). The sweep is slow and headed and
+the comparison sheet places cameras off the Orchard axis; neither answers "go
+and look at THAT corner", which is what most vets actually need. It waits for
+the streamer to finish before shooting, because a frame taken one second after
+a teleport is a photograph of a district that has not been built yet — already
+mistaken for a defect once today.
+
+ROAD-SHADOW PATCHWORK (queue item 4) FIXED. In shadow the sun contributes
+nothing and a road, whose normal points up, takes the HemisphereLight's sky
+colour alone. That was 0xa6c8e2, a saturated light blue, so dark asphalt times
+saturated blue is navy — then ACES crushes what is left. Real shadowed tarmac
+is a desaturated grey that leans blue, not a blue that leans grey. Sky term
+desaturated to 0xbcc8d2, ground 0x9a8d78, intensity 1.35 -> 1.62. Vetted at
+four CBD canyon spots AND three points on the Orchard axis, so the fix is not
+one that only works where the problem was: the canyon foreground is now a grey
+shadow instead of ink, and open Orchard is unchanged.
+
+NEW, SEEN WHILE VETTING: a BLANK BLACK PANEL hangs over Orchard Road at the
+axis midpoint (-116/462/1185, 7156 area) — an overhead sign board with no
+artwork on it. Not investigated. Likely a sign that missed its atlas page or a
+gantry board drawn before its texture; the sign atlas is the first place to
+look (`SignAtlas` in tex.js, 1,018 materials wrapping 58 textures into 2 atlas
+pages — a miss there produces exactly a black rectangle).
+
 # 2026-07-30 evening (Opus 5) — THE CBD DID NOT EXIST WHEN YOU STOOD IN IT
 
 Chasing the crown vantages (queue item 2) found a user-facing streaming bug

@@ -314,3 +314,39 @@ unused in the scene file while kerbs went down both sides of every street.
 
 Equal means the served bundle is the one you built. Pages usually lands in under
 a minute.
+
+## The deploy takes five minutes, not fifty (2026-07-30)
+
+Every headless tool here launches Playwright's Chromium, and whether that gets
+the GPU depends on ONE FLAG. Measured on this machine by reading
+`UNMASKED_RENDERER_WEBGL` under five flag sets:
+
+    --use-gl=angle      ANGLE Metal Renderer: Intel Iris Plus 645   (real GPU)
+    --use-angle=metal   ANGLE Metal Renderer: Intel Iris Plus 645   (real GPU)
+    --enable-gpu        ANGLE Metal Renderer: Intel Iris Plus 645   (real GPU)
+    --use-gl=egl        SwiftShader                                 (software)
+    (no flags)          SwiftShader                                 (software)
+
+`behaviour.mjs` and `defects.mjs` passed the flag. `audit_run.mjs` and
+`livecheck.mjs` did NOT — and those are the eight scene audits plus the live
+check that every deploy runs, i.e. nearly all of it. They were software-
+rasterising a world this machine draws in hardware.
+
+Result of adding the flag: a full `./deploy.sh` went from about fifty minutes
+to **five**, the world audit from a 25-minute budget (which had twice refused
+a green deploy by timing out) to **60 seconds**, and the live check's reported
+boot from 391,945ms to 27,644ms.
+
+Nothing was traded for it. The audits gate on SCENE FACTS — draw calls,
+triangle counts, positions — never on frame rate, so the renderer cannot move
+a single number; verified by diffing a full world audit before and after.
+
+TWO THINGS THAT FOLLOW:
+- "Headless falls back to software GL" is written in several comments in this
+  repo. It is only true WITHOUT the flag. Do not repeat it as a general fact.
+- SwiftShader is no longer inflating timings in the gated tools, so a slow
+  audit now means something is actually slow. The old advice to never diagnose
+  performance from headless numbers still holds for FRAME RATE, which is still
+  measured in a focused real browser (`fps.mjs`, headless: false).
+
+Any new tool that opens a browser: pass `--use-gl=angle`.

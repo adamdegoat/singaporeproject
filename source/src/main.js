@@ -98,7 +98,18 @@ sun.shadow.camera.near = 1; sun.shadow.camera.far = 460;
 sun.shadow.bias = -0.0005;
 sun.shadow.normalBias = 0.05;
 scene.add(sun, sun.target);
-scene.add(new THREE.HemisphereLight(0xa6c8e2, 0x94856f, 1.35));
+// SHADOWED ASPHALT WAS READING NAVY, which is the "navy-vs-grey road
+// patchwork" reported in the tower canyons. In shadow the sun contributes
+// nothing and a road, whose normal points up, takes the hemisphere's SKY
+// colour alone — and 0xa6c8e2 is a saturated light blue, so dark asphalt
+// times saturated blue is navy, then ACES crushes what is left. Real
+// shadowed tarmac is a desaturated grey that leans blue, not a blue that
+// leans grey. Desaturated the sky term and lifted the intensity a little:
+// the sun still carries the contrast, and everything in shadow — the road,
+// pavements, north faces — stops going to ink. Vetted at four CBD canyon
+// spots and in open Orchard so the fix cannot be one that only works where
+// the problem was.
+scene.add(new THREE.HemisphereLight(0xbcc8d2, 0x9a8d78, 1.62));
 
 const world = new THREE.Group();
 scene.add(world);
