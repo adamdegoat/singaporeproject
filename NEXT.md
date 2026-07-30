@@ -3117,3 +3117,42 @@ conditions, `?nosurround`, `?nofoliage`, `?nopeople` to bisect.
   harness had created.
 - One scene file per district. Two copies with a preference order let a stale one
   be written over a fresh reprocess.
+
+## 2026-07-31 — Little India, from four returned research briefs
+
+SHIPPED. Bras Basah Complex recipe (podium + two staggered 25-storey slabs;
+beat the generic, wired). Tekka Centre recipe (purple #957D96 podium, ochre
+fascia and columns, OPEN market colonnade instead of glazed retail bays,
+14 inboard barrel vaults, 10.5m rotunda; beat the generic, wired, and added to
+NO_SHOPFRONT for the same reason lau pa sat is in NEVER_SHOPFRONT). Height
+classes for Masjid Abdul Gafoor (20 -> 12, two storeys) and Sri
+Veeramakaliamman (20.4 -> 12, gopuram ~12m photogrammetric).
+
+PARKED. mustafaCentre — written, rendered, LOST to the generic, left unwired
+with its three faults named at the function head. Fix (b) first: a mass that
+silently fails to draw is not a Mustafa problem.
+
+OPEN, AND THE BIGGEST THING HERE. Tekka is FIVE HDB blocks, not one: 665 is the
+2-storey market podium we now build, and 661 = 23 storeys, 662 = 25, 663 = 21,
+664 = 4 are separate residential blocks (HDB's own figures). OSM maps none of
+the four. Meanwhile littleindia.json carries several large UNNAMED footprints
+nearby at h=18-20 — 8446, 7635, 6885, 6885, 6618 m2. If any of those ARE those
+blocks then 21-to-25-storey slabs are being drawn 20m tall and Little India's
+skyline is flat-wrong, not merely coarse. A research agent is matching block
+addresses against the scene file. DO NOT invent tower footprints if it comes
+back unmatched — real buildings in guessed places is the worse error.
+
+ALSO OPEN, from the same briefs, none acted on yet:
+  - Masjid Abdul Gafoor is 310m off Serangoon Road, not on it, and has been
+    WHITE AND GREEN since a 2021 repaint; nearly every photo online is the
+    2003-2021 yellow scheme.
+  - Masjid Angullia is a 2018-20 building with no street-visible dome, one
+    square clock-tower minaret, dusty terracotta-rose. Only the 1890s gatehouse
+    is historic.
+  - Sri Srinivasa Perumal's OSM footprint is 218 m2 — the gopuram block alone,
+    not the compound. Its gopuram is ~1:1.6 (tall) on a slate blue-grey base;
+    Veeramakaliamman's is ~1.1:1 (squat), taper 1.00/.875/.75/.625/.52, five
+    gold kalasams. THE TWO MUST NOT SHARE A MESH.
+  - The "18m gopuram / 600 deities" figure that circulates for
+    Veeramakaliamman is fabricated — one unsourced site, echoed by aggregators.
+    It is a conserved building, NOT a National Monument.

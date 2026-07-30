@@ -32,10 +32,25 @@ export function orientedBox(pts) {
     minU = Math.min(minU, u); maxU = Math.max(maxU, u);
     minV = Math.min(minV, v); maxV = Math.max(maxV, v);
   }
+  const midU = (maxU + minU) / 2, midV = (maxV + minV) / 2;
   return {
+    // cx, cz is the VERTEX MEAN. It is NOT the centre of the box, and on a long
+    // or an L-shaped footprint the two are far apart -- measured 8.9m and 9.7m
+    // on two of Mustafa Centre's four ways, which is most of the way off a mass
+    // 20m wide. A 26.5m dome placed on cx,cz there hangs over open ground, and
+    // that is what it looked like: a recipe whose mass had failed to draw.
+    //
+    // Same family as every other bug this project keeps finding: two things
+    // describe one fact and the proxy one is wrong. So the real box centre is
+    // returned too, and anything CENTRED on the building -- a dome, a drum, a
+    // rotunda, a spire -- must use bx,bz. cx,cz stays for what it is honestly
+    // good for: a stable per-building key for the merger's spatial tiles, and a
+    // reasonable anchor on compact footprints.
     cx, cz, ux, uz, ang,
+    bx: cx + midU * ux - midV * uz,
+    bz: cz + midU * uz + midV * ux,
     halfLong: (maxU - minU) / 2, halfShort: (maxV - minV) / 2,
-    midU: (maxU + minU) / 2, midV: (maxV + minV) / 2,
+    midU, midV,
   };
 }
 
@@ -4717,4 +4732,206 @@ function tekkaCentre(api, b) {
   const rc = new THREE.CylinderGeometry(5.6, 5.6, 0.7, 20);
   rc.translate(rx, api.groundAt(rx, rz) + H + 1.4, rz);
   api.merge(rc, ochre, ob.cx, ob.cz);
+}
+
+// Mustafa Centre — the 24-hour department store on Syed Alwi Road.
+// Researched 2026-07-30, research/mustafa-centre.md.
+//
+// THE PREMISE MOST PEOPLE BUILD FROM IS WRONG. Mustafa is described everywhere
+// as a signage-covered box. The research measured it: signage occupies only the
+// bottom 25-35% of the elevation, and above roughly 8m it is quiet architectural
+// wall. Skinning the whole thing in signs would be the caricature, not the
+// building.
+//
+// It is also not one building. It is TWO street blocks on the NE side of Syed
+// Alwi Road split by Verdun Road, four registered addresses, four mapped
+// footprints, ~279m of frontage — and it carries FOUR distinct facade languages
+// in that one run:
+//   1. cream stucco with teal arched windows (the 1995 block)
+//   2. dark polished granite with one monumental arched teal window
+//   3. a teal glass corner drum
+//   4. a stainless fish-scale "wave" wing (~2017-18)
+// Capturing that variety is the whole point of a recipe here. WHICH mapped
+// footprint carries WHICH language is an ASSUMPTION — the research could not
+// tie language to way, and it separately proved OSM way 178437069 ("171") is
+// wrong on the ground. So the four languages are dealt out by footprint size,
+// largest first, and that assignment is a guess stated as one.
+//
+// NO HEIGHT IN METRES IS PUBLISHED for any part of this building, including in
+// OSM. h=17 is a height class for the B2-L4 blocks. The ONE published dimension
+// of any part of it is the rooftop dome's 720 m2 of glass (Geometrica), which
+// the research fitted on imagery at 26.5m diameter reconciling to a 7.3m rise —
+// two independent numbers that agree, so those are the numbers used here.
+// STILL NOT WIRED. Reworked 2026-07-31 -- shoelace areas, the seat fix and
+// board-style signage all landed, and the remaining version renders cleanly --
+// but it is not CLEARLY BETTER than the generic, and 'not clearly better' is
+// not the bar. The generic is a clean banded 4-storey run with glazed
+// shopfronts. Originally rendered against it and LOST, so by this
+// project's own rule it stays out of the pattern table until it wins. Three
+// named faults, all diagnosable, none of them reasons to throw the research
+// away:
+//   a) `area` below is the ORIENTED BOX area, not the polygon area, so the
+//      size-rank that deals out the four facade languages is measured off the
+//      wrong number and every footprint may fall into the same branch. Use a
+//      shoelace area of b.p.
+//   b) On the largest footprint the parapet and the dome drew but the MASS
+//      under them did not, so a 26.5m dome floats over open ground. Find out
+//      why before touching anything else -- a mass that silently fails to draw
+//      is a bug that would not be confined to this recipe.
+//   c) The sign band is one flat saturated red covering 30% of the elevation,
+//      which produces exactly the signage-dominated caricature the research
+//      set out to disprove. 30% was the right NUMBER and the wrong RENDERING:
+//      real signage is many small differently-coloured boards, not one wall.
+// The generic it lost to is a clean banded 4-storey run with glazed shopfronts
+// -- unremarkable, but not wrong, and not wrong beats wrong.
+// MATERIALS AT MODULE SCOPE, created once. They were created inside the recipe
+// on every call, and Mustafa is called once PER FOOTPRINT -- so three separate
+// "cream" objects existed for one cream wall, and the masses using them did not
+// render at all while smaller geometry on the same materials did. Swapping in a
+// shared api.mat.* made them appear immediately, which is the whole diagnosis.
+// Every well-behaved material in this file already lives at module scope (see
+// LMAT in city.js); this recipe was the exception, and it paid for it.
+const MUSTAFA_MAT = {
+  cream: new THREE.MeshStandardMaterial({ color: 0xd8cdb6, roughness: 0.84 }),
+  teal: new THREE.MeshStandardMaterial({ color: 0x2c6d6a, roughness: 0.3, metalness: 0.24 }),
+  steel: new THREE.MeshStandardMaterial({ color: 0xb9bcbd, roughness: 0.34, metalness: 0.55 }),
+};
+const _signMats = new Map();
+function signMat(c) {
+  if (!_signMats.has(c)) {
+    _signMats.set(c, new THREE.MeshStandardMaterial({ color: c, roughness: 0.7 }));
+  }
+  return _signMats.get(c);
+}
+function mustafaCentre(api, b) {
+  const ob = orientedBox(b.p);
+  // THE SEAT, once, for every hand-placed piece. api.groundAt() is the TERRAIN
+  // and api.footingY() is where this building actually sits, and on this site
+  // they differ by ~2.7m -- the mass runs 10.3..33.1 while groundAt reads 13.
+  // The dome was placed off groundAt and floated clear of its own roof, which
+  // is the exact trap api.footingY's comment in city.js already warns about:
+  // mix the two and the podium sits on the hill while the tower sits at sea
+  // level. One building, one number.
+  const SEAT = api.footingY(b.p);
+  const H = Math.max(14, b.h || 17);
+  // SHOELACE, not the box. The box area of these four ways is 2123 / 2073 /
+  // 881 / 517 against real areas of 1912 / 1757 / 743 / 358, which put TWO of
+  // them in the same branch and left one facade language unbuilt.
+  let area = 0;
+  for (let i = 0; i < b.p.length; i++) {
+    const [x0, z0] = b.p[i], [x1, z1] = b.p[(i + 1) % b.p.length];
+    area += x0 * z1 - x1 * z0;
+  }
+  area = Math.abs(area) / 2;
+
+  const { cream, teal, steel } = MUSTAFA_MAT;
+
+  // Which of the four this footprint is, by size rank. The thresholds are the
+  // measured areas of the four mapped ways, not round numbers.
+  const lang = area > 1850 ? 0 : area > 1400 ? 1 : area > 550 ? 2 : 3;   // the four measured way areas
+
+  // the mass. The new wing carries unit numbers up to #07, so it is taller than
+  // the B2-L4 blocks; the corner drum is the short one.
+  const top = lang === 0 ? H * 1.34 : lang === 3 ? H * 0.86 : H;
+  const skin = lang === 0 ? steel : lang === 1 ? cream : lang === 2 ? api.mat.granite : teal;
+  api.merge(api.extrudeGeo(b.p, top), skin, ob.cx, ob.cz);
+
+  // THE SIGN BAND, and only the bottom third of it. Applied as a proud fascia
+  // over the ground and first floors, which is where the research put it, and
+  // stopping there.
+  // THE SIGN BAND, bottom third only, and as BOARDS. One flat red wall covering
+  // 30% of the elevation was the first attempt and it produced exactly the
+  // signage-dominated caricature the research set out to disprove: 30% was the
+  // right NUMBER and the wrong RENDERING. Real signage on this street is many
+  // small differently-coloured boards at slightly different heights, so that is
+  // what is built, and the wall behind them stays visible between them.
+  const SIGNC = [0xb8352c, 0xc9962b, 0x2f5d86, 0x2b6b46, 0xe4e0d6, 0x8d3a6d];
+  for (let i = 0; i < b.p.length; i++) {
+    const [x0, z0] = b.p[i], [x1, z1] = b.p[(i + 1) % b.p.length];
+    const dx = x1 - x0, dz = z1 - z0, len = Math.hypot(dx, dz);
+    const n = Math.max(1, Math.round(len / 5.2));
+    for (let k = 0; k < n; k++) {
+      // hashed off the board's own position so a rebuild deals the same colours
+      const hsh = Math.abs(((x0 + k * 31) * 7919 + (z0 + i * 17) * 104729) | 0);
+      if (hsh % 5 === 0) continue;                       // gaps: not a solid run
+      const t0 = (k + 0.10) / n, t1 = (k + 0.90) / n;
+      const q0 = [x0 + dx * t0, z0 + dz * t0], q1 = [x0 + dx * t1, z0 + dz * t1];
+      const nx = -dz / (len || 1), nz = dx / (len || 1);
+      const o = 0.34;
+      const ring = [[q0[0], q0[1]], [q1[0], q1[1]],
+                    [q1[0] + nx * o, q1[1] + nz * o], [q0[0] + nx * o, q0[1] + nz * o]];
+      const bh = H * (0.16 + (hsh % 7) * 0.018);
+      const by = H * (0.17 + (hsh % 4) * 0.028);
+      api.merge(api.extrudeGeo(ring, bh, by),
+        signMat(SIGNC[hsh % SIGNC.length]), ob.cx, ob.cz);
+    }
+  }
+  // the parapet the quiet wall runs up to
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.006), 1.0, top - 1.0), api.mat.trim, ob.cx, ob.cz);
+
+  const P = (u, v) => [ob.cx + u * ob.ux - v * ob.uz, ob.cz + u * ob.uz + v * ob.ux];
+  const rect = (u0, v0, hu, hv) => [P(u0 - hu, v0 - hv), P(u0 + hu, v0 - hv),
+                                    P(u0 + hu, v0 + hv), P(u0 - hu, v0 + hv)];
+
+  if (lang === 0) {
+    // 1. the stainless fish-scale wave wing: a run of shallow vertical bulges
+    //    down the long face, which is what makes it read as a wave rather than
+    //    as a flat metal box.
+    // THE WAVE WING IS NOT BUILT, and this is the note for whoever tries next.
+    // A loop of ~22 small bulges merged into the same tile-and-material bucket
+    // as this footprint's mass makes THE MASS STOP RENDERING. Verified by
+    // deleting only the loop: a 22.8m mass reappears immediately, dome seated
+    // on its roof. Ruled out, each by a separate test: an exception (no
+    // pageerror fires), CylinderGeometry (rebuilt with extrudeGeo, same
+    // result), an attribute-length overflow in Merger.flush, and non-finite
+    // coordinates (the merger now drops those per-geometry and the mass still
+    // did not come back). The geometry is correct and its bounds are correct.
+    // Unexplained. Do not re-add the loop without a test that shows the mass
+    // survives it.
+    // 2. THE DOME. 26.5m across, 7.3m rise — the only published-adjacent
+    //    dimension on the whole building, so it is built to those numbers and
+    //    not scaled off the footprint like everything else here.
+    const R = 26.5 / 2, RISE = 7.3;
+    const sr = (R * R + RISE * RISE) / (2 * RISE);
+    const th = Math.asin(Math.min(1, R / sr));
+    const dg = new THREE.SphereGeometry(sr, 22, 10, 0, Math.PI * 2, 0, th);
+    dg.translate(ob.bx, SEAT + top - (sr - RISE), ob.bz);
+    api.merge(dg, api.mat.towerGlass, ob.cx, ob.cz);
+  } else if (lang === 1) {
+    // the 1995 block: cream stucco pierced by tall teal arched windows
+    const N = Math.max(4, Math.min(14, Math.round(ob.halfLong * 2 / 6.5)));
+    for (let i = 0; i < N; i++) {
+      const u = (i - (N - 1) / 2) * (ob.halfLong * 2 * 0.88 / N);
+      for (const side of [-1, 1]) {
+        const y0 = H * 0.50;
+        api.merge(api.extrudeGeo(rect(u, side * ob.halfShort * 0.995, 1.5, 0.30),
+          top - y0 - 2.0, y0), teal, ob.cx, ob.cz);
+        const [ax, az] = P(u, side * ob.halfShort * 0.995);
+        const ag = new THREE.CylinderGeometry(1.5, 1.5, 0.6, 12, 1, false, 0, Math.PI);
+        ag.rotateX(Math.PI / 2);
+        ag.rotateY(-ob.ang + (side < 0 ? Math.PI : 0));
+        ag.translate(ax, SEAT + top - 2.0, az);
+        api.merge(ag, teal, ob.cx, ob.cz);
+      }
+    }
+  } else if (lang === 2) {
+    // the granite block and its ONE monumental arched teal window
+    const sw = streetward(api, ob);
+    const v = (sw.nx * -ob.uz + sw.nz * ob.ux) > 0 ? 1 : -1;
+    const w = Math.min(ob.halfLong * 0.5, 9);
+    api.merge(api.extrudeGeo(rect(ob.midU, v * ob.halfShort * 0.99, w, 0.35),
+      top * 0.52, H * 0.34), teal, ob.cx, ob.cz);
+    const [ax, az] = P(ob.midU, v * ob.halfShort * 0.99);
+    const ag = new THREE.CylinderGeometry(w, w, 0.7, 18, 1, false, 0, Math.PI);
+    ag.rotateX(Math.PI / 2);
+    ag.rotateY(-ob.ang + (v < 0 ? Math.PI : 0));
+    ag.translate(ax, SEAT + H * 0.34 + top * 0.52, az);
+    api.merge(ag, teal, ob.cx, ob.cz);
+  } else {
+    // the teal glass corner drum
+    const R = Math.min(ob.halfShort, ob.halfLong) * 0.92;
+    const dg = new THREE.CylinderGeometry(R, R, top + 1.6, 20);
+    dg.translate(ob.bx, SEAT + (top + 1.6) * 0.5, ob.bz);
+    api.merge(dg, teal, ob.cx, ob.cz);
+  }
 }

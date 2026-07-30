@@ -444,6 +444,10 @@ export function surfaceAt(x, z) {
 // no matter where you look. Merge per material AND per spatial tile instead, so
 // each merged mesh stays local and cullable.
 const TILE = 110;
+// Geometry dropped for containing NaN/Infinity. Reported by the audit rather
+// than swallowed: silently discarding a building is how this class of bug hid.
+export let BAD_GEO = 0;
+export function badGeoCount() { return BAD_GEO; }
 export class Merger {
   constructor() { this.groups = new Map(); this.mats = new Map(); }
   add(geo, mat, x = 0, z = 0) {
@@ -463,8 +467,35 @@ export class Merger {
   flush(world, opts = {}) {
     const cast = opts.cast !== false;
     let meshes = 0;
-    for (const [key, list] of this.groups) {
+    for (const [key, _list] of this.groups) {
+      let list = _list;
       const mat = this.mats.get(key);
+      // DROP NON-FINITE GEOMETRY, KEEP ITS NEIGHBOURS.
+      //
+      // A single NaN coordinate anywhere in a bucket makes the merged bounding
+      // sphere NaN, and a NaN bounding sphere is frustum-culled every frame. So
+      // one malformed piece did not fail loudly, or even fail alone -- it
+      // silently deleted EVERY mesh sharing its ~110m tile and its material.
+      // Mustafa Centre lost a 22.8m mass this way while a dome and a parapet on
+      // other materials went on drawing above thin air, and it read for hours
+      // like a mass that had never been built.
+      //
+      // Computing the bounding box instead does not save it: a NaN position
+      // makes the box NaN too. The only fix that holds is to not let the bad
+      // geometry into the buffer. This runs once per geometry at build time,
+      // never per frame.
+      const good = [];
+      for (const g of list) {
+        const a = g.attributes.position.array;
+        let ok = true;
+        for (let i = 0; i < a.length; i++) {
+          if (!Number.isFinite(a[i])) { ok = false; break; }
+        }
+        if (ok) good.push(g);
+        else { BAD_GEO++; g.dispose(); }
+      }
+      if (!good.length) continue;
+      list = good;
       let n = 0;
       for (const g of list) n += g.attributes.position.count;
       const pos = new Float32Array(n * 3);
@@ -472,11 +503,26 @@ export class Merger {
       const uv = new Float32Array(n * 2);
       let o3 = 0, o2 = 0;
       for (const g of list) {
-        pos.set(g.attributes.position.array, o3);
-        if (g.attributes.normal) nor.set(g.attributes.normal.array, o3);
-        if (g.attributes.uv) uv.set(g.attributes.uv.array, o2);
-        o3 += g.attributes.position.count * 3;
-        o2 += g.attributes.position.count * 2;
+        // COPY BY THE POSITION COUNT, NOT BY THE SOURCE ARRAY'S LENGTH.
+        //
+        // These three lines assumed every geometry in a bucket carries a normal
+        // and a uv sized exactly to its position count. One that does not made
+        // `set()` write past the end of the destination, which throws, which
+        // aborts this whole loop -- so a single malformed geometry silently
+        // deleted EVERY mesh in its tile-and-material bucket AND every bucket
+        // after it. It cost an afternoon on Mustafa Centre: a 22.8m mass with
+        // correct bounds, correctly merged, that simply never appeared, while a
+        // dome and a parapet on other materials drew fine above thin air.
+        //
+        // Nothing here should be able to lose a building. A short or missing
+        // attribute now costs that attribute on that geometry and nothing else.
+        const pc = g.attributes.position.count;
+        pos.set(g.attributes.position.array.subarray(0, pc * 3), o3);
+        const gn = g.attributes.normal, gu = g.attributes.uv;
+        if (gn && gn.array.length >= pc * 3) nor.set(gn.array.subarray(0, pc * 3), o3);
+        if (gu && gu.array.length >= pc * 2) uv.set(gu.array.subarray(0, pc * 2), o2);
+        o3 += pc * 3;
+        o2 += pc * 2;
         g.dispose();
       }
       const merged = new THREE.BufferGeometry();
@@ -484,6 +530,14 @@ export class Merger {
       merged.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
       merged.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
       merged.computeBoundingSphere();
+      // A NaN anywhere in `pos` makes this NaN, and a NaN bounding sphere is
+      // frustum-culled every frame -- the same invisible-but-present failure,
+      // reached by a different road. Fall back to the box, which survives it.
+      if (!merged.boundingSphere || !Number.isFinite(merged.boundingSphere.radius)) {
+        merged.computeBoundingBox();
+        merged.boundingSphere = new THREE.Sphere();
+        if (merged.boundingBox) merged.boundingBox.getBoundingSphere(merged.boundingSphere);
+      }
       const mesh = new THREE.Mesh(merged, mat);
       mesh.castShadow = cast; mesh.receiveShadow = true;
       world.add(mesh);

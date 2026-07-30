@@ -362,6 +362,38 @@ LANDMARKS = {
     "flower dome":            {"h": 38, "key": True},
     "cloud forest":           {"h": 58, "key": True},
 }
+
+# HDB STOREY COUNTS, KEYED BY POSTCODE.
+#
+# These blocks carry NO NAME, so the name-keyed OVERRIDES table above cannot
+# reach them, and OSM tags every one of them height=0 -- which the junk-tag
+# guard below correctly rejects, dropping them into TYPE_DEFAULT["residential"]
+# = 40. The result: blocks of 23, 25 and 21 storeys all drawn at an identical
+# 40m, so the Tekka group had no skyline modulation at all and was roughly 26m
+# short. Researched 2026-07-31, research/littleindia-hdb-towers.md.
+#
+# Storey counts are HDB's own and are AUTHORITATIVE. The metre figures are NOT:
+# no height in metres is published for any HDB block anywhere I could reach
+# (HDB publishes max_floor_lvl and no height field of any kind). So these are
+# storeys x an assumed floor-to-floor, stated here once rather than hidden:
+# 2.9m for HDB residential slabs. Tagged as a guess by the caller, deliberately,
+# so the accuracy ledger does not count them as surveyed.
+#
+# Postcode, not house number: house numbers repeat across the island and this
+# table has to stay safe when the world grows past Little India.
+#
+# THE REAL FIX, when there is time, is to join HDB's max_floor_lvl onto OSM ways
+# by addr:housenumber + addr:postcode -- both are already tagged on most HDB
+# blocks island-wide, which would fix every HDB estate at once instead of five
+# records at a time.
+HDB_STOREYS = {
+    "210661": 23,    # Buffalo Road, corridor-access slab
+    "210662": 25,    # the tallest of the group
+    "210663": 21,
+    "210664": 4,     # OSM says building:levels=3; HDB says 4, and HDB is the authority
+}
+HDB_FLOOR_M = 2.9
+
 TYPE_DEFAULT = {
     "retail": 22, "commercial": 30, "hotel": 55, "apartments": 45,
     "residential": 40, "office": 45, "civic": 18, "house": 9,
@@ -444,6 +476,11 @@ def height_for(tags):
             return v, False, "osm", None
         if v is not None:
             BAD_HEIGHT_TAGS.append((tags.get("name") or "(unnamed)", v))
+    pc = str(tags.get("addr:postcode") or "").strip()
+    if pc in HDB_STOREYS:
+        # a guess, and recorded as one -- the storeys are authoritative, the
+        # metres are storeys x an assumption
+        return HDB_STOREYS[pc] * HDB_FLOOR_M, False, "guess", None
     lv = tags.get("building:levels")
     if lv:
         try:
