@@ -2073,33 +2073,45 @@ function cqWarehouse(api, b) {
   // cream body to the tall-godown eave, white barge trim at the head
   api.world.add(api.extrude(b.p, 8.5, cream, g0));
   api.world.add(api.extrude(api.grow(b.p, 1.005), 0.4, trim, g0 + 8.2));
-  // parallel gabled ranges ACROSS the short axis: ridge prisms side by
-  // side, each with a raised jack-roof monitor slot
-  const W2 = ob.halfShort * 2, L2 = ob.halfLong * 2;
+  // RING extents, not the oriented box: The Foundry's ground footprint is
+  // a chunky pentagon and box-extent ranges landed outside the walls
+  // (round 1's failure, same lesson as buddhaTooth's roofs)
+  const yawL2 = Math.atan2(ob.ux, ob.uz);
+  const xA2 = { x: Math.cos(yawL2), z: -Math.sin(yawL2) };
+  let uMn = 1e9, uMx = -1e9, vMn = 1e9, vMx = -1e9;
+  for (const [rx2, rz2] of b.p) {
+    const dx2 = rx2 - ob.cx, dz2 = rz2 - ob.cz;
+    const u2 = dx2 * xA2.x + dz2 * xA2.z, v2 = dx2 * ob.ux + dz2 * ob.uz;
+    uMn = Math.min(uMn, u2); uMx = Math.max(uMx, u2);
+    vMn = Math.min(vMn, v2); vMx = Math.max(vMx, v2);
+  }
+  const uC2 = (uMn + uMx) / 2, vC2 = (vMn + vMx) / 2;
+  const W2 = (uMx - uMn) * 0.9, L2 = (vMx - vMn) * 0.9;
   const ranges = Math.max(3, Math.round(L2 / 16));
   const rw = (L2 * 0.94) / ranges;
   for (let k = 0; k < ranges; k++) {
-    const lz = -L2 * 0.47 + (k + 0.5) * rw;
+    const lz = vC2 - L2 * 0.47 + (k + 0.5) * rw;
     const g = new THREE.CylinderGeometry(0.02, 0.71, 1, 4);
     g.rotateY(Math.PI / 4);
     g.scale(W2 * 0.96, 3.5, rw * 0.96);
     const roof = new THREE.Mesh(g, roofM);
     roof.rotation.y = yawL;
-    at(roof, 0, g0 + 8.5 + 1.75, lz);
+    at(roof, uC2, g0 + 8.5 + 1.75, lz);
     const jack = new THREE.Mesh(new THREE.BoxGeometry(W2 * 0.4, 1.1, rw * 0.3), roofM);
     jack.rotation.y = yawL;
-    at(jack, 0, g0 + 12.2, lz);
+    at(jack, uC2, g0 + 12.2, lz);
   }
   // tall timber double doors along both long faces, alternating green/blue
   for (const sgn of [-1, 1]) {
     for (let k = 0; k < ranges; k++) {
-      const lz = -L2 * 0.47 + (k + 0.5) * rw;
-      const px = ob.cx + xA.x * sgn * W2 * 0.485 + ob.ux * lz;
-      const pz = ob.cz + xA.z * sgn * W2 * 0.485 + ob.uz * lz;
+      const lz = vC2 - L2 * 0.47 + (k + 0.5) * rw;
+      const lu = uC2 + sgn * W2 * 0.485;
+      const px = ob.cx + xA.x * lu + ob.ux * lz;
+      const pz = ob.cz + xA.z * lu + ob.uz * lz;
       if (onCarriageway(px, pz, 0.15)) continue;
       const d = new THREE.Mesh(new THREE.BoxGeometry(0.14, 4.2, 3.0), k % 3 === 1 ? doorB : doorG);
       d.rotation.y = yawL;
-      at(d, sgn * W2 * 0.485, g0 + 2.1, lz, false);
+      at(d, lu, g0 + 2.1, lz, false);
     }
   }
 }
@@ -4351,6 +4363,11 @@ export const RECIPES = [
   // land wrong, and the trim extrude caps the whole top white. Round 2:
   // derive ranges from the RING extents (the buddhaTooth lesson), vet from
   // the river, and only then wire. Recipes + research stay banked.
+  // PARKED again after round 2 (2026-07-30 ~13:55): ring-extent ranges
+  // STILL don't land on The Foundry's pentagon — the roofs are absent from
+  // the aerial while the extrude renders, and no exception fires. Round 3
+  // must INSTRUMENT (log uC2/vC2/W2/L2 and one roof's world position vs
+  // the ring) before placing anything. Do not burn vet rounds guessing.
   // [/^the foundry$|^the cannery$/i, cqWarehouse],
   // [/^merchants' court$/i, cqShophouses],
 

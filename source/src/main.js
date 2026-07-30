@@ -2011,11 +2011,21 @@ function loop(now) {
         realDt -= slice;
       }
     }
-    // you cannot ride through a bus
-    if (trafficSys && trafficSys.hits(S.x, S.z, vehicleKind === 'car' ? 0.95 : 0.55)) {
-      S.x = px; S.z = pz;
-      S.speed *= -0.12;                 // a small bounce, then stopped
-      if (Math.abs(S.speed) < 0.4) S.speed = 0;
+    // you cannot ride through a bus — but a SIDE graze slides along it
+    // like walls do. The old response reverted the whole move and killed
+    // the speed on any overlap, so riding parallel to traffic in the next
+    // lane kept dead-stopping the bike (user bug report, 2026-07-30).
+    {
+      const rr = vehicleKind === 'car' ? 0.95 : 0.55;
+      if (trafficSys && trafficSys.hits(S.x, S.z, rr)) {
+        if (!trafficSys.hits(S.x, pz, rr)) { S.z = pz; S.speed *= 0.9; }
+        else if (!trafficSys.hits(px, S.z, rr)) { S.x = px; S.speed *= 0.9; }
+        else {
+          S.x = px; S.z = pz;
+          S.speed *= -0.12;             // head-on: a small bounce, then stopped
+          if (Math.abs(S.speed) < 0.4) S.speed = 0;
+        }
+      }
     }
     if (blocked(S.x, S.z)) {
       // slide along the wall rather than dead-stopping: keep whichever single
