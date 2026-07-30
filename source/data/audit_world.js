@@ -761,6 +761,20 @@ window.__auditWorld = async function auditWorld() {
     for (const p of props) {
       if (!terr) break;
       if (ROOFTOP.has(p.sig) || p.y < -900) continue;
+      // A CAR ON A BRIDGE IS NOT A PROP OFF THE GROUND. Since decks became
+      // standable surfaces the fleet drives at deck height, which is 24m above
+      // the seabed on Sheares Avenue and exactly zero above the road it is on;
+      // P3 reported 43 of them as floating. Exempt by mechanism, as P1, P4, the
+      // T-checks and W2 already do — actors move, and where they are is a
+      // question for the behaviour checks, not for a placement check.
+      //
+      // Deliberately NOT re-grounding every prop against the deck: tried it,
+      // and taking the deck wherever one exists calls the kerbs and lamps
+      // standing UNDER a bridge sunk by three metres, while taking the nearer
+      // of the two surfaces left 83 findings I could not explain. Static props
+      // are still placed at groundAt(), so terrain remains the right question
+      // for them; when that stops being true this is the place to fix it.
+      if (p.actor) continue;
       const d = p.y - terr.at(p.x, p.z);
       if (d > 19) {
         if ((CANOPY.has(p.sig) || p.flat) && overATree(p)) continue;

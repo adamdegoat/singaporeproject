@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance } from './tex.js';
-import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, buildSurround, buildWater, buildSupertrees } from './city.js';
+import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, buildSurround, buildWater, buildSupertrees } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
@@ -1241,6 +1241,9 @@ async function buildRegion(data, opts = {}) {
   terrain.carve(opts.carveRoads || data.roads || []);
   setTerrain(terrain);
   window.__terrain = terrain;
+  // the audit needs the same notion of 'ground' the world uses: on a bridge
+  // that is the DECK, not the seabed under it
+  window.__bridgeDeckAt = bridgeDeckAt;
   indexBuildings(opts.regionData || data);
 
   // The road index is built FIRST. Buildings carry structural pieces — entrance

@@ -294,7 +294,70 @@ export function groundAt(x, z) { return TERRAIN.at(x, z); }
 // the road: the bike, the traffic and the crowd all were.
 const SURFACE_ROAD = 0.061;      // clears the highest per-road offset
 const SURFACE_PATH = 0.024;
+
+// A BRIDGE DECK IS A SURFACE YOU STAND ON.
+//
+// Bridge ways are already DRAWN flat, at the highest ground they touch plus
+// 1.2m, because a deck does not follow the ground — that is what makes it a
+// bridge. But surfaceAt() only ever asked the terrain, so the rider, the
+// traffic and the crowd all stayed on the seabed while the deck ran overhead:
+// ride out along Esplanade Drive and you drop off the bridge onto bare ground
+// with the deck ramping away above you. Same two-numbers trap as the bike
+// riding 5.5cm under the road, one storey up.
+//
+// Indexed rather than scanned: surfaceAt is called for every crowd part every
+// frame, so a linear pass over every bridge segment in the region is not
+// affordable. Cells are 40m, which is larger than any single segment's reach.
+const BR_CELL = 40;
+const BRIDGES = { cells: new Map(), segs: [] };
+export function clearBridges() { BRIDGES.cells.clear(); BRIDGES.segs.length = 0; }
+export function addBridgeWay(pts, width) {
+  if (!pts || pts.length < 2) return;
+  let deck = 0;
+  for (const q of pts) deck = Math.max(deck, TERRAIN.at(q[0], q[1]));
+  deck += 1.2;                        // the deck sits above its abutment
+  const half = width / 2;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const idx = BRIDGES.segs.length;
+    BRIDGES.segs.push([pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], half, deck]);
+    const mnx = Math.min(pts[i][0], pts[i + 1][0]) - half;
+    const mxx = Math.max(pts[i][0], pts[i + 1][0]) + half;
+    const mnz = Math.min(pts[i][1], pts[i + 1][1]) - half;
+    const mxz = Math.max(pts[i][1], pts[i + 1][1]) + half;
+    for (let cx = Math.floor(mnx / BR_CELL); cx <= Math.floor(mxx / BR_CELL); cx++) {
+      for (let cz = Math.floor(mnz / BR_CELL); cz <= Math.floor(mxz / BR_CELL); cz++) {
+        const k = cx + ',' + cz;
+        let l = BRIDGES.cells.get(k);
+        if (!l) { l = []; BRIDGES.cells.set(k, l); }
+        l.push(idx);
+      }
+    }
+  }
+}
+// The deck height under a point, or null if there is no bridge over it. The
+// widest deck wins where two overlap, which is the ramp rather than the slip
+// road and is the one you are actually riding on.
+export function bridgeDeckAt(x, z) {
+  const l = BRIDGES.cells.get(Math.floor(x / BR_CELL) + ',' + Math.floor(z / BR_CELL));
+  if (!l) return null;
+  let best = null, bestHalf = -1;
+  for (const i of l) {
+    const s = BRIDGES.segs[i];
+    const vx = s[2] - s[0], vz = s[3] - s[1];
+    const l2 = vx * vx + vz * vz || 1;
+    let t = ((x - s[0]) * vx + (z - s[1]) * vz) / l2;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const dx = x - (s[0] + vx * t), dz = z - (s[1] + vz * t);
+    if (dx * dx + dz * dz <= (s[4] + 0.4) * (s[4] + 0.4) && s[4] > bestHalf) {
+      bestHalf = s[4]; best = s[5];
+    }
+  }
+  return best;
+}
+
 export function surfaceAt(x, z) {
+  const deck = bridgeDeckAt(x, z);
+  if (deck !== null) return deck + SURFACE_ROAD;
   const g = TERRAIN.at(x, z);
   if (window.__onRoad && window.__onRoad(x, z, 0.4)) return g + SURFACE_ROAD;
   return g + SURFACE_PATH;
@@ -1181,6 +1244,12 @@ export async function buildRoads(world, data, Y = null) {
     // own geometry, gives every overlap a consistent winner.
     const seed = Math.abs(Math.round(r.p[0][0] * 7 + r.p[0][1] * 13)) % 5;
     const y = isPath ? 0.02 : 0.055 + seed * 0.0012;
+    // Register the deck as a standable surface at the same moment it is drawn,
+    // so only bridges that EXIST raise anything — a bridge in an unloaded
+    // chunk must not lift a rider standing where it will one day be. Carriage-
+    // ways only: a 2m footbridge deck is not something the ride belongs on,
+    // and lifting the crowd onto one would put pedestrians in mid-air.
+    if (r.bridge && !isPath && (r.w || 0) >= 5.5) addBridgeWay(r.p, r.w);
     const g = ribbon(r.p, r.w, y, !!r.bridge);
     if (!g.attributes.position || g.attributes.position.count === 0) continue;
     // WHAT IT IS MADE OF, from the map. `surface` is on 61% of ways here and
