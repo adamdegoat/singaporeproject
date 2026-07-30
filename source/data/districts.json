@@ -87,8 +87,8 @@
    "name": "Little India / Farrer Park",
    "bbox": "1.3030,103.8490,1.3140,103.8600",
    "axis": "serangoon road",
-   "status": "planned",
-   "notes": "Serangoon Road from the Rochor end up past Farrer Park, with Race Course Road, Buffalo Road, Dunlop Street, Campbell Lane, Kerbau Road and the Tekka/Mustafa blocks. Chosen as the first expansion after the polish pass because it is the most recognisable quarter still missing and because it CLOSES A HOLE rather than reaching into empty map: it overlaps bugis (south edge 1.3030 under its 1.3040 north edge) and orchard (west edge 103.8490 under its 103.8505 east edge), so the region stays one block with no seam gap. Long side 1,224m, inside the ~1.2km Overpass ceiling the readme sets. Conservation shophouse country, so it exercises the shophouse path the way chinatown does rather than the tower path. STATUS planned until the scene file exists: deploy.sh and gates.sh both read this registry now, so a district listed before it is built would fail every deploy. Flip to 'building' the moment data/littleindia.json is written.",
+   "status": "building",
+   "notes": "Serangoon Road from the Rochor end up past Farrer Park, with Race Course Road, Buffalo Road, Dunlop Street, Campbell Lane, Kerbau Road and the Tekka/Mustafa blocks. Chosen as the first expansion after the polish pass because it is the most recognisable quarter still missing and because it CLOSES A HOLE rather than reaching into empty map: it overlaps bugis (south edge 1.3030 under its 1.3040 north edge) and orchard (west edge 103.8490 under its 103.8505 east edge), so the region stays one block with no seam gap. Long side 1,224m, inside the ~1.2km Overpass ceiling the readme sets. Conservation shophouse country, so it exercises the shophouse path the way chinatown does rather than the tower path. Built 2026-07-30: 2,088 buildings, 1,662 roads, 756 named shopfronts, 217 mapped crossings, terrain pinned to opentopodata like every other district. Overpass had three of four mirrors down that evening, which is what added the live-mirror probe to build_district.py.",
    "queued_after": "robertson"
   }
  ]

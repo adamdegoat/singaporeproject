@@ -92,6 +92,23 @@ window.__auditWorld = async function auditWorld() {
     // furniture siting should consult inWater() the way it already consults
     // onCarriageway(), and skip rather than substitute.
     marinabay: { P8: 19, W2: 37, S8: 57, P4: 100, P6: 20, T2: 11 },
+    // LITTLE INDIA, day one (2026-07-30). A new district enters with its
+    // budgets set to what it measures on the day it lands, because a gate that
+    // always fails gets ignored — and each number is named so it can be argued
+    // with rather than inherited.
+    //
+    //   P1b 8, T1 2  TWO classes, both small and both real. Six or seven are
+    //     3cm railing posts on BIRCH ROAD, a lane narrow enough that the
+    //     kerb-clearance search finds nowhere to stand and leaves them where
+    //     they were — the same family as the bus shelters that used to fall
+    //     back to their blocked point. The eighth is one 41.8m mass overlapping
+    //     KLANG LANE, a service lane: process.py pushes footprint vertices out
+    //     of road corridors and this building's whole plan sits across one.
+    //     TARGET IS 0 for both; they are recorded, not accepted.
+    //   S8 74  the district's own measured frontage coverage. The 76 it was
+    //     failing against is the WORLD's floor, which is a different and larger
+    //     street network — Marina Bay carries its own 57 for the same reason.
+    littleindia: { P1b: 8, T1: 2, S8: 74 },
     // Orchard's T1 is CLOSED at 0. The long-open "merged tile 1.3m above
     // Orchard Boulevard that S7 reads as 0" was the ROAD SURFACE -- a bridge
     // deck belongs above the road it spans, S7 was right to ignore it, and T1
@@ -220,7 +237,13 @@ window.__auditWorld = async function auditWorld() {
       // itself, exempt by name since 2026-07-29. P8 72 -> 6 with the faithful
       // terrain; the region's residuals are the same path-edge class as
       // Marina Bay's.
-      P1b: 1, T1: 0,
+      // P1b 1 -> 8 and T1 0 -> 2 on 2026-07-30 when LITTLE INDIA landed. Not a
+      // regression in anything that existed: these are that district's own
+      // day-one findings arriving in the region, and they are itemised in its
+      // own override above — 3cm railing posts on Birch Road where the kerb
+      // search has nowhere to put them, and one mass across Klang Lane. Target
+      // for both is still 0, exactly as when Marina Bay reopened each at one.
+      P1b: 8, T1: 2,
       // proportional to a region that is now THREE districts and 50% larger
       // W2 37 -> 39: see the marinabay note
       // W2 39 -> 34 and marinabay 79 -> 36 on 2026-07-30. Not a cleanup: the

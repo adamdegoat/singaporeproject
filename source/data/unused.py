@@ -42,6 +42,15 @@ THRESHOLD = 0.05
 # line here is a decision and should look like one; leaving a tag out of both
 # this and the scene file is what the gate is for.
 IGNORED = {
+    # Little India 2026-07-30: the operator's own naming for a transit stop,
+    # not a fact about where anything is or what it looks like. "SBS Transit",
+    # its abbreviation and its wikidata id tell a rider nothing they can see
+    # from the seat, and we already carry the stop's NAME and position, which
+    # are what the wayfinder reads.
+    "network": "transit operator name on a stop; carries no geometry and "
+               "nothing visible from the street",
+    "network:short": "abbreviation of the same",
+    "network:wikidata": "identifier for the same",
     "crossing_ref":   "UK-style duplicate of crossing=; the classifier reads crossing=, and both say 'zebra' about the same node",
     "highway":        "IS the road class; carried as `k`",
     "building":       "IS the building; carried by existing at all",
@@ -113,6 +122,20 @@ CARRIED_ELSEWHERE = {
 # quietly folding them into IGNORED is how this project lost seven of them in
 # the first place. Empty this list, do not grow it.
 DEFERRED = {
+    # Surfaced by Little India 2026-07-30. Kerbside parking is a REAL and
+    # visible feature of Serangoon Road and the lanes around Tekka — cars
+    # nose-in along the kerb are half of what that street looks like — and it
+    # is mapped on roughly one way in eleven here, which is far more than any
+    # district we had. Deferred rather than ignored because the day the traffic
+    # system learns to park, this is the data that says where: it is not noise,
+    # it is a feature waiting for its system.
+    "parking:lane:left": "kerbside parking, real and unmodelled; the data that "
+                         "will place parked cars when traffic learns to park",
+    "parking:lane:right": "same",
+    "parking:lane:both": "same",
+    "parking:condition:right:vehicles": "which vehicles may park there; same "
+                                        "deferral as parking:lane",
+    "parking:condition:both:vehicles": "same",
     # carried into the scene and read by nothing YET, which is a different
     # state from unread: the bus lane is drawn behind a DRAW_BUS_LANES flag
     # that is off because per-fragment ribbons render as stains. See city.js.
