@@ -2669,23 +2669,67 @@ function crystalMesh(api, b) {
   });
   const sw = streetward(api, ob);
   const N = 30;
+  // PLACED FROM THE BOX CENTRE, not from cx0/cz0. orientedBox's cx,cz is the
+  // VERTEX MEAN and on an irregular footprint it is nowhere near the middle of
+  // the box -- this recipe predates ob.bx/bz existing, and the result was a
+  // lattice standing clear of the building with its far end out over the road.
+  const bx0 = ob.bx, bz0 = ob.bz;
   for (let i = 0; i < N; i++) {
-    const t = (i / (N - 1) - 0.5) * ob.halfLong * 1.9;
-    const px = cx0 + ob.ux * t + sw.nx * (ob.halfShort + 0.7);
-    const pz = cz0 + ob.uz * t + sw.nz * (ob.halfShort + 0.7);
-    if (onCarriageway(px, pz, -0.3)) continue;
+    const t = ob.midU + (i / (N - 1) - 0.5) * ob.halfLong * 1.75;
+    const px = ob.cx + ob.ux * t - ob.uz * ob.midV + sw.nx * (ob.halfShort + 0.7);
+    const pz = ob.cz + ob.uz * t + ob.ux * ob.midV + sw.nz * (ob.halfShort + 0.7);
+    // CLEARANCE FOR THE LEAN, not just for the base. These bars rake +-0.3 rad
+    // over a 26m height, so a bar whose foot is comfortably on the pavement has
+    // its head about 4m out -- and it was over Cheng Yan Place. The old -0.3
+    // margin actually RELAXED the test, which is the wrong direction for a
+    // piece that grows sideways as it rises.
+    if (onCarriageway(px, pz, 2.4)) continue;
     for (const lean of [0.30, -0.30]) {
       const bar = new THREE.BoxGeometry(0.22, h * 1.12, 0.22);
       bar.rotateZ(lean);
       bar.rotateY(-ob.ang);
-      bar.translate(px, api.groundAt(px, pz) + h / 2, pz);
+      bar.translate(px, api.footingY(b.p) + h / 2, pz);
       api.merge(bar, mesh, cx0, cz0);
     }
   }
-  // horizontal courses, so it is a mesh and not a picket fence
+  // Horizontal courses, so it is a mesh and not a picket fence -- but ONLY
+  // along the face that carries the mesh. A grown ring wraps all four sides and
+  // put the lattice on the rectilinear block too, which is exactly the thing
+  // the research says is wrong: the caps cover the CURVED block, and the other
+  // one is a flat patchwork box.
+  const P = (u, v) => [cx0 + u * ob.ux - v * ob.uz, cz0 + u * ob.uz + v * ob.ux];
+  const rect = (u0, v0, hu, hv) => [P(u0 - hu, v0 - hv), P(u0 + hu, v0 - hv),
+                                    P(u0 + hu, v0 + hv), P(u0 - hu, v0 + hv)];
+  const side = ((sw.nx * -ob.uz + sw.nz * ob.ux) > 0) ? 1 : -1;
+  // SEGMENTED, so each piece can be tested against the road. As one 135m strip
+  // this stood in Manila Street and P1b caught it -- the bars beside it check
+  // onCarriageway individually and the courses did not.
+  const SEG = 12;
   for (let k = 1; k <= 5; k++) {
-    const y = (h / 6) * k;
-    api.merge(api.extrudeGeo(api.grow(b.p, 1.04), 0.18, y), mesh, cx0, cz0);
+    for (let j = 0; j < SEG; j++) {
+      const u = ob.midU + ((j + 0.5) / SEG - 0.5) * ob.halfLong * 1.9;
+      const v = ob.midV + side * (ob.halfShort + 0.7);
+      const [qx, qz] = P(u, v);
+      if (onCarriageway(qx, qz, 0.2)) continue;
+      api.merge(api.extrudeGeo(rect(u, v, (ob.halfLong * 1.9) / (SEG * 2), 0.22),
+        0.18, (h / 6) * k), mesh, cx0, cz0);
+    }
+  }
+
+  // THE OTHER BLOCK: red, orange and charcoal panels, not glass and not
+  // lattice. Hashed off each panel's own position so a rebuild deals the same
+  // patchwork rather than reshuffling it.
+  const PATCH = [0xa8402f, 0xc9762a, 0x3b3d40, 0x8d3326, 0x4a4d51];
+  for (let k = 0; k < 5; k++) {
+    for (let j = 0; j < 7; j++) {
+      const u = ob.midU + (j / 6 - 0.5) * ob.halfLong * 1.8;
+      const hsh = Math.abs(((u * 31) | 0) + k * 97);
+      const vv = ob.midV - side * (ob.halfShort + 0.25);
+      const [wx, wz] = P(u, vv);
+      if (onCarriageway(wx, wz, 0.2)) continue;
+      api.merge(api.extrudeGeo(rect(u, vv, ob.halfLong * 0.13, 0.22),
+        h / 5.6, (h / 5.2) * k), signMat(PATCH[hsh % PATCH.length]), cx0, cz0);
+    }
   }
 }
 
