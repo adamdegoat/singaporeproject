@@ -238,6 +238,19 @@ LANDMARKS = {
     # audit and the ledger all read one number.
     "lasalle":                {"h": 26},
 
+    # The Warehouse Hotel, 320/326/332 Havelock Road. Researched 2026-07-30,
+    # research/robertson-rivervalley.md. THREE two-storey gabled godowns
+    # standing shoulder to shoulder -- and it was carrying a TYPE_DEFAULT guess
+    # of 20m, better than double what a two-storey godown stands at, so the most
+    # recognisable godown group on this reach of the river was a tower block.
+    # UNPUBLISHED: no metre height is published for ANY conserved godown here;
+    # URA gives storeys and plan dimensions only. Height CLASS for two storeys
+    # plus a pitched roof, same footing as lau pa sat.
+    #
+    # It is also NOT on Robertson Quay, whatever Wikipedia says: Havelock Road,
+    # south bank, and it is not in URA's Robertson Quay gazette at all.
+    "the warehouse":          {"h": 9.5},
+
     # ---- Little India, researched 2026-07-30 (research/littleindia-temples.md,
     # research/sri-veeramakaliamman.md). NEITHER of these has a published height
     # in metres from ANY authoritative source -- both agents said so explicitly,

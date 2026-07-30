@@ -4428,6 +4428,7 @@ export const RECIPES = [
   [/veeramakaliamman/i, veeramakaliamman],
   [/abdul gafoor/i, abdulGafoor],
   [/angullia/i, angullia],
+  [/^the warehouse$/i, warehouseGodowns],
   [/srinivasa perumal/i, perumalGopuram],
   // PARKED 2026-07-30 midday after round 1: The Foundry's OSM footprint is
   // a chunky pentagon, not the 115x57 slab the research measured (the
@@ -5538,4 +5539,101 @@ function angullia(api, b) {
   api.merge(api.extrudeGeo(sq(1.9), 1.0, H * 1.42), A.trim, ob.cx, ob.cz);
   // the clock faces, near the top of the shaft on all four sides
   api.merge(api.extrudeGeo(sq(1.76), 1.5, H * 1.42 - 3.4), A.trim, ob.cx, ob.cz);
+}
+
+// The Warehouse Hotel, 320 / 326 / 332 Havelock Road — three conserved godowns.
+// Researched 2026-07-30, research/robertson-rivervalley.md §1.
+//
+// TWO FALSE PREMISES CORRECTED BEFORE ANY GEOMETRY. It is NOT on Robertson
+// Quay: Wikipedia says it was gazetted in the Robertson Quay conservation area
+// and it does not appear in URA's list for it. Havelock Road, SOUTH bank. And
+// it is not one building: THREE identical two-storey volumes shoulder to
+// shoulder, each with its own triangular pediment gable facing the river, each
+// pediment carrying a circular oculus.
+//
+// THE COLOUR IS THE POINT OF THIS WHOLE DISTRICT. The research calls it the
+// single biggest colour error available here: there are TWO committed schemes
+// on this reach of river and they are opposites. This group, on Havelock Road,
+// is FLAT WHITE with pale shutters. The Watermark / Rodyk Street row on the
+// other bank is NEAR-BLACK with vermilion joinery. Painting the whole godown
+// family white is exactly why the district reads wrong, so this recipe paints
+// the one that IS white and says so, rather than generalising.
+//
+// A godown is not a shophouse. What makes it read as a godown is the JACKROOF,
+// a raised ventilated ridge running the length of the pitch, plus a deep plan
+// and a heavy cornice. Facades are divided by flat pilaster strips into three
+// bays per unit with paired shuttered windows on both floors.
+const GODOWN_MAT = {
+  white: new THREE.MeshStandardMaterial({ color: 0xeae7df, roughness: 0.88 }),
+  shutter: new THREE.MeshStandardMaterial({ color: 0xb9bcb4, roughness: 0.84 }),
+  tile: new THREE.MeshStandardMaterial({ color: 0x8a5b46, roughness: 0.86 }),
+  granite: new THREE.MeshStandardMaterial({ color: 0x7d7b75, roughness: 0.95 }),
+};
+function warehouseGodowns(api, b) {
+  const ob = orientedBox(b.p);
+  const W = GODOWN_MAT;
+  const H = Math.max(7, b.h || 9.5);
+  const UNITS = 3;
+
+  const P = (u, v) => [ob.cx + u * ob.ux - v * ob.uz, ob.cz + u * ob.uz + v * ob.ux];
+  const rect = (u0, v0, hu, hv) => [P(u0 - hu, v0 - hv), P(u0 + hu, v0 - hv),
+                                    P(u0 + hu, v0 + hv), P(u0 - hu, v0 + hv)];
+  const hu = (ob.halfLong * 0.98) / UNITS;
+
+  for (let i = 0; i < UNITS; i++) {
+    const u0 = ob.midU + (i - (UNITS - 1) / 2) * (hu * 2);
+    // the two-storey volume
+    api.merge(api.extrudeGeo(rect(u0, ob.midV, hu * 0.97, ob.halfShort * 0.98), H),
+      W.white, ob.cx, ob.cz);
+    // the heavy cornice between the storeys, and the pilaster strips that cut
+    // each unit into three bays
+    api.merge(api.extrudeGeo(rect(u0, ob.midV, hu * 1.00, ob.halfShort * 1.01), 0.45, H * 0.50),
+      W.white, ob.cx, ob.cz);
+    for (let p = -1; p <= 1; p++) {
+      api.merge(api.extrudeGeo(rect(u0 + p * hu * 0.62, ob.midV, hu * 0.055,
+        ob.halfShort * 1.01), H), W.white, ob.cx, ob.cz);
+    }
+    // paired shuttered windows, both floors, on the gable (river) end
+    const _os = outwardSign(b.p);
+    for (const f of [0, 1]) {
+      for (const s2 of [-1, 1]) {
+        api.merge(api.extrudeGeo(
+          rect(u0 + s2 * hu * 0.30, ob.midV + ob.halfShort * 1.005, hu * 0.17, 0.16),
+          H * 0.30, H * (0.10 + f * 0.48)), W.shutter, ob.cx, ob.cz);
+      }
+    }
+    // THE PITCHED ROOF, gable end facing the river. Three radial segments is
+    // the idiom the shophouse roof already uses here, and its radius sets its
+    // height as well as its span, so it is capped for the same reason.
+    // THE RIDGE RUNS DOWN THE DEPTH, not across the frontage. A godown is a deep
+    // plan -- 26 to 46m deep for a 12 to 15m frontage -- with the GABLE facing
+    // the river. Run along the frontage instead and each roof becomes a short
+    // wedge stranded in the middle of a flat roof, which is what it looked
+    // like: three brown trenches rather than three pitched roofs.
+    // RADIUS SETS THE HEIGHT; A SCALE SETS THE SPAN. A three-sided cylinder's
+    // radius controls both at once -- the trap the shophouse roof above is
+    // already commented for -- so sizing the radius to cover a 15m unit gives a
+    // 12m-tall roof on a 9.5m building, and capping the radius instead leaves
+    // white flat roof showing either side of the ridge. Pick the radius for the
+    // pitch you want, then scale the SECTION out to the full width.
+    const rad = 3.0;                                   // ~4.5m to the ridge
+    const rg = new THREE.CylinderGeometry(rad, rad, ob.halfShort * 2 * 0.98, 3, 1, false);
+    rg.rotateZ(Math.PI / 2);
+    rg.scale(1, 1, (hu * 1.02) / (rad * 0.866));       // section is in Y-Z here
+    rg.rotateY(-ob.ang + Math.PI / 2);
+    const [rx, rz] = P(u0, ob.midV);
+    rg.translate(rx, api.footingY(b.p) + H + rad * 0.5, rz);
+    api.merge(rg, W.tile, ob.cx, ob.cz);
+    // THE JACKROOF: the raised ventilated ridge that makes it a godown
+    api.merge(api.extrudeGeo(rect(u0, ob.midV, hu * 0.16, ob.halfShort * 0.86),
+      0.85, H + rad * 1.15), W.white, ob.cx, ob.cz);
+    // the triangular pediment gable, with its circular oculus
+    api.merge(api.extrudeGeo(rect(u0, ob.midV + ob.halfShort * 0.99, hu * 0.90, 0.22),
+      rad * 1.05, H), W.white, ob.cx, ob.cz);
+    api.merge(api.extrudeGeo(rect(u0, ob.midV + ob.halfShort * 1.02, hu * 0.13, 0.13),
+      rad * 0.34, H + rad * 0.30), W.shutter, ob.cx, ob.cz);
+  }
+  // the rough grey granite rubble river wall in front of the group
+  api.merge(api.extrudeGeo(rect(ob.midU, ob.midV + ob.halfShort * 1.30,
+    ob.halfLong * 1.02, 0.5), 1.1), W.granite, ob.cx, ob.cz);
 }
