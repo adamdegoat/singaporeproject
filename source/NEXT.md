@@ -70,6 +70,64 @@
 8. Boat Quay river-row colour treatment; more CBD facades; then ASK THE
    USER about expanding (Little India / civic core / Tiong Bahru).
 
+# 2026-07-30 night (Opus 5) — SIX DISTRICTS HAD NO TRAFFIC AT ALL
+
+`new Traffic(...)` was created ONCE, for the primary axis, in the region build.
+`addChunk` never built any. So every streamed district — South Bridge Road,
+Victoria Street, Bayfront Avenue, all of them — had completely empty
+carriageways. District CROWDS were given their own instances two sessions ago
+and traffic was missed in the same pass, which is exactly why the pavements
+looked alive and the roads did not.
+
+FIXED with the crowd's own lifecycle: `extraTraffic[]`, one Traffic per chunk
+built into that chunk's group, fleet scaled from the primary axis's own
+figures (Orchard is 2,586m with 78 cars and 12 buses, so one car per 33m and
+one bus per 215m), ticked in all three update paths and dropped on unload.
+`trafficHits()` and `trafficNearest()` fold every fleet into one answer for
+the ride, the walker and the engine sound — a car you can see but ride
+straight through is worse than no car.
+
+A SPLIT BUILDING PART INHERITED ITS PARENT'S GUESSED HEIGHT. Found because
+check.py refused a deploy after marinabay was reprocessed: "2 sub-230 m2
+footprints taller than 16m with GUESSED heights". They were REAL and they were
+old — two 18m towers on 60 and 92 m2 courtyard fragments in Orchard — and they
+had been invisible because the parts also carried the PARENT'S stale area
+(both recorded 275 m2; six Orchard Parksuites fragments all recorded 1409).
+split.py recomputes each part's true area, which is the whole point of it, and
+that is what finally let the check see them. `_recap_guess()` now re-applies
+process.py's own small-footprint storey cap after a split, and only to GUESSED
+heights — splitting a footprint is not new information about how tall it is.
+
+ALL SEVEN DISTRICTS ARE NOW ON ONE PIPELINE. Reprocessed every district from
+its raw cache with a before/after count on every layer and an abort on any
+loss. Six came back byte-identical — they were already current. MARINABAY was
+the stale one: 247 -> 296 buildings (the tower-on-a-podium rule bites hardest
+in a tower district), plus UOB Plaza Tower Two dropping from the inherited
+280m cap to its real 162m. Checked chinatown's raw cache still held the river
+that topup.py recovered BEFORE reprocessing anything, because a reprocess
+would have silently dropped it.
+
+TWO STALE TRIAGE ITEMS CLOSED BY MEASUREMENT, NOT BY WORK:
+- "The shophouse fabric heuristic misses Chinatown's larger conserved rows."
+  It does not. 1,794 of 2,135 chinatown buildings (84%) take the shophouse
+  path, and the 52 pre-1970 buildings it skips are Old City Hall, the
+  Fullerton, the Old Supreme Court, Masjid Sultan and St Joseph's — civic
+  monuments that must NOT be shophouses. A rider's-eye crop of South Bridge
+  Road shows the conservation rows reading correctly: sage and cream, green
+  shutters, timber doors, roller shutters, signboard lintels, five-foot way.
+  The morning's ground-floor work fixed this; the triage note was stale.
+- The "blank black panel" over Orchard Road is a gantry backer seen from 8m.
+
+STILL OPEN, honestly: street furniture standing in open water in marinabay (a
+lamp head at 3051,8878, median kerbs at 2315,8679 and 3065,8773, a sign box at
+2256,9252 — all 16 to 97m from the nearest mapped bridge, so genuinely
+misplaced, not bridge furniture). Fix: furniture siting should consult
+inWater() the way it already consults onCarriageway(), and skip rather than
+substitute. Also: Angsana trunks look oversized against a narrow conservation
+frontage on South Bridge Road — not touched, because the proportions were set
+deliberately from NParks figures and changing them globally to suit one street
+would be the wrong trade.
+
 # 2026-07-30 night (Opus 5) — ROAD SHADOW FIXED, AND A NEW TOOL TO LOOK WITH
 
 `data/streetshot.mjs` — rider's-eye frames at named spots (`canyon`,

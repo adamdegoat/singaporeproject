@@ -984,7 +984,19 @@ async function addChunk(ch, id, Y, rec = {}) {
       // population scales with the main street, same density class as the
       // spawn district (2,200 over 2,586m); walkers beyond 105m cost no
       // draws, and this crowd stops ticking the moment the district unloads
-      const pop = Math.min(1600, Math.max(500, Math.round((ch.axis.p.length * 28) * 0.6)));
+      // POPULATION FROM THE STREET'S LENGTH, NOT ITS VERTEX COUNT. This read
+      // `ch.axis.p.length * 28 * 0.6` — the number of POLYLINE POINTS — so how
+      // crowded a district looked depended on how finely OSM happened to map
+      // its main street. Measured across the seven: 0.43 people per metre on
+      // Bayfront Avenue against 0.85 on River Valley Road, a factor of two
+      // decided by mapping detail alone. Same class as every other bug found
+      // today: a quantised proxy standing in for the real measure.
+      let axLen = 0;
+      for (let i = 1; i < ch.axis.p.length; i++) {
+        axLen += Math.hypot(ch.axis.p[i][0] - ch.axis.p[i - 1][0],
+                            ch.axis.p[i][1] - ch.axis.p[i - 1][1]);
+      }
+      const pop = Math.min(1600, Math.max(400, Math.round(axLen * 0.6)));
       const wb = WALLSREF ? (x2, z2) => blocked(x2, z2) || WALLSREF.at(x2, z2) : blocked;
       const chunkSides = selectSideStreets(ch, ax);
       const cr = new Crowd(ax, wb, pop, chunkSides);
