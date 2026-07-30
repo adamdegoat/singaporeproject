@@ -70,6 +70,92 @@
 8. Boat Quay river-row colour treatment; more CBD facades; then ASK THE
    USER about expanding (Little India / civic core / Tiong Bahru).
 
+# DESIGNED, NOT BUILT — WHAT HAS TO HAPPEN BEFORE THE ISLAND
+
+The user asked whether to one-shot the whole of Singapore and polish after.
+Answer, with numbers rather than opinion: expanding the DATA is free and safe,
+expanding the BUILT WORLD is not, and there is exactly ONE hard blocker.
+
+BOOT FETCHES EVERY CHUNK. `buildStreamed` does
+`await Promise.all(mani.districts.map(fetch))` before anything renders.
+Measured today across the eight chunks:
+    total on disk            3.8 MB
+    roads      2.12 MB (49%)     buildings  1.54 MB (36%)
+    shops      0.37 MB ( 9%)     lamps      0.13 MB ( 3%)
+Singapore at this bbox size is roughly 35-45 districts, so that is ~20 MB
+downloaded on a phone before you can move. That is the blocker.
+
+WHY IT LOADS EVERYTHING, and why the obvious fixes do not work:
+The boot needs a UNION for four things — the terrain mesh, the surround massing
+(grey blocks must never stand where a later chunk will build real buildings),
+ROADIX/colGrid/water (the documented seam bug: "a chunk build that could not
+see a neighbour's roads laid kerbs in Waterloo Close"), and REGIONB, the
+shopfront neighbour index added 2026-07-30.
+  - "Ship a lighter union": measured. Geometry only, dropping every tag, name
+    and shop, is 2.29 MB at eight districts — 63% of full — so 11.5 MB at
+    forty. Does not solve it.
+  - "Rasterise the road index to a bitmap": NO. onRoad(x, z, 0.3) is a
+    clearance query used for placement, and a 2m raster cannot answer it. That
+    is the quantised-proxy trap this project has hit five times today; do not
+    introduce a sixth deliberately.
+
+THE DESIGN THAT DOES WORK, because it separates what needs PRECISION from what
+needs REACH:
+  1. The SURROUND is the only thing that genuinely needs to see the whole
+     island, and it is deliberately coarse — featureless massing kept 40m clear
+     of any road. So ship a coarse OCCUPANCY GRID (buildings + water) at ~8m
+     for the whole region: about 60 KB, and CONSTANT no matter how many
+     districts exist. Quantisation is harmless here in a way it is not for
+     onRoad, because the surround is already an approximation by design.
+  2. ROADIX / colGrid / water / REGIONB are built from LOADED chunks only and
+     extended incrementally as chunks arrive. The seam bug is not solved by
+     loading everything — it is solved by loading a chunk's NEIGHBOURS BEFORE
+     BUILDING IT, which content-box streaming already tends to do and which
+     should be made explicit rather than left to luck.
+  3. Chunks fetch on approach instead of at boot.
+Result: boot cost stops scaling with district count. Until this lands, do not
+go much past a dozen districts.
+
+ORDER OF WORK RECOMMENDED TO THE USER: cache the island's raw OSM (free, zero
+risk, kills the 40-minute Overpass fetch), then this, then expand in a ring
+outward a few districts at a time — every district built later inherits every
+fix for free, which is why Little India cost about twenty minutes.
+
+# 2026-07-30 late (Opus 5) — LITTLE INDIA'S DAY-ONE RATCHETS, CLOSED
+
+P1b 8 -> 1 and T1 2 -> 0, and the diagnosis in the previous entry was WRONG in
+a way worth keeping. I wrote them up as "3cm railing posts on Birch Road where
+the kerb-clearance search has nowhere to stand". A probe said otherwise: at
+those exact coordinates `__onRoad` returns TRUE, so any clearance test would
+have rejected them, and the nearest taxi rank is 69m away. The audit's own
+signature said `CylinderGeometry(0.03x1.05)` and the taxi rank's post is 1.00 —
+they were MRT ENTRANCE RAILINGS from sgdetail.js.
+
+An entrance is five metres wide with a balustrade at ±2.6m from its centre, and
+`pushClear` only ever moved the CENTRE. So an entrance sitting neatly beside a
+kerb put its rail posts in the carriageway. This is precisely the finding
+city.js already carries for entrance-canopy posts — "the posts stand at the
+ends of that width, and clearance.outward only checked the projection straight
+out from the middle" — in a file that had never heard about it. The entrance
+now tests where its rails ACTUALLY STAND, walks further from the road if they
+are not clear, and builds nothing if no offset works.
+
+Six of the eight findings were that. P1b is now 0 in six of eight districts,
+1 in littleindia, 2 in bugis; all ratchets tightened to what they measure.
+
+W2 37 -> 35 the same evening: `sgdetail.js`'s emit had NO water guard while
+street.js and markings.js both had one, so its median kerbs were built in
+Marina Bay 21m and 87m from the nearest shore. All three now share a
+`standable()` in city.js that is DECK-AWARE — a median on a causeway survives
+because it is standing on the causeway, which only became expressible once
+bridge decks existed.
+
+THE PATTERN, AGAIN: three files doing the same job, one of them never told.
+That is the fifth or sixth instance today (the district lists, the pedestrian
+signature allowlists, the pretty-name table, the water guards, the clearance
+tests). When a rule is worth having in one file it is worth asking which other
+files were supposed to have it.
+
 # 2026-07-30 night (Opus 5) — LITTLE INDIA IS THE EIGHTH DISTRICT
 
 The user lifted the polish-first order ("expand more districts if you want"),

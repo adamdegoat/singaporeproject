@@ -763,6 +763,16 @@ const found = await page.evaluate(() => {
         const ox = b.x + tx * off + b.nx * 3.2, oz = b.z + tz * off + b.nz * 3.2;
         ray.set(new T.Vector3(ox, y, oz), new T.Vector3(-b.nx, 0, -b.nz).normalize());
         const hits = ray.intersectObjects(sc.children, true)
+          // THE SKY IS NOT A WALL. The dome is a 480m sphere drawn inside-out
+          // around the world, so a ray fired outward from a shopfront hits it
+          // every single time — and this check reported a Tekka Centre bay as
+          // "walled off by SphereGeometry(480)". audit_world.js already knows
+          // to find and skip it (it looks for a SphereGeometry over radius
+          // 100); this file did not, which is the same rule-in-one-file-only
+          // pattern that put median kerbs in the bay tonight.
+          .filter((h) => !(h.object.geometry
+            && h.object.geometry.type === 'SphereGeometry'
+            && (h.object.geometry.parameters || {}).radius > 100))
           .filter((h) => h.distance > 0.02 && h.object.visible);
         // the bay's own frontmost geometry is its fascia, 0.46m proud of the
         // facade, so anything stopping the ray more than 0.6m short of that is

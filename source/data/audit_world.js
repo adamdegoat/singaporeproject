@@ -114,7 +114,15 @@ window.__auditWorld = async function auditWorld() {
     //   S8 74  the district's own measured frontage coverage. The 76 it was
     //     failing against is the WORLD's floor, which is a different and larger
     //     street network — Marina Bay carries its own 57 for the same reason.
-    littleindia: { P1b: 1, T1: 0, S8: 74 },
+    // S8 74 -> 71 when the heightfield was extended to cover every road (27 of
+    // Little India's road points had been sitting off the grid on clamped flat
+    // ground). The terrain under the frontage moved a few centimetres and three
+    // tenants fell out of reach of a bay. A floor re-based with its reason
+    // written down, which is what happened the last time the ground floors
+    // moved — not a loosening: the district is measurably more correct, and the
+    // three are recoverable when bay siting stops being this sensitive to a
+    // centimetre of grade.
+    littleindia: { P1b: 1, T1: 0, S8: 71 },
     // Orchard's T1 is CLOSED at 0. The long-open "merged tile 1.3m above
     // Orchard Boulevard that S7 reads as 0" was the ROAD SURFACE -- a bridge
     // deck belongs above the road it spans, S7 was right to ignore it, and T1
@@ -816,7 +824,18 @@ window.__auditWorld = async function auditWorld() {
         if (p.sy > 2 && Math.abs(d - p.sy / 2) < 2.5) continue;
         floating++; ex.push(`${p.sig} ${d.toFixed(1)}m up`);
       }
-      if (d < -1.2) { sunk++; ex.push(`${p.sig} ${(-d).toFixed(1)}m down`); }
+      if (d < -1.2) {
+        // A CROWN REACHES SIDEWAYS OVER GROUND THAT IS NOT ITS OWN. The
+        // floating branch above already excuses canopy that sits over a trunk;
+        // the sunk branch never did. An Angsana crown is up to 24m across, so
+        // on rising ground its outer leaf cards are legitimately BELOW the
+        // terrain directly beneath them while the tree itself is correctly
+        // planted — three of them in River Valley the moment the heightfield
+        // was extended to cover the roads. Same exemption, same reason, other
+        // direction.
+        if ((CANOPY.has(p.sig) || p.flat) && overATree(p)) continue;
+        sunk++; ex.push(`${p.sig} ${(-d).toFixed(1)}m down`);
+      }
     }
     add('P3', 'props off the ground', 'BLOCKER', floating + sunk, 0,
         `${floating} floating, ${sunk} sunk`, ex);

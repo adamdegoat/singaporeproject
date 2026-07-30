@@ -250,10 +250,20 @@ def despike(pts, elev, radius=110.0, tol=4.5, tol_down=7.0):
 REACH = 240.0     # how far a road sample influences a grid cell
 
 
-def build_grid(pts, elev, pad=90.0):
+def build_grid(pts, elev, pad=90.0, extent=None):
+    """`pts`/`elev` are the SAMPLES the surface is interpolated from; `extent`
+    is any extra geometry the grid must merely COVER.
+
+    Bridges are deliberately not sampled — reading the Benjamin Sheares deck as
+    ground put a 53m ridge across a flat district — but they are still roads,
+    and a road outside the grid falls back to the clamped edge value. Little
+    India's canal crossings put 27 road points off the heightfield that way.
+    Sized to cover them, still not sampled from them.
+    """
     shash = _hash_points(pts, REACH)
-    minx = min(p[0] for p in pts) - pad; maxx = max(p[0] for p in pts) + pad
-    minz = min(p[1] for p in pts) - pad; maxz = max(p[1] for p in pts) + pad
+    span = list(pts) + list(extent or [])
+    minx = min(p[0] for p in span) - pad; maxx = max(p[0] for p in span) + pad
+    minz = min(p[1] for p in span) - pad; maxz = max(p[1] for p in span) + pad
     nx = int((maxx - minx) / CELL) + 1
     nz = int((maxz - minz) / CELL) + 1
     grid = []
@@ -386,7 +396,10 @@ def main():
     print(f"   ground range {min(elev):.0f}-{max(elev):.0f}m "
           f"(relief {max(elev)-min(elev):.0f}m)")
 
-    grid = build_grid(pts, elev)
+    # every road point, bridges included, purely so the grid REACHES them —
+    # bridges are still excluded from the samples above
+    extent_pts = [tuple(q) for r in data["roads"] for q in r["p"]]
+    grid = build_grid(pts, elev, extent=extent_pts)
 
     # ---- SINK THE GROUND UNDER WATER ---------------------------------------
     # The heightfield is interpolated from samples taken along ROADS, and there
