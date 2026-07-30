@@ -219,19 +219,51 @@ LANDMARKS = {
     "central park tower":     {"h": 215},
     "ioi central boulevard":  {"h": 245},   # WEST; east is ~16 floors unpublished
     "frasers tower":          {"h": 231},
-    "asia square tower 1":    {"h": 229, "key": True},
+    "asia square tower 1":    {"h": 229, "key": True},   # CTBUH
     "asia square tower 2":    {"h": 222, "key": True},
-    "asia square":            {"h": 229, "key": True},
+    # 17m PODIUM, published: Denton Corker Marshall describe "The Cube" as "a
+    # 17-metre high, 6,000 m2 city room" with "the two towers sit above a
+    # floating white rectangular podium". This is the only genuinely published
+    # podium height in the CBD set. The block further down this same dict
+    # already says "NOT asia square: that name is the site OUTLINE" -- but the
+    # key was still defined HERE, earlier in the same literal, so the outline
+    # kept the tower height and kept swallowing both of its own towers.
+    # Asia Square's towers are height=0 in OSM, so their keys are mandatory.
+    "asia square":            {"h": 17},
     "marina bay suites":      {"h": 227},
-    "one shenton":            {"h": 214},
+    # T2 IS NOT 214. CTBUH: T1 214m/50fl, T2 177.7m/42fl -- and the OSM data
+    # already carries 214 and 178 on the two building:part ways. The single key
+    # was overwriting a correct pair with one number.
+    "one shenton tower 1":    {"h": 214, "key": True},
+    "one shenton tower 2":    {"h": 177.7},
+    # 6-storey carpark and retail podium per Meinhardt, the engineer of record;
+    # no metres published, so this is a height CLASS. OSM's levels=9 is higher
+    # than the engineer's own count.
+    "one shenton":            {"h": 20},
     "ocbc centre":            {"h": 198, "key": True},   # OSM said 16
     "ocbc bank":              {"h": 198, "key": True},   # the footprint carries the bank name
-    "singapore land tower":   {"h": 190},   # CTBUH; Wikipedia's 213 unverified
-    "sgx centre":             {"h": 187},
+    # NO KEY FOR SINGAPORE LAND TOWER, deliberately. Two OSM ways share the name
+    # EXACTLY -- way 46595418 is the 48-storey tower and already carries
+    # height=190, way 939684168 is the 4-storey podium at 13.6. No substring can
+    # separate them, so any key here puts one number on both and the podium then
+    # buries the tower. OSM alone is already right. (Wikipedia's 213 is
+    # unattributed: its refs are dead Emporis and SkyscraperPage entries.)
+    # "Unity Tower One/Two" is CTBUH's own recorded FORMER NAME for SGX Centre
+    # 1 and 2, so those OSM names are real, not inventions. Both 187.3m, 29fl.
+    # The way actually named "SGX Centre" is the shared 3-storey podium -- it
+    # was standing at 187m and burying both towers.
+    "unity tower one":        {"h": 187.3, "key": True},
+    "unity tower two":        {"h": 187.3, "key": True},
+    "sgx centre":             {"h": 15},
     "18 robinson":            {"h": 180},
     "hitachi tower":          {"h": 179},
     "16 collyer quay":        {"h": 179},
-    "state courts":           {"h": 178},   # the 2019 tower
+    # NO "state courts" KEY. It was matching the 1975 OCTAGON -- a different,
+    # still-standing building that OSM tags height=35 -- and rendering it as a
+    # 7,900 m2 slab 178m tall. The 2019 towers are named "Court Tower" and
+    # "Office Tower" in OSM; only the first is keyed, because "office tower"
+    # also matches Guoco Midtown Office Tower and The Concourse Office Tower.
+    "court tower":            {"h": 177.8, "key": True},   # CTBUH; CPG "at 178 metres high"
     "pickering operations":   {"h": 177},
     "maybank tower":          {"h": 175},
     "sia building":           {"h": 176},
@@ -423,8 +455,9 @@ LANDMARKS = {
     # NOT "asia square": that name is the site OUTLINE, and giving the outline
     # the tower height made it swallow both of its own towers as buried
     # footprints. The towers carry their own names and their own heights.
-    "asia square tower 1":    {"h": 250, "key": True},
-    "asia square tower 2":    {"h": 220, "key": True},
+    # (Asia Square tower heights live once, above: CTBUH 229 and 222. The 250
+    # and 220 that used to sit here were a second, conflicting definition in the
+    # SAME dict, so the later one silently won and T1 stood 21m too tall.)
     "the sail @ marina bay":  {"h": 245, "key": True},
     # These two patterns matched things that are NOT the landmark, which is the
     # mistake already recorded here for "Grand Park City Hall" and "Esplanade
