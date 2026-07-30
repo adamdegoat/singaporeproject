@@ -251,7 +251,14 @@ LANDMARKS = {
     # error family as the UOB spelling trap -- one number standing in for a
     # shape that has two.
     "masjid abdul gafoor":    {"h": 12},    # TWO storeys (OSM tags levels=1 elsewhere); dome + minaret sit above this mass, not in it
-    "sri veeramakaliamman":   {"h": 12},    # gopuram photogrammetric ~12m (12-15, +-20%); the hall behind is lower still
+    # NOT Sri Veeramakaliamman. That override was removed 2026-07-31: the ~12m
+    # estimate is for THE GOPURAM, and this name is carried by TWO footprints --
+    # the street compound AND a tall plain rear block that OSM tags six storeys
+    # and which the research says stands TALLER than the gopuram. Forcing both
+    # to 12m flattened the rear block by eight metres to fix a tower that is not
+    # even the same footprint. The gopuram's own height is set by proportion
+    # inside the recipe, where it belongs; OSM's 20.4 is right for the rear
+    # block and is left alone.
     # Maxwell Food Centre carried h=20 out of the extract — a 20m slab where
     # a single-storey 1986 hawker shed stands (sweep review 2026-07-30 saw
     # "a giant slab consuming half the frame"). Ridge height UNPUBLISHED;

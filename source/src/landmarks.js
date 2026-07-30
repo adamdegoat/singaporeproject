@@ -4426,6 +4426,8 @@ export const RECIPES = [
   [/lasalle/i, lasalle],
   [/^sim lim square$/i, simLimSquare],
   [/veeramakaliamman/i, veeramakaliamman],
+  [/abdul gafoor/i, abdulGafoor],
+  [/angullia/i, angullia],
   [/srinivasa perumal/i, perumalGopuram],
   // PARKED 2026-07-30 midday after round 1: The Foundry's OSM footprint is
   // a chunky pentagon, not the 115x57 slab the research measured (the
@@ -4550,6 +4552,21 @@ export function hasShopfront(name) {
   if (name && NEVER_SHOPFRONT.test(name)) return false;
   const fn = recipeFor(name);
   return !fn || !NO_SHOPFRONT.has(fn);
+}
+
+// The OUTWARD normal of a footprint edge. Guessing it as (-dz, dx) is a coin
+// flip: it depends entirely on which way the ring is wound, and OSM rings are
+// not consistently wound. Guessed wrong, everything a recipe hangs on a facade
+// -- window bays, sign boards, awnings -- is built INSIDE the mass, where it is
+// either invisible or z-fighting with the wall it is supposed to sit on. Both
+// of those were seen on Abdul Gafoor within one render of each other.
+function outwardSign(ring) {
+  let a = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x0, z0] = ring[i], [x1, z1] = ring[(i + 1) % ring.length];
+    a += x0 * z1 - x1 * z0;
+  }
+  return a > 0 ? -1 : 1;
 }
 
 export function recipeFor(name) {
@@ -4863,10 +4880,13 @@ function mustafaCentre(api, b) {
       if (hsh % 5 === 0) continue;                       // gaps: not a solid run
       const t0 = (k + 0.10) / n, t1 = (k + 0.90) / n;
       const q0 = [x0 + dx * t0, z0 + dz * t0], q1 = [x0 + dx * t1, z0 + dz * t1];
-      const nx = -dz / (len || 1), nz = dx / (len || 1);
-      const o = 0.34;
-      const ring = [[q0[0], q0[1]], [q1[0], q1[1]],
-                    [q1[0] + nx * o, q1[1] + nz * o], [q0[0] + nx * o, q0[1] + nz * o]];
+      const _os = outwardSign(b.p);
+      const nx = _os * -dz / (len || 1), nz = _os * dx / (len || 1);
+      // clear of the wall for the same reason the Gafoor bays are: a face flush
+      // with the facade z-fights against it
+      const o0 = 0.05, o1 = 0.36;
+      const ring = [[q0[0] + nx * o0, q0[1] + nz * o0], [q1[0] + nx * o0, q1[1] + nz * o0],
+                    [q1[0] + nx * o1, q1[1] + nz * o1], [q0[0] + nx * o1, q0[1] + nz * o1]];
       const bh = H * (0.16 + (hsh % 7) * 0.018);
       const by = H * (0.17 + (hsh % 4) * 0.028);
       api.merge(api.extrudeGeo(ring, bh, by),
@@ -5267,6 +5287,19 @@ function veeramakaliamman(api, b) {
   }
   area = Math.abs(area) / 2;
 
+  // WHICH FOOTPRINT IS THIS? The name covers two: the street compound that
+  // carries the gopuram, and a tall plain rear block that OSM tags six storeys
+  // and that the research says stands TALLER than the gopuram itself. Decided
+  // by distance to the district axis -- which for Little India IS Serangoon
+  // Road -- rather than by footprint area, because the geometry knows and the
+  // area does not. The rear block is drawn plain and at its full height; only
+  // the street compound gets a low hall and a tower.
+  const _sw0 = streetward(api, ob);
+  if (_sw0.dist >= 46) {
+    api.merge(api.extrudeGeo(b.p, H), G.wall, ob.cx, ob.cz);
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.008), 0.7, H - 0.7), G.pale, ob.cx, ob.cz);
+    return;
+  }
   // the prayer hall, DELIBERATELY LOW. The gopuram has to clear it or the
   // building loses the only thing anyone recognises it by; at 0.62H the tower
   // was buried to its shoulders and read as two stubs on a roof.
@@ -5281,8 +5314,8 @@ function veeramakaliamman(api, b) {
   // that under "could not establish". Two guessed boxes on the roof read as two
   // guessed boxes, so they are gone rather than invented.
 
-  if (area > 480) {
-    const sw = streetward(api, ob);
+  const sw = streetward(api, ob);
+  if (sw.dist < 46) {
     const gx = ob.bx + sw.nx * (ob.halfShort * 0.42);
     const gz = ob.bz + sw.nz * (ob.halfShort * 0.42);
     const w = Math.max(9, Math.min(ob.halfShort * 1.5, 12));
@@ -5309,4 +5342,200 @@ function perumalGopuram(api, b) {
   const w = Math.min(ob.halfLong * 1.7, 13);
   gopuram(api, ob, ob.bx, ob.bz, w, Math.min(ob.halfShort * 1.7, w * 0.5),
     baseH, 1.6, {});   // RELATIVE to the seat, not SEAT + baseH
+}
+
+// Abdul Gafoor Mosque, 41 Dunlop Street. National Monument, gazetted 1979.
+// Researched 2026-07-30, research/littleindia-temples.md §3.
+//
+// IT IS NOT YELLOW. Almost every photograph online, and every travel article,
+// shows the yellow-and-green scheme from the 2003 restoration. It was repainted
+// WHITE AND GREEN in 2021 and October 2025 photographs confirm white walls with
+// sage-green trim. The research calls this the single highest-value correction
+// in its section, and it is the kind of thing that is wrong everywhere at once
+// because everyone is looking at the same old photographs.
+//
+// It is also NOT on Serangoon Road: 310m off it, ~250m in along Dunlop Street,
+// hemmed in by shophouses and invisible from the main road. It is a Dunlop
+// Street event. Nothing here is sized for a long view.
+//
+// AND IT IS NOT A GREAT DOMED MOSQUE. There is ONE dome and no free-standing
+// minaret. The dome is a compact octagonal LANTERN -- a drum roughly as tall as
+// it is wide, pierced by eight coloured-glass windows, capped by an ogee onion
+// in pale sage and a crescent-and-star finial. The research is explicit that
+// this must never be modelled as a Sultan Mosque-type golden hemisphere. What
+// reads as minarets are four turrets at the roof corners, a ring of small ones
+// round the drum base, and a continuous line of slim pinnacles along the
+// parapet -- and EVERY one of them sits BELOW the dome. The crescent is the
+// highest point of the building, full stop.
+//
+// A NOTE ON THE TWO CONTRADICTORY HEIGHT TAGS. OSM carries height=20 and
+// building:levels=1 on the same feature, which cannot both be right for a
+// two-storey mosque. Built as specified here -- a 12m two-storey mass with a
+// drum and onion above it -- the crescent lands near 21m. So the 20 was
+// probably always a measurement TO THE DOME, and the mass was never 20m tall.
+// That reconciles both tags without either being junk.
+const GAFOOR_MAT = {
+  white: new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.86 }),
+  sage: new THREE.MeshStandardMaterial({ color: 0x8fa383, roughness: 0.72 }),
+  glass: new THREE.MeshStandardMaterial({
+    color: 0x3f6d5e, roughness: 0.28, metalness: 0.3,
+  }),
+};
+function abdulGafoor(api, b) {
+  const ob = orientedBox(b.p);
+  const G = GAFOOR_MAT;
+  const H = Math.max(9, b.h || 12);          // the TWO-STOREY mass, not the dome
+
+  // the mass, and the sage parapet band it runs up to
+  api.merge(api.extrudeGeo(b.p, H), G.white, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.012), 0.8, H - 0.8), G.sage, ob.cx, ob.cz);
+  // the boundary wall, low, with its own line of piers
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.055), 2.1), G.white, ob.cx, ob.cz);
+
+  // THE CONTINUOUS LINE OF PINNACLES along the parapet: a slim white shaft with
+  // a miniature ogee and a crescent. Walked round the real perimeter, because
+  // this footprint is 39.8 x 30.2m and its box corners are not on it.
+  for (let i = 0; i < b.p.length; i++) {
+    const [x0, z0] = b.p[i], [x1, z1] = b.p[(i + 1) % b.p.length];
+    const dx = x1 - x0, dz = z1 - z0, len = Math.hypot(dx, dz);
+    // A LINE, NOT A PICKET FENCE. At 4.2m spacing this produced ~33 shafts
+    // round a 140m perimeter and the roof read as fencing. Slimmer and much
+    // further apart: the eye wants a rhythm along the parapet, not a crowd.
+    const n = Math.max(1, Math.round(len / 8.0));
+    for (let k = 0; k < n; k++) {
+      const t = (k + 0.5) / n;
+      const px = x0 + dx * t, pz = z0 + dz * t;
+      const sq = (r) => [[px - r, pz - r], [px + r, pz - r], [px + r, pz + r], [px - r, pz + r]];
+      api.merge(api.extrudeGeo(sq(0.22), 1.5, H), G.white, ob.cx, ob.cz);
+      api.merge(api.extrudeGeo(sq(0.30), 0.45, H + 1.5), G.sage, ob.cx, ob.cz);
+    }
+  }
+
+  // TWO STOREYS OF OPENINGS. A blank white box with a dome on it is a mosque
+  // only in outline; the arcade is what makes it read at the 30m this building
+  // is ever seen from, hemmed in as it is by Dunlop Street shophouses.
+  for (let i = 0; i < b.p.length; i++) {
+    const [x0, z0] = b.p[i], [x1, z1] = b.p[(i + 1) % b.p.length];
+    const dx = x1 - x0, dz = z1 - z0, len = Math.hypot(dx, dz);
+    const n = Math.max(1, Math.round(len / 3.6));
+    const _os = outwardSign(b.p);
+    const nx = _os * -dz / (len || 1), nz = _os * dx / (len || 1);
+    for (let k = 0; k < n; k++) {
+      const t0 = (k + 0.26) / n, t1 = (k + 0.74) / n;
+      const q0 = [x0 + dx * t0, z0 + dz * t0], q1 = [x0 + dx * t1, z0 + dz * t1];
+      // CLEAR OF THE WALL, not flush with it. Built from the wall plane
+      // outward, the bay's inner face is exactly coplanar with the facade and
+      // the two z-fight -- which renders as a moire streak down every opening
+      // and looks like a texture bug rather than a depth one.
+      const o0 = 0.04, o1 = 0.26;
+      const bay = [[q0[0] + nx * o0, q0[1] + nz * o0], [q1[0] + nx * o0, q1[1] + nz * o0],
+                   [q1[0] + nx * o1, q1[1] + nz * o1], [q0[0] + nx * o1, q0[1] + nz * o1]];
+      for (const f of [0, 1]) {
+        api.merge(api.extrudeGeo(bay, H * 0.30, H * (0.10 + f * 0.45)), G.glass, ob.cx, ob.cz);
+        // the sage arch head over each opening
+        api.merge(api.extrudeGeo(bay, H * 0.06, H * (0.40 + f * 0.45)), G.sage, ob.cx, ob.cz);
+      }
+    }
+  }
+
+  // THE LANTERN. Drum roughly as tall as it is wide, eight coloured-glass
+  // windows, ring of small turrets at its base.
+  const R = Math.min(ob.halfShort * 0.42, 3.0);
+  const DRUM = R * 1.9;
+  const oct = (r, y0, h, mat) => {
+    const ring = [];
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2 + Math.PI / 8;
+      ring.push([ob.bx + Math.cos(a) * r, ob.bz + Math.sin(a) * r]);
+    }
+    api.merge(api.extrudeGeo(ring, h, y0), mat, ob.cx, ob.cz);
+  };
+  oct(R, H, DRUM, G.white);
+  oct(R * 1.02, H + DRUM * 0.34, DRUM * 0.26, G.glass);      // the eight windows
+  for (let k = 0; k < 8; k++) {                              // turrets at its base
+    const a = (k / 8) * Math.PI * 2;
+    const tx = ob.bx + Math.cos(a) * R * 1.24, tz = ob.bz + Math.sin(a) * R * 1.24;
+    api.merge(api.extrudeGeo(
+      [[tx - 0.3, tz - 0.3], [tx + 0.3, tz - 0.3], [tx + 0.3, tz + 0.3], [tx - 0.3, tz + 0.3]],
+      DRUM * 0.55, H), G.white, ob.cx, ob.cz);
+  }
+  // the ogee onion, in pale sage: a sphere pinched at the top rather than a
+  // hemisphere, which is the whole difference between this and a golden dome
+  const og = new THREE.SphereGeometry(R * 1.06, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62);
+  og.scale(1, 1.15, 1);
+  og.translate(ob.bx, api.footingY(b.p) + H + DRUM, ob.bz);
+  api.merge(og, G.sage, ob.cx, ob.cz);
+  // the crescent-and-star finial: the highest point of the building
+  api.merge(api.extrudeGeo(
+    [[ob.bx - 0.16, ob.bz - 0.16], [ob.bx + 0.16, ob.bz - 0.16],
+     [ob.bx + 0.16, ob.bz + 0.16], [ob.bx - 0.16, ob.bz + 0.16]],
+    R * 1.3, H + DRUM + R * 0.7), G.sage, ob.cx, ob.cz);
+
+  // four minaret turrets at the roof corners, ALL BELOW THE DOME
+  for (const su of [-1, 1]) {
+    for (const sv of [-1, 1]) {
+      const u = ob.midU + su * ob.halfLong * 0.86, v = ob.midV + sv * ob.halfShort * 0.86;
+      const cx2 = ob.cx + u * ob.ux - v * ob.uz, cz2 = ob.cz + u * ob.uz + v * ob.ux;
+      const sq = (r) => [[cx2 - r, cz2 - r], [cx2 + r, cz2 - r],
+                         [cx2 + r, cz2 + r], [cx2 - r, cz2 + r]];
+      api.merge(api.extrudeGeo(sq(0.55), DRUM * 0.80, H), G.white, ob.cx, ob.cz);
+      api.merge(api.extrudeGeo(sq(0.68), 0.8, H + DRUM * 0.80), G.sage, ob.cx, ob.cz);
+    }
+  }
+}
+
+// Masjid Angullia, 265 Serangoon Road.
+// Researched 2026-07-30, research/littleindia-temples.md §4.
+//
+// THE ADDRESS IS RIGHT AND THE BUILDING IS WRONG in every brief I have seen.
+// The mosque a rider passes today is NOT a historic mosque: the 1970 building
+// was DEMOLISHED and a new four-storey block put up 2018-2020 under the Mosque
+// Upgrading Programme. Only the 1890s gatehouse is historic.
+//
+// So: NO street-visible dome. What is sometimes called a "lattice steel dome"
+// is a roof lantern, not a dome on the skyline. ONE square clock-tower minaret.
+// And it is DUSTY TERRACOTTA-ROSE, not the beige of MUIS's own render. Model a
+// white domed mosque here and you are wrong by a whole building -- the
+// research's words, and it is the reason this recipe exists at all.
+const ANGULLIA_MAT = {
+  // dusty terracotta-ROSE, not brick. 0xb08274 rendered as dark brick red.
+  rose: new THREE.MeshStandardMaterial({ color: 0xc4988c, roughness: 0.86 }),
+  trim: new THREE.MeshStandardMaterial({ color: 0xe6ddd4, roughness: 0.8 }),
+  lantern: new THREE.MeshStandardMaterial({
+    color: 0x8d9aa2, roughness: 0.4, metalness: 0.45,
+  }),
+};
+function angullia(api, b) {
+  const ob = orientedBox(b.p);
+  const A = ANGULLIA_MAT;
+  const H = Math.max(13, b.h || 20);
+  const FL = H / 4;                                  // four storeys
+
+  api.merge(api.extrudeGeo(b.p, H), A.rose, ob.cx, ob.cz);
+  // pale floor bands: a 2020 block reads by its horizontals, not by ornament
+  for (let f = 1; f < 4; f++) {
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.010), 0.45, FL * f), A.trim, ob.cx, ob.cz);
+  }
+  // a recessed glazing strip in each storey, under its band
+  for (let f = 0; f < 4; f++) {
+    api.merge(api.extrudeGeo(api.grow(b.p, 0.995), FL * 0.42, FL * f + FL * 0.34),
+      A.lantern, ob.cx, ob.cz);
+  }
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.014), 0.9, H - 0.9), A.trim, ob.cx, ob.cz);
+
+  // the ROOF LANTERN -- low, set in, and emphatically not a dome on the skyline
+  const R = Math.min(ob.halfShort * 0.34, 3.4);
+  api.merge(api.extrudeGeo(
+    [[ob.bx - R, ob.bz - R], [ob.bx + R, ob.bz - R],
+     [ob.bx + R, ob.bz + R], [ob.bx - R, ob.bz + R]], 1.9, H), A.lantern, ob.cx, ob.cz);
+
+  // THE ONE SQUARE CLOCK-TOWER MINARET, on the street corner
+  const sw = streetward(api, ob);
+  const mx = ob.bx + sw.nx * (ob.halfShort * 0.80) + (-sw.nz) * (ob.halfLong * 0.62);
+  const mz = ob.bz + sw.nz * (ob.halfShort * 0.80) + (sw.nx) * (ob.halfLong * 0.62);
+  const sq = (r) => [[mx - r, mz - r], [mx + r, mz - r], [mx + r, mz + r], [mx - r, mz + r]];
+  api.merge(api.extrudeGeo(sq(1.7), H * 1.42), A.rose, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(sq(1.9), 1.0, H * 1.42), A.trim, ob.cx, ob.cz);
+  // the clock faces, near the top of the shaft on all four sides
+  api.merge(api.extrudeGeo(sq(1.76), 1.5, H * 1.42 - 3.4), A.trim, ob.cx, ob.cz);
 }
