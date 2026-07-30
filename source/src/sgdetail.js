@@ -20,6 +20,11 @@ function yawMesh(geo, mat, x, y, z, ang) {
   return m;
 }
 
+// The tray a sign board sits in: pale grey aluminium, seen from behind.
+const SIGN_TRAY = new THREE.MeshStandardMaterial({
+  color: 0x9aa0a6, roughness: 0.55, metalness: 0.25,
+});
+
 /* ---------------- ERP gantry ---------------- */
 // Two portal legs, a deep beam, the antenna heads and the camera box. Nothing
 // else on a Singapore road looks like this.
@@ -769,10 +774,19 @@ export function buildSgDetail(world, axis, data, isBlocked) {
       face.rotateY(rot);
       face.translate(mx + (oX / oL) * 1.05, sy, mz + (oZ / oL) * 1.05);
       signs.add(face, uv.mat, mx, mz);
+      // THE BACK OF A SIGN IS GREY ALUMINIUM, NOT A HOLE IN THE SKY.
+      // In darkMetal this reads as a flat black rectangle from behind, and a
+      // rider on the far side of the street sees a big blank void hanging over
+      // the road. It was written up as a defect once, chased through three
+      // probes on Victoria Street, and re-chased on Serangoon Road -- because
+      // "a black panel in the sky" looks exactly like a missing texture.
+      // It is not a bug, but near-black was the wrong answer: a real sign tray
+      // is a pale grey extrusion, and painting it that way removes both the
+      // false alarm and the void.
       const back = new THREE.BoxGeometry(boardW + 0.5, boardH + 0.5, 0.3);
       back.rotateY(rot);
       back.translate(mx + (oX / oL) * 0.85, sy, mz + (oZ / oL) * 0.85);
-      signs.add(back, MAT.darkMetal, mx, mz);
+      signs.add(back, SIGN_TRAY, mx, mz);
       (window.__signage = window.__signage || [])
         .push({ kind: 'name', x: mx, z: mz, text: b.n });
       stats.nameSigns = (stats.nameSigns || 0) + 1;

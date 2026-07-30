@@ -278,11 +278,19 @@ LANDMARKS = {
     # of the AMSL figure. DUO Residences is absent from the data entirely -- it
     # is tagged building:part, not building, so the fetch never sees it.
     "the concourse office tower": {"h": 165, "key": True},   # 41 storeys
-    # ~108m over 24 storeys. Weaker than the two above -- the source is a storey
-    # count with an approximate metre figure rather than a first-party
-    # architectural height -- but 45m on a 24-storey monument is wrong by more
-    # than the uncertainty here.
-    "parkview square":        {"h": 108, "key": True},
+    # 144m, and the 108 I set earlier was WRONG. Re-researched 2026-07-31
+    # (research/raffles-parkview.md): NOTHING publishes ~108. CTBUH, Emporis,
+    # SkyscraperPage, Structurae and Wikipedia's own refs all say 144m; the
+    # project's facade consultant Meinhardt says 150. The 108 was roughly right
+    # about the ROOF -- two photogrammetric measurements put the 24th-floor roof
+    # at ~110m +-8 -- but above it sits a 31-37m ORNAMENTAL CROWN containing no
+    # floors, and architectural height includes it.
+    #
+    # Built flat at 144 for now, which makes the crown solid. A recipe should
+    # model it open: OSM already holds a seven-part 3D massing for this building
+    # (relation 9621448) that this pipeline does not read, giving a tower slab
+    # of 61.6 x 27.5m standing 59m back from North Bridge Road.
+    "parkview square":        {"h": 144, "key": True},
 
     # People's Park Complex, 1 Park Road (1973, Design Partnership).
     # Researched 2026-07-31, research/chinatown-landmarks.md.
@@ -511,6 +519,14 @@ HDB_STOREYS = {
     "210664": 4,     # OSM says building:levels=3; HDB says 4, and HDB is the authority
 }
 HDB_FLOOR_M = 2.9
+
+# Buildings OSM identifies by wikidata id but never names. Each entry has been
+# checked against the Wikidata entity itself -- this is a lookup of verified
+# ids, not a guess from an id pattern. Researched 2026-07-31,
+# research/raffles-parkview.md.
+NAMED_BY_WIKIDATA = {
+    "Q1538837": "Raffles Hotel",   # relation 3413910; outer way 254815863 has only source=Bing
+}
 
 TYPE_DEFAULT = {
     "retail": 22, "commercial": 30, "hotel": 55, "apartments": 45,
@@ -984,8 +1000,29 @@ def main():
                 "h": round(h, 1),
                 "a": round(a),
             }
-            if tags.get("name"):
-                b["n"] = tags["name"]
+            # A NAME IS NOT ALWAYS IN THE NAME TAG.
+            #
+            # Raffles Hotel is mapped as a multipolygon RELATION carrying
+            # wikidata=Q1538837 and addr:* but NO name, so it stood in this
+            # world as an unnamed 3,742 m2 block that no recipe could ever
+            # reach -- the most famous hotel in Singapore, rendered as generic
+            # fabric. The only OSM nodes actually called "Raffles Hotel" nearby
+            # are BUS STOPS, which is what makes this look unfixable until you
+            # look at the relation.
+            #
+            # So: fall back through the tags that DO identify a building.
+            # addr:housename is a name by definition. A wikidata id is not a
+            # name and is never used as one -- it only marks the building as
+            # identifiable, and NAMED_BY_WIKIDATA maps the few ids we have
+            # actually checked to their real names. Guessing a name from an id
+            # would be inventing one.
+            _nm = tags.get("name") or tags.get("addr:housename")
+            if not _nm:
+                _wd = tags.get("wikidata")
+                if _wd and _wd in NAMED_BY_WIKIDATA:
+                    _nm = NAMED_BY_WIKIDATA[_wd]
+            if _nm:
+                b["n"] = _nm
             if key:
                 b["k"] = 1
             if hsrc != "guess":

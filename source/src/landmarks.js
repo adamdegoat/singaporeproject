@@ -4508,6 +4508,7 @@ export const RECIPES = [
   [/angullia/i, angullia],
   [/^the warehouse$/i, warehouseGodowns],
   [/^golden mile complex$/i, goldenMileComplex],
+  [/^raffles hotel$/i, rafflesHotel],
   [/srinivasa perumal/i, perumalGopuram],
   // PARKED 2026-07-30 midday after round 1: The Foundry's OSM footprint is
   // a chunky pentagon, not the 115x57 slab the research measured (the
@@ -5991,4 +5992,96 @@ function bugisJunction(api, b) {
   const dr = new THREE.CylinderGeometry(R * 1.04, R * 1.04, 1.0, 18);
   dr.translate(ob.bx, SEAT + H + 0.4, ob.bz);
   api.merge(dr, M.rib, ob.cx, ob.cz);
+}
+
+// Raffles Hotel, 1 Beach Road. National Monument.
+// Researched 2026-07-31: research/bugis-brasbasah-landmarks.md (elevation and
+// paint) and research/raffles-parkview.md (geometry and OSM identification).
+//
+// IT WAS INVISIBLE TO EVERY RECIPE UNTIL TODAY. OSM maps it as a multipolygon
+// RELATION carrying wikidata=Q1538837 and no `name`, so it stood here as an
+// unnamed 3,742 m2 block; the only OSM nodes actually called "Raffles Hotel"
+// nearby are BUS STOPS. Naming it (see NAMED_BY_WIKIDATA in process.py) then
+// handed it to the generic colonialHotel recipe, whose roof cylinders sized
+// themselves off a 125m-deep footprint and floated two enormous clay tubes past
+// both ends of the building. This exists because BOTH of those were wrong.
+//
+// WHAT THE RESEARCH CORRECTED:
+//   - The famous portico is a 1989-91 REPRODUCTION; the 1913 original was
+//     dismantled in 1920. Build it, but it is not the ancient part.
+//   - The Beach Road elevation is the 44.6m SE END, not the long side. The
+//     125m dimension is DEPTH. Getting this backwards puts the hotel's face on
+//     the wrong street.
+//   - Beach Road's upper verandahs are GLAZED loggias. The open,
+//     green-balustered verandahs face the COURTYARDS.
+//   - No cupolas and no turrets. The roof is mixed hipped plus flat planted
+//     terraces.
+//   - Paint is KEIM Royalan white, scaffolding off June 2019; dark green is on
+//     the BALUSTRADES and the shutters are pale cream -- not the reverse.
+//
+// The roof is built as stepped inward extrusions rather than as cylinders. A
+// three-sided cylinder's radius sets its height AND its span, which is what
+// produced the floating tubes, and this footprint is far too irregular to take
+// one safely.
+const RAFFLES_MAT = {
+  white: new THREE.MeshStandardMaterial({ color: 0xf2efe6, roughness: 0.86 }),
+  green: new THREE.MeshStandardMaterial({ color: 0x2f4c3a, roughness: 0.78 }),
+  cream: new THREE.MeshStandardMaterial({ color: 0xe6ddc6, roughness: 0.84 }),
+  tile: new THREE.MeshStandardMaterial({ color: 0x8f5340, roughness: 0.9 }),
+};
+function rafflesHotel(api, b) {
+  const ob = orientedBox(b.p);
+  const M = RAFFLES_MAT;
+  const H = Math.max(12, b.h || 20);
+  const WALL = H * 0.74;                 // three storeys under a deep roof
+  const FL = WALL / 3;
+
+  api.merge(api.extrudeGeo(b.p, WALL), M.white, ob.cx, ob.cz);
+
+  // THE VERANDAH RHYTHM. What makes this building read is a stack of deep
+  // shaded galleries with a green balustrade at every floor, not a window grid.
+  for (let f = 1; f < 3; f++) {
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.018), 0.34, FL * f - 0.34),
+      M.white, ob.cx, ob.cz);
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.022), 0.62, FL * f), M.green, ob.cx, ob.cz);
+  }
+  // the shaded gallery behind each balustrade, set back so it reads as depth
+  for (let f = 0; f < 3; f++) {
+    api.merge(api.extrudeGeo(api.grow(b.p, 0.992), FL * 0.52, FL * f + FL * 0.30),
+      M.cream, ob.cx, ob.cz);
+  }
+  // a strong cornice at the eaves
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.030), 0.55, WALL - 0.55), M.white, ob.cx, ob.cz);
+
+  // THE HIPPED ROOF, as inward steps. Deep, but it cannot overhang or float:
+  // every course is the footprint itself, drawn smaller.
+  // TWO COURSES, NOT FIVE. api.grow() is a CENTROID SCALE, so a uniform shrink
+  // cannot cut a true hip on a plan 125m deep and 34m wide -- the short axis
+  // collapses long before the long one has moved. Five courses read as a
+  // ziggurat. A deep projecting eave and one shallow cap is what this building
+  // actually shows from the street, and it is honest about what the geometry
+  // can express.
+  const RH = H - WALL;
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.045), RH * 0.30, WALL), M.tile, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.965), RH * 0.72, WALL + RH * 0.28),
+    M.tile, ob.cx, ob.cz);
+
+  // THE PORTICO, on the Beach Road end -- the SE short face, found by walking
+  // out from the box centre toward the street rather than assumed.
+  const sw = streetward(api, ob);
+  const P = (u, v) => [ob.cx + u * ob.ux - v * ob.uz, ob.cz + u * ob.uz + v * ob.ux];
+  const px = ob.bx + sw.nx * (ob.halfShort * 0.92);
+  const pz = ob.bz + sw.nz * (ob.halfShort * 0.92);
+  const sq = (cx2, cz2, r) => [[cx2 - r, cz2 - r], [cx2 + r, cz2 - r],
+                               [cx2 + r, cz2 + r], [cx2 - r, cz2 + r]];
+  if (!onCarriageway(px, pz, 0.5)) {
+    api.merge(api.extrudeGeo(sq(px, pz, 5.2), FL * 1.35), M.white, ob.cx, ob.cz);
+    api.merge(api.extrudeGeo(sq(px, pz, 5.9), 0.5, FL * 1.35), M.white, ob.cx, ob.cz);
+    for (const dx of [-1, 1]) {
+      for (const dz of [-1, 1]) {
+        api.merge(api.extrudeGeo(sq(px + dx * 4.3, pz + dz * 4.3, 0.42), FL * 1.35),
+          M.white, ob.cx, ob.cz);
+      }
+    }
+  }
 }

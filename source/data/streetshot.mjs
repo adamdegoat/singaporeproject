@@ -101,6 +101,20 @@ for (const s of spots) {
     });
     return covering.every((r) => !!r.group);
   }, s, { polling: 700, timeout: 300000 });
+  // WAIT FOR THE PROPS, not just for the district record. `!r.group` says the
+  // chunk's BUILDINGS are up; street furniture, trees and signage keep landing
+  // for a while after that, and a frame taken in the gap shows a banner with no
+  // pole under it and no tree beside it. That has been mistaken for a floating
+  // sign TWICE -- once written up as a defect, once chased through three
+  // probes. Settle on the total instance count instead of on a fixed sleep.
+  await page.waitForFunction(() => {
+    let n = 0;
+    window.__scene.traverse((o) => { if (o.isInstancedMesh) n += o.count; });
+    const prev = window.__settleN;
+    window.__settleN = n;
+    window.__settleHits = (prev === n) ? (window.__settleHits || 0) + 1 : 0;
+    return window.__settleHits >= 3;
+  }, null, { polling: 500, timeout: 60000 }).catch(() => {});
   await page.waitForTimeout(2500);
   const info = await page.evaluate((sp) => {
     // rider's seat: 1.4m, looking along the heading, slightly down the street

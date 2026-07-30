@@ -16,6 +16,11 @@ function signCanvas(w, h, draw) {
 }
 
 // LTA-style directional gantry: green ground, white text and arrow
+// The rear face of an overhead direction sign: pale grey aluminium.
+const SIGN_BACK = new THREE.MeshStandardMaterial({
+  color: 0x9aa0a6, roughness: 0.55, metalness: 0.25,
+});
+
 function texDirection(lines) {
   return signCanvas(512, 192, (x, w, h) => {
     x.fillStyle = '#0f6b3f'; x.fillRect(0, 0, w, h);
@@ -132,7 +137,15 @@ export function buildSignage(world, axis, data, isBlocked) {
         face.position.set(nx * (half * 0.42), 5.9, nz * (half * 0.42));
         face.rotation.y = ang + Math.PI;
         g.add(face);
-        const backer = new THREE.Mesh(new THREE.BoxGeometry(4.6, 1.72, 0.09), MAT.darkMetal);
+        // THE BACK OF A DIRECTION SIGN IS GREY ALUMINIUM. In darkMetal it is
+        // near-black, and since the green face points at oncoming traffic on
+        // ONE carriageway, a rider on the other one meets a large blank black
+        // rectangle hanging over the road. That has now been investigated three
+        // times -- written up as a defect once, then chased through probes on
+        // Victoria Street and again on Serangoon Road -- because a black panel
+        // in the sky looks exactly like a missing texture. The sign is correct;
+        // the colour was not.
+        const backer = new THREE.Mesh(new THREE.BoxGeometry(4.6, 1.72, 0.09), SIGN_BACK);
         backer.position.copy(face.position);
         backer.position.y -= 0.0;
         backer.rotation.y = ang;
