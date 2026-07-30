@@ -1941,6 +1941,111 @@ function peoplesPark(api, b) {
   }
 }
 
+
+// THIAN HOCK KENG, 158 Telok Ayer Street — Singapore's oldest Hokkien
+// temple (1839-42), National Monument. Researched 2026-07-30 (research/
+// thianhockkeng-clarkequay.md). Corrections that shaped this: the street
+// front is THREE sections (raised centre + two lower sides), each with its
+// own swallowtail ridge — not one sweeping curve; the ridge tips are
+// plastered SWALLOWTAIL forks, not dragons (the dragons are separate roof
+// sculptures); the roofs read GREEN-AND-TERRACOTTA striped (green glazed
+// cover tiles over terracotta pans — a documented change from the
+// original); single-storey halls throughout, main hall DOUBLE-EAVED and
+// taller than the entrance hall; flush to the street behind a granite
+// plinth with a pale-jade cast-iron railing. Heights UNPUBLISHED — the
+// proportion table is photogrammetric, anchored to the 2,807 m2 footprint.
+function thianHockKeng(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const sw = streetward(api, ob);
+  const roofM = new THREE.MeshStandardMaterial({ color: 0x7e8c63, roughness: 0.8 });
+  const drip = new THREE.MeshStandardMaterial({ color: 0x5f7f52, roughness: 0.7 });
+  const spineM = new THREE.MeshStandardMaterial({ color: 0xc9ccc8, roughness: 0.8 });
+  const granite = new THREE.MeshStandardMaterial({ color: 0xa9a6a0, roughness: 0.85 });
+  const wallG = new THREE.MeshStandardMaterial({ color: 0x8e8b82, roughness: 0.9 });
+  const oxblood = new THREE.MeshStandardMaterial({ color: 0x7c2e22, roughness: 0.8 });
+  const jade = new THREE.MeshStandardMaterial({ color: 0x6fbfb0, roughness: 0.6, metalness: 0.3 });
+  const yawL = Math.atan2(ob.ux, ob.uz);
+  const xA = { x: Math.cos(yawL), z: -Math.sin(yawL) };
+  const zA = { x: ob.ux, z: ob.uz };
+  const at = (mesh, lx, y, lz, cast = true) => {
+    mesh.position.set(ob.cx + xA.x * lx + zA.x * lz, y, ob.cz + xA.z * lx + zA.z * lz);
+    mesh.castShadow = cast;
+    api.world.add(mesh);
+  };
+  // ring extents in the local frame; the street side by sw
+  let uMn = 1e9, uMx = -1e9, vMn = 1e9, vMx = -1e9;
+  for (const [rx2, rz2] of b.p) {
+    const dx2 = rx2 - ob.cx, dz2 = rz2 - ob.cz;
+    const u2 = dx2 * xA.x + dz2 * xA.z, v2 = dx2 * zA.x + dz2 * zA.z;
+    uMn = Math.min(uMn, u2); uMx = Math.max(uMx, u2);
+    vMn = Math.min(vMn, v2); vMx = Math.max(vMx, v2);
+  }
+  const uC = (uMn + uMx) / 2;
+  const sDot = Math.sign(sw.nx * zA.x + sw.nz * zA.z) || 1;
+  const vStreet = sDot > 0 ? vMx : vMn;
+  const W = Math.min(43, uMx - uMn);
+  // plinth + the dark courtyard interior mass (so the compound reads
+  // enclosed, not hollow)
+  api.world.add(api.extrude(b.p, 0.45, granite, g0));
+  api.world.add(api.extrude(api.grow(b.p, 0.94), 3.4,
+    new THREE.MeshStandardMaterial({ color: 0x2a241d, roughness: 1 }), g0 + 0.45));
+  // one hall: walls + striped hip roof + pale ridge spine + upturned
+  // swallowtail fork tips
+  const hall = (lx, lz, w, d, wallH, ridgeH, tips = true) => {
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(w * 0.94, wallH, d * 0.86), wallG);
+    wall.rotation.y = yawL;
+    at(wall, lx, g0 + 0.45 + wallH / 2, lz);
+    const roofG = new THREE.CylinderGeometry(0.10, 0.71, 1, 4);
+    roofG.rotateY(Math.PI / 4);
+    roofG.scale(w * 1.12, ridgeH - wallH, d * 1.18);
+    const roof = new THREE.Mesh(roofG, roofM);
+    roof.rotation.y = yawL;
+    at(roof, lx, g0 + 0.45 + wallH + (ridgeH - wallH) / 2, lz);
+    // green glazed drip course along the eave, oxblood fascia under it
+    const dripB = new THREE.Mesh(new THREE.BoxGeometry(w * 1.12, 0.22, d * 1.18), drip);
+    dripB.rotation.y = yawL;
+    at(dripB, lx, g0 + 0.45 + wallH + 0.05, lz, false);
+    const fas = new THREE.Mesh(new THREE.BoxGeometry(w * 1.06, 0.3, d * 1.10), oxblood);
+    fas.rotation.y = yawL;
+    at(fas, lx, g0 + 0.45 + wallH - 0.2, lz, false);
+    // ridge spine with the forked tips rising at both ends
+    const spine = new THREE.Mesh(new THREE.BoxGeometry(w * 0.72, 0.55, 0.35), spineM);
+    spine.rotation.y = yawL;
+    at(spine, lx, g0 + 0.45 + ridgeH + 0.2, lz, false);
+    if (tips) {
+      for (const sgn of [-1, 1]) {
+        const tip = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.28, 0.3), spineM);
+        tip.rotation.y = yawL;
+        tip.rotation.z = sgn * 0.5;
+        at(tip, lx + sgn * w * 0.37, g0 + 0.45 + ridgeH + 0.75, lz, false);
+      }
+    }
+  };
+  // entrance row on the street: raised centre + two lower sides
+  const dEntr = 11.0;
+  const lzE = vStreet - sDot * (dEntr / 2 + 0.6);
+  hall(uC, lzE, W * 0.38, dEntr, 4.3, 8.15);
+  hall(uC - W * 0.345, lzE, W * 0.27, dEntr, 3.9, 6.55);
+  hall(uC + W * 0.345, lzE, W * 0.27, dEntr, 3.9, 6.55);
+  // main hall behind the courtyard: double-eaved, taller
+  const lzM = vStreet - sDot * (dEntr + 14);
+  hall(uC, lzM, W * 0.42, 14, 4.6, 7.6, false);
+  hall(uC, lzM, W * 0.34, 10.5, 6.8, 10.1);
+  // granite veranda columns + the pale-jade railing along the street
+  const railZ = vStreet - sDot * 0.7;
+  for (let k = -3; k <= 3; k++) {
+    const lx = uC + k * (W * 0.94 / 7);
+    const px = ob.cx + xA.x * lx + zA.x * railZ, pz = ob.cz + xA.z * lx + zA.z * railZ;
+    if (onCarriageway(px, pz, 0.2)) continue;
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.21, 3.9, 8), granite);
+    at(col, lx, g0 + 0.45 + 1.95, railZ);
+  }
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(W * 0.9, 1.1, 0.08), jade);
+  rail.rotation.y = yawL;
+  at(rail, uC, g0 + 0.45 + 0.55, railZ, false);
+}
+
 // Raffles City. I.M. Pei: a nine-square plan carved away and rotated 45 degrees
 // so it angles back from the street instead of presenting a 600-foot broadside,
 // and towers that read cylindrical from one direction and rectangular from
@@ -3889,6 +3994,7 @@ export const RECIPES = [
   [/^sri mariamman temple$/i, sriMariamman],
   [/^lau pa sat$/i, lauPaSat],
   [/^people's park complex$/i, peoplesPark],
+  [/^thian hock keng$/i, thianHockKeng],
 
   // THESE THREE ARE WIRED UP, and the comment that used to sit here said the
   // opposite: "WRITTEN AND NOT WIRED UP ... they stay here, unreferenced".
@@ -3985,7 +4091,7 @@ const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery,
 // was given a row of glazed retail bays. Only words that cannot be anything
 // else: "gallery" is Mandarin Gallery, a mall, and "court" is a block of flats.
 const NEVER_SHOPFRONT =
-  /synagogue|mosque|masjid|gurdwara|temple|cathedral|chapel|church|monastery|convent|cenotaph|parliament|embassy|high commission|museum|memorial|merlion|observatory|supertree|lau pa sat/i;
+  /synagogue|mosque|masjid|gurdwara|temple|cathedral|chapel|church|monastery|convent|cenotaph|parliament|embassy|high commission|museum|memorial|merlion|observatory|supertree|lau pa sat|thian hock keng/i;
 export function hasShopfront(name) {
   if (name && NEVER_SHOPFRONT.test(name)) return false;
   const fn = recipeFor(name);
