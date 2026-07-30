@@ -228,6 +228,21 @@ LANDMARKS = {
     "chevron house":          {"h": 152},
     "marina one":             {"h": 200},   # architect figure; CTBUH says 225.5 — conflict recorded
     "lau pa sat":             {"h": 14},    # 1-storey market + clock lantern; UNPUBLISHED, height class only
+
+    # ---- Little India, researched 2026-07-30 (research/littleindia-temples.md,
+    # research/sri-veeramakaliamman.md). NEITHER of these has a published height
+    # in metres from ANY authoritative source -- both agents said so explicitly,
+    # and the "18 m gopuram" figure that circulates for the temple traces to one
+    # unsourced site. So these are HEIGHT CLASSES, same footing as lau pa sat
+    # above, not measurements dressed up as measurements.
+    #
+    # Both carried h=20 over their WHOLE footprint, which is what makes them
+    # wrong on screen rather than merely imprecise: a 20m solid block where the
+    # real thing is a low mass with ONE tall element on it. That is the same
+    # error family as the UOB spelling trap -- one number standing in for a
+    # shape that has two.
+    "masjid abdul gafoor":    {"h": 12},    # TWO storeys (OSM tags levels=1 elsewhere); dome + minaret sit above this mass, not in it
+    "sri veeramakaliamman":   {"h": 12},    # gopuram photogrammetric ~12m (12-15, +-20%); the hall behind is lower still
     # Maxwell Food Centre carried h=20 out of the extract — a 20m slab where
     # a single-storey 1986 hawker shed stands (sweep review 2026-07-30 saw
     # "a giant slab consuming half the frame"). Ridge height UNPUBLISHED;

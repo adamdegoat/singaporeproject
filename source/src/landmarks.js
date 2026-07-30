@@ -4406,6 +4406,7 @@ export const RECIPES = [
   [/^ocbc bank$/i, ocbcCentre],
   [/^republic plaza$/i, republicPlaza],
   [/^old hill street police station$/i, oldHillStreet],
+  [/bras basah complex/i, brasBasahComplex],
   // PARKED 2026-07-30 midday after round 1: The Foundry's OSM footprint is
   // a chunky pentagon, not the 115x57 slab the research measured (the
   // research measured the ROOF outline from satellite; the ground footprint
@@ -4527,4 +4528,82 @@ export function recipeFor(name) {
   if (!name) return null;
   for (const [re, fn] of RECIPES) if (re.test(name)) return fn;
   return null;
+}
+
+
+// BRAS BASAH COMPLEX, 231/232/233 Bain Street — "Book City", 1979-80.
+// Researched 2026-07-31, spec in research/bras-basah-complex.md.
+//
+// WHY THIS RECIPE EXISTS. The map gives this site ONE polygon with height=20,
+// and 20m is the tag for the SHOPPING PODIUM sitting on a polygon that covers
+// the whole block — so the generic family drew an 8,700 m2 slab five storeys
+// high where the real thing is a podium carrying TWO 25-STOREY RESIDENTIAL
+// SLABS. From North Bridge Road a rider saw a long low box instead of the two
+// towers that are the whole silhouette of this corner, opposite the National
+// Library. HDB's own dataset settles it: block 231 max_floor_lvl 5, blocks 232
+// and 233 max_floor_lvl 25, 120 four-room flats each.
+//
+// HEIGHT IS A STATED ASSUMPTION, NOT A FACT. No metre height is published for
+// this complex in HDB, URA, Roots, Wikipedia, EdgeProp or the press — the
+// research went looking and came back empty, which is recorded rather than
+// papered over. The podium keeps the MAPPED 20m, because that tag genuinely
+// describes the podium. The slabs are drawn from the storey count at 2.9m
+// floor to floor for levels 6-25, and that multiplication is an assumption of
+// this file, flagged here so nobody later mistakes it for a surveyed figure.
+function brasBasahComplex(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const render = api.mat.paleStone;
+  const accent = new THREE.MeshStandardMaterial({ color: 0xa8503a, roughness: 0.82 });
+  const deck = api.mat.warmStone;
+
+  const PODIUM = Math.min(22, b.h || 20);          // the mapped tag's own subject
+  const FLOORS = 20;                               // levels 6-25
+  const FLOOR = 2.9;                               // ASSUMPTION, see note above
+  const TOP = PODIUM + FLOORS * FLOOR;
+
+  // box space -> world. u runs along the long axis (Bain Street, ~114m), v
+  // across it toward North Bridge Road.
+  const P = (u, v) => [ob.cx + u * ob.ux - v * ob.uz, ob.cz + u * ob.uz + v * ob.ux];
+  const rect = (u0, v0, hu, hv) => [P(u0 - hu, v0 - hv), P(u0 + hu, v0 - hv),
+                                    P(u0 + hu, v0 + hv), P(u0 - hu, v0 + hv)];
+
+  // 1. the commercial podium, the whole footprint
+  api.merge(api.extrudeGeo(b.p, PODIUM), render, ob.cx, ob.cz);
+  // a low parapet, because the podium roof is an OCCUPIED deck — HDB put the
+  // void deck on level 5 so the shops could have the base, and from the street
+  // that roofline reads as an edge, not as the top of the building
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.012), 0.9, PODIUM - 0.9), deck, ob.cx, ob.cz);
+
+  // 2. the two slabs, parallel to Bain Street with the full-length atrium
+  //    between them. Staggered in plan — each slab is a run of offset segments
+  //    with the service cores standing proud between, which is what gives the
+  //    serrated silhouette and the stepped roofline rather than one flat line.
+  const slabHV = ob.halfShort * 0.30;
+  const SEG = 3;
+  for (const side of [-1, 1]) {
+    const vC = side * ob.halfShort * 0.44;
+    for (let i = 0; i < SEG; i++) {
+      const hu = (ob.halfLong * 0.86) / SEG;
+      const u0 = ob.midU - ob.halfLong * 0.86 + hu * (2 * i + 1);
+      const jog = (i % 2 ? 1 : -1) * slabHV * 0.16;      // the stagger
+      const top = TOP - (i % 2 ? 0 : 2.4);               // stepped roofline
+      api.merge(api.extrudeGeo(rect(u0, vC + jog, hu * 0.94, slabHV), top - PODIUM, PODIUM),
+        render, ob.cx, ob.cz);
+      // terracotta accent panel on the end wall of each segment, the colour
+      // the complex was repainted (off-white with red panels, Aug 2023)
+      api.merge(api.extrudeGeo(rect(u0, vC + jog + slabHV * side, hu * 0.42, 0.35),
+        top - PODIUM - 3.0, PODIUM + 1.5), accent, ob.cx, ob.cz);
+
+      // 3. the projecting service core between segments, and the lift-motor
+      //    box standing proud of the parapet above it
+      if (i < SEG - 1) {
+        const uc = u0 + hu;
+        api.merge(api.extrudeGeo(rect(uc, vC + jog, hu * 0.20, slabHV * 1.22), top - PODIUM, PODIUM),
+          render, ob.cx, ob.cz);
+        api.merge(api.extrudeGeo(rect(uc, vC + jog, hu * 0.15, slabHV * 0.8), 3.2, top),
+          deck, ob.cx, ob.cz);
+      }
+    }
+  }
 }
