@@ -1011,16 +1011,36 @@ window.__auditWorld = async function auditWorld() {
     // zebra crossings were dropped to 0.046 and 0.052 while the tarmac is drawn
     // at 0.055, so they were under the road and nothing else noticed: every
     // other check was happy, and the street simply looked wrong.
+    // A MARKING IS JUDGED AGAINST THE SURFACE IT SITS ON, and there are two.
+    // The carriageway is drawn at 0.055; a FOOTWAY is drawn at 0.020. Judging
+    // everything against the road buried nothing -- it reported a perfectly
+    // correct footway marking at 22mm as sunk, because 22 < 55. That false
+    // positive stayed hidden until construction sites opened up ground where no
+    // flat path prop had previously been emitted, and then it blocked a deploy
+    // for a defect that did not exist.
+    //
+    // The original class this check was written for is still caught: the lane
+    // dashes and zebras that sat at 46mm and 52mm are well above the 30mm band
+    // and are still measured against the road. And a footway marking that IS
+    // buried -- below its own 20mm surface -- is now caught too, which the old
+    // form could not distinguish from the ones it was wrongly flagging.
     const ROAD_Y = 0.055;
+    const PATH_Y = 0.020;
+    const PATH_BAND = 0.030;   // below this a flat prop belongs to a footway
     let sunk = 0; const ex = [];
     for (const p of props) {
       if (!p.flat || !terr) continue;
       const above = p.y - terr.at(p.x, p.z);
       if (above < 0.001) continue;              // not a road marking at all
       if (above > 0.5) continue;                // signage, not paint
-      if (above < ROAD_Y + 0.004) {
+      const onPath = above < PATH_BAND;
+      const floor = onPath ? PATH_Y : ROAD_Y + 0.004;
+      if (above < floor) {
         sunk++;
-        if (ex.length < 6) ex.push(`marking ${(above * 1000) | 0}mm up, tarmac at ${ROAD_Y * 1000}mm`);
+        if (ex.length < 6) {
+          ex.push(`marking ${(above * 1000) | 0}mm up, `
+            + `${onPath ? 'footway' : 'tarmac'} at ${(floor * 1000) | 0}mm`);
+        }
       }
     }
     add('P7', 'road markings under the tarmac', 'BLOCKER', sunk, 0,

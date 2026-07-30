@@ -1042,6 +1042,21 @@ def main():
             # defect for being five metres tall.
             if tags.get("building") == "roof":
                 b["roof"] = 1
+            # UNDER CONSTRUCTION IS NOT A BUILDING YET. 72 footprints here are
+            # tagged building=construction and NONE of them carries a height, so
+            # every one falls through to a type default and is drawn as a
+            # finished block. Two of them are enormous: IR2 at 32,610 m2 and NS
+            # Square at 28,118 m2, both standing in Marina Bay as 18m slabs
+            # where the real sites are hoardings and cranes.
+            #
+            # OSM CONSTRUCTION TAGS GO STALE, which is why this carries a flag
+            # rather than deleting the mass: Piccadilly Grand completed around
+            # 2023 and is still tagged construction, so it is excluded by name.
+            # The renderer decides what to draw; the data only records what the
+            # map says. Re-check this list when the tags are refetched.
+            if tags.get("building") == "construction":
+                if not re.search(r"piccadilly", (tags.get("name") or ""), re.I):
+                    b["con"] = 1
             buildings.append(b)
 
         elif "highway" in tags:

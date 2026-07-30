@@ -2,7 +2,8 @@
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng } from './tex.js';
-import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV } from './landmarks.js';
+import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV,
+         constructionSite } from './landmarks.js';
 
 export const TEX = {
   asphalt: texAsphalt(),
@@ -908,6 +909,16 @@ export async function buildBuildings(world, data, Y = null) {
     // instead of re-deriving one from its own thickness or its own ring.
     FOOT = seatY(b);
     STREET = streetY(b);
+
+    // A SITE IS NOT A BUILDING. Before anything else decides what to draw:
+    // building=construction means there is no building there yet, and drawing
+    // one asserts something false about the city. Ahead of the shophouse test
+    // and the recipe table because neither of those has any way to know.
+    if (b.con && !window.__noSites) {
+      constructionSite(api, b);
+      stats.count++; stats.sites = (stats.sites || 0) + 1;
+      continue;
+    }
 
     // small and low with no name: a shophouse, which is what fills the lanes.
     //

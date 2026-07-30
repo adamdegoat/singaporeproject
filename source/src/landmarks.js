@@ -5746,3 +5746,106 @@ function goldenMileComplex(api, b) {
   // 4. the two-storey maisonette crown, so the top tread reads double height
   face(0, D - Math.min(D * 0.62, (LV - FROM) * STEP), H, FL * 0.55, M.deck);
 }
+
+// A SITE, NOT A BUILDING. Drawn for footprints OSM tags building=construction.
+//
+// 72 of them across these districts, none carrying a height, so every one was
+// falling through to a type default and standing as a finished block. IR2 and
+// NS Square are the worst: 32,610 and 28,118 m2 of Marina Bay drawn as 18m
+// slabs where the real sites are hoarding, piling rigs and cranes. A rider
+// crossing Bayfront Avenue was passing two invented buildings.
+//
+// What this draws is deliberately modest: hoarding at the property line, an
+// open interior, and for anything big enough to warrant one, a tower crane and
+// a partial frame. The point is to stop asserting a building that is not there,
+// not to guess what will eventually stand.
+const SITE_MAT = {
+  hoard: new THREE.MeshStandardMaterial({ color: 0x7d94a6, roughness: 0.85 }),
+  post: new THREE.MeshStandardMaterial({ color: 0x8a8f92, roughness: 0.8 }),
+  dirt: new THREE.MeshStandardMaterial({ color: 0x9d8f76, roughness: 0.98 }),
+  frame: new THREE.MeshStandardMaterial({ color: 0xa6a29a, roughness: 0.9 }),
+  crane: new THREE.MeshStandardMaterial({ color: 0xd8b13a, roughness: 0.6, metalness: 0.3 }),
+};
+export function constructionSite(api, b) {
+  const ob = orientedBox(b.p);
+  const M = SITE_MAT;
+  const area = b.a || (ob.halfLong * ob.halfShort * 4);
+
+  // A RING, NOT A SLAB. The first version extruded the whole footprint to 3m
+  // and capped it with dirt, which buried a road: P7 ("road markings under the
+  // tarmac") went from 0 to 1 in River Valley the moment sites were switched
+  // on. A construction footprint is not guaranteed clear of a carriageway the
+  // way a building's is, so this walks the perimeter and SKIPS any panel whose
+  // midpoint stands in the road, and never covers the ground between.
+  const _os = outwardSign(b.p);
+  for (let i = 0; i < b.p.length; i++) {
+    const [x0, z0] = b.p[i], [x1, z1] = b.p[(i + 1) % b.p.length];
+    const dx = x1 - x0, dz = z1 - z0, len = Math.hypot(dx, dz);
+    if (len < 0.4) continue;
+    const n = Math.max(1, Math.round(len / 6.0));
+    const nx = _os * -dz / len, nz = _os * dx / len;
+    for (let k = 0; k < n; k++) {
+      const t0 = k / n, t1 = (k + 1) / n, tm = (k + 0.5) / n;
+      if (onCarriageway(x0 + dx * tm, z0 + dz * tm, 0.4)) continue;
+      const q0 = [x0 + dx * t0, z0 + dz * t0], q1 = [x0 + dx * t1, z0 + dz * t1];
+      const o = 0.3;
+      const panel = [[q0[0], q0[1]], [q1[0], q1[1]],
+                     [q1[0] + nx * o, q1[1] + nz * o], [q0[0] + nx * o, q0[1] + nz * o]];
+      api.merge(api.extrudeGeo(panel, 3.0), M.hoard, ob.cx, ob.cz);
+      api.merge(api.extrudeGeo(panel, 0.26, 3.0), M.post, ob.cx, ob.cz);
+    }
+  }
+
+  if (area < 900) return;                 // a small site is a hoarded gap, no more
+
+  const P = (u, v) => [ob.cx + u * ob.ux - v * ob.uz, ob.cz + u * ob.uz + v * ob.ux];
+  const rect = (u0, v0, hu, hv) => [P(u0 - hu, v0 - hv), P(u0 + hu, v0 - hv),
+                                    P(u0 + hu, v0 + hv), P(u0 - hu, v0 + hv)];
+
+  // NOTHING BIG GOES DOWN WITHOUT CHECKING THE ROAD FIRST. A construction
+  // footprint is not pushed clear of carriageways the way a building's is --
+  // these polygons are whole development plots and they routinely span a
+  // street. The first version dropped a 141 x 128m frame across Raffles Avenue
+  // and P1b caught it. Same rule slab() uses: if the piece stands in a road, it
+  // is not built.
+  const clearRect = (u0, v0, hu, hv) => {
+    for (const [du, dv] of [[0, 0], [-1, -1], [1, -1], [1, 1], [-1, 1],
+                            [-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      const [px, pz] = P(u0 + du * hu, v0 + dv * hv);
+      if (onCarriageway(px, pz, 0.5)) return false;
+    }
+    return true;
+  };
+
+  // a partial concrete frame: a few floor plates on part of the site, which is
+  // what a site this size looks like part-way up
+  const FL = 3.4;
+  const n = Math.min(7, Math.max(2, Math.round(Math.sqrt(area) / 22)));
+  const fu = ob.halfLong * 0.36, fv = ob.halfShort * 0.40;
+  const fU = ob.midU - ob.halfLong * 0.22;
+  if (clearRect(fU, ob.midV, fu, fv)) {
+  for (let i = 0; i < n; i++) {
+    api.merge(api.extrudeGeo(rect(ob.midU - ob.halfLong * 0.22, ob.midV, fu, fv), 0.35, FL * i),
+      M.frame, ob.cx, ob.cz);
+  }
+  for (const su of [-1, 1]) {
+    for (const sv of [-1, 1]) {
+      api.merge(api.extrudeGeo(rect(fU + su * fu * 0.88,
+        ob.midV + sv * fv * 0.88, 0.5, 0.5), FL * n), M.frame, ob.cx, ob.cz);
+    }
+  }
+  }
+
+  // THE TOWER CRANE. One mast, one jib, one counter-jib -- the silhouette that
+  // says "site" from three streets away.
+  const cu = ob.midU + ob.halfLong * 0.30, cv = ob.midV + ob.halfShort * 0.18;
+  if (!clearRect(cu, cv, 1.6, 1.6)) return;
+  const MAST = Math.min(78, 26 + Math.sqrt(area) * 0.42);
+  api.merge(api.extrudeGeo(rect(cu, cv, 1.1, 1.1), MAST), M.crane, ob.cx, ob.cz);
+  const JIB = Math.min(58, ob.halfLong * 0.95);
+  api.merge(api.extrudeGeo(rect(cu + JIB * 0.42, cv, JIB * 0.5, 0.7), 1.3, MAST),
+    M.crane, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(rect(cu - JIB * 0.16, cv, JIB * 0.18, 0.7), 1.1, MAST - 0.2),
+    M.crane, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(rect(cu, cv, 1.6, 1.6), 2.2, MAST + 1.3), M.crane, ob.cx, ob.cz);
+}
