@@ -833,6 +833,14 @@ export class Crowd {
             const hit = far.find(at);
             if (hit !== undefined) pr.offWant = hit;
             else {
+              // TRIED AND REJECTED, 2026-07-30: sending them to the FAR
+              // pavement when their own side is blocked. It reduced the number
+              // permanently stuck (10 -> 8) and made the visible problem WORSE
+              // — the instantaneous count rose from ~40 to ~52, because a
+              // walker crossing a road is, for those seconds, a walker standing
+              // in a road. What the rider sees is the instant, not the average.
+              // Do not re-add it without measuring the plateau.
+              //
               // NOTHING ON THIS SIDE CLEARS, ANYWHERE. Every probe above keeps
               // the walker's own sign, so where a whole side of a stretch is
               // carriageway — a wide junction mouth, a slip road meeting the
@@ -867,6 +875,24 @@ export class Crowd {
 
       // a pedestrian standing inside a building is worse than a missing one
       if (this.isBlocked(x, z)) continue;
+
+      // AND SO IS ONE STANDING IN LIVE TRAFFIC. Same rule, same reason, one
+      // line apart — it just was never applied to the carriageway.
+      //
+      // About 38 of 2,200 are on tarmac at any moment in Robertson Quay, and
+      // they are not transient: the reactive escape probes only its own side of
+      // the path, so at a wide junction mouth there is nowhere to go, and the
+      // u-turn added tonight only paces them back into the same blocked
+      // stretch. Until the junction work lands (see NEXT.md — pavement offsets
+      // are per-street and cross OTHER streets, which needs a path-level fix,
+      // not another probe) the honest thing is to not draw them.
+      //
+      // DELIBERATELY NOT hidden from the MEASUREMENT: __crowdPositions still
+      // reports every walker, so D36 and the defect hunt keep counting these
+      // and the ledger keeps saying the simulation needs work. The world stops
+      // showing a person standing in traffic; the numbers do not stop
+      // admitting it.
+      if (!pr.crossing && window.__onRoad && window.__onRoad(x, z, -0.8)) continue;
 
       // Only animate and draw the people you could actually see. With 260 of
       // them spread over 1.2km, roughly forty are ever in range, so this is the
