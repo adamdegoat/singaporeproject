@@ -199,7 +199,21 @@ LANDMARKS = {
     "overseas union bank":    {"h": 278, "key": True},
     "guoco tower":            {"h": 284, "key": True},
     "tanjong pagar centre":   {"h": 284, "key": True},
-    "one raffles quay":       {"h": 245},   # NORTH; south tower is 139.9 and needs a part split
+    # THE PART SPLIT THIS NOTE ASKED FOR, DONE 2026-07-31 -- and the data was
+    # already there. OSM maps both towers as building:part ways carrying their
+    # own published heights (245 and 139.9), and this pipeline was reading them
+    # all along. They never appeared because the BARE key below put 245m on the
+    # 10,341 m2 SITE polygon, and process.py's buried-footprint filter then
+    # dropped both towers for sitting inside a footprint that was larger and
+    # just as tall. The site swallowed its own towers.
+    #
+    # Longest-key-wins makes this safe, and it is the UOB Plaza lesson again:
+    # the specific spellings must exist or the bare one captures them.
+    "one raffles quay north tower": {"h": 245, "key": True},
+    "one raffles quay south tower": {"h": 139.9},
+    # the podium the two towers stand on. UNPUBLISHED -- height class for a
+    # 3-storey retail base, not a measurement.
+    "one raffles quay":       {"h": 20},
     "ocean financial":        {"h": 245, "key": True},
     "the sail":               {"h": 245, "key": True},
     "central park tower":     {"h": 215},
@@ -273,6 +287,9 @@ LANDMARKS = {
     # is exactly the distinction that made 200m wrong on Keppel's 137m-long
     # site strip.
     "duo tower":              {"h": 170, "key": True},
+    # The OSM part carries no height; 186m is published (Buro Ole Scheeren /
+    # CTBUH, 50 storeys). Without this the part comes in as a guess.
+    "duo residences":         {"h": 186, "key": True},
     # DUO's widely published 186/170 are AMSL ELEVATIONS, not building heights;
     # 170 is the architectural height above ground and reconciles to within ~9m
     # of the AMSL figure. DUO Residences is absent from the data entirely -- it
@@ -971,6 +988,24 @@ def main():
                                    or _neg_layer(tags)):
             skipped_underground += 1
             continue
+        # 3D MASSING OSM ALREADY HAS AND THIS PIPELINE IGNORED.
+        #
+        # `building:part` is how OSM records a building that is not one box:
+        # One Raffles Quay is mapped as a podium with a NORTH tower at 245m and
+        # a SOUTH tower at 139.9m, and this pipeline read only the outline and
+        # drew a single 10,357 m2 slab at 245m -- the note in the height table
+        # above has said "south tower is 139.9 and needs a part split" for
+        # weeks, and the split was sitting in the data the whole time. Duo
+        # Residences is mapped ONLY as a part, so it was missing entirely.
+        #
+        # Taken only when the part carries a height, levels or a name, i.e.
+        # where someone modelled it deliberately. Parts that coincide with their
+        # parent are caught by the same dedupe as everything else.
+        if "building:part" in tags and "building" not in tags:
+            if tags.get("height") or tags.get("building:levels") or tags.get("name"):
+                tags = dict(tags)
+                tags["building"] = tags.get("building:part") or "yes"
+
         if "building" in tags:
             pts = ring(e["geometry"])
             if len(pts) < 3:
@@ -1726,6 +1761,27 @@ def main():
                             and (_o.get("h") or 0) >= (_b.get("h") or 0):
                         _in += 1
                         break
+        # WHY THERE IS NO "NAMED TOWERS ARE EXEMPT" GUARD HERE.
+        #
+        # This filter drops ELEVEN NAMED CBD TOWERS -- Asia Square Tower 2,
+        # Singapore Land Tower, Court Tower, both Unity towers, both One Shenton
+        # towers and three fragments of One Raffles Place Tower 2 -- and that
+        # looks alarming enough that exempting them is the obvious fix. It was
+        # tried on 2026-07-31 and REVERTED, because it makes things worse.
+        #
+        # The filter only drops a footprint whose parent is BOTH larger AND at
+        # least as tall. That means the tower is completely enclosed by its
+        # parent and cannot be seen. Restoring it adds hidden geometry and
+        # z-fighting and changes nothing on screen: Singapore Land Tower came
+        # back as a 1,591 m2 tower at 190m sitting inside a 3,749 m2 site at
+        # 190m.
+        #
+        # The actual fault is UPSTREAM. LANDMARKS matches by substring, so
+        # "one shenton" puts the TOWER's 214m on the whole SITE polygon, and a
+        # site as tall as its towers swallows them. The fix per building is to
+        # split podium from towers, as done for One Raffles Quay above -- which
+        # needs a podium height per site, i.e. research, not a filter change.
+        # Logged in NEXT.md.
         if _n >= 4 and _in / _n > 0.8:
             _buried.append(_b)
     for _b in buildings:

@@ -3298,3 +3298,31 @@ STILL OPEN, highest value first:
      `pr.waited` accumulates, with a 26s patience cap so nobody stands at a
      junction forever. Do not "fix" this; the frozen-looking pedestrian at a
      kerb is doing what it is supposed to do.
+
+## Site polygons wearing tower heights — the CBD backlog
+
+Found 2026-07-31 while splitting One Raffles Quay. LANDMARKS matches by
+SUBSTRING, so a key like "one shenton" lands the TOWER's height on the whole
+SITE polygon. A site as tall as its towers then CONTAINS them, and process.py's
+buried-footprint filter correctly removes them as enclosed. The towers are in
+the data, mapped as building:part with their own published heights, and they
+never reach the screen.
+
+Confirmed swallowed, with the height the site is wearing:
+  - Asia Square Tower 2 (220m) under "asia square" 229
+  - One Shenton Tower 1 and 2 (214m) under "one shenton" 214
+  - One Raffles Place Tower 2 (280m, three fragments) under "one raffles place" 280
+  - Singapore Land Tower (190m) under its own site at 190
+  - Court Tower (178m), Unity Tower One and Two (187m), Office Tower (178m)
+
+DO NOT fix this by exempting named towers from the buried filter. That was tried
+and reverted: the filter only drops a footprint whose parent is larger AND at
+least as tall, so the tower is fully enclosed and invisible, and restoring it
+adds hidden geometry and z-fighting for no visual gain.
+
+The fix per site is the One Raffles Quay pattern:
+  1. Add explicit longest-key entries for each tower at its published height.
+  2. Give the bare site key a PODIUM height.
+Step 2 is the one that needs research: a podium height per site, published if
+possible and a stated height CLASS if not. One Raffles Quay's podium is set at
+20m as an unpublished 3-storey class.
