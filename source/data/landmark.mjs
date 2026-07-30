@@ -32,6 +32,7 @@ for (const name of names) {
   const slug = name.replace(/\W+/g, '_');
   for (const variant of ['recipe', 'generic']) {
     const page = await browser.newPage({ viewport: { width: 1200, height: 760 } });
+    page.on('pageerror', (e) => console.log('    PAGEERROR ' + String(e.message).slice(0,200)));
     const q = `dpr=1&scene=${SCENE}&solo=${encodeURIComponent(name)}`
       // nofoliage matters as much as the rest: the Angsana avenue is between
       // the camera and every building on this street, and a crown is 34m across

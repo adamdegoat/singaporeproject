@@ -4425,6 +4425,8 @@ export const RECIPES = [
   [/^tekka centre$/i, tekkaCentre],
   [/lasalle/i, lasalle],
   [/^sim lim square$/i, simLimSquare],
+  [/veeramakaliamman/i, veeramakaliamman],
+  [/srinivasa perumal/i, perumalGopuram],
   // PARKED 2026-07-30 midday after round 1: The Foundry's OSM footprint is
   // a chunky pentagon, not the 115x57 slab the research measured (the
   // research measured the ROOF outline from satellite; the ground footprint
@@ -5157,4 +5159,154 @@ function simLimSquare(api, b) {
       api.merge(api.extrudeGeo(rect(u, v, 3.2, 4.2), H * 1.19), M.conc, ob.cx, ob.cz);
     }
   }
+}
+
+// THE TWO GOPURAMS OF SERANGOON ROAD, and they are opposite shapes.
+// Researched 2026-07-30/31: research/littleindia-temples.md and
+// research/sri-veeramakaliamman.md.
+//
+// The research says this outright and it is the reason this is written as a
+// parameterised tower and not as one mesh used twice: Sri Veeramakaliamman's
+// gopuram is SQUAT, about 1.1:1 and overtopped by the block behind it, while
+// Sri Srinivasa Perumal's is TALL, about 1:1.6, standing on a slate blue-grey
+// base. Building them from one silhouette would make Little India's two most
+// recognisable objects into the same object.
+//
+// NO HEIGHT IS PUBLISHED FOR EITHER, from any authoritative source. The "18m
+// gopuram, 600 stucco deities" figure that circulates for Veeramakaliamman
+// traces to a single unsourced site and was fabricated; a matching "20m, built
+// 1966" for Vadapathira Kaliamman is falsely attributed to Lonely Planet, whose
+// page contains neither number. Veeramakaliamman is a URA-conserved building,
+// NOT a National Monument. Heights here come from the footprint and the
+// measured PROPORTIONS, which is the only honest way to size them.
+//
+// The tier taper is measured, not invented: 1.00 / 0.875 / 0.75 / 0.625 / 0.52
+// of the base width, a clean ~12.5%-per-stage step. Four receding sculpted
+// talas plus one crowning barrel-vaulted shala -- that is what "five-tiered"
+// means here, counted from three photographs rather than taken on trust. Five
+// gold kalasams on the ridge, and two flared makara horn-scrolls that give the
+// crown its "W".
+const GOPURAM_MAT = {
+  // pastel polychrome, softened visibly since 2017
+  pale: new THREE.MeshStandardMaterial({ color: 0xe8ddd0, roughness: 0.88 }),
+  rose: new THREE.MeshStandardMaterial({ color: 0xd9a9a4, roughness: 0.86 }),
+  mint: new THREE.MeshStandardMaterial({ color: 0xa8c6b4, roughness: 0.86 }),
+  sky: new THREE.MeshStandardMaterial({ color: 0xa9bed4, roughness: 0.86 }),
+  gold: new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: 0.35, metalness: 0.5 }),
+  slate: new THREE.MeshStandardMaterial({ color: 0x6b7681, roughness: 0.8 }),
+  wall: new THREE.MeshStandardMaterial({ color: 0xe2e0da, roughness: 0.9 }),
+  stripe: new THREE.MeshStandardMaterial({ color: 0xa8443a, roughness: 0.85 }),
+};
+
+// One gopuram, built from measured proportions. `slender` is the height-to-base
+// ratio: ~1.1 for Veeramakaliamman (squat), ~1.6 for Perumal (tall).
+function gopuram(api, ob, cx, cz, baseW, baseD, y0, slender, opts) {
+  const G = GOPURAM_MAT;
+  const TAPER = [1.00, 0.875, 0.75, 0.625, 0.52];
+  const H = baseW * slender;
+  const tierH = H / 5.4;
+  const band = [G.rose, G.mint, G.sky, G.rose];
+  const rect = (hw, hd) => [[cx - hw, cz - hd], [cx + hw, cz - hd],
+                            [cx + hw, cz + hd], [cx - hw, cz + hd]];
+  let y = y0;
+  for (let t = 0; t < 5; t++) {
+    const f = TAPER[t];
+    const hw = baseW * 0.5 * f, hd = baseD * 0.5 * f;
+    // the tala itself, then the projecting cornice that separates it from the
+    // next -- without the cornice a stack of five boxes reads as a stepped
+    // pyramid, not as a tower of storeys
+    api.merge(api.extrudeGeo(rect(hw, hd), tierH * 0.86, y), G.pale, cx, cz);
+    api.merge(api.extrudeGeo(rect(hw * 1.06, hd * 1.06), tierH * 0.14, y + tierH * 0.86),
+      band[t % band.length], cx, cz);
+    // the central nasika opening, on talas 2-4 only, which is what the
+    // photographs show
+    if (t >= 1 && t <= 3) {
+      api.merge(api.extrudeGeo(rect(hw * 0.20, hd * 1.10), tierH * 0.5, y + tierH * 0.2),
+        band[(t + 1) % band.length], cx, cz);
+    }
+    y += tierH;
+  }
+  // the crowning barrel-vaulted shala, laid along the facade
+  const cw = baseW * 0.5 * 0.52, cd = baseD * 0.5 * 0.52;
+  api.merge(api.extrudeGeo(rect(cw * 1.04, cd * 0.72), tierH * 0.30, y), G.pale, cx, cz);
+  // FIVE gold kalasams on the ridge -- counted, not assumed
+  for (let k = 0; k < 5; k++) {
+    const u = cx + (k - 2) * (cw * 0.42);
+    api.merge(api.extrudeGeo([[u - 0.22, cz - 0.22], [u + 0.22, cz - 0.22],
+                              [u + 0.22, cz + 0.22], [u - 0.22, cz + 0.22]],
+      tierH * 0.34, y + tierH * 0.30), G.gold, cx, cz);
+  }
+  // the two flared makara horn-scrolls that give the crown its "W"
+  for (const sx of [-1, 1]) {
+    const u = cx + sx * cw * 1.08;
+    api.merge(api.extrudeGeo([[u - 0.5, cz - cd * 0.5], [u + 0.5, cz - cd * 0.5],
+                              [u + 0.5, cz + cd * 0.5], [u - 0.5, cz + cd * 0.5]],
+      tierH * 0.55, y + tierH * 0.16), G.gold, cx, cz);
+  }
+  return y0 + H;
+}
+
+// Sri Veeramakaliamman, 141 Serangoon Road. SQUAT gopuram (~1.1:1), overtopped
+// by the block behind it, on a CORNER site at Belilios Road with the gopuram
+// directly over the street entrance and only a shallow forecourt. The boundary
+// is a tiled wall with vertical RED stripes under a continuous sculpture
+// parapet, standing hard on the property line. Eight main domes on the
+// roofscape -- the temple's own site is the only authority for that, and it
+// does not say where they sit, so two are placed on the hall behind and the
+// rest are not invented.
+function veeramakaliamman(api, b) {
+  const ob = orientedBox(b.p);
+  const G = GOPURAM_MAT;
+  const H = Math.max(9, b.h || 12);
+  // shoelace: this temple is mapped as TWO footprints and it has ONE gopuram.
+  // Built on both, the tower appeared twice side by side.
+  let area = 0;
+  for (let k = 0; k < b.p.length; k++) {
+    const [x0, z0] = b.p[k], [x1, z1] = b.p[(k + 1) % b.p.length];
+    area += x0 * z1 - x1 * z0;
+  }
+  area = Math.abs(area) / 2;
+
+  // the prayer hall, DELIBERATELY LOW. The gopuram has to clear it or the
+  // building loses the only thing anyone recognises it by; at 0.62H the tower
+  // was buried to its shoulders and read as two stubs on a roof.
+  api.merge(api.extrudeGeo(b.p, H * 0.45), G.wall, ob.cx, ob.cz);
+  // the boundary wall standing hard on the property line: tiled, with the
+  // vertical red stripes, under a continuous sculpture parapet
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 2.3), G.wall, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.038), 0.5, 2.3), G.stripe, ob.cx, ob.cz);
+
+  // THE EIGHT DOMES ARE NOT BUILT. The temple's own site is the only authority
+  // that mentions them and it does not say where they sit; the research lists
+  // that under "could not establish". Two guessed boxes on the roof read as two
+  // guessed boxes, so they are gone rather than invented.
+
+  if (area > 480) {
+    const sw = streetward(api, ob);
+    const gx = ob.bx + sw.nx * (ob.halfShort * 0.42);
+    const gz = ob.bz + sw.nz * (ob.halfShort * 0.42);
+    const w = Math.max(9, Math.min(ob.halfShort * 1.5, 12));
+    gopuram(api, ob, gx, gz, w, w * 0.40, 0, 1.15, {});   // y0 RELATIVE to the seat
+  }
+}
+
+// Sri Srinivasa Perumal, 397 Serangoon Road. TALL gopuram (~1:1.6) on a slate
+// blue-grey base block, pale chalky polychrome. Five tiers, not six.
+//
+// Its OSM footprint is only ~218 m2 -- that is THE GOPURAM BLOCK ALONE, not the
+// temple compound, which is why this recipe builds a tower on a base and does
+// not try to put a hall behind it. Building a compound here would be inventing
+// a footprint OSM does not have.
+//
+// The gopuram was ADDED to the 1966 temple, not built with it: NHB says 1975,
+// NLB says 1977-79. The "20m, built 1966" line repeated everywhere is an
+// uncited Wikipedia sentence.
+function perumalGopuram(api, b) {
+  const ob = orientedBox(b.p);
+  const G = GOPURAM_MAT;
+  const baseH = Math.max(3.0, (b.h || 14) * 0.24);
+  api.merge(api.extrudeGeo(b.p, baseH), G.slate, ob.cx, ob.cz);
+  const w = Math.min(ob.halfLong * 1.7, 13);
+  gopuram(api, ob, ob.bx, ob.bz, w, Math.min(ob.halfShort * 1.7, w * 0.5),
+    baseH, 1.6, {});   // RELATIVE to the seat, not SEAT + baseH
 }

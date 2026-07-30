@@ -909,15 +909,29 @@ export async function buildBuildings(world, data, Y = null) {
     FOOT = seatY(b);
     STREET = streetY(b);
 
-    // small and low with no name: a shophouse, which is what fills the lanes
-    if (!b.k && b.a < 520 && b.h <= 20 && b.p.length <= 64) {
+    // small and low with no name: a shophouse, which is what fills the lanes.
+    //
+    // "WITH NO NAME" WAS IN THE COMMENT AND NOT IN THE CONDITION. This branch
+    // sits above the recipe dispatch, so ANY named building under 520 m2 and
+    // 20m tall was silently turned into an anonymous shophouse and could never
+    // reach a bespoke recipe at all -- no error, no warning, and a recipe
+    // vs generic render that comes back byte-identical because neither ran.
+    //
+    // Sri Srinivasa Perumal Temple is 218 m2 and 14.4m: its OSM footprint is
+    // the GOPURAM BLOCK ALONE, not the compound, so the one building in Little
+    // India whose whole identity is a five-tier tower was being drawn as a
+    // shophouse. Small does not mean anonymous. Little India and Chinatown are
+    // full of small temples and mosques and this would have swallowed every
+    // recipe written for any of them.
+    const _rec = NORECIPE ? null : recipeFor(b.n);
+    if (!_rec && !b.k && b.a < 520 && b.h <= 20 && b.p.length <= 64) {
       shophouse(api, b);
       stats.count++; stats.shophouses = (stats.shophouses || 0) + 1;
       continue;
     }
 
     // the buildings people navigate by get their real arrangement, not a box
-    const recipe = NORECIPE ? null : recipeFor(b.n);
+    const recipe = _rec;
     if (recipe) {
       recipe(api, b);
       if (hasShopfront(b.n)) addShopfront(world, b, perimeter(pts), merger, clearance);
