@@ -303,6 +303,7 @@ export class Crowd {
       // RAILING POST from street.js, which had 57 instances by coincidence.
       // Counting things that resemble the target is not counting the target.
       im.userData.crowdPart = true;
+      im.userData.actor = true;      // moves; see the traffic mk() note
       world.add(im);
       return im;
     };
@@ -337,13 +338,18 @@ export class Crowd {
     // there when the figure is STANDING STILL, and that opens into daylight
     // the moment the leg swings. It read as scattered shoes with nobody
     // standing in them. 0.587 + two radii reaches the ankle exactly.
-    this.legL = mk(new THREE.CapsuleGeometry(0.058, 0.587, 3, 7), lam());
-    this.legR = mk(new THREE.CapsuleGeometry(0.058, 0.587, 3, 7), lam());
+    // 11.6cm thick legs under a 39cm torso read as stilts. A thigh is about
+    // 15cm and a calf 11cm; one capsule has to be both, so 13.4cm splits it.
+    this.legL = mk(new THREE.CapsuleGeometry(0.067, 0.569, 3, 8), lam());
+    this.legR = mk(new THREE.CapsuleGeometry(0.067, 0.569, 3, 8), lam());
     this.bag = mk(new THREE.BoxGeometry(0.22, 0.26, 0.10), lam());
     this.shoeL = mk(new THREE.BoxGeometry(0.11, 0.07, 0.25), lam(0x2b2723));
     this.shoeR = mk(new THREE.BoxGeometry(0.11, 0.07, 0.25), lam(0x2b2723));
-    this.handL = mk(new THREE.SphereGeometry(0.052, 7, 6), lam());
-    this.handR = mk(new THREE.SphereGeometry(0.052, 7, 6), lam());
+    // A hand is longer than it is wide and flatter than it is either. As a
+    // plain sphere it read as a ball stuck on the end of a sleeve, which is
+    // the first thing the eye lands on at arm's length.
+    this.handL = mk(scaleGeo(new THREE.SphereGeometry(0.052, 8, 6), 0.82, 1.35, 1.05), lam());
+    this.handR = mk(scaleGeo(new THREE.SphereGeometry(0.052, 8, 6), 0.82, 1.35, 1.05), lam());
     this.neck = mk(new THREE.CylinderGeometry(0.052, 0.06, 0.1, 7), lam());
 
     const cTop = new THREE.Color(), cBot = new THREE.Color();
@@ -1070,6 +1076,12 @@ export class Traffic {
     const mk = (geo, mat, count) => {
       const im = new THREE.InstancedMesh(geo, mat, count);
       im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false;
+      // Marked as something that MOVES. A car crossing the Bayfront bridge is
+      // over open water for as long as it takes to cross, and W2 — which asks
+      // what we BUILT in open water — was counting the fleet, so its value
+      // depended on where the traffic happened to be when the audit sampled.
+      // A MAJOR gate that flaps with the signal cycle is not a gate.
+      im.userData.actor = true;
       world.add(im);
       return im;
     };

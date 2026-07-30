@@ -24,7 +24,23 @@ const { chromium } = await import(
   process.env.PLAYWRIGHT_PATH || '/Users/ZY/receptionig/node_modules/playwright/index.mjs');
 
 const browser = await chromium.launch({
-  args: ['--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding',
+  args: [
+    // --use-gl=angle IS THE REAL GPU HERE, and its absence is why this file was
+    // the slowest thing in the project. Measured 2026-07-30 by reading
+    // UNMASKED_RENDERER_WEBGL under five flag sets on this machine:
+    //   --use-gl=angle      -> ANGLE Metal Renderer: Intel Iris Plus 645
+    //   --use-angle=metal   -> ANGLE Metal Renderer: Intel Iris Plus 645
+    //   --use-gl=egl        -> SwiftShader
+    //   (no flags)          -> SwiftShader
+    // behaviour.mjs and defects.mjs already passed it; audit_run and livecheck
+    // did not, so the eight scene audits every deploy runs — the dominant cost
+    // of shipping anything — were software-rasterising a world the machine can
+    // draw in hardware. The audits gate on SCENE FACTS (draw calls, triangles,
+    // positions), never on frame rate, so the renderer cannot change a single
+    // number; only how long it takes to get them. Verified by diffing a full
+    // district audit before and after.
+    '--use-gl=angle',
+    '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding',
          '--disable-features=CalculateNativeWinOcclusion'],
 });
 // the reference platform: landscape phone at real pixel density, touch on

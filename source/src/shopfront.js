@@ -298,7 +298,7 @@ class BuildingIndex {
 }
 
 /* ---------------- the build ---------------- */
-export function buildShopfronts(world, data, axes, wallAt) {
+export function buildShopfronts(world, data, axes, wallAt, neighbours) {
   const stats = {
     shopRuns: 0, bays: 0, realShops: 0, glazedFrontage: 0, shopAwnings: 0,
     // why a tenant got nothing, split out rather than pooled, because "382 have
@@ -316,7 +316,22 @@ export function buildShopfronts(world, data, axes, wallAt) {
   const atlas = new SignAtlas(THREE);
   const merger = new Merger();
   const streets = new StreetGrid(data, axes || []);
-  const index = new BuildingIndex(data.buildings);
+  // THE INDEX MUST SEE THE NEIGHBOURS, EVEN THE ONES IN ANOTHER CHUNK.
+  //
+  // A bay is only built where the pavement in front of it is not another
+  // building, and that question was asked of `data.buildings` — which, for a
+  // streamed district, is that district's buildings and nothing else. The
+  // dedup partition splits adjacent buildings across chunks by design:
+  // "Bugis Junction" belongs to brasbasah and "Bugis Junction Tower" to bugis,
+  // so the tower's bays were sited facing into a mall the index could not see
+  // and S6 caught twelve of them inside a building. This is the seam lesson
+  // the region already learned for ROADS ("a chunk build that could not see a
+  // neighbour's roads laid kerbs in Waterloo Close at the seam") — the same
+  // union was simply never handed to the shopfront pass.
+  //
+  // Hosts still come from `data`, so a chunk builds only its OWN frontages;
+  // only the "is something already there" question widens.
+  const index = new BuildingIndex((neighbours || data).buildings);
 
   window.__shopBays = [];
   // Front faces only for the two planes that cover the most screen. Glass and

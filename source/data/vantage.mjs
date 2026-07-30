@@ -321,7 +321,13 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.log('  page error:', e.message));
-await page.goto(`http://localhost:8933/index.html?dpr=1&scene=${SCENE}`, { waitUntil: 'load' });
+// `streamall` builds every chunk and drains, instead of streaming by proximity
+// to the ride. A comparison sheet places cameras hundreds of metres from the
+// rider by design — the whole point of a vantage is to stand back — and the
+// proximity streamer has no reason to have built what such a camera is looking
+// at. Chasing that produced two rounds of empty frames.
+const ALLQ = SHOTS.some((s) => s.kind === 'crown') ? '&streamall' : '';
+await page.goto(`http://localhost:8933/index.html?dpr=1&scene=${SCENE}${ALLQ}`, { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true', null, { timeout: 90000 });
 await page.evaluate(() => window.__ui(false));
 console.log('world ready:', JSON.stringify(await page.evaluate(() => window.__stats.buildings)) + ' buildings');
@@ -428,13 +434,22 @@ async function place(s, c) {
 // tower is the first thing the centre ray hits, so a naive nearest-hit test
 // calls every candidate blocked.
 async function placeCrown(c) {
-  return page.evaluate(([cands, aim, rad, eyeY, aimF, fov]) => {
+  return page.evaluate(([cands, aim, rad, y0, aimF, fov]) => {
     const THREE = window.__THREE, scene = window.__scene;
     const ray = new THREE.Raycaster(); ray.far = 4000;
     const up = new THREE.Vector3(0, 1, 0);
     const ay = window.__surfaceAt(aim[0], aim[1]) + aimF;
     let best = null;
     for (const [ex, ez] of cands) {
+      // ABOVE THE WATER, NOT AT AN ABSOLUTE HEIGHT. `y: 15` put the eye ten
+      // metres UNDERGROUND out in the bay, where the surface reads about 25.
+      // From inside the terrain you see sky through its backfaces, while a ray
+      // fired at the tower still travels up and hits it — so the shot reported
+      // its subject present and came back a rectangle of cloud. The same
+      // two-numbers trap as the bike riding under the road: the height a
+      // camera is PUT at and the height the ground is THERE are different
+      // numbers, and only one of them is a camera height.
+      const eyeY = Math.max(y0, window.__surfaceAt(ex, ez) + 4);
       const from = new THREE.Vector3(ex, eyeY, ez);
       const to = new THREE.Vector3(aim[0], ay, aim[1]);
       const dir = to.clone().sub(from).normalize();
@@ -449,11 +464,40 @@ async function placeCrown(c) {
         }
       }
       const frac = Math.min(1, near / reach);
-      if (!best || frac > best.frac) best = { ex, ez, near, reach, frac, d: from.distanceTo(to) };
+      if (!best || frac > best.frac) best = { ex, ez, eyeY, near, reach, frac, d: from.distanceTo(to) };
       if (best.frac >= 0.999) break;
     }
-    window.__cam(best.ex, eyeY, best.ez, aim[0], ay, aim[1], fov);
+    window.__cam(best.ex, best.eyeY, best.ez, aim[0], ay, aim[1], fov);
+    // PUSH THE FAR PLANE OUT, or the subject is clipped and the frame is sky.
+    //
+    // This is what actually cost the crown shots five rounds. The far plane is
+    // tuned for a rider at street level — around 700m — and a skyline shot
+    // stands 660 to 900m back BY DESIGN, so the 280m crown lands at a range of
+    // 723m and is clipped away while everything nearer still draws. Projecting
+    // the crown into clip space is what finally said it: NDC z = 1.001, a
+    // thousandth past the plane. Every other theory (the district had not
+    // streamed, the camera was underground, the sight line was blocked) was
+    // wrong, and two of them were real bugs found on the way.
+    const cam = window.__camera;
+    cam.far = Math.max(cam.far, best.d * 2.5);
+    cam.updateProjectionMatrix();
+    // IS THE SUBJECT ACTUALLY THERE? An unobstructed view of NOTHING scores
+    // better than a view of the tower — `near` is Infinity when the ray hits
+    // nothing, which the clearance test reads as perfectly clear. So a chunk
+    // that has not streamed in wins every candidate and the shot comes back as
+    // a rectangle of sky, silently. Ask the question directly: fire one ray
+    // down the lens axis and see whether it lands on something standing near
+    // the aim point. Report the answer rather than assume it.
+    const look = new THREE.Vector3(aim[0], ay, aim[1])
+      .sub(new THREE.Vector3(best.ex, best.eyeY, best.ez)).normalize();
+    ray.set(new THREE.Vector3(best.ex, best.eyeY, best.ez), look);
+    const first = ray.intersectObjects(scene.children, true).find((h) => h.distance > 2);
+    const onSubject = !!first
+      && Math.hypot(first.point.x - aim[0], first.point.z - aim[1]) < rad + 25
+      && first.point.y > window.__surfaceAt(aim[0], aim[1]) + 30;
     return { x: +best.ex.toFixed(1), z: +best.ez.toFixed(1), dist: Math.round(best.d),
+      subject: onSubject, eye: +best.eyeY.toFixed(1),
+      hitY: first ? +first.point.y.toFixed(0) : null,
       blocked: best.frac < 0.98 ? Math.round(best.near) : null };
   }, [c.cands, c.aim, c.rad, c.y, c.aimF, c.fov]);
 }
@@ -467,10 +511,30 @@ for (const s of list) {
   // yet — the same drain trap that had the audits judging a half-built world.
   if (s.kind === 'crown') {
     await page.evaluate((a) => window.__teleport(a[0], a[1] + 120, 0), c.aim);
-    await page.waitForFunction(
-      '!window.__streamState || (window.__streamState.pending.length === 0 && !window.__streamState.building)',
-      null, { polling: 400, timeout: 300000 });
-    await page.waitForTimeout(600);
+    // with streamall the world is already whole; this still waits, cheaply,
+    // because the drain finishes before the first crown shot is reached
+    // WAIT FOR THE TOWER, NOT FOR THE WORLD. Streaming builds the districts
+    // near the RIDE and leaves the rest pending indefinitely, so the whole-world
+    // drain condition the audits use never becomes true here and simply times
+    // out. What this shot actually needs is that the subject exists: drop a ray
+    // down the tower's own centre from above its published height and wait
+    // until it hits something.
+    await page.waitForFunction((aim) => {
+      const st = window.__streamState;
+      if (st && st.building) return false;
+      const T = window.__THREE;
+      const ray = new T.Raycaster(
+        new T.Vector3(aim[0], 600, aim[1]), new T.Vector3(0, -1, 0), 0, 900);
+      const hits = ray.intersectObjects(window.__scene.children, true);
+      if (!hits.length) return false;
+      // "Something is there" is not enough: the TERRAIN is always there, and
+      // the first version of this waited on it, declared the CBD ready and
+      // photographed an empty beige plain where three 280m towers should be.
+      // Require a hit well clear of the ground — that can only be the tower.
+      const g = window.__surfaceAt(aim[0], aim[1]);
+      return hits[0].point.y > g + 40;
+    }, c.aim, { polling: 1000, timeout: 600000 });
+    await page.waitForTimeout(1200);
   }
   if (s.kind === 'oblique') { c.above = c.aimY; }
   // The fog is tuned so that street level reads as Singapore haze. Seen from
@@ -495,7 +559,8 @@ for (const s of list) {
     p.near != null && p.near < 12 ? `blocked at ${p.near}m` : '',
     p.slid ? `slid ${p.slid}m` : '',
     p.dist ? `${p.dist}m out` : '',
-    p.blocked != null ? `SIGHT LINE BLOCKED at ${p.blocked}m` : ''].filter(Boolean).join(', ');
+    p.blocked != null ? `SIGHT LINE BLOCKED at ${p.blocked}m` : '',
+    p.subject === false ? `SUBJECT NOT IN FRAME (first hit y=${p.hitY})` : ''].filter(Boolean).join(', ');
   console.log(`${s.id}  ${s.title}${flags ? '   [' + flags + ']' : ''}`);
   done.push({ ...s, file: `${s.id}.jpg`, ...p });
 }

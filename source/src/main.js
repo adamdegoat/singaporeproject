@@ -134,6 +134,9 @@ function inPoly(poly, x, z) {
 // road and nothing objected. The bike and the walker keep using the raw
 // building test below, because they are supposed to be on the road.
 let ROADIX = null;
+// the whole region's data, unioned at boot, for passes that must see across a
+// chunk boundary (see the shopfront index)
+let REGIONB = null;
 function place(x, z) {
   return blocked(x, z) || (ROADIX ? ROADIX.onRoad(x, z, -0.4) : false);
 }
@@ -576,6 +579,17 @@ const carRig = buildCar();
 carRig.group.visible = false;
 let vehicleKind = 'bike';
 let rideParams = RIDE;
+// The mode pill's text, in one place. A `function` declaration so it can be
+// called from setVehicle — which runs during boot, long before updateHelp's
+// `const` block exists — without walking into the temporal dead zone that
+// crashed the whole module once already (see the note by updateHelp's call).
+// It touches nothing but the button.
+function modeLabel() {
+  const btn = document.getElementById('modebtn');
+  if (!btn) return;
+  btn.textContent = mode === 'ride'
+    ? 'Get off' : (vehicleKind === 'car' ? 'Drive' : 'Ride');
+}
 function setVehicle(kind) {
   vehicleKind = kind === 'car' ? 'car' : 'bike';
   rideParams = vehicleKind === 'car' ? CAR : RIDE;
@@ -592,6 +606,8 @@ function setVehicle(kind) {
   try { localStorage.setItem('sg_vehicle', vehicleKind); } catch (e) { /* private mode */ }
   const b = document.getElementById('vehiclebtn');
   if (b) b.textContent = vehicleKind === 'bike' ? 'Car' : 'Bike';
+  // swapping vehicle while on foot changes Ride <-> Drive
+  modeLabel();
 }
 window.__setVehicle = setVehicle;
 const bike = new THREE.Group();
@@ -814,6 +830,9 @@ async function buildStreamed(mani) {
     'trees', 'crossings', 'signals', 'busstops', 'mrt', 'taxis', 'shops',
     'gantries', 'lamps'];
   const regionData = { origin: mani.origin, water: [], buildings: [], roads: [] };
+  // kept for the streamed chunk builds: the shopfront pass needs to see
+  // buildings in OTHER chunks or it sites bays into them at the seam
+  REGIONB = regionData;
   for (const ch of chunks) for (const k of LAYERS) {
     if (!Array.isArray(ch[k])) continue;
     if (!regionData[k]) regionData[k] = [];
@@ -946,7 +965,7 @@ async function addChunk(ch, id, Y, rec = {}) {
   }
   const solidBefore = WALLSREF ? (x, z) => WALLSREF.at(x, z) : null;
   mk('shops');
-  if (!P.has('noshops')) buildShopfronts(g, ch, ax ? [ax] : [], solidBefore);
+  if (!P.has('noshops')) buildShopfronts(g, ch, ax ? [ax] : [], solidBefore, REGIONB);
   await Y();
   mk('solid');
   if (SOLID) SOLID.build(g, (x, z) => terrain.at(x, z));
@@ -1031,6 +1050,36 @@ async function streamRest(rest) {
     }
     return Math.sqrt(best);
   };
+  // LOAD A DISTRICT BY WHERE ITS CONTENT IS, NOT BY WHERE ITS MAIN STREET IS.
+  //
+  // Streaming decided everything on axDist — the distance to the chunk's main
+  // road — and a district's axis is not its extent. Marina Bay's axis runs
+  // along the bay, 904m from Raffles Place, while the chunk that owns UOB
+  // Plaza, One Raffles Place and Republic Plaza reaches west to x=1770 and
+  // CONTAINS Raffles Place. Standing between the three tallest buildings in
+  // Singapore, the load test measured 904m against a 900m threshold and left
+  // all three unbuilt: FOUR METRES of margin decided whether the CBD skyline
+  // exists. Verified 2026-07-30 by parking the ride there for 160s — chinatown
+  // and rivervalley streamed in, marinabay stayed pending forever, and a ray
+  // dropped down UOB Plaza's centre hit bare ground.
+  //
+  // The box is the extent of what the chunk will actually DRAW, so a player
+  // standing inside a district measures zero to it and it loads first. Cached
+  // per record: the chunks are already in memory, and this walks them once.
+  // The chunk ALREADY CARRIES ITS EXTENT as rec.box = [x0, z0, x1, z1] (the
+  // district's terrain grid). The first version of this fix computed its own
+  // box and cached it on `rec.box` — the property that already existed — so it
+  // read back an ARRAY, took `.x0` off it, got undefined, and every distance
+  // became NaN. NaN < NEAR is false, so nothing streamed at all, anywhere.
+  // Adding a field that is already there is its own kind of bug; use the
+  // world's answer rather than inventing a second one.
+  const nearDist = (rec) => {
+    const b2 = rec.box;
+    if (!b2 || b2.length !== 4) return axDist(rec);
+    const dx = Math.max(b2[0] - px(), 0, px() - b2[2]);
+    const dz = Math.max(b2[1] - pz(), 0, pz() - b2[3]);
+    return Math.hypot(dx, dz);
+  };
   const ALL = P.has('streamall');
   const NEAR = 900, FAR = 1700;
   const recs = rest.map((r) => ({ ...r, pushed: false, group: null, signals: null, dressedDelta: null }));
@@ -1045,9 +1094,13 @@ async function streamRest(rest) {
   };
   for (;;) {
     let cand = recs.filter((r) => !r.group);
-    if (!ALL) cand = cand.filter((r) => axDist(r) < NEAR);
+    if (!ALL) cand = cand.filter((r) => nearDist(r) < NEAR);
     if (cand.length) {
-      cand.sort((a, b) => axDist(a) - axDist(b));
+      // Nearest content first; where two districts both contain you (the
+      // bboxes overlap by design so the region closes with no seam holes)
+      // both measure zero, so break the tie on whose main street you are
+      // actually near — that is the one you are looking down.
+      cand.sort((a, b) => (nearDist(a) - nearDist(b)) || (axDist(a) - axDist(b)));
       const next = cand[0];
       window.__streamState.building = next.id;
       try {
@@ -1062,7 +1115,7 @@ async function streamRest(rest) {
     }
     if (ALL) { syncState(); return; }   // drained: the gates' mode is done
     for (const r of recs) {
-      if (r.group && axDist(r) > FAR) {
+      if (r.group && nearDist(r) > FAR) {
         unloadChunk(r);
         window.__streamState.unloads++;
         syncState();
@@ -1718,6 +1771,16 @@ function updateHelp() {
   const ped = document.getElementById('pedals'), sh = document.getElementById('steerhint');
   if (ped) ped.classList.toggle('on', mode === 'ride' && TOUCH);
   if (sh) sh.classList.toggle('on', mode === 'ride' && TOUCH);
+  // THE BUTTON IS UPDATED BEFORE THE EARLY RETURN, and that is the whole bug
+  // the user reported: there is no #help element in index.html any more — the
+  // panel was removed — so `if (!el) return` fired on EVERY call and the line
+  // that relabels the mode button was never reached. The pill kept the text it
+  // was born with in the markup, "Get off", whether you were on the bike or
+  // standing beside it. A guard for one element must not gate another.
+  //
+  // And it names the vehicle: getting on a car is not "Ride". vehicleKind is
+  // the same value the vehicle button shows, so the two agree.
+  modeLabel();
   const el = document.getElementById('help');
   if (!el) return;
   el.innerHTML = mode === 'ride'
@@ -1726,8 +1789,6 @@ function updateHelp() {
       + '<span style="opacity:.65">keys: A/D · W · S · E to get off</span>'
     : '<b>drag left side</b> walk<br><b>drag right side</b> look around<br>'
       + '<span style="opacity:.65">keys: WASD · shift to run · E to ride</span>';
-  const btn = document.getElementById('modebtn');
-  if (btn) btn.textContent = mode === 'ride' ? 'Get off' : 'Ride';
 }
 // reflect the STARTING mode once everything the helper reads exists — called
 // above the const block it crashed the whole module in the temporal dead zone

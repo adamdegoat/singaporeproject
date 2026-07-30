@@ -178,6 +178,16 @@ LANDMARKS = {
     # CTBUH architectural heights; naming traps documented there) -----------
     "uob plaza one":          {"h": 280, "key": True},
     "uob plaza 2":            {"h": 162},
+    # THE MAP SPELLS THEM "TOWER 1" AND "TOWER 2", and the lookup is substring
+    # with longest-key-wins, so "UOB Plaza Tower 2" does not contain
+    # "uob plaza 2" and fell through to the bare "uob plaza" — inheriting the
+    # 280m cap. The crown vantage caught it on 2026-07-30: UOB Plaza reads as
+    # THREE equal 280m cylinders from across the water because all three
+    # footprints ("UOB Plaza", "Tower 1", "Tower 2") matched the same key.
+    # Same height as the researched "uob plaza 2" line above, deliberately —
+    # two spellings of one building must not carry two numbers.
+    "uob plaza tower 1":      {"h": 280, "key": True},
+    "uob plaza tower 2":      {"h": 162},
     "uob plaza":              {"h": 280, "key": True},
     "republic plaza":         {"h": 276, "key": True},
     "capitaspring":           {"h": 276, "key": True},

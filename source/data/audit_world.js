@@ -79,7 +79,7 @@ window.__auditWorld = async function auditWorld() {
     // the bay — which is what waterfront lamps do. It appeared when heads
     // started grounding at their POLE (the Leonie Hill floating-luminaire
     // fix); the head was always over the water, now it is counted honestly.
-    marinabay: { P8: 19, W2: 79, S8: 57, P4: 100, P6: 20, T2: 11 },
+    marinabay: { P8: 19, W2: 36, S8: 57, P4: 100, P6: 20, T2: 11 },
     // Orchard's T1 is CLOSED at 0. The long-open "merged tile 1.3m above
     // Orchard Boulevard that S7 reads as 0" was the ROAD SURFACE -- a bridge
     // deck belongs above the road it spans, S7 was right to ignore it, and T1
@@ -211,7 +211,17 @@ window.__auditWorld = async function auditWorld() {
       P1b: 1, T1: 0,
       // proportional to a region that is now THREE districts and 50% larger
       // W2 37 -> 39: see the marinabay note
-      P8: 6, W2: 39, S8: 70,
+      // W2 39 -> 34 and marinabay 79 -> 36 on 2026-07-30. Not a cleanup: the
+      // check had been counting MOVING TRAFFIC. A car crossing the Bayfront
+      // bridge is over open water for as long as it takes to cross, so the
+      // budget measured where the fleet happened to be at sample time —
+      // marinabay read 79 one run and 85 the next with nothing changed in the
+      // world, which is a MAJOR gate flapping with the signal cycle. Actors
+      // are now exempt by mechanism (userData.actor, set in both of actors.js'
+      // mk() helpers) and what is left is what was actually BUILT there. A
+      // ratchet on a measurement that has become honest is reset to the honest
+      // number, the same rule S8 already carries.
+      P8: 6, W2: 34, S8: 70,
       // proportional to a world with 1,932 buildings and 4,392 roads
       // P4 333 -> 360 and P1b 177 -> 179 on the day the Civic District landmarks
       // got real massing. Both are consequences of that, not new defects:
@@ -356,6 +366,7 @@ window.__auditWorld = async function auditWorld() {
       // answer is to stop describing a person by their measurements.
       props.push({ sig, mat: matId, x: v3.x, y: v3.y, z: v3.z, sy: sc3.y,
                    crowd: !!o.userData.crowdPart,
+                   actor: !!(o.userData.actor || o.userData.crowdPart),
                    flat: g.type === 'PlaneGeometry' });
     }
   });
@@ -404,6 +415,10 @@ window.__auditWorld = async function auditWorld() {
     'BoxGeometry(1.69,0.38,2)',
     'BoxGeometry(2.5,2.5,11.8)', 'BoxGeometry(2.54,0.62,11.7)',   // buses
     'BoxGeometry(2.54,0.95,10.4)',
+    // SUPERSEDED 2026-07-30: pedestrians are exempt by userData.crowdPart
+    // (see the props collector). These measurements stopped matching the
+    // moment the leg capsule was corrected and are kept only as a record of
+    // what the figure used to be. Do not add new ones here.
     'CapsuleGeometry(0.4,0.04)', 'CapsuleGeometry(0.44,0.06)',    // pedestrians,
     'CapsuleGeometry(0.34,0.13)', 'CapsuleGeometry(0.1,0.12)',    // who do cross
     'BoxGeometry(0.11,0.07,0.25)', 'BoxGeometry(0.22,0.26,0.1)',
@@ -425,6 +440,7 @@ window.__auditWorld = async function auditWorld() {
   const CLUSTERED = new Set(['CylinderGeometry(0.06,1)', 'IcosahedronGeometry(1)',
     'SphereGeometry(0.66)',
     // a person carries two arms, two legs and two shoes, all within 60cm
+    // SUPERSEDED: exempt by userData.crowdPart, see the props collector.
     'CapsuleGeometry(0.4,0.04)', 'CapsuleGeometry(0.44,0.06)',
     'CapsuleGeometry(0.34,0.13)', 'CapsuleGeometry(0.1,0.12)',
     'BoxGeometry(0.11,0.07,0.25)', 'SphereGeometry(0.05)',
@@ -456,6 +472,7 @@ window.__auditWorld = async function auditWorld() {
       'BoxGeometry(1.69,0.38,2)', 'BoxGeometry(2.5,2.5,11.8)',       // buses
       'BoxGeometry(2.54,0.62,11.7)', 'BoxGeometry(2.54,0.95,10.4)',
       'BoxGeometry(1.65,0.42,0.08)',  // bus blind
+      // SUPERSEDED: exempt by userData.crowdPart, see the props collector.
       'CapsuleGeometry(0.4,0.04)', 'CapsuleGeometry(0.44,0.06)',     // pedestrians
       'CapsuleGeometry(0.34,0.13)', 'CapsuleGeometry(0.1,0.12)',
       'BoxGeometry(0.11,0.07,0.25)', 'BoxGeometry(0.22,0.26,0.1)',
@@ -1382,7 +1399,11 @@ window.__auditWorld = async function auditWorld() {
     // band. Things that use roads stay exempt by signature as before.
     const RIDER_LOW = 0.35, RIDER_HIGH = 2.6;
     const solid = props.filter((p) => {
-      if (p.flat || ROAD_OK.has(p.sig)) return false;
+      // A pedestrian is not an obstruction you can ride into — they dodge, and
+      // T-checks about a blocked carriageway are about geometry that will not
+      // move. Exempt by mechanism, same as P1 and P4; the pedestrian entries
+      // in ROAD_OK below are superseded and kept only as a record.
+      if (p.flat || p.crowd || ROAD_OK.has(p.sig)) return false;
       if (!terr) return true;
       const up = p.y - terr.at(p.x, p.z);
       return up >= RIDER_LOW && up <= RIDER_HIGH;
@@ -1747,6 +1768,12 @@ window.__auditWorld = async function auditWorld() {
       ]);
       for (const p of props) {
         if (p.y < -900) continue;
+        // Traffic and pedestrians are not things BUILT in open water. They
+        // cross bridges, which is what bridges are for, and counting them made
+        // this budget depend on where the fleet was at sample time: marinabay
+        // read 79 one run and 85 the next with nothing changed in the world.
+        // Exempt by mechanism, like P1 and P4 — not by listing car dimensions.
+        if (p.actor) continue;
         if (OVERHANGS.has(p.sig)) continue;
         if (!inWater(p.x, p.z)) continue;
         inW++;

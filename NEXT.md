@@ -70,6 +70,149 @@
 8. Boat Quay river-row colour treatment; more CBD facades; then ASK THE
    USER about expanding (Little India / civic core / Tiong Bahru).
 
+# 2026-07-30 evening (Opus 5) — THE CBD DID NOT EXIST WHEN YOU STOOD IN IT
+
+Chasing the crown vantages (queue item 2) found a user-facing streaming bug
+worth far more than the frames.
+
+`axDist` decided everything about streaming — load under NEAR=900, unload past
+FAR=1700 — and it measured the distance to a chunk's MAIN-STREET AXIS. A
+district's axis is not its extent. Marina Bay's axis runs along the bay; the
+chunk that owns UOB Plaza, One Raffles Place and Republic Plaza (all three
+280m, the height cap) reaches west to x=1770 and CONTAINS Raffles Place.
+Standing between the three tallest buildings in Singapore, the test measured
+904m against a 900m threshold and left all three unbuilt. FOUR METRES of
+margin decided whether the CBD skyline exists.
+
+Measured, not inferred: parked the ride at Raffles Place for 160s — chinatown
+and rivervalley streamed in, marinabay stayed pending forever, and a ray
+dropped down UOB Plaza's centre hit bare ground at 25.2m. From that spot the
+axis distances are marinabay 904m / chinatown 418m while the CONTENT box
+distances are 0m and 0m: you are inside both.
+
+FIXED: `nearDist` measures to the chunk's content box (zero when you are
+inside it), falling back to the axis only for a chunk with nothing in it.
+Ties broken on axis distance, so where two overlapping districts both contain
+you, the one whose street you are actually on builds first. After the fix the
+same ray hits the crown at 297.7m and marinabay streams in within 10s.
+GOTCHA PAID FOR ON THE WAY: the first version computed its own bbox and cached
+it on `rec.box` — a property the chunk record ALREADY HAD, as [x0,z0,x1,z1] —
+so it read an array, took `.x0` off it, got NaN, and NOTHING streamed anywhere.
+Adding a field that already exists is its own kind of bug.
+
+AND WHY THE CROWN FRAMES WERE EMPTY, after five rounds and three wrong
+theories: THE FAR PLANE. It is tuned for a rider at street level, about 700m,
+and a skyline shot stands 660-900m back by design, so a 280m crown sits at a
+range of 723m and is CLIPPED while everything nearer still draws. Projecting
+the crown into clip space is what finally said it — NDC z = 1.001, a
+thousandth past the plane. `placeCrown` now pushes the far plane to 2.5x the
+shot distance. The two wrong theories on the way were both real bugs and both
+are fixed: the camera was placed at an ABSOLUTE y=15 which is ten metres
+UNDERGROUND out in the bay (you see sky through the terrain's backfaces while
+a ray to the tower still travels up and hits it — the same two-numbers trap as
+the bike riding under the road), and the clearance test scored an unobstructed
+view of NOTHING as perfect, so a chunk that had not streamed in won every
+candidate. `placeCrown` now reports SUBJECT NOT IN FRAME rather than returning
+a silent rectangle of sky.
+
+FIRST REAL FINDING FROM THE FRAMES: UOB Plaza reads as THREE equal cylinders
+from across the water. The height table is matched by SUBSTRING with
+longest-key-wins, and the map spells them "UOB Plaza Tower 1" and "UOB Plaza
+Tower 2" — neither of which contains the researched key "uob plaza 2" — so
+both fell through to the bare "uob plaza" and inherited the 280m aviation cap.
+process.py now carries both OSM spellings, Tower 2 at the same 162m the
+researched line already had (two spellings of one building must not carry two
+numbers). NOT YET IN THE WORLD: this only takes effect when marinabay is
+reprocessed and the region re-merged, which shifts a scene and therefore wants
+its own batch and its own gate run. Queued, not done.
+
+ALSO FIXED (user rode past and reported it): the mode pill always read "Get
+off". `updateHelp()` opens with `const el = document.getElementById('help');
+if (!el) return;` and the #help panel was deleted from index.html at some
+point, so the guard fired on EVERY call and the line that relabels the button
+was never reached — the pill kept the literal text from the markup forever. A
+guard for one element must not gate another. The label now lives in a hoisted
+`modeLabel()` both updateHelp and setVehicle call, and it names the vehicle:
+Get off / Ride / Drive. Verified through every transition.
+
+# 2026-07-30 late afternoon (Opus 5) — THE CROWD HAD NEVER BEEN LOOKED AT
+
+The user rode past and reported "the legs and limbs all suddenly vibrate at a
+very fast rate", then "why is everyone Indian and got no faces". Both true,
+and the first frame of `data/crowdshot.mjs` showed worse: bodies floating,
+legs in a detached X, shoes scattered flat on the pavement with nobody in them.
+
+WHY NO CHECK SAW IT. Every tool in this project is built to ignore the people.
+The sweep gates on draw calls, the audit walks a STILL scene, behaviour.mjs
+measures speeds and path continuity (all five green throughout this), and
+landmark.mjs deliberately passes `nopeople`. The walkers were counted, never
+looked at. `data/crowdshot.mjs` is the missing tool — three framings (portrait
+at 3.2m, pair at 7m, street at 14m), the subject picked as the walker with the
+most neighbours within 12m so a bad figure cannot be framed out, and the camera
+placed from TWO position samples 320ms apart so it stands in FRONT of someone.
+Every framing derived from the road normal photographed the backs of heads.
+
+FOUR BUGS, ALL IN THE FIGURE:
+1. THE STRIDE WAS THE CLOCK TIMES A SPEED.
+       Math.sin(time * 5.2 * (gait / 1.3) + pr.phase)
+   scales the frequency by the CURRENT speed and multiplies by ABSOLUTE time,
+   so the argument is time x k(t) where it must be the integral of k. The
+   derivative carries a `time * dk` term: a walker whose speed wobbles by
+   0.01 m/s jumps 4 x time x 0.01 radians in ONE FRAME — nothing at ten
+   seconds, twelve radians five minutes in. That is the reported vibration and
+   why it seems to start from nowhere. A stride is a phase you accumulate.
+   Guarded (`dt > 0 && dt < 1`) because an accumulator is unforgiving: one NaN
+   dt and that walker's matrices are NaN forever, the class P11 now refuses.
+2. LIMBS ROTATED ABOUT THEIR OWN CENTRES, not their joints. Pitching a thigh
+   41 degrees about its middle swings the top backwards out of the pelvis and
+   the bottom forwards — the two legs cross into an X below a body they are no
+   longer joined to. Now hung: centre = joint + R_x(t).(0,-L,0). A foot rises
+   by L(1-cos t) as it swings, which is what makes a walk read as a walk. The
+   joint heights are chosen so at t=0 every part is EXACTLY where it was.
+3. THE LEG CAPSULE WAS 15cm TOO SHORT TO REACH ITS OWN SHOE, standing still:
+   0.44 + 2r = 0.556 hung from a hip at 0.798 ends at 0.242, shoe top 0.095.
+   Now 0.587. This, not the swing, is why shoes looked scattered and ownerless.
+4. EVERY PART SAMPLED THE TERRAIN UNDER ITSELF, so a walker crossing a kerb had
+   their shoes on the road surface and their head on the pavement, each part
+   twitching independently over the step. One ground per body now.
+
+AND THE LOOK: stride cut ±0.72 -> ±0.40 rad and tied to actual speed (82
+degrees between the legs is the splits, not a walk; a slow walker now takes
+short steps, which is most of what makes a crowd read as a crowd rather than
+one animation played by everybody). Torso and hips scaled in the GEOMETRY to
+39cm across and 21cm deep — the arms hang at ±0.19 and the torso was 25cm
+wide, so they floated 6.5cm clear of the body on each side. SKIN reweighted to
+the city: the palette was five mid-browns picked with EQUAL probability, now
+weighted to roughly 74/13.5/9 Chinese/Malay/Indian (SingStat) with the paler
+end nudged up for Orchard's visitor share, entries repeated to weight the draw
+because a weighted pick would need its own random stream and a texture must not
+be able to move a bus stop. Hair got brown and grey. FACES are drawn into the
+head sphere's own UV (`texFace()` in tex.js) — eyes as instanced spheres would
+be two more InstancedMeshes for something visible only within a few metres,
+while a map is free: the instance colour MULTIPLIES it, so a white field leaves
+every skin tone untouched and only the features darken. Face goes at u=0.25
+because three.js SphereGeometry starts phi at -X, so that is +Z, the way a
+walker faces. It was invisible at first because the hair cap ran to 0.62pi and
+covered the top 56% of the head, brow and eyes included; a hemisphere puts the
+hairline at 40%, where a hairline is.
+
+THE GATE CAUGHT THE EXIT. Lengthening the leg revoked the pedestrians'
+exemption in P1 and three walkers mid-crossing became BLOCKERS — the third time
+a geometry-signature allowlist has bitten this file (tree branch, lamp bracket,
+now the crowd), and the comment above ROAD_OK predicted it in writing: a
+signature list "fails OPEN for new shapes and fails CLOSED for changed ones".
+Props now carry `crowd: !!o.userData.crowdPart` and P1/P4 exempt by MECHANISM.
+Stop describing a person by their measurements.
+
+ALSO: audit gained `R1`, ungated, reporting real recipe coverage from
+`stats.bespoke` — ORCHARD IS 102 OF 283 NAMED, not the 8 that accuracy.py's
+landmark FLAG suggested. Ungated on purpose: a budget there would either be met
+by writing bad recipes or ignored.
+
+STILL OPEN ON THE CROWD: hands are pale spheres that read as balls at the
+sleeve end; legs are thin sticks under a now-wide torso; shoes are flat slabs.
+None of it is wrong, all of it is coarse — a second pass if the user wants it.
+
 # 2026-07-30 afternoon (Opus 5, main loop) — ONE DATUM PER BUILDING
 
 The user looked at an Old Hill Street vet frame and asked about "the roof
