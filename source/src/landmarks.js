@@ -1634,9 +1634,14 @@ function buddhaTooth(api, b) {
   // terracotta), thin gilt strip along each eave. R3 slightly wider than R2
   // by publication — no uniform pagoda taper.
   const roof = (w, d, hgt, y, lx = 0, lz = 0) => {
-    const r = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.71, 1, 4), tile);
-    r.rotation.y = yawL + Math.PI / 4;
-    r.scale.set(w, hgt, d);
+    // rotate the 4-gon to a square IN GEOMETRY, then scale to the rectangle
+    // — rotating at the MESH level and then scaling non-uniformly SHEARS
+    // the roof into a sail (round 1's failure, vetted and diagnosed)
+    const geo = new THREE.CylinderGeometry(0.30, 0.71, 1, 4);
+    geo.rotateY(Math.PI / 4);
+    geo.scale(w, hgt, d);   // bottom radius 0.71 -> unit edge span after the 45-deg bake
+    const r = new THREE.Mesh(geo, tile);
+    r.rotation.y = yawL;
     at(r, lx, g0 + y + hgt / 2, lz);
     for (const [gx2, gz2, ln, axis] of [[0, d * 0.5, w, 'x'], [0, -d * 0.5, w, 'x'],
                                         [w * 0.5, 0, d, 'z'], [-w * 0.5, 0, d, 'z']]) {
@@ -3699,6 +3704,15 @@ export const RECIPES = [
   // the mesh), and the gopuram edge-march needs verifying against the
   // real South Bridge Road side. A recipe that reads worse than the
   // generic does not ship. Next session: buildup playbook, staged gates.
+  // STILL PARKED after round 2 (2026-07-30 ~09:45): the roof shear is FIXED
+  // (rotation baked into geometry — keep that), and the massing now reads
+  // from the air, but at STREET level the porch roof hangs over the public
+  // pavement (span W*0.66 x 12 deep from a centre 5.2m out reaches ~11m),
+  // R2/R3 roofs are swallowed by the full-height core (needs stepped
+  // set-backs: full footprint to ~12m, 0.9 to ~18, 0.8 to ~24 so each roof
+  // wraps a step), and the SMT gopuram has never been verified visible from
+  // South Bridge Road. Round 3: fix those three, then judge from the
+  // RIDER'S seat before wiring.
   // [/^buddha tooth relic temple/i, buddhaTooth],
   // [/^sri mariamman temple$/i, sriMariamman],
 
