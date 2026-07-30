@@ -832,6 +832,27 @@ export class Crowd {
               Math.max(1.2, Math.min(26, Math.abs(pr.off) + d)) * sgn);
             const hit = far.find(at);
             if (hit !== undefined) pr.offWant = hit;
+            else {
+              // NOTHING ON THIS SIDE CLEARS, ANYWHERE. Every probe above keeps
+              // the walker's own sign, so where a whole side of a stretch is
+              // carriageway — a wide junction mouth, a slip road meeting the
+              // main street — the search has nowhere to go and the walker
+              // stands in traffic forever. Measured in Robertson Quay: twelve
+              // of them still on the tarmac after sixteen seconds, with the
+              // correction firing the whole time and achieving nothing. The
+              // mask's own dead-stretch u-turn never fires for these because
+              // the mask (quantised to whole metres) still reports clear bits
+              // at that bucket while the road index says otherwise — the same
+              // quantised-versus-real split that has produced half the bugs in
+              // this file.
+              //
+              // So use the answer the file already has for "the footway ends":
+              // turn round. It moves nobody sideways across a live carriageway,
+              // it reuses the reflection the path ends use, and the cooldown
+              // stops it oscillating on the spot.
+              pr.uturn = (pr.uturn || 0) - dt;
+              if (pr.uturn <= 0) { pr.dir = -pr.dir; pr.uturn = 4.0; }
+            }
           }
         } else if (window.__inWater && window.__inWater(x, z)) {
           pr.offWant = Math.max(1.2, Math.abs(pr.off) - 3.0) * sgn;

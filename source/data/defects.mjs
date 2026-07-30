@@ -1166,7 +1166,16 @@ const found = await page.evaluate(() => {
     report('D35', 'vehicles driving off the carriageway', offRoad, `${tr.length} vehicles`);
   }
 
-  /* D36  a pedestrian standing in the road who is not crossing it.
+  /* D36 SAMPLES ONCE, AND ONCE IS THE LOW-WATER MARK. Walkers accumulate in
+     carriageways over the first seconds after load — measured in Robertson
+     Quay at 4-second intervals: 54, 47, 37, 37, 40 — and this probe runs
+     immediately, so it reported 5. A number that is only true in the first
+     second is worse than no number. Left as-is deliberately for now, with the
+     behaviour written down, because the fix belongs with the junction work in
+     NEXT.md; when that lands, sample this over several seconds and take the
+     plateau, not the first reading.
+
+     D36  a pedestrian standing in the road who is not crossing it.
      The crowd walks a pavement band offset from the centreline, and the band
      was sized per path; a narrow street or a wide vehicle lane can put the
      band on the tarmac. Crossers are excluded because crossing is the one time

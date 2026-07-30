@@ -70,6 +70,88 @@
 8. Boat Quay river-row colour treatment; more CBD facades; then ASK THE
    USER about expanding (Little India / civic core / Tiong Bahru).
 
+# OPEN, MEASURED, NOT SOLVED — PEDESTRIANS ACCUMULATE IN CARRIAGEWAYS
+
+Found by riding: a walker standing in the middle of River Valley Road in the
+Robertson frame. D36 reported 5 for that district, which is TRUE AT LOAD and
+misleading after: sampled every 4s, the count runs 54, 47, 37, 37, 40 out of
+2,200. Walkers ACCUMULATE in roads over the first seconds and then plateau —
+D36 happens to sample at t=0 and sees the low-water mark. Worth fixing in the
+probe as well as the world.
+
+DIAGNOSED. Every one of them is offset BEYOND its own path's carriageway (6.3m
+out from a 4m half-width, 10m, 13m) and standing in a DIFFERENT street's
+carriageway — the junction case. The reactive escape in actors.js probes
+inward, outward, then ±6 and ±10 metres, but every probe keeps the walker's own
+sign (`* sgn`), so where a whole SIDE of a stretch is carriageway — a wide
+junction mouth, a slip road meeting the main street — there is nowhere for the
+search to go and the walker stands in traffic indefinitely. Twelve were still
+on the tarmac after sixteen seconds with the correction firing the whole time.
+The mask's own dead-stretch u-turn never fires for these, because the mask is
+quantised to whole metres and still reports clear bits at that bucket while the
+road index says otherwise — the same quantised-versus-real split that has
+produced half the bugs in this file.
+
+DONE: when no offset on the walker's side clears, it now turns round, which is
+the answer the file already has for "the footway ends here" — it moves nobody
+sideways across a live carriageway and reuses the reflection the path ends use.
+Measured improvement only: 12 stuck -> 10, plateau 54 -> ~40. All behaviour
+checks still pass (B1 2.31 m/s, B3 0 discontinuities).
+
+NOT DONE, and it needs a real design rather than another probe: crowd paths run
+along streets and their pavement offsets cross OTHER streets at every junction.
+The right fix is at path level — either route pavement walkers around junction
+mouths, or make them use the mapped crossings that are already in the data
+(217 of them in Little India alone) instead of drifting across. That is a
+behaviour piece, not a patch, and it should be measured with the 5-sample
+plateau above rather than a single t=0 reading.
+
+# 2026-07-30 late night (Opus 5) — WHAT THE MEASUREMENTS ACTUALLY SAY
+
+THREE METRICS WERE LYING, all in the same direction — describing the code's
+control flow instead of the world:
+1. accuracy.py's headline was a CLASS ratio, identical (21/28) for all seven
+   districts. A ledger that cannot tell a finished district from one built the
+   night before cannot answer the one question it exists for. It now also
+   reports FRONTAGE-ONLY coverage — the buildings within 45m of the main
+   street, which is what the finish line is actually written against. It
+   reproduces Orchard's hand-counted 68 exactly.
+2. "landmark massing" in that ledger was reading `b.k`, the data's LANDMARK
+   FLAG, and reporting brasbasah at 0 while it visibly has the National
+   Gallery, CHIJMES and the Esplanade.
+3. R1 counted only `stats.bespoke`. A shophouse is drawn by shophouse() — a
+   real recipe with a five-foot way, pitched roof, doors and shutters — but it
+   is dispatched BEFORE the name lookup, so it increments stats.shophouses and
+   never stats.bespoke. R1 said Chinatown was 28 of 360. It is 1,822 of 2,135.
+   Honest figures now: littleindia 90%, chinatown 85%, orchard 75%,
+   robertson 53%, marinabay 53% drawn by a real recipe.
+
+TRAFFIC NEVER CULLED FOR DRAWING. Its own comment said the player position was
+"only used to decide where a vehicle may be recycled", and its meshes are
+frustumCulled=false — so once every district got its own fleet this evening, a
+phone was submitting 630 vehicles to look at about forty, from every angle,
+always. Now packed into the front of the buffer with .count set, exactly as the
+crowd has done since 2026-07-27. Measured: traffic 380k triangles -> 1k. The
+SIMULATION still runs for all of them, so a street is busy when you arrive.
+
+AND A PERFORMANCE GHOST I NEARLY CHASED, recorded so nobody else does. The HUD
+read 20fps and I started digging into the merged building fabric (63% of
+triangles, and tile-LOD only registers tiles UNDER 4m tall, so building tiles
+are never distance-culled — that part is true and is the real lever if it is
+ever needed). But Orchard ALONE and the full region both measured exactly 20,
+min and max, with loads differing by a million triangles. That is not a GPU
+limit, it is Chrome throttling a window that sits behind the terminal — a trap
+already written down here: "the same spot reads 51fps focused and 23 in the
+spawned window". There is NO measurable regression and no honest way to measure
+frame rate from a script. The only trustworthy source is a HUD screenshot from
+the user's own phone. Do not optimise against these numbers.
+
+STATE OF THE EIGHT: all pass 42 checks with no blockers. P1b is 0 in six of
+eight (bugis 2, littleindia 1 — all large merged masses overhanging back lanes,
+ratcheted with reasons). Frontage heights run 42% (littleindia) to 92%
+(chinatown). Phone-size verification on the LIVE site: boots clean, no page
+errors, no horizontal scroll, wayfinder/minimap/pills all correct.
+
 # DESIGNED, NOT BUILT — WHAT HAS TO HAPPEN BEFORE THE ISLAND
 
 The user asked whether to one-shot the whole of Singapore and polish after.
