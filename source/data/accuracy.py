@@ -163,6 +163,35 @@ def frontage_coverage(d, reach=45.0):
     }
 
 
+def _recipe_hits(B):
+    """How many NAMED buildings here would match a recipe pattern.
+
+    Parsed from src/landmarks.js rather than imported, because that file is ES
+    modules and imports three.js. The table is a literal list of
+    `[/regex/flags, fn]` pairs, so reading it is unambiguous -- and if the
+    parse ever returns nothing, this reports 0 loudly rather than guessing.
+    """
+    import re as _re
+    src_path = os.path.join(os.path.dirname(HERE), "src", "landmarks.js")
+    if not os.path.exists(src_path):
+        return 0
+    src = open(src_path).read()
+    pats = []
+    for m in _re.finditer(r"^\s*\[/(.+?)/([a-z]*),\s*(\w+)", src, _re.M):
+        try:
+            pats.append(_re.compile(m.group(1), _re.I if "i" in m.group(2) else 0))
+        except _re.error:
+            pass
+    if not pats:
+        return 0
+    n = 0
+    for b in B:
+        nm = b.get("n")
+        if nm and any(p.search(nm) for p in pats):
+            n += 1
+    return n
+
+
 def coverage(d):
     """How much of each countable class is REAL, read out of the scene.
 
@@ -191,6 +220,18 @@ def coverage(d):
         ("landmark-flagged in the data", sum(1 for b in B if b.get("k")),
          sum(1 for b in B if b.get("n")),
          "OSM/hand-set landmark flag among the NAMED ones — NOT recipe coverage"),
+        # RECIPE COVERAGE, read from the pattern table itself.
+        #
+        # The note above says this belongs in the audit because it needs the
+        # world built. That was true of the earlier attempt, which counted a
+        # `k` flag and reported 0 for a district visibly full of bespoke
+        # buildings. It is NOT true of reading src/landmarks.js's RECIPES table
+        # and matching it against the names in this scene: that is exactly what
+        # `recipeFor` does at runtime, and it answers the question this project
+        # actually cares about -- how many of the buildings a rider can name are
+        # built as themselves rather than as fabric.
+        ("named buildings with a bespoke recipe", _recipe_hits(B), sum(1 for b in B if b.get("n")),
+         "matched against the RECIPES table in src/landmarks.js"),
         ("road lane counts", sum(1 for r in R if r.get("lanes")), len(R),
          "OSM lanes/turn:lanes; the rest defaults by road class"),
         ("road widths", sum(1 for r in R if r.get("wtag")), len(R),

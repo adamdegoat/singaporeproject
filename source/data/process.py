@@ -1129,6 +1129,16 @@ def main():
             if tags.get("building") == "construction":
                 if not re.search(r"piccadilly", (tags.get("name") or ""), re.I):
                     b["con"] = 1
+            # AND BY NAME, where OSM still tags a demolished building as a
+            # building. One Sophia does not exist: Peace Centre and Peace
+            # Mansion were sold en bloc and demolished, and two 19-storey towers
+            # are under construction for ~2028 (research/heights-mixed.md). We
+            # were drawing a 30m building on an empty site -- and its ring
+            # self-crosses, which is what a footprint left over from a
+            # demolished building tends to look like. Reviewed when the tags are
+            # refetched; by 2028 this entry should be wrong and removed.
+            elif re.search(r"^one sophia$", (tags.get("name") or "").strip(), re.I):
+                b["con"] = 1
             buildings.append(b)
 
         elif "highway" in tags:

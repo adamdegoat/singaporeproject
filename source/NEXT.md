@@ -3288,7 +3288,13 @@ STILL OPEN, highest value first:
      as unnamed records -- do NOT author them, it would duplicate.
   4. DUO Residences and Golden Mile Complex's neighbour tower are absent.
   5. The Watermark / Rodyk Street godowns are near-black with vermilion
-     joinery; we build the white Havelock Road group only.
+     joinery against the Havelock Road group's flat white -- BUT CHECKED
+     2026-07-31 AND THEY ARE NOT SEPARATELY MAPPED. Within 110m of The
+     Watermark there is exactly ONE building under 12m, 103m away and 212 m2.
+     The retained godown facades are inside the residential development's own
+     footprint, so there is nothing to paint. Doing this needs authored
+     footprints and therefore measured geometry first, exactly like Golden Mile
+     Complex. Not a colour fix.
   6. RESOLVED, and NOT a defect. `__crowdPositions` only ever read the boot
      district's crowd, so a probe reported zero pedestrians beside a rider
      standing in a crowd. `window.__allCrowd()` now covers every system, the
