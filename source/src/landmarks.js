@@ -1788,6 +1788,159 @@ function sriMariamman(api, b) {
   }
 }
 
+
+// LAU PA SAT, 18 Raffles Quay. Researched 2026-07-30 (research/
+// laupasat-peoplespark.md). Corrections that shaped this: the roof is TWO
+// tiers + a lantern/clock tower, not one; the ironwork is TWO-colour —
+// green columns/arches but CREAM valance, cresting, lantern and the whole
+// clock tower (all-green is the classic error); the "125 ft across" figure
+// describes Coleman's demolished 1838 market — the real 1894 octagon is
+// ~70m across flats (our footprint agrees); height UNPUBLISHED, apex ~24m
+// photogrammetric estimate. Fully open sides: columns + shadow, no walls.
+function lauPaSat(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const cx = ob.cx, cz = ob.cz;
+  const green = new THREE.MeshStandardMaterial({ color: 0x3a5c48, roughness: 0.6, metalness: 0.35 });
+  const cream = new THREE.MeshStandardMaterial({ color: 0xeae6dc, roughness: 0.7 });
+  const tiles = new THREE.MeshStandardMaterial({ color: 0xb4785e, roughness: 0.85 });
+  const dial = new THREE.MeshStandardMaterial({ color: 0xf2efe7, roughness: 0.6 });
+  // octagon sized from the REAL footprint: area = 2*sqrt(2) * Rcirc^2
+  const R = Math.sqrt((b.a || 3800) / 2.8284);
+  const oct = (rTop, rBot, h, mat, y, open4 = false) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, h, 8, 1, open4), mat);
+    m.rotation.y = ob.ang + Math.PI / 8;   // flats toward the streets
+    m.position.set(cx, g0 + y + h / 2, cz);
+    m.castShadow = true;
+    api.world.add(m);
+    return m;
+  };
+  // dark interior mass so the open hall reads as columns + SHADOW, not as
+  // a see-through void with the far street visible inside it
+  oct(R * 0.92, R * 0.92, 7.2, new THREE.MeshStandardMaterial({ color: 0x241f19, roughness: 1 }), 0.1);
+  // the perimeter colonnade: 5 bays per face, green columns at the
+  // column-line octagon
+  for (let f = 0; f < 8; f++) {
+    const a0 = ob.ang + Math.PI / 8 + (f / 8) * Math.PI * 2;
+    const v0x = cx + Math.cos(a0) * R, v0z = cz + Math.sin(a0) * R;
+    const a1 = a0 + Math.PI / 4;
+    const v1x = cx + Math.cos(a1) * R, v1z = cz + Math.sin(a1) * R;
+    for (let k = 0; k <= 5; k++) {
+      const t = k / 5;
+      const px = v0x + (v1x - v0x) * t, pz = v0z + (v1z - v0z) * t;
+      if (onCarriageway(px, pz, 0.2)) continue;
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 7.5, 8), green);
+      col.position.set(px, g0 + 3.75, pz);
+      col.castShadow = true;
+      api.world.add(col);
+    }
+  }
+  // cream eave valance ring: the iron lace, as a thin banded octagon
+  oct(R * 1.045, R * 1.045, 0.55, cream, 7.0);
+  // lower tiled roof: wide frustum with ~4m eaves, then cream cresting
+  oct(R * 0.66, R * 1.11, 4.0, tiles, 7.5);
+  oct(R * 0.655, R * 0.655, 0.5, cream, 11.5);
+  // inner skylight ring rising to the drum
+  oct(R * 0.24, R * 0.65, 3.0, tiles, 11.7);
+  oct(R * 0.24, R * 0.24, 1.2, cream, 14.6);
+  // lantern, clock stage with four dials, ogee-ish crown, finial — CREAM
+  oct(2.9, 3.2, 4.0, cream, 15.8);
+  {
+    const clock = new THREE.Mesh(new THREE.BoxGeometry(4.2, 4.6, 4.2), cream);
+    clock.rotation.y = ob.ang + Math.PI / 8;
+    clock.position.set(cx, g0 + 19.8 + 2.3, cz);
+    clock.castShadow = true;
+    api.world.add(clock);
+    for (let f = 0; f < 4; f++) {
+      const a2 = ob.ang + Math.PI / 8 + (f / 4) * Math.PI * 2;
+      const d = new THREE.Mesh(new THREE.CircleGeometry(1.35, 20), dial);
+      d.position.set(cx + Math.cos(a2) * 2.13, g0 + 22.1, cz + Math.sin(a2) * 2.13);
+      d.rotation.y = -a2 + Math.PI / 2;
+      api.world.add(d);
+    }
+  }
+  const crown = new THREE.Mesh(new THREE.ConeGeometry(2.4, 2.6, 8), cream);
+  crown.rotation.y = ob.ang + Math.PI / 8;
+  crown.position.set(cx, g0 + 24.4 + 1.3, cz);
+  crown.castShadow = true;
+  api.world.add(crown);
+  const fin = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.0, 6), cream);
+  fin.position.set(cx, g0 + 26.9, cz);
+  api.world.add(fin);
+  // eight gabled entrance porches, one per face centre: green fan window,
+  // cream bargeboard
+  for (let f = 0; f < 8; f++) {
+    const aM = ob.ang + Math.PI / 8 + ((f + 0.5) / 8) * Math.PI * 2;
+    const fx2 = Math.cos(aM), fz2 = Math.sin(aM);
+    const gx2 = cx + fx2 * (R * 0.924 + 2.0), gz2 = cz + fz2 * (R * 0.924 + 2.0);
+    if (onCarriageway(gx2, gz2, 0.2)) continue;
+    const gab = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 3.1, 3.4, 3), tiles);
+    gab.rotation.y = -aM + Math.PI / 2;
+    gab.rotation.x = 0;
+    gab.position.set(gx2, g0 + 9.2, gz2);
+    gab.castShadow = true;
+    api.world.add(gab);
+    const fan = new THREE.Mesh(new THREE.CircleGeometry(1.5, 14, 0, Math.PI), green);
+    fan.position.set(gx2 + fx2 * 1.3, g0 + 7.9, gz2 + fz2 * 1.3);
+    fan.rotation.y = -aM - Math.PI / 2;
+    api.world.add(fan);
+  }
+}
+
+// PEOPLE'S PARK COMPLEX, 1 Park Road. Researched 2026-07-30 — the finding
+// that matters: it is RED AND WHITE TODAY (repainted 2025; verified against
+// photographs dated Feb 2026). Raw grey concrete died in 1989 and the
+// yellow+green scheme in 2025 — every older source is stale. 6-storey
+// podium (~25m, the mapped height) + 25-storey slab to 103m (published),
+// slab ~96x15m along the podium's long axis, five service shafts with RED
+// water tanks above the roofline — the skyline signature.
+function peoplesPark(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const red = new THREE.MeshStandardMaterial({ color: 0xc0281e, roughness: 0.8 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xf0efeb, roughness: 0.8 });
+  const crownM = new THREE.MeshStandardMaterial({ color: 0xb9b7b2, roughness: 0.85 });
+  const win = new THREE.MeshStandardMaterial({ color: 0x3b4145, roughness: 0.5 });
+  // podium: the real footprint, red, with a white frieze band at its head
+  api.world.add(api.extrude(b.p, 25.0, red, g0));
+  api.world.add(api.extrude(api.grow(b.p, 1.005), 1.4, white, g0 + 21.6));
+  // the slab: 96 x 15 along the long axis, base at the podium head
+  const yawL = Math.atan2(ob.ux, ob.uz);
+  const at = (mesh, lx, y, lz) => {
+    const xA = { x: Math.cos(yawL), z: -Math.sin(yawL) };
+    mesh.position.set(ob.cx + xA.x * lx + ob.ux * lz, y, ob.cz + xA.z * lx + ob.uz * lz);
+    mesh.castShadow = true;
+    api.world.add(mesh);
+  };
+  const SL = Math.min(96, ob.halfLong * 2 * 0.72), SD = 15, SH = 78;
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(SD, SH, SL), red);
+  slab.rotation.y = yawL;
+  at(slab, -ob.halfShort * 0.22, g0 + 25 + SH / 2, 0);
+  // banding: dark window strips, with a WHITE corridor band every 5th floor
+  for (let fl = 0; fl < 25; fl++) {
+    const y = g0 + 25 + fl * 3.1 + 1.55;
+    const corridor = fl % 5 === 4;
+    const band = new THREE.Mesh(
+      new THREE.BoxGeometry(SD + 0.14, corridor ? 1.5 : 1.4, SL * 0.98),
+      corridor ? white : win);
+    band.rotation.y = yawL;
+    at(band, -ob.halfShort * 0.22, y, 0);
+  }
+  // porthole crown band
+  const crown = new THREE.Mesh(new THREE.BoxGeometry(SD - 1.2, 3.2, SL - 1.6), crownM);
+  crown.rotation.y = yawL;
+  at(crown, -ob.halfShort * 0.22, g0 + 25 + SH + 1.6, 0);
+  // five service shafts + RED cylindrical water tanks over the roofline
+  for (let k = -2; k <= 2; k++) {
+    const lz = k * (SL / 5.2);
+    const shaft = new THREE.Mesh(new THREE.BoxGeometry(5, SH + 8, 7), white);
+    shaft.rotation.y = yawL;
+    at(shaft, -ob.halfShort * 0.22 - SD / 2 - 2.2, g0 + 25 + (SH + 8) / 2, lz);
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 2.8, 14), red);
+    at(tank, -ob.halfShort * 0.22 - SD / 2 - 2.2, g0 + 25 + SH + 8 + 1.4, lz);
+  }
+}
+
 // Raffles City. I.M. Pei: a nine-square plan carved away and rotated 45 degrees
 // so it angles back from the street instead of presenting a 600-foot broadside,
 // and towers that read cylindrical from one direction and rectangular from
@@ -3734,6 +3887,8 @@ export const RECIPES = [
   // RIDER'S seat before wiring.
   [/^buddha tooth relic temple/i, buddhaTooth],
   [/^sri mariamman temple$/i, sriMariamman],
+  [/^lau pa sat$/i, lauPaSat],
+  [/^people's park complex$/i, peoplesPark],
 
   // THESE THREE ARE WIRED UP, and the comment that used to sit here said the
   // opposite: "WRITTEN AND NOT WIRED UP ... they stay here, unreferenced".
@@ -3830,7 +3985,7 @@ const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery,
 // was given a row of glazed retail bays. Only words that cannot be anything
 // else: "gallery" is Mandarin Gallery, a mall, and "court" is a block of flats.
 const NEVER_SHOPFRONT =
-  /synagogue|mosque|masjid|gurdwara|temple|cathedral|chapel|church|monastery|convent|cenotaph|parliament|embassy|high commission|museum|memorial|merlion|observatory|supertree/i;
+  /synagogue|mosque|masjid|gurdwara|temple|cathedral|chapel|church|monastery|convent|cenotaph|parliament|embassy|high commission|museum|memorial|merlion|observatory|supertree|lau pa sat/i;
 export function hasShopfront(name) {
   if (name && NEVER_SHOPFRONT.test(name)) return false;
   const fn = recipeFor(name);

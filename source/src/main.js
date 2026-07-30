@@ -762,6 +762,31 @@ if (!P.has('nostream')) {
   fetch(`./data/${SCENE}.json`).then((r) => r.json()).then(buildRegion).catch(bootFailed);
 }
 
+// Pretty names for the teleport bar; ids come from the manifest
+const DISTRICT_NAMES = {
+  orchard: 'Orchard', brasbasah: 'Bras Basah', marinabay: 'Marina Bay',
+  chinatown: 'Chinatown', rivervalley: 'River Valley', bugis: 'Bugis',
+  robertson: 'Robertson Quay',
+};
+
+// The teleport target for a district: the midpoint of its main street by
+// arclength, offset onto the carriageway exactly like the spawn point, so
+// arriving somewhere always means arriving ON a road, facing along it.
+function axisMidPose(axis) {
+  const P0 = axis.p;
+  let total = 0;
+  for (let i = 0; i < P0.length - 1; i++) total += Math.hypot(P0[i + 1][0] - P0[i][0], P0[i + 1][1] - P0[i][1]);
+  let acc = 0, best = 0;
+  for (let i = 0; i < P0.length - 1; i++) {
+    const seg = Math.hypot(P0[i + 1][0] - P0[i][0], P0[i + 1][1] - P0[i][1]);
+    if (acc + seg >= total / 2) { best = i; break; }
+    acc += seg;
+  }
+  const p0 = P0[best], p1 = P0[Math.min(best + 1, P0.length - 1)];
+  const dx = p1[0] - p0[0], dz = p1[1] - p0[1], L = Math.hypot(dx, dz) || 1;
+  return { x: p0[0] + (-dz / L) * -3.4, z: p0[1] + (dx / L) * -3.4, heading: Math.atan2(dx, dz) };
+}
+
 async function buildStreamed(mani) {
   if (BOOTUI.sub) BOOTUI.sub.textContent = mani.districts.map((d) => d.id).join(' · ');
   const chunks = await Promise.all(mani.districts.map((d) =>
@@ -786,6 +811,10 @@ async function buildStreamed(mani) {
   spawn.axisFullLength = mani.axisFullLength;
   spawn.axes = spawn.axis && spawn.axis.p ? [spawn.axis] : [];
   const rest = mani.districts.slice(1).map((d, i) => ({ id: d.id, box: d.box, ch: chunks[i + 1] }));
+  window.__districts = mani.districts.map((d, i) => {
+    const ax = chunks[i].axis;
+    return ax && ax.p ? { id: d.id, name: DISTRICT_NAMES[d.id] || d.id, ...axisMidPose(ax) } : null;
+  }).filter(Boolean);
   await buildRegion(spawn, {
     carveRoads: regionData.roads,
     regionData,
@@ -1021,6 +1050,10 @@ async function buildRegion(data, opts = {}) {
     let hsh = 0;
     for (const ch of SCENE) hsh = (Math.imul(hsh, 31) + ch.charCodeAt(0)) >>> 0;
     reseedPlacement(hsh);
+  }
+  if (!window.__districts && data.axes && data.axes.length) {
+    window.__districts = data.axes.filter((ax) => ax && ax.p).map((ax) => ({
+      id: ax.n || 'street', name: ax.n || 'street', ...axisMidPose(ax) }));
   }
   BOOTT.push(['module-init+fetch', Math.round(performance.now())]);
   _bt = performance.now();
@@ -2076,6 +2109,14 @@ window.__teleport = (x, z, heading) => {
 // Free camera at runtime, for the comparison sheet. Pass null to hand the
 // camera back to the ride. fov is vertical; the default 46 is about a 26mm
 // lens across a 16:9 frame, which is the range street photographs are shot in.
+window.__teleportTo = (id) => {
+  const d = (window.__districts || []).find((q) => q.id === id);
+  if (!d) return false;
+  if (mode !== 'ride') toggleMode();          // arrive in the saddle
+  S.x = d.x; S.z = d.z; S.heading = d.heading; S.speed = 0;
+  walker.x = d.x; walker.z = d.z;
+  return true;
+};
 window.__cam = (x, y, z, tx, ty, tz, fov) => {
   SPEC = x == null ? null : [x, y, z, tx, ty, tz, fov || 46];
   camInit = false;

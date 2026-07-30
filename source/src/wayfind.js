@@ -297,6 +297,24 @@ export class Wayfinder {
       this.map.addEventListener('click', openIt);
       this.map.addEventListener('touchstart', openIt, { passive: false });
     }
+    // the district teleport bar: one pill per district, built fresh each
+    // open (districts stream in over time, so the list grows)
+    const tpbar = document.getElementById('tpbar');
+    this._fillTpbar = () => {
+      if (!tpbar) return;
+      tpbar.innerHTML = '';
+      for (const d of (window.__districts || [])) {
+        const btn = document.createElement('button');
+        btn.textContent = d.name;
+        const go = (e) => {
+          e.preventDefault(); e.stopPropagation();
+          if (window.__teleportTo && window.__teleportTo(d.id)) this.setOpen(false);
+        };
+        btn.addEventListener('click', go);
+        btn.addEventListener('touchstart', go, { passive: false });
+        tpbar.appendChild(btn);
+      }
+    };
     const close = document.getElementById('bigclose');
     if (close) {
       close.addEventListener('click', shut);
@@ -364,6 +382,7 @@ export class Wayfinder {
   }
 
   setOpen(v) {
+    if (v && this._fillTpbar) this._fillTpbar();
     this.open = !!v;
     if (this.big) this.big.classList.toggle('on', this.open);
     document.body.classList.toggle('mapopen', this.open);
@@ -529,10 +548,9 @@ export class Wayfinder {
       b.p.forEach(([x, z], i) => (i ? g.lineTo(X(x), Z(z)) : g.moveTo(X(x), Z(z))));
       g.closePath(); g.fill();
     }
-    g.strokeStyle = '#ffd696'; g.lineWidth = Math.max(2, 3 * dpr);
-    g.beginPath();
-    this.axis.p.forEach(([x, z], i) => (i ? g.lineTo(X(x), Z(z)) : g.moveTo(X(x), Z(z))));
-    g.stroke();
+    // (the amber axis line is gone from this map too — the user read the
+    // highlighted street as a glitch on the minimap, and a real map should
+    // highlight nothing but YOU. Same decision, both maps, 2026-07-30.)
 
     // Label the biggest places, and only as many as will not collide. A map
     // with forty overlapping labels is less readable than one with none.
