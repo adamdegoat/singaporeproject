@@ -1081,7 +1081,16 @@ async function streamRest(rest) {
     return Math.hypot(dx, dz);
   };
   const ALL = P.has('streamall');
-  const NEAR = 900, FAR = 1700;
+  // TIGHTENED WHEN THE MEASURE CHANGED. 900/1700 were distances to a
+  // district's AXIS — a line somewhere inside it — so they had to be generous
+  // enough to reach that line from outside the district. nearDist measures to
+  // the district's EDGE and is ZERO anywhere inside it, so the same numbers
+  // now reach roughly a district further than intended: five of seven chunks
+  // were resident at Raffles Place. 480m of edge margin still loads a
+  // neighbour well before you arrive (top speed is 41.8 km/h, so that is
+  // forty seconds of warning), and a district you are STANDING IN is still
+  // distance zero and loads first, which is the whole point of the change.
+  const NEAR = 480, FAR = 1000;
   const recs = rest.map((r) => ({ ...r, pushed: false, group: null, signals: null, dressedDelta: null }));
   window.__streamState = { pending: recs.map((r) => r.id), building: null, done: [], unloads: 0 };
   window.__streamRecs = recs;
