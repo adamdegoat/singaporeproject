@@ -77,6 +77,29 @@ try {
   // the loading overlay removes itself 600ms after ready; still standing
   // means the page is stuck behind it even though the world came up
   await page.waitForTimeout(1200);
+
+  // WAIT FOR STREAMING TO SETTLE BEFORE BELIEVING THE TRIANGLE COUNT.
+  //
+  // `__ready` means the BOOT district is up. The streamer keeps building
+  // neighbouring chunks for many seconds after that, and the HUD sampled at
+  // ready reported 1,849k triangles when the settled figure on the very same
+  // build was 2,593k. Every deploy log this project has ever printed has
+  // understated its own world by about 700k, which is exactly the number
+  // anyone would reach for when asking whether it still fits on a phone.
+  //
+  // Settle on the count itself rather than on a fixed sleep: same trick as
+  // streetshot.mjs, and it stops as soon as the world stops growing.
+  await page.waitForFunction(() => {
+    const t = ((document.querySelector('#hud') || {}).textContent || '')
+      .match(/(\d+)k tris/);
+    const n = t ? +t[1] : -1;
+    const prev = window.__triPrev;
+    window.__triPrev = n;
+    window.__triHits = (n >= 0 && prev === n) ? (window.__triHits || 0) + 1 : 0;
+    return window.__triHits >= 4;
+  }, null, { polling: 700, timeout: 45000 }).catch(() => {});
+  info.hud = await page.evaluate(() =>
+    (document.querySelector('#hud') || {}).textContent || '');
   const bootLeft = await page.evaluate(() => !!document.getElementById('boot'));
   if (info.ready && bootLeft) errors.push('loading overlay still covering the page after ready');
   // The HUD was sampled AT the ready instant, before the loop had drawn a
