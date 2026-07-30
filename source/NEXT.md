@@ -3240,3 +3240,61 @@ One Pearl Bank authored from scratch because OSM has no footprint for it.
     3,850m -- one car every 49m, and a 260m draw radius makes that read as
     empty. Measure before changing: the cost is ~1% of triangles after culling,
     so density is cheap, but D34/D35 gate vehicle overlap and off-carriageway.
+
+## 2026-07-31 05:45 — second half of the night
+
+SHIPPED SINCE 03:30:
+  - **One Pearl Bank** authored from a least-squares circle fit (R=46.0m, rms
+    2.13m over 142 points). OSM has no building there at all -- only a
+    landuse polygon still linked to the demolished Pearl Bank Apartments -- so
+    the tallest residential building in Outram was a hole. Built at 135m above
+    its platform, NOT the 178m everyone repeats, which is 4.56m per storey.
+  - **Golden Mile Complex** authored and terraced. Missing for TWO independent
+    reasons: OSM way 47126585 carries construction=yes and no `building` tag so
+    the fetch never sees it, AND it sits east of the bugis bbox. Built at the
+    architect's 89m with the doubt recorded (89/16 storeys = 5.56m a floor).
+  - **Duo Tower 170m, Concourse Office Tower 165m, Parkview Square 108m** --
+    all three were at 45m from `height=0` tags falling through to the office
+    default. Safe to set flat because each has its PODIUM mapped separately.
+  - **80 construction sites** now draw as sites: hoarding, partial frame, tower
+    crane. IR2 and NS Square were 18m slabs over 32,610 and 28,118 m2.
+  - **Seam dedupe scaled by footprint size.** Funan, Old City Hall, Bugis+,
+    Peninsula Plaza and NAFA were each drawn twice.
+  - **Bugis Junction** got its own recipe. It was wearing Bugis+'s crystal mesh.
+  - **Bugis+ lattice** was placed from orientedBox's vertex mean and stood clear
+    of the building out over the road.
+  - **Traffic density** 49m -> 25m spacing per axis.
+
+ENGINE FINDINGS, all in WORKFLOW.md:
+  - A long merged cylinder silently does not render. Bisected: 34/45/60m draw,
+    92/141m do not. Bucket-key hypothesis TESTED AND RULED OUT. Same failure as
+    Mustafa's wave wing. Still unexplained.
+  - A process.py override only reaches the world if EVERY overlapping district
+    scene is rebuilt.
+  - One frame is not evidence -- three false alarms in one session.
+  - Leaning geometry needs carriageway clearance for its LEAN, not its base.
+  - P7 judged every flat marking against the carriageway; footway markings sit
+    at 20mm and were reported as buried.
+
+STILL OPEN, highest value first:
+  1. **Raffles Hotel is unnamed in OSM** and therefore unreachable by any
+     recipe. It IS built -- an unnamed ~3,700 m2 block. The only "Raffles Hotel"
+     node is a BUS STOP. An agent is identifying the real way. A general
+     POI-to-building naming rule was measured and REJECTED: 112 matches, but
+     they include "PS Cafe" and "Hard Rock Cafe" on 3,000 m2 blocks.
+  2. Keppel South Central (200m) and PARKROYAL Pickering (89m) need
+     podium-plus-tower recipes; their polygons are site outlines.
+  3. Piccadilly Grand's three 23-storey towers ARE already in the data at 78.2m
+     as unnamed records -- do NOT author them, it would duplicate.
+  4. DUO Residences and Golden Mile Complex's neighbour tower are absent.
+  5. The Watermark / Rodyk Street godowns are near-black with vermilion
+     joinery; we build the white Havelock Road group only.
+  6. RESOLVED, and NOT a defect. `__crowdPositions` only ever read the boot
+     district's crowd, so a probe reported zero pedestrians beside a rider
+     standing in a crowd. `window.__allCrowd()` now covers every system, the
+     same hole `__allTraffic` had. With a hook that works, 10-20% of walkers
+     WITHIN VIEW are not advancing at any instant -- and that is correct: they
+     are waiting at red pedestrian signals. actors.js holds `pr.s` while
+     `pr.waited` accumulates, with a 26s patience cap so nobody stands at a
+     junction forever. Do not "fix" this; the frozen-looking pedestrian at a
+     kerb is doing what it is supposed to do.

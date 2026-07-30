@@ -1535,6 +1535,24 @@ async function buildRegion(data, opts = {}) {
     // must come after construction, or the handover is a no-op
     if (window.__crossings) crowdSys.setCrossings(window.__crossings);
     window.__crowdPositions = () => crowdSys.positions();
+// EVERY crowd system, not just the boot district's. `extraCrowds` holds one per
+// streamed district, so a probe reading only crowdSys sees Orchard's 2,200 and
+// reports ZERO pedestrians standing next to a rider in Little India. That is
+// exactly what happened on 2026-07-31, and it made a "14% of walkers are stuck"
+// measurement untrustworthy -- the stuck ones were simply the districts the
+// probe could not see. Same shape of hole as __allTraffic, fixed the same way.
+    window.__allCrowd = () => {
+      const out = [];
+      for (const c of [crowdSys, ...extraCrowds]) {
+        if (!c) continue;
+        const ps = c.positions();
+        for (let i = 0; i < ps.length; i++) {
+          out.push({ x: ps[i][0], z: ps[i][1], s: c.people[i] ? c.people[i].s : 0,
+                     speed: c.people[i] ? c.people[i].speed : 0 });
+        }
+      }
+      return out;
+    };
     window.__clearMask = (pi) => Array.from(crowdSys.clearMask[pi] || []);
     // Full per-pedestrian state, for the behaviour probe. Speeds alone tell you
     // that someone is sprinting and not why; this says which path they are on,

@@ -431,8 +431,10 @@ way), an attribute-length overflow in `Merger.flush`, and non-finite coordinates
 Not understood. What is known:
   - It is silent, so it will be mistaken for "my recipe didn't run".
   - The cheap first test is to SHORTEN the piece or split it into segments.
-  - `Merger.add` keys buckets on `(tile of x,z | material)` with TILE = 110m, so
-    a suspect is a merged mesh whose extent greatly exceeds the tile it is
-    filed under. That is a hypothesis, not a finding.
+  - The bucket key is NOT it. `Merger.add` files buckets under
+    `(tile of x,z | material)` with TILE = 110m, so the obvious suspect was a
+    mesh whose extent dwarfs the tile it is filed under. TESTED 2026-07-31 by
+    re-running the 141m vault with the bucket keyed on the CYLINDER'S OWN centre
+    instead of the building's: no change, still invisible. Ruled out.
 
 If you are chasing a recipe whose geometry will not appear, check this first.
