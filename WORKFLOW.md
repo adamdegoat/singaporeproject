@@ -350,3 +350,37 @@ TWO THINGS THAT FOLLOW:
   measured in a focused real browser (`fps.mjs`, headless: false).
 
 Any new tool that opens a browser: pass `--use-gl=angle`.
+
+## A process.py override only reaches the world if EVERY scene holding that
+## building is rebuilt
+
+Found 2026-07-31, the hard way. The district bboxes OVERLAP, so one real
+building lives in two or three scene files at once. LASALLE is in
+`orchard.json`, `bugis.json` AND `littleindia.json`. merge.py dedupes across the
+seam and keeps ONE copy — and it is not necessarily the one you just rebuilt.
+
+So: set a height in `data/process.py`, rebuild only the district you were
+thinking about, merge, deploy — and the world still ships the OLD number, with a
+deploy that passes every gate and verifies clean by SHA. The tell is
+`data/world.json`'s hash not changing when it obviously should have. LASALLE
+shipped at 17m from `orchard.json` while `littleindia.json` said 26m.
+
+The HDB blocks in the same batch got through only because littleindia's copy
+happened to win their seam. Luck, not design.
+
+    # after ANY process.py change, find every scene that holds the building:
+    python3 - <<'PY'
+    import json
+    ids=[d['id'] for d in json.load(open('data/districts.json'))['districts']
+         if (d.get('status') or '') not in ('planned',)
+         and 'merged' not in (d.get('status') or '')]
+    for i in ids:
+        d=json.load(open(f'data/{i}.json'))
+        hits=[b.get('h') for b in d['buildings'] if 'NAME' in (b.get('n') or '').lower()]
+        if hits: print(i, hits)
+    PY
+    # then rebuild each one (cached raw, no Overpass refetch) before merge.py
+    python3 data/build_district.py <id>
+
+Same bug family as everything else in this file: two things describe one fact,
+and the one you did not update is the one that ships.
