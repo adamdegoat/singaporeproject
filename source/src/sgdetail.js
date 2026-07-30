@@ -5,7 +5,7 @@
 // No brand marks anywhere: signage is colour and form only.
 import * as THREE from '../lib/three.module.js';
 import { R, rand, pick, chance, rng, SignAtlas } from './tex.js';
-import { MAT, groundAt, Merger } from './city.js';
+import { MAT, groundAt, Merger, standable } from './city.js';
 import { recipeFor } from './landmarks.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d,
@@ -617,6 +617,11 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   const p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1);
   const cc = new THREE.Color();
   const emit = (geo, mat, list, fn, colFn) => {
+    // This file had NO water guard while street.js and markings.js both did,
+    // so its median kerbs went into Marina Bay — 21m and 87m from the nearest
+    // shore, which W2 has been counting ever since. Deck-aware, so a median on
+    // a causeway survives: it is standing on the causeway.
+    if (window.__inWater) list = list.filter((r) => standable(r[0], r[2]));
     if (!list.length) return;
     const im = new THREE.InstancedMesh(geo, mat, list.length);
     list.forEach((r, i) => {

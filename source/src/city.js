@@ -416,6 +416,17 @@ export function bridgeDeckAt(x, z) {
   return best;
 }
 
+// Can something STAND here? Open water says no — unless there is a bridge
+// deck over it, because a median kerb or a lamp on a causeway is standing on
+// the causeway. street.js and markings.js already filtered their furniture by
+// inWater alone, which was right until decks existed and is now too blunt;
+// sgdetail.js filtered by nothing at all, which is why marinabay's median
+// kerbs were standing in the bay 21 and 87 metres from shore.
+export function standable(x, z) {
+  if (!window.__inWater || !window.__inWater(x, z)) return true;
+  return bridgeDeckAt(x, z) !== null;
+}
+
 export function surfaceAt(x, z) {
   const deck = bridgeDeckAt(x, z);
   if (deck !== null) return deck + SURFACE_ROAD;

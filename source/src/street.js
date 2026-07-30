@@ -3,7 +3,7 @@
 // Everything is instanced and placed by walking the street axis.
 import * as THREE from '../lib/three.module.js';
 import { R, rand, pick, chance } from './tex.js';
-import { MAT, groundAt } from './city.js';
+import { MAT, groundAt, standable } from './city.js';
 import { claim } from './roads.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d, 0xcf6b3a, 0x2b2f33];
@@ -165,7 +165,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     // Street furniture is not built on water either. blocked() knows about the
     // reservoir, but several of these lists are filled by paths that never ask
     // it -- the same reason markings.js needed one guard at the emit point.
-    if (window.__inWater) list = list.filter((r) => !window.__inWater(r[0], r[2]));
+    if (window.__inWater) list = list.filter((r) => standable(r[0], r[2]));
     if (!list.length) return null;
     const buckets = new Map();
     list.forEach((rec) => {

@@ -91,7 +91,13 @@ window.__auditWorld = async function auditWorld() {
     // kept as machinery that could hide the next one. Real fix: street
     // furniture siting should consult inWater() the way it already consults
     // onCarriageway(), and skip rather than substitute.
-    marinabay: { P8: 19, W2: 37, S8: 57, P4: 100, P6: 20, T2: 11 },
+    // W2 37 -> 35: sgdetail.js's emit had NO water guard while street.js and
+    // markings.js both had one, so its median kerbs were going into the bay 21
+    // and 87 metres from shore. All three now share a `standable()` that is
+    // deck-aware, so a median on a causeway survives — it is standing on the
+    // causeway. What is left is furniture from paths that do not go through
+    // these emits; ratcheted, target lower.
+    marinabay: { P8: 19, W2: 35, S8: 57, P4: 100, P6: 20, T2: 11 },
     // LITTLE INDIA, day one (2026-07-30). A new district enters with its
     // budgets set to what it measures on the day it lands, because a gate that
     // always fails gets ignored — and each number is named so it can be argued
@@ -259,7 +265,7 @@ window.__auditWorld = async function auditWorld() {
       // ratchet on a measurement that has become honest is reset to the honest
       // number, the same rule S8 already carries.
       // W2 34 -> 35: marinabay's reprocess, see its note above.
-      P8: 6, W2: 35, S8: 70,
+      P8: 6, W2: 34, S8: 70,   // 35 -> 34 with marinabay's median kerbs out of the bay
       // proportional to a world with 1,932 buildings and 4,392 roads
       // P4 333 -> 360 and P1b 177 -> 179 on the day the Civic District landmarks
       // got real massing. Both are consequences of that, not new defects:
