@@ -26,6 +26,9 @@ if len(sys.argv) > 1:
 RAW_PATH = os.environ.get("SG_RAW") or os.path.join(HERE, "raw.json")
 OUT_PATH = os.environ.get("SG_OUT") or os.path.join(HERE, "orchard.json")
 AXIS_NAME = os.environ.get("SG_AXIS") or "orchard road"
+# which district this run is, taken from the output filename -- process.py is
+# driven entirely by the environment and never sees the districts.json record
+DIST_ID = os.path.splitext(os.path.basename(OUT_PATH))[0]
 # Defaults are the ISLAND origin (SVY21 datum), not a point in Orchard, so a
 # bare run lands in the same frame every district uses.
 LAT0 = float(os.environ.get("SG_LAT0") or 1.366666)
@@ -228,6 +231,34 @@ LANDMARKS = {
     "chevron house":          {"h": 152},
     "marina one":             {"h": 200},   # architect figure; CTBUH says 225.5 — conflict recorded
     "lau pa sat":             {"h": 14},    # 1-storey market + clock lantern; UNPUBLISHED, height class only
+
+    # ---- CBD + civic, researched 2026-07-31 (research/heights-cbd.md,
+    # research/bugis-brasbasah-landmarks.md). CTBUH architectural heights.
+    #
+    # READ THIS BEFORE ADDING AN "OUE DOWNTOWN" KEY. Seven OSM objects share
+    # that prefix here: a 7,692 m2 retail PODIUM polygon, two towers, and four
+    # building:part setback records. Lookup is substring with longest-key-wins,
+    # so a bare "oue downtown" key would cap all seven at 201m -- which is
+    # precisely the UOB Plaza failure that made three separate footprints into
+    # three identical 280m cylinders. The bare polygon is the podium and its
+    # 20m default is CORRECT. Only the tower gets a tower height.
+    "oue downtown tower 1":   {"h": 201, "key": True},
+    # Tower 2 stays on OSM's 150: CTBUH's 149 is flagged an estimate by CTBUH
+    # itself, so there is nothing to gain by overriding a tag with a guess.
+    "mas building":           {"h": 104, "key": True},
+    # PARKROYAL COLLECTION Pickering (89m, CTBUH + WOHA) and Keppel South
+    # Central (200m, CTBUH drawing-verified) are NOT set here, deliberately.
+    # Both published heights are good; both OSM polygons are SITE OUTLINES, not
+    # towers. Keppel's is 137 x 63m and no 200m tower has a 137m-long footprint;
+    # PARKROYAL's is 154 x 104m at 0.33 fill. Applying a tower height to a site
+    # polygon is the Bras Basah Complex error -- a 20m tag on a whole block --
+    # run in reverse, and it would drop a 137 x 63 x 200m monolith on Anson
+    # Road. They need podium-plus-tower recipes, and until then their defaults
+    # are wrong by less than the "fix" would be. Logged in NEXT.md.
+    # 102.8m: CTBUH, corroborated by a 2006 peer-reviewed article. The competing
+    # 98m is the architect's SUPERSEDED 15-storey scheme and OSM's 90 is a Bing
+    # guess.
+    "national library":       {"h": 102.8, "key": True},
 
     # People's Park Complex, 1 Park Road (1973, Design Partnership).
     # Researched 2026-07-31, research/chinatown-landmarks.md.
@@ -1805,6 +1836,49 @@ def main():
     if water:
         print(f"  water: {len(water)} polygons, largest {water[0]['a']:,} m2, "
               f"total {sum(w['a'] for w in water):,} m2")
+
+    # BUILDINGS THE MAP DOES NOT HAVE. See data/authored.json for why this
+    # exists and what the bar for an entry is. Appended before the dedupe so an
+    # authored building that duplicates one OSM later adds is caught by the same
+    # check as everything else.
+    _auth_path = os.path.join(HERE, "authored.json")
+    if os.path.exists(_auth_path):
+        _auth = json.load(open(_auth_path)).get("buildings", [])
+        _added = 0
+        for _e in _auth:
+            if _e.get("district") != DIST_ID:
+                continue
+            _cx, _cz = proj(_e["lat"], _e["lon"])
+            if _e.get("shape") != "arc":
+                continue
+            for _a0, _a1 in _e["arcs"]:
+                # compass azimuth: north is -z, east is +x
+                _sw = (_a1 - _a0) % 360
+                _n = max(8, int(_sw / 6))
+                _ring = []
+                for _k in range(_n + 1):
+                    _th = math.radians(_a0 + _sw * _k / _n)
+                    _ring.append((_cx + _e["r_outer"] * math.sin(_th),
+                                  _cz - _e["r_outer"] * math.cos(_th)))
+                for _k in range(_n, -1, -1):
+                    _th = math.radians(_a0 + _sw * _k / _n)
+                    _ring.append((_cx + _e["r_inner"] * math.sin(_th),
+                                  _cz - _e["r_inner"] * math.cos(_th)))
+                _ar = abs(sum(_ring[_i][0] * _ring[(_i + 1) % len(_ring)][1]
+                              - _ring[(_i + 1) % len(_ring)][0] * _ring[_i][1]
+                              for _i in range(len(_ring)))) / 2
+                # `a` is what every OSM building here carries and what the
+                # shophouse test, the audit and the vet tools all read; without
+                # it an authored building is a hole in every downstream check.
+                _b = {"p": [[round(x, 1), round(z, 1)] for x, z in _ring],
+                      "h": _e["h"], "n": _e["n"], "hs": "authored",
+                      "a": round(_ar)}
+                if _e.get("key"):
+                    _b["key"] = 1
+                buildings.append(_b)
+                _added += 1
+        if _added:
+            print(f"  authored {_added} footprint(s) the map does not have")
 
     # ONE BUILDING, ONE FOOTPRINT.
     #

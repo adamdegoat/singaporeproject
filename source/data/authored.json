@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "BUILDINGS THE MAP DOES NOT HAVE.",
+    "",
+    "Every footprint in this world comes from OpenStreetMap, and once in a while",
+    "OSM simply has no building where a building plainly stands. Not a bad tag, not",
+    "a wrong height -- nothing at all. That is not something a height override or a",
+    "recipe can fix, because a recipe needs a footprint to be called with.",
+    "",
+    "This file is the exception list, and it is deliberately small and deliberately",
+    "noisy about provenance. Every entry must cite the research that measured it.",
+    "An entry here is a claim that a real building exists at a real place at a real",
+    "size, and if that claim is wrong the world is worse than the hole was.",
+    "",
+    "Shapes are stored as PARAMETERS, not as vertex lists: a centre, radii and arc",
+    "spans are readable, auditable and correctable, where 140 projected lat/lon",
+    "pairs are none of those things."
+  ],
+  "buildings": [
+    {
+      "district": "chinatown",
+      "n": "One Pearl Bank",
+      "shape": "arc",
+      "lat": 1.28291,
+      "lon": 103.83988,
+      "r_outer": 46.0,
+      "r_inner": 30.0,
+      "arcs": [[145, 290], [325, 110]],
+      "h": 135,
+      "key": true,
+      "src": "research/chinatown-landmarks.md B.3. OSM has NO building footprint here -- way 295892200 is landuse=residential and still carries a wikipedia link to Pearl Bank Apartments, which was demolished Feb-Mar 2020. One Pearl Bank topped out Dec 2024 and is the tallest residential building in Outram-Chinatown, so the model had a hole where it stands. R=46.0m is a least-squares circle fit to the roof's outer edge over a ~145deg arc, rms 2.13m over 142 sample points, taken on the NORTH arc where the satellite lean is tangential. Ring outer diameter ~92m fills the site's 93m N-S dimension, which is an independent confirmation. Tower depth 16m is [EST] range 13-18. Two free-standing crescents that do NOT interlock; they touch only at roof level via sky bridges. One gap is confidently E to SSE where the entry court, porte-cochere and pool are; the opposite gap could not be pinned and is placed symmetrically.",
+      "h_src": "135m above its own platform, [EST] range 128-145. The widely repeated 178m is NOT a height above local ground: 178/39 storeys = 4.56m per floor, which no residential building has. Pearl's Hill stands ~43m, and 178-43 = 135 gives 3.46m per storey, which fits. Putting a 178m box on the terrain would make this building ~40m too tall."
+    }
+  ]
+}

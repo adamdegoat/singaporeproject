@@ -2509,9 +2509,31 @@ function rafflesCity(api, b) {
   }
 }
 
-// The National Library. T.R. Hamzah & Ken Yeang: two 16-storey blocks split by a
-// full-height atrium, the larger regular one over an open civic plaza, the
-// second one curved.
+// The National Library. T.R. Hamzah & Ken Yeang: two blocks split by a
+// full-height naturally-ventilated atrium, the larger regular one over an open
+// civic plaza, the second one curved.
+//
+// Researched 2026-07-31, research/bugis-brasbasah-landmarks.md, which settled
+// three things this comment used to get wrong or leave open:
+//   - HEIGHT IS 102.8m, published by CTBUH and corroborated by a 2006
+//     peer-reviewed article. OSM's 90 is a Bing guess and the competing 98 is
+//     the architect's SUPERSEDED 15-storey scheme. Set in process.py, not here.
+//   - "two 16-storey blocks" was wrong: the blocks are not equal, and the
+//     rectilinear one is the LIBRARY while the curved one is the DRAMA CENTRE.
+//     This recipe already builds them that way round, which is lucky rather
+//     than researched, and is now on the record as correct.
+//   - The atrium is AIMED AT ST JOSEPH'S CHURCH, bearing 303.7 degrees at 145m,
+//     and the measured roof seam matches the architect's stated intent to
+//     within 0.4 degrees. The split here is taken from the footprint's own
+//     short axis instead. Re-cutting it on the true bearing is a real
+//     improvement and NOT a safe one: the carriageway pull-back below exists
+//     because this very split once pushed a wall four metres into North Bridge
+//     Road, and a slot on a fixed compass bearing would not respect the
+//     footprint it is cutting. Left alone deliberately.
+//
+// Also corrected, for whoever adds detail later: the big curved elements are
+// the roof canopy and the atrium bridges, NOT facade louvres. There is no red
+// brick on the facade -- it is at B1. There is no link bridge to Bugis.
 //
 // The first attempt was one flat grey ninety-metre slab, and the reason is worth
 // keeping: at that scale a subtle concrete texture reads as nothing at all. What
