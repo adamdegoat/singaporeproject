@@ -11,4 +11,5 @@ http.createServer((q, r) => {
     r.writeHead(200, { 'Content-Type': M[path.extname(rp)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
     r.end(d);
   });
-}).listen(8933, () => console.log('lookdev on http://localhost:8932'));
+}).listen(+(process.env.PORT || 8933), () =>
+  console.log('lookdev on http://localhost:' + (process.env.PORT || 8933)));

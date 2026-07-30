@@ -7,7 +7,7 @@
 // with burn must DIFFER (proving the fingerprint can see reshuffles at all
 // — a gate that cannot fail is not a gate).
 const SCENE = process.env.SG_SCENE || 'orchard';
-const BASE = process.argv[2] || 'http://localhost:8933';
+const BASE = process.argv[2] || `http://localhost:${process.env.SG_PORT || 8933}`;
 const { chromium } = await import(
   process.env.PLAYWRIGHT_PATH || '/Users/ZY/receptionig/node_modules/playwright/index.mjs');
 const browser = await chromium.launch({ args: ['--disable-backgrounding-occluded-windows'] });
