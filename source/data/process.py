@@ -229,6 +229,22 @@ LANDMARKS = {
     "marina one":             {"h": 200},   # architect figure; CTBUH says 225.5 — conflict recorded
     "lau pa sat":             {"h": 14},    # 1-storey market + clock lantern; UNPUBLISHED, height class only
 
+    # People's Park Complex, 1 Park Road (1973, Design Partnership).
+    # Researched 2026-07-31, research/chinatown-landmarks.md.
+    # PUBLISHED 103 m: 31 storeys, 6 of podium plus a 25-storey slab. OSM tags
+    # this footprint 25, which is the PODIUM ALONE on a polygon covering the
+    # whole site -- the same trap as Bras Basah Complex, and it rendered
+    # Singapore's first strata mega-structure as a six-storey box with 78m of
+    # slab missing. The recipe draws the slab; it needs the height to draw it
+    # against.
+    #
+    # NOT to be confused with People's Park CENTRE, 101 Upper Cross Street,
+    # which is a different building. Keys here are substring-matched with
+    # longest-key-wins, so both spellings must stay distinct -- this is exactly
+    # how UOB Plaza ended up as three identical 280m cylinders.
+    "people's park complex":  {"h": 103, "key": True},
+    "peoples park complex":   {"h": 103, "key": True},
+
     # LASALLE College of the Arts, McNally campus. Researched 2026-07-31,
     # research/lasalle-simlim.md. OSM carries building:levels=5 and the
     # published storey count is SEVEN, so the 17m we had was 9-12m short.

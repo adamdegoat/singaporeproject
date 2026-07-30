@@ -56,6 +56,37 @@ def check(did):
         fail(f"{len(flat)} buildings under 3m tall (a missing or zero height tag): "
              + ", ".join((b.get("n") or "(unnamed)")[:20] for b in flat[:5]))
 
+    # 1b. ONE BUILDING, ONE FOOTPRINT.
+    # OSM maps some buildings twice -- once as a way and once as a multipolygon
+    # relation over the same outline. Ten of them were found across these eight
+    # districts on 2026-07-31, including Marina Bay Sands Theatres at 13,773 m2,
+    # Pan Pacific, The Fullerton Bay Hotel and Clifford Pier. Extruded twice
+    # they are coincident solids: every face z-fights with its twin, the
+    # geometry cost doubles, and every shopfront and prop hung off the footprint
+    # is built twice. process.py drops them now; this is the check that says so,
+    # because a fix with no test is a fix that comes back.
+    #
+    # Keyed on rounded centroid + area, not on the vertex list: the way and the
+    # relation trace the same outline without agreeing where the ring starts or
+    # which way it winds.
+    _seen = {}
+    _dup = []
+    for _b in B:
+        _p = _b.get("p") or []
+        if len(_p) < 3:
+            continue
+        _cx = sum(q[0] for q in _p) / len(_p)
+        _cz = sum(q[1] for q in _p) / len(_p)
+        _ar = abs(sum(_p[i][0] * _p[(i + 1) % len(_p)][1] - _p[(i + 1) % len(_p)][0] * _p[i][1]
+                      for i in range(len(_p)))) / 2
+        _k = (round(_cx, 1), round(_cz, 1), round(_ar))
+        if _k in _seen:
+            _dup.append(_b.get("n") or "(unnamed)")
+        _seen[_k] = 1
+    if _dup:
+        fail(f"{len(_dup)} coincident footprints mapped twice: "
+             + ", ".join(d[:24] for d in _dup[:5]))
+
     # 2. no implausibly short big footprint
     # building=roof is excluded by kind, not by fudging the threshold: a roof
     # structure is a wide low canopy by definition.
