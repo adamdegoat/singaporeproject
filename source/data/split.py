@@ -147,9 +147,35 @@ def split_ring_by_road(building, roads, min_inside=8.0):
         nb = dict(building)
         nb["p"] = p
         nb["a"] = abs(_area(p))        # stale parent area misleads every
-        result.append(nb)              # downstream size classifier
+        result.append(_recap_guess(nb))   # downstream size classifier
     return result
 
+
+def _recap_guess(nb):
+    """Re-apply the small-footprint height cap after a split.
+
+    A split part gets its OWN area — that is the point of recomputing it — but
+    it inherits the PARENT'S height, and a height that was a reasonable guess
+    for the whole footprint is a needle on a fragment of it. Orchard carried
+    two 18m towers on 60 and 92 m2 courtyard fragments, invisible for as long
+    as the parts also carried the parent's stale 275 m2 area: the size was
+    wrong in exactly the direction that kept the check quiet.
+
+    Only GUESSED heights are touched. A part of a building whose height came
+    from a tag or from a published figure keeps it — splitting a footprint is
+    not new information about how tall it is. Thresholds and storey counts are
+    the same ones process.py applies at first assignment, deliberately: two
+    places deciding the same thing differently is how this project got a
+    parapet in the sky.
+    """
+    if nb.get("hs") or nb.get("k"):
+        return nb
+    a = nb.get("a", 0)
+    if a >= 520:
+        return nb
+    storeys = (2 if a < 230 else 3) + (int(abs(a)) % 3)
+    nb["h"] = round(min(nb.get("h", 99), round(3.6 * storeys, 1)), 1)
+    return nb
 
 def segment_terrace(building, seg_len=16.0, min_long=40.0, max_h=16.0, ratio=3.0):
     """Split a long low row every seg_len metres along its long axis so each
@@ -193,7 +219,7 @@ def segment_terrace(building, seg_len=16.0, min_long=40.0, max_h=16.0, ratio=3.0
         nb = dict(building)
         nb["p"] = p
         nb["a"] = abs(_area(p))
-        result.append(nb)
+        result.append(_recap_guess(nb))
     return result
 
 

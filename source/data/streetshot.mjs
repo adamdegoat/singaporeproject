@@ -38,6 +38,20 @@ const SETS = {
     { id: 'orchard-mid', x: 462, z: 7156, h: 1.06 },
     { id: 'orchard-east', x: 1185, z: 7406, h: 1.25 },
   ],
+  // ONE POINT ON EACH DISTRICT'S MAIN STREET, taken from the middle of its own
+  // axis in its own scene file. `node data/streetshot.mjs all` is the fastest
+  // honest answer to "what does each district actually look like from the
+  // seat right now", which beats working from a triage list written two
+  // sessions ago.
+  all: [
+    { id: '1-orchard', x: 315, z: 7075, h: 1.06 },
+    { id: '2-brasbasah', x: 1976, z: 7736, h: 0.89 },
+    { id: '3-marinabay', x: 3078, z: 8534, h: 0.05 },
+    { id: '4-chinatown', x: 1364, z: 9280, h: -0.54 },
+    { id: '5-rivervalley', x: 66, z: 7798, h: 1.43 },
+    { id: '6-bugis', x: 2152, z: 7715, h: 2.46 },
+    { id: '7-robertson', x: -805, z: 8140, h: 2.21 },
+  ],
 };
 
 const args = process.argv.slice(2);

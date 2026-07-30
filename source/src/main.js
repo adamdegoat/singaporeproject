@@ -647,6 +647,27 @@ const extraSignals = [];
 // ticks only while it is LOADED, and its meshes live in the district group
 // so an unload disposes them with everything else.
 const extraCrowds = [];
+// EVERY DISTRICT GETS ITS OWN TRAFFIC. `new Traffic(...)` was created ONCE, for
+// the primary axis, so the six streamed districts had completely empty roads —
+// South Bridge Road, Victoria Street, Bayfront Avenue, all of them, not a
+// single vehicle. District CROWDS were given this treatment two sessions ago
+// and traffic was missed, which is why the pavements looked alive and the
+// carriageways did not. Same lifecycle: built with the chunk, ticked only
+// while it is loaded, dropped when it unloads.
+const extraTraffic = [];
+// The ride, the walker and the engine sound must consider EVERY fleet, not
+// just the spawn district's. A car you can see but ride straight through is
+// worse than no car.
+const trafficHits = (x, z, r) => {
+  if (trafficSys && trafficSys.hits(x, z, r)) return true;
+  for (const t of extraTraffic) if (t.hits(x, z, r)) return true;
+  return false;
+};
+const trafficNearest = (x, z) => {
+  let d = trafficSys ? trafficSys.nearest(x, z) : 999;
+  for (const t of extraTraffic) { const n = t.nearest(x, z); if (n < d) d = n; }
+  return d;
+};
 // side streets already dressed, shared between the boot build and every
 // streamed chunk so a street crossing a seam is never dressed twice
 const dressedStreets = new Set();
@@ -973,6 +994,23 @@ async function addChunk(ch, id, Y, rec = {}) {
       rec.crowd = cr;
       await Y();
     }
+    if (!P.has('notraffic') && ax && ax.p && ax.p.length > 1) {
+      mk('traffic');
+      // Fleet scaled to the street it runs on, from the same figures the
+      // primary axis uses: Orchard Road is 2,586m with 78 cars and 12 buses,
+      // so one car per 33m and one bus per 215m of main street.
+      let alen = 0;
+      for (let i = 1; i < ax.p.length; i++) {
+        alen += Math.hypot(ax.p[i][0] - ax.p[i - 1][0], ax.p[i][1] - ax.p[i - 1][1]);
+      }
+      const cars = Math.max(18, Math.min(78, Math.round(alen / 33)));
+      const buses = Math.max(3, Math.min(12, Math.round(alen / 215)));
+      const tr = new Traffic(ax, cars, buses, axisSpec(ax, ch));
+      tr.build(g, 0);
+      extraTraffic.push(tr);
+      rec.traffic = tr;
+      await Y();
+    }
   }
   const solidBefore = WALLSREF ? (x, z) => WALLSREF.at(x, z) : null;
   mk('shops');
@@ -1015,6 +1053,10 @@ function unloadChunk(rec) {
   if (rec.crowd) {
     const i = extraCrowds.indexOf(rec.crowd);
     if (i >= 0) extraCrowds.splice(i, 1);
+  }
+  if (rec.traffic) {
+    const i = extraTraffic.indexOf(rec.traffic);
+    if (i >= 0) extraTraffic.splice(i, 1);
     rec.crowd = null;   // its meshes died with the group
   }
   for (const r of rec.dressedDelta || []) dressedStreets.delete(r);
@@ -1642,6 +1684,7 @@ async function buildRegion(data, opts = {}) {
         if (signals) signals.update(tSim);
         for (const es of extraSignals) es.update(tSim);
         if (trafficSys) trafficSys.update(tSim, 0.0166, signals, S.x, S.z);
+        for (const t of extraTraffic) t.update(tSim, 0.0166, signals, S.x, S.z);
         if (crowdSys) crowdSys.update(tSim, 0.0166, S.x, S.z, signals);
         for (const c of extraCrowds) c.update(tSim, 0.0166, S.x, S.z, signals);
         if ((k & 15) === 0) await bstep(0.99, 'waking the street');
@@ -1765,7 +1808,7 @@ function toggleMode() {
           const nx2 = Math.cos(walker.heading + a), nz2 = -Math.sin(walker.heading + a);
           const px2 = walker.x + nx2 * reach, pz2 = walker.z + nz2 * reach;
           if (blocked(px2, pz2)) continue;
-          if (trafficSys && trafficSys.hits(px2, pz2, 1.2)) continue;
+          if (trafficHits(px2, pz2, 1.2)) continue;
           S.x = px2; S.z = pz2; S.heading = walker.heading; S.speed = 0;
           placed = true;
         }
@@ -2040,7 +2083,7 @@ function loop(now) {
       const mz = -inp.moveY * fz + inp.moveX * fx;
       const wx = walker.x, wz = walker.z;
       stepWalk(walker, dt, mx, mz, inp.run);
-      if (trafficSys && trafficSys.hits(walker.x, walker.z, 0.32)) {
+      if (trafficHits(walker.x, walker.z, 0.32)) {
         walker.x = wx; walker.z = wz; walker.speed = 0;
       }
       if (blocked(walker.x, walker.z)) {
@@ -2063,10 +2106,11 @@ function loop(now) {
     for (const es of extraSignals) es.update(clock);
       for (const es of extraSignals) es.update(clock);
       if (trafficSys) trafficSys.update(clock, dt, signals, walker.x, walker.z);
+      for (const t of extraTraffic) t.update(clock, dt, signals, walker.x, walker.z);
       if (crowdSys) crowdSys.update(clock, dt, walker.x, walker.z, signals);
       for (const c of extraCrowds) c.update(clock, dt, walker.x, walker.z, signals);
       if (wayfinder) wayfinder.update(walker, dt);
-      sound.update(0, 'walk', walker.speed, walker.phase, trafficSys ? trafficSys.nearest(walker.x, walker.z) : 999);
+      sound.update(0, 'walk', walker.speed, walker.phase, trafficNearest(walker.x, walker.z));
       if (SPEC) driveCamera(dt); else walkCamera(dt);
       renderer.render(scene, camera);
       frames++;
@@ -2098,9 +2142,9 @@ function loop(now) {
     // lane kept dead-stopping the bike (user bug report, 2026-07-30).
     {
       const rr = vehicleKind === 'car' ? 0.95 : 0.55;
-      if (trafficSys && trafficSys.hits(S.x, S.z, rr)) {
-        if (!trafficSys.hits(S.x, pz, rr)) { S.z = pz; S.speed *= 0.9; }
-        else if (!trafficSys.hits(px, S.z, rr)) { S.x = px; S.speed *= 0.9; }
+      if (trafficHits(S.x, S.z, rr)) {
+        if (!trafficHits(S.x, pz, rr)) { S.z = pz; S.speed *= 0.9; }
+        else if (!trafficHits(px, S.z, rr)) { S.x = px; S.speed *= 0.9; }
         else {
           S.x = px; S.z = pz;
           S.speed *= -0.12;             // head-on: a small bounce, then stopped
@@ -2151,13 +2195,14 @@ function loop(now) {
     if (signals) signals.update(clock);
     fmk('signals');
     if (trafficSys) trafficSys.update(clock, dt, signals, S.x, S.z);
+    for (const t of extraTraffic) t.update(clock, dt, signals, S.x, S.z);
     fmk('traffic');
     if (crowdSys) crowdSys.update(clock, dt, S.x, S.z, signals);
     for (const c of extraCrowds) c.update(clock, dt, S.x, S.z, signals);
     fmk('crowd');
     if (wayfinder) wayfinder.update(S, dt);
     fmk('wayfind');
-    sound.update(S.speed, 'ride', 0, 0, trafficSys ? trafficSys.nearest(S.x, S.z) : 999);
+    sound.update(S.speed, 'ride', 0, 0, trafficNearest(S.x, S.z));
     fmk('sound');
 
     driveCamera(dt);
@@ -2292,7 +2337,7 @@ window.__auditRoads = (step = 4) => {
           ray.set(from, upv); ray.near = 0; ray.far = 1.6;
           let hit = ray.intersectObjects(world.children, true);
           // a vehicle is a legitimate hit; identify by proximity to traffic
-          const nearVeh = trafficSys ? trafficSys.nearest(sx, sz) : 999;
+          const nearVeh = trafficNearest(sx, sz);
           if (hit.length && nearVeh > 4.5) {
             out.obstruct.push({ road: r.n || r.k, x: +sx.toFixed(1), z: +sz.toFixed(1),
               off: +off.toFixed(1), h: +(0.4 + hit[0].distance).toFixed(2) });
