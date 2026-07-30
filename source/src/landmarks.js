@@ -1623,13 +1623,31 @@ function buddhaTooth(api, b) {
     mesh.castShadow = true;
     api.world.add(mesh);
   };
-  const W = ob.halfShort * 2, D = ob.halfLong * 2;
-  // red body on a granite plinth, with the white spandrel bands proud
-  api.world.add(api.extrude(api.grow(b.p, 1.004), 1.0, api.mat.conc, g0));
-  api.world.add(api.extrude(b.p, 24.0, red, g0 + 1.0));
-  for (const bandY of [10.2, 15.2, 23.2]) {
-    api.world.add(api.extrude(api.grow(b.p, 1.006), 1.1, white, g0 + bandY));
+  // roof rectangles sized to the RING's real extents in the local frame,
+  // not the oriented box: the footprint is notched, and box-sized roofs
+  // sailed metres past the street-side wall (round 3 vet)
+  let uMn = 1e9, uMx = -1e9, vMn = 1e9, vMx = -1e9;
+  for (const [rx2, rz2] of b.p) {
+    const dx2 = rx2 - ob.cx, dz2 = rz2 - ob.cz;
+    const u2 = dx2 * xA.x + dz2 * xA.z, v2 = dx2 * zA.x + dz2 * zA.z;
+    if (u2 < uMn) uMn = u2;
+    if (u2 > uMx) uMx = u2;
+    if (v2 < vMn) vMn = v2;
+    if (v2 > vMx) vMx = v2;
   }
+  const uC = (uMn + uMx) / 2, vC = (vMn + vMx) / 2;
+  const W = uMx - uMn, D = vMx - vMn;
+  // the red body STEPS BACK as it rises (wedding-cake, per the photos) so
+  // each skirt roof wraps a real step instead of slicing through a
+  // monolith — round 2's remaining fault. White spandrel band at each
+  // step head, granite plinth below.
+  api.world.add(api.extrude(api.grow(b.p, 1.004), 1.0, api.mat.conc, g0));
+  api.world.add(api.extrude(b.p, 11.0, red, g0 + 1.0));
+  api.world.add(api.extrude(api.grow(b.p, 1.006), 1.1, white, g0 + 10.4));
+  api.world.add(api.extrude(api.grow(b.p, 0.93), 6.2, red, g0 + 12.0));
+  api.world.add(api.extrude(api.grow(b.p, 0.936), 1.0, white, g0 + 17.3));
+  api.world.add(api.extrude(api.grow(b.p, 0.85), 5.6, red, g0 + 18.4));
+  api.world.add(api.extrude(api.grow(b.p, 0.856), 1.0, white, g0 + 23.0));
   // stacked hip roofs: 4-gon frusta in BLUE-GREY (researched: not gold, not
   // terracotta), thin gilt strip along each eave. R3 slightly wider than R2
   // by publication — no uniform pagoda taper.
@@ -1651,35 +1669,42 @@ function buddhaTooth(api, b) {
       at(strip, lx + gx2, g0 + y + 0.06, lz + gz2);
     }
   };
-  roof(W * 1.10, D * 1.04, 2.6, 11.5);
-  roof(W * 0.90, D * 0.88, 2.4, 16.5);
-  roof(W * 0.95, D * 0.93, 2.6, 23.5);
+  roof(W * 1.08, D * 1.02, 2.6, 12.0, uC, vC);   // skirt over the base
+  roof(W * 0.99, D * 0.94, 2.4, 18.4, uC, vC);   // over step 2
+  roof(W * 0.92, D * 0.87, 2.6, 24.0, uC, vC);   // crown over step 3
+
   // entrance porch projecting toward the street, low, its own roof
   {
-    const plz = sDot * (ob.halfLong + 5.2);
+    // the annex projects toward the street but its ROOF must stay off the
+    // public pavement (round 2 hung it over the kerb — vetted from the
+    // rider's seat). Centre 2.4m out, roof 8.5 deep: reach ~6.7m.
+    const plz = (sDot > 0 ? vMx : vMn) + sDot * 2.4;
     const px2 = ob.cx + zA.x * plz, pz2 = ob.cz + zA.z * plz;
-    if (!onCarriageway(px2, pz2, 0.3)) {
-      const porch = new THREE.Mesh(new THREE.BoxGeometry(W * 0.62, 7.0, 10.4), red);
+    const rimX = ob.cx + zA.x * (plz + sDot * 4.4), rimZ = ob.cz + zA.z * (plz + sDot * 4.4);
+    if (!onCarriageway(px2, pz2, 0.3) && !onCarriageway(rimX, rimZ, 0.2)) {
+      const porch = new THREE.Mesh(new THREE.BoxGeometry(W * 0.60, 6.4, 4.8), red);
       porch.rotation.y = yawL;
-      at(porch, 0, g0 + 3.5, plz);
-      roof(W * 0.66, 12, 2.2, 8.0, 0, plz);
+      at(porch, 0, g0 + 3.2, plz);
+      roof(W * 0.64, 8.5, 2.0, 7.4, 0, plz);
     }
   }
   // roof-garden pavilions: 4 corners + centre; the street-side PAIR is the
   // skyline signature (researched: there is NO golden stupa outside)
   const pav = (lx, lz) => {
+    // base ABOVE the crown roof's apex (24 + 2.6): round 3 had the bodies
+    // starting inside it, poking red through the grey
     const body = new THREE.Mesh(new THREE.BoxGeometry(7.4, 3.4, 7.4), red);
     body.rotation.y = yawL;
-    at(body, lx, g0 + 26.7, lz);
-    roof(9.2, 9.2, 1.7, 28.4, lx, lz);
-    roof(6.4, 6.4, 1.5, 30.1, lx, lz);
+    at(body, lx, g0 + 28.5, lz);
+    roof(9.2, 9.2, 1.7, 30.2, lx, lz);
+    roof(6.4, 6.4, 1.5, 31.9, lx, lz);
     const knob = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), gold);
-    at(knob, lx, g0 + 31.9, lz);
+    at(knob, lx, g0 + 33.7, lz);
   };
-  const uO = ob.halfShort * 0.55, vO = ob.halfLong * 0.70;
-  pav(-uO, vO * sDot); pav(uO, vO * sDot);
-  pav(-uO, -vO * sDot); pav(uO, -vO * sDot);
-  pav(0, 0);
+  const uO = W * 0.25, vO = D * 0.31;
+  pav(uC - uO, vC + vO * sDot); pav(uC + uO, vC + vO * sDot);
+  pav(uC - uO, vC - vO * sDot); pav(uC + uO, vC - vO * sDot);
+  pav(uC, vC);
 }
 
 function sriMariamman(api, b) {
@@ -1707,16 +1732,10 @@ function sriMariamman(api, b) {
     if (!pointInRing(ob.cx + sw.nx * d2, ob.cz + sw.nz * d2, b.p)) { edge = d2 - 0.5; break; }
   }
   const bl = Math.max(16, ob.halfShort * 2);
-  // vault roofs: shallow green half-cylinders, axis PARALLEL to the street
-  const up = new THREE.Vector3(0, 1, 0), tv = new THREE.Vector3(tX, 0, tZ);
-  for (const off of [-5.5, 0, 5.5]) {
-    const v = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, bl * 0.7, 10, 1, false, 0, Math.PI), green);
-    v.quaternion.setFromUnitVectors(up, tv);
-    v.rotateY(Math.PI / 2);
-    v.scale.set(1, 1, 0.6);
-    v.position.set(ob.cx + sw.nx * off, g0 + 8.9, ob.cz + sw.nz * off);
-    api.world.add(v);
-  }
+  // (the green barrel vaults were cut in round 3: modelled as half-
+  // cylinders they read as giant claws from the street, and the research
+  // says the recognition lives in the gopuram, the cream wall and the
+  // cows — not the court roofs. Flat roof + terracotta coping stay.)
   // Nandi cows: the dotted white line along the street coping
   for (let u = -bl / 2 + 1.5; u < bl / 2 - 1.5; u += 3.5) {
     const cx2 = ob.cx + sw.nx * edge + tX * u, cz2 = ob.cz + sw.nz * edge + tZ * u;
@@ -3713,8 +3732,8 @@ export const RECIPES = [
   // wraps a step), and the SMT gopuram has never been verified visible from
   // South Bridge Road. Round 3: fix those three, then judge from the
   // RIDER'S seat before wiring.
-  // [/^buddha tooth relic temple/i, buddhaTooth],
-  // [/^sri mariamman temple$/i, sriMariamman],
+  [/^buddha tooth relic temple/i, buddhaTooth],
+  [/^sri mariamman temple$/i, sriMariamman],
 
   // THESE THREE ARE WIRED UP, and the comment that used to sit here said the
   // opposite: "WRITTEN AND NOT WIRED UP ... they stay here, unreferenced".

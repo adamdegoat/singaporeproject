@@ -447,27 +447,12 @@ export class Wayfinder {
       b.p.forEach(([x, z], i) => (i ? g.lineTo(x, z) : g.moveTo(x, z)));
       g.closePath(); g.fill(); g.stroke();
     }
-    // THE MAIN STREETS, all of them, on top so they are findable.
-    //
-    // This drew ONE amber line -- the primary axis -- which in a three-district
-    // region means Orchard Road is highlighted and Bras Basah Road and Bayfront
-    // Avenue are not. A single unexplained yellow line down one street is a
-    // question, not a wayfinding aid, and that is exactly how it was read.
-    //
-    // Every main street is drawn now, and the one you are ON is drawn brighter
-    // and thicker, which is what makes the colour mean something: it is you.
-    const axes = (this.data.axes && this.data.axes.length)
-      ? this.data.axes : [this.axis];
-    const onName = (this._lastStreet || '').toLowerCase();
-    for (const ax of axes) {
-      if (!ax || !ax.p) continue;
-      const mine = onName && (ax.n || '').toLowerCase() === onName;
-      g.strokeStyle = mine ? 'rgba(255,214,150,0.95)' : 'rgba(255,214,150,0.40)';
-      g.lineWidth = (mine ? 3.2 : 1.8) / k;
-      g.beginPath();
-      ax.p.forEach(([x, z], i) => (i ? g.lineTo(x, z) : g.moveTo(x, z)));
-      g.stroke();
-    }
+    // NO street highlights. There used to be amber lines over the main
+    // streets (first one, then all of them with "the one you are on"
+    // thicker) and the user read the thick one as an unexplained glitch —
+    // twice, in two different designs. A real map tracks YOU; the streets
+    // are already legible as dark lines. The marker and its facing cone
+    // below are the only amber left. (User decision, 2026-07-30.)
     g.restore();
 
     // you, always dead centre and always pointing up
