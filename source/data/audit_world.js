@@ -10,6 +10,12 @@
 // ceiling. Declared once: listing them by id at each comparison site is how C8
 // came to report 13% coverage as a pass against a 70% floor.
 const FLOORS = new Set(['C4', 'C7', 'C8', 'S8']);
+// S8 floors raised 2026-07-30 (orchard 72->73, brasbasah 68->69,
+// rivervalley 40->43, marinabay 52->57) when the ground floor moved onto the
+// STREET datum instead of the structural seat. On a slope the shopfront band
+// had been seated at the bottom of the hill behind the building; at street
+// level it reaches tenants it could not before. Floors go up, never down —
+// left at the old numbers the gain would be free to leak away unnoticed.
 
 window.__auditWorld = async function auditWorld() {
   const T = window.__THREE, sc = window.__scene;
@@ -73,17 +79,17 @@ window.__auditWorld = async function auditWorld() {
     // the bay — which is what waterfront lamps do. It appeared when heads
     // started grounding at their POLE (the Leonie Hill floating-luminaire
     // fix); the head was always over the water, now it is counted honestly.
-    marinabay: { P8: 19, W2: 79, S8: 52, P4: 100, P6: 20, T2: 11 },
+    marinabay: { P8: 19, W2: 79, S8: 57, P4: 100, P6: 20, T2: 11 },
     // Orchard's T1 is CLOSED at 0. The long-open "merged tile 1.3m above
     // Orchard Boulevard that S7 reads as 0" was the ROAD SURFACE -- a bridge
     // deck belongs above the road it spans, S7 was right to ignore it, and T1
     // now carries the same by-name surface exemption P1b has. The two checks
     // agree again and the disagreement is resolved, not tuned away.
-    orchard: { W2: 0, T1: 0, S8: 72 },
+    orchard: { W2: 0, T1: 0, S8: 73 },
     // Bras Basah's T3 is a single road sample outside the heightfield at the
     // Marina Bay seam: the merged grid grew when the third district joined and
     // one way at the edge now falls a cell outside it.
-    brasbasah: { W2: 2, S8: 68, T1: 1, T3: 1 },   // W2: see the marinabay note
+    brasbasah: { W2: 2, S8: 69, T1: 1, T3: 1 },   // W2: see the marinabay note
     // Districts 4+5 enter the audit set 2026-07-30, day one of their
     // existence, with ratchets AT the day-one measurement. These may go
     // down and never up.
@@ -110,7 +116,7 @@ window.__auditWorld = async function auditWorld() {
     // main street ends at the bbox — surface ways genuinely end in stubs
     // (same mechanism as marinabay's 11). S8 40: Robertson/UE Square
     // frontage is condo podium, day-one figure.
-    rivervalley: { C7: 33, T2: 11, S8: 40 },
+    rivervalley: { C7: 33, T2: 11, S8: 43 },
     // Bugis enters 2026-07-30, day one. P1b 2: the Bugis+ generic-family
     // bands overhang Victoria Street where the footprint meets the kerb —
     // the building needs its recipe (the crystal-mesh facade), queued in

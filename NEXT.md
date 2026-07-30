@@ -70,6 +70,69 @@
 8. Boat Quay river-row colour treatment; more CBD facades; then ASK THE
    USER about expanding (Little India / civic core / Tiong Bahru).
 
+# 2026-07-30 afternoon (Opus 5, main loop) — ONE DATUM PER BUILDING
+
+The user looked at an Old Hill Street vet frame and asked about "the roof
+floating off the building". He was right, and it was not that building: it was
+the whole seating model.
+
+`extrudeGeo(pts, h, y0)` chose the footing datum from **the thickness of the
+piece being extruded** — `h <= 16 ? streetFootingY : footingY`. So a 30m mass
+took footingY (7.31m at Old Hill Street) while its own 0.7m parapet cap took
+streetFootingY (20.5m), and the cap landed at 50.5m over a roof at 37.31m:
+13.2m of daylight, a pale slab in the sky. Every trim course, cornice and
+shopfront band in city.js AND landmarks.js funnels through extrudeGeo, so the
+same split opened under every one of them on every sloped site in the world.
+It could never show on flat ground, which is why 41 green checks never saw it.
+
+FIXED — `FOOT`, a module-level datum set ONCE per building at the top of the
+builder loop, using the rule the mass already used (so **no mass moves**; only
+the pieces snap back onto their own building). extrudeGeo, extrude and
+`api.footingY` all read it. `api.footingY` now answers with the current
+building's seat rather than re-sampling whatever ring a recipe hands it —
+recipes pass grown and inset rings constantly and those sample different
+ground, which was a second way to get two seats for one building.
+
+TWO MORE OF THE SAME FAMILY, found while fixing it, both confirmed by probe:
+- **Rooftop plant has never been visible, anywhere.** Plant boxes, stair
+  housing, water tanks and duct runs are raw BoxGeometry translated to an
+  ABSOLUTE `y = h`. Nothing seats a raw BoxGeometry, so every one of them sat
+  a full footing below its own roof — 7.3m into Old Hill Street, 26 to 50m
+  into Orchard. An entire detail layer built, merged and shadowed inside the
+  buildings since the day it was written. Now seated on `FOOT + h`.
+- **The recessed lobby and the entrance canopy were underground too.** The
+  lobby back wall at y=2.5, sides at 2.5, ceiling at 4.7, glass doors at 2.4,
+  canopy at 6.1, posts at 3.0 — all absolute. The probe found them at y
+  0.3–4.7 under ground that is 8.2–20.8m there. The one feature whose whole
+  purpose is "what you actually see from a scooter" has been buried on every
+  building in the world. Now seated on the building's foot.
+
+Verified: Old Hill Street generic frame has no sky slab and shows plant on the
+roof; Wisma Atria (flat ground, ground=26) is unchanged in massing and now
+shows its entrance canopy and glazed band at street level.
+
+STILL OPEN, named so it is not mistaken for fixed: on a steep footprint
+footingY takes the LOWEST ground, so Old Hill Street (12.6m of relief across
+one 21-vertex ring, Fort Canning's flank) is buried 12.6m on its uphill side
+and the lowest two shutter rows go underground. That is deliberate for a tower
+("bury the uphill side") and wrong at 2.5 storeys. The real answer is a plinth:
+seat at the STREET frontage and extrude the mass DOWN to the lowest ground so
+the roof stays at street+h and no daylight shows downhill. Not done — it
+changes every sloped silhouette in the world and every landmark recipe extrudes
+its own mass, so it needs its own batch and its own vet.
+
+ALSO THIS BATCH — **crown vantages, built not hunted** (queue item 2).
+`data/vantage.mjs` gains `kind: 'crown'`: candidate eyes are points on a real
+mapped water polygon (area > 20,000m2, shoreline resampled at 40m, one
+candidate per 15 degrees of bearing so one finely-mapped quay cannot
+monopolise the choice), and the PAGE picks between them by line of sight,
+measured against the distance to the subject minus the tower's own radius —
+the tower is the first thing every centre ray hits, so a naive nearest-hit
+test calls every candidate blocked. Shots 15-18: UOB, Republic, OCBC, and all
+three 280m peaks together at fov 44 ("if they are not level, one is wrong").
+Crown shots teleport the ride to the tower and WAIT FOR DRAIN first — the ride
+parks in the spawn district 2km away and the CBD would not be built yet.
+
 # HANDOVER — state as of 2026-07-30 (overnight session, user asleep)
 
 ## DISTRICT REVIEW TRIAGE (6 Opus agents, 274 frames of chinatown+rivervalley

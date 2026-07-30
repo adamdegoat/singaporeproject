@@ -530,6 +530,49 @@ export function footingY(pts) {
   return lo - 0.9;
 }
 
+// ONE DATUM PER BUILDING. A building is seated once, and every piece of it —
+// mass, parapet, cornice, shopfront band, awning, rooftop plant — is measured
+// from that seat. This used to be re-derived per PIECE from the piece's own
+// thickness, so a 30m mass took footingY while its own 0.7m parapet cap took
+// streetFootingY, and wherever those two differ the cap left the roof: Old
+// Hill Street Police Station's parapet floated 13.2m over its roof as a pale
+// slab in the sky, which is what the user saw and asked about. Every trim
+// course in landmarks.js funnels through extrudeGeo too, so the same daylight
+// opened under every cornice on every sloped site in the world.
+//
+// The rule that picks the datum is unchanged and still lives on the BUILDING
+// (low street-facing rows foot at their street edge, towers bury the uphill
+// side), so no mass moves; only the pieces snap back onto their own building.
+// A BUILDING ON A SLOPE HAS TWO HONEST DATUMS, and the original bug was not
+// that there were two — it was that the choice between them was made by the
+// THICKNESS OF THE SLICE being extruded rather than by what the piece is.
+//
+//   FOOT   the structural seat: the lowest ground under the ring, so the mass
+//          fills the fall and no daylight shows downhill. The roof is FOOT+h,
+//          so everything that caps or stands on the roof measures from it —
+//          parapet, cornice, rooftop plant.
+//   STREET where the building meets the pavement it fronts. Everything at
+//          ground level measures from THIS — shopfront band, entrance canopy,
+//          recessed lobby, doors — because a ground floor is at street level
+//          by definition, not at the bottom of the hill behind the building.
+//
+// Old Hill Street Police Station is the case that separates them: 12.6m of
+// relief across one ring, so FOOT is 7.31m and STREET is 20.5m. Seating the
+// parapet on STREET put it 13.2m above its own roof (the slab in the sky the
+// user asked about); seating the shopfront band on FOOT buried it in the hill
+// and cost a tenant its frontage (S8 67/68, caught by the gate).
+let FOOT = null;
+let STREET = null;
+
+// Both, in one place, so the later passes cannot invent their own. Exported
+// because buildShopfronts runs long after these are back to null.
+export function seatY(b) {
+  return b.h <= 16 ? streetFootingY(b.p) : footingY(b.p);
+}
+export function streetY(b) {
+  return streetFootingY(b.p);
+}
+
 // the raw geometry, without wrapping it in a Mesh. Low buildings (a
 // shophouse, not a tower) foot at their STREET EDGE — see streetFootingY.
 function extrudeGeo(pts, h, y0 = 0) {
@@ -537,7 +580,7 @@ function extrudeGeo(pts, h, y0 = 0) {
     depth: h, bevelEnabled: false, curveSegments: 1,
   });
   geo.rotateX(Math.PI / 2);
-  const foot = h <= 16 ? streetFootingY(pts) : footingY(pts);
+  const foot = FOOT !== null ? FOOT : (h <= 16 ? streetFootingY(pts) : footingY(pts));
   geo.translate(0, foot + y0 + h, 0);
   return geo;
 }
@@ -580,7 +623,7 @@ function extrude(pts, h, mat, y0 = 0) {
     depth: h, bevelEnabled: false, curveSegments: 1,
   });
   geo.rotateX(Math.PI / 2);      // +Z extrusion becomes +Y
-  geo.translate(0, footingY(pts) + y0 + h, 0);
+  geo.translate(0, (FOOT !== null ? FOOT : footingY(pts)) + y0 + h, 0);
   const m = new THREE.Mesh(geo, mat);
   m.castShadow = true; m.receiveShadow = true;
   return m;
@@ -633,7 +676,13 @@ export async function buildBuildings(world, data, Y = null) {
     // that mixes the two puts its tower at sea level while its podium sits on
     // the hill. Lucky Plaza's ground is 26m up and its bubble lift was drawn
     // from y=0, buried with three metres showing.
-    footingY,
+    //
+    // While a building is being built this answers with THAT BUILDING'S seat
+    // rather than a fresh sample of whatever ring it is handed. Recipes pass
+    // grown and inset rings constantly, and those sample different ground, so
+    // the same building could get two different seats — the exact split that
+    // left parapets in the sky. One building, one number.
+    footingY: (pts) => (FOOT !== null ? FOOT : footingY(pts)),
     merge: (geo, mat, x, z) => merger.add(autoUV(geo, mat), mat, x, z),
     // the ground under a point, so a recipe can seat a dome or a spire on the
     // terrain instead of on y=0. Without it every hand-placed piece floats or
@@ -661,6 +710,13 @@ export async function buildBuildings(world, data, Y = null) {
     const pts = b.p;
     if (pts.length < 3) continue;
     if (SOLO && !((b.n || '').toLowerCase().includes(SOLO))) continue;
+
+    // Seat the building ONCE, here, before anything about it is drawn. The
+    // rule is the one the mass already used, so no mass moves; what changes is
+    // that every later piece of this building is measured from the same number
+    // instead of re-deriving one from its own thickness or its own ring.
+    FOOT = seatY(b);
+    STREET = streetY(b);
 
     // small and low with no name: a shophouse, which is what fills the lanes
     if (!b.k && b.a < 520 && b.h <= 20 && b.p.length <= 64) {
@@ -744,35 +800,46 @@ export async function buildBuildings(world, data, Y = null) {
     addShopfront(world, b, per, merger, clearance);
 
     // rooftop plant on the bigger flat roofs: plant boxes, a stair housing,
-    // water tanks and a run of ducting, so no two roofs read the same
+    // water tanks and a run of ducting, so no two roofs read the same.
+    //
+    // ALL OF IT STOOD AT ABSOLUTE y=h AND HAS THEREFORE NEVER BEEN VISIBLE.
+    // A raw BoxGeometry is not seated by anything, and the roof it belongs on
+    // is at FOOT+h, so every plant box, stair housing, tank and duct in the
+    // world was sunk by the height of its own ground — 7.3m into Old Hill
+    // Street, 26 to 50m into Orchard. It has been building an invisible layer
+    // inside the buildings since the day it was written. Same two-numbers trap
+    // as the bike riding 5.5cm under the road: the height a thing is DRAWN at
+    // and the height a thing STANDS on.
     if (b.a > 900 && h > 12) {
       const c = centroid(pts);
+      const roof = FOOT + h;
       for (let i = 0; i < 3; i++) {
         const g2 = new THREE.BoxGeometry(rand(3, 7), rand(1.6, 3.4), rand(3, 6));
-        g2.translate(c[0] + rand(-8, 8), h + rand(1, 1.8), c[1] + rand(-8, 8));
+        g2.translate(c[0] + rand(-8, 8), roof + rand(1, 1.8), c[1] + rand(-8, 8));
         merger.add(g2, MAT.conc, c[0], c[1]);
       }
       // lift and stair housing
       const sh = new THREE.BoxGeometry(rand(4, 7), rand(3.2, 4.6), rand(4, 6));
-      sh.translate(c[0] + rand(-6, 6), h + 2.2, c[1] + rand(-6, 6));
+      sh.translate(c[0] + rand(-6, 6), roof + 2.2, c[1] + rand(-6, 6));
       merger.add(sh, MAT.trim, c[0], c[1]);
       // water tanks
       if (chance(0.6)) {
         for (let i = 0; i < 2; i++) {
           const tk = new THREE.CylinderGeometry(rand(0.9, 1.4), rand(0.9, 1.4), 1.7, 10);
-          tk.translate(c[0] + rand(-9, 9), h + 0.9, c[1] + rand(-9, 9));
+          tk.translate(c[0] + rand(-9, 9), roof + 0.9, c[1] + rand(-9, 9));
           merger.add(tk, MAT.trim, c[0], c[1]);
         }
       }
       // duct run
       if (chance(0.5)) {
         const dz = new THREE.BoxGeometry(rand(9, 16), 0.7, 0.7);
-        dz.translate(c[0] + rand(-4, 4), h + 0.9, c[1] + rand(-7, 7));
+        dz.translate(c[0] + rand(-4, 4), roof + 0.9, c[1] + rand(-7, 7));
         merger.add(dz, MAT.metal, c[0], c[1]);
       }
     }
     stats.count++;
   }
+  FOOT = STREET = null;   // nothing outside this loop belongs to a building
   stats.mergedMeshes = merger.flush(world);
   return stats;
 }
@@ -782,6 +849,18 @@ export async function buildBuildings(world, data, Y = null) {
 function addShopfront(world, b, per, merger, clearance) {
   if (b.a <= 600 || b.h <= 7) return;
   const pts = b.p;
+  // The band and its trim go through extrudeGeo and are seated for us; every
+  // hand-placed piece below is a raw Mesh at an absolute y and was NOT. The
+  // recessed lobby — the whole point of which is that you can see into it from
+  // a scooter — sat at y=2.5 with its ceiling at 4.7, so on Old Hill Street's
+  // 8.2m ground it was four metres under the pavement and on Orchard's 26 to
+  // 50m it was never within twenty metres of daylight. It has been built,
+  // lit and shadow-cast underground on every building in the world.
+  const foot = STREET !== null ? STREET : streetFootingY(pts);
+  // How far the ground floor sits above the structural seat. extrudeGeo works
+  // from FOOT, so the band is lifted by the difference rather than given its
+  // own seat — one number, applied where it belongs.
+  const dy = foot - (FOOT !== null ? FOOT : footingY(pts));
   const sf = pick(SHOPS);
   const sfMat = sharedMat(sf, 0.32, 0.05);
   if (merger) {
@@ -789,13 +868,13 @@ function addShopfront(world, b, per, merger, clearance) {
     // metre UVs (see the UV RULE above): texShopfront is 6 bays per tile, so
     // 1/15 is a 2.5m bay, and 1/5.4 fits exactly one row to the 5.4m band
     // instead of stacking five of them
-    merger.add(scaleUV(extrudeGeo(grow(pts, 1.012), 5.4), 1 / 15, 1 / 5.4), sfMat, cS[0], cS[1]);
-    merger.add(extrudeGeo(grow(pts, 1.055), 0.42, 5.3), MAT.trim, cS[0], cS[1]);
+    merger.add(scaleUV(extrudeGeo(grow(pts, 1.012), 5.4, dy), 1 / 15, 1 / 5.4), sfMat, cS[0], cS[1]);
+    merger.add(extrudeGeo(grow(pts, 1.055), 0.42, 5.3 + dy), MAT.trim, cS[0], cS[1]);
   } else {
-    const band = extrude(grow(pts, 1.012), 5.4, sfMat);
+    const band = extrude(grow(pts, 1.012), 5.4, sfMat, dy);
     scaleUV(band.geometry, 1 / 15, 1 / 5.4);   // same metre rule as the merger branch
     world.add(band);
-    world.add(extrude(grow(pts, 1.055), 0.42, MAT.trim, 5.3));
+    world.add(extrude(grow(pts, 1.055), 0.42, MAT.trim, 5.3 + dy));
   }
   // entrance canopy: a deeper projection on the longest edge
   let bi = 0, bl = 0;
@@ -826,14 +905,14 @@ function addShopfront(world, b, per, merger, clearance) {
           color: 0x2b2620, roughness: 0.7,
           emissive: 0xd9b477, emissiveIntensity: 0.55,
         }));
-      back.position.set(mx - ux * 5.2, 2.5, mz - uz * 5.2);
+      back.position.set(mx - ux * 5.2, foot + 2.5, mz - uz * 5.2);
       back.rotation.y = ang + Math.PI / 2;
       world.add(back);
       // side walls, so it reads as depth rather than a glowing sticker
       for (const sgn of [-1, 1]) {
         const side = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 4.4),
           new THREE.MeshStandardMaterial({ color: 0x3a332b, roughness: 0.8, side: THREE.DoubleSide }));
-        side.position.set(mx - ux * 2.5 + Math.sin(ang) * sgn * lw / 2, 2.5,
+        side.position.set(mx - ux * 2.5 + Math.sin(ang) * sgn * lw / 2, foot + 2.5,
                           mz - uz * 2.5 + Math.cos(ang) * sgn * lw / 2);
         side.rotation.y = ang;
         world.add(side);
@@ -842,7 +921,7 @@ function addShopfront(world, b, per, merger, clearance) {
         new THREE.MeshStandardMaterial({ color: 0x4a423a, roughness: 0.8, side: THREE.DoubleSide }));
       ceil.rotation.x = Math.PI / 2;
       ceil.rotation.z = -ang;
-      ceil.position.set(mx - ux * 2.5, 4.7, mz - uz * 2.5);
+      ceil.position.set(mx - ux * 2.5, foot + 4.7, mz - uz * 2.5);
       world.add(ceil);
       // glass doors across the opening
       const doors = new THREE.Mesh(new THREE.PlaneGeometry(lw, 4.2),
@@ -850,7 +929,7 @@ function addShopfront(world, b, per, merger, clearance) {
           color: 0xbcd0da, roughness: 0.08, metalness: 0.2,
           transparent: true, opacity: 0.34, side: THREE.DoubleSide,
         }));
-      doors.position.set(mx + ux * 0.35, 2.4, mz + uz * 0.35);
+      doors.position.set(mx + ux * 0.35, foot + 2.4, mz + uz * 0.35);
       doors.rotation.y = ang + Math.PI / 2;
       world.add(doors);
     }
@@ -878,14 +957,19 @@ function addShopfront(world, b, per, merger, clearance) {
         const [px2, pz2] = postAt(w, s2); return onCarriageway(px2, pz2);
       });
       if (clear) {
+        // Seated on the building, not on the datum. These were at an absolute
+        // 6.1m with their posts at 3.0m, so on ground that is 8m up the canopy
+        // was two metres underground and on Orchard it was thirty — the whole
+        // entrance-canopy layer was buried everywhere the ground is not at sea
+        // level, which is everywhere. Found with the rooftop plant, 2026-07-30.
         const can = new THREE.Mesh(new THREE.BoxGeometry(w, 0.5, reach * 1.15), MAT.trim);
-        can.position.set(mx + ux * reach * 0.5, 6.1, mz + uz * reach * 0.5);
+        can.position.set(mx + ux * reach * 0.5, foot + 6.1, mz + uz * reach * 0.5);
         can.rotation.y = ang + Math.PI / 2;
         can.castShadow = true; world.add(can);
         for (const s2 of [-1, 1]) {
           const [px2, pz2] = postAt(w, s2);
           const col = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 6.0, 8), MAT.metal);
-          col.position.set(px2, 3.0, pz2);
+          col.position.set(px2, foot + 3.0, pz2);
           col.castShadow = true; world.add(col);
         }
       }

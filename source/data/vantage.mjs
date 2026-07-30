@@ -94,6 +94,79 @@ function frontage(name) {
   return { b, front: best.v, ax: best.ax, centre: [cx, cz], h: b.h || 20 };
 }
 
+/* ---------- water, for the towers the street cannot show ----------
+ *
+ * A CBD crown cannot be judged from the pavement. The canyon between the
+ * towers eats every camera you point up it, and 2026-07-30 went five vet
+ * rounds hunting one by hand before the lesson was written down: build the
+ * vantage, do not hunt it. The city is photographed from the water, so the
+ * camera goes there — and it is DERIVED, like every other camera here.
+ * Candidate eyes are points on a real mapped water polygon at roughly the
+ * distance the postcard is taken from, one per fifteen degrees of bearing so
+ * a single long quay cannot monopolise the choice, and the page picks between
+ * them by line of sight. Which quay is blocked is a fact about the built
+ * world; it cannot be known out here, and guessing it is what cost the five
+ * rounds.
+ */
+const WATER = (data.water || [])
+  .map((w) => (Array.isArray(w) ? { p: w } : w))
+  .filter((w) => w && w.p && w.p.length > 2)
+  .map((w) => {
+    let a = 0;
+    for (let i = 0; i < w.p.length; i++) {
+      const q = w.p[i], r = w.p[(i + 1) % w.p.length];
+      a += q[0] * r[1] - r[0] * q[1];
+    }
+    return { p: w.p, a: Math.abs(a) / 2 };
+  })
+  .filter((w) => w.a > 20000);          // a pond is not a vantage
+
+// Every shoreline, resampled at 40m so a long straight quay offers as many
+// candidates as a fiddly one and the bearing buckets below stay honest.
+const SHORE = (() => {
+  const out = [];
+  for (const w of WATER) {
+    for (let i = 0; i < w.p.length; i++) {
+      const a = w.p[i], b = w.p[(i + 1) % w.p.length];
+      const l = len(sub(b, a));
+      const n = Math.max(1, Math.round(l / 40));
+      for (let k = 0; k < n; k++) out.push([a[0] + (b[0] - a[0]) * (k / n), a[1] + (b[1] - a[1]) * (k / n)]);
+    }
+  }
+  return out;
+})();
+
+// One candidate per 15 degrees of bearing, the one nearest the asked-for
+// distance. Without the buckets every candidate comes off whichever quay
+// happens to be finely mapped, and if that quay is behind another tower the
+// shot has nowhere else to go.
+function waterCands(centre, dist) {
+  const best = new Map();
+  for (const p of SHORE) {
+    const d = len(sub(p, centre));
+    if (d < dist * 0.55 || d > dist * 1.7) continue;
+    const k = Math.round(Math.atan2(p[0] - centre[0], p[1] - centre[1]) / (Math.PI / 12));
+    const cur = best.get(k);
+    if (!cur || Math.abs(d - dist) < Math.abs(cur.d - dist)) best.set(k, { p, d });
+  }
+  return [...best.values()]
+    .sort((a, b) => Math.abs(a.d - dist) - Math.abs(b.d - dist))
+    .map((c) => c.p);
+}
+
+// A tower by name, with the radius the crown actually occupies, so the line of
+// sight can tell "blocked by a building in the way" from "arrived at the
+// subject" — the tower is itself the first thing every centre ray hits.
+function tower(name) {
+  const b = named.get(name);
+  if (!b) throw new Error(`no building named ${name} in the scene`);
+  const cx = b.p.reduce((s, q) => s + q[0], 0) / b.p.length;
+  const cz = b.p.reduce((s, q) => s + q[1], 0) / b.p.length;
+  let rad = 0;
+  for (const q of b.p) rad = Math.max(rad, Math.hypot(q[0] - cx, q[1] - cz));
+  return { centre: [cx, cz], rad, h: b.h || 100 };
+}
+
 /* ---------- the shots ----------
  *
  * `across`  stand on the far pavement and look at the building, offset along
@@ -160,11 +233,40 @@ const SHOTS = [
     title: 'The whole street from the air, looking east',
     note: 'The shape of the district. Haze switched off for this one frame: the '
       + 'fog is tuned for street level and from any height it washes the skyline flat.' },
+
+  // The CBD crowns. Three towers share one height because Singapore caps them
+  // there — 280m, the Paya Lebar airspace limit — so the test of this trio is
+  // not the height, which is a published fact, but the TOP of each: UOB's
+  // stepped octagon, Republic's rotating plan, OCBC's paired end cores. Every
+  // one of them was wired up on 2026-07-30 with its crown unverified, because
+  // no camera in the canyon could see one.
+  { id: '15', kind: 'crown', target: 'UOB Plaza', dist: 850, fov: 19, y: 15, nofog: true,
+    title: 'UOB Plaza from the water',
+    note: 'The stepped octagonal crown, 280m — the height cap, shared with Republic Plaza and One Raffles Place.' },
+
+  { id: '16', kind: 'crown', target: 'Republic Plaza', dist: 900, fov: 19, y: 15, nofog: true,
+    title: 'Republic Plaza from the water',
+    note: 'The plan rotates as it rises; the test is whether the top still reads as an octagon turned off the base.' },
+
+  { id: '17', kind: 'crown', target: 'OCBC Bank', dist: 800, fov: 19, y: 15, nofog: true,
+    title: 'OCBC Centre from the water',
+    note: 'The calculator: two curved end cores with the floor bands slung between them, 197.6m.' },
+
+  { id: '18', kind: 'crown', target: 'UOB Plaza', dist: 1150, fov: 44, y: 18, aimF: 0.62, nofog: true,
+    title: 'The Raffles Place skyline from the water',
+    note: 'All three 280m peaks together. If they are not level with each other, one of them is wrong.' },
 ];
 
 /* ---------- turn each shot into a camera ---------- */
 
 function camFor(s) {
+  if (s.kind === 'crown') {
+    const t = tower(s.target);
+    const cands = waterCands(t.centre, s.dist);
+    if (!cands.length) throw new Error(`no mapped water within reach of ${s.target}`);
+    return { cands, aim: t.centre, rad: t.rad, y: s.y ?? 15,
+             aimF: t.h * (s.aimF ?? 0.88), fov: s.fov ?? 20, meta: { h: t.h, cands: cands.length } };
+  }
   if (s.kind === 'oblique') {
     const a = atChainage(s.chain);
     const eye = [a.q[0] - a.tan[0] * s.back, a.q[1] - a.tan[1] * s.back];
@@ -319,9 +421,57 @@ async function place(s, c) {
     s.kind === 'across' ? [0, 5, -5, 10, -10, 16, -16, 23, -23, 30, -30] : [0, 4, -4, 8, -8, 12, -12]]);
 }
 
+// A crown shot is placed by line of sight and nothing else: there is no kerb
+// to stand behind, no carriageway to stay out of and no pavement to slide
+// along. It picks the water candidate whose view of the tower is least
+// obstructed, measuring "obstructed" against the distance to the SUBJECT — the
+// tower is the first thing the centre ray hits, so a naive nearest-hit test
+// calls every candidate blocked.
+async function placeCrown(c) {
+  return page.evaluate(([cands, aim, rad, eyeY, aimF, fov]) => {
+    const THREE = window.__THREE, scene = window.__scene;
+    const ray = new THREE.Raycaster(); ray.far = 4000;
+    const up = new THREE.Vector3(0, 1, 0);
+    const ay = window.__surfaceAt(aim[0], aim[1]) + aimF;
+    let best = null;
+    for (const [ex, ez] of cands) {
+      const from = new THREE.Vector3(ex, eyeY, ez);
+      const to = new THREE.Vector3(aim[0], ay, aim[1]);
+      const dir = to.clone().sub(from).normalize();
+      const reach = Math.max(1, from.distanceTo(to) - rad - 8);
+      let near = Infinity;
+      for (const yaw of [0, 0.09, -0.09]) {
+        ray.set(from, dir.clone().applyAxisAngle(up, yaw));
+        for (const h of ray.intersectObjects(scene.children, true)) {
+          if (h.distance < 2) continue;
+          if (h.distance < near) near = h.distance;
+          break;
+        }
+      }
+      const frac = Math.min(1, near / reach);
+      if (!best || frac > best.frac) best = { ex, ez, near, reach, frac, d: from.distanceTo(to) };
+      if (best.frac >= 0.999) break;
+    }
+    window.__cam(best.ex, eyeY, best.ez, aim[0], ay, aim[1], fov);
+    return { x: +best.ex.toFixed(1), z: +best.ez.toFixed(1), dist: Math.round(best.d),
+      blocked: best.frac < 0.98 ? Math.round(best.near) : null };
+  }, [c.cands, c.aim, c.rad, c.y, c.aimF, c.fov]);
+}
+
 const done = [];
 for (const s of list) {
   const c = camFor(s);
+  // The world streams around the RIDE, and the ride is parked at the spawn
+  // district two kilometres from Raffles Place. Photographing the CBD without
+  // moving it first photographs empty ground where the CBD has not been built
+  // yet — the same drain trap that had the audits judging a half-built world.
+  if (s.kind === 'crown') {
+    await page.evaluate((a) => window.__teleport(a[0], a[1] + 120, 0), c.aim);
+    await page.waitForFunction(
+      '!window.__streamState || (window.__streamState.pending.length === 0 && !window.__streamState.building)',
+      null, { polling: 400, timeout: 300000 });
+    await page.waitForTimeout(600);
+  }
   if (s.kind === 'oblique') { c.above = c.aimY; }
   // The fog is tuned so that street level reads as Singapore haze. Seen from
   // 250m it is a beige wall that hides the entire district, so the one aerial
@@ -330,7 +480,7 @@ for (const s of list) {
     if (off) { window.__fogSaved = window.__scene.fog; window.__scene.fog = null; }
     else if (window.__fogSaved) { window.__scene.fog = window.__fogSaved; window.__fogSaved = null; }
   }, !!s.nofog);
-  const p = await place(s, c);
+  const p = s.kind === 'crown' ? await placeCrown(c) : await place(s, c);
 
   // let the crowd, the traffic and the signals settle, and give the renderer a
   // few frames: the first frame after a camera jump can still be mid-LOD
@@ -341,8 +491,11 @@ for (const s of list) {
   // A camera standing in a live carriageway is a bad photograph and also a
   // wrong one: it claims a viewpoint no pedestrian has. Report it, do not
   // quietly nudge it, because the nudge is what hides the mistake.
-  const flags = [p.inRoad ? 'IN CARRIAGEWAY' : '', p.near !== null && p.near < 12 ? `blocked at ${p.near}m` : '',
-    p.slid ? `slid ${p.slid}m` : ''].filter(Boolean).join(', ');
+  const flags = [p.inRoad ? 'IN CARRIAGEWAY' : '',
+    p.near != null && p.near < 12 ? `blocked at ${p.near}m` : '',
+    p.slid ? `slid ${p.slid}m` : '',
+    p.dist ? `${p.dist}m out` : '',
+    p.blocked != null ? `SIGHT LINE BLOCKED at ${p.blocked}m` : ''].filter(Boolean).join(', ');
   console.log(`${s.id}  ${s.title}${flags ? '   [' + flags + ']' : ''}`);
   done.push({ ...s, file: `${s.id}.jpg`, ...p });
 }
@@ -353,7 +506,7 @@ await browser.close();
 
 const html = `<!doctype html><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Orchard Road — comparison sheet</title>
+<title>Singapore World — comparison sheet</title>
 <style>
   :root{color-scheme:dark}
   body{margin:0;background:#0f1113;color:#e9e4da;
@@ -371,11 +524,13 @@ const html = `<!doctype html><meta charset="utf-8">
   @media(min-width:980px){.grid{grid-template-columns:1fr 1fr;padding:16px 22px 60px}}
 </style>
 <header>
-  <h1>Orchard Road — does this look like the street you know?</h1>
-  <p>Fourteen views from vantage points you can name. Every camera is placed
-  from the surveyed road centreline and the real building footprint it is
-  looking at, at standing eye height on the pavement. Tell me what is wrong in
-  each and that becomes the work.</p>
+  <h1>Singapore World — does this look like the city you know?</h1>
+  <p>${done.length} views from vantage points you can name. Every camera is
+  placed from surveyed geometry — the road centreline and the real footprint
+  it is looking at, at standing eye height on the pavement, or for the tower
+  crowns a point on a mapped shoreline chosen by line of sight. None of them
+  was picked by eye, because a viewpoint picked by eye is a viewpoint picked
+  to flatter. Tell me what is wrong in each and that becomes the work.</p>
 </header>
 <div class="grid">
 ${done.map((s) => `  <figure>

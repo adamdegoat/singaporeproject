@@ -28,7 +28,7 @@
 // Text only, neutral typeface, no brand marks: this labels a place the way a
 // map labels it.
 import * as THREE from '../lib/three.module.js';
-import { Merger, onCarriageway, groundAt, footingY } from './city.js';
+import { Merger, onCarriageway, groundAt, streetY } from './city.js';
 import { SignAtlas } from './tex.js';
 import { hasShopfront } from './landmarks.js';
 
@@ -377,7 +377,10 @@ export function buildShopfronts(world, data, axes, wallAt) {
     // addShopfront's own test for whether a ground-floor band was drawn
     const banded = !isShophouse && b.a > 600 && b.h > 7;
     const c = centroidOf(b.p);
-    const base = footingY(b.p) + GROUND;
+    // The ground floor rides the STREET datum, the same one addShopfront's
+    // band now uses. These bays sit IN that band — if they take a different
+    // seat they float in front of it or sink behind it on every slope.
+    const base = streetY(b) + GROUND;
     const runs = [];
     for (let i = 0; i < b.p.length; i++) {
       const a = b.p[i], d = b.p[(i + 1) % b.p.length];
