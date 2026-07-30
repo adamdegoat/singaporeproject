@@ -51,6 +51,7 @@ const SETS = {
     { id: '5-rivervalley', x: 66, z: 7798, h: 1.43 },
     { id: '6-bugis', x: 2152, z: 7715, h: 2.46 },
     { id: '7-robertson', x: -805, z: 8140, h: 2.21 },
+    { id: '8-littleindia', x: 2261, z: 6336, h: 2.56 },
   ],
 };
 

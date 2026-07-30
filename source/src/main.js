@@ -837,12 +837,24 @@ if (!P.has('nostream')) {
   fetch(`./data/${SCENE}.json`).then((r) => r.json()).then(buildRegion).catch(bootFailed);
 }
 
-// Pretty names for the teleport bar; ids come from the manifest
+// Pretty names for the teleport bar; ids come from the manifest.
+//
+// SHORT ON PURPOSE — these are pills on top of the map and the user has twice
+// asked for that bar to stop eating the view, so they are not the registry's
+// full names ("Little India / Farrer Park"). But a district missing from this
+// table showed its RAW ID in the UI: littleindia shipped in the dropdown
+// reading "littleindia" next to "Robertson Quay". Fifth hardcoded list to
+// drift today, so it gets a fallback rather than just a new row — a future
+// district will read "Tiong Bahru", not "tiongbahru", whether or not anyone
+// remembers this table.
 const DISTRICT_NAMES = {
   orchard: 'Orchard', brasbasah: 'Bras Basah', marinabay: 'Marina Bay',
   chinatown: 'Chinatown', rivervalley: 'River Valley', bugis: 'Bugis',
-  robertson: 'Robertson Quay',
+  robertson: 'Robertson Quay', littleindia: 'Little India',
 };
+const prettyDistrict = (id) => DISTRICT_NAMES[id]
+  || String(id).replace(/([a-z])([A-Z])/g, '$1 $2')
+              .replace(/\b[a-z]/g, (c) => c.toUpperCase());
 
 // The teleport target for a district: the midpoint of its main street by
 // arclength, offset onto the carriageway exactly like the spawn point, so
@@ -891,7 +903,7 @@ async function buildStreamed(mani) {
   const rest = mani.districts.slice(1).map((d, i) => ({ id: d.id, box: d.box, ch: chunks[i + 1] }));
   window.__districts = mani.districts.map((d, i) => {
     const ax = chunks[i].axis;
-    return ax && ax.p ? { id: d.id, name: DISTRICT_NAMES[d.id] || d.id, ...axisMidPose(ax) } : null;
+    return ax && ax.p ? { id: d.id, name: prettyDistrict(d.id), ...axisMidPose(ax) } : null;
   }).filter(Boolean);
   await buildRegion(spawn, {
     carveRoads: regionData.roads,

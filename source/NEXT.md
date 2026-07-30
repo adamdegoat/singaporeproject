@@ -70,6 +70,46 @@
 8. Boat Quay river-row colour treatment; more CBD facades; then ASK THE
    USER about expanding (Little India / civic core / Tiong Bahru).
 
+# 2026-07-30 night (Opus 5) — LITTLE INDIA IS THE EIGHTH DISTRICT
+
+The user lifted the polish-first order ("expand more districts if you want"),
+so: Serangoon Road from the Rochor end to Farrer Park, with Race Course Road,
+Buffalo Street, Dunlop Street, Kerbau Road, Tekka and Sim Lim. 2,088 buildings,
+1,662 roads, 756 named shopfronts, 217 mapped crossings, 1,212m of main street
+at 100% coverage, terrain pinned to opentopodata like every other district.
+Chosen because it CLOSES A HOLE rather than reaching into empty map — it
+overlaps bugis and orchard by design so the region stays one block.
+
+TOOLING THAT HAD TO BE FIXED TO GET IT:
+- OVERPASS MIRROR ORDER WAS STATIC and three of the four were down that
+  evening, with the survivor rate-limiting. Every part paid 150s of timeout
+  per dead host before reaching one that worked. `order_mirrors()` now probes
+  all four with a one-node query, DROPS the dead ones from the ring entirely
+  (a host that will not answer a probe will not answer a district query, and
+  each attempt on it is a full timeout), and treats HTTP 429/502/503/504 as
+  BUSY rather than DOWN — the first version declared the only working mirror
+  dead because we had rate-limited ourselves against it.
+- THE DISTRICT LIST WAS WRITTEN OUT THREE TIMES: deploy.sh's audit loop,
+  deploy.sh's dist copy block, and gates.sh. That drift is exactly what left
+  districts four to seven ungated for a week. All three now read districts.json,
+  which already knows. A `planned` status keeps a registered-but-unbuilt
+  district out of the gates instead of failing every deploy.
+- `build_district.py` does NOT run terrain.py; that is a separate step in the
+  sequence and it is easy to miss — littleindia passed check.py with NO
+  HEIGHTFIELD AT ALL before I noticed. Worth adding to the tool one day.
+
+DAY-ONE RATCHETS, itemised rather than inherited: P1b 8 and T1 2, which are
+TWO classes — six or seven 3cm railing posts on BIRCH ROAD, a lane narrow
+enough that the kerb-clearance search finds nowhere to stand and leaves them
+where they were (the same family as the bus shelters that used to fall back to
+their blocked point), and one 41.8m mass across KLANG LANE, a service lane.
+Target is 0 for both. S8 74 is the district's own frontage coverage; it was
+failing against the WORLD's 76, which is a different and larger network.
+Eight OSM tags arrived that no other district carries: five kerbside-parking
+tags (DEFERRED — Serangoon Road genuinely parks along the kerb and this is the
+data that will place those cars when traffic learns to park) and three transit
+`network` tags (IGNORED — an operator's name carries no geometry).
+
 # 2026-07-30 night (Opus 5) — SIX DISTRICTS HAD NO TRAFFIC AT ALL
 
 `new Traffic(...)` was created ONCE, for the primary axis, in the region build.
