@@ -32,7 +32,18 @@ STILL OPEN, BY MECHANISM (worst first):
    larger/taller conserved rows, so they get the generic family. Needs the
    heuristic widened (conservation streets are DATA — building age/levels)
    + five-foot-way colonnade.
-2. LANDMARK RECIPE WAVE, chinatown+CBD+quays: Buddha Tooth Relic Temple,
+2. LANDMARK RECIPE WAVE, chinatown+CBD+quays — STARTED AND PARKED same
+   night: buddhaTooth + sriMariamman recipes WRITTEN (landmarks.js,
+   unwired) from research/southbridge-temples.md (16 corrected premises:
+   no external gold stupa, blue-grey tiles, 5 gopuram tiers not 6, the
+   published "5m gopuram" wrong by 3x, ~16m). First vet failed: the
+   rectangular hip roofs SHEAR — a 4-gon frustum rotated 45 deg cannot be
+   non-uniformly scaled at the MESH level; bake rotateY(PI/4) + scale into
+   the GEOMETRY then yaw the mesh. Verify the gopuram edge-march lands on
+   the South Bridge side. Wire up ONLY after a solo vet reads better than
+   the generic. Also found while vetting: floating CircleGeometry pieces
+   ~20m up around (2371-2526, 10127-10224) — palm fronds without trunks,
+   pre-existing, add to the tree triage. Rest of the wave: Buddha Tooth Relic Temple,
    Sri Mariamman, Thian Hock Keng, Lau Pa Sat (currently skeleton frames),
    People's Park Complex (wrong colour, blank), Maxwell Food Centre
    (renders as giant green slab OVER the carriageway — investigate its

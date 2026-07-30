@@ -1557,6 +1557,175 @@ function gothicChurch(api, b) {
   api.world.add(spire);
 }
 
+
+// BUDDHA TOOTH RELIC TEMPLE, 288 South Bridge Road. Researched 2026-07-30 by
+// agent; SIXTEEN false premises corrected across the two temples, the big
+// ones here: there is NO golden stupa outside (it is interior, 4th floor);
+// the tiles are COOL BLUE-GREY, not gold or terracotta; it is not a pagoda
+// but a rectangular block, 66.7m DEEP and only 31.5m wide to the street,
+// with stacked skirt roofs; the recognisable "twin towers" are the two
+// street-side ROOF-GARDEN PAVILIONS. Height UNPUBLISHED: the estimate ~29m
+// brackets the mapped 30 and the mapped value stands for the core.
+function buddhaTooth(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const sw = streetward(api, ob);
+  const tile = new THREE.MeshStandardMaterial({ color: 0x7d828b, roughness: 0.72 });
+  const red = new THREE.MeshStandardMaterial({ color: 0x7e3f3a, roughness: 0.8 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xe6e4dc, roughness: 0.85 });
+  const gold = new THREE.MeshStandardMaterial({ color: 0xc9a24a, roughness: 0.4, metalness: 0.55 });
+  // ONE clean frame: local Z runs along the LONG axis (the 66.7m depth,
+  // perpendicular to South Bridge Rd), local X across the 31.5m frontage.
+  const yawL = Math.atan2(ob.ux, ob.uz);
+  const xA = { x: Math.cos(yawL), z: -Math.sin(yawL) };
+  const zA = { x: ob.ux, z: ob.uz };
+  const sDot = Math.sign(sw.nx * ob.ux + sw.nz * ob.uz) || 1;  // +z toward street?
+  const at = (mesh, lx, y, lz) => {
+    mesh.position.set(ob.cx + xA.x * lx + zA.x * lz, y, ob.cz + xA.z * lx + zA.z * lz);
+    mesh.castShadow = true;
+    api.world.add(mesh);
+  };
+  const W = ob.halfShort * 2, D = ob.halfLong * 2;
+  // red body on a granite plinth, with the white spandrel bands proud
+  api.world.add(api.extrude(api.grow(b.p, 1.004), 1.0, api.mat.conc, g0));
+  api.world.add(api.extrude(b.p, 24.0, red, g0 + 1.0));
+  for (const bandY of [10.2, 15.2, 23.2]) {
+    api.world.add(api.extrude(api.grow(b.p, 1.006), 1.1, white, g0 + bandY));
+  }
+  // stacked hip roofs: 4-gon frusta in BLUE-GREY (researched: not gold, not
+  // terracotta), thin gilt strip along each eave. R3 slightly wider than R2
+  // by publication — no uniform pagoda taper.
+  const roof = (w, d, hgt, y, lx = 0, lz = 0) => {
+    const r = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.71, 1, 4), tile);
+    r.rotation.y = yawL + Math.PI / 4;
+    r.scale.set(w, hgt, d);
+    at(r, lx, g0 + y + hgt / 2, lz);
+    for (const [gx2, gz2, ln, axis] of [[0, d * 0.5, w, 'x'], [0, -d * 0.5, w, 'x'],
+                                        [w * 0.5, 0, d, 'z'], [-w * 0.5, 0, d, 'z']]) {
+      const strip = new THREE.Mesh(
+        new THREE.BoxGeometry(axis === 'x' ? ln : 0.2, 0.15, axis === 'x' ? 0.2 : ln), gold);
+      strip.rotation.y = yawL;
+      at(strip, lx + gx2, g0 + y + 0.06, lz + gz2);
+    }
+  };
+  roof(W * 1.10, D * 1.04, 2.6, 11.5);
+  roof(W * 0.90, D * 0.88, 2.4, 16.5);
+  roof(W * 0.95, D * 0.93, 2.6, 23.5);
+  // entrance porch projecting toward the street, low, its own roof
+  {
+    const plz = sDot * (ob.halfLong + 5.2);
+    const px2 = ob.cx + zA.x * plz, pz2 = ob.cz + zA.z * plz;
+    if (!onCarriageway(px2, pz2, 0.3)) {
+      const porch = new THREE.Mesh(new THREE.BoxGeometry(W * 0.62, 7.0, 10.4), red);
+      porch.rotation.y = yawL;
+      at(porch, 0, g0 + 3.5, plz);
+      roof(W * 0.66, 12, 2.2, 8.0, 0, plz);
+    }
+  }
+  // roof-garden pavilions: 4 corners + centre; the street-side PAIR is the
+  // skyline signature (researched: there is NO golden stupa outside)
+  const pav = (lx, lz) => {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(7.4, 3.4, 7.4), red);
+    body.rotation.y = yawL;
+    at(body, lx, g0 + 26.7, lz);
+    roof(9.2, 9.2, 1.7, 28.4, lx, lz);
+    roof(6.4, 6.4, 1.5, 30.1, lx, lz);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), gold);
+    at(knob, lx, g0 + 31.9, lz);
+  };
+  const uO = ob.halfShort * 0.55, vO = ob.halfLong * 0.70;
+  pav(-uO, vO * sDot); pav(uO, vO * sDot);
+  pav(-uO, -vO * sDot); pav(uO, -vO * sDot);
+  pav(0, 0);
+}
+
+function sriMariamman(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const sw = streetward(api, ob);
+  const cream = new THREE.MeshStandardMaterial({ color: 0xefe0c6, roughness: 0.9 });
+  const terra = new THREE.MeshStandardMaterial({ color: 0xb0512f, roughness: 0.85 });
+  const greyStone = new THREE.MeshStandardMaterial({ color: 0x5e6266, roughness: 0.8 });
+  const poly = new THREE.MeshStandardMaterial({ color: 0xb9c3cb, roughness: 0.9 });
+  const green = new THREE.MeshStandardMaterial({ color: 0x585f4e, roughness: 0.9 });
+  const gold = new THREE.MeshStandardMaterial({ color: 0xd9ae52, roughness: 0.4, metalness: 0.5 });
+  const cow = new THREE.MeshStandardMaterial({ color: 0xdcdcd6, roughness: 0.85 });
+  // the low hall: cream walls with green shallow barrel-vault roofs
+  api.world.add(api.extrude(b.p, 8.6, cream, g0));
+  api.world.add(api.extrude(api.grow(b.p, 1.005), 0.5, terra, g0 + 8.6));
+  // street frame from the SURVEYED street, not from a guessed edge: the
+  // gopuram stands flush with the South Bridge Road boundary, ~60% along
+  // the frontage from the SSW end (researched; NOT centred)
+  const yawS = Math.atan2(sw.nx, sw.nz);           // facing the street
+  const tX = -sw.nz, tZ = sw.nx;                   // along the street
+  // march from the centre toward the street to find the property edge
+  let edge = 0;
+  for (let d2 = 1; d2 < 40; d2 += 0.5) {
+    if (!pointInRing(ob.cx + sw.nx * d2, ob.cz + sw.nz * d2, b.p)) { edge = d2 - 0.5; break; }
+  }
+  const bl = Math.max(16, ob.halfShort * 2);
+  // vault roofs: shallow green half-cylinders, axis PARALLEL to the street
+  const up = new THREE.Vector3(0, 1, 0), tv = new THREE.Vector3(tX, 0, tZ);
+  for (const off of [-5.5, 0, 5.5]) {
+    const v = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, bl * 0.7, 10, 1, false, 0, Math.PI), green);
+    v.quaternion.setFromUnitVectors(up, tv);
+    v.rotateY(Math.PI / 2);
+    v.scale.set(1, 1, 0.6);
+    v.position.set(ob.cx + sw.nx * off, g0 + 8.9, ob.cz + sw.nz * off);
+    api.world.add(v);
+  }
+  // Nandi cows: the dotted white line along the street coping
+  for (let u = -bl / 2 + 1.5; u < bl / 2 - 1.5; u += 3.5) {
+    const cx2 = ob.cx + sw.nx * edge + tX * u, cz2 = ob.cz + sw.nz * edge + tZ * u;
+    if (onCarriageway(cx2, cz2, 0.25)) continue;
+    if (!pointInRing(cx2 - sw.nx * 0.5, cz2 - sw.nz * 0.5, b.p)) continue;
+    const c = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.55, 0.42), cow);
+    c.rotation.y = yawS + Math.PI / 2;
+    c.position.set(cx2, g0 + 9.35, cz2);
+    api.world.add(c);
+  }
+  // THE GOPURAM: grey portal 39%, polychrome tower 61%, FIVE tiers +
+  // flattened barrel crest (roots.gov.sg/NLB: five, not six), ~16m total
+  // (the published "5m" is wrong by 3x — see the research note)
+  const gu = bl * 0.10;
+  const gx = ob.cx + sw.nx * (edge - 1.9) + tX * gu;
+  const gz = ob.cz + sw.nz * (edge - 1.9) + tZ * gu;
+  const H = 16.0, portalH = H * 0.39, towerH = H * 0.61;
+  const portal = new THREE.Mesh(new THREE.BoxGeometry(6.4, portalH, 3.5), greyStone);
+  portal.rotation.y = yawS;
+  portal.position.set(gx, g0 + portalH / 2, gz);
+  portal.castShadow = true;
+  api.world.add(portal);
+  const tierFrac = [0.23, 0.18, 0.16, 0.14, 0.13];
+  const widFrac = [1.0, 0.90, 0.81, 0.71, 0.62];
+  const T1W = 7.5;
+  let ty = portalH;
+  tierFrac.forEach((f, i) => {
+    const th = towerH * f, tw = T1W * widFrac[i];
+    const tier = new THREE.Mesh(new THREE.BoxGeometry(tw, th, 3.4 * widFrac[i]), poly);
+    tier.rotation.y = yawS;
+    tier.position.set(gx, g0 + ty + th / 2, gz);
+    tier.castShadow = true;
+    api.world.add(tier);
+    const c2 = new THREE.Mesh(new THREE.BoxGeometry(tw * 1.07, 0.28, 3.4 * widFrac[i] * 1.07), terra);
+    c2.rotation.y = yawS;
+    c2.position.set(gx, g0 + ty + th, gz);
+    api.world.add(c2);
+    ty += th;
+  });
+  const crest = new THREE.Mesh(new THREE.CylinderGeometry(1.68, 1.68, T1W * 0.53, 10, 1, false, 0, Math.PI), terra);
+  crest.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(tX, 0, tZ));
+  crest.rotateY(Math.PI / 2);
+  crest.scale.set(1, 1, 0.8);
+  crest.position.set(gx, g0 + ty, gz);
+  api.world.add(crest);
+  for (let k = -2; k <= 2; k++) {
+    const kal = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.85, 6), gold);
+    kal.position.set(gx + tX * k * 0.85, g0 + ty + 1.6, gz + tZ * k * 0.85);
+    api.world.add(kal);
+  }
+}
+
 // Raffles City. I.M. Pei: a nine-square plan carved away and rotated 45 degrees
 // so it angles back from the street instead of presenting a 600-foot broadside,
 // and towers that read cylindrical from one direction and rectangular from
@@ -3484,6 +3653,16 @@ export const RECIPES = [
   [/^the cathay$|^cathay building|cathay building/i, theCathay],
   [/the centrepoint|^centrepoint/i, theCentrepoint],
   [/raffles city|swissotel|fairmont singapore|westin plaza/i, rafflesCity],
+  // PARKED 2026-07-30 morning, NOT wired: both South Bridge Road temple
+  // recipes exist below with full research (16 corrected premises) but the
+  // first build round failed its vet — the rectangular hip roofs SHEAR
+  // (a 4-gon frustum rotated 45° cannot then be non-uniformly scaled at
+  // the MESH level; bake rotateY(PI/4)+scale into the GEOMETRY, then yaw
+  // the mesh), and the gopuram edge-march needs verifying against the
+  // real South Bridge Road side. A recipe that reads worse than the
+  // generic does not ship. Next session: buildup playbook, staged gates.
+  // [/^buddha tooth relic temple/i, buddhaTooth],
+  // [/^sri mariamman temple$/i, sriMariamman],
 
   // THESE THREE ARE WIRED UP, and the comment that used to sit here said the
   // opposite: "WRITTEN AND NOT WIRED UP ... they stay here, unreferenced".

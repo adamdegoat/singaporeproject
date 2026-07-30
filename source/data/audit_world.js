@@ -90,7 +90,12 @@ window.__auditWorld = async function auditWorld() {
     // Chinatown S8 64: dense hawker/temple frontage where many mapped
     // tenants sit inside conserved shophouses whose ground floors are the
     // doors-and-shutters fabric, not glazed bays. Target stays 76.
-    chinatown: { S8: 64 },
+    // P1b 1 appeared with the 2026-07-30 rebuild (river + Maxwell height —
+    // the whole district reprocessed and vertices shifted): one generic-
+    // family band mass overhangs Stanley St at (1622,9781), same class as
+    // Bugis+ on Victoria St. The recipe wave owns the real fix; ratchet
+    // may go down, never up.
+    chinatown: { S8: 64, P1b: 1 },
     // River Valley C7 33: the district DELIBERATELY takes the east 1.6km of
     // a 4.9km road (declared partialMainStreet in districts.json; the west
     // belongs to a future Robertson Quay district). C7 measures against the

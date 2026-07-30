@@ -18,6 +18,10 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 SCENES=${1:-"orchard brasbasah marinabay chinatown rivervalley bugis robertson world"}
+# the world scene streams SEVEN districts in SwiftShader during its audit —
+# the drain alone runs past the old 600s default. Forgetting to pass this
+# by hand refused an otherwise-green deploy on 2026-07-30.
+export SG_STREAM_BUDGET=${SG_STREAM_BUDGET:-1500000}
 FAILED=0
 
 hr() { printf '\n== %s\n' "$1"; }
