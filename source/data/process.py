@@ -415,6 +415,24 @@ LANDMARKS = {
 # by addr:housenumber + addr:postcode -- both are already tagged on most HDB
 # blocks island-wide, which would fix every HDB estate at once instead of five
 # records at a time.
+# PUBLISHED HEIGHTS KEYED BY POSTCODE, for buildings whose NAME cannot pick
+# them out. UE Square carries the same name on two footprints -- the mall and
+# the office tower -- so the name-keyed OVERRIDES table would set both to one
+# number and raise a 65m mall to 91.6m to fix a tower. The postcode separates
+# them: S239920 is the office tower, S239918 is the mall.
+#
+# These beat the OSM height tag, unlike HDB_STOREYS below, because they ARE
+# published measurements from a better source rather than a storey count times
+# an assumption -- so the caller returns "override", not "guess".
+POSTCODE_HEIGHT = {
+    # UE Square office tower, 83 Clemenceau Avenue. 91.60 m published by Tange
+    # Associates, the architect's own works record. OSM tags this mass 85.
+    # Researched 2026-07-30, research/robertson-rivervalley.md section 4.
+    # The complex is branded UE BizHub CITY now; only the mall still trades as
+    # UE Square.
+    "239920": 91.6,
+}
+
 HDB_STOREYS = {
     "210661": 23,    # Buffalo Road, corridor-access slab
     "210662": 25,    # the tallest of the group
@@ -480,6 +498,14 @@ def height_for(tags):
     if best_spec is not None:
         return (best_spec["h"], best_spec.get("key", False), "named",
                 best_spec.get("podium"))
+    # POSTCODE FIRST, alongside the name overrides above and BEFORE the OSM
+    # height tag -- these are published measurements from a better source, and
+    # ranking them under a crowd-sourced tag means they never fire. UE Square's
+    # tower is tagged 85 in OSM and published at 91.6 by its architect; placed
+    # after this block, the override was dead code.
+    pc = str(tags.get("addr:postcode") or "").strip()
+    if pc in POSTCODE_HEIGHT:
+        return POSTCODE_HEIGHT[pc], True, "override", None
     h = tags.get("height")
     if h:
         try:
@@ -505,7 +531,6 @@ def height_for(tags):
             return v, False, "osm", None
         if v is not None:
             BAD_HEIGHT_TAGS.append((tags.get("name") or "(unnamed)", v))
-    pc = str(tags.get("addr:postcode") or "").strip()
     if pc in HDB_STOREYS:
         # a guess, and recorded as one -- the storeys are authoritative, the
         # metres are storeys x an assumption
@@ -1764,6 +1789,44 @@ def main():
     if water:
         print(f"  water: {len(water)} polygons, largest {water[0]['a']:,} m2, "
               f"total {sum(w['a'] for w in water):,} m2")
+
+    # ONE BUILDING, ONE FOOTPRINT.
+    #
+    # OSM maps a fair number of buildings TWICE -- once as a way and once as a
+    # multipolygon relation tracing the same outline. Ten of them across these
+    # eight districts, including Marina Bay Sands Theatres at 13,773 m2, Pan
+    # Pacific, The Fullerton Bay Hotel, Clifford Pier and Concorde Shopping
+    # Centre. Extruded twice they are two coincident solids: every face
+    # z-fights with its twin and shimmers, the geometry cost is doubled, and
+    # anything hung off the footprint -- shopfronts, awnings, props -- is built
+    # twice too.
+    #
+    # Keyed on rounded centroid + area rather than on vertex list, because the
+    # way and the relation trace the same outline without agreeing on where the
+    # ring starts or which way it winds. The copy KEPT is the one that knows
+    # more: a name beats no name, and a real height source beats a guess.
+    _seen = {}
+    _rank = {"named": 4, "override": 3, "osm": 2, "guess": 1}
+    _dupes = 0
+    for _b in buildings:
+        _p = _b.get("p") or []
+        if len(_p) < 3:
+            continue
+        _cx = sum(q[0] for q in _p) / len(_p)
+        _cz = sum(q[1] for q in _p) / len(_p)
+        _a = abs(sum(_p[i][0] * _p[(i + 1) % len(_p)][1] - _p[(i + 1) % len(_p)][0] * _p[i][1]
+                     for i in range(len(_p)))) / 2
+        _k = (round(_cx, 1), round(_cz, 1), round(_a))
+        _score = (1 if _b.get("n") else 0, _rank.get(_b.get("hs"), 0), len(_b))
+        if _k not in _seen or _score > _seen[_k][0]:
+            if _k in _seen:
+                _dupes += 1
+            _seen[_k] = (_score, _b)
+        else:
+            _dupes += 1
+    if _dupes:
+        buildings = [v[1] for v in _seen.values()]
+        print(f"  deduped {_dupes} coincident footprint(s) mapped twice by OSM")
 
     out = {
         "origin": {"lat": LAT0, "lon": LON0},
