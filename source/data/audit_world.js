@@ -1419,11 +1419,22 @@ window.__auditWorld = async function auditWorld() {
   {
     const st = window.__stats || {};
     const data = window.__data || {};
-    const named = (data.buildings || []).filter((b) => b.n).length;
-    add('R1', `named buildings with a bespoke recipe (of ${named} named)`,
-        'INFO', st.bespoke || 0, null,
-        `${st.bespoke || 0} of ${named} named buildings are drawn by a researched `
-        + `recipe; the rest take the generic facade family`, []);
+    // COUNT BOTH KINDS OF "NOT THE GENERIC FAMILY". A shophouse is drawn by
+    // shophouse() — a real recipe with a five-foot way, pitched roof, doors and
+    // shuttered windows — but it is dispatched BEFORE the name lookup, so it
+    // increments stats.shophouses and never stats.bespoke. Reporting only
+    // bespoke said Chinatown was 28 of 360 when 1,794 of its buildings are
+    // drawn by the shophouse recipe: the metric was describing the file's
+    // control flow rather than the world, which is how the landmark FLAG got
+    // mistaken for recipe coverage earlier today.
+    const total = (data.buildings || []).length;
+    const sh = st.shophouses || 0;
+    const bp = st.bespoke || 0;
+    add('R1', `buildings drawn by a real recipe (of ${total})`,
+        'INFO', bp + sh, null,
+        `${bp} bespoke by name + ${sh} shophouse = ${bp + sh} of ${total} `
+        + `(${Math.round(100 * (bp + sh) / Math.max(1, total))}%); the rest take `
+        + `the generic facade family`, []);
   }
 
   {
