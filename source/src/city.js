@@ -370,6 +370,16 @@ LMAT.palaisWaffle.userData.tile = [12, 12];
 LMAT.goldSign = new THREE.MeshStandardMaterial({ color: 0xc9a23f, emissive: 0x8a6a1c, emissiveIntensity: 0.55, roughness: 0.35, metalness: 0.6 });
 LMAT.bronze = new THREE.MeshStandardMaterial({ color: 0x6e5433, roughness: 0.45, metalness: 0.55 });
 LMAT.ivory.userData.tile = [9, 9];
+// THE 2010s BOUTIQUE APARTMENT WALL. texBalcony is the residential facade this
+// project already draws for apartment fabric -- recessed balconies with a rail,
+// nine rows to a tile. The boutiqueApartment recipe was first written with a
+// PLAIN wall and it showed: side by side against the generic family the recipe
+// had the right form and no windows at all, which is a regression however
+// correct the massing is. Tiled at 5 bays x 9 floors over 17m x 30m, so a bay
+// lands near 3.4m and a floor near 3.3m -- the storey height these blocks are
+// actually built to.
+LMAT.rvRender = new THREE.MeshStandardMaterial({ map: texBalcony(0xd9d2c4), roughness: 0.74 });
+LMAT.rvRender.userData.tile = [17, 30];
 // MacDonald House: one tile is one 3.9m structural bay by a 3.5m floor
 LMAT.redBrick = new THREE.MeshStandardMaterial({ map: texRedBrick(), roughness: 0.88 });
 LMAT.redBrick.userData.tile = [3.9, 3.5];

@@ -523,12 +523,18 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
         // you ride into, so those segments are simply not built.
         if (isBlocked(cxp, czp)) continue;
         if (!claim('covered', cxp, czp, 3.0)) continue;   // OSM ways overlap
-        linkRoof.push([cxp, 3.35, czp, ang]);
-        linkBeam.push([cxp, 3.12, czp, ang]);
+        // POSTS FIRST, ROOF ONLY IF SOMETHING HOLDS IT UP. The roof used to be
+        // pushed unconditionally and the posts tested separately, so a segment
+        // whose posts both landed in a carriageway kept its roof and floated
+        // (defect D20). A roof with no post is not a walkway.
+        let posts = 0;
         for (const sgn of [1, -1]) {
           const lx = cxp + nx * 1.5 * sgn, lz = czp + nz * 1.5 * sgn;
-          if (!isBlocked(lx, lz)) linkPost.push([lx, 1.6, lz, ang]);
+          if (!isBlocked(lx, lz)) { linkPost.push([lx, 1.6, lz, ang]); posts++; }
         }
+        if (!posts) continue;
+        linkRoof.push([cxp, 3.35, czp, ang]);
+        linkBeam.push([cxp, 3.12, czp, ang]);
       }
     }
   }

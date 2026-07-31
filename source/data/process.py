@@ -815,6 +815,66 @@ def storey_record(name, area):
     return None
 
 
+# IDENTITY KEYED BY OSM WAY ID, for buildings that carry no name at all.
+#
+# The whole western reach of River Valley Road -- Kim Seng to Zion -- was
+# anonymous fabric: 680 buildings, 5% of the frontage named, 0% reaching a
+# recipe, the worst-scoring district in the world. research/rivervalley-road-
+# frontage.md identified every one of the seventeen unnamed frontage footprints
+# from OneMap and the developers' own records.
+#
+# None of them can be reached by any table already here. They have no `name`
+# tag for the name-keyed tables, and only five of the fifteen postcodes are in
+# our extract, so POSTCODE_HEIGHT cannot see them either. The OSM way id is the
+# only key that reaches all of them.
+#
+# THE RISK, STATED: a way id is not stable the way a postcode is. If a mapper
+# redraws a footprint the id changes and this entry silently stops matching --
+# so it does not fail silently. Any id here that is absent from the extract is
+# reported at build time, loudly, the same way a dead LANDMARKS key is.
+#
+# `st` is a PUBLISHED STOREY COUNT, not metres, and goes through the same
+# 3.4m-per-floor path with the same "levels" provenance as every other storey
+# count in this file. `yr` is only present where a completion year is actually
+# published; where sources conflict (Crystal Court, 1983 vs 1988) an era BAND
+# is given instead, because a band is what is known.
+_OSM_WAY_SEEN = set()
+OSM_WAY = {
+    # --- the seventeen, research/rivervalley-road-frontage.md PART 1
+    # RV Suites already carries its name in OSM; this adds only the year.
+    178594778:  {"n": "RV Suites",              "st": 7, "era": (2011, 2012)},
+    543153088:  {"n": "Loft @ Nathan",          "st": 7, "yr": 2014},
+    # OSM tags this way 2 Shanghai Road / 248209, which is RV Edge 55m away.
+    # OneMap puts STELLAR RV on this footprint, 3m from its centroid.
+    178594851:  {"n": "Stellar RV",             "st": 7, "yr": 2015},
+    # "completed 1988" and "Built Year 1983" both circulate; neither is primary.
+    # OUTSIDE THE DISTRICT'S WESTERN EDGE (bbox starts at lon 103.8280) and so
+    # not in the world at all: Crystal Court 103.82700, Loft @ Nathan
+    # 103.82766, RV Residences blk 471 103.82781, and the 460-486 terrace at
+    # 103.826xx. They are kept here, correct and sourced, because the research
+    # covers the whole Kim Seng -> Zion reach and the bbox may yet be widened;
+    # the build reports them as unmatched every time until it is.
+    178594898:  {"n": "Crystal Court",          "st": 4, "era": (1983, 1988)},
+    178594827:  {"n": "River Valley Apartments", "st": 4, "yr": 1970},
+    # RV Residences: six near-identical blocks stepping down the slope, one
+    # development, completed 2015. OSM says building:levels=7.5 on four of
+    # them, which is a mapper writing "seven plus a roof structure"; it is 7.
+    1285894309: {"n": "RV Residences",          "st": 7, "yr": 2015},
+    1285894305: {"n": "RV Residences",          "st": 7, "yr": 2015},
+    1285894304: {"n": "RV Residences",          "st": 7, "yr": 2015},
+    1285894306: {"n": "RV Residences",          "st": 7, "yr": 2015},
+    1285894308: {"n": "RV Residences",          "st": 7, "yr": 2015},
+    1285894307: {"n": "RV Residences",          "st": 7, "yr": 2015},
+    178594948:  {"n": "RV Edge",                "st": 7, "era": (2012, 2013)},
+    542171515:  {"n": "RV Edge",                "st": 7, "era": (2012, 2013)},
+    # The two shophouse terraces. No published name and no published year, so
+    # they get storeys only -- the thing that is actually known. OSM models the
+    # 460-486 run as ONE way; SLA numbers fourteen addresses along it.
+    453942380:  {"st": 2},
+    178594846:  {"st": 4},
+}
+
+
 # NAMES OSM CARRIES THAT ARE NOT BUILDING NAMES.
 #
 # Three different mistakes, all of which make the model claim something false:
@@ -1657,6 +1717,8 @@ def main():
     crossings, signals, busstops, mrt, taxis = [], [], [], [], []
     bridges, covered, shops = [], [], []
 
+    global _OSM_WAY_SEEN
+    _OSM_WAY_SEEN = set()
     for e in els:
         tags = e.get("tags", {})
         if e["type"] == "node":
@@ -1883,6 +1945,27 @@ def main():
                 "h": round(h, 1),
                 "a": round(a),
             }
+            # IDENTITY BY WAY ID, for footprints no other table can reach.
+            # See OSM_WAY above. Applied here, before the name fallbacks, so a
+            # researched name behaves exactly like an OSM one from this point
+            # on -- it reaches the recipes, the facade families and the gates
+            # through the same path, with nothing special-cased downstream.
+            _wid = e.get("id") if e.get("type") == "way" else None
+            _ow = OSM_WAY.get(_wid) if _wid else None
+            if _ow:
+                _OSM_WAY_SEEN.add(_wid)
+                if _ow.get("n") and not tags.get("name"):
+                    b["n"] = _ow["n"]
+                if _ow.get("st"):
+                    # A PUBLISHED STOREY COUNT, NOT A MEASUREMENT. Same 3.4m
+                    # and the same "levels" provenance as building:levels, so
+                    # the accuracy ledger keeps reporting it as what it is.
+                    b["h"] = round(_ow["st"] * STOREY_FLOOR_M, 1)
+                    b["hsrc"] = "levels"
+                if _ow.get("yr"):
+                    b["yr"] = _ow["yr"]
+                elif _ow.get("era"):
+                    b["era"] = list(_ow["era"])
             # A NAME IS NOT ALWAYS IN THE NAME TAG.
             #
             # Raffles Hotel is mapped as a multipolygon RELATION carrying
@@ -3303,6 +3386,18 @@ def main():
         names = ", ".join(n for n, _ in BAD_HEIGHT_TAGS[:4])
         print(f"  refused {len(BAD_HEIGHT_TAGS)} implausible height tags "
               f"(under 2.5m): {names}{'...' if len(BAD_HEIGHT_TAGS) > 4 else ''}")
+    # A WAY ID THAT NO LONGER MATCHES MUST NOT PASS QUIETLY. OSM ids change
+    # when a mapper redraws a footprint, and a researched name that silently
+    # stops applying is worse than never having had it: the district's score
+    # would drop with nothing to point at. Only reported when at least one id
+    # from the table WAS found, so the other seven districts stay silent.
+    if _OSM_WAY_SEEN:
+        _missing = sorted(set(OSM_WAY) - _OSM_WAY_SEEN)
+        if _missing:
+            print(f"  ! OSM_WAY: {len(_missing)} researched way id(s) not in this "
+                  f"extract, so their names and storeys were NOT applied: "
+                  + ", ".join(str(m) for m in _missing[:8]))
+        print(f"  OSM_WAY: {len(_OSM_WAY_SEEN)} footprints named and sized by way id")
     print(f"  wrote {path}  {os.path.getsize(path)/1024:.0f} KB")
     print("\nlargest by footprint:")
     for b in buildings[:12]:

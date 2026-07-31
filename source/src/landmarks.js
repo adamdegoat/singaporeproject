@@ -1089,6 +1089,89 @@ function finnedSlab(api, b) {
   api.world.add(api.extrude(api.grow(b.p, 1.02), 1.1, api.mat.trim, b.h));
 }
 
+// THE 2010s FREEHOLD BOUTIQUE APARTMENT BLOCK — the dominant building type on
+// the western reach of River Valley Road, and a type this world did not have.
+//
+// research/rivervalley-road-frontage.md corrected the premise this was built
+// on: these seven-storey blocks are NOT 1970s walk-ups that happen to be short.
+// Every one of them was completed 2011-2015 (RV Suites ~2011, RV Edge ~2013,
+// Loft @ Nathan 2014, Stellar RV 2015, RV Residences 2015), and they are seven
+// storeys because that is the URA height control for this pocket of District
+// 10 — the "shoebox" boom built out to the exact limit, block after block.
+//
+// What that produces on the street, and what this draws: a painted render
+// frame, one continuous balcony band per floor with a GLASS balustrade set
+// slightly proud of the wall, a recessed ground floor (car park and lobby,
+// always in shadow), and a flat roof with a low parapet and a lift overrun.
+// No podium, no crown, no curtain wall — the whole type is horizontal lines.
+//
+// Heights here are storeys x 3.4, never metres: no one publishes metres for
+// any of them. See OSM_WAY in data/process.py.
+function boutiqueApartment(api, b) {
+  const ob = orientedBox(b.p);
+  const wall = api.mat.rvRender, glass = api.mat.blueGlass;
+  const floors = Math.max(3, Math.round(b.h / 3.4));
+  const g = 3.9;                                  // recessed ground floor
+  // The ground floor is INSET, not flush: it is a car park behind a screen and
+  // it reads as a dark undercroft from the road. Drawn first so the mass above
+  // visibly overhangs it.
+  api.world.add(api.extrude(api.grow(b.p, 0.94), g, api.mat.conc));
+  api.world.add(api.extrude(b.p, b.h - g, wall, g));
+  // FIRST ATTEMPT READ AS A MULTI-STOREY CAR PARK and was rejected on sight:
+  // a 0.22m slab edge plus a 1.05m balustrade is 1.27m of band on a 3.4m
+  // floor, so more than a third of the facade was horizontal white stripe --
+  // and the balustrade was a WHITE glass against a WHITE wall, which removed
+  // the only cue that the band is glazing rather than concrete deck.
+  //
+  // What reads correctly at riding speed is a THIN slab edge and a rail that
+  // is visibly darker than the wall it stands on. The wall is ivory, the rail
+  // is blue-grey glass; the eye reads render + glazing, not deck + deck.
+  for (let f = 1; f < floors; f++) {
+    const y = g + (f - 1) * 3.4;
+    api.world.add(api.extrude(api.grow(b.p, 1.018), 0.16, api.mat.trim, y));       // slab edge
+    api.world.add(api.extrude(api.grow(b.p, 1.014), 0.92, glass, y + 0.16));       // rail
+  }
+  // parapet, then the lift overrun at the short end — the only thing that
+  // breaks the roofline on any of these blocks
+  api.world.add(api.extrude(api.grow(b.p, 1.01), 0.9, wall, b.h));
+  const lw = Math.min(4.2, ob.halfShort * 0.7);
+  slab(api, ob, ob.midU + ob.halfLong * 0.62, ob.midV, lw, lw * 1.2, b.h + 0.9, 2.6, wall);
+}
+
+// NOT WIRED UP — JUDGED WORSE THAN THE GENERIC AND HELD BACK, which is what
+// this project does with a recipe that fails its own test (see the header of
+// data/landmark.mjs). Compared side by side on 2026-08-01: the generic facade
+// family gives this block three storeys of real windows and a warm painted
+// wall; this recipe replaced all of that with a blank ivory box whose access
+// galleries did not survive the carriageway test, so it read as a warehouse.
+// A single 662 m2 building is not worth losing the window grid for. Kept here,
+// with its research intact, for whoever gives it windows of its own.
+//
+// THE 1970 WALK-UP. River Valley Apartments, 400 River Valley Road, TOP 1970 —
+// the ONLY genuine walk-up among the seventeen, which is why it does not share
+// the family above. Four storeys, painted concrete, an open access gallery on
+// the street face with a solid balustrade rather than glass, and projecting
+// concrete sun ledges over the windows. Nothing glazed, nothing proud.
+function walkupApartment(api, b) {
+  const ob = orientedBox(b.p);
+  const wall = api.mat.ivory;
+  const floors = Math.max(2, Math.round(b.h / 3.4));
+  api.world.add(api.extrude(b.p, b.h, wall));
+  const sw = streetward(api, ob);
+  const facing = (sw.nx * -Math.sin(ob.ang) + sw.nz * Math.cos(ob.ang)) >= 0 ? 1 : -1;
+  for (let f = 1; f < floors; f++) {
+    const y = f * 3.4;
+    // access gallery: a solid concrete balustrade, street face only
+    slab(api, ob, ob.midU, ob.midV + facing * (ob.halfShort + 0.45),
+         ob.halfLong * 1.9, 0.9, y, 0.95, api.mat.conc);
+    // the deck it stands on
+    slab(api, ob, ob.midU, ob.midV + facing * (ob.halfShort + 0.32),
+         ob.halfLong * 1.9, 0.7, y - 0.18, 0.18, api.mat.conc);
+  }
+  // a flat roof with a plain parapet, and nothing else
+  api.world.add(api.extrude(api.grow(b.p, 1.012), 0.7, api.mat.conc, b.h));
+}
+
 function wheelockPlace(api, b) {
   const ob = orientedBox(b.p);
   const glass = api.mat.towerGlass, stone = api.mat.paleStone;
@@ -4456,6 +4539,10 @@ function nomadSingapore(api, b) {
 }
 
 export const RECIPES = [
+  // River Valley Road's western frontage. RV Residences is six blocks under one
+  // name and they MUST share a family — the research is explicit that they are
+  // one development stepping down the slope.
+  [/rv suites|rv residences|rv edge|stellar rv|loft @ nathan|oxley thanksgiving/i, boutiqueApartment],
   [/far east shopping/i, farEastShopping],
   [/^concorde hotel/i, concordeHotel],
   [/pullman singapore orchard/i, pullmanOrchard],
