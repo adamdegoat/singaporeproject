@@ -1822,7 +1822,13 @@ async function buildRegion(data, opts = {}) {
   }
   if (!P.has('notraffic') && axis) {
     // Five lanes one way carrying 21 vehicles over 2,586m is a road at 4am.
-    trafficSys = new Traffic(axis, PHONE ? 150 : 240, PHONE ? 20 : 32, axis && axisSpec(axis, data));
+    // ?cars= and ?buses= exist so the rider can test on his OWN phone whether
+    // the traffic increase is what cost him the smooth start. Guessing from a
+    // desktop pretending to be a phone has been wrong every time.
+    const CARS = parseInt(P.get('cars') || '', 10), BUSES = parseInt(P.get('buses') || '', 10);
+    trafficSys = new Traffic(axis, Number.isFinite(CARS) ? CARS : (PHONE ? 150 : 240),
+                             Number.isFinite(BUSES) ? BUSES : (PHONE ? 20 : 32),
+                             axis && axisSpec(axis, data));
     trafficSys.build(world, trafficSys.path.nearestS(S.x, S.z));
     // The system itself, so a probe can DRIVE the tick instead of waiting on
     // requestAnimationFrame -- a spawned browser is throttled and its loop may
@@ -2598,6 +2604,42 @@ function resizeIfStale() {
   if (canvas.clientWidth !== appliedW || canvas.clientHeight !== appliedH) resize();
 }
 resize();
+
+
+// ?diag — A REPORT THE RIDER'S OWN PHONE CAN GIVE ME.
+//
+// Every performance claim in this file that came from a phone-shaped window on
+// a desktop was wrong, and the rider has had to correct me from his actual
+// device three times. This records forty seconds from the moment the world is
+// ready and prints it big enough to photograph: frame rate per second, plus
+// everything that could plausibly change during a warm-up window, so "it lags
+// for fifteen seconds and then it is fine" can be read off rather than guessed.
+if (P.has('diag')) {
+  const rows = [];
+  let dt0 = 0, dframes = 0, dlast = 0;
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;left:0;top:0;z-index:90;background:rgba(10,11,13,.92);'
+    + 'color:#e8e6e1;font:12px/1.35 ui-monospace,Menlo,monospace;padding:8px 10px;max-height:100%;overflow:auto';
+  const tick = (now) => {
+    requestAnimationFrame(tick);
+    if (!window.__ready) return;
+    if (!dt0) { dt0 = now; dlast = now; document.body.appendChild(el); }
+    dframes++;
+    if (now - dlast < 1000) return;
+    const sec = Math.round((now - dt0) / 1000);
+    const ri = window.__renderer ? window.__renderer.info.render : {};
+    rows.push([sec, Math.round(dframes * 1000 / (now - dlast)), ri.calls || 0,
+               Math.round((ri.triangles || 0) / 1000),
+               +(renderer.getPixelRatio()).toFixed(2),
+               (window.__streamRecs || []).filter((r) => r.group).length,
+               (window.__streamState || {}).building ? 'B' : '-']);
+    dframes = 0; dlast = now;
+    if (rows.length > 40) return;
+    el.textContent = 'sec  fps  draw  ktri   dpr  dist bld\n'
+      + rows.map((r) => r.map((v, i) => String(v).padStart([3, 5, 6, 6, 6, 5, 4][i])).join('')).join('\n');
+  };
+  requestAnimationFrame(tick);
+}
 
 /* ---------------- loop ---------------- */
 let last = performance.now(), frames = 0, t0 = last, fps = 0, lastCoolT = 0;
