@@ -664,6 +664,29 @@ POSTCODE_HEIGHT = {
     "229723": 122,
 }
 
+# LOW BUILDINGS THAT ARE REALLY THAT LOW, NAMED ONE AT A TIME.
+#
+# The squat guard below replaces any height under 8m on a footprint over 600 m2
+# with a type default, because a 3,000 m2 building 3.5m tall is a bad tag. It is
+# right about most of them -- Tang Plaza, Liat Tower and Far East Shopping
+# Centre are all tagged `building:levels=-1`. It is wrong about the genuinely
+# low ones, and the note beside it says so: "Fix those individually with a
+# source".
+#
+# This is that list. An entry is a claim that a REAL, SOURCED, low building
+# stands on a large footprint, and each one cites what says so. Deliberately
+# not a blanket exemption for explicit levels: that was considered and rejected
+# because it would restore the -1s and flatten real towers.
+SOURCED_LOW = {
+    # 32 Beach Road, built 1952, conserved. OSM way 380512068 carries
+    # building:levels=2 AND roof:levels=1, and Roots.gov.sg describes a
+    # two-storey building. At 1,131 m2 the guard was replacing its 6.8m with a
+    # 30m type default -- a two-storey 1950s services club drawn as a nine-
+    # storey block. research/bugis-marina-guessed-heights.md.
+    "nco club",
+}
+
+
 # PUBLISHED STOREY COUNTS, WHERE NO ONE PUBLISHES METRES.
 #
 # Most Singapore buildings below the skyline have no published height at all.
@@ -723,6 +746,14 @@ STOREY_COUNTS = {
     # 20-storey commercial tower with the retail podium opened as The Heeren
     # Shops in 1997. Metres UNPUBLISHED anywhere.
     "the heeren":       [{"st": 20}],
+
+    # ---- research/littleindia-temples.md section 3
+    # 265 Serangoon Road. The 1970 mosque was DEMOLISHED and a new four-storey
+    # block built 2018-2020 under the Mosque Upgrading Programme -- MUIS's own
+    # fact sheet, 23 Feb 2018, in the National Archives. OSM carries neither a
+    # height nor a level count, so this stood at the 20m type default. Only the
+    # 1890s gatehouse is historic; there is no street-visible dome.
+    "masjid angullia": [{"st": 4}],
     # THREE storeys, and OSM's height=40 on this way is simply an error: it is
     # a conserved shophouse block on Orchard Road. `beats_osm` because the tag
     # is the thing being corrected. The recipe draws 15.7m of detail on top of
@@ -2061,7 +2092,9 @@ def main():
             # considered and REJECTED -- it would restore the -1s and flatten
             # real towers. Fix those individually with a source, as Peranakan
             # Place now is.
-            if h < 8 and a > 600:
+            _nm = norm(tags.get("name") or "")
+            _sourced_low = _nm and any(k in _nm for k in SOURCED_LOW)
+            if h < 8 and a > 600 and not _sourced_low:
                 h = TYPE_DEFAULT.get(tags.get("building", "yes"), 24)
                 hsrc = "guess"
                 # NOT `key = False`. That was tried and reverted: `key` is the
