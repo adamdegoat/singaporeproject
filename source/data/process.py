@@ -631,6 +631,39 @@ NAMED_BY_WIKIDATA = {
     "Q1538837": "Raffles Hotel",   # relation 3413910; outer way 254815863 has only source=Bing
 }
 
+# ORCHARD ROAD FRONTAGE: year and facade colour, researched 2026-07-31
+# (research/orchard-frontage-facades.md). These are the buildings a rider
+# actually passes, and their appearance was coming from an era mix or a hash.
+#
+# The YEAR is the one that describes the SKIN, not always the build date. Orchard
+# Shopping Centre went up in 1976-77 but was completely re-clad between Mar 2009
+# and Jun 2013 (bracketed by dated Street View), so a 1976 date here would drive
+# a punched-window facade and be actively wrong -- the street sees a c.2010 dark
+# curtain wall.
+#
+# Colours are hex-sampled from named, dated photographs. Two are deliberately
+# ABSENT: Orchard Towers, whose post-2023 re-clad has only a low-res news
+# thumbnail, and anything the research marked low confidence. A missing colour
+# falls back to the existing behaviour; a wrong one is worse than none.
+#
+# OSM WINS. These are applied only where the map has no start_date and no
+# building:colour of its own -- a surveyed tag always beats a researched one.
+FRONTAGE_FACADE = {
+    "shaw house":              (1993, "#cfcbbf"),
+    "the heeren":              (1997, "#a8acab"),
+    "orchard towers":          (1975, None),      # current skin not reliably known
+    "far east shopping":       (1974, "#c8cbc9"),
+    "delfi orchard":           (1984, "#e8e8ea"),
+    "midpoint orchard":        (1984, "#4e5155"),
+    "orchard shopping centre": (2011, "#2c3e51"),  # RE-CLAD date, not 1976
+    "orchard gateway @ emerald": (2014, "#89a4b5"),
+    "tong building":           (1978, "#5c6470"),
+    "temasek shophouse":       (1928, "#e6e6e5"),
+    "peranakan place":         (1902, "#c5b4a4"),
+    "claymore connect":        (2015, None),      # no dated photo found
+    "orchard 22":              (1921, "#dee1dc"),
+}
+
 TYPE_DEFAULT = {
     "retail": 22, "commercial": 30, "hotel": 55, "apartments": 45,
     "residential": 40, "office": 45, "civic": 18, "house": 9,
@@ -1194,6 +1227,19 @@ def main():
                 v = tags.get(tk)
                 if v:
                     b[key_out] = str(v)[:16]
+            # researched frontage facts, only where OSM offers nothing
+            _fn = (b.get("n") or "").lower()
+            if _fn:
+                _best = None
+                for _k, _v in FRONTAGE_FACADE.items():
+                    if _k in _fn and (_best is None or len(_k) > len(_best[0])):
+                        _best = (_k, _v)
+                if _best:
+                    _yr, _col = _best[1]
+                    if _yr and not b.get("yr"):
+                        b["yr"] = _yr
+                    if _col and not b.get("col"):
+                        b["col"] = _col
             # A roof structure is a canopy with no walls: large and low is what
             # it IS, not a bad height. Flagged so the "no squat big footprint"
             # check does not report a 2,122 m2 covered area from 1930 as a
