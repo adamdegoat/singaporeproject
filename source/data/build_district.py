@@ -203,10 +203,59 @@ def fetch(d, force=False):
         print(f"  ! these parts came back EMPTY and probably should not have: "
               f"{', '.join(empty)}")
         print(f"  ! rerun with --force before trusting this district")
-    json.dump({"elements": merged}, open(path, "w"))
-    print(f"  raw: {len(merged)} elements -> {path} ({os.path.getsize(path)/1024:.0f} KB)")
     if not merged:
         sys.exit("  ! nothing fetched; Overpass may be down. Try again later.")
+
+    # A REFETCH THAT LOSES DATA MUST NOT OVERWRITE THE CACHE.
+    #
+    # Overpass mirrors fail per-layer and the retry ladder falls back to another
+    # mirror, which can quietly return a partial answer. On 2026-07-31 an Orchard
+    # refetch came back with the 196 building:part ways it was sent for AND 172
+    # fewer buildings and 573 fewer roads. Every per-layer line said "ok". The
+    # only reason it was caught is that the raw file had been backed up by hand
+    # and the counts compared afterwards.
+    #
+    # The existing guard only catches a layer that comes back EMPTY. This one
+    # catches a layer that comes back THIN, which is the commoner and quieter
+    # failure. Categories are recomputed from tags on both sides, so it does not
+    # depend on the fetch structure staying the same.
+    if os.path.exists(path):
+        def _census(els):
+            c = {"building": 0, "highway": 0, "tree": 0, "crossing": 0, "poi": 0}
+            for e in els:
+                t = e.get("tags") or {}
+                if "building" in t or "building:part" in t:
+                    c["building"] += 1
+                if "highway" in t:
+                    c["highway"] += 1
+                if t.get("natural") == "tree":
+                    c["tree"] += 1
+                if t.get("highway") == "crossing":
+                    c["crossing"] += 1
+                if t.get("shop") or t.get("amenity"):
+                    c["poi"] += 1
+            return c
+        try:
+            was = _census(json.load(open(path)).get("elements", []))
+        except Exception:
+            was = None
+        if was:
+            now = _census(merged)
+            lost = [(k, was[k], now[k]) for k in was
+                    if was[k] > 20 and now[k] < was[k] * 0.98]
+            if lost:
+                rej = path + ".rejected"
+                json.dump({"elements": merged}, open(rej, "w"))
+                print("  ! REFETCH REJECTED — it LOST data and the cache is untouched:")
+                for k, a, b in lost:
+                    print(f"  !   {k:9} {a} -> {b}   ({b - a:+d}, {100*(b-a)/a:+.1f}%)")
+                print(f"  ! the fetched copy is at {rej} if you want to inspect it.")
+                print("  ! this is a flaky-mirror partial, not news about the world.")
+                print("  ! just run --force again; a clean fetch will be accepted.")
+                return path
+
+    json.dump({"elements": merged}, open(path, "w"))
+    print(f"  raw: {len(merged)} elements -> {path} ({os.path.getsize(path)/1024:.0f} KB)")
     return path
 
 

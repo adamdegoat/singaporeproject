@@ -4506,6 +4506,7 @@ export const RECIPES = [
   [/veeramakaliamman/i, veeramakaliamman],
   [/abdul gafoor/i, abdulGafoor],
   [/angullia/i, angullia],
+  [/masjid malabar|malabar muslim/i, masjidMalabar],
   [/^the warehouse$/i, warehouseGodowns],
   [/^golden mile complex$/i, goldenMileComplex],
   [/^raffles hotel$/i, rafflesHotel],
@@ -6084,4 +6085,132 @@ function rafflesHotel(api, b) {
       }
     }
   }
+}
+
+// Masjid Malabar (Malabar Muslim Jama-Ath Mosque), 471 Victoria Street at
+// Jalan Sultan. Researched 2026-07-31, research/littleindia-worship-2.md.
+//
+// THE TWO THINGS EVERY DESCRIPTION OF THIS BUILDING GETS WRONG:
+//
+//   1. THE DOME IS GOLD, NOT BLUE. It is known locally as both the "Golden
+//      Dome Mosque" and the "Blue Mosque" -- every dome and finial is gold and
+//      the blue is the WALL TILING. There are FOUR gold onion domes, counted on
+//      a 2025 aerial, not the two or three that get published.
+//   2. THE MINARET IS THE TALLEST ELEMENT, not the dome. Its crescent stands
+//      ~18% above the dome's crescent and ~40% above the dome's apex. Lead with
+//      the dome and the silhouette is wrong.
+//
+// AND THE BLUE IS NOT LAPIS. "Lapis lazuli" is the literature's phrase, not the
+// built colour: sampled off a dated 2023 photograph the tile field is a LIGHT
+// POWDER BLUE, #8AAABA to #8CB5CB, scored by a darker slate lattice. Skinning
+// this navy would be wrong by a mile at street distance.
+//
+// The tiling is also not the whole building. The 1963 main complex is tiled top
+// to parapet; the REAR north-west block is plain white render under large
+// ORANGE pitched clay-tile roofs, and it reads pale and blank behind the blue
+// from the street. Tile the whole footprint and about a third of it is wrong.
+//
+// Heights are RATIOS of the minaret tip, measured off a dated frontal
+// photograph with the scale set two independent ways that agree. NO height is
+// published by MUIS, NHB, NLB, URA or the mosque's own heritage site, so h is
+// taken as the minaret tip and everything hangs off it.
+const MALABAR_MAT = {
+  tile: new THREE.MeshStandardMaterial({ color: 0x8aaaba, roughness: 0.42, metalness: 0.08 }),
+  lattice: new THREE.MeshStandardMaterial({ color: 0x3f5867, roughness: 0.5 }),
+  gold: new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: 0.3, metalness: 0.62 }),
+  white: new THREE.MeshStandardMaterial({ color: 0xece9e0, roughness: 0.88 }),
+  clay: new THREE.MeshStandardMaterial({ color: 0xb5633a, roughness: 0.86 }),
+  screen: new THREE.MeshStandardMaterial({ color: 0x345060, roughness: 0.55, metalness: 0.2 }),
+};
+function masjidMalabar(api, b) {
+  const ob = orientedBox(b.p);
+  const M = MALABAR_MAT;
+  const H = Math.max(12, b.h || 20);            // = the MINARET CRESCENT TIP
+  const SEAT = api.footingY(b.p);
+
+  // which way the street is: the tiled faces front it, the white block is behind
+  const sw = streetward(api, ob);
+  const P = (u, v) => [ob.cx + u * ob.ux - v * ob.uz, ob.cz + u * ob.uz + v * ob.ux];
+  const rect = (u0, v0, hu, hv) => [P(u0 - hu, v0 - hv), P(u0 + hu, v0 - hv),
+                                    P(u0 + hu, v0 + hv), P(u0 - hu, v0 + hv)];
+  const side = ((sw.nx * -ob.uz + sw.nz * ob.ux) > 0) ? 1 : -1;   // +v faces the street
+  // THE ORIENTED BOX IS MUCH BIGGER THAN THE BUILDING. This footprint is 33.8 x
+  // 14.1m of building, but its box is 38.8 x 29.4 with the vertex mean 5.7m off
+  // centre across -- it wraps a courtyard. Sizing sub-blocks off halfShort made
+  // both the rear block and the prayer hall span the WHOLE plan and bury the
+  // tiled base that is most of what you see. Everything below is sized off the
+  // SHORT half only, and modestly.
+
+  // 1. the two-storey Victoria Street wing, tiled, at 0.35H
+  api.merge(api.extrudeGeo(b.p, H * 0.35), M.tile, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.012), 0.4, H * 0.35 - 0.4), M.lattice, ob.cx, ob.cz);
+
+  // 2. the main prayer-hall block, tiled, at 0.53H, on the street half
+  const hallV = ob.midV + side * ob.halfShort * 0.40;
+  api.merge(api.extrudeGeo(rect(ob.midU, hallV, ob.halfLong * 0.40, ob.halfShort * 0.22),
+    H * 0.53), M.tile, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(rect(ob.midU, hallV, ob.halfLong * 0.42, ob.halfShort * 0.24),
+    0.45, H * 0.53 - 0.45), M.lattice, ob.cx, ob.cz);
+
+  // 3. THE REAR BLOCK IS NOT BLUE. Plain white render under big orange pitched
+  //    clay roofs -- about a third of the complex, and visible over the wing.
+  const backV = ob.midV - side * ob.halfShort * 0.46;
+  api.merge(api.extrudeGeo(rect(ob.midU, backV, ob.halfLong * 0.38, ob.halfShort * 0.20),
+    H * 0.44), M.white, ob.cx, ob.cz);
+  // The orange pitched roofs, sitting ON the white block rather than beside it.
+  // The first version ran them off the block's ends, where a three-sided
+  // cylinder seen end-on reads as an arrowhead floating in space.
+  {
+    const rad = Math.min(ob.halfShort * 0.11, 2.0);
+    const g = new THREE.CylinderGeometry(rad, rad, ob.halfLong * 0.74, 3, 1, false);
+    g.rotateZ(Math.PI / 2);
+    g.scale(1, 1, (ob.halfShort * 0.20) / (rad * 0.866));
+    g.rotateY(-ob.ang);
+    const [rx, rz] = P(ob.midU, backV);
+    g.translate(rx, SEAT + H * 0.44 + rad * 0.5, rz);
+    api.merge(g, M.clay, ob.cx, ob.cz);
+  }
+
+  // 4. the dome pavilion and FOUR gold onion domes. Apex 0.71H, crescent 0.85H.
+  const onion = (cx2, cz2, r, baseY) => {
+    const dg = new THREE.SphereGeometry(r, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.60);
+    dg.scale(1, 1.42, 1);
+    dg.translate(cx2, SEAT + baseY, cz2);
+    api.merge(dg, M.gold, ob.cx, ob.cz);
+    api.merge(api.extrudeGeo(
+      [[cx2 - 0.14, cz2 - 0.14], [cx2 + 0.14, cz2 - 0.14],
+       [cx2 + 0.14, cz2 + 0.14], [cx2 - 0.14, cz2 + 0.14]],
+      r * 1.5, baseY + r * 1.30), M.gold, ob.cx, ob.cz);
+  };
+  const [dx, dz] = P(ob.midU, hallV);
+  const R = Math.min(ob.halfShort * 0.24, 3.6);
+  onion(dx, dz, R, H * 0.53);                       // the main dome
+  for (const su of [-1, 1]) {                       // three subsidiary domes
+    const [sx, sz] = P(ob.midU + su * ob.halfLong * 0.40, hallV);
+    onion(sx, sz, R * 0.44, H * 0.53);
+  }
+  const [ax, az] = P(ob.midU, hallV - side * ob.halfShort * 0.42);
+  onion(ax, az, R * 0.40, H * 0.44);
+
+  // 5. THE OCTAGONAL MINARET, tallest thing here. Tiled shaft to 0.65H, banded
+  //    collar, gold dome apex at 0.89H, crescent tip at H.
+  const [mx, mz] = P(ob.midU - ob.halfLong * 0.42, ob.midV + side * ob.halfShort * 0.46);
+  const oct = (r, y0, h2, mat) => {
+    const ring = [];
+    for (let k = 0; k < 8; k++) {
+      const a2 = (k / 8) * Math.PI * 2 + Math.PI / 8;
+      ring.push([mx + Math.cos(a2) * r, mz + Math.sin(a2) * r]);
+    }
+    api.merge(api.extrudeGeo(ring, h2, y0), mat, ob.cx, ob.cz);
+  };
+  const MR = Math.min(ob.halfShort * 0.11, 1.7);
+  oct(MR, 0, H * 0.65, M.tile);
+  oct(MR * 1.12, H * 0.60, H * 0.05, M.lattice);        // the banded collar
+  oct(MR * 0.92, H * 0.65, H * 0.10, M.tile);           // the open lantern stage
+  onion(mx, mz, MR * 1.15, H * 0.75);                   // gold dome + crescent
+
+  // 6. the 2023 annexe screen: perforated turquoise, not mosaic
+  api.merge(api.extrudeGeo(rect(ob.midU + ob.halfLong * 0.66,
+    ob.midV + side * ob.halfShort * 0.30, ob.halfLong * 0.22, 0.30),
+    H * 0.40, H * 0.06), M.screen, ob.cx, ob.cz);
 }
