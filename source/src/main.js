@@ -2009,6 +2009,32 @@ async function buildRegion(data, opts = {}) {
   }
   bmark('rest');
 
+  // FREEZE THE HOME DISTRICT'S STATIC GEOMETRY, exactly as addChunk already
+  // does for every STREAMED district.
+  //
+  // It never did, and the omission cost more than everything else in this
+  // file: counted on a phone-shaped run, 2,310 of the 4,486 objects in the
+  // scene were still recomputing their world matrix on every single frame --
+  // kerbs, railings, shopfronts, lamp posts, none of which will ever move
+  // again. That is where "a fifth of the phone goes into deciding what to
+  // draw" came from, and it is why the world felt heavy even standing still.
+  //
+  // Same rules as the chunk version: skip InstancedMesh (its per-instance
+  // matrices are managed internally), skip Groups (a Group is what an animated
+  // assembly hangs off, and freezing one strands whatever moves under it), and
+  // compute the matrix ONCE before the flag goes off so nothing is left at the
+  // origin.
+  {
+    let frozen = 0;
+    world.traverse((o) => {
+      if (o === world || o.isInstancedMesh || o.isGroup || !o.isMesh) return;
+      o.updateMatrix();
+      o.matrixAutoUpdate = false;
+      frozen++;
+    });
+    BOOTT.push(['freeze-static', frozen]);
+  }
+
   // GPU WARM-UP, and it must come AFTER consolidate. The first rendered frame
   // used to be an 8.7s main-thread task — Metal shader translation plus the
   // upload of 178MB of merged vertex data — sitting invisibly AFTER __ready,
@@ -2363,6 +2389,35 @@ const SPEC0 = (P.get('spec') || '').split(',').map(Number);
 let SPEC = (SPEC0.length === 6 || SPEC0.length === 7) && SPEC0.every((n) => Number.isFinite(n))
   ? SPEC0 : null;
 
+// CULL A WHOLE DISTRICT WITH ONE TEST INSTEAD OF WALKING ITS SUBTREE.
+//
+// A profile of nine seconds of riding on a phone-speed CPU spent 1.6 of those
+// seconds inside three.js's own scene walk -- projectObject, intersectsObject
+// and updateMatrixWorld -- deciding, object by object, that things behind the
+// rider were not on screen. Up to three districts are resident at once and
+// usually only one is in front of you.
+//
+// three.js's projectObject returns immediately on an invisible object, so
+// hiding a district's group skips its entire subtree for free. One box test
+// per district replaces thousands of per-object ones. The district you are
+// standing in stays visible because its box contains the camera.
+const _dBox = new THREE.Box3(), _dFru = new THREE.Frustum(), _dMat = new THREE.Matrix4();
+let CULL_D = true;
+window.__cullD = (v) => { CULL_D = !!v; if (!CULL_D) for (const r of (window.__streamRecs||[])) if (r.group) r.group.visible = true; return CULL_D; };
+function cullDistricts() {
+  const recs = window.__streamRecs;
+  if (!CULL_D || !recs || !recs.length) return;
+  _dMat.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  _dFru.setFromProjectionMatrix(_dMat);
+  for (const r of recs) {
+    if (!r.group || !r.box || r.box.length !== 4) continue;
+    // Generous in Y: the box is a 2D footprint and the tallest tower in the
+    // world is under 300m, so this must never clip a skyline off the top.
+    _dBox.min.set(r.box[0], -80, r.box[1]);
+    _dBox.max.set(r.box[2], 460, r.box[3]);
+    r.group.visible = _dFru.intersectsBox(_dBox);
+  }
+}
 function driveCamera(dt) {
   if (SPEC) {
     camera.position.set(SPEC[0], SPEC[1], SPEC[2]);
@@ -2466,16 +2521,32 @@ let FPS_CAP = TOUCH ? (parseFloat(P.get('fps') || '0') || 30) : 0;
 // run cool and smooth without a settings screen. Verdict from the median of
 // the first eight one-second fps readings after ready; ?dpr/?fps overrides
 // win, and a saved verdict applies from the next boot's first frame.
-let TIER_DPR = 0;
+// START LOW AND EARN THE PIXELS, rather than start high and make the rider pay
+// for the measurement.
+//
+// This used to begin at the phone's own pixel ratio (capped at 1.5) and only
+// demote AFTER eight one-second samples. On a phone that is eight-plus seconds
+// of drawing every frame at up to 2.25x the pixels it will eventually settle
+// on -- and it is exactly the symptom reported: "the first 15-20 seconds lag,
+// after that is ok", including with the bike parked and nothing streaming.
+// Watched live in the HUD: dpr 1.5 for the first several seconds, then 1.25,
+// and the lag goes with it.
+//
+// So a touch device now starts AT the conservative setting and is promoted
+// only if it demonstrates it can do better. Nobody waits through the
+// measurement any more; the worst case is that a strong phone spends its first
+// eight seconds slightly softer than it needs to, which nobody has ever
+// complained about.
+let TIER_DPR = TOUCH && !P.get('dpr') ? 1.25 : 0;
 const tierFps = [];
 // The default cap above must NOT count as "the user chose a frame rate":
 // only an explicit ?fps= or ?dpr= disables the adaptive tier, otherwise
 // turning the cap on would have switched the tier off for every phone.
 let tierDone = !TOUCH || !!P.get('fps') || !!P.get('dpr');
 try {
-  if (!tierDone && localStorage.getItem('sg_tier') === 'low') {
-    TIER_DPR = 1.25; FPS_CAP = 24; tierDone = true;
-  }
+  const saved = !tierDone && localStorage.getItem('sg_tier');
+  if (saved === 'low') { TIER_DPR = 1.25; FPS_CAP = 24; tierDone = true; }
+  else if (saved === 'high') { TIER_DPR = Math.min(devicePixelRatio || 1, 1.5); tierDone = true; }
 } catch (e) { tierDone = tierDone || false; }
 function tierSample(f) {
   if (tierDone) return;
@@ -2483,9 +2554,17 @@ function tierSample(f) {
   if (tierFps.length < 8) return;
   tierDone = true;
   const s = [...tierFps].sort((a, b) => a - b);
+  // Below 20fps even at the conservative setting: this phone needs the frame
+  // cap dropped too, and should remember so the next boot starts there.
   if (s[4] < 20) {
-    TIER_DPR = 1.25; FPS_CAP = 24;
+    FPS_CAP = 24;
     try { localStorage.setItem('sg_tier', 'low'); } catch (e) { /* fine */ }
+  } else if (s[4] >= 40 && !P.get('dpr')) {
+    // Comfortably clearing the 30fps cap with room to spare: this phone can
+    // afford a sharper picture. Promotion, not demotion -- and it happens
+    // once, after the rider is already moving smoothly.
+    TIER_DPR = Math.min(devicePixelRatio || 1, 1.5);
+    try { localStorage.setItem('sg_tier', 'high'); } catch (e) { /* fine */ }
     resize();
   }
 }
@@ -2524,6 +2603,8 @@ resize();
 let last = performance.now(), frames = 0, t0 = last, fps = 0, lastCoolT = 0;
 // frames >200ms in the first 10s after ready — the number the user's
 // screenshot carries so "still laggy" becomes measurable (shows as jN)
+let DT_CLAMP = 0.1;
+window.__dtClamp = (v) => { DT_CLAMP = +v || 0.1; return DT_CLAMP; };
 let jankCount = 0, jankWindowEnd = 0;
 let FRAME_MS = 0;
 let lastCapT = 0, shadowFlip = true;
@@ -2539,7 +2620,20 @@ function loop(now) {
     if (!jankWindowEnd) jankWindowEnd = now + 10000;
     else if (now < jankWindowEnd && rawDt > 0.2) jankCount++;
   }
-  const dt = Math.min(0.05, rawDt); last = now;
+  // THIS CLAMP IS WHAT MAKES A SLOW PHONE RUN IN SLOW MOTION.
+  //
+  // Everything except the ride physics advances by `dt`. Clamped at 0.05 the
+  // world can never advance faster than a 20fps step, so at 15fps it runs at
+  // 75% speed and at 10fps at half speed -- the camera eases toward the bike
+  // slower than the bike moves, traffic crawls, and the whole thing reads as
+  // "moving off fucking slow" rather than as a low frame rate. The rider
+  // reported exactly that, and it got worse the slower the device.
+  //
+  // The clamp exists so one long stall cannot advance the world by a second in
+  // a single step. 0.1 still guarantees that and stops inventing slow motion
+  // above 10fps. Everything it feeds -- camera easing, traffic, crowd,
+  // signals -- is lerp-based and safe at a tenth of a second.
+  const dt = Math.min(DT_CLAMP, rawDt); last = now;
   // FRAME HEALTH, read by the world builder. A rolling mean of the last dozen
   // frames, in milliseconds.
   if (rawDt > 0 && rawDt < 1) {
@@ -2683,6 +2777,7 @@ function loop(now) {
       if (wayfinder) wayfinder.update(walker, dt);
       sound.update(0, 'walk', walker.speed, walker.phase, trafficNearest(walker.x, walker.z));
       if (SPEC) driveCamera(dt); else walkCamera(dt);
+      cullDistricts();
       renderer.render(scene, camera);
       frames++;
       if (now - t0 > 1000) reportHud(now);
