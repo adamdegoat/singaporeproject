@@ -371,6 +371,14 @@ LANDMARKS = {
     # derivation every research brief this project sends out forbids.
     # research/bugis-frontage-heights.md.
     "shaw towers":            {"h": 200, "key": True},
+    # 89.00m architectural, highest occupied floor 78.60m, 16 floors. CTBUH
+    # 14115 from a data-submission form, corroborated independently by the
+    # Skyscraper Museum's WOHA exhibition record at the same 89m. Two acceptable
+    # sources; they disagree only on storeys (16 vs 15), which does not move the
+    # height. The polygon is the whole site, so this pairs with the
+    # parkroyalPickering recipe -- a flat 89m extrusion of a 159m-long site is
+    # the "wall of buildings" the architect designed it to break down.
+    "parkroyal collection pickering": {"h": 89, "key": True},
     # 144m, and the 108 I set earlier was WRONG. Re-researched 2026-07-31
     # (research/raffles-parkview.md): NOTHING publishes ~108. CTBUH, Emporis,
     # SkyscraperPage, Structurae and Wikipedia's own refs all say 144m; the
@@ -670,6 +678,12 @@ STOREY_COUNTS = {
     # default, which is what TYPE_DEFAULT gives a 737 m2 footprint with no tag.
     "ritz-carlton residences": [{"st": 34}],
 
+    # ---- research/cbd-podium-geometry.md
+    # 89.00m architectural is PUBLISHED (CTBUH 14115 + Skyscraper Museum/WOHA)
+    # so this one does not belong in the storey table at all -- it is in
+    # LANDMARKS above. Listed here only so the next reader does not add it.
+    #   "parkroyal collection pickering": 89m, see LANDMARKS
+
     # ---- research/robertson-district-heights.md
     # 40 occupied levels. The 39-vs-40 conflict in the sources is not a
     # conflict: flats stop at L39 and L40 is the rooftop facility deck.
@@ -692,6 +706,31 @@ STOREY_COUNTS = {
     # not a residential storey -- the same reasoning the HDB join already
     # applies to market_hawker blocks, and for the same reason: 3.4m would be
     # shorter than the building's own roof trusses.
+    # ---- research/rivervalley-guessed-heights.md, all [PUBLISHED] storeys.
+    # Nine of these were standing at a hotel or residential type default that
+    # was out by a factor of two in one direction or the other.
+    "mirage tower":              [{"st": 33}],   # was 40m, is 33 storeys
+    "great world serviced":      [{"st": 34}],   # was 20m
+    "aspen heights":             [{"st": 16}],   # was 40m, two blocks
+    "seng kee building":         [{"st": 10}],   # was 20m
+    "the inspira":               [{"st": 13}],   # was 20m; three-winged plan
+    "king's centre":             [{"st": 8}],    # was 55m
+    "park regis":                [{"st": 7}],    # was 55m, GHDWoodhead
+    "robertson house":           [{"st": 10}],   # was 55m
+    "the pier at robertson":     [{"st": 10}],   # was 40m
+    "copthorne king's hotel":    [{"st": 12}],   # was 55m
+    "hotel miramar":             [{"st": 16}],   # was 55m; closed Oct 2025
+    # New Bahru, the former Nan Chiau High School. OSM calls it "Big Block",
+    # which IS one of its blocks rather than an invention, so the name stays.
+    "big block":                 [{"st": 5}],    # was 22m
+    # Zion Riverside Food Centre: a 1976 open hawker shed on the Alexandra
+    # Canal, not a building on the river. One storey and tall with it.
+    "zion riverside":            [{"st": 1, "per": 6.5}],
+    # Zyon Galleria is NOT BUILT. It is Zyon Grand's retail deck, under
+    # construction, one storey over three basements with a grass roof. Modelled
+    # at 24m it was a mall that does not exist yet.
+    "zyon galleria":             [{"st": 1, "per": 6.0}],
+
     "redhill wet market":               [{"st": 1, "per": 7.5}],
     "beo crescent food centre":         [{"st": 1, "per": 7.0}],
     "havelock road cooked food centre": [{"st": 1, "per": 7.0}],
@@ -887,6 +926,94 @@ def _conservation_areas():
                         "box": (min(xs), min(zs), max(xs), max(zs))})
         _CONS_CACHE = out
     return _CONS_CACHE
+
+
+# WHAT COLOUR THE PUBLIC HOUSING ACTUALLY IS.
+#
+# research/robertson-district-heights.md read dated photographs estate by
+# estate and its conclusion is blunt: "this district is not a grey or beige
+# district. Its public housing is painted in salmon-pink, magenta, terracotta,
+# mint-green and pale yellow against cream and white. A monochrome HDB field
+# will look wrong from any viewpoint."
+#
+# Keyed by the HDB street, because that is what the join already gives us, and
+# split by BLOCK SHAPE where the sources split: at Redhill the long slabs are
+# cream with salmon end gables while the point blocks behind them are salmon
+# all over, so a slab and a point block on the same street take different
+# colours. `point` applies below the footprint area given; `slab` above it.
+#
+# WHAT THIS DOES NOT MODEL, and it is the more distinctive half: the ACCENTS.
+# Redhill's salmon end gables on cream slabs, Bukit Merah's magenta gable-end
+# murals, Zion Road's terracotta banding. The renderer takes one colour per
+# building, so only the wall field is set. That gap is real and is recorded in
+# the ledger rather than papered over by splitting the difference into a colour
+# nobody painted.
+HDB_ESTATE_WALL = {
+    # [PHOTO] 22 Aug 2025. Slabs cream with salmon end gables; the point blocks
+    # behind are salmon-pink with white banding and white crown caps.
+    "REDHILL CLOSE": {"slab": "#efe6d6", "point": "#d98d78", "cut": 900},
+    "REDHILL ROAD":  {"slab": "#efe6d6", "point": "#d98d78", "cut": 900},
+    # [PHOTO] 6 Jan 2026. The 2011 blocks are white/pale grey with mint-green
+    # and pale yellow panels; blk 22, from 1964, is flat white with no accent.
+    "HAVELOCK ROAD": {"slab": "#eef0ec", "point": "#eef0ec", "cut": 900},
+    # [PHOTO] 10 Sep 2016, aerial. White and cream slabs; the magenta
+    # gable-end murals are the accent this cannot carry.
+    "JALAN BUKIT MERAH":  {"slab": "#f0ece1", "point": "#f0ece1", "cut": 900},
+    "HENDERSON ROAD":     {"slab": "#f0ece1", "point": "#f0ece1", "cut": 900},
+    "HENDERSON CRESCENT": {"slab": "#f0ece1", "point": "#f0ece1", "cut": 900},
+    # [PHOTO] 10 Sep 2016. Cream to pale yellow towers, some yellow with
+    # orange-red banding.
+    "BUKIT MERAH VIEW":    {"slab": "#f2ecd2", "point": "#f2ecd2", "cut": 900},
+    "BUKIT MERAH CENTRAL": {"slab": "#f2ecd2", "point": "#f2ecd2", "cut": 900},
+    # [PHOTO] 16 Oct 2025. White point blocks with terracotta banding.
+    "ZION ROAD":     {"slab": "#f1f0ec", "point": "#f1f0ec", "cut": 900},
+    "KIM TIAN ROAD": {"slab": "#f1f0ec", "point": "#f1f0ec", "cut": 900},
+}
+
+
+def hdb_estate_colour(rec, area):
+    if not rec:
+        return None
+    spec = HDB_ESTATE_WALL.get(_hdb_norm(rec.get("street")))
+    if not spec:
+        return None
+    return spec["slab"] if area >= spec["cut"] else spec["point"]
+
+
+_HDB_PTS = None
+
+
+def _hdb_points():
+    """OneMap's coordinate for every nearby HDB block, projected into world
+    metres and paired with its HDB record. Empty and LOUD if the cache is
+    missing -- a silent empty list here looks exactly like "no HDB nearby"."""
+    global _HDB_PTS
+    if _HDB_PTS is None:
+        here = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(here, "hdb_points.json")
+        if not os.path.exists(path):
+            print("  ! data/hdb_points.json missing — run data/hdb_geocode.py. "
+                  "HDB blocks with no address tags will keep their type default.")
+            _HDB_PTS = []
+            return _HDB_PTS
+        pts = json.load(open(path))["points"]
+        # hdb_table() is keyed by the NORMALISED pair; the points cache is keyed
+        # by the RAW pair, which is what hdb_geocode.py wrote. Read the blocks
+        # file directly rather than reusing that table, so the two keyings
+        # cannot silently drift apart.
+        blocks = {}
+        bp = os.path.join(here, "hdb_blocks.json")
+        if os.path.exists(bp):
+            for b in json.load(open(bp))["blocks"]:
+                blocks[f"{b['blk_no']}|{b['street']}"] = b
+        out = []
+        for key, ll in pts.items():
+            if not ll or key not in blocks:
+                continue
+            x, z = proj(ll[0], ll[1])
+            out.append((x, z, blocks[key]))
+        _HDB_PTS = out
+    return _HDB_PTS
 
 
 def _hdb_height(storeys, rec=None):
@@ -1795,12 +1922,19 @@ def main():
             # facade family, and a public housing slab from 1968 does not look
             # like one from 1997; both were being dealt a family by hashing the
             # footprint because nothing in the pipeline knew when they went up.
-            if not b.get("yr"):
-                _rec = hdb_record(tags)
-                if _rec:
+            _rec = hdb_record(tags)
+            if _rec:
+                if not b.get("yr"):
                     _m = re.match(r"^(\d{4})", str(_rec.get("year_completed") or "").strip())
                     if _m and 1930 < int(_m.group(1)) <= 2030:
                         b["yr"] = int(_m.group(1))
+                # A dated-photograph wall colour, where the estate has one.
+                # Behind an OSM `building:colour` tag, which is a survey of
+                # this particular block rather than of its street.
+                if not b.get("col"):
+                    _ec = hdb_estate_colour(_rec, b.get("a") or 0)
+                    if _ec:
+                        b["col"] = _ec
             for tk, key_out in (("building:material", "mat"),
                                 ("building:colour", "col"),
                                 ("roof:shape", "rs")):
@@ -2264,6 +2398,87 @@ def main():
     for b in buildings:
         b.pop("_hdb", None)
         b.pop("_hdbone", None)
+
+    # THE HDB JOIN AGAIN, THIS TIME BY POSITION RATHER THAN BY ADDRESS.
+    #
+    # The address join above is exact and is the right first pass, but it only
+    # reaches footprints that CARRY `addr:housenumber` and `addr:street`. Many
+    # HDB slabs in OSM carry neither -- traced from imagery, never tagged -- so
+    # the join landed on 39 of Robertson's 558 buildings and the storey count
+    # and completion year had nowhere to attach.
+    #
+    # data/hdb_geocode.py asks SLA's OneMap where each block is. A block number
+    # and street IS an address, OneMap is the authority on Singapore addresses,
+    # and point-in-polygon is not a guess.
+    #
+    # APPLIED ONLY OVER A GUESS. A surveyed height tag, a published figure or
+    # the address join all say more about a specific building than "an HDB
+    # address point falls inside this ring", so none of them is displaced. The
+    # year is set whenever it is missing, because year_completed is published
+    # either way.
+    _pts = _hdb_points()
+    if _pts:
+        _spat_h = _spat_y = 0
+        for b in buildings:
+            p = b.get("p") or []
+            if len(p) < 3:
+                continue
+            xs = [q[0] for q in p]; zs = [q[1] for q in p]
+            x0, x1, z0, z1 = min(xs), max(xs), min(zs), max(zs)
+            for (px, pz, rec) in _pts:
+                if px < x0 or px > x1 or pz < z0 or pz > z1:
+                    continue
+                if not _point_in_ring(px, pz, p):
+                    continue
+                try:
+                    st = int(rec["max_floor_lvl"])
+                except (TypeError, ValueError):
+                    break
+                if st >= 1 and not b.get("hs"):
+                    b["h"] = round(_hdb_height(st, rec), 1)
+                    b["hs"] = "levels"
+                    if st <= 1 and (b.get("a") or 0) > 600:
+                        b["low"] = 1
+                    _spat_h += 1
+                if not b.get("yr"):
+                    _m2 = re.match(r"^(\d{4})", str(rec.get("year_completed") or "").strip())
+                    if _m2 and 1930 < int(_m2.group(1)) <= 2030:
+                        b["yr"] = int(_m2.group(1))
+                        _spat_y += 1
+                if not b.get("col"):
+                    _ec2 = hdb_estate_colour(rec, b.get("a") or 0)
+                    if _ec2:
+                        b["col"] = _ec2
+                break
+        if _spat_h or _spat_y:
+            print(f"  HDB join by position: {_spat_h} heights, {_spat_y} years on "
+                  f"footprints that carry no address tags")
+
+    # A LOW BUILDING WITH A SOURCED STOREY COUNT IS NOT A SQUAT DEFECT.
+    #
+    # check.py fails any footprint over 600 m2 standing under 8m, and it is
+    # right to: that shape is almost always a site polygon wearing its podium's
+    # height, which is the single most common way this world goes wrong.
+    #
+    # But it is not ALWAYS that. A two-storey HDB multi-storey car park deck
+    # over 1,682 m2 really is 5.6m, and a two-storey commercial block really is
+    # 7.3m, and both of those numbers came from HDB's own storey counts rather
+    # than from a guess. The gate started reporting the correct answer as a
+    # defect the moment the storey joins began landing.
+    #
+    # So the exemption is scoped to PROVENANCE, not to size: only a height that
+    # came from a storey count somebody published gets it. Anything still
+    # sitting on a type default is exactly what the gate was written to catch
+    # and keeps failing.
+    _lowflag = 0
+    for b in buildings:
+        if (b.get("hs") == "levels" and (b.get("h") or 99) < 8
+                and (b.get("a") or 0) > 600 and not b.get("low")):
+            b["low"] = 1
+            _lowflag += 1
+    if _lowflag:
+        print(f"  {_lowflag} low buildings exempted from the squat check: their "
+              f"storey count is sourced, not guessed")
 
     # WHICH GAZETTED CONSERVATION AREA IS THIS BUILDING STANDING IN?
     #

@@ -66,7 +66,45 @@ def order_mirrors():
             print(f"  mirror {host:34s} DOWN ({type(e).__name__})", flush=True)
     scored.sort()
     if scored[0][0] > 900:
-        sys.exit("  ! every Overpass mirror is unreachable — try again later")
+        # EVERY MIRROR BUSY IS A MOMENT, NOT A VERDICT. This used to exit the
+        # whole run, which meant that refetching several districts in sequence
+        # killed itself: the first district's fourteen-part fetch leaves every
+        # mirror rate-limiting us, so the second district's PROBE finds nothing
+        # answering and gives up before asking for anything. Chinatown's
+        # refetch on 2026-07-31 did exactly that to Orchard's, one minute
+        # later.
+        #
+        # Nothing is lost by waiting -- the caches are untouched and the guard
+        # further down refuses a short fetch anyway. So wait, and ask again.
+        for wait in (60, 150, 300, 600):
+            print(f"  every mirror busy — waiting {wait}s before re-probing",
+                  flush=True)
+            time.sleep(wait)
+            again = []
+            for m in MIRRORS:
+                host = m.split("//")[1].split("/")[0]
+                t0 = time.time()
+                try:
+                    req = urllib.request.Request(
+                        m, data=probe.encode(),
+                        headers={"User-Agent": "sgproject/1.0"})
+                    with urllib.request.urlopen(req, timeout=20) as r:
+                        r.read()
+                    dt = time.time() - t0
+                    again.append((dt, m))
+                    print(f"  mirror {host:34s} ok  {dt:.1f}s", flush=True)
+                except urllib.error.HTTPError as e:
+                    busy = e.code in (429, 502, 503, 504)
+                    again.append((60.0 if busy else 999.0, m))
+                except Exception:
+                    again.append((999.0, m))
+            again.sort()
+            if again[0][0] <= 900:
+                scored = again
+                break
+        else:
+            sys.exit("  ! every Overpass mirror still unreachable after 18 "
+                     "minutes of waiting — try again later. No cache was touched.")
     # DROP THE DEAD ONES ENTIRELY rather than rotating onto them. A mirror that
     # did not answer a one-node probe will not answer a district query either,
     # and every attempt on it costs a full 90s timeout: with three of four down

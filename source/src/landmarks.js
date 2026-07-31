@@ -4512,6 +4512,11 @@ export const RECIPES = [
   [/^golden mile complex$/i, goldenMileComplex],
   [/^raffles hotel$/i, rafflesHotel],
   [/srinivasa perumal/i, perumalGopuram],
+  // Matched on the full name because "Pickering" alone also hits "Pickering
+  // Operation Complex" and "One Upper Pickering", two different buildings on
+  // the same street. research/heights-cbd.md TRAP 5 warns that two footprints
+  // share the PARKROYAL name.
+  [/parkroyal collection pickering/i, parkroyalPickering],
   // kampongKaporChurch IS WRITTEN AND IS DELIBERATELY NOT WIRED. See the note
   // at the head of the function. It would belong here, before the generic
   // gothicChurch pattern that matches /methodist church/.
@@ -6577,4 +6582,98 @@ function kampongKaporChurch(api, b) {
   // red brick forecourt
   api.merge(api.extrudeGeo(rect(ob.midU, ob.midV + side * S * 1.12, L * 0.86, S * 0.16),
     0.12, SEAT), M.brick, ob.cx, ob.cz);
+}
+
+
+// PARKROYAL COLLECTION PICKERING, 3 Upper Pickering Street. WOHA, 2013.
+// 89.00m architectural, highest occupied floor 78.60m, 16 floors — CTBUH 14115
+// corroborated by the Skyscraper Museum's WOHA exhibition data, and OSM's
+// 89/78.6 pair reproduces CTBUH's architectural/highest-occupied pair exactly.
+// Spec in research/cbd-podium-geometry.md.
+//
+// WHY THIS NEEDS A RECIPE, in the research's own words: "If you model this as
+// one 159 x 34 m block at 89 m you destroy the building." OSM gives one
+// polygon for the whole site and our data carried it at the 20m retail
+// default, so the choice was a 20m box or a 159m-long 89m slab. Both are
+// wrong, and the slab is the worse of the two.
+//
+// IT IS AN E, AND THREE PUBLISHED SOURCES SAY SO. Bingham-Hall: "placed on an
+// E plan". Nixon and the AIA 2014 award citation: "a hotel of three linked
+// towers in an E-shaped plan". WOHA's own wording is different but compatible,
+// "attenuated into an open-sided courtyard configuration, breaking down the
+// 'wall of buildings' effect". So: a spine on the south-east carrying services,
+// three parallel room-wings projecting north-west toward Hong Lim Park, and the
+// two gaps between them filled by the sky gardens.
+//
+// min_level=6 IS THE KEY NUMBER. The guest-room wings start at level 6, so the
+// plane at 5-6 is the open sky-garden and pool deck over the car park. The
+// famous planted terraces happen in the VOIDS BETWEEN THE WINGS and at that
+// deck, not as a continuous green podium roof — which is how this building is
+// usually drawn wrong.
+const PARKROYAL_MAT = {
+  // The podium's "geological" contour bands: WOHA's cast concrete striations.
+  // OSM tags the car-park parts #6e6b6a, which is the mid-grey of that concrete.
+  rock: new THREE.MeshStandardMaterial({ color: 0x6e6b6a, roughness: 0.94 }),
+  band: new THREE.MeshStandardMaterial({ color: 0x817d78, roughness: 0.92 }),
+  // The room wings read as pale horizontal bands of balcony and glazing.
+  wing: new THREE.MeshStandardMaterial({ color: 0xdfdcd4, roughness: 0.6 }),
+  glass: new THREE.MeshStandardMaterial({
+    color: 0x9fb3ba, roughness: 0.22, metalness: 0.18 }),
+  // 15,000 m2 of planting, "around double the area of the site" (WOHA).
+  green: new THREE.MeshStandardMaterial({ color: 0x4f7a43, roughness: 0.95 }),
+};
+
+function parkroyalPickering(api, b) {
+  const ob = orientedBox(b.p);
+  const M = PARKROYAL_MAT;
+  const SEAT = api.footingY(b.p);
+  const TOP = 89.0, SPINE = 78.6;
+  const DECK = 21.0;            // level 6, where the wings spring from
+  const P = (u, v) => [ob.cx + u * ob.ux - v * ob.uz, ob.cz + u * ob.uz + v * ob.ux];
+  const rect = (u0, v0, hu, hv) => [P(u0 - hu, v0 - hv), P(u0 + hu, v0 - hv),
+                                    P(u0 + hu, v0 + hv), P(u0 - hu, v0 + hv)];
+
+  // 1. THE PODIUM, five levels, covering essentially the whole site. Built off
+  //    the real footprint rather than a rectangle so it keeps the site's shape.
+  api.merge(api.extrudeGeo(b.p, DECK, SEAT), M.rock, ob.cx, ob.cz);
+  // the contour banding, which is only the L3-L4 zone and not the whole podium
+  for (let i = 0; i < 3; i++) {
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.008 + i * 0.004), 1.1,
+      SEAT + DECK * 0.42 + i * 2.2), M.band, ob.cx, ob.cz);
+  }
+  // the sky-garden and pool deck ON TOP of the podium, at the springing plane
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.97), 0.6, SEAT + DECK), M.green, ob.cx, ob.cz);
+
+  // 2. THE THREE ROOM WINGS. Spread along the site's 159m length at roughly
+  //    E -48, E -8 and E +34 from the centroid, each plate about 33.5 x 17.3m,
+  //    running PERPENDICULAR to the site's long axis. The oriented box's own
+  //    frame already gives that: u is the long axis, so a wing is short in u
+  //    and long in v.
+  const L = ob.halfLong, S = ob.halfShort;
+  const wingU = Math.min(9.0, L * 0.115);      // half of ~17.3m
+  const wingV = Math.min(17.0, S * 0.98);      // half of ~33.5m
+  const at = [-0.60, -0.10, 0.42];             // fractions of halfLong
+  for (const f of at) {
+    const u = ob.midU + f * L;
+    slab(api, ob, u, ob.midV, wingU * 2, wingV * 2, SEAT + DECK, TOP - DECK, M.wing);
+    // horizontal glazing bands: every guest room has a garden view, and the
+    // elevation reads as stacked bands rather than as a curtain wall
+    for (let k = 0; k < 9; k++) {
+      slab(api, ob, u, ob.midV, wingU * 2.04, wingV * 2.04,
+        SEAT + DECK + 2.2 + k * 7.2, 2.4, M.glass);
+    }
+  }
+  // 3. THE TWO LINK BARS between the wings, the spine of the E, stopping at
+  //    78.6m — the highest occupied floor, which is why the silhouette steps.
+  for (let i = 0; i < at.length - 1; i++) {
+    const u = ob.midU + (at[i] + at[i + 1]) / 2 * L;
+    slab(api, ob, u, ob.midV + S * 0.42, Math.abs(at[i + 1] - at[i]) * L * 0.62,
+      Math.min(9.3, S * 0.5), SEAT + DECK, SPINE - DECK, M.wing);
+    // the sky gardens live in the voids between the wings, at the deck and
+    // again partway up — this is where the planting actually is
+    for (const y of [SEAT + DECK + 0.7, SEAT + DECK + 26, SEAT + DECK + 48]) {
+      slab(api, ob, u, ob.midV - S * 0.30, Math.abs(at[i + 1] - at[i]) * L * 0.58,
+        Math.min(11.0, S * 0.55), y, 1.5, M.green);
+    }
+  }
 }

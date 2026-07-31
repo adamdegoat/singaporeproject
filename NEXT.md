@@ -3482,3 +3482,79 @@ HUD at `__ready`, before streaming had settled — it now waits for the count to
 stop moving. Nothing tonight added meaningfully to it (+11k across the whole
 night), but the honest figure is higher than this project has been quoting
 itself, and only a HUD screenshot from the actual device is trustworthy for fps.
+
+# 2026-07-31 afternoon — data layers, and a pipeline bug that hid them
+
+## THE BUG THAT MATTERED MOST
+
+`merge.py` writes `world.json` AND the per-district streaming chunks. Every
+gate reads the flat file. **No rider ever loads it** — the world scene streams
+the chunks. Writing the chunks was opt-in behind `--stream`, so two deploys
+today went green on data the live site was not serving; the chunks on the CDN
+were four hours and three features stale, and the SHA verify afterwards
+cheerfully confirmed the stale file had arrived intact.
+
+Fixed twice over: merge.py writes chunks by default (`--no-stream` is the
+opt-out), and deploy.sh refuses if any chunk is older than the district it came
+from. Written up in WORKFLOW.md under "The gates read one file and the rider
+loads another".
+
+## NEW DATA LAYERS
+
+**HDB Property Information** (`data/hdb_fetch.py`, `data/hdb_blocks.json`).
+All 13,357 Singapore HDB blocks: `max_floor_lvl` and `year_completed`, both
+authoritative, both free. Joined on `addr:housenumber` + `addr:street` with
+both sides normalised (HDB writes "BUFFALO RD", OSM writes "Buffalo Road").
+128 blocks matched. Floor height varies by BLOCK TYPE — a market hall is one
+tall volume, an MSCP has the shallowest decks HDB builds — because a flat 2.9m
+put a single-storey wet market at 2.9m, shorter than its own doorway.
+
+Validated independently: the join reproduced, block by block, what a researcher
+found by hand for seven Havelock View blocks — 35/40/36/36/40/38 storeys.
+
+**URA conservation areas** (`data/conservation_fetch.py`,
+`data/conservation.json`). URA's own Master Plan 2025 layer, 216 polygons
+inside the world. 3,059 buildings that carried no date now carry a construction
+period. The bands come from the STYLES URA names for each area, dated by the
+one area page that publishes years (Little India's), corroborated by NHB.
+
+Two researchers disagreed about whether those dates exist at all. Settled by
+fetching the page, not by preferring an agent: the style SHEETS carry no dates,
+the area PAGES do.
+
+**Restoration dates dropped.** A conserved building cannot post-date its own
+gazette. OSM tags 326 Tanjong Pagar shophouses `start_date=1990`, one year
+after the 1989 gazette — that is when the terrace was RESTORED. 478 such dates
+dropped across the world; they had been dealing pre-war masonry the balconied
+slab of the 1980s.
+
+## HONESTY FIX IN THE LEDGER
+
+`building:levels x 3.4` was filed as `hs="osm"` — the same provenance as a
+surveyed `height=` tag — on 3,077 buildings, 40% of the world. Every research
+brief this project sends out forbids converting storeys to metres, and the
+pipeline was doing it and calling the result surveyed. Now `hs="levels"`, and
+the ledger reports three tiers. **No geometry moved. The world-wide score fell
+from 39% to 33% because the old number was wrong, not because anything broke.**
+
+A published storey count now has a labelled home too (`STOREY_COUNTS`), at the
+same 3.4m and the same "levels" provenance — which is what let Centrium
+Square's 19 storeys, Alex Residences' 40 and Echelon's 41 land at all.
+
+## STILL OPEN
+
+- **`building:part` is the big one.** `build_district.py` was fixed to fetch it
+  but every raw cache predates the fix: chinatown holds 16 parts against ~465
+  live, and about 1,700 are missing across the districts. Refetching resolves
+  nine of the eleven CBD podium/tower sites on its own. Backups of every raw
+  cache are in `data/raw_backup_20260731/`; the refetch guard refuses any fetch
+  that loses more than 2% of a category.
+- **`data/hdb_geocode.py`** asks OneMap where each block is, so footprints with
+  no address tags can join by point-in-polygon. The spatial pass is written in
+  process.py and waiting on the cache to finish filling.
+- kampongKaporChurch is written and NOT wired — two vetting rounds and it still
+  loses to the generic. Reasons are at the head of the function.
+- Robertson's HDB estates have dated-photograph paint schemes in
+  research/robertson-district-heights.md (salmon-pink Redhill, magenta Bukit
+  Merah, mint-green Havelock). Not applied — the renderer takes one colour per
+  building and these are wall-plus-accent schemes.

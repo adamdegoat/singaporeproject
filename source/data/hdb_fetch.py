@@ -49,7 +49,11 @@ PAGE = 2000
 # at 2.9m -- shorter than its own doorway.
 NEEDED = ("blk_no", "street", "max_floor_lvl", "year_completed",
           "residential", "commercial", "market_hawker", "miscellaneous",
-          "multistorey_carpark", "precinct_pavilion", "total_dwelling_units")
+          "multistorey_carpark", "precinct_pavilion", "total_dwelling_units",
+          # The HDB town, so the geocoding pass in hdb_geocode.py can ask
+          # OneMap about the ~2,000 blocks near our districts instead of all
+          # 13,357.
+          "bldg_contract_town")
 
 
 def fetch_all():
