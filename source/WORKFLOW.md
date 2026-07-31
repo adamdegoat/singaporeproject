@@ -622,3 +622,44 @@ four boxes meet that test can never be satisfied and the panel times out.
   limit in `behaviour.mjs` and `vantage.mjs` was under that, so the gate started
   failing on the build rather than on anything it checks. Raised to 300s and
   named `BOOT_MS`, with the measurement written down beside it.
+
+## The frame cap ate half of real time, and no frame-rate measurement could see it
+
+2026-08-01. The rider spent an entire evening reporting "the first 15-20 seconds
+lag", "slowmo", "moving off fucking slow", "laggy and glitchy I can tell". Six
+theories were measured and disproved here — build stutter, streaming under the
+rider, resolution, shader warm-up, traffic density, scene traversal. All wrong.
+
+The bug was four lines apart in the frame loop:
+
+```js
+const dt = Math.min(DT_CLAMP, rawDt); last = now;     // line 2712: clock advances
+...
+if (capSkip > 1 && capTick % capSkip) { rAF(loop); return; }   // line 2781: frame skipped
+```
+
+`last = now` had ALREADY RUN. So every skipped frame threw away the time it
+represented. At a 30fps cap on a 60Hz screen that is every other frame, so **the
+world advanced by half of real time**. Not "felt slow" — ran at half speed.
+Measured: 0 to 42 km/h took 17s against a physics model that does it in 4.2s.
+With the cap removed and the clock restored on an early return, 4.3s.
+
+Three lessons, in order of how much time each would have saved:
+
+1. **Any early return from the frame loop must give the clock back.**
+   `last = lastFrameT` before `return`. The idle-cooling skip a few lines above
+   had the identical defect and was fixed at the same time.
+2. **Frames-per-second cannot detect a wrong clock.** The `?diag` panel reported
+   a rock-steady 30 drawn frames a second with a worst frame of 30ms — a
+   perfectly healthy world — while it ran at half speed. The number that would
+   have found this in one minute was SPEED, and it only got measured because the
+   rider kept using the word "slowmo" instead of "lag". A user's exact wording is
+   data; "slow motion" and "low frame rate" are different faults.
+3. **A saving nobody asked for is not worth a defect the user can see.** The cap
+   existed to reduce heat. It was never requested, it was never A/B'd against a
+   real device, and it cost more than the heat did. It is gone; nothing sets
+   FPS_CAP now except an explicit `?fps=`.
+
+Corollary on instruments: the same panel measured `requestAnimationFrame` ticks
+and I read them as rendered frames — the fourth time that specific mistake has
+been made in this project. It now reports both, plus speed, plus the worst gap.

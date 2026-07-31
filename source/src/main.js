@@ -2521,7 +2521,21 @@ const DPR_FORCE = parseFloat(P.get('dpr') || '0');
 // ?fps=60 still overrides for anyone who wants the smoothness, the adaptive
 // tier still drops a genuinely weak phone to 24, and window.__fpsCap is there
 // so the next person can re-run the A/B above rather than take this on trust.
-let FPS_CAP = TOUCH ? (parseFloat(P.get('fps') || '0') || 30) : 0;
+// THE FRAME CAP IS GONE. Nothing sets it any more except an explicit ?fps=,
+// which exists for measurement and for anyone who deliberately wants it.
+//
+// It was introduced on 2026-07-31 to keep a phone cool and it cost the rider
+// his entire evening. Capped against a stopwatch rather than against the
+// screen's refreshes it delivered frames 33, 33, 50, 17 -- an average of
+// exactly the 30fps asked for, which is why every measurement here said the
+// world was healthy while he kept reporting "laggy and glitchy". He found it
+// himself by loading ?fps=60 and watching the problem vanish, then told me to
+// take it out. Taken out.
+//
+// The lesson is not "caps are bad", it is that a saving nobody asked for is
+// not worth a defect the user can see. If heat comes back, it gets solved by
+// doing less work per frame, not by throwing frames away.
+let FPS_CAP = parseFloat(P.get('fps') || '0') || 0;
 // ADAPTIVE TIER: a phone that cannot hold ~20fps at the standard settings
 // demotes itself once — dpr 1.25, cap 24 — and remembers, so weaker phones
 // run cool and smooth without a settings screen. Verdict from the median of
@@ -2551,7 +2565,7 @@ const tierFps = [];
 let tierDone = !TOUCH || !!P.get('fps') || !!P.get('dpr');
 try {
   const saved = !tierDone && localStorage.getItem('sg_tier');
-  if (saved === 'low') { TIER_DPR = 1.25; FPS_CAP = 24; tierDone = true; }
+  if (saved === 'low') { TIER_DPR = 1.0; tierDone = true; }
   else if (saved === 'high') { TIER_DPR = Math.min(devicePixelRatio || 1, 1.5); tierDone = true; }
 } catch (e) { tierDone = tierDone || false; }
 function tierSample(f) {
@@ -2563,7 +2577,10 @@ function tierSample(f) {
   // Below 20fps even at the conservative setting: this phone needs the frame
   // cap dropped too, and should remember so the next boot starts there.
   if (s[4] < 20) {
-    FPS_CAP = 24;
+    // A struggling phone gets a SOFTER PICTURE, never fewer frames. Dropping
+    // frames is what caused the judder this tier used to make worse.
+    TIER_DPR = 1.0;
+    resize();
     try { localStorage.setItem('sg_tier', 'low'); } catch (e) { /* fine */ }
   } else if (s[4] >= 40 && !P.get('dpr')) {
     // Comfortably clearing the 30fps cap with room to spare: this phone can
@@ -2647,7 +2664,8 @@ if (P.has('diag')) {
                ri.calls || 0, (window.__streamState || {}).building ? 'B' : '-']);
     dprev = drawn; dframes = 0; dworst = 0; dlast = now;
     if (rows.length > 40) return;
-    el.textContent = 'sec  raf drawn worst  kmh  draw bld\n'
+    el.textContent = 'hz ' + Math.round(capHz) + ' skip ' + capSkip + ' cap ' + FPS_CAP
+      + '\nsec  raf drawn worst  kmh  draw bld\n'
       + rows.map((r) => r.map((v, i) => String(v).padStart([3, 5, 6, 6, 5, 6, 4][i])).join('')).join('\n');
   };
   requestAnimationFrame(tick);
@@ -2661,12 +2679,16 @@ let DT_CLAMP = 0.1;
 window.__dtClamp = (v) => { DT_CLAMP = +v || 0.1; return DT_CLAMP; };
 let jankCount = 0, jankWindowEnd = 0;
 let FRAME_MS = 0;
+let capTick = 0, capHz = 0, capSkip = 1, capLast = 0;
+const capGaps = [];
 let lastCapT = 0, shadowFlip = true;
 // A/B THE FRAME CAP INSIDE ONE PAGE. Comparing two browser launches on a busy
 // machine is worthless -- the same uncapped configuration measured 34.3 and
 // 17.3 rendered fps twenty minutes apart -- so the cap has to be switched
 // under a single settled world with everything else held still.
-window.__fpsCap = (n) => { FPS_CAP = +n || 0; lastCapT = 0; return FPS_CAP; };
+window.__fpsCap = (n) => { FPS_CAP = +n || 0; lastCapT = 0;
+  capSkip = (FPS_CAP && capHz) ? Math.max(1, Math.round(capHz / FPS_CAP)) : 1;
+  return FPS_CAP; };
 
 function loop(now) {
   const rawDt = (now - last) / 1000;
@@ -2687,7 +2709,7 @@ function loop(now) {
   // a single step. 0.1 still guarantees that and stops inventing slow motion
   // above 10fps. Everything it feeds -- camera easing, traffic, crowd,
   // signals -- is lerp-based and safe at a tenth of a second.
-  const dt = Math.min(DT_CLAMP, rawDt); last = now;
+  const dt = Math.min(DT_CLAMP, rawDt); const lastFrameT = last; last = now;
   // FRAME HEALTH, read by the world builder. A rolling mean of the last dozen
   // frames, in milliseconds.
   if (rawDt > 0 && rawDt < 1) {
@@ -2714,7 +2736,20 @@ function loop(now) {
   // gesture listener stamps lastGestureT before this check runs again.
   if (TOUCH && now - lastGestureT > 6000) {
     const parked = mode === 'ride' ? Math.abs(S.speed) < 0.15 : walker.speed < 0.05;
-    if (parked && now - lastCoolT < 41) { requestAnimationFrame(loop); return; }
+    // GIVE THE CLOCK BACK BEFORE BAILING OUT.
+    //
+    // `last = now` has already run by the time we get here, so returning
+    // without simulating DISCARDS the time this frame represents. The frame
+    // cap had the identical defect a few lines below and it made the entire
+    // world run at half speed: the rider's scooter took 17 seconds to reach a
+    // top speed the physics model reaches in 4.2, and everything he described
+    // as "slowmo" and "moving off fucking slow" was exactly that, literally.
+    // He said so repeatedly and was right; I spent hours measuring frame rates
+    // instead of the clock.
+    //
+    // Restoring `last` means the skipped interval is simply carried into the
+    // next frame that does run, which is what a skipped frame must always do.
+    if (parked && now - lastCoolT < 41) { last = lastFrameT; requestAnimationFrame(loop); return; }
     lastCoolT = now;
   }
   // RIDING FRAME CAP, phones only: 30fps. The heat the user still felt was
@@ -2737,10 +2772,40 @@ function loop(now) {
   // leaves a slow one alone: if more than two intervals have already gone by,
   // the device is not keeping up and the clock resyncs to now rather than
   // accumulating a debt of skips it can never repay.
+  // SKIP WHOLE DISPLAY FRAMES, NEVER A STOPWATCH.
+  //
+  // This used to compare elapsed milliseconds against 1000/FPS_CAP. The screen
+  // does not refresh on a stopwatch: it refreshes on a vsync, and animation
+  // callbacks arrive a millisecond or two either side of one. A tick landing at
+  // 31.0ms against a 31.33ms threshold gets skipped, and the frame after it
+  // lands a whole vsync late -- so the picture is delivered 33, 33, 50, 17,
+  // which AVERAGES to exactly the 30fps asked for and judders visibly.
+  //
+  // That is the rider's "laggy and glitchy", and it was invisible to every
+  // measurement taken here: frames-per-second was right, the worst frame was
+  // right, and nothing was stalling. He found it by loading ?fps=60, which
+  // turns this off, and reporting that the problem vanished.
+  //
+  // Counting refreshes instead makes the cadence exact. On a 60Hz screen a
+  // 30fps cap means drawing every second refresh, forever, with no drift and
+  // no decision to get wrong. The refresh rate is measured rather than
+  // assumed, because a 120Hz phone needs to skip three, not one.
+  capTick++;
   if (TOUCH && FPS_CAP) {
-    const interval = 1000 / FPS_CAP;
-    if (now - lastCapT < interval - 2) { requestAnimationFrame(loop); return; }
-    lastCapT = (now - lastCapT > interval * 2) ? now : lastCapT + interval;
+    if (capHz === 0) {
+      // Median of the first 24 gaps, so one slow frame during warm-up cannot
+      // convince this that the screen is 40Hz.
+      if (capLast) capGaps.push(now - capLast);
+      capLast = now;
+      if (capGaps.length >= 24) {
+        const g = [...capGaps].sort((a, b) => a - b)[12];
+        capHz = g > 0 ? 1000 / g : 60;
+        capSkip = Math.max(1, Math.round(capHz / FPS_CAP));
+      }
+    } else if (capSkip > 1 && (capTick % capSkip) !== 0) {
+      last = lastFrameT;                 // see the note above: never eat time
+      requestAnimationFrame(loop); return;
+    }
   }
   // Shadows refresh EVERY frame again. The alternate-frame "optimisation"
   // made every pedestrian's shadow jerk behind them at half rate — the
