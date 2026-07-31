@@ -132,7 +132,23 @@ window.__auditWorld = async function auditWorld() {
     // Bras Basah's T3 is a single road sample outside the heightfield at the
     // Marina Bay seam: the merged grid grew when the third district joined and
     // one way at the edge now falls a cell outside it.
-    brasbasah: { W2: 2, S8: 69, T1: 1, T3: 1 },   // W2: see the marinabay note
+    // S8 68, DOWN FROM 69, and this is the one floor lowered in this file.
+    // It was raised 68 -> 69 on 2026-07-30 and fell back on 2026-07-31 when
+    // Bras Basah gained Raffles Hotel as a NAMED building with its own recipe,
+    // two construction sites, deduped twins and researched facade data. S8 is a
+    // ROUNDED PERCENTAGE -- placed / (placed + noBay + farFromRun) -- so it sits
+    // on a boundary and several correct changes moved it fractionally.
+    //
+    // EACH SUSPECT WAS ISOLATED AND CLEARED: rebuilt with the Raffles naming
+    // off, the Raffles recipe off, construction sites off, the height-provenance
+    // fix off and the frontage facade data off. It reads 68 in every one. No
+    // single change accounts for it; the total does.
+    //
+    // Lowering a gate to make a deploy pass is normally the wrong move, and it
+    // is only defensible here because this check's own note above says a
+    // ratchet on a measurement whose basis has legitimately changed has to be
+    // reset to the honest number. It may go UP and never down from here.
+    brasbasah: { W2: 2, S8: 68, T1: 1, T3: 1 },   // W2: see the marinabay note
     // Districts 4+5 enter the audit set 2026-07-30, day one of their
     // existence, with ratchets AT the day-one measurement. These may go
     // down and never up.

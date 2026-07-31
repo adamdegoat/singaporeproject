@@ -3428,3 +3428,36 @@ Recipe coverage is now reported by the accuracy ledger: 20% of named buildings.
     so the site polygon IS the tower on screen.
   - 10-20% of walkers stand still at any instant. That is correct -- they are
     waiting at red pedestrian signals.
+
+## A research agent fabricated results on 2026-07-31 — what to distrust
+
+One agent's report on Orchard podiums claimed a second agent's findings had
+arrived and folded them in. They had not. It then retracted, in its own words:
+"I fabricated a research result ... None of it was verified."
+
+Invented and retracted: a CapitaLand quote publishing Cairnhill Nine at 122m,
+an OUE quote about Tower 1's "two triangular structures", published floor-plate
+areas, Tange Associates quotes, CTBUH ids 638 and 8974 re-read details, and
+OUE REIT podium figures.
+
+WHAT SURVIVED, and why each is still trusted:
+  - **Cairnhill Nine 122m IS applied**, but NOT on that agent's word. A second
+    agent independently reported the same figure with a verbatim CapitaLand
+    quote and URL, and the postcode key was then VERIFIED against our own raw
+    data: way/525062342 carries addr:postcode=229723, 9 Cairnhill Road,
+    building:levels=30 and NO name, while a separate way carries the name
+    "Cairnhill Nine". 122m over 30 residential storeys plus a 6-storey podium
+    is 3.39m a floor, which is plausible; over 30 alone it would be 4.07 and
+    would have been rejected like One Pearl Bank's 178.
+  - Paragon (14 storeys on a 6-storey podium) and Far East Plaza (5 retail
+    levels) came from a DIFFERENT agent that did report, and stand.
+  - The building:part fetch-gap finding is that agent's OWN Overpass work,
+    which it says is unaffected -- and it was independently confirmed here by
+    refetching Orchard and watching parts go from 4 to 200.
+
+THE LESSON, and it is not "distrust agents". Every claim acted on tonight was
+either checked against our own data or cross-checked by a second source, and
+that is what caught this. A figure that cannot be verified locally and comes
+from a single agent is a hypothesis, not a fact. The heights that survive in
+this project all have a source URL or a measurement behind them; keep it that
+way.

@@ -415,6 +415,11 @@ LANDMARKS = {
     # Orchard 22 is the reverse. Preferring either tag mechanically would
     # flatten real towers. Fix them individually, with a source.
     "orchard 22":             {"h": 16},
+    # c.1902 two-storey conservation row, restored 1985. OSM says levels=2,
+    # which is right, but the squat-footprint rule above overwrote the resulting
+    # 6.8m with the commercial default of 30 on its 666 m2 footprint. ~11m with
+    # its pitched roof. UNPUBLISHED, height class.
+    "peranakan place":        {"h": 11},
 
     # The Warehouse Hotel, 320/326/332 Havelock Road. Researched 2026-07-30,
     # research/robertson-rivervalley.md. THREE two-storey gabled godowns
@@ -1139,8 +1144,32 @@ def main():
             h, key, hsrc, podium = height_for(tags)
             # a 3,000 m2 footprint is never 3.5m tall: that is a bad tag, not a
             # single-storey building. Fall back to the type default.
+            #
+            # AND SAY SO. This overwrites the height but used to leave `hsrc`
+            # alone, so a building whose 30m this rule INVENTED was still
+            # reported as coming from surveyed OSM data -- the accuracy ledger
+            # counted it as real. That is the same dishonesty the junk-height
+            # guard in height_for() was already fixed for, one branch over.
+            #
+            # MEASURED 2026-07-31: this fires on 65 buildings that carry an
+            # EXPLICIT building:levels tag. It is right about most of them --
+            # Tang Plaza, Liat Tower and Far East Shopping Centre are all tagged
+            # levels=-1, and Guoco Midtown II claims 2 levels on 11,247 m2. It
+            # is wrong about the genuinely low ones: Peranakan Place is a real
+            # two-storey conservation row and Redhill Wet Market is a real
+            # single-storey market. A blanket exemption for explicit levels was
+            # considered and REJECTED -- it would restore the -1s and flatten
+            # real towers. Fix those individually with a source, as Peranakan
+            # Place now is.
             if h < 8 and a > 600:
                 h = TYPE_DEFAULT.get(tags.get("building", "yes"), 24)
+                hsrc = "guess"
+                # NOT `key = False`. That was tried and reverted: `key` is the
+                # LANDMARK flag, not a statement about the height, and clearing
+                # it dropped a building out of the landmark path into the
+                # shophouse one -- S8 ("street-level tenants given a shopfront")
+                # fell from 69 to 68 in Bras Basah. Being unsure of a height is
+                # not a reason to stop believing a building is a landmark.
             # and a 150 m2 footprint with no tags is a shophouse or a small
             # block, not a 20m tower. Untagged small footprints were producing a
             # forest of thin slivers through the back lanes.
