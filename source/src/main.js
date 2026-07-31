@@ -31,6 +31,8 @@ renderer.shadowMap.enabled = !P.has('noshadow');
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
+// Set while an arrival panel is up; see window.__arriveWait far below.
+let ARRIVING = false;
 // Density is set from the far plane, not by eye: FogExp2 leaves
 // exp(-(density*d)^2) of an object showing at distance d, and at 520m a density
 // of 0.0021 still showed 30% of it, so buildings popped out of nothing at a hard
@@ -1089,7 +1091,7 @@ async function addChunk(ch, id, Y, rec = {}) {
   mk('buildings');
   if (!P.has('nobuild')) await buildBuildings(g, ch, Y);
   mk('prune');
-  pruneCarriageway(g, ROADIX.onRoad, (x, z) => terrain.at(x, z));
+  await pruneCarriageway(g, ROADIX.onRoad, (x, z) => terrain.at(x, z), Y);
   await Y();
   mk('roads');
   await buildRoads(g, ch, Y);
@@ -1404,9 +1406,14 @@ async function streamRest(rest) {
   //
   // 20ms and a MessageChannel is what this used to do everywhere: it builds as
   // fast as the machine allows and never waits for a frame that nobody sees.
-  const FAST = P.has('streamall') || P.has('nostream');
+  // DECLARED HERE, NOT BESIDE THE OVERLAY THAT SETS IT. `let` has a temporal
+  // dead zone: the world is built during module evaluation, so Y() reads this
+  // flag before a declaration further down the file has run, and boot died with
+  // a ReferenceError before __ready was ever set.
+  const FAST0 = P.has('streamall') || P.has('nostream');
   let sliceT0 = performance.now();
   const Y = () => {
+    const FAST = FAST0 || ARRIVING;
     if (performance.now() - sliceT0 < (FAST ? 20 : 6)) return Promise.resolve();
     if (FAST) {
       return new Promise((r) => { wake = r; chan.port2.postMessage(0); })
@@ -1422,8 +1429,29 @@ async function streamRest(rest) {
       st0.block = st0.block || {};
       if (blocked > (st0.block[st0.step] || 0)) st0.block[st0.step] = Math.round(blocked);
     }
+    // BUILD ONLY WHEN THERE IS ROOM TO BUILD.
+    //
+    // A CPU profile of the first nine seconds of RIDING has no idle time in it
+    // at all: culling, the collision grid, matrix updates, audio startup and
+    // the traffic all land on the same frames as the world build, and no single
+    // one of them is the problem. Six separate loops were broken up before this
+    // was understood, and the rider still felt ten seconds of stutter.
+    //
+    // So the builder now watches the frame rate and gets out of the way. Above
+    // ~45fps it takes a frame as before; as frames get slower it waits more of
+    // them, up to eight. The world finishes filling in a few seconds later and
+    // the ride stays smooth, which is the trade worth making — nobody notices a
+    // district arriving late, everybody notices the picture stuttering.
+    let waits = 1;
+    if (FRAME_MS > 22) waits = 2;
+    if (FRAME_MS > 30) waits = 4;
+    if (FRAME_MS > 45) waits = 8;
     const p2 = (typeof document !== 'undefined' && document.visibilityState === 'visible')
-      ? new Promise((r) => requestAnimationFrame(() => r()))
+      ? new Promise((r) => {
+        let k = 0;
+        const step = () => { if (++k >= waits) r(); else requestAnimationFrame(step); };
+        requestAnimationFrame(step);
+      })
       : new Promise((r) => { wake = r; chan.port2.postMessage(0); });
     return p2.then(() => { sliceT0 = performance.now(); });
   };
@@ -1533,6 +1561,12 @@ async function streamRest(rest) {
     }
     if (n) { window.__streamState.unloads += n; syncState(); }
   };
+  // A SIGNAL FOR "THE NEIGHBOURHOOD IS UP". The loading screen used to come
+  // off with none of these built, and the first thing the rider did was ride
+  // into a district that then built underneath them. Boot waits on this.
+  let settle = null;
+  window.__streamSettled = new Promise((r) => { settle = r; });
+  const settled = () => { if (settle) { const f = settle; settle = null; f(); } };
   for (;;) {
     evict();
     let cand = recs.filter((r) => !r.group);
@@ -1541,6 +1575,7 @@ async function streamRest(rest) {
     // the cap, the nearest candidate has to wait for something to leave.
     if (!ALL && recs.filter((r) => r.group).length >= MAX_RESIDENT) cand = [];
     if (cand.length) {
+      window.__streamIdle = false;
       // Nearest content first; where two districts both contain you (the
       // bboxes overlap by design so the region closes with no seam holes)
       // both measure zero, so break the tie on whose main street you are
@@ -1558,7 +1593,14 @@ async function streamRest(rest) {
       syncState();
       continue;
     }
-    if (ALL) { syncState(); return; }   // drained: the gates' mode is done
+    if (ALL) { syncState(); settled(); window.__streamIdle = true; return; }
+    settled();
+    // NOTHING LEFT WITHIN REACH THAT THIS DEVICE IS ALLOWED TO HOLD. Arrivals
+    // wait on this rather than on "every district containing me is built":
+    // the district boxes overlap by design, and a phone caps residency at
+    // three, so standing where four boxes meet made that test unsatisfiable
+    // and the arrival panel timed out instead of clearing.
+    window.__streamIdle = true;
     await new Promise((r) => setTimeout(r, 1500));
   }
 }
@@ -1691,7 +1733,7 @@ async function buildRegion(data, opts = {}) {
   bmark('buildings');
   // one sweep over what the building pass just added, before any street
   // furniture exists, so the scope is exactly "buildings and landmarks"
-  const pruned = pruneCarriageway(world, ROADIX.onRoad, (x, z) => terrain.at(x, z));
+  const pruned = await pruneCarriageway(world, ROADIX.onRoad, (x, z) => terrain.at(x, z));
   await bstep(0.23, `laying ${(data.roads || []).length.toLocaleString()} roads`);
   const fallbackAxis = await buildRoads(world, data);
   bmark('roads');
@@ -2092,13 +2134,45 @@ async function buildRegion(data, opts = {}) {
     glFinish();
   } else buildEnvironment();
 
+  // BUILD THE NEIGHBOURING DISTRICTS BEHIND THE LOADING SCREEN, NOT UNDER THE
+  // RIDER.
+  //
+  // Measured: the screen came off at 13.6s with ZERO of the seven neighbouring
+  // districts built, and the streamer then spent 9.7 more seconds building one
+  // of them while the rider was already moving. That is exactly the "first ten
+  // seconds is glitchy and stuck stuck stuck" report, and it is why six rounds
+  // of breaking up individual build loops never fixed it — the work was never
+  // too chunky, it was merely happening at the wrong time.
+  //
+  // So the first wave now runs here, with ARRIVING set so Y() builds at full
+  // speed instead of politely handing frames back to a ride nobody is watching
+  // yet. Boot gets longer; the ride is smooth from the first metre, which is
+  // the trade worth making. The 30s cap means a slow phone still gets in.
+  if (opts.streamRest && opts.streamRest.length) {
+    streamRest(opts.streamRest);
+    if (!P.has('streamall') && !P.has('nostream')) {
+      ARRIVING = true;
+      const tw0 = performance.now();
+      let waiting = true;
+      window.__streamSettled.then(() => { waiting = false; });
+      while (waiting && performance.now() - tw0 < 30000) {
+        const el = performance.now() - tw0;
+        await bstep(0.95 + 0.05 * Math.min(1, el / 9000), 'building the neighbourhood');
+        await new Promise((r) => setTimeout(r, 120));
+      }
+      ARRIVING = false;
+      BOOTT.push(['first-wave', Math.round(performance.now() - tw0)]);
+    }
+  }
+  // Open the sound hardware and build the synth graph here, silent, rather
+  // than on the rider's first throttle press. See Sound.prewarm().
+  try { sound.prewarm(); } catch (e) { /* never fatal: the world is playable mute */ }
   await bstep(1, 'ready');
   bootDone();
   ready = true;
   if (P.has('boot')) console.log('BOOT ' + JSON.stringify(BOOTT));
   window.__ready = true;
   window.__stats = stats;
-  if (opts.streamRest && opts.streamRest.length) streamRest(opts.streamRest);
 }
 function bootFailed(e) {
   window.__bootError = (e && e.stack) || String(e);
@@ -2451,6 +2525,7 @@ let last = performance.now(), frames = 0, t0 = last, fps = 0, lastCoolT = 0;
 // frames >200ms in the first 10s after ready — the number the user's
 // screenshot carries so "still laggy" becomes measurable (shows as jN)
 let jankCount = 0, jankWindowEnd = 0;
+let FRAME_MS = 0;
 let lastCapT = 0, shadowFlip = true;
 // A/B THE FRAME CAP INSIDE ONE PAGE. Comparing two browser launches on a busy
 // machine is worthless -- the same uncapped configuration measured 34.3 and
@@ -2465,6 +2540,11 @@ function loop(now) {
     else if (now < jankWindowEnd && rawDt > 0.2) jankCount++;
   }
   const dt = Math.min(0.05, rawDt); last = now;
+  // FRAME HEALTH, read by the world builder. A rolling mean of the last dozen
+  // frames, in milliseconds.
+  if (rawDt > 0 && rawDt < 1) {
+    FRAME_MS = FRAME_MS ? FRAME_MS * 0.88 + rawDt * 1000 * 0.12 : rawDt * 1000;
+  }
 
   // Stop rendering entirely when the page is not visible. A 60fps WebGL loop is
   // a real power draw — it pegged two CPU cores on this laptop — and on a phone
@@ -2611,6 +2691,11 @@ function loop(now) {
     }
 
     const px = S.x, pz = S.z;
+    // NOBODY RIDES BEHIND THE ARRIVAL PANEL. The panel used to be cosmetic:
+    // the ride carried on underneath it, so the rider still crossed a district
+    // that was mid-build and still met every stutter, they simply could not
+    // see where. Throttle and steering are ignored until the street is up.
+    if (ARRIVING) { inp.throttle = 0; inp.brake = 1; inp.steer = 0; S.speed = 0; }
     // SUB-STEP THE PHYSICS THROUGH JANK. dt is clamped to 0.05, so on a
     // phone whose first seconds after ready run at a few fps, six real
     // seconds advanced the sim by a fraction of one — full throttle read
@@ -2758,6 +2843,72 @@ window.__drive = (throttle, steer, seconds) => {
 // it -- D33 was measuring 2,200 walkers across three districts against a
 // behaviour that runs within 120m by design.
 window.__ridePos = () => [S.x, S.z];
+// ARRIVING OVERLAY. The boot screen is removed once the world is up, so this is
+// a small standalone panel reused for every arrival.
+let arriveEl = null;
+function arriveShow(on, msg) {
+  if (on && !arriveEl) {
+    arriveEl = document.createElement('div');
+    arriveEl.style.cssText = 'position:fixed;inset:0;z-index:60;display:flex;'
+      + 'align-items:center;justify-content:center;background:#141518;color:#e8e6e1;'
+      + 'font:500 17px ui-sans-serif,system-ui,-apple-system,Helvetica,Arial;'
+      + 'letter-spacing:.02em;transition:opacity .35s;opacity:0';
+    document.body.appendChild(arriveEl);
+    requestAnimationFrame(() => { if (arriveEl) arriveEl.style.opacity = '1'; });
+  }
+  if (arriveEl) {
+    if (msg) arriveEl.textContent = msg;
+    if (!on) {
+      arriveEl.style.opacity = '0';
+      const el = arriveEl; arriveEl = null;
+      setTimeout(() => el.remove(), 420);
+    }
+  }
+}
+
+// ARRIVE PROPERLY INSTEAD OF STUTTERING INTO A HALF-BUILT DISTRICT.
+//
+// The rider reported ten seconds of stutter after loading in AND after every
+// teleport, and six rounds of breaking up individual build loops did not fix
+// it — a CPU profile of those seconds has no idle time in it at all, because
+// culling, the collision grid, matrix updates, audio and the traffic all land
+// on the same frames as the build. There is no single job to shrink.
+//
+// The real problem is that the world is being built UNDERNEATH someone who is
+// already riding in it. So when the place being arrived at is not built yet,
+// hold a brief panel, build it at full speed with nobody looking, and reveal a
+// finished street. Two seconds of a clean overlay beats ten of stuttering.
+window.__arriveWait = async (x, z) => {
+  const recs = window.__streamRecs || [];
+  const here = recs.filter((r) => {
+    const b2 = r.box;
+    return b2 && b2.length === 4 && x >= b2[0] && x <= b2[2] && z >= b2[1] && z <= b2[3];
+  });
+  // Already standing in something built, and the streamer has nothing queued:
+  // no panel, no pause.
+  if (here.some((r) => r.group) && window.__streamIdle !== false) return;
+  if (!here.length && window.__streamIdle !== false) return;
+  ARRIVING = true;                       // Y() builds at full speed while set
+  arriveShow(true, 'arriving');
+  const t0 = performance.now();
+  // Give the streamer a moment to notice the new position before believing an
+  // "idle" left over from where the rider just was.
+  await new Promise((r) => setTimeout(r, 200));
+  while (performance.now() - t0 < 20000) {
+    // MEASURED BOTH WAYS, 2026-07-31, phone viewport, teleport to Bugis.
+    // Releasing as soon as the district underfoot exists gave a 3.3s panel and
+    // then ten seconds of 28-45fps with five hitches, worst 400ms, because the
+    // neighbouring districts were still arriving. Waiting for the streamer to
+    // go quiet gave a 10.3s panel and then a flat 60fps with no hitch at all.
+    // A longer honest wait beats a shorter dishonest one.
+    if (window.__streamIdle && (!here.length || here.some((r) => r.group))) break;
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  ARRIVING = false;
+  arriveShow(false);
+};
+window.__arriving = () => ARRIVING;
+
 window.__teleport = (x, z, heading) => {
   S = newState(x, z, heading == null ? S.heading : heading);
   S.speed = 0;
@@ -2774,6 +2925,9 @@ window.__teleport = (x, z, heading) => {
   // the street: distinct places all reported an identical 1,537 draw calls.
   camInit = false;
   driveCamera(1.0);
+  // Not awaited: __teleport is synchronous and its callers read the return
+  // value. The overlay raises and lowers itself.
+  if (!window.__noArrive) window.__arriveWait(S.x, S.z);
   return { x: S.x, z: S.z, heading: S.heading };
 };
 // Free camera at runtime, for the comparison sheet. Pass null to hand the
@@ -2785,6 +2939,12 @@ window.__teleportTo = (id) => {
   if (mode !== 'ride') toggleMode();          // arrive in the saddle
   S.x = d.x; S.z = d.z; S.heading = d.heading; S.speed = 0;
   walker.x = d.x; walker.z = d.z;
+  camInit = false;
+  // This is the jump the rider actually uses, from the district list. It set
+  // the position and returned, dropping them straight into a district that had
+  // not been built — which is the "teleport somewhere and it lags for ten
+  // seconds" report. Same arrival panel as __teleport.
+  window.__arriveWait(S.x, S.z);
   return true;
 };
 window.__cam = (x, y, z, tx, ty, tz, fov) => {

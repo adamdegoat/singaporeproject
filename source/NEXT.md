@@ -3640,3 +3640,32 @@ reading to 20.0.
     entirely. OneMap places blk 1 and blk 3 seven metres apart, so the geocode
     does not resolve which footprint is which and it stays UNBUILT rather than
     guessed.
+
+## 2026-08-01 — the startup/teleport lag, actually fixed
+
+Root cause was timing, not chunk size (full write-up in WORKFLOW.md).
+
+- The loading screen came off with none of the neighbouring districts built, so
+  the streamer built them under a rider who was already moving.
+- The first throttle press also paid 303ms for the audio engine, which is wired
+  to the first gesture.
+
+Fixed by building the first streaming wave behind the loading screen at full
+speed, prewarming the synth graph on a suspended context at boot, and giving
+teleports the same arrival panel WITH the ride frozen while it is up.
+
+Measured, phone viewport, riding from the instant the screen clears:
+60fps, **zero** hitches over 100ms (was 12-36fps for six seconds, worst 500ms).
+Teleport to Bugis: 10.3s panel, then flat 60fps, zero hitches.
+
+Cost: boot 13.6s -> 16.6s.
+
+Also raised the boot guard in behaviour.mjs / vantage.mjs from 90s to 300s —
+`?nostream` builds all eight districts inline and measures 115-140s, so the old
+limit was failing on the build rather than on anything the gate checks.
+
+### Still open
+- `src/city.js` dead diagnostic removed; no others outstanding.
+- Orchard and River Valley still lack `building:part` masses (Overpass mirrors).
+- Unapplied research: rivervalley-road-frontage.md, CBD podium geometry,
+  South Beach JW Marriott and CanningHill Piers need hand-authoring.

@@ -12,12 +12,34 @@ export class Sound {
     this._lastStep = 0;
   }
 
-  start() {
-    if (this.ready) return;
+  // BUILD THE SYNTH BEFORE ANYONE ASKS FOR IT.
+  //
+  // start() used to do everything, and it is called from the FIRST GESTURE --
+  // which, for someone loading the game and riding off, is the moment they
+  // press the throttle. A CPU profile of that moment billed 303ms to this
+  // file: opening an AudioContext talks to the sound hardware, and the wind
+  // bed is two seconds of noise generated a sample at a time. So the rider's
+  // first frame of movement dropped a third of a second.
+  //
+  // None of that needs a gesture. An AudioContext may be created at any time;
+  // it simply starts suspended and stays silent. Only UNLOCKING it -- resume()
+  // plus a buffer played from inside the gesture -- has to wait. So boot calls
+  // prewarm() behind the loading screen and the gesture is left with almost
+  // nothing to do.
+  prewarm() {
+    if (this.ctx) return;
     const C = window.AudioContext || window.webkitAudioContext;
     if (!C) { this.state = 'no-webaudio'; return; }
-    const ctx = new C();
-    this.ctx = ctx;
+    try { this.ctx = new C(); } catch (e) { this.state = 'no-webaudio'; return; }
+    this.state = 'prewarmed';
+    this._buildGraph(this.ctx);
+  }
+
+  start() {
+    if (this.ready) return;
+    this.prewarm();
+    const ctx = this.ctx;
+    if (!ctx) return;
     this.state = 'starting';
     // iOS needs more than resume(): the context only truly unlocks once a
     // buffer has actually been played from inside the gesture.
@@ -46,7 +68,10 @@ export class Sound {
       if (p && p.catch) p.catch(() => { /* will retry on the next gesture via poke() */ });
       this._session = el;
     } catch (e) { /* no media element support: web audio alone still works */ }
+    this._graphStarted();
+  }
 
+  _buildGraph(ctx) {
     this.master = ctx.createGain();
     this.master.gain.value = 0.0;
     this.master.connect(ctx.destination);
@@ -137,14 +162,20 @@ export class Sound {
     this.osc1.start(); this.osc2.start(); this.osc3.start();
     this.lfo.start(); this.wind.start(); this.amb.start();
 
-    // ease in so it never starts with a click
-    this.master.gain.setTargetAtTime(this.muted ? 0 : 0.55, ctx.currentTime, 0.4);
-    this.ready = true;
-
     // Safari can re-suspend when the page is backgrounded or a call comes in
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
     });
+  }
+
+  // The two lines that must NOT happen at prewarm time: the graph is built and
+  // running on a suspended context (silent, costing nothing), and only becomes
+  // audible when a gesture has unlocked it.
+  _graphStarted() {
+    if (!this.ctx || !this.master) return;
+    // ease in so it never starts with a click
+    this.master.gain.setTargetAtTime(this.muted ? 0 : 0.55, this.ctx.currentTime, 0.4);
+    this.ready = true;
   }
 
   // call from any later gesture: cheap if already running

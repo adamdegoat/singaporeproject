@@ -328,7 +328,14 @@ page.on('pageerror', (e) => console.log('  page error:', e.message));
 // at. Chasing that produced two rounds of empty frames.
 const ALLQ = SHOTS.some((s) => s.kind === 'crown') ? '&streamall' : '';
 await page.goto(`http://localhost:8933/index.html?dpr=1&scene=${SCENE}${ALLQ}`, { waitUntil: 'load' });
-await page.waitForFunction('window.__ready === true', null, { timeout: 90000 });
+// HOW LONG TO ALLOW FOR BOOT. `?nostream` builds all eight districts inline
+// in one go, which is the heaviest thing this project ever asks a browser to
+// do: measured 115s and 140s on two consecutive clean runs, 2026-07-31. The
+// old 90s was under that and the gate began failing on the build itself
+// rather than on anything it checks. This limit is a "did it hang" guard, not
+// a performance budget -- the performance budgets live in fps.mjs.
+const BOOT_MS = 300000;
+await page.waitForFunction('window.__ready === true', null, { timeout: BOOT_MS });
 await page.evaluate(() => window.__ui(false));
 console.log('world ready:', JSON.stringify(await page.evaluate(() => window.__stats.buildings)) + ' buildings');
 

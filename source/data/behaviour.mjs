@@ -51,7 +51,14 @@ const browser = await chromium.launch({ args: ['--use-gl=angle'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 500 } });
 page.on('pageerror', (e) => console.log('  page error:', e.message));
 await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/index.html?dpr=1&nostream=1&scene=${process.env.SG_SCENE || 'orchard'}`, { waitUntil: 'load' });
-await page.waitForFunction('window.__ready === true', null, { timeout: 90000 });
+// HOW LONG TO ALLOW FOR BOOT. `?nostream` builds all eight districts inline
+// in one go, which is the heaviest thing this project ever asks a browser to
+// do: measured 115s and 140s on two consecutive clean runs, 2026-07-31. The
+// old 90s was under that and the gate began failing on the build itself
+// rather than on anything it checks. This limit is a "did it hang" guard, not
+// a performance budget -- the performance budgets live in fps.mjs.
+const BOOT_MS = 300000;
+await page.waitForFunction('window.__ready === true', null, { timeout: BOOT_MS });
 
 /* ---------- B1 and B2: sample the world moving ---------- */
 

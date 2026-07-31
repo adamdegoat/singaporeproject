@@ -213,20 +213,27 @@ export function trimShadowCasters(root, minHeight = 3.0) {
 // most of what P1b still counts. Widening the pass to run later would mean
 // re-deciding, for every kind of furniture, what is allowed to sit over a road,
 // which is the allowlist problem again rather than a prune problem.
-export function pruneCarriageway(root, onRoad, groundAt) {
+// ASYNC. Measured at 133ms of solid freeze while the rider is moving, which is
+// four dropped frames on a phone. It walks every mesh in the district testing
+// whether it stands in a carriageway, and did all of them without a pause.
+export async function pruneCarriageway(root, onRoad, groundAt, Y = null) {
   const v = new THREE.Vector3();
   const doomed = [];
   root.updateMatrixWorld(true);
-  root.traverse((o) => {
-    if (!o.isMesh || o.isInstancedMesh) return;
+  // traverse() cannot be paused from inside its callback, so collect first.
+  const list = [];
+  root.traverse((o) => { if (o.isMesh && !o.isInstancedMesh) list.push(o); });
+  let _pt = performance.now();
+  for (const o of list) {
+    if (Y && performance.now() - _pt > 6) { await Y(); _pt = performance.now(); }
     const pos = o.geometry.attributes.position;
-    if (!pos) return;
+    if (!pos) continue;
     // a merged tile is many buildings at once and must not be judged as one
-    if (pos.count > 6000) return;
+    if (pos.count > 6000) continue;
     const gp = o.geometry.parameters || {};
     // anything this wide spans the street on purpose: canopies over a forecourt,
     // ION's shell, a porte-cochere
-    if (Math.max(gp.width || 0, gp.depth || 0, (gp.radiusTop || 0) * 2) > 12) return;
+    if (Math.max(gp.width || 0, gp.depth || 0, (gp.radiusTop || 0) * 2) > 12) continue;
 
     const step = Math.max(1, Math.floor(pos.count / 60));
     for (let i = 0; i < pos.count; i += step) {
@@ -237,9 +244,9 @@ export function pruneCarriageway(root, onRoad, groundAt) {
       // fascia bands sitting four to eight metres up and hanging over the
       // carriageway, which is wrong to look at even if you can ride under it.
       if (up < 0.3 || up > 8.5) continue;
-      if (onRoad(v.x, v.z, -1.0)) { doomed.push(o); return; }
+      if (onRoad(v.x, v.z, -1.0)) { doomed.push(o); break; }
     }
-  });
+  }
   for (const o of doomed) {
     if (o.parent) o.parent.remove(o);
     o.geometry.dispose();

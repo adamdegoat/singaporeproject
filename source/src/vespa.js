@@ -66,6 +66,11 @@ export function buildVespa() {
   // missing. Drawn once for the rider's own bike, so the cost is a rounding
   // error next to a single building.
   //
+  // NOTE FOR ANYONE MOVING THE COWL AGAIN: every fitting below is positioned
+  // against the rear body, whose z half-extent is about 0.31 after the cowl was
+  // cut from a 0.93m egg to a 0.63m hip. Placed against the old length they
+  // hung in the air behind the bike, which is what a close render caught.
+  //
   // Front mudguard: the curved shield over the front wheel is the most
   // Vespa-shaped thing on a Vespa after the cowl. Built from three short slabs
   // stepping round the wheel rather than a curve, which matches how everything
@@ -83,15 +88,15 @@ export function buildVespa() {
   // is what the handlebars do) laid it ACROSS the machine and it photographed as
   // a white stick poking out of the rear wheel.
   g.add(part(new THREE.CylinderGeometry(0.035, 0.035, 0.40, 8), chrome,
-    0.19, 0.30, -0.60, Math.PI / 2, 0, 0));
+    0.19, 0.30, -0.50, Math.PI / 2, 0, 0));
   // rear light and number plate, so the bike is not blank from the chase view
   g.add(part(new THREE.BoxGeometry(0.13, 0.09, 0.05), new THREE.MeshStandardMaterial({
     color: 0x8c1a17, emissive: 0xd83a2c, emissiveIntensity: 0.75, roughness: 0.35,
-  }), 0, 0.86, -0.72));
-  g.add(part(new THREE.BoxGeometry(0.17, 0.11, 0.02), cream, 0, 0.72, -0.70, 0.25));
+  }), 0, 0.84, -0.58));
+  g.add(part(new THREE.BoxGeometry(0.17, 0.11, 0.02), cream, 0, 0.70, -0.56, 0.25));
   // a pillion grab rail behind the seat
   g.add(part(new THREE.CylinderGeometry(0.018, 0.018, 0.34, 6), chrome,
-    0, 0.83, -0.44, 0, 0, Math.PI / 2));
+    0, 0.82, -0.40, 0, 0, Math.PI / 2));
 
   // wheels: small, which is most of why a Vespa looks like a Vespa
   const tyre = new THREE.CylinderGeometry(0.205, 0.205, 0.115, 16);
@@ -137,15 +142,35 @@ export function buildRider() {
   g.add(peak);
   // neck, so the head is attached to something
   g.add(part(new THREE.CylinderGeometry(0.052, 0.058, 0.10, 8), skin, 0, 1.44, -0.035));
-  // thighs forward, shins down: the seated scooter pose
-  for (const sx of [-0.13, 0.13]) {
-    g.add(part(new THREE.CapsuleGeometry(0.085, 0.30, 4, 8), jeans, sx, 0.90, 0.10, Math.PI / 2.3));
-    g.add(part(new THREE.CapsuleGeometry(0.072, 0.28, 4, 8), jeans, sx, 0.58, 0.30, 0.22));
-    g.add(part(new THREE.SphereGeometry(0.062, 8, 7), jeans, sx, 0.36, 0.34));
-    // arms reaching to the bars
-    g.add(part(new THREE.CapsuleGeometry(0.055, 0.40, 4, 8), shirt, sx * 1.7, 1.20, 0.26, Math.PI / 2.6));
-    g.add(part(new THREE.SphereGeometry(0.05, 8, 7), skin, sx * 2.3, 1.09, 0.56));
+  // THE RIDER, POSED PROPERLY. The old figure was a torso capsule with two
+  // detached limb capsules per side: from the saddle the legs floated clear of
+  // the floorboard, the arms stopped short of the bars, and there was nothing
+  // where a hand should be. Close up it read as parts near a scooter rather
+  // than a person on one.
+  //
+  // Three joints per limb now — thigh, shin, foot ON THE FLOORBOARD, and upper
+  // arm, forearm, hand ON THE GRIP — with each segment placed where the one
+  // before it ends. Still capsules, still no textures, still no skinning: this
+  // is the same handful of meshes arranged so they connect.
+  const shoe = new THREE.MeshLambertMaterial({ color: 0x23262a });
+  for (const sx of [-0.15, 0.15]) {
+    // thigh runs forward and slightly down from the hip
+    g.add(part(new THREE.CapsuleGeometry(0.088, 0.30, 4, 8), jeans, sx, 0.88, 0.09, Math.PI / 2.15));
+    // shin drops from the knee to the floorboard
+    g.add(part(new THREE.CapsuleGeometry(0.070, 0.26, 4, 8), jeans, sx, 0.60, 0.30, 0.30));
+    // knee, so the two do not read as a broken stick
+    g.add(part(new THREE.SphereGeometry(0.072, 8, 7), jeans, sx, 0.79, 0.27));
+    // the foot SITS ON the floorboard, which is at y 0.30
+    g.add(part(new THREE.BoxGeometry(0.11, 0.055, 0.24), shoe, sx, 0.355, 0.36));
+    // upper arm out of the shoulder, forearm down to the bar
+    g.add(part(new THREE.CapsuleGeometry(0.056, 0.24, 4, 8), shirt, sx * 1.55, 1.26, 0.22, Math.PI / 2.5));
+    g.add(part(new THREE.CapsuleGeometry(0.048, 0.22, 4, 8), shirt, sx * 1.85, 1.16, 0.44, Math.PI / 2.9));
+    g.add(part(new THREE.SphereGeometry(0.056, 8, 7), shirt, sx * 1.7, 1.24, 0.34));   // elbow
+    // the hand CLOSES ON THE GRIP: the bar is at y 1.09, z 0.60, x +-0.30
+    g.add(part(new THREE.SphereGeometry(0.052, 8, 7), skin, sx * 2.0, 1.10, 0.58));
   }
+  // a collar, so the shirt reads as clothing rather than a plain capsule
+  g.add(part(new THREE.CylinderGeometry(0.115, 0.135, 0.07, 10), shirt, 0, 1.38, -0.06));
   return g;
 }
 

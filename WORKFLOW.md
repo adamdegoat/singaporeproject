@@ -559,3 +559,66 @@ single application cost in this world was `walkBlocked` at 9.7% of all samples
 beyond the 105m draw cull was standing inside a building. Moving the cull three
 lines earlier removed it from the profile entirely and took idle headroom from
 37% to 50%. Nobody would have guessed that; the profile said it in one line.
+
+## The first ten seconds: it was never the size of the work
+
+Six separate rounds of breaking build loops into smaller slices did not fix
+"the first ten seconds of riding is glitchy and stuck stuck stuck", and a CPU
+profile of those seconds showed no idle time to reclaim. The reason none of it
+worked is that the work was not too chunky. It was happening at the wrong time.
+
+Measured, 2026-07-31, phone viewport:
+
+- The loading screen came off at **13.6s with ZERO of the seven neighbouring
+  districts built**. The streamer then spent **9.7 more seconds** building one
+  of them — while the rider was already moving. That is the ten seconds.
+- The first throttle press cost a further **303ms** in `audio.js`, because
+  `Sound.start()` is wired to the first gesture and opens the audio hardware
+  and generates a two-second noise bed. For someone who loads the game and
+  rides off, the first gesture IS riding off.
+
+Two fixes, both about timing rather than size:
+
+1. Boot now runs the first streaming wave BEHIND the loading screen, with
+   `ARRIVING` set so `Y()` builds at full speed instead of politely handing
+   frames back to a ride nobody is watching. Boot 13.6s → 16.6s.
+2. `Sound.prewarm()` builds the whole synth graph at boot on a suspended
+   context. Only the unlock — `resume()` plus a buffer played from inside the
+   gesture — still waits for the gesture, and that is cheap.
+
+Result riding from the instant the screen clears: **60fps, zero hitches over
+100ms, worst frame 50ms**. Before: 12–36fps for six seconds, worst 500ms.
+
+### The same fix for teleports, and the trade inside it
+
+`__teleportTo` (the in-game district list, which is the jump riders actually
+use) set the position and returned, dropping the rider into an unbuilt
+district. It now raises the same arrival panel — and **the ride is frozen while
+the panel is up**. A cosmetic panel is worthless: the first version left the
+ride running underneath, so the rider still crossed a half-built district and
+still met every stutter, they simply could not see where.
+
+How long to hold the panel was measured both ways, teleporting to Bugis:
+
+| release when | panel | then |
+|---|---|---|
+| the district underfoot exists | 3.3s | 28–45fps for 10s, 5 hitches, worst 400ms |
+| the streamer goes quiet | 10.3s | flat 60fps, no hitch at all |
+
+A longer honest wait beats a shorter dishonest one. The panel waits on
+`window.__streamIdle`, NOT on "every district containing me is built" — the
+district boxes overlap by design and a phone caps residency at three, so where
+four boxes meet that test can never be satisfied and the panel times out.
+
+### Two traps this touched
+
+- **`let` has a temporal dead zone.** `ARRIVING` was declared beside the overlay
+  that sets it, far down the file. The world is built during module evaluation,
+  so `Y()` read the flag before that line had run and boot died with a
+  ReferenceError before `__ready` was ever set. Flags read by the build belong
+  at the top of the module.
+- **A gate's boot timeout is not a performance budget.** `?nostream` builds all
+  eight districts inline: 115s and 140s on two consecutive clean runs. The 90s
+  limit in `behaviour.mjs` and `vantage.mjs` was under that, so the gate started
+  failing on the build rather than on anything it checks. Raised to 300s and
+  named `BOOT_MS`, with the measurement written down beside it.

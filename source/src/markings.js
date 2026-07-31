@@ -601,6 +601,13 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
 
     let acc = 0;
     for (let i = 0; i < pts.length - 1; i++) {
+      // AND INSIDE THE STREET, not only between streets. The budget check at
+      // the top of the loop cannot help when a SINGLE street costs 200ms — and
+      // one long street does, because every four metres of it plants kerbs,
+      // lamps, trees and crossings down both sides. Measured while RIDING (the
+      // test that sits still says this phase is fine, which is how it was
+      // declared fixed twice), `side` was still freezing for 202ms.
+      if (Y && performance.now() - _dt > 6) { await Y(); _dt = performance.now(); }
       const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
       const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
       if (len < 0.5) continue;
@@ -788,7 +795,14 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
       }
       return best;
     };
+    // Every street lamp in the district in one pass. LTA publishes 126,144 lamp
+    // posts island-wide and a district's share is thousands, each doing a grid
+    // lookup plus a road test — the last unbroken block in this phase, which is
+    // why `side` still froze for 199ms after the street loop was already
+    // pausing.
+    let _lt = performance.now();
     for (const [lx, lz] of (data.lamps || [])) {
+      if (Y && performance.now() - _lt > 6) { await Y(); _lt = performance.now(); }
       // `blockedIn` is the parameter; `isBlocked` is an alias declared inside
       // the per-road loop and is not in scope out here.
       if (blockedIn(lx, lz)) continue;
