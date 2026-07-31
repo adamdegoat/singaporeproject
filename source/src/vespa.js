@@ -140,15 +140,40 @@ export function buildCar() {
   g.add(part(new THREE.BoxGeometry(1.6, 0.16, 0.5), paint, 0, 0.9, 1.55));
   g.add(part(new THREE.BoxGeometry(1.7, 0.14, 0.18), trim, 0, 0.38, 1.98));
   g.add(part(new THREE.BoxGeometry(1.7, 0.14, 0.18), trim, 0, 0.38, -1.98));
-  // headlights
-  g.add(part(new THREE.CylinderGeometry(0.09, 0.09, 0.06, 10), chrome, -0.55, 0.66, 1.99, Math.PI / 2));
-  g.add(part(new THREE.CylinderGeometry(0.09, 0.09, 0.06, 10), chrome, 0.55, 0.66, 1.99, Math.PI / 2));
+  // THE RIDER'S OWN CAR GETS THE SAME TREATMENT THE TRAFFIC GOT. It is drawn
+  // ONCE, not per instance, so a handful of extra pieces here is the cheapest
+  // detail in the whole world — and it is the vehicle the rider looks at most
+  // after the scooter.
+  //
+  // Lit lamps rather than chrome discs: a chrome cylinder reads as a bolt head
+  // at any distance, and the traffic's lamps are lit, so an unlit player car
+  // looked switched off in its own street.
+  const lampM = new THREE.MeshStandardMaterial({
+    color: 0xfff4dc, emissive: 0xffe9b8, emissiveIntensity: 0.9, roughness: 0.3 });
+  const tailM = new THREE.MeshStandardMaterial({
+    color: 0x8c1a17, emissive: 0xd83a2c, emissiveIntensity: 0.75, roughness: 0.35 });
+  for (const sx of [-0.55, 0.55]) {
+    g.add(part(new THREE.BoxGeometry(0.40, 0.15, 0.08), lampM, sx, 0.70, 1.99));
+    g.add(part(new THREE.BoxGeometry(0.34, 0.16, 0.08), tailM, sx, 0.74, -1.99));
+    // wing mirrors, which is what tells you a box is a car at a glance
+    g.add(part(new THREE.BoxGeometry(0.18, 0.09, 0.08), trim, sx * 1.68, 1.02, 0.62));
+  }
+  // raked windscreen and backlight, so the cabin is not a floating glass slab
+  g.add(part(new THREE.BoxGeometry(1.50, 0.44, 0.08), glassT, 0, 1.10, 0.80, -0.55));
+  g.add(part(new THREE.BoxGeometry(1.46, 0.40, 0.08), glassT, 0, 1.10, -1.28, 0.62));
+  // a dark sill under the doors: it grounds the body and hides the gap the
+  // wheels leave, the same trick the traffic uses
+  g.add(part(new THREE.BoxGeometry(1.72, 0.22, 3.98), rubber, 0, 0.36, 0));
+  // a thin painted roof cap over the glass band
+  g.add(part(new THREE.BoxGeometry(1.48, 0.08, 1.92), paint, 0, 1.31, -0.25));
 
   const wheels = [];
   for (const [wx, wz] of [[-0.78, 1.31], [0.78, 1.31], [-0.78, -1.31], [0.78, -1.31]]) {
-    const w = part(new THREE.CylinderGeometry(0.31, 0.31, 0.2, 14), rubber, wx, 0.31, wz, 0, 0, Math.PI / 2);
+    const w = part(new THREE.CylinderGeometry(0.33, 0.33, 0.22, 14), rubber, wx, 0.33, wz, 0, 0, Math.PI / 2);
     g.add(w);
     wheels.push(w);
+    // a pale hub so the wheel reads as a wheel and not a black hole
+    g.add(part(new THREE.CylinderGeometry(0.18, 0.18, 0.24, 10), chrome, wx, 0.33, wz, 0, 0, Math.PI / 2));
   }
   return { group: g, wheels };
 }

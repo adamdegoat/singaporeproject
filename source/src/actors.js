@@ -1095,7 +1095,37 @@ export class Crowd {
 // Lengths, used by both the following rule and the boot-time spacing pass, so
 // the two cannot disagree about how much room a bus needs.
 const VLEN = { car: 4.32, bus: 11.8 };
-const CAR_COLS = [0xd8dade, 0x2b3038, 0x8f959c, 0x7a2f2a, 0x27405e, 0xb9bcc0, 0x3d4a3f];
+// SINGAPORE ROADS ARE MOSTLY WHITE, SILVER AND BLACK. The COE market pushes
+// buyers toward resale-safe colours, and a street of evenly-mixed maroon and
+// olive reads as generic Europe. Weighted by repeating the common ones rather
+// than carrying a weights table.
+const CAR_COLS = [
+  0xe8eaec, 0xe8eaec, 0xe8eaec,       // white, the most common car here by far
+  0xb9bcc0, 0xb9bcc0, 0x8f959c,       // silver and grey
+  0x2b3038, 0x2b3038,                 // black
+  0x27405e, 0x7a2f2a, 0x3d4a3f, 0xd8dade,
+];
+
+// FOUR BODY TYPES FROM ONE SET OF PARTS, which is why this costs nothing. Every
+// car already places each part individually per instance, so a different set of
+// offsets and scales is a different car — no extra geometry, no extra draw
+// call, no extra material. What makes traffic read as fake is not the polygon
+// count, it is every vehicle being the same silhouette.
+//
+// `k` scales a part, `d` shifts it along the car. Proportions are eyeballed
+// against the real thing: an SUV is taller and its cabin sits higher and
+// squarer, a hatchback loses most of its boot and pushes the cabin back, a van
+// is taller again with a long flat roof and almost no bonnet.
+const CAR_TYPES = [
+  // saloon — the reference
+  { w: 1.00, h: 1.00, len: 1.00, cabZ: -0.22, cabH: 1.00, roofY: 1.38, bootK: 1.00, wheel: 1.00 },
+  // small SUV, the other half of Singapore's fleet
+  { w: 1.06, h: 1.16, len: 1.02, cabZ: -0.10, cabH: 1.18, roofY: 1.56, bootK: 0.86, wheel: 1.12 },
+  // hatchback
+  { w: 0.97, h: 0.98, len: 0.90, cabZ: -0.34, cabH: 1.04, roofY: 1.38, bootK: 0.44, wheel: 0.96 },
+  // small van, the ones with a company name down the side
+  { w: 1.04, h: 1.30, len: 1.00, cabZ: -0.26, cabH: 1.46, roofY: 1.74, bootK: 0.30, wheel: 1.04 },
+];
 
 export class Traffic {
   // `spec` comes from axisSpec() in markings.js: the real lane count, the real
@@ -1183,6 +1213,14 @@ export class Traffic {
     this.lampL = mk(new THREE.BoxGeometry(0.42, 0.15, 0.09), lamp, n * 2);
     this.tailL = mk(new THREE.BoxGeometry(0.40, 0.14, 0.09), tail, n * 2);
     this.mirror = mk(new THREE.BoxGeometry(0.20, 0.09, 0.09), trim, n * 2);
+    // TAXI ROOF SIGN. One more instanced mesh for the whole fleet, and the
+    // single cheapest thing that says Singapore rather than generic city — a
+    // rider clocks a taxi rank before they read a street name. Drawn for every
+    // car and simply parked flat inside the roof on the ones that are not
+    // taxis, which costs nothing and avoids a second count to keep in step.
+    this.taxiTop = mk(new THREE.BoxGeometry(0.52, 0.13, 0.20),
+      new THREE.MeshStandardMaterial({
+        color: 0xf2ede2, emissive: 0xd8c58e, emissiveIntensity: 0.35, roughness: 0.5 }), n);
     this.wheel = mk(new THREE.CylinderGeometry(0.32, 0.32, 0.22, 12), dark, n * 4);
     this.hub = mk(new THREE.CylinderGeometry(0.17, 0.17, 0.24, 10),
       new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.4, metalness: 0.6 }), n * 4);
@@ -1196,6 +1234,20 @@ export class Traffic {
     this.busBlind = mk(new THREE.BoxGeometry(1.65, 0.42, 0.08),
       new THREE.MeshStandardMaterial({ color: 0x1a1d20, emissive: 0xd8a23c, emissiveIntensity: 0.5 }), b);
     this.busWheel = mk(new THREE.CylinderGeometry(0.48, 0.48, 0.28, 10), dark, b * 4);
+    // A SINGAPORE BUS IS NOT A PLAIN BOX. What identifies one at a glance is the
+    // deep raked windscreen, the pair of doors on the kerb side, the rear engine
+    // bay standing proud of the body, and the red lamps at the back. Six more
+    // instanced meshes for the whole fleet, which is six draw calls, not six per
+    // bus.
+    this.busWind = mk(new THREE.BoxGeometry(2.42, 1.30, 0.10), glass, b);
+    this.busDoor = mk(new THREE.BoxGeometry(0.10, 1.85, 1.15), glass, b * 2);
+    this.busEngine = mk(new THREE.BoxGeometry(2.44, 1.05, 0.55),
+      new THREE.MeshStandardMaterial({ color: 0x3a3f43, roughness: 0.75 }), b);
+    this.busTail = mk(new THREE.BoxGeometry(0.34, 0.30, 0.10), tail, b * 2);
+    this.busLamp = mk(new THREE.BoxGeometry(0.36, 0.16, 0.10), lamp, b * 2);
+    // the roof-line band every operator paints above the windows
+    this.busBand = mk(new THREE.BoxGeometry(2.56, 0.22, 11.4),
+      new THREE.MeshStandardMaterial({ color: 0xf0efe9, roughness: 0.6 }), b);
 
     const col = new THREE.Color();
     for (let i = 0; i < n; i++) {
@@ -1207,7 +1259,18 @@ export class Traffic {
         lane, dir, speed: base, base,
       });
       const cc = pick(CAR_COLS);
-      this.items[this.items.length - 1].col = cc;   // follows a packed slot
+      const it0 = this.items[this.items.length - 1];
+      it0.col = cc;                                  // follows a packed slot
+      // saloons and SUVs dominate; hatchbacks and vans are the seasoning
+      it0.ty = [0, 0, 0, 1, 1, 2, 3][i % 7];
+      // ROUGHLY ONE CAR IN NINE IS A TAXI, which is about right for a weekday
+      // Orchard Road. Liveries are the real operators: ComfortDelGro blue,
+      // CityCab yellow, Trans-Cab red, Premier silver-black, SMRT green. A taxi
+      // is always a saloon here.
+      if (i % 9 === 4) {
+        it0.taxi = 1; it0.ty = 0;
+        it0.col = [0x2f6fb0, 0xe8b21f, 0xc23b30, 0x4c5359, 0x2e7d5b][(i / 9 | 0) % 5];
+      }
       col.setHex(cc);
       this.body.setColorAt(i, col); this.roof.setColorAt(i, col);
     }
@@ -1496,32 +1559,44 @@ export class Traffic {
       if (it.kind === 'car') {
         const gy = surfaceAt(x, z);
         const fwd = it.dir;                       // +1 nose along the path
-        const put = (mesh, idx, along, across, up, rot) => {
-          p.set(x + ux * along * fwd + nx * across, gy + up, z + uz * along * fwd + nz * across);
-          if (rot === undefined) { m.compose(p, q, s); } else {
+        // FOUR SILHOUETTES FROM ONE SET OF PARTS. Each part is already placed
+        // per instance, so scaling and shifting them by body type costs nothing
+        // — no extra geometry, no extra draw call. A street where every vehicle
+        // is the same outline is what reads as fake, not the polygon count.
+        const T = CAR_TYPES[it.ty || 0];
+        this._cs = this._cs || new THREE.Vector3();
+        const put = (mesh, idx, along, across, up, rot, kx, ky, kz) => {
+          this._cs.set(kx === undefined ? T.w : kx, ky === undefined ? T.h : ky,
+                       kz === undefined ? T.len : kz);
+          p.set(x + ux * along * T.len * fwd + nx * across * T.w,
+                gy + up, z + uz * along * T.len * fwd + nz * across * T.w);
+          if (rot === undefined) { m.compose(p, q, this._cs); } else {
             e.set(rot, heading, 0, 'YXZ');
             this._q3 = this._q3 || new THREE.Quaternion();
             this._q3.setFromEuler(e);
-            m.compose(p, this._q3, s);
+            m.compose(p, this._q3, this._cs);
           }
           mesh.setMatrixAt(idx, m);
         };
-        put(this.sill, si, 0, 0, 0.33);
-        put(this.body, si, 0, 0, 0.68);
-        put(this.bonnet, si, 1.36, 0, 0.99);
-        put(this.boot, si, -1.56, 0, 1.00);
+        put(this.sill, si, 0, 0, 0.33 * T.h);
+        put(this.body, si, 0, 0, 0.68 * T.h);
+        put(this.bonnet, si, 1.36, 0, 0.99 * T.h);
+        put(this.boot, si, -1.56, 0, 1.00 * T.h, undefined, T.w, T.h, T.len * T.bootK);
         // cabin a little behind centre, which is what makes a car read as a car
-        put(this.glaze, si, -0.22, 0, 1.14);
-        put(this.roof, si, -0.22, 0, 1.38);
+        put(this.glaze, si, T.cabZ, 0, 1.14 * T.h, undefined, T.w, T.cabH, T.len);
+        put(this.roof, si, T.cabZ, 0, T.roofY, undefined, T.w, 1, T.len);
         // raked screens at both ends of the cabin
-        put(this.wind, si, 0.72, 0, 1.14, -0.58);
-        put(this.rear, si, -1.16, 0, 1.14, 0.66);
+        put(this.wind, si, 0.72, 0, 1.14 * T.h, -0.58, T.w, T.cabH, 1);
+        put(this.rear, si, T.cabZ - 0.94, 0, 1.14 * T.h, 0.66, T.w, T.cabH, 1);
         for (let k = 0; k < 2; k++) {
           const side = k ? 0.60 : -0.60;
-          put(this.lampL, si * 2 + k, 2.12, side, 0.82);
-          put(this.tailL, si * 2 + k, -2.12, side, 0.90);
-          put(this.mirror, si * 2 + k, 0.66, k ? 0.97 : -0.97, 1.10);
+          put(this.lampL, si * 2 + k, 2.12, side, 0.82 * T.h, undefined, 1, 1, 1);
+          put(this.tailL, si * 2 + k, -2.12, side, 0.90 * T.h, undefined, 1, 1, 1);
+          put(this.mirror, si * 2 + k, 0.66, k ? 0.97 : -0.97, 1.10 * T.h, undefined, 1, 1, 1);
         }
+        // the roof sign sits on the cabin; a non-taxi gets it buried inside
+        put(this.taxiTop, si, T.cabZ + 0.30, 0,
+            it.taxi ? T.roofY + 0.10 : T.roofY - 0.30, undefined, 1, it.taxi ? 1 : 0.01, 1);
         for (let w = 0; w < 4; w++) {
           const along = (w < 2 ? 1.4 : -1.4) * it.dir;
           const across = (w % 2 ? 0.86 : -0.86);
@@ -1531,12 +1606,15 @@ export class Traffic {
           // any grade the downhill wheels were buried and the uphill ones
           // hovered. Same rule the bike needed: the height a thing is drawn at
           // and the height the ground is under it are different numbers.
-          const wx2 = x + ux * along + nx * across, wz2 = z + uz * along + nz * across;
-          p.set(wx2, surfaceAt(wx2, wz2) + 0.31, wz2);
+          const wx2 = x + ux * along * T.len + nx * across * T.w;
+          const wz2 = z + uz * along * T.len + nz * across * T.w;
+          p.set(wx2, surfaceAt(wx2, wz2) + 0.32 * T.wheel, wz2);
           e.set(0, heading, Math.PI / 2, 'YXZ');
           this._q2 = this._q2 || new THREE.Quaternion();
           this._q2.setFromEuler(e);
-          m.compose(p, this._q2, s);
+          this._ws = this._ws || new THREE.Vector3();
+          this._ws.set(T.wheel, 1, T.wheel);
+          m.compose(p, this._q2, this._ws);
           this.wheel.setMatrixAt(si * 4 + w, m);
           this.hub.setMatrixAt(si * 4 + w, m);
         }
@@ -1547,6 +1625,26 @@ export class Traffic {
         p.set(x, gyb + 2.05, z); m.compose(p, q, s); this.busGlaze.setMatrixAt(si, m);
         p.set(x + ux * 5.95 * it.dir, gyb + 2.42, z + uz * 5.95 * it.dir);
         m.compose(p, q, s); this.busBlind.setMatrixAt(si, m);
+        const bput = (mesh, idx, along, across, up, rot) => {
+          p.set(x + ux * along * it.dir + nx * across, gyb + up,
+                z + uz * along * it.dir + nz * across);
+          if (rot === undefined) { m.compose(p, q, s); } else {
+            e.set(rot, heading, 0, 'YXZ');
+            this._qb = this._qb || new THREE.Quaternion();
+            this._qb.setFromEuler(e);
+            m.compose(p, this._qb, s);
+          }
+          mesh.setMatrixAt(idx, m);
+        };
+        bput(this.busWind, si, 5.82, 0, 2.05, -0.16);      // raked screen
+        bput(this.busBand, si, 0, 0, 2.86);                // roof-line band
+        bput(this.busEngine, si, -5.85, 0, 1.35);          // rear engine bay
+        for (let k = 0; k < 2; k++) {
+          // doors on the kerb side only, which is the left in Singapore
+          bput(this.busDoor, si * 2 + k, k ? 3.60 : -0.40, -1.27, 1.42);
+          bput(this.busTail, si * 2 + k, -5.94, k ? 0.86 : -0.86, 1.05);
+          bput(this.busLamp, si * 2 + k, 5.94, k ? 0.92 : -0.92, 0.95);
+        }
         for (let w = 0; w < 4; w++) {
           const along = (w < 2 ? 3.6 : -3.6) * it.dir;
           const across = (w % 2 ? 1.2 : -1.2);
@@ -1566,8 +1664,10 @@ export class Traffic {
     // the crowd.
     for (const part of [this.body, this.roof, this.glaze, this.sill,
       this.bonnet, this.boot, this.wind, this.rear, this.lampL, this.tailL,
-      this.mirror, this.hub,
-      this.busBody, this.busSkirt, this.busGlaze, this.busBlind]) {
+      this.mirror, this.hub, this.taxiTop,
+      this.busBody, this.busSkirt, this.busGlaze, this.busBlind,
+      this.busWind, this.busDoor, this.busEngine, this.busTail, this.busLamp,
+      this.busBand]) {
       part.instanceMatrix.needsUpdate = true;
     }
     // EVERY new part needs its count set too, or it draws the whole buffer
@@ -1576,9 +1676,12 @@ export class Traffic {
     this.sill.count = this.bonnet.count = this.boot.count = carSlot;
     this.wind.count = this.rear.count = carSlot;
     this.lampL.count = this.tailL.count = this.mirror.count = carSlot * 2;
+    this.taxiTop.count = carSlot;
     this.wheel.count = this.hub.count = carSlot * 4;
     this.busBody.count = this.busSkirt.count = this.busGlaze.count
-      = this.busBlind.count = busSlot;
+      = this.busBlind.count = this.busWind.count = this.busEngine.count
+      = this.busBand.count = busSlot;
+    this.busDoor.count = this.busTail.count = this.busLamp.count = busSlot * 2;
     this.busWheel.count = busSlot * 4;
     this.wheel.instanceMatrix.needsUpdate = true;
     this.busWheel.instanceMatrix.needsUpdate = true;

@@ -53,7 +53,17 @@ export class Solid {
     }
   }
 
-  build(root, groundAt, opts = {}) {
+  // TAKES A YIELD FUNCTION, because this is the single longest uninterrupted
+  // call in a district build. A CPU profile of the freeze window — 1.2s to 4.5s
+  // after the loading screen clears, which is exactly when the rider says the
+  // game goes "stuck stuck stuck" — put `_segment` at 12.9% of all samples,
+  // more than three times the next item. It walks every triangle of every mesh
+  // in the district and marks the collision grid, and it did all of it without
+  // once letting the browser draw a frame.
+  //
+  // Y is optional: the boot-time build happens behind the loading screen where
+  // a freeze is invisible and nobody needs to pass one.
+  async build(root, groundAt, opts = {}) {
     // The band a rider and a walker occupy. Below LOW is a kerb you ride over;
     // above HIGH is a canopy you pass under.
     const LOW = opts.low ?? 0.45;
@@ -62,16 +72,30 @@ export class Solid {
     const ab = new THREE.Vector3(), ac = new THREE.Vector3(), nrm = new THREE.Vector3();
     let tris = 0, walls = 0, meshes = 0;
 
-    root.traverse((o) => {
-      if (!o.isMesh || o.isInstancedMesh) return;
+    // Collect first, then walk with a time budget: traverse() takes a callback
+    // and cannot be paused from inside one.
+    const Y = opts.yield || null;
+    const meshList = [];
+    root.traverse((o) => { if (o.isMesh && !o.isInstancedMesh) meshList.push(o); });
+    let _st = performance.now();
+    for (const o of meshList) {
+      if (Y && performance.now() - _st > 6) { await Y(); _st = performance.now(); }
       const geo = o.geometry;
       const pos = geo && geo.attributes && geo.attributes.position;
-      if (!pos) return;
-      if (o.userData && o.userData.nosolid) return;
+      if (!pos) continue;
+      if (o.userData && o.userData.nosolid) continue;
       meshes++;
       const idx = geo.index;
       const count = idx ? idx.count : pos.count;
       for (let i = 0; i < count; i += 3) {
+        // AND INSIDE THE TRIANGLE LOOP, not just between meshes. Buildings are
+        // merged per material and per 110m tile before this runs, so ONE mesh
+        // can carry hundreds of thousands of triangles — pausing between meshes
+        // bounds nothing when a single mesh is the whole half-second. Checked
+        // every 4,096 triangles so the clock read costs nothing measurable.
+        if (Y && (i & 4095) === 0 && performance.now() - _st > 6) {
+          await Y(); _st = performance.now();
+        }
         const i0 = idx ? idx.getX(i) : i;
         const i1 = idx ? idx.getX(i + 1) : i + 1;
         const i2 = idx ? idx.getX(i + 2) : i + 2;
@@ -99,7 +123,7 @@ export class Solid {
         this._segment(b.x, b.z, c.x, c.z);
         this._segment(c.x, c.z, a.x, a.z);
       }
-    });
+    }
     this.n = this.g.size;
     return { meshes, tris, walls, cells: this.n };
   }

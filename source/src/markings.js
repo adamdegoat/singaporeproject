@@ -426,7 +426,17 @@ export function selectSideStreets(data, axis, reach = 230) {
 // where 245 of the region's 333 duplicated props and most of its z-fighting
 // came from. The set is shared across the calls rather than rebuilt per axis,
 // because the whole point is what a PREVIOUS axis already did.
-export function dressSideStreets(world, data, axis, blockedIn, TreeField, done = null, reachOverride = 0) {
+// ASYNC, AND IT PAUSES BETWEEN STREETS. This dresses every side street in the
+// district with kerbs, lamps, trees, crossings and name plates, and it did all
+// of them in one go. Instrumenting the yield helper to record the longest gap
+// between pauses in each build phase put THIS phase at 502ms — by far the worst
+// single freeze in the world, and the actual cause of the "first ten seconds
+// lag". Four other phases were optimised before this one was identified, which
+// is what guessing costs.
+//
+// Y is optional so the boot-time call, which happens behind the loading screen,
+// is unaffected.
+export async function dressSideStreets(world, data, axis, blockedIn, TreeField, done = null, reachOverride = 0, Y = null) {
   const trees = new TreeField();
   const kerb = [], lamp = [], lampArm = [];
   let roads = 0, skipped = 0;
@@ -499,7 +509,9 @@ export function dressSideStreets(world, data, axis, blockedIn, TreeField, done =
     return n === 0 || inside / n < 0.7;
   });
   skipped = data.roads.length - chosen.length;
+  let _dt = performance.now();
   for (const r of chosen) {
+    if (Y && performance.now() - _dt > 6) { await Y(); _dt = performance.now(); }
     const pts = r.p, half = r.w / 2;
     const isBlocked = blockedIn;
     for (let i = 0; i < pts.length - 1; i++) segs.push([pts[i], pts[i + 1], half]);

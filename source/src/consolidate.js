@@ -88,7 +88,13 @@ function bakeable(o) {
   return true;
 }
 
-export function consolidate(root) {
+// TAKES A YIELD FUNCTION. This merges every mesh in a district by material and
+// tile, and on a big district it is one uninterrupted call — a 500ms freeze two
+// seconds after the loading screen clears, which is exactly what the rider
+// feels as "stuck". The work cannot be made much smaller, but it can be spread:
+// the group loop is where nearly all of it goes, so that is where it breathes.
+// Y is optional so every existing caller keeps working unchanged.
+export async function consolidate(root, Y = null) {
   root.updateMatrixWorld(true);
 
   const targets = [];
@@ -108,7 +114,9 @@ export function consolidate(root) {
   }
 
   let merged = 0, removed = 0;
+  let _ct = performance.now();
   for (const list of groups.values()) {
+    if (Y && performance.now() - _ct > 6) { await Y(); _ct = performance.now(); }
     if (list.length < 2) continue;               // nothing to gain
 
     const parts = [];

@@ -298,7 +298,10 @@ class BuildingIndex {
 }
 
 /* ---------------- the build ---------------- */
-export function buildShopfronts(world, data, axes, wallAt, neighbours) {
+// ASYNC for the same reason dressSideStreets is: one uninterrupted pass over
+// every building that fronts a street, and the worst single freeze left in a
+// district build once the side streets were broken up. Y is optional.
+export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y = null) {
   const stats = {
     shopRuns: 0, bays: 0, realShops: 0, glazedFrontage: 0, shopAwnings: 0,
     // why a tenant got nothing, split out rather than pooled, because "382 have
@@ -377,7 +380,9 @@ export function buildShopfronts(world, data, axes, wallAt, neighbours) {
   // dropped can say whether its building is genuinely on a back lane or the
   // frontage test is simply too tight
   const nearestStreet = new Map();
+  let _st = performance.now();
   for (const b of data.buildings) {
+    if (Y && performance.now() - _st > 6) { await Y(); _st = performance.now(); }
     if (!b.p || b.p.length < 3) continue;
     // the same test buildBuildings uses to send a footprint to the shophouse
     // recipe, because the two have completely different ground floors

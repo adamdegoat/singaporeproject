@@ -1096,7 +1096,7 @@ async function addChunk(ch, id, Y, rec = {}) {
   await Y();
   // the walls picture grows BEFORE the dressing and the shopfronts consult it
   mk('walls');
-  if (WALLSREF) WALLSREF.build(g, (x, z) => terrain.at(x, z));
+  if (WALLSREF) await WALLSREF.build(g, (x, z) => terrain.at(x, z), { yield: Y });
   await Y();
   const ax = ch.axis && ch.axis.p
     ? (trimAxes(data.axes).find((t) => t.did === id) || null) : null;
@@ -1117,7 +1117,7 @@ async function addChunk(ch, id, Y, rec = {}) {
     mk('side');
     if (!P.has('noside')) {
       const before = new Set(dressedStreets);
-      dressSideStreets(g, ch, ax, place, TreeField, dressedStreets);
+      await dressSideStreets(g, ch, ax, place, TreeField, dressedStreets, 0, Y);
       rec.dressedDelta = [...dressedStreets].filter((r) => !before.has(r));
     }
     await Y();
@@ -1198,10 +1198,10 @@ async function addChunk(ch, id, Y, rec = {}) {
   }
   const solidBefore = WALLSREF ? (x, z) => WALLSREF.at(x, z) : null;
   mk('shops');
-  if (!P.has('noshops')) buildShopfronts(g, ch, ax ? [ax] : [], solidBefore, REGIONB);
+  if (!P.has('noshops')) await buildShopfronts(g, ch, ax ? [ax] : [], solidBefore, REGIONB, Y);
   await Y();
   mk('solid');
-  if (SOLID) SOLID.build(g, (x, z) => terrain.at(x, z));
+  if (SOLID) await SOLID.build(g, (x, z) => terrain.at(x, z), { yield: Y });
   await Y();
   mk('consolidate');
   if (!P.has('raw')) {
@@ -1218,7 +1218,7 @@ async function addChunk(ch, id, Y, rec = {}) {
     // world stutters as it loads" and "the world freezes twice".
     dedupeMaterials(world);
     await Y();
-    consolidate(g);
+    await consolidate(g, Y);
     await Y();
     trimShadowCasters(g);
     await Y();
@@ -1376,11 +1376,56 @@ async function streamRest(rest) {
   // points stay cheap no-ops the rest of the time. The clock restarts AFTER
   // the yield resolves, so time the browser spends rendering the interleaved
   // frame is not billed to the next work slice.
+  // SIX MILLISECONDS, AND HAND THE FRAME BACK PROPERLY.
+  //
+  // This waited for TWENTY milliseconds of work before yielding at all, which
+  // is longer than a whole 16ms frame — so every slice was guaranteed to drop
+  // one, and the finer 8ms checks added inside the build loops were no-ops
+  // because this gate never let them through. Worse, a MessageChannel message
+  // is a macrotask: the browser gets to render once and then the next 20ms
+  // slice starts immediately, so the main thread stayed pinned and every frame
+  // arrived late. That is the "stuck stuck stuck" for the first ten seconds.
+  //
+  // Now: at most 6ms of building, then WAIT FOR AN ANIMATION FRAME. The frame
+  // gets the rest of its budget, so the world builds while the page stays
+  // responsive. It takes longer in wall-clock and it is smooth, which is the
+  // right trade when the rider is sitting at the spawn point looking at a
+  // district that is already there.
+  //
+  // The MessageChannel path is KEPT for a hidden page. requestAnimationFrame
+  // does not fire in a backgrounded tab or a headless harness, and without
+  // this fallback a chunk build would simply stop — which is the bug the
+  // original comment here was written to avoid.
+  // THE GATES GET THE OLD AGGRESSIVE PACING. `?streamall` is the audit's mode:
+  // it builds every district in the world back to back and nobody is looking at
+  // the screen. Pacing the build to 6ms a frame is for a RIDER, and applying it
+  // there turned a 10-minute audit budget into a timeout — the boot-stutter fix
+  // failed its own deploy that way.
+  //
+  // 20ms and a MessageChannel is what this used to do everywhere: it builds as
+  // fast as the machine allows and never waits for a frame that nobody sees.
+  const FAST = P.has('streamall') || P.has('nostream');
   let sliceT0 = performance.now();
   const Y = () => {
-    if (performance.now() - sliceT0 < 20) return Promise.resolve();
-    return new Promise((r) => { wake = r; chan.port2.postMessage(0); })
-      .then(() => { sliceT0 = performance.now(); });
+    if (performance.now() - sliceT0 < (FAST ? 20 : 6)) return Promise.resolve();
+    if (FAST) {
+      return new Promise((r) => { wake = r; chan.port2.postMessage(0); })
+        .then(() => { sliceT0 = performance.now(); });
+    }
+    // DIAGNOSTIC, and it earns its keep. The gap since the last yield IS the
+    // blocking time, so recording the worst one per build phase says exactly
+    // which phase freezes the page — four separate guesses at the "first ten
+    // seconds lag" were fixed before this existed and none of them was it.
+    const blocked = performance.now() - sliceT0;
+    const st0 = window.__streamState;
+    if (st0 && st0.step) {
+      st0.block = st0.block || {};
+      if (blocked > (st0.block[st0.step] || 0)) st0.block[st0.step] = Math.round(blocked);
+    }
+    const p2 = (typeof document !== 'undefined' && document.visibilityState === 'visible')
+      ? new Promise((r) => requestAnimationFrame(() => r()))
+      : new Promise((r) => { wake = r; chan.port2.postMessage(0); });
+    return p2.then(() => { sliceT0 = performance.now(); });
   };
   const px = () => (mode === 'ride' ? S.x : walker.x);
   const pz = () => (mode === 'ride' ? S.z : walker.z);
@@ -1701,7 +1746,7 @@ async function buildRegion(data, opts = {}) {
   if (!P.has('nosolid')) {
     const tS = performance.now();
     WALLS = new Solid();
-    WALLS.build(world, (x, z) => terrain.at(x, z));
+    await WALLS.build(world, (x, z) => terrain.at(x, z));
     WALLSREF = WALLS;
     solidMs0 = performance.now() - tS;
     window.__wallBefore = (x, z) => WALLS.at(x, z);
@@ -1772,7 +1817,7 @@ async function buildRegion(data, opts = {}) {
     if (!P.has('nomarks')) marks += buildMarkings(world, ax, data);
       bmark('furniture+signage+markings');
     if (!P.has('noside')) {
-      const t = dressSideStreets(world, data, ax, place, TreeField, dressed);
+      const t = await dressSideStreets(world, data, ax, place, TreeField, dressed);
       for (const k of Object.keys(t)) side[k] = (side[k] || 0) + t[k];
     }
     bmark('sideStreets');
@@ -1849,7 +1894,7 @@ async function buildRegion(data, opts = {}) {
   const shopGroup = new THREE.Group();
   world.add(shopGroup);
   await bstep(0.70, 'glazing the shopfronts');
-  const shopf = P.has('noshops') ? {} : buildShopfronts(shopGroup, data, axes, solidBefore);
+  const shopf = P.has('noshops') ? {} : await buildShopfronts(shopGroup, data, axes, solidBefore);
   bmark('shopfronts');
 
   signals = new Signals(furniture.signals || [], furniture.lensMesh || null);
@@ -1869,7 +1914,7 @@ async function buildRegion(data, opts = {}) {
   if (!P.has('nosolid')) {
     const t0 = performance.now();
     SOLID = new Solid();
-    const st = SOLID.build(world, (x, z) => terrain.at(x, z));
+    const st = await SOLID.build(world, (x, z) => terrain.at(x, z));
     stats.solidCells = st.cells; stats.solidWalls = st.walls;
     stats.solidMs = Math.round(solidMs0 + (performance.now() - t0));
     window.__solid = (x, z) => SOLID.at(x, z);
@@ -1879,7 +1924,7 @@ async function buildRegion(data, opts = {}) {
   const RAW = P.has('raw');       // audit mode: leave objects unbatched
   await bstep(0.84, 'packing the city');
   const dedupe = RAW ? { before: 0, after: 0 } : dedupeMaterials(world);
-  const cons = RAW ? { removed: 0, merged: 0 } : consolidate(world);
+  const cons = RAW ? { removed: 0, merged: 0 } : await consolidate(world);
   bmark('dedupe+consolidate');
   stats.matsBefore = dedupe.before; stats.matsAfter = dedupe.after;
   const shad = RAW ? { kept: 0, dropped: 0 } : trimShadowCasters(world);
