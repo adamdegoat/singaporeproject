@@ -379,6 +379,19 @@ LANDMARKS = {
     # parkroyalPickering recipe -- a flat 89m extrusion of a 159m-long site is
     # the "wall of buildings" the architect designed it to break down.
     "parkroyal collection pickering": {"h": 89, "key": True},
+    # ---- research/bugis-marina-guessed-heights.md
+    # 217.5m over 35 floors (CTBUH). Standing at the 45m office default, which
+    # is 173m short of the tallest thing on that stretch of Beach Road.
+    "south beach tower":      {"h": 217.5, "key": True},
+    # St Andrew's spire is 63m (207 ft), from the cathedral's own site. The
+    # facade is brilliant glossy white Madras chunam, which the recipe already
+    # draws. Note the recipe caps a GUESSED church at 30m; this one is sourced.
+    # NO APOSTROPHE IN THE KEY. LANDMARKS is matched against norm(name), which
+    # strips everything outside [a-z0-9 ], so "saint andrew's cathedral" can
+    # never match anything. Written with the apostrophe first and it silently
+    # did nothing -- the cathedral stayed at its 16m guess through a rebuild.
+    "saint andrews cathedral": {"h": 63, "key": True},
+    "st andrews cathedral":    {"h": 63, "key": True},
     # 144m, and the 108 I set earlier was WRONG. Re-researched 2026-07-31
     # (research/raffles-parkview.md): NOTHING publishes ~108. CTBUH, Emporis,
     # SkyscraperPage, Structurae and Wikipedia's own refs all say 144m; the
@@ -406,7 +419,7 @@ LANDMARKS = {
     # which is a different building. Keys here are substring-matched with
     # longest-key-wins, so both spellings must stay distinct -- this is exactly
     # how UOB Plaza ended up as three identical 280m cylinders.
-    "people's park complex":  {"h": 103, "key": True},
+    "peoples park complex":  {"h": 103, "key": True},
     "peoples park complex":   {"h": 103, "key": True},
 
     # LASALLE College of the Arts, McNally campus. Researched 2026-07-31,
@@ -534,7 +547,7 @@ LANDMARKS = {
     # (Asia Square tower heights live once, above: CTBUH 229 and 222. The 250
     # and 220 that used to sit here were a second, conflicting definition in the
     # SAME dict, so the later one silently won and T1 stood 21m too tall.)
-    "the sail @ marina bay":  {"h": 245, "key": True},
+    "the sail  marina bay":  {"h": 245, "key": True},
     # These two patterns matched things that are NOT the landmark, which is the
     # mistake already recorded here for "Grand Park City Hall" and "Esplanade
     # Theatre": "Singapore Flyer Car Park" was given the wheel's 165m and
@@ -553,7 +566,7 @@ LANDMARKS = {
     "the exchange":           {"h": 20},
     "millenia tower":         {"h": 190, "key": True},
     "centennial tower":       {"h": 180, "key": True},
-    "the ritz-carlton":       {"h": 130, "key": True},
+    "the ritzcarlton":       {"h": 130, "key": True},
     "pan pacific singapore":  {"h": 130},
     "marina square":          {"h": 40},
     "suntec":                 {"h": 150, "key": True},
@@ -730,6 +743,13 @@ STOREY_COUNTS = {
     # construction, one storey over three basements with a grass roof. Modelled
     # at 24m it was a mall that does not exist yet.
     "zyon galleria":             [{"st": 1, "per": 6.0}],
+
+    # ---- research/bugis-marina-guessed-heights.md, published storeys
+    "peninsula plaza":           [{"st": 30}],   # was 22m
+    "bugis junction tower":      [{"st": 15}],   # was 20m
+    "raffles hospital":          [{"st": 13}],   # was 18m
+    "guoco midtown office":      [{"st": 30}],   # was 45m
+    "midtown bay":               [{"st": 32}],   # was 40m
 
     "redhill wet market":               [{"st": 1, "per": 7.5}],
     "beo crescent food centre":         [{"st": 1, "per": 7.0}],
@@ -1268,6 +1288,25 @@ def proj(lat, lon):
 
 def norm(s):
     return re.sub(r"[^a-z0-9 ]", "", (s or "").lower()).strip()
+
+
+# A LANDMARK KEY THAT norm() CANNOT PRODUCE IS DEAD CODE THAT LOOKS ALIVE.
+#
+# LANDMARKS is matched against norm(name), which strips everything outside
+# [a-z0-9 ]. So a key written with an apostrophe, a hyphen or an "@" can never
+# match anything, and the entry sits there looking like a fact the pipeline
+# honours while the building keeps its guess. Three did:
+#
+#   "people's park complex", "the sail @ marina bay", "the ritz-carlton"
+#
+# and a fourth was added the same day ("saint andrew's cathedral") and quietly
+# did nothing through a full rebuild. This is not a thing to remember; it is a
+# thing to check.
+_bad_keys = sorted(k for k in LANDMARKS if norm(k) != k)
+if _bad_keys:
+    sys.exit("  ! LANDMARKS keys that norm() can never match, so they are dead:\n"
+             + "\n".join(f"      {k!r} -> norm gives {norm(k)!r}" for k in _bad_keys)
+             + "\n    Rewrite them in normalised form.")
 
 
 # Every height tag we refused, so the count is printed rather than swallowed.

@@ -1591,7 +1591,14 @@ function gothicChurch(api, b) {
   const sx = cx0 + ob.ux * ob.halfLong * 0.72, sz = cz0 + ob.uz * ob.halfLong * 0.72;
   const gs = api.groundAt(sx, sz);
   const tw = Math.min(3.2, ob.halfShort * 0.5);
-  const towerH = Math.max(wall + 4, Math.min(b.h, 30));
+  // A SOURCED CHURCH HEIGHT IS NOT A GUESS AND SHOULD NOT BE CAPPED AT 30m.
+  // The cap exists because a church footprint with a type-default height would
+  // otherwise grow a 55m spire out of a parish hall. But St Andrew's spire is
+  // 63m — 207 feet, published by the cathedral itself — and the cap silently
+  // cut a third off the tallest thing in the City Hall skyline. Where `hs`
+  // says the height came from a source, trust it; where it does not, keep the
+  // old ceiling.
+  const towerH = Math.max(wall + 4, Math.min(b.h, b.hs ? 70 : 30));
   // A spire is the tallest thing a church has and it must not stand in the road.
   // The nave is inside its own footprint by construction; the tower is placed by
   // an offset along the long axis, which for a church set at an angle to the
