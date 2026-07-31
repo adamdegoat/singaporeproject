@@ -357,7 +357,20 @@ LANDMARKS = {
     # 170 is the architectural height above ground and reconciles to within ~9m
     # of the AMSL figure. DUO Residences is absent from the data entirely -- it
     # is tagged building:part, not building, so the fetch never sees it.
-    "the concourse office tower": {"h": 165, "key": True},   # 41 storeys
+    # 175, not the 165 set here earlier. Re-researched 2026-07-31
+    # (research/bugis-frontage-heights.md): Paul Rudolph WITH Architects 61,
+    # completed 1994, octagonal plan on pilotis. The neighbouring Concourse
+    # Skyline is a SEPARATE 2014 development, 150m / 40 storeys, and the two
+    # were being conflated.
+    "the concourse office tower": {"h": 175, "key": True},
+    # THE 1975 SHAW TOWER IS GONE AND THE ONE STANDING THERE NOW IS TALLER.
+    # Demolished 2020; the replacement opened mid-2026 at 200m over 35 storeys
+    # (The Straits Times, 2 Dec 2018). The trap that makes this worth spelling
+    # out: BOTH towers are 35 storeys and the old one was 134m, so a storey
+    # count alone picks the wrong building by 66m -- which is exactly the
+    # derivation every research brief this project sends out forbids.
+    # research/bugis-frontage-heights.md.
+    "shaw towers":            {"h": 200, "key": True},
     # 144m, and the 108 I set earlier was WRONG. Re-researched 2026-07-31
     # (research/raffles-parkview.md): NOTHING publishes ~108. CTBUH, Emporis,
     # SkyscraperPage, Structurae and Wikipedia's own refs all say 144m; the
@@ -620,6 +633,45 @@ POSTCODE_HEIGHT = {
     "229723": 122,
 }
 
+# NAMES OSM CARRIES THAT ARE NOT BUILDING NAMES.
+#
+# Three different mistakes, all of which make the model claim something false:
+#
+#   a SHOP TENANCY mapped as if it were a building. "Joyalukkas" is a jeweller
+#   with units at the base of an older cream apartment block on Serangoon Road
+#   and a second unit inside Centrium Square; OneMap has no such building.
+#
+#   a SALES GALLERY that has been demolished. "Parksuites Showflat" is a name
+#   bolted onto a 2012 Bing trace in October 2021, and the only Parksuites in
+#   Singapore is on Holland Grove Road, 5.5 km away. "Canninghill Piers
+#   Showflat" is the same class: the development it sold has been completed.
+#
+#   a NAME OSM INVENTED. "FDAWU Tower" -- OneMap holds no building name for
+#   279 River Valley Road at all, and the address itself is wrong in OSM.
+#
+# All three are dropped rather than corrected, because the honest state is that
+# we do not know what these footprints are called. An unnamed block is honest
+# background; a wrong name is a claim. Sources in research/rivervalley-towers.md
+# and research/littleindia-frontage-heights.md.
+NAME_STRIP = (
+    "joyalukkas",
+    "parksuites showflat",
+    "canninghill piers showflat",
+    "fdawu tower",
+)
+
+# Structures that begin in the air, where OSM records no min_height. Without
+# this a bridge deck is extruded from the ground and stands as a needle.
+LANDMARK_MIN_HEIGHT = {
+    # CanningHill Piers' sky bridge links the two towers at the top of the
+    # 24-storey north-east tower, which CDL and CapitaLand publish at 100m.
+    # Our footprint is 143 m2 and was being drawn as an 82m column of solid
+    # mass -- a tower where a bridge is. research/rivervalley-towers.md is
+    # explicit that this object "really is the sky bridge and must not be
+    # inflated into a tower". Deck depth is not published; 6m is a judgement.
+    "canninghill piers skybridge": (94.0, 100.0),
+}
+
 HDB_STOREYS = {
     "210661": 23,    # Buffalo Road, corridor-access slab
     "210662": 25,    # the tallest of the group
@@ -678,6 +730,7 @@ HDB_ABBR = {
 }
 _HDB_TABLE = None
 HDB_JOINS = []          # (blk, street, storeys, year) for the build report
+NAMES_STRIPPED = []     # OSM names that are not building names; see NAME_STRIP
 
 
 def _hdb_norm(s):
@@ -1558,12 +1611,24 @@ def main():
                 _wd = tags.get("wikidata")
                 if _wd and _wd in NAMED_BY_WIKIDATA:
                     _nm = NAMED_BY_WIKIDATA[_wd]
+            if _nm and any(s in _nm.lower() for s in NAME_STRIP):
+                NAMES_STRIPPED.append(_nm)
+                _nm = None
             if _nm:
                 b["n"] = _nm
             if key:
                 b["k"] = 1
             if hsrc != "guess":
                 b["hs"] = hsrc          # height provenance, for the accuracy ledger
+            # AFTER the provenance line, not before it: set here first, hsrc
+            # overwrote it and the ledger went on calling a published figure a
+            # storey-count derivation.
+            if _nm:
+                _lo = _nm.lower()
+                for _k2, (_mlo, _mhi) in LANDMARK_MIN_HEIGHT.items():
+                    if _k2 in _lo:
+                        b["mh"], b["h"], b["hs"] = _mlo, _mhi, "named"
+                        break
             # Remember WHICH HDB record this height came from, so the pass at
             # the end of build() can catch the case where several footprints
             # claim the same block. Stripped before the file is written.
@@ -2821,6 +2886,9 @@ def main():
           f"{len(busstops)} bus stops, {len(mrt)} MRT, {len(taxis)} taxi ranks")
     print(f"  real structures: {len(bridges)} ped bridges, {len(covered)} covered walkways, "
           f"{len(shops)} named shops")
+    if NAMES_STRIPPED:
+        print(f"  dropped {len(NAMES_STRIPPED)} OSM names that are not building names: "
+              f"{', '.join(sorted(set(NAMES_STRIPPED))[:4])}")
     if HDB_JOINS:
         _tall = sorted(HDB_JOINS, key=lambda r: -r[2])[:3]
         print(f"  HDB join: {len(HDB_JOINS)} blocks matched to HDB storey records "
