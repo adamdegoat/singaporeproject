@@ -82,6 +82,10 @@ LANDMARKS = {
     # Centre behind it is published ~100m (SkyscraperPage, 1972).
     "shaw house":             {"h": 90},
     "shaw centre":            {"h": 100},
+    # 180 FEET, PUBLISHED = 54.9m. It stood at 64.6 = 19 levels x 3.4, which is
+    # the storey-to-metre conversion this project forbids wherever a real
+    # measurement exists -- and one does. research/orchard-frontage-facades.md.
+    "tong building":          {"h": 54.9},
     # SOTA: CTBUH building 16766 publishes 56m / 10 floors; the OSM tag said
     # 50 with no source. research/sota.md has the full build spec.
     "school of the arts":     {"h": 56},
@@ -178,7 +182,13 @@ LANDMARKS = {
     # 3.4m default; same figure as the hotel.
     "orchard parade":         {"h": 55},
     "liat towers":            {"h": 40},
-    "the heeren":             {"h": 60},
+    # THE HEEREN IS NOT HERE ANY MORE. It sat at 60m with no citation, in the
+    # table that claims "named" provenance -- i.e. a published measurement --
+    # and 60m over 20 storeys is 3.0m a floor, too low for a tower that is six
+    # retail levels under fourteen of offices. The owner publishes the STOREY
+    # count and nobody publishes metres, so it belongs in STOREY_COUNTS where
+    # the ledger will report it as what it is. See research/orchard-frontage-
+    # facades.md.
     "somerset":               {"h": 40},
     # heights OSM had plainly wrong, or missing entirely
     "four seasons":           {"h": 68},
@@ -704,6 +714,21 @@ STOREY_COUNTS = {
     # tower that actually stands on it. The storey count puts the tower on the
     # skyline where it belongs; the recipe below shapes the podium under it.
     "valley point":     [{"st": 20}],
+
+    # ---- research/orchard-frontage-facades.md, the height-corrections table
+    # Nine storeys. 30 was TYPE_DEFAULT for a commercial footprint with no
+    # tags at all -- OSM way 260954106 carries neither height nor levels.
+    "orchard shopping centre": [{"st": 9}],
+    # 20 storeys, from the owner's own split of the 1992 redevelopment: a
+    # 20-storey commercial tower with the retail podium opened as The Heeren
+    # Shops in 1997. Metres UNPUBLISHED anywhere.
+    "the heeren":       [{"st": 20}],
+    # THREE storeys, and OSM's height=40 on this way is simply an error: it is
+    # a conserved shophouse block on Orchard Road. `beats_osm` because the tag
+    # is the thing being corrected. The recipe draws 15.7m of detail on top of
+    # whatever mass this gives, and a 40m mass behind a 15.7m facade is the
+    # kind of mismatch that reads as a wall growing out of a shophouse.
+    "temasek shophouse": [{"st": 3, "beats_osm": True}],
 
     # ---- research/orchard-hinterland.md
     # 34 storeys, 65 Cairnhill Road, TOP 2011. Standing at the 20m retail
@@ -2074,7 +2099,16 @@ def main():
                     # and the same "levels" provenance as building:levels, so
                     # the accuracy ledger keeps reporting it as what it is.
                     b["h"] = round(_ow["st"] * STOREY_FLOOR_M, 1)
-                    b["hsrc"] = "levels"
+                    # SET THE LOCAL `hsrc`, NOT A KEY ON b.
+                    #
+                    # The provenance that reaches the file is written further
+                    # down as `b["hs"] = hsrc` from this variable. Writing
+                    # b["hsrc"] instead put a key on the record that nothing
+                    # ever reads, so eleven researched heights shipped with NO
+                    # provenance at all and the accuracy ledger scored them as
+                    # guesses -- the same "carried into the scene file and then
+                    # ignored" sin this file already documents for roof:colour.
+                    hsrc = "levels"
                 if _ow.get("yr"):
                     b["yr"] = _ow["yr"]
                 elif _ow.get("era"):
