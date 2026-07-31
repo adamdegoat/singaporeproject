@@ -1326,13 +1326,52 @@ export class Traffic {
       }
       for (const [, list] of byDir) {
         list.sort((a, b) => a.s - b.s);
+        // WALK BACK BY DISTANCE, NOT BY A COUNT OF SIX.
+        //
+        // A fixed six-entry window is not a rule about the road, it is a guess
+        // about density. The list is sorted by arc length across ALL lanes, so
+        // where traffic bunches, six entries can span less than one bus: two
+        // buses 10.6m apart with six cars between them in s-order never got
+        // compared at all, and D34 reported that same pair on Orchard Road
+        // through every other fix in this file.
+        //
+        // The furthest any pair can need is a bus against a bus, so walking
+        // back while the gap is under that is both correct and bounded -- it
+        // stops at the first vehicle too far away to matter, which in ordinary
+        // traffic is the first or second one.
+        const MAXNEED = LEN.bus + 4.0;
         for (let k = 1; k < list.length; k++) {
           const b = list[k];
-          for (let m = 1; m <= 6 && k - m >= 0; m++) {
+          for (let m = 1; k - m >= 0; m++) {
             const a = list[k - m];
+            if (b.s - a.s > MAXNEED) break;
             if (Math.abs(a.lane - b.lane) > LANE_SAME) continue;
             const need = (LEN[a.kind] + LEN[b.kind]) / 2 + 4.0;
             if (b.s - a.s < need) b.s = a.s + need;
+          }
+        }
+        // THE ROAD IS A LOOP AND THIS PASS WAS A LINE.
+        //
+        // Sorting by s and walking forward never compares the LAST vehicle
+        // with the FIRST, but they are neighbours: s wraps at the end of the
+        // axis. One bus pair survived every other separation rule and sat
+        // 10.6m apart across that seam on Orchard Road (defect D34), because
+        // no rule in this file had ever looked at it.
+        //
+        // Nothing is pushed here -- pushing at the seam would cascade back
+        // through a queue that is already spaced. The trailing vehicle is
+        // pulled BACK instead, into the gap it came from.
+        const L = this.path && this.path.len;
+        if (L) {
+          for (let pass = 0; pass < 2; pass++) {
+            for (let k = list.length - 1; k >= 0 && list.length > 1; k--) {
+              const b = list[k], a = list[(k + 1) % list.length];
+              if (a === b) continue;
+              const ahead = k === list.length - 1 ? a.s + L : a.s;
+              if (Math.abs(a.lane - b.lane) > LANE_SAME) continue;
+              const need = (LEN[a.kind] + LEN[b.kind]) / 2 + 4.0;
+              if (ahead - b.s < need) b.s = ahead - need;
+            }
           }
         }
       }
@@ -1463,8 +1502,12 @@ export class Traffic {
         list.sort((a, b) => (b.s - a.s) * a.dir);
         for (let k = 1; k < list.length; k++) {
           const back = list[k];
-          for (let m = 1; m <= LOOK && k - m >= 0; m++) {
+          for (let m = 1; k - m >= 0; m++) {
             const lead = list[k - m];
+            // Same reasoning as the build-time pass above: bounded by the
+            // furthest a pair can possibly need, not by a count.
+            if ((lead.s - back.s) * back.dir > VLEN.bus + 1.6) break;
+            if (m > LOOK * 4) break;                    // hard stop, never hot
             if (Math.abs(lead.lane - back.lane) > LANE_SAME) continue;
             const stop = (VLEN[lead.kind] + VLEN[back.kind]) / 2 + 1.6;
             if ((lead.s - back.s) * back.dir < stop) {

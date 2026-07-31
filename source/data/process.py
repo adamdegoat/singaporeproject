@@ -686,6 +686,25 @@ STOREY_COUNTS = {
     # the developer.
     "lyf farrer park":  [{"st": 18}],
 
+    # ---- research/bugis-frontage-heights.md section 7
+    # Bugis+ (the former Iluma) is TEN storeys -- The Straits Times, 21 Nov 2007,
+    # reporting the $160m mall. OSM's building:levels says 7 and was winning, so
+    # the whole Victoria Street corner stood three storeys short. No metre height
+    # is published for it anywhere, so this stays a storey count.
+    "bugis+":           [{"st": 10, "beats_osm": True}],
+
+    # ---- research/heights-mixed.md section 7
+    # Valley Point is ONE OSM footprint covering two very different things:
+    # "a 20-storey office tower" over "a 2-storey shopping centre", both stated
+    # by the owner (Frasers Property's own commercial portfolio page) and by the
+    # building's own site. No metre height is published for either.
+    #
+    # As a single 20m box it was wrong twice over -- three times too tall for
+    # the mall that fills the 6,570 m2 footprint, and a third the height of the
+    # tower that actually stands on it. The storey count puts the tower on the
+    # skyline where it belongs; the recipe below shapes the podium under it.
+    "valley point":     [{"st": 20}],
+
     # ---- research/orchard-hinterland.md
     # 34 storeys, 65 Cairnhill Road, TOP 2011. Standing at the 20m retail
     # default, which is what TYPE_DEFAULT gives a 737 m2 footprint with no tag.
@@ -840,6 +859,19 @@ def storey_record(name, area):
 # is given instead, because a band is what is known.
 _OSM_WAY_SEEN = set()
 OSM_WAY = {
+    # --- research/mustafa-centre.md section 5
+    # Mustafa Centre is FOUR footprints and OSM gives all four building:levels=5.
+    # The research keeps storeys and metres deliberately apart and finds only one
+    # PUBLISHED correction: the new south-east wing at 171 Syed Alwi Road has a
+    # rooftop restaurant carrying unit number #07-00, so it is at least seven
+    # storeys above ground -- it is visibly the tallest part of the complex and
+    # was being drawn the same height as the 1980s blocks beside it.
+    #
+    # The other three (145, 147, 151) are left at OSM's 5. The research offers
+    # only photograph-based estimates for them, and an estimate is not a reason
+    # to overwrite a survey.
+    178437069:  {"st": 7},
+
     # --- the seventeen, research/rivervalley-road-frontage.md PART 1
     # RV Suites already carries its name in OSM; this adds only the year.
     178594778:  {"n": "RV Suites",              "st": 7, "era": (2011, 2012)},
@@ -1707,6 +1739,87 @@ def carry_terrain(out_path, scene):
     return False
 
 
+def despike_ring(ring, cos_lim=-0.995, max_edge=0.6):
+    """Unwind zero-width spurs: vertices where the ring doubles straight back.
+
+    OSM building ways sometimes include a dead-end tail — the outline walks out
+    along a sliver and returns over almost the same points. OUE Link's upper
+    deck did exactly that for twelve of its twenty-nine vertices, points 17-23
+    going out and 24-28 coming back within a few centimetres.
+
+    A tail like that always self-intersects and the greedy vertex-dropping
+    repair cannot clear it: removing one vertex of a doubled-back pair leaves
+    the other, so every candidate scores the same and the search sits on a
+    plateau until it runs out of passes. Twenty-eight passes did not help; the
+    shape needs the TAIL removed, not a vertex.
+
+    So: repeatedly drop any vertex whose incoming and outgoing edges point in
+    opposite directions. That is the tip of a spike by definition, and removing
+    it exposes the next one, so the tail unwinds from the outside in. A ring
+    with real corners is untouched — a 90-degree turn has a dot product of 0,
+    nowhere near -1.
+    """
+    r = [q for q in ring]
+    for _ in range(len(ring)):
+        n = len(r)
+        if n <= 4:
+            break
+        drop = -1
+        for i in range(n):
+            a, b, c = r[i - 1], r[i], r[(i + 1) % n]
+            ax, az = b[0] - a[0], b[1] - a[1]
+            cx, cz = c[0] - b[0], c[1] - b[1]
+            la = (ax * ax + az * az) ** 0.5
+            lc = (cx * cx + cz * cz) ** 0.5
+            if la < 1e-9 or lc < 1e-9:
+                drop = i
+                break
+            # AND ONLY WHEN THE SPIKE IS SMALL. Reversal alone is not enough:
+            # a genuine narrow building -- a 35m x 2m party wall in Chinatown,
+            # 78 m2 -- is a long thin loop that doubles back at each end, and
+            # an angle-only rule unwound it to nothing and deleted the
+            # building. One tenant lost its shopfront with it (audit S8 63->62),
+            # which is how this was caught.
+            #
+            # A rounding artefact is by definition SHORT: the vertices come
+            # from subdivide() landing several interpolated points on the same
+            # decimetre. Requiring one of the two edges to be under 0.6m keeps
+            # every real outline and still unwinds OUE Link's tail, whose
+            # segments run 0.2 to 0.7m.
+            if (ax * cx + az * cz) / (la * lc) < cos_lim and min(la, lc) < max_edge:
+                drop = i
+                break
+        if drop < 0:
+            break
+        r.pop(drop)
+    return r
+
+
+def dedupe_ring(ring):
+    """Drop consecutive duplicate points, including the wrap-around pair.
+
+    Footprint coordinates are rounded to 0.1m on the way out, and OSM traces
+    curves finely enough that several consecutive nodes land on the SAME
+    decimetre. OUE Link's 22-point ring held eleven duplicates -- points 5, 6
+    and 7 were the same coordinate -- and the zero-length segments between them
+    are what the D13 self-intersection test was reporting as "a ring that
+    crosses itself". They also extrude into zero-area triangles, which cost a
+    draw and shade unpredictably.
+
+    Nine footprints across five districts carried them. This is the repair the
+    check was actually asking for: not a different test, a clean ring.
+    """
+    if len(ring) < 3:
+        return ring
+    out = [ring[0]]
+    for q in ring[1:]:
+        if q[0] != out[-1][0] or q[1] != out[-1][1]:
+            out.append(q)
+    while len(out) > 1 and out[0][0] == out[-1][0] and out[0][1] == out[-1][1]:
+        out.pop()
+    return out
+
+
 def main():
     raw = json.load(open(RAW_PATH))
     els = raw["elements"]
@@ -2501,7 +2614,13 @@ def main():
 
     before_pts = sum(len(b["p"]) for b in buildings)
     for b in buildings:
-        b["p"] = simplify(b["p"])
+        # DEDUPE LAST, NOT FIRST. This was first done where the ring is created,
+        # which is too early to matter: subdivide() runs afterwards and INSERTS
+        # interpolated vertices rounded to the same 0.1m, so a short segment
+        # comes back out of it holding several identical points. OUE Link ended
+        # up with eleven of them in a 22-point ring and D13 read the zero-length
+        # segments between them as a ring that crosses itself.
+        b["p"] = simplify(b["p"]) if os.environ.get("SG_NO_FINAL_RINGS") else dedupe_ring(simplify(b["p"]))
     after_pts = sum(len(b["p"]) for b in buildings)
     print(f"  simplified rings: {before_pts} -> {after_pts} vertices "
           f"({100 - 100 * after_pts // max(before_pts, 1)}% smaller)")
@@ -2853,6 +2972,81 @@ def main():
                     c += 1
         return c
 
+    # DEDUPE BEFORE ATTEMPTING ANY REPAIR.
+    #
+    # Every ring reported as self-crossing was really a ring full of ZERO-LENGTH
+    # segments. subdivide() inserts interpolated vertices and rounds them to
+    # 0.1m, so a short edge comes back holding several identical points -- OUE
+    # Link's 22-point ring held eleven -- and _segs_cross cannot answer
+    # sensibly about a segment with no direction. The greedy repair below then
+    # spent ten passes dropping vertices and gave up, because dropping one of a
+    # duplicated pair leaves the other.
+    #
+    # Removing them first is not a workaround for the check: identical
+    # consecutive vertices extrude into zero-area triangles that cost a draw
+    # and shade unpredictably, so the ring is genuinely better without them.
+    _dd = 0
+    for _b in ([] if os.environ.get("SG_NO_FINAL_RINGS") else buildings):
+        _n0 = len(_b["p"])
+        _b["p"] = despike_ring(dedupe_ring(_b["p"]))
+        _dd += _n0 - len(_b["p"])
+    if _dd:
+        print(f"  dropped {_dd} degenerate ring vertices (zero-length segments and spurs)")
+
+    # CUT THE LOOP, DON'T NIBBLE AT IT.
+    #
+    # A crossing splits a ring into two closed loops. Dropping single vertices
+    # (the greedy repair below) only works when one of those loops is a spike;
+    # when it is a thin SLIVER LOOP -- out along one path, back along a
+    # slightly different one -- every candidate removal scores the same and the
+    # search sits on a plateau. OUE Link's upper deck survived twenty-eight
+    # passes of it, and survived the despike too, because its tail never quite
+    # doubles back on a single vertex.
+    #
+    # Cutting at the crossing and keeping the LARGER of the two loops is the
+    # standard repair and it terminates: every cut strictly shortens the ring.
+    # The bigger loop is the building; the smaller one is the artefact.
+    def _area2(ring):
+        return abs(sum(ring[i][0] * ring[(i + 1) % len(ring)][1]
+                       - ring[(i + 1) % len(ring)][0] * ring[i][1]
+                       for i in range(len(ring))))
+
+    def _uncross(ring):
+        r = list(ring)
+        for _ in range(40):
+            n = len(r)
+            if n < 5:
+                break
+            hit = None
+            for i in range(n):
+                for j in range(i + 2, n):
+                    if i == 0 and j == n - 1:
+                        continue
+                    if _segs_cross(r[i], r[(i + 1) % n], r[j], r[(j + 1) % n]):
+                        hit = (i, j)
+                        break
+                if hit:
+                    break
+            if not hit:
+                break
+            i, j = hit
+            inner = r[i + 1:j + 1]
+            outer = r[:i + 1] + r[j + 1:]
+            if len(inner) < 3 or len(outer) < 3:
+                break
+            r = inner if _area2(inner) > _area2(outer) else outer
+        return r
+
+    _cut = 0
+    for _b in ([] if os.environ.get("SG_NO_FINAL_RINGS") else buildings):
+        if _self_crossing(_b["p"]):
+            _r = _uncross(_b["p"])
+            if len(_r) >= 3 and not _self_crossing(_r) and _area2(_r) > 8:
+                _b["p"] = _r
+                _cut += 1
+    if _cut:
+        print(f"  {_cut} self-crossing footprints repaired by cutting at the crossing")
+
     _fixed = _left = 0
     for _b in ([] if os.environ.get("SG_NO_RING_REPAIR") else buildings):
         if not _self_crossing(_b["p"]):
@@ -2863,7 +3057,12 @@ def main():
         # the hunt kept reporting it.
         _ring = list(_b["p"])
         _plateau = 0
-        for _pass in range(10):
+        # TEN PASSES WAS NOT ENOUGH FOR A LONG RING. Each pass drops at most
+        # one vertex, so a 29-point footprint folded in several places -- OUE
+        # Link's upper deck -- ran out of passes with a crossing left. The loop
+        # already exits the moment the ring is clean, so a higher ceiling costs
+        # nothing on the rings that were fine after two.
+        for _pass in range(28):
             if not _self_crossing(_ring) or len(_ring) <= 4:
                 break
             _base = _crossings(_ring)
@@ -3347,6 +3546,38 @@ def main():
         "axis": {"p": [[round(x, 1), round(z, 1)] for x, z in axis],
                  "w": axis_width, "n": axis_name},
     }
+    # FINAL RING CLEANUP, AFTER EVERY APPEND.
+    #
+    # The dedupe, despike and uncross passes above run in the middle of main(),
+    # and building PARTS -- the masses that give a tower its podium, and link
+    # bridges like OUE Link -- are appended hundreds of lines later. They were
+    # skipping every repair in the file, which is why a ring kept being
+    # reported as self-crossing while the build insisted it had fixed
+    # everything: the build had, for the buildings it could still see.
+    #
+    # Cleaning here instead means every footprint gets the same treatment
+    # however it entered the list. Cheap: the passes exit immediately on a ring
+    # that is already sound, which is nearly all of them.
+    # SG_NO_FINAL_RINGS=1 rebuilds without this pass, so its effect on the
+    # downstream gates can be measured rather than argued about -- the same
+    # switch SG_NO_RING_REPAIR gives the greedy repair above.
+    _fd = _fc = 0
+    for _b in ([] if os.environ.get("SG_NO_FINAL_RINGS") else out["buildings"]):
+        _p0 = _b.get("p") or []
+        if len(_p0) < 3:
+            continue
+        _p1 = despike_ring(dedupe_ring(_p0))
+        _fd += len(_p0) - len(_p1)
+        if _self_crossing(_p1):
+            _p2 = _uncross(_p1)
+            if len(_p2) >= 3 and not _self_crossing(_p2) and _area2(_p2) > 8:
+                _p1 = _p2
+                _fc += 1
+        _b["p"] = _p1
+    if _fd or _fc:
+        print(f"  final ring pass: {_fd} degenerate vertices dropped"
+              + (f", {_fc} crossings cut" if _fc else ""))
+
     path = OUT_PATH
     kept = carry_terrain(path, out)
     json.dump(out, open(path, "w"), separators=(",", ":"))

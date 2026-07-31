@@ -3669,3 +3669,39 @@ limit was failing on the build rather than on anything the gate checks.
 - Orchard and River Valley still lack `building:part` masses (Overpass mirrors).
 - Unapplied research: rivervalley-road-frontage.md, CBD podium geometry,
   South Beach JW Marriott and CanningHill Piers need hand-authoring.
+
+## 2026-08-01 overnight — River Valley identified, four defect classes worked
+
+**River Valley 24% -> 31%.** research/rivervalley-road-frontage.md had been sitting
+unapplied. Eleven of its seventeen footprints are now named and sized through a new
+OSM_WAY table in process.py, keyed by way id because these buildings carry no name
+tag and only five of the fifteen postcodes are in our extract. The other four
+(Crystal Court, Loft @ Nathan, RV Residences blk 471, the 460-486 terrace) are WEST
+of the district's own bbox edge at lon 103.8280 and are not in the world at all;
+the build reports them as unmatched every time, by design.
+
+New recipe `boutiqueApartment` for the 2010s freehold blocks that are the dominant
+type on that stretch — RV Suites, Stellar RV, RV Edge, RV Residences, Loft @ Nathan.
+Two drafts were rejected on sight before the third: the first read as a multi-storey
+car park (bands too thick, white glass on a white wall), the second had the right
+massing and NO WINDOWS, which loses to the generic family however correct the form
+is. It now uses texBalcony as its wall.
+
+`walkupApartment` was written for River Valley Apartments (the one genuine 1970
+walk-up) and is NOT wired up — judged worse than the generic side by side. Held
+back per the rule in data/landmark.mjs.
+
+**Defects.**
+- D27 (6 buried props) was a FALSE POSITIVE and the check is what got fixed:
+  surfaceAt answers with the bridge DECK where one crosses, so a covered walkway
+  passing under the Fort Canning footbridge — ground 8-10m, roof ~12m, deck 14.6m —
+  read as 2.8m underground. A prop under a bridge is not buried.
+- D20 (roof with no post) was real: the roof panel was pushed unconditionally and
+  the posts tested separately, so a segment whose posts both landed in a
+  carriageway kept a floating roof. Posts first now; no posts, no roof.
+- D13 (self-crossing rings) was real and the cause was DUPLICATE consecutive
+  points after rounding to 0.1m — OUE Link's 22-point ring held eleven of them.
+  New dedupe_ring() in process.py. Nine footprints across five districts.
+- D34 (bus pair overlapping) was real: the build-time separation sorts by arc
+  length and walks FORWARD, so it never compared the last vehicle with the first.
+  The road is a loop. Seam pass added.

@@ -1089,6 +1089,36 @@ function finnedSlab(api, b) {
   api.world.add(api.extrude(api.grow(b.p, 1.02), 1.1, api.mat.trim, b.h));
 }
 
+// ONE OSM FOOTPRINT, TWO BUILDINGS: a low retail podium filling the plot with a
+// slim office tower standing on part of it. Singapore is full of these and OSM
+// almost always draws the whole complex as a single way, so the height that
+// reaches this world is either the mall's (and the tower vanishes) or the
+// tower's (and a 6,570 m2 plot becomes a 68m glass wall — which is exactly what
+// Valley Point looked like before this existed).
+//
+// Valley Point, 491/491B River Valley Road: "a 20-storey office tower" over "a
+// 2-storey shopping centre", both from Frasers Property's own portfolio page
+// and the building's own site (research/heights-mixed.md section 7). No metre
+// height is published for either part, so b.h is the storey count times the
+// usual floor height and the podium is measured in storeys too.
+function mallPodiumTower(api, b) {
+  const ob = orientedBox(b.p);
+  const POD = 7.4;                              // two retail storeys and the slab over them
+  api.world.add(api.extrude(b.p, POD, api.mat.paleStone));
+  // the capping band a mall roof always has, and which reads as the podium
+  // edge from the street
+  api.world.add(api.extrude(api.grow(b.p, 1.014), 0.9, api.mat.trim, POD));
+  // The tower sits toward one end rather than centred: it is an office block
+  // on a corner of the site, not a spire on a plinth. Bounded by the plot's
+  // short side so it can never overhang its own podium.
+  const tw = Math.min(36, ob.halfShort * 1.35);
+  const td = Math.min(22, ob.halfShort * 0.85);
+  const u = ob.midU - ob.halfLong * 0.30;
+  const top = Math.max(POD + 12, b.h);
+  slab(api, ob, u, ob.midV, tw, td, POD, top - POD, api.mat.towerGlass);
+  crown(api, ob, u, ob.midV, tw, td, top, api.mat.paleStone);
+}
+
 // THE 2010s FREEHOLD BOUTIQUE APARTMENT BLOCK — the dominant building type on
 // the western reach of River Valley Road, and a type this world did not have.
 //
@@ -2791,6 +2821,24 @@ function crystalMesh(api, b) {
   const rect = (u0, v0, hu, hv) => [P(u0 - hu, v0 - hv), P(u0 + hu, v0 - hv),
                                     P(u0 + hu, v0 + hv), P(u0 - hu, v0 + hv)];
   const side = ((sw.nx * -ob.uz + sw.nz * ob.ux) > 0) ? 1 : -1;
+  // TEST THE PANEL, NOT ITS CENTRE POINT.
+  //
+  // Both loops below asked onCarriageway about ONE point and then built a
+  // panel metres wide around it, so a panel whose middle clears the kerb still
+  // hung over Manila Street by half its width. P1b found it in the merged
+  // patchwork tile, and it is the same mistake this project already fixed for
+  // shopfront bays -- "one point per bay was tested while a bay is up to eight
+  // metres wide" (see the T1 note in data/audit_world.js).
+  //
+  // Checking both ends as well as the middle costs two extra road lookups per
+  // panel and is the difference between a guard and a gesture.
+  const panelClear = (u0, v0, hu) => {
+    for (const du of [-hu, 0, hu]) {
+      const [qx, qz] = P(u0 + du, v0);
+      if (onCarriageway(qx, qz, 0.2)) return false;
+    }
+    return true;
+  };
   // SEGMENTED, so each piece can be tested against the road. As one 135m strip
   // this stood in Manila Street and P1b caught it -- the bars beside it check
   // onCarriageway individually and the courses did not.
@@ -2799,8 +2847,7 @@ function crystalMesh(api, b) {
     for (let j = 0; j < SEG; j++) {
       const u = ob.midU + ((j + 0.5) / SEG - 0.5) * ob.halfLong * 1.9;
       const v = ob.midV + side * (ob.halfShort + 0.7);
-      const [qx, qz] = P(u, v);
-      if (onCarriageway(qx, qz, 0.2)) continue;
+      if (!panelClear(u, v, (ob.halfLong * 1.9) / (SEG * 2))) continue;
       api.merge(api.extrudeGeo(rect(u, v, (ob.halfLong * 1.9) / (SEG * 2), 0.22),
         0.18, (h / 6) * k), mesh, cx0, cz0);
     }
@@ -2815,8 +2862,7 @@ function crystalMesh(api, b) {
       const u = ob.midU + (j / 6 - 0.5) * ob.halfLong * 1.8;
       const hsh = Math.abs(((u * 31) | 0) + k * 97);
       const vv = ob.midV - side * (ob.halfShort + 0.25);
-      const [wx, wz] = P(u, vv);
-      if (onCarriageway(wx, wz, 0.2)) continue;
+      if (!panelClear(u, vv, ob.halfLong * 0.13)) continue;
       api.merge(api.extrudeGeo(rect(u, vv, ob.halfLong * 0.13, 0.22),
         h / 5.6, (h / 5.2) * k), signMat(PATCH[hsh % PATCH.length]), cx0, cz0);
     }
@@ -4542,6 +4588,7 @@ export const RECIPES = [
   // River Valley Road's western frontage. RV Residences is six blocks under one
   // name and they MUST share a family — the research is explicit that they are
   // one development stepping down the slope.
+  [/valley point/i, mallPodiumTower],
   [/rv suites|rv residences|rv edge|stellar rv|loft @ nathan|oxley thanksgiving/i, boutiqueApartment],
   [/far east shopping/i, farEastShopping],
   [/^concorde hotel/i, concordeHotel],

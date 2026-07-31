@@ -663,3 +663,50 @@ Three lessons, in order of how much time each would have saved:
 Corollary on instruments: the same panel measured `requestAnimationFrame` ticks
 and I read them as rendered frames — the fourth time that specific mistake has
 been made in this project. It now reports both, plus speed, plus the worst gap.
+
+## A cleanup that deletes a building is not a cleanup
+
+The ring work above (dedupe, despike, uncross) repaired nine broken footprints
+across five districts and cleared three defect classes. It also silently deleted
+a building, and the only thing that noticed was a ratchet: Chinatown's S8 fell
+from 63 street-level tenants with a shopfront to 62, and deploy refused.
+
+The deleted footprint was a 35m x 2m party wall, 78 m2, ten vertices. To
+`despike_ring` it looked exactly like a rounding artefact — the outline runs out
+along one side and comes back along the other, reversing direction at each end —
+so the rule "drop any vertex where the ring doubles straight back" unwound the
+whole thing until it had no area left to keep.
+
+The fix is one extra condition: a reversal only counts as an artefact if one of
+its two edges is SHORT (under 0.6m). That is what a rounding artefact actually
+is — `subdivide()` landing several interpolated points on the same decimetre.
+A real narrow building reverses across edges metres long.
+
+Three things worth keeping from this:
+
+1. **Measure the cleanup, don't argue about it.** `SG_NO_FINAL_RINGS=1` now
+   rebuilds without every ring pass, the same switch `SG_NO_RING_REPAIR` gives
+   the greedy repair. Two builds and one audit run turned "is this fix safe?"
+   into a number. The first two guesses about which pass caused it were both
+   wrong, and the switch is what showed that.
+2. **A geometric rule needs a scale, not just an angle.** "Doubles back" is a
+   shape; "doubles back over 20cm" is an artefact. The first version had no
+   length in it anywhere, which is why it could not tell a defect from a wall.
+3. **The ratchet earned its keep.** Nothing else in the suite noticed: the ring
+   checks were happy (that was the point), the defect hunt was at zero, and the
+   world looked right. A count of shopfronts, three steps removed from the
+   change, is what caught a missing building.
+
+### Do not rebuild a district while a deploy is auditing
+
+A deploy reported `FAIL 1 blockers` in the world audit; run again by hand a minute
+later, the same audit passed 42/42 with nothing changed. The difference was that
+the first run had a `build_district.py chinatown` finishing underneath it, so the
+audit read a world.json that was mid-rewrite.
+
+The stale-chunk guard catches the ordering mistake it was built for (chunks older
+than their district file). It cannot catch a district being rewritten DURING the
+audit, because the timestamps end up in the right order anyway.
+
+Deploy is a read-only operation on the data. Nothing that writes `data/*.json`
+may run at the same time — check with `pgrep -f build_district` first.

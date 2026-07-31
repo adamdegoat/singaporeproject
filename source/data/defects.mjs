@@ -859,7 +859,22 @@ const found = await page.evaluate(() => {
         m4.decompose(p4, q4, s4);
         p4.applyMatrix4(o.matrixWorld);
         if (p4.y < -900) continue;                  // parked out of the world on purpose
-        const d = window.__surfaceAt(p4.x, p4.z) - p4.y;
+        // A PROP UNDER A BRIDGE IS NOT BURIED, and this check said it was.
+        //
+        // surfaceAt answers with the DECK wherever a bridge crosses, so the
+        // covered walkway that passes beneath the Fort Canning footbridge --
+        // seated correctly on ground at 8-10m, roof at ~12m, deck overhead at
+        // 14.6m -- was reported as "2.8m under the surface". Six props, all
+        // of them built exactly where they belong.
+        //
+        // The question this check means to ask is whether a prop is below the
+        // ground IT STANDS ON. So when a deck exists ABOVE the prop, the deck
+        // is not that ground; the terrain is.
+        const _deck = window.__bridgeDeckAt(p4.x, p4.z);
+        const _surf = (_deck !== null && p4.y < _deck)
+          ? window.__terrain.at(p4.x, p4.z)
+          : window.__surfaceAt(p4.x, p4.z);
+        const d = _surf - p4.y;
         if (d > 1.2) {
           bad[sig] = (bad[sig] || 0) + 1;
           if (ex.length < 6) ex.push(`${sig} ${d.toFixed(1)}m under the surface at ${p4.x | 0},${p4.z | 0}`);
