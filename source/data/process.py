@@ -890,6 +890,82 @@ def storey_record(name, area):
     return None
 
 
+# BUILDING NAMES FROM POSTCODES, resolved by data/postcode_names.py.
+#
+# A Singapore postcode identifies ONE building and SLA's OneMap is the authority
+# on which. 888 footprints across the eight districts carry `addr:postcode` and
+# no name; 133 of those postcodes resolve to a real building name -- Marina Bay
+# Fire Station, the Ritz-Carlton Millenia, Customs House, China Square Food
+# Centre -- and every one of them was being drawn as anonymous fabric that no
+# recipe and no researched fact could ever reach.
+#
+# The other 593 answer NIL, which is CORRECT and is left alone: a shophouse is
+# an address, not a named building, and being unnamed is exactly what routes it
+# to the shophouse path instead of the landmark one.
+_PC_NAMES = None
+_PC_NAMED = []
+
+
+def postcode_name(tags):
+    """The building name OneMap gives for this footprint's postcode, or None."""
+    global _PC_NAMES
+    if _PC_NAMES is None:
+        pth = os.path.join(HERE, "postcode_names.json")
+        try:
+            _PC_NAMES = json.load(open(pth))
+        except Exception:
+            _PC_NAMES = {}
+    pc = (tags.get("addr:postcode") or "").strip()
+    rec = _PC_NAMES.get(pc)
+    if not rec:
+        return None
+    nm = rec.get("name")
+    if not nm:
+        return None
+    up = nm.upper()
+    # AN AREA IS NOT A BUILDING. OneMap answers some postcodes with the
+    # gazetted conservation area they sit in -- "KRETA AYER CONSERVATION AREA",
+    # "BOAT QUAY CONSERVATION AREA" -- and attaching that to one shophouse
+    # would put a district's name on a single footprint and let it reach
+    # landmark recipes as if it were a building.
+    if up.endswith("CONSERVATION AREA"):
+        return None
+    # Generic descriptions are not names either: a recipe keyed on a name would
+    # be matching a building type.
+    if up in {"MULTI STOREY CAR PARK", "MULTI-STOREY CAR PARK", "CAR PARK"}:
+        return None
+    # "(U/C)" is OneMap saying under construction, not part of the name.
+    nm = nm.replace("(U/C)", "").replace("(u/c)", "").strip(" -–")
+    if not nm:
+        return None
+    return _titlecase_sg(nm)
+
+
+# OneMap answers in capitals and this world's signage is mixed case. Keep the
+# small joining words down, keep anything that is already an acronym up, and do
+# not touch what follows an apostrophe.
+_SMALL = {"a", "an", "and", "at", "by", "de", "for", "in", "of", "on", "the", "to"}
+_KEEP_UP = {"HDB", "NTUC", "SMU", "NUS", "UOB", "OCBC", "DBS", "MRT", "JTC",
+            "URA", "PSA", "SPH", "AXA", "IOI", "OUE", "CPF", "MAS", "SIA"}
+
+
+def _titlecase_sg(s):
+    out = []
+    parts = s.split()
+    for i, w in enumerate(parts):
+        core = w.strip("(),.")
+        if core.upper() in _KEEP_UP:
+            out.append(w.upper())
+            continue
+        lw = w.lower()
+        if i and lw.strip("(),.") in _SMALL:
+            out.append(lw)
+            continue
+        # hyphenated names capitalise both halves: Ritz-Carlton, Toa-Payoh
+        out.append("-".join(seg[:1].upper() + seg[1:] for seg in lw.split("-")))
+    return " ".join(out)
+
+
 # IDENTITY KEYED BY OSM WAY ID, for buildings that carry no name at all.
 #
 # The whole western reach of River Valley Road -- Kim Seng to Zion -- was
@@ -2167,6 +2243,13 @@ def main():
                 _wd = tags.get("wikidata")
                 if _wd and _wd in NAMED_BY_WIKIDATA:
                     _nm = NAMED_BY_WIKIDATA[_wd]
+            # LAST, so a surveyed name always wins: OneMap's answer for this
+            # footprint's postcode. See postcode_name() above.
+            if not _nm:
+                _pn = postcode_name(tags)
+                if _pn:
+                    _nm = _pn
+                    _PC_NAMED.append(_pn)
             if _nm and any(s in _nm.lower() for s in NAME_STRIP):
                 NAMES_STRIPPED.append(_nm)
                 _nm = None
@@ -3673,6 +3756,9 @@ def main():
           f"{len(busstops)} bus stops, {len(mrt)} MRT, {len(taxis)} taxi ranks")
     print(f"  real structures: {len(bridges)} ped bridges, {len(covered)} covered walkways, "
           f"{len(shops)} named shops")
+    if _PC_NAMED:
+        print(f"  named {len(_PC_NAMED)} footprint(s) from their postcode via OneMap: "
+              + ", ".join(sorted(set(_PC_NAMED))[:3]) + ("..." if len(set(_PC_NAMED)) > 3 else ""))
     if NAMES_STRIPPED:
         print(f"  dropped {len(NAMES_STRIPPED)} OSM names that are not building names: "
               f"{', '.join(sorted(set(NAMES_STRIPPED))[:4])}")

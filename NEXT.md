@@ -3760,3 +3760,97 @@ gives. The guard is working exactly as intended; the data on disk is untouched.
 This is an upstream outage, not a bug here. Three of the four Overpass mirrors
 have been down since 2026-07-31. Retry occasionally rather than in a tight loop:
 the CPU is better spent elsewhere and hammering a struggling mirror is rude.
+
+## 2026-08-01 morning — height provenance, and a guard eating good data
+
+**A bug in my own overnight work.** The OSM_WAY table wrote `b["hsrc"]`, but the
+provenance that reaches the file is written from a LOCAL variable as
+`b["hs"] = hsrc`. So eleven researched heights shipped with no provenance and
+the accuracy ledger scored them as guesses. Same "carried into the scene file and
+then ignored" sin this project already documented for `roof:colour`. Fixed; all
+eight River Valley buildings now report their real source.
+
+**SOURCED_LOW.** The squat guard ("under 8m on over 600 m2 is a bad tag")
+replaced NCO Club's sourced 6.8m with a 30m type default AND reported the
+invented figure as survey data. It is a real two-storey 1952 conserved services
+club, tagged `building:levels=2` + `roof:levels=1`. The guard's own comment said
+"fix those individually with a source", so there is now a named list where each
+entry cites what makes it true — deliberately not a blanket exemption for
+explicit levels, which would restore the `-1`s the guard exists to catch.
+
+**Orchard frontage, from research/orchard-frontage-facades.md's correction table:**
+- Tong Building 64.6 -> 54.9m. 64.6 was 19 levels x 3.4; 180 feet IS published.
+- Temasek Shophouse 40 -> 10.2m. OSM's height tag on it is an error; it is a
+  three-storey conserved shophouse, and a 40m mass behind a 15.7m facade reads
+  as a wall growing out of a shophouse.
+- Orchard Shopping Centre 30 (TYPE_DEFAULT) -> nine published storeys.
+- The Heeren OUT of LANDMARKS. It sat at 60m with no citation in the table that
+  means "published measurement", and 60m over 20 storeys is 3.0m a floor. The
+  owner publishes the storey count and nobody publishes metres.
+- Masjid Angullia 20 (default) -> four storeys, MUIS fact sheet 23 Feb 2018.
+
+**Confirmed correct, no change needed:** Bugis Street's 5m — it is a canopy
+(`building=roof`), not a building. St Andrew's spire, South Beach Tower 217.5m,
+the 45-storey JW Marriott, Peninsula Plaza and Bugis Junction Tower were all
+already applied in an earlier session.
+
+**Method note:** the "which research has reached the build" heuristic that
+greps names out of research files and looks for them in source is MISLEADING and
+sent me chasing already-applied work twice. Query the DATA — `hs` provenance per
+building — not the source files.
+
+## Apparent gaps that are NOT gaps — checked 2026-08-01, do not re-chase
+
+The scorecard's low numbers in Chinatown invite three wrong conclusions. All
+three were checked against the data and all three are fine:
+
+1. **"386 of 421 named Chinatown buildings have no recipe."** True and correct.
+   Most are ordinary CBD office towers, and a generic glass tower is what they
+   actually look like. A bespoke recipe would not make One Raffles Quay more
+   recognisable.
+2. **"Asia Square is 17m, One Raffles Quay 20m, Pinnacle@Duxton 24m."** Those
+   are PODIUM footprints. The district holds 135 masses over 100m and 505
+   `building:part` masses; the Pinnacle's seven towers are there at 156m, Asia
+   Square's at 250-280m. The skyline is modelled.
+3. **"Little India's frontage heights are only 23%."** Its conserved shophouses
+   have no published metre heights anywhere, and 47% of them already carry an
+   OSM storey count, which the ledger scores at half weight by design. That is
+   an honesty ceiling, not a quality gap.
+
+**Also checked and found sound:** the red shapes along Serangoon Road that look
+like oversized chevrons in a wide frame are the 30 shopfront awnings seen at an
+angle. At street level the shopfronts read correctly. No defect.
+
+**Real remaining candidate:** the Pinnacle@Duxton's two 500m SKY GARDENS linking
+its seven towers at floors 26 and 50 are its signature and are not modelled. The
+towers are UNNAMED `building:part` masses, so no name-keyed recipe can reach
+them — this needs either authored geometry or a position-keyed hook.
+
+## Postcode naming — 95 anonymous buildings given their real identities
+
+`data/postcode_names.py` asks SLA's OneMap what building stands at each postcode
+OSM left unnamed. 888 footprints across the eight districts carry an
+`addr:postcode` and no name; 726 distinct postcodes; **133 resolve to a real
+building name and 95 footprints took one.**
+
+Rivergate (150m), Canninghill Piers (163m), Rivière (122m), The Colonnade,
+Regency Park, Leonie Towers, Paterson Suites, Piccadilly Grand, Midtown Modern,
+Concourse Skyline, Capital Square, Selegie House, Customs House, Marina Square,
+the Ritz-Carlton Millenia, Marina Bay Fire Station — every one of them was being
+drawn as fabric that no recipe and no researched fact could reach.
+
+**Two filters, both about not inventing things:**
+- OneMap answers some postcodes with the gazetted CONSERVATION AREA they sit in.
+  An area is not a building; stamping "Kreta Ayer Conservation Area" on one
+  shophouse would let a district name reach a landmark recipe. Seven rejected.
+- "MULTI STOREY CAR PARK" is a building TYPE, not a name. Rejected.
+- The 593 postcodes that answer NIL stay unnamed, which is CORRECT: a shophouse
+  is an address, not a named building, and being unnamed is precisely what
+  routes it to the shophouse path instead of the landmark one.
+
+**The scorecard barely moved and that is informative.** "named recipe" measures
+named buildings that reach a recipe, so naming 95 buildings grew the
+DENOMINATOR: orchard 39% -> 37%, robertson 27% -> 20%. The world got better and
+the score went down. Do not chase that number by writing recipes for buildings
+that do not need one — an ordinary residential tower looks like an ordinary
+residential tower.

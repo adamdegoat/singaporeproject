@@ -1,0 +1,2906 @@
+{
+"018962": {
+"addr": "70 MARINA VIEW MARINA BAY FIRE STATION SINGAPORE 018962",
+"name": "MARINA BAY FIRE STATION"
+},
+"019959": {
+"addr": "22 MARINA VIEW W RESIDENCES MARINA VIEW \u2013 SINGAPORE (U/C) SINGAPORE 019959",
+"name": "W RESIDENCES MARINA VIEW \u2013 SINGAPORE (U/C)"
+},
+"039595": {
+"addr": "7 RAFFLES BOULEVARD MARINA SQUARE SINGAPORE 039595",
+"name": "MARINA SQUARE"
+},
+"039799": {
+"addr": "7 RAFFLES AVENUE THE RITZ-CARLTON, MILLENIA SINGAPORE SINGAPORE 039799",
+"name": "THE RITZ-CARLTON, MILLENIA SINGAPORE"
+},
+"048441": {
+"addr": "51 TELOK AYER STREET CHINA SQUARE FOOD CENTRE SINGAPORE 048441",
+"name": "CHINA SQUARE FOOD CENTRE"
+},
+"049323": {
+"addr": "70 COLLYER QUAY CUSTOMS HOUSE SINGAPORE 049323",
+"name": "CUSTOMS HOUSE"
+},
+"049369": {
+"addr": "13B CIRCULAR ROAD BOAT QUAY CONSERVATION AREA SINGAPORE 049369",
+"name": "BOAT QUAY CONSERVATION AREA"
+},
+"049481": {
+"addr": "23 CHURCH STREET CAPITAL SQUARE SINGAPORE 049481",
+"name": "CAPITAL SQUARE"
+},
+"049818": {
+"addr": "28A BOAT QUAY BOAT QUAY CONSERVATION AREA SINGAPORE 049818",
+"name": "BOAT QUAY CONSERVATION AREA"
+},
+"049819": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"049820": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"049821": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"049823": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"049828": {
+"addr": "39A BOAT QUAY BOAT QUAY CONSERVATION AREA SINGAPORE 049828",
+"name": "BOAT QUAY CONSERVATION AREA"
+},
+"049838": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"049844": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"049846": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"049856": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"049857": {
+"addr": "69 BOAT QUAY BOAT QUAY CONSERVATION AREA SINGAPORE 049857",
+"name": "BOAT QUAY CONSERVATION AREA"
+},
+"049858": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"049860": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"049864": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"049866": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"050005": {
+"name": null,
+"why": "onemap says NIL"
+},
+"050033": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"050034": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"050532": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"050533": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"050535": {
+"name": null,
+"why": "onemap says NIL"
+},
+"050536": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"051335": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"052335": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058267": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058341": {
+"name": null,
+"why": "onemap says NIL"
+},
+"058456": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058469": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058476": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058479": {
+"name": null,
+"why": "onemap says NIL"
+},
+"058569": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058581": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058584": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058588": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058595": {
+"addr": "50A TEMPLE STREET KRETA AYER CONSERVATION AREA SINGAPORE 058595",
+"name": "KRETA AYER CONSERVATION AREA"
+},
+"058598": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058600": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058602": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058610": {
+"addr": "65B TEMPLE STREET KRETA AYER CONSERVATION AREA SINGAPORE 058610",
+"name": "KRETA AYER CONSERVATION AREA"
+},
+"058670": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058677": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058689": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058716": {
+"name": null,
+"why": "onemap says NIL"
+},
+"058760": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058776": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058803": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058806": {
+"addr": "257 SOUTH BRIDGE ROAD TELOK AYER CONSERVATION AREA SINGAPORE 058806",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"058809": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058813": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058814": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058816": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058817": {
+"addr": "268A SOUTH BRIDGE ROAD KRETA AYER CONSERVATION AREA SINGAPORE 058817",
+"name": "KRETA AYER CONSERVATION AREA"
+},
+"058822": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058828": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058833": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058837": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058922": {
+"addr": "8 SMITH STREET KRETA AYER CONSERVATION AREA SINGAPORE 058922",
+"name": "KRETA AYER CONSERVATION AREA"
+},
+"058926": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058927": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058928": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058930": {
+"addr": "16 SMITH STREET KRETA AYER CONSERVATION AREA SINGAPORE 058930",
+"name": "KRETA AYER CONSERVATION AREA"
+},
+"058933": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058937": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058938": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058942": {
+"addr": "28A SMITH STREET KRETA AYER CONSERVATION AREA SINGAPORE 058942",
+"name": "KRETA AYER CONSERVATION AREA"
+},
+"058944": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058945": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058950": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058954": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058956": {
+"addr": "46B SMITH STREET JYU CAPSULE HOTEL SINGAPORE 058956",
+"name": "JYU CAPSULE HOTEL"
+},
+"058958": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058959": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058961": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058967": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"058968": {
+"addr": "70A SMITH STREET KRETA AYER CONSERVATION AREA SINGAPORE 058968",
+"name": "KRETA AYER CONSERVATION AREA"
+},
+"058971": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059011": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059012": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059014": {
+"addr": "12 SAGO STREET KRETA AYER CONSERVATION AREA SINGAPORE 059014",
+"name": "KRETA AYER CONSERVATION AREA"
+},
+"059015": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059017": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059026": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059027": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059188": {
+"addr": "28 PAGODA STREET JAMAE CHULIA HERITAGE SINGAPORE 059188",
+"name": "JAMAE CHULIA HERITAGE"
+},
+"059191": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059205": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059222": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059225": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059228": {
+"addr": "69 PAGODA STREET KRETA AYER CONSERVATION AREA SINGAPORE 059228",
+"name": "KRETA AYER CONSERVATION AREA"
+},
+"059233": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059234": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059238": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059239": {
+"addr": "80A PAGODA STREET KRETA AYER CONSERVATION AREA SINGAPORE 059239",
+"name": "KRETA AYER CONSERVATION AREA"
+},
+"059383": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059384": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059385": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059386": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059387": {
+"name": null,
+"why": "onemap says NIL"
+},
+"059388": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059389": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059422": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059423": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059428": {
+"addr": "201 NEW BRIDGE ROAD KRETA AYER CONSERVATION AREA SINGAPORE 059428",
+"name": "KRETA AYER CONSERVATION AREA"
+},
+"059429": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059441": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059488": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059491": {
+"addr": "11 MOSQUE STREET KRETA AYER CONSERVATION AREA SINGAPORE 059491",
+"name": "KRETA AYER CONSERVATION AREA"
+},
+"059493": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059494": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059497": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059498": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059499": {
+"name": null,
+"why": "no result for this postcode"
+},
+"059505": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059511": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059513": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059522": {
+"name": null,
+"why": "onemap says NIL"
+},
+"059526": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059648": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059654": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059661": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059663": {
+"addr": "20 HONGKONG STREET FRAGRANCE HOTEL - RIVERSIDE SINGAPORE 059663",
+"name": "FRAGRANCE HOTEL - RIVERSIDE"
+},
+"059672": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059676": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059677": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059679": {
+"name": null,
+"why": "onemap says NIL"
+},
+"059680": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059682": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059683": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059684": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059685": {
+"addr": "47 HONGKONG STREET HOTEL BENCOOLEN @ HONG KONG STREET SINGAPORE 059685",
+"name": "HOTEL BENCOOLEN @ HONG KONG STREET"
+},
+"059764": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059905": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"059915": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068574": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068590": {
+"addr": "121 TELOK AYER STREET TELOK AYER CONSERVATION AREA SINGAPORE 068590",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"068601": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068602": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068603": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068606": {
+"addr": "147 TELOK AYER STREET TELOK AYER CONSERVATION AREA SINGAPORE 068606",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"068615": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068620": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068621": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068624": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068626": {
+"addr": "178 TELOK AYER STREET TELOK AYER CONSERVATION AREA SINGAPORE 068626",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"068627": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068628": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068629": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068630": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068637": {
+"addr": "198 TELOK AYER STREET TELOK AYER CONSERVATION AREA SINGAPORE 068637",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"068640": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068641": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068645": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068724": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068726": {
+"addr": "7 STANLEY STREET TELOK AYER CONSERVATION AREA SINGAPORE 068726",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"068730": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068732": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068734": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068737": {
+"name": null,
+"why": "onemap says NIL"
+},
+"068895": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068897": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068898": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"068913": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069247": {
+"name": null,
+"why": "onemap says NIL"
+},
+"069249": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069250": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069333": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069410": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069413": {
+"addr": "27A CLUB STREET TELOK AYER CONSERVATION AREA SINGAPORE 069413",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"069414": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069421": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069424": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069431": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069448": {
+"addr": "80 CLUB STREET TELOK AYER CONSERVATION AREA SINGAPORE 069448",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"069449": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069451": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069453": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069454": {
+"addr": "86 CLUB STREET TELOK AYER CONSERVATION AREA SINGAPORE 069454",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"069455": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069456": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069457": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069460": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069461": {
+"addr": "93 CLUB STREET TELOK AYER CONSERVATION AREA SINGAPORE 069461",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"069462": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069472": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069548": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069612": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069618": {
+"addr": "17 BOON TAT STREET TELOK AYER CONSERVATION AREA SINGAPORE 069618",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"069621": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069624": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069688": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069689": {
+"addr": "7 ANN SIANG ROAD TELOK AYER CONSERVATION AREA SINGAPORE 069689",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"069690": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069692": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069693": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069698": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069702": {
+"addr": "22 ANN SIANG ROAD TELOK AYER CONSERVATION AREA SINGAPORE 069702",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"069708": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069716": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069719": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069784": {
+"addr": "1B ANN SIANG HILL TELOK AYER CONSERVATION AREA SINGAPORE 069784",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"069858": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069868": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069883": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069891": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069895": {
+"addr": "76B AMOY STREET TELOK AYER CONSERVATION AREA SINGAPORE 069895",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"069896": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069912": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069913": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069914": {
+"addr": "94 AMOY STREET TELOK AYER CONSERVATION AREA SINGAPORE 069914",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"069915": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069916": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069917": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069918": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069919": {
+"name": null,
+"why": "no result for this postcode"
+},
+"069920": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069921": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069922": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069923": {
+"addr": "103 AMOY STREET TELOK AYER CONSERVATION AREA SINGAPORE 069923",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"069924": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069925": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069926": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069927": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069928": {
+"addr": "108 AMOY STREET TELOK AYER CONSERVATION AREA SINGAPORE 069928",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"069929": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069930": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069931": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069932": {
+"addr": "112 AMOY STREET TELOK AYER CONSERVATION AREA SINGAPORE 069932",
+"name": "TELOK AYER CONSERVATION AREA"
+},
+"069933": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069934": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069935": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"069936": {
+"name": null,
+"why": "no result for this postcode"
+},
+"078977": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"078989": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"078991": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"079001": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"079003": {
+"addr": "64 TRAS STREET TANJONG PAGAR CONSERVATION AREA SINGAPORE 079003",
+"name": "TANJONG PAGAR CONSERVATION AREA"
+},
+"079007": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"079013": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"079015": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"079017": {
+"addr": "78B TRAS STREET TANJONG PAGAR CONSERVATION AREA SINGAPORE 079017",
+"name": "TANJONG PAGAR CONSERVATION AREA"
+},
+"079019": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"080333": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"080334": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"085101": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"085201": {
+"addr": "1B CANTONMENT ROAD THE PINNACLE@DUXTON SINGAPORE 085201",
+"name": "THE PINNACLE@DUXTON"
+},
+"085301": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"085401": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"085501": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"085601": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"085701": {
+"addr": "1G CANTONMENT ROAD THE PINNACLE@DUXTON SINGAPORE 085701",
+"name": "THE PINNACLE@DUXTON"
+},
+"088380": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088391": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088392": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088443": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088449": {
+"addr": "26 TANJONG PAGAR ROAD TANJONG PAGAR CONSERVATION AREA SINGAPORE 088449",
+"name": "TANJONG PAGAR CONSERVATION AREA"
+},
+"088450": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088456": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088460": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088465": {
+"name": null,
+"why": "no result for this postcode"
+},
+"088469": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088474": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088478": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088480": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088481": {
+"addr": "60 TANJONG PAGAR ROAD TANJONG PAGAR CONSERVATION AREA SINGAPORE 088481",
+"name": "TANJONG PAGAR CONSERVATION AREA"
+},
+"088482": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088483": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088484": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088487": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088488": {
+"addr": "67 TANJONG PAGAR ROAD TANJONG PAGAR CONSERVATION AREA SINGAPORE 088488",
+"name": "TANJONG PAGAR CONSERVATION AREA"
+},
+"088489": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088493": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088494": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088497": {
+"addr": "76 TANJONG PAGAR ROAD TANJONG PAGAR CONSERVATION AREA SINGAPORE 088497",
+"name": "TANJONG PAGAR CONSERVATION AREA"
+},
+"088498": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088499": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088500": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088502": {
+"addr": "81B TANJONG PAGAR ROAD TANJONG PAGAR CONSERVATION AREA SINGAPORE 088502",
+"name": "TANJONG PAGAR CONSERVATION AREA"
+},
+"088504": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088507": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088508": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088510": {
+"addr": "89 TANJONG PAGAR ROAD TANJONG PAGAR CONSERVATION AREA SINGAPORE 088510",
+"name": "TANJONG PAGAR CONSERVATION AREA"
+},
+"088511": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088512": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088515": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088516": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088517": {
+"name": null,
+"why": "onemap says NIL"
+},
+"088518": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088519": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088521": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088524": {
+"addr": "104 TANJONG PAGAR ROAD TANJONG PAGAR CONSERVATION AREA SINGAPORE 088524",
+"name": "TANJONG PAGAR CONSERVATION AREA"
+},
+"088525": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088527": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088529": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088532": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088533": {
+"addr": "124A TANJONG PAGAR ROAD TANJONG PAGAR CONSERVATION AREA SINGAPORE 088533",
+"name": "TANJONG PAGAR CONSERVATION AREA"
+},
+"088534": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088539": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088746": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088750": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088751": {
+"name": null,
+"why": "onemap says NIL"
+},
+"088752": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088759": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088808": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088810": {
+"name": null,
+"why": "onemap says NIL"
+},
+"088812": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088824": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088859": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088897": {
+"name": null,
+"why": "onemap says NIL"
+},
+"088905": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"088995": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089007": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089114": {
+"name": null,
+"why": "onemap says NIL"
+},
+"089135": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089137": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089138": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089139": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089141": {
+"name": null,
+"why": "onemap says NIL"
+},
+"089143": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089146": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089154": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089158": {
+"addr": "55 KEONG SAIK ROAD KESA HOUSE SINGAPORE 089158",
+"name": "KESA HOUSE"
+},
+"089165": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089168": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089263": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089265": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089267": {
+"name": null,
+"why": "onemap says NIL"
+},
+"089483": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089496": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089513": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089516": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089524": {
+"addr": "60A DUXTON ROAD TANJONG PAGAR CONSERVATION AREA SINGAPORE 089524",
+"name": "TANJONG PAGAR CONSERVATION AREA"
+},
+"089529": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089540": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089588": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089589": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089591": {
+"addr": "5 DUXTON HILL TANJONG PAGAR CONSERVATION AREA SINGAPORE 089591",
+"name": "TANJONG PAGAR CONSERVATION AREA"
+},
+"089614": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089662": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089665": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089667": {
+"addr": "7 CRAIG ROAD TANJONG PAGAR CONSERVATION AREA SINGAPORE 089667",
+"name": "TANJONG PAGAR CONSERVATION AREA"
+},
+"089669": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089671": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089676": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089681": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089688": {
+"addr": "50 CRAIG ROAD TANJONG PAGAR CONSERVATION AREA SINGAPORE 089688",
+"name": "TANJONG PAGAR CONSERVATION AREA"
+},
+"089689": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089764": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089768": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"089822": {
+"name": null,
+"why": "onemap says NIL"
+},
+"150078": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"150081": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"150101": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"150102": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"150103": {
+"name": null,
+"why": "onemap says NIL"
+},
+"150105": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"150106": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"150138": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"150139": {
+"addr": "139 ALEXANDRA ROAD ALEXANDRA PEAKS SINGAPORE 150139",
+"name": "ALEXANDRA PEAKS"
+},
+"150140": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"150141": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"150142": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"151104": {
+"addr": "104A HENDERSON CRESCENT MULTI STOREY CAR PARK SINGAPORE 151104",
+"name": "MULTI STOREY CAR PARK"
+},
+"151138": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"151140": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"152138": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"152140": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"153150": {
+"name": null,
+"why": "no result for this postcode"
+},
+"159016": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"160001": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"160003": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"160005": {
+"name": null,
+"why": "onemap says NIL"
+},
+"160022": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"160051": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"160052": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"160053": {
+"name": null,
+"why": "onemap says NIL"
+},
+"160054": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"160077": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"160087": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"161001": {
+"addr": "1 JALAN KUKOH HAWKER CENTRE (BLK 1 JALAN KUKOH) SINGAPORE 161001",
+"name": "HAWKER CENTRE (BLK 1 JALAN KUKOH)"
+},
+"161002": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"161004": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"161078": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"161079": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"164078": {
+"addr": "78A INDUS ROAD MULTI STOREY CAR PARK SINGAPORE 164078",
+"name": "MULTI STOREY CAR PARK"
+},
+"168977": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"169075": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"169423": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"169424": {
+"addr": "3 JIAK KIM STREET RIVI\u00c8RE SINGAPORE 169424",
+"name": "RIVI\u00c8RE"
+},
+"169555": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"169557": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"169558": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"169564": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"169630": {
+"addr": "397 HAVELOCK ROAD SPC HAVELOCK SINGAPORE 169630",
+"name": "SPC HAVELOCK"
+},
+"179094": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"179230": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"179360": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"179882": {
+"addr": "1 CLARKE QUAY CANNINGHILL PIERS (U/C) SINGAPORE 179882",
+"name": "CANNINGHILL PIERS (U/C)"
+},
+"179883": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"179884": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"179885": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"179934": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"180008": {
+"addr": "8 SELEGIE ROAD SELEGIE HOUSE SINGAPORE 180008",
+"name": "SELEGIE HOUSE"
+},
+"180009": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"180010": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"180270": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"180271": {
+"name": null,
+"why": "onemap says NIL"
+},
+"182269": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"187949": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"188062": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"188105": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"188144": {
+"addr": "16 TAN QUEE LAN STREET MIDTOWN MODERN SINGAPORE 188144",
+"name": "MIDTOWN MODERN"
+},
+"188535": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"188726": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"188749": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"188940": {
+"addr": "30 MIDDLE ROAD THE M SINGAPORE 188940",
+"name": "THE M"
+},
+"188941": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"188945": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"188947": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"189557": {
+"addr": "75 BRAS BASAH ROAD INCOME CENTRE SINGAPORE 189557",
+"name": "INCOME CENTRE"
+},
+"189641": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"189657": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"189677": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"189754": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"190012": {
+"addr": "12 NORTH BRIDGE ROAD GOLDEN BEACH VISTA SINGAPORE 190012",
+"name": "GOLDEN BEACH VISTA"
+},
+"190014": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"190017": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"190018": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"198477": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"198710": {
+"addr": "742 NORTH BRIDGE ROAD KAMPONG GLAM CONSERVATION AREA SINGAPORE 198710",
+"name": "KAMPONG GLAM CONSERVATION AREA"
+},
+"198713": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"199020": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"199314": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"199554": {
+"addr": "298 BEACH ROAD CONCOURSE SKYLINE SINGAPORE 199554",
+"name": "CONCOURSE SKYLINE"
+},
+"199598": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"199599": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"199830": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200001": {
+"addr": "1 MAUDE ROAD D'JOY CHILDREN'S CENTRE SINGAPORE 200001",
+"name": "D'JOY CHILDREN'S CENTRE"
+},
+"200002": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200007": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200026": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200027": {
+"name": null,
+"why": "onemap says NIL"
+},
+"200028": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200029": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200030": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200031": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200036": {
+"addr": "36 KELANTAN ROAD MULTI STOREY CAR PARK SINGAPORE 200036",
+"name": "MULTI STOREY CAR PARK"
+},
+"200037": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200632": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200633": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200634": {
+"addr": "634 VEERASAMY ROAD ROWELL COURT SINGAPORE 200634",
+"name": "ROWELL COURT"
+},
+"200635": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200636": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200637": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200638": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200639": {
+"name": null,
+"why": "onemap says NIL"
+},
+"200640": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200641": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200642": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200818": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"200819": {
+"addr": "819 KING GEORGE'S AVENUE KING GEORGE'S HEIGHTS SINGAPORE 200819",
+"name": "KING GEORGE'S HEIGHTS"
+},
+"201036": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"201037": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"201818": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"202036": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"202037": {
+"addr": "37B WELD ROAD RIVER PEAKS II SINGAPORE 202037",
+"name": "RIVER PEAKS II"
+},
+"203037": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"207542": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"207553": {
+"addr": "131 TYRWHITT ROAD PETAIN ROAD/TYRWHITT ROAD CONSERVATION AREA SINGAPORE 207553",
+"name": "PETAIN ROAD/TYRWHITT ROAD CONSERVATION AREA"
+},
+"207636": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"208272": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"208581": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"208678": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"208795": {
+"name": null,
+"why": "no result for this postcode"
+},
+"208857": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"208864": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"209110": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"209335": {
+"addr": "5 DUNLOP STREET LITTLE INDIA CONSERVATION AREA SINGAPORE 209335",
+"name": "LITTLE INDIA CONSERVATION AREA"
+},
+"210009": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"210010": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"210011": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"210012": {
+"addr": "12 FARRER PARK ROAD FARRER PARK VIEW SINGAPORE 210012",
+"name": "FARRER PARK VIEW"
+},
+"210013": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"210014": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"210015": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"210016": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"210017": {
+"name": null,
+"why": "no result for this postcode"
+},
+"210018": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"210019": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"210049": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"210050": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"210661": {
+"addr": "661 BUFFALO ROAD ZHUJIAO CENTRE (TEKKA MARKET) SINGAPORE 210661",
+"name": "ZHUJIAO CENTRE (TEKKA MARKET)"
+},
+"210662": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"210663": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"210664": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"210668": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"210671": {
+"addr": "671 KLANG LANE MULTI STOREY CAR PARK SINGAPORE 210671",
+"name": "MULTI STOREY CAR PARK"
+},
+"210672": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"211014": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"211016": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"211018": {
+"addr": "18A FARRER PARK ROAD FARRER PARK FIELDS SINGAPORE 211018",
+"name": "FARRER PARK FIELDS"
+},
+"211019": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"211050": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"211671": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"211672": {
+"name": null,
+"why": "onemap says NIL"
+},
+"212016": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"212018": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"212019": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"212671": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"212672": {
+"name": null,
+"why": "onemap says NIL"
+},
+"213016": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"213018": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"213019": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"214016": {
+"addr": "16D FARRER PARK ROAD FARRER PARK FIELDS SINGAPORE 214016",
+"name": "FARRER PARK FIELDS"
+},
+"217564": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"218583": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"218842": {
+"addr": "2 OWEN ROAD OWEN HOUSE BY HABYT SINGAPORE 218842",
+"name": "OWEN HOUSE BY HABYT"
+},
+"218914": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"218918": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"218922": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"218924": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"218927": {
+"name": null,
+"why": "onemap says NIL"
+},
+"218931": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"219499": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"219541": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"219568": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"219569": {
+"addr": "3 NORTHUMBERLAND ROAD PICCADILLY GRAND SINGAPORE 219569",
+"name": "PICCADILLY GRAND"
+},
+"219570": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228151": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228152": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228154": {
+"name": null,
+"why": "onemap says NIL"
+},
+"228155": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228156": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228157": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228163": {
+"addr": "95 SOPHIA ROAD MOUNT SOPHIA SUITES SINGAPORE 228163",
+"name": "MOUNT SOPHIA SUITES"
+},
+"228164": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228168": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228170": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228184": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228185": {
+"addr": "130 SOPHIA ROAD ORCHARD SOPHIA (U/C) SINGAPORE 228185",
+"name": "ORCHARD SOPHIA (U/C)"
+},
+"228189": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228191": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228192": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228194": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228195": {
+"addr": "13 SOPHIA ROAD SOPHIA RESIDENCE SINGAPORE 228195",
+"name": "SOPHIA RESIDENCE"
+},
+"228196": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228220": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"228450": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"229508": {
+"addr": "1A SOPHIA ROAD THE COLLECTIVE AT ONE SOPHIA (U/C) SINGAPORE 229508",
+"name": "THE COLLECTIVE AT ONE SOPHIA (U/C)"
+},
+"229509": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"229538": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"229539": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"229545": {
+"addr": "21 CLAYMORE ROAD THE TATE RESIDENCES SINGAPORE 229545",
+"name": "THE TATE RESIDENCES"
+},
+"229546": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"229572": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"229723": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"229745": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"229774": {
+"addr": "31 CAIRNHILL CIRCLE CAIRNHILL RESIDENCES SINGAPORE 229774",
+"name": "CAIRNHILL RESIDENCES"
+},
+"229775": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"229784": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"229785": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"229789": {
+"addr": "61 CAIRNHILL CIRCLE THE PEAK @ CAIRNHILL II SINGAPORE 229789",
+"name": "THE PEAK @ CAIRNHILL II"
+},
+"229811": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"229813": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"229814": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"237963": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"237989": {
+"addr": "4 MARTIN PLACE MARTIN PLACE RESIDENCES SINGAPORE 237989",
+"name": "MARTIN PLACE RESIDENCES"
+},
+"237992": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238026": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238096": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238102": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238107": {
+"addr": "22 SAINT THOMAS WALK SKYPARK SINGAPORE 238107",
+"name": "SKYPARK"
+},
+"238111": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238112": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238118": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238120": {
+"addr": "40 SAINT THOMAS WALK SAINT THOMAS COURT SINGAPORE 238120",
+"name": "SAINT THOMAS COURT"
+},
+"238142": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238146": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238166": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238255": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238257": {
+"addr": "97 ROBERTSON QUAY RIVERGATE SINGAPORE 238257",
+"name": "RIVERGATE"
+},
+"238291": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238318": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238346": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238357": {
+"addr": "325 RIVER VALLEY ROAD YONG AN PARK SINGAPORE 238357",
+"name": "YONG AN PARK"
+},
+"238359": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238361": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238363": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238365": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238367": {
+"addr": "338 RIVER VALLEY ROAD VALLEY HOUSE SINGAPORE 238367",
+"name": "VALLEY HOUSE"
+},
+"238428": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238432": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238438": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238509": {
+"addr": "20 PATERSON ROAD PATERSON LINC SINGAPORE 238509",
+"name": "PATERSON LINC"
+},
+"238518": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238539": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238549": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238550": {
+"addr": "55 PATERSON ROAD PATERSON SUITES SINGAPORE 238550",
+"name": "PATERSON SUITES"
+},
+"238551": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238567": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238623": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238628": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238664": {
+"name": null,
+"why": "onemap says NIL"
+},
+"238665": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238870": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238898": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238993": {
+"addr": "53 MOHAMED SULTAN ROAD SULTAN-LINK SINGAPORE 238993",
+"name": "SULTAN-LINK"
+},
+"238995": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"238997": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239071": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239091": {
+"addr": "2 LLOYD ROAD LLOYD'S INN SINGAPORE 239091",
+"name": "LLOYD'S INN"
+},
+"239114": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239194": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239220": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239222": {
+"addr": "20 LEONIE HILL LEONIE TOWERS SINGAPORE 239222",
+"name": "LEONIE TOWERS"
+},
+"239223": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239227": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239228": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239229": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239230": {
+"addr": "36 LEONIE HILL RIVA LODGE SINGAPORE 239230",
+"name": "RIVA LODGE"
+},
+"239264": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239266": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239268": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239270": {
+"addr": "18 LENGKOK ANGSA PATERSON GARDEN SINGAPORE 239270",
+"name": "PATERSON GARDEN"
+},
+"239319": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239320": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239328": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239361": {
+"addr": "60 KIM YAM ROAD GAMBIER COURT SINGAPORE 239361",
+"name": "GAMBIER COURT"
+},
+"239363": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239365": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239375": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239381": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239520": {
+"name": null,
+"why": "onemap says NIL"
+},
+"239524": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239527": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239528": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239547": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239548": {
+"name": null,
+"why": "onemap says NIL"
+},
+"239553": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239565": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239568": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239573": {
+"addr": "143 KILLINEY ROAD THE BOUTIQ SINGAPORE 239573",
+"name": "THE BOUTIQ"
+},
+"239588": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239590": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239591": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239592": {
+"addr": "9 UNITY STREET THE ROBERTSON OPUS (U/C) SINGAPORE 239592",
+"name": "THE ROBERTSON OPUS (U/C)"
+},
+"239593": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239594": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239595": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239637": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239638": {
+"addr": "5 RIVER VALLEY GREEN RIVER MODERN (U/C) SINGAPORE 239638",
+"name": "RIVER MODERN (U/C)"
+},
+"239639": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239641": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239666": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239669": {
+"addr": "15 INSTITUTION HILL ASPEN LINQ SINGAPORE 239669",
+"name": "ASPEN LINQ"
+},
+"239670": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239671": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239700": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239802": {
+"addr": "13 DUBLIN ROAD DUBLIN ROAD FLATS SINGAPORE 239802",
+"name": "DUBLIN ROAD FLATS"
+},
+"239851": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239852": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239855": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239864": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239900": {
+"addr": "65 DEVONSHIRE ROAD ILLUMINAIRE ON DEVONSHIRE SINGAPORE 239900",
+"name": "ILLUMINAIRE ON DEVONSHIRE"
+},
+"239974": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239975": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"239977": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"247781": {
+"name": null,
+"why": "onemap says NIL"
+},
+"247785": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"247855": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"247856": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"247858": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"248209": {
+"addr": "2 SHANGHAI ROAD RV EDGE SINGAPORE 248209",
+"name": "RV EDGE"
+},
+"248279": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"248303": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"248307": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"248309": {
+"name": null,
+"why": "onemap says NIL"
+},
+"248322": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"248324": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"248328": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"248346": {
+"addr": "461 RIVER VALLEY ROAD RV RESIDENCES SINGAPORE 248346",
+"name": "RV RESIDENCES"
+},
+"248348": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"248350": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"248352": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"248354": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"248356": {
+"addr": "471 RIVER VALLEY ROAD RV RESIDENCES SINGAPORE 248356",
+"name": "RV RESIDENCES"
+},
+"248358": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"248360": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"248362": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"248368": {
+"addr": "483 RIVER VALLEY ROAD VALLEY PARK SINGAPORE 248368",
+"name": "VALLEY PARK"
+},
+"248648": {
+"addr": "245 ORCHARD BOULEVARD ORCHARD BEL AIR SINGAPORE 248648",
+"name": "ORCHARD BEL AIR"
+},
+"248726": {
+"addr": "3 NATHAN ROAD REGENCY PARK SINGAPORE 248726",
+"name": "REGENCY PARK"
+},
+"248727": {
+"addr": "5 NATHAN ROAD REGENCY PARK SINGAPORE 248727",
+"name": "REGENCY PARK"
+},
+"248728": {
+"addr": "7 NATHAN ROAD REGENCY PARK SINGAPORE 248728",
+"name": "REGENCY PARK"
+},
+"248730": {
+"addr": "9 NATHAN ROAD REGENCY PARK SINGAPORE 248730",
+"name": "REGENCY PARK"
+},
+"248732": {
+"addr": "11 NATHAN ROAD REGENCY PARK SINGAPORE 248732",
+"name": "REGENCY PARK"
+},
+"248737": {
+"addr": "13 NATHAN ROAD REGENCY PARK SINGAPORE 248737",
+"name": "REGENCY PARK"
+},
+"248741": {
+"addr": "15 NATHAN ROAD REGENCY PARK SINGAPORE 248741",
+"name": "REGENCY PARK"
+},
+"248903": {
+"addr": "91 KELLOCK ROAD MELROSE PARK SINGAPORE 248903",
+"name": "MELROSE PARK"
+},
+"248904": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"249004": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"249020": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"249078": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"249417": {
+"name": null,
+"why": "onemap says NIL"
+},
+"249419": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"249565": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"249578": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"249587": {
+"addr": "82 GRANGE ROAD THE COLONNADE SINGAPORE 249587",
+"name": "THE COLONNADE"
+},
+"249690": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"249692": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"249693": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"249696": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"249697": {
+"addr": "11 CUSCADEN WALK BOULEVARD VUE SINGAPORE 249697",
+"name": "BOULEVARD VUE"
+},
+"249724": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"258344": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"258346": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"258372": {
+"name": null,
+"why": "onemap says NIL"
+},
+"638630": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+},
+"883390": {
+"name": null,
+"why": "request failed: HTTP Error 429: Too Many Requests"
+}
+}
