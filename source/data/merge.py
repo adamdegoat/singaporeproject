@@ -367,7 +367,22 @@ def main():
     json.dump(out, open(path, "w"), separators=(",", ":"))
     print(f"  wrote {path} ({os.path.getsize(path)/1024:.0f} KB)")
 
-    if "--stream" in sys.argv:
+    # CHUNKS ARE WRITTEN EVERY TIME, and this used to be opt-in behind
+    # `--stream`.
+    #
+    # THE TRAP THAT COST A DAY. The flat world.json is what every gate reads:
+    # check.py, audit_run.mjs, accuracy.py, progress.py. The per-district chunk
+    # files are what the RUNTIME reads -- the world scene streams them, the
+    # flat file is never fetched by a rider. So a merge without the flag left
+    # the chunks stale while refreshing the file the gates inspect, and the
+    # whole pipeline reported PASS on data the live site was not serving. Two
+    # deploys on 2026-07-31 shipped chunks that were four hours and three
+    # features out of date, through a green deploy, twice.
+    #
+    # An opt-in flag on the correctness-critical half of the output is not a
+    # flag, it is a way to be wrong quietly. `--no-stream` remains for the rare
+    # case where only the flat file is wanted, and it has to be asked for.
+    if "--no-stream" not in sys.argv:
         # Per-district chunk files + a manifest, for the runtime loader. The
         # flat file above keeps being written and stays the gates' subject;
         # these are the SAME keeps partitioned by contributing district, so

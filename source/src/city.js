@@ -250,7 +250,34 @@ export const MAT = {
   }),
 };
 
+// The default is the quiet register: chalky pastels, which is what most
+// conserved shophouse streets in Singapore actually are.
 const SHOPHOUSE_COLS = [0xd8cbb4, 0xbfd2c4, 0xd9c39a, 0xc9d3dd, 0xd6b6a8, 0xe0d6bd, 0xb9c9bd];
+
+// BUT KRETA AYER IS NOT QUIET, AND THAT IS A SOURCED FACT ABOUT ONE AREA.
+//
+// research/conservation-chinatown.md read dated photographs street by street
+// and found the saturated repaint is real and is specific: Pagoda Street
+// (Nov 2019) turquoise, ochre-mustard, sky blue, mid-teal, each unit
+// different; Smith Street (Feb 2025) dusty rose columns on cream; Temple
+// Street (Feb 2025) a deep magenta block with white pilasters; Trengganu
+// Street saturated reds, yellows and blues at its south end. Its conclusion
+// is the important part and is why this is keyed to ONE area rather than
+// applied to every shophouse in the world: "saturation is a Kreta Ayer /
+// tourist-street phenomenon" — Kreta Ayer Road itself, one block away, is
+// white with dark brown shutters.
+//
+// So every other conservation area keeps the pastels. Painting Little India
+// or Kampong Glam in these would be inventing a fact about them from a
+// photograph of somewhere else.
+const SHOPHOUSE_COLS_BY_AREA = {
+  'CHINATOWN (KRETA AYER)': [
+    0x3fa9a0, 0xc9922f, 0x7fb3d4, 0x3d8f8a, 0xb8446b, 0xd9a8b4, 0xe4ded0, 0xc0473f,
+  ],
+  'CHINATOWN HISTORIC DISTRICT CORE AREA - KRETA AYER': [
+    0x3fa9a0, 0xc9922f, 0x7fb3d4, 0x3d8f8a, 0xb8446b, 0xd9a8b4, 0xe4ded0, 0xc0473f,
+  ],
+};
 const AWNING_COLS = [0x8c4a3f, 0x2f5f52, 0x8a7433, 0x3f5570, 0x6e4a63, 0x9a5f36];
 const shopHouseMats = new Map();
 const awningMats = new Map();
@@ -296,7 +323,8 @@ const LMAT = {
   shophouse(b) {
     let h = 0;
     for (const [x, z] of b.p) h = (h * 31 + ((x * 5) | 0) + ((z * 11) | 0)) | 0;
-    const col = SHOPHOUSE_COLS[Math.abs(h) % SHOPHOUSE_COLS.length];
+    const pool = (b.cons && SHOPHOUSE_COLS_BY_AREA[b.cons]) || SHOPHOUSE_COLS;
+    const col = pool[Math.abs(h) % pool.length];
     if (!shopHouseMats.has(col)) {
       shopHouseMats.set(col, new THREE.MeshStandardMaterial({
         map: texShophouse(col), roughness: 0.88,
