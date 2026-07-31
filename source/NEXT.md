@@ -3461,3 +3461,24 @@ that is what caught this. A figure that cannot be verified locally and comes
 from a single agent is a hypothesis, not a fact. The heights that survive in
 this project all have a source URL or a measurement behind them; keep it that
 way.
+
+## Verified end state, 2026-07-31 09:40
+
+  - data/check.py: PASS on all 8 districts and on world.
+  - audit_run.mjs: PASS, 42 checks, no blockers, nothing over budget, on all 8
+    districts and on world.
+  - defects.mjs: 7 findings across 35 classes (D13 two self-crossing OSM rings,
+    D26 three walled-off shop bays, D36 two pedestrians in a carriageway). All
+    pre-existing and minor; the self-crossing rings are OSM residue, not ours.
+  - Live site on a phone viewport (844x390 landscape, touch forced, dpr 3):
+    no page errors, scrollWidth == viewport so no horizontal overflow, HUD,
+    minimap, ride controls and mode pill all correct. Boot 12.6s.
+  - World: 7,694 buildings, 1,219 named, 68 construction sites, 3 authored,
+    2,594k triangles / 731 draws settled.
+
+ONE NUMBER TO WATCH ON A REAL PHONE: the settled world is ~2.6M triangles.
+Every deploy log before today said ~1.85M because the live check sampled the
+HUD at `__ready`, before streaming had settled — it now waits for the count to
+stop moving. Nothing tonight added meaningfully to it (+11k across the whole
+night), but the honest figure is higher than this project has been quoting
+itself, and only a HUD screenshot from the actual device is trustworthy for fps.
