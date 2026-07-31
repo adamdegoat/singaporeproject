@@ -1567,12 +1567,55 @@ export async function buildRoads(world, data, Y = null) {
         }
       }
       const name = k.split('|')[0];
-      const junctionsNear = (run) => {
-        const cuts = [];
+      // A SPATIAL INDEX, BECAUSE THIS RAN ONCE PER CHAIN OVER EVERY ROAD POINT
+      // IN THE DISTRICT. The original walked all ~1,600 roads and all ~16,000
+      // of their vertices for EVERY run, and for each vertex walked every
+      // segment of that run: the product is millions of operations per chain,
+      // and a CPU profile of the boot window put this function at 4.5% of all
+      // samples -- the largest single application cost while the world is
+      // building, which is exactly the "first ten seconds lag" a rider feels.
+      //
+      // The test radius is 3m, so a vertex more than 3m outside the run's
+      // bounding box can never produce a cut. Bucketing the candidate vertices
+      // once per district and gathering only the cells the run passes through
+      // leaves the inner loop untouched and identical -- same segment walk from
+      // i = 0, same first-hit break, same accumulated arc length. The cuts are
+      // sorted by distance at the end either way, so discovery order cannot
+      // change the answer.
+      const JCELL = 24;
+      if (!data.__jgrid) {
+        const grid = new Map();
         for (const r2 of data.roads) {
           if (r2.k === 'footway' || r2.k === 'pedestrian') continue;
-          if ((r2.n || '?') === name) continue;      // same street
           for (const q of r2.p) {
+            const key = Math.floor(q[0] / JCELL) + ',' + Math.floor(q[1] / JCELL);
+            let cell = grid.get(key);
+            if (!cell) grid.set(key, cell = []);
+            cell.push([q, r2]);
+          }
+        }
+        data.__jgrid = grid;
+      }
+      const junctionsNear = (run) => {
+        const cuts = [];
+        let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+        for (const pnt of run) {
+          if (pnt[0] < x0) x0 = pnt[0];
+          if (pnt[0] > x1) x1 = pnt[0];
+          if (pnt[1] < z0) z0 = pnt[1];
+          if (pnt[1] > z1) z1 = pnt[1];
+        }
+        const seen = new Set();
+        const cand = [];
+        for (let cx2 = Math.floor((x0 - 4) / JCELL); cx2 <= Math.floor((x1 + 4) / JCELL); cx2++) {
+          for (let cz2 = Math.floor((z0 - 4) / JCELL); cz2 <= Math.floor((z1 + 4) / JCELL); cz2++) {
+            const cell = data.__jgrid.get(cx2 + ',' + cz2);
+            if (cell) for (const e of cell) cand.push(e);
+          }
+        }
+        for (const [q, r2] of cand) {
+          if ((r2.n || '?') === name) continue;      // same street
+          {
             let acc = 0;
             for (let i = 0; i < run.length - 1; i++) {
               const ax = run[i + 1][0] - run[i][0], az = run[i + 1][1] - run[i][1];
@@ -2210,14 +2253,44 @@ export function buildSurround(world, data, reach = 470) {
   const rnd = rng(20260727);
   const put = [];
   const CELL = 78;
+  // INDEX THE BUILT BOXES, because this tested every cell against every
+  // building. Chinatown has 2,294 buildings and the surround grid spans the
+  // district plus 470m of reach in both directions -- several thousand cells,
+  // each walking the whole building list until it found an overlap or ran out.
+  // A boot-window CPU profile put this function at 3.6% of all samples, second
+  // only to junctionsNear, and both of them land in the seconds the rider sees
+  // as lag.
+  //
+  // Each box is expanded by the same 70m the test uses and registered in every
+  // grid cell it touches, so the lookup returns exactly the boxes that could
+  // possibly match. The PREDICATE IS UNCHANGED, which matters more than the
+  // speed: rnd() is only called after this check, so a different set of
+  // surviving cells would shift the whole placement RNG stream and the
+  // determinism gate would (rightly) fail.
+  const GCELL = 156;
+  const coreGrid = new Map();
+  for (const bx of built) {
+    const [a, b, c, d] = bx;
+    for (let gx = Math.floor((a - 70) / GCELL); gx <= Math.floor((c + 70) / GCELL); gx++) {
+      for (let gz = Math.floor((b - 70) / GCELL); gz <= Math.floor((d + 70) / GCELL); gz++) {
+        const key = gx + ',' + gz;
+        let cell = coreGrid.get(key);
+        if (!cell) coreGrid.set(key, cell = []);
+        cell.push(bx);
+      }
+    }
+  }
   for (let x = dx0 - reach; x < dx1 + reach; x += CELL) {
     for (let z = dz0 - reach; z < dz1 + reach; z += CELL) {
       // Keep out of the BUILT core, where the real buildings are. The area
       // between the last building and the end of the road network is fair game:
       // that is real city in life, and empty ground here.
       let inCore = false;
-      for (const [a, b, c, d] of built) {
-        if (x > a - 70 && x < c + 70 && z > b - 70 && z < d + 70) { inCore = true; break; }
+      const near = coreGrid.get(Math.floor(x / GCELL) + ',' + Math.floor(z / GCELL));
+      if (near) {
+        for (const [a, b, c, d] of near) {
+          if (x > a - 70 && x < c + 70 && z > b - 70 && z < d + 70) { inCore = true; break; }
+        }
       }
       if (inCore) continue;
       if (rnd() > 0.72) continue;                       // not a solid carpet
