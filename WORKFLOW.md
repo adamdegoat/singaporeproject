@@ -485,3 +485,43 @@ does it next:
     news about the world.
 Overpass mirrors are flaky — run it with nohup, never through a pipe that can
 SIGPIPE it, and never inside a tool timeout shorter than the fetch.
+
+## The gates read one file and the rider loads another (2026-07-31)
+
+`data/merge.py` writes TWO things from the same districts:
+
+  - `data/world.json`, one flat file, and
+  - `data/world.d.<id>.json` + `world.manifest.json`, the streaming chunks.
+
+Every gate in this project reads the flat file. `check.py`, `audit_run.mjs`,
+`accuracy.py`, `progress.py`, `defects.mjs` — all of them open `world.json`.
+**No rider ever fetches it.** The world scene streams the chunks; the flat file
+is only the `?nostream` fallback.
+
+Writing the chunks used to be opt-in, behind `--stream`. A merge without the
+flag refreshed the file the gates inspect and left the chunks where they were.
+
+So on 2026-07-31 the pipeline reported PASS, twice, on data the live site was
+not serving. The HDB storey join, three thousand conservation-area era bands,
+Shaw Tower's 200m and the sky-bridge fix all went green through `./deploy.sh`
+and none of them reached the world; the chunks on the CDN were four hours old.
+Nothing in the deploy noticed, because `cp data/world.d.*.json` copies a stale
+file exactly as happily as a fresh one, and the SHA verify afterwards confirmed
+the stale file had arrived intact.
+
+Two changes, and the second matters more than the first:
+
+  1. merge.py writes the chunks every time. `--no-stream` is the opt-out and
+     has to be asked for. **An opt-in flag on the correctness-critical half of
+     the output is not a flag, it is a way to be wrong quietly.**
+  2. deploy.sh refuses if any `world.d.<id>.json` is older than the
+     `<id>.json` it was built from, and refuses if the manifest is missing.
+
+THE GENERAL SHAPE, which is the third time this project has hit it: when one
+artefact is DERIVED from another, the gate must read the derived one. Gating
+the source and shipping the derivative tests nothing. It is the same failure as
+"a process.py override only reaches the world if every scene holding that
+building is rebuilt", two sections above, and the same as the district list
+that lived in three files until four districts shipped ungated.
+
+When you add an output, ask which file the USER's browser opens, and gate that.

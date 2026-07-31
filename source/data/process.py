@@ -633,6 +633,53 @@ POSTCODE_HEIGHT = {
     "229723": 122,
 }
 
+# PUBLISHED STOREY COUNTS, WHERE NO ONE PUBLISHES METRES.
+#
+# Most Singapore buildings below the skyline have no published height at all.
+# Research comes back with "19 storeys [PUBLISHED]" and nothing else, over and
+# over, and until now that answer had nowhere to go: LANDMARKS takes metres and
+# claims "named" provenance, which would be laundering a storey count into a
+# measurement -- the exact thing every research brief this project sends out
+# forbids.
+#
+# So the storeys land here instead, get multiplied by the SAME 3.4m the OSM
+# `building:levels` path uses, and carry the SAME "levels" provenance. The
+# accuracy ledger already reports that tier separately as "heights, from
+# storeys". Nothing is being dressed up: this is a published storey count times
+# an assumed floor height, and it says so.
+#
+# It still beats what it replaces by a wide margin. Centrium Square is a
+# 19-storey block on Serangoon Road being drawn as a 20m box, because 20 is
+# TYPE_DEFAULT["retail"]-ish and nothing better existed.
+#
+# `amin`/`amax` disambiguate when one name covers footprints of very different
+# size -- Tekka Place is a 10-storey main block and a 7-storey annex sharing a
+# name, and giving both the taller figure would put a whole storey of mass over
+# the annex's rooftop deck.
+STOREY_COUNTS = {
+    # research/littleindia-frontage-heights.md
+    "centrium square":  [{"st": 19}],                       # officesolutions.com.sg
+    "tekka place":      [{"st": 10, "amin": 2700},          # ONG&ONG: main block
+                         {"st": 7,  "amax": 2700}],         # ONG&ONG: annex + roof deck
+    # The developer's own page says 18; OSM's building:levels says 19. Prefer
+    # the developer.
+    "lyf farrer park":  [{"st": 18}],
+}
+STOREY_FLOOR_M = 3.4
+
+
+def storey_record(name, area):
+    lo = (name or "").lower()
+    for key, specs in STOREY_COUNTS.items():
+        if key not in lo:
+            continue
+        for sp in specs:
+            if area < sp.get("amin", 0) or area > sp.get("amax", 1e12):
+                continue
+            return sp["st"]
+    return None
+
+
 # NAMES OSM CARRIES THAT ARE NOT BUILDING NAMES.
 #
 # Three different mistakes, all of which make the model claim something false:
@@ -1629,6 +1676,23 @@ def main():
                     if _k2 in _lo:
                         b["mh"], b["h"], b["hs"] = _mlo, _mhi, "named"
                         break
+                # A published storey count, where nobody publishes metres.
+                #
+                # Applied over a guess, and ALSO over an OSM `building:levels`
+                # figure -- both are storey counts, and a developer's own page
+                # beats a crowd-sourced tag. lyf Farrer Park is the case: OSM
+                # says 19 levels, Low Keng Huat's own project page says the
+                # tower is 18, and without this the OSM tag won by arriving
+                # first.
+                #
+                # NOT applied over "osm" (a surveyed `height=` tag), "named" or
+                # "override" (published metres). Those are measurements, and a
+                # storey count must never displace one.
+                if b.get("hs") in (None, "levels"):
+                    _st = storey_record(_nm, b.get("a") or 0)
+                    if _st:
+                        b["h"] = round(_st * STOREY_FLOOR_M, 1)
+                        b["hs"] = "levels"
             # Remember WHICH HDB record this height came from, so the pass at
             # the end of build() can catch the case where several footprints
             # claim the same block. Stripped before the file is written.
