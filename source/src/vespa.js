@@ -62,6 +62,37 @@ export function buildVespa() {
   // little windscreen, reads instantly as a scooter
   g.add(part(new THREE.BoxGeometry(0.44, 0.34, 0.02), glass, 0, 1.32, 0.66, -0.24));
 
+  // THE PIECES A SCOOTER IS ACTUALLY RECOGNISED BY, and the ones this was
+  // missing. Drawn once for the rider's own bike, so the cost is a rounding
+  // error next to a single building.
+  //
+  // Front mudguard: the curved shield over the front wheel is the most
+  // Vespa-shaped thing on a Vespa after the cowl. Built from three short slabs
+  // stepping round the wheel rather than a curve, which matches how everything
+  // else here is made.
+  for (const [dz, dy, rx] of [[0.60, 0.60, 0.34], [0.68, 0.44, 0.08], [0.62, 0.28, -0.28]]) {
+    g.add(part(new THREE.BoxGeometry(0.26, 0.05, 0.20), body, 0, dy, dz, rx));
+  }
+  // rear mudguard over the driven wheel, tucked under the cowl
+  g.add(part(new THREE.BoxGeometry(0.28, 0.05, 0.26), body, 0, 0.42, -0.55, 0.22));
+  // the engine cowl bulge on the right, which is where the motor actually is
+  const cowl = part(new THREE.SphereGeometry(0.16, 10, 8), body, 0.22, 0.40, -0.52);
+  cowl.scale.set(0.9, 0.85, 1.25); g.add(cowl);
+  // Exhaust, low on the right and running ALONG the bike. A cylinder's axis is
+  // Y, so it needs rotating about X to lie fore-and-aft; rotating about Z (which
+  // is what the handlebars do) laid it ACROSS the machine and it photographed as
+  // a white stick poking out of the rear wheel.
+  g.add(part(new THREE.CylinderGeometry(0.035, 0.035, 0.40, 8), chrome,
+    0.19, 0.30, -0.60, Math.PI / 2, 0, 0));
+  // rear light and number plate, so the bike is not blank from the chase view
+  g.add(part(new THREE.BoxGeometry(0.13, 0.09, 0.05), new THREE.MeshStandardMaterial({
+    color: 0x8c1a17, emissive: 0xd83a2c, emissiveIntensity: 0.75, roughness: 0.35,
+  }), 0, 0.86, -0.72));
+  g.add(part(new THREE.BoxGeometry(0.17, 0.11, 0.02), cream, 0, 0.72, -0.70, 0.25));
+  // a pillion grab rail behind the seat
+  g.add(part(new THREE.CylinderGeometry(0.018, 0.018, 0.34, 6), chrome,
+    0, 0.83, -0.44, 0, 0, Math.PI / 2));
+
   // wheels: small, which is most of why a Vespa looks like a Vespa
   const tyre = new THREE.CylinderGeometry(0.205, 0.205, 0.115, 16);
   const rim = new THREE.CylinderGeometry(0.115, 0.115, 0.12, 12);
