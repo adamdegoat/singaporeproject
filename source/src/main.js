@@ -2616,27 +2616,39 @@ resize();
 // for fifteen seconds and then it is fine" can be read off rather than guessed.
 if (P.has('diag')) {
   const rows = [];
-  let dt0 = 0, dframes = 0, dlast = 0;
+  let dt0 = 0, dframes = 0, dlast = 0, dprev = 0, dworst = 0, dprevT = 0;
   const el = document.createElement('div');
   el.style.cssText = 'position:fixed;left:0;top:0;z-index:90;background:rgba(10,11,13,.92);'
     + 'color:#e8e6e1;font:12px/1.35 ui-monospace,Menlo,monospace;padding:8px 10px;max-height:100%;overflow:auto';
   const tick = (now) => {
     requestAnimationFrame(tick);
     if (!window.__ready) return;
-    if (!dt0) { dt0 = now; dlast = now; document.body.appendChild(el); }
+    if (!dt0) { dt0 = now; dlast = now; dprevT = now; document.body.appendChild(el); }
     dframes++;
+    const gap = now - dprevT; dprevT = now;
+    if (gap > dworst) dworst = gap;
     if (now - dlast < 1000) return;
     const sec = Math.round((now - dt0) / 1000);
     const ri = window.__renderer ? window.__renderer.info.render : {};
-    rows.push([sec, Math.round(dframes * 1000 / (now - dlast)), ri.calls || 0,
-               Math.round((ri.triangles || 0) / 1000),
-               +(renderer.getPixelRatio()).toFixed(2),
-               (window.__streamRecs || []).filter((r) => r.group).length,
-               (window.__streamState || {}).building ? 'B' : '-']);
-    dframes = 0; dlast = now;
+    // THE FIRST VERSION OF THIS PANEL COUNTED ANIMATION-FRAME CALLBACKS, which
+    // is the browser's refresh rate, NOT the rate the world is drawn at -- the
+    // frame cap skips draws and rAF keeps firing regardless. It read 58 while
+    // the world was being drawn 30 times a second. Same mistake as three
+    // earlier measurements in this project; both numbers are reported now.
+    //
+    // SPEED IS HERE BECAUSE THE RIDER'S WORDS WERE "SLOWMO", NOT "CHOPPY".
+    // A high frame rate with a crawling speed means the world's clock is
+    // running slow, which is a completely different fault from a slow picture,
+    // and no amount of frame-rate data can tell the two apart.
+    const drawn = ri.frame || 0;
+    rows.push([sec, Math.round(dframes * 1000 / (now - dlast)),
+               Math.round((drawn - dprev) * 1000 / (now - dlast)),
+               Math.round(dworst), Math.round(window.__kmh ? window.__kmh() : 0),
+               ri.calls || 0, (window.__streamState || {}).building ? 'B' : '-']);
+    dprev = drawn; dframes = 0; dworst = 0; dlast = now;
     if (rows.length > 40) return;
-    el.textContent = 'sec  fps  draw  ktri   dpr  dist bld\n'
-      + rows.map((r) => r.map((v, i) => String(v).padStart([3, 5, 6, 6, 6, 5, 4][i])).join('')).join('\n');
+    el.textContent = 'sec  raf drawn worst  kmh  draw bld\n'
+      + rows.map((r) => r.map((v, i) => String(v).padStart([3, 5, 6, 6, 5, 6, 4][i])).join('')).join('\n');
   };
   requestAnimationFrame(tick);
 }
@@ -2980,6 +2992,9 @@ window.__drive = (throttle, steer, seconds) => {
 // it -- D33 was measuring 2,200 walkers across three districts against a
 // behaviour that runs within 120m by design.
 window.__ridePos = () => [S.x, S.z];
+// Speed in km/h, for the ?diag panel: "slowmo" is a speed complaint, not a
+// frame-rate one, and only this number can tell them apart.
+window.__kmh = () => Math.abs(S.speed * 3.6);
 // ARRIVING OVERLAY. The boot screen is removed once the world is up, so this is
 // a small standalone panel reused for every arrival.
 let arriveEl = null;
