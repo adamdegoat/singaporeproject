@@ -4507,6 +4507,7 @@ export const RECIPES = [
   [/abdul gafoor/i, abdulGafoor],
   [/angullia/i, angullia],
   [/masjid malabar|malabar muslim/i, masjidMalabar],
+  [/lakshmi ?narayan/i, lakshminarayan],
   [/^the warehouse$/i, warehouseGodowns],
   [/^golden mile complex$/i, goldenMileComplex],
   [/^raffles hotel$/i, rafflesHotel],
@@ -6213,4 +6214,126 @@ function masjidMalabar(api, b) {
   api.merge(api.extrudeGeo(rect(ob.midU + ob.halfLong * 0.66,
     ob.midV + side * ob.halfShort * 0.30, ob.halfLong * 0.22, 0.30),
     H * 0.40, H * 0.06), M.screen, ob.cx, ob.cz);
+}
+
+// Siddh Peeth Shree Lakshminarayan Temple, 5 Chander Road.
+// Researched 2026-07-31, research/littleindia-worship-2.md.
+//
+// IT IS A SHIKHARA, NOT A GOPURAM, and this is the easiest thing in Little
+// India to get wrong. The two Serangoon Road temples are Dravidian, with tiered
+// gopurams covered in sculpted figures. This is North Indian: THREE smooth,
+// bulbous, WAISTED spires — a bell profile that swells near the base, narrows
+// to a waist, then carries a stack of flattened lotus-petal discs and a kalasha
+// bulb. NO tiers, no niches, no sculpture, no figures. It reads closer to a
+// Thai chedi than to anything on Serangoon Road, and building it from the
+// gopuram helper would be wrong in kind, not just in detail.
+//
+// ROOTS SAYS "bright red pointed domes". THEY ARE NOT RED. Sampled off the
+// 2026 consecration close-ups and confirmed on a 2016 photograph, they are a
+// strong chrome yellow (#FDE751) with rose-pink bands on the discs and gold
+// leaf on the bulbs. In no dated photograph are they red.
+//
+// AND EVERY PHOTO ONLINE IS OUT OF DATE. The temple reopened after a seven-year
+// renovation and was reconsecrated on 25 February 2026 — five months before
+// this was written, the first consecration in 56 years.
+//
+// No height is published by NHB, NLB, URA, the temple or the press, so h is
+// taken as the central finial tip and the parapet hangs off it at the measured
+// ratio: parapet 0.82, flanking finials 0.85.
+const SHIKHARA_MAT = {
+  yellow: new THREE.MeshStandardMaterial({ color: 0xfde751, roughness: 0.55 }),
+  gold: new THREE.MeshStandardMaterial({ color: 0xd8a93a, roughness: 0.32, metalness: 0.55 }),
+  rose: new THREE.MeshStandardMaterial({ color: 0xd98fa0, roughness: 0.72 }),
+  wall: new THREE.MeshStandardMaterial({ color: 0xefe7d8, roughness: 0.87 }),
+  trim: new THREE.MeshStandardMaterial({ color: 0xc9b79a, roughness: 0.8 }),
+  om: new THREE.MeshStandardMaterial({ color: 0xb02f26, roughness: 0.6 }),
+};
+function lakshminarayan(api, b) {
+  const ob = orientedBox(b.p);
+  const M = SHIKHARA_MAT;
+  const H = Math.max(10, b.h || 18);          // = the central Om finial tip
+  const PARAPET = H * 0.82;
+  const SEAT = api.footingY(b.p);
+
+  // the block: a double-height ground floor, three upper storeys, and a
+  // screened roof terrace. Storeys are photographic, not published.
+  api.merge(api.extrudeGeo(b.p, PARAPET), M.wall, ob.cx, ob.cz);
+  for (let f = 1; f <= 4; f++) {
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.014), 0.3, PARAPET * (0.28 + f * 0.145)),
+      M.trim, ob.cx, ob.cz);
+  }
+  // the screened terrace parapet
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.006), PARAPET * 0.10, PARAPET * 0.90),
+    M.trim, ob.cx, ob.cz);
+
+  // ONE SPIRE. A waisted bell of revolution, built as stacked rings so the
+  // profile is explicit and cheap: swell near the base, pull in to a waist,
+  // then the amalaka discs, the kalasha and the Om.
+  const spire = (cx2, cz2, R0, baseY, tipY) => {
+    const top = tipY - baseY;
+    const ringAt = (r, y0, h2, mat) => {
+      const ring = [];
+      for (let k = 0; k < 12; k++) {
+        const a2 = (k / 12) * Math.PI * 2;
+        ring.push([cx2 + Math.cos(a2) * r, cz2 + Math.sin(a2) * r]);
+      }
+      api.merge(api.extrudeGeo(ring, h2, y0), mat, ob.cx, ob.cz);
+    };
+    const BODY = top * 0.70, N = 14;
+    for (let k = 0; k < N; k++) {
+      const t = k / (N - 1);
+      // swells to 1.12 R0 at a fifth of the way up, then waists to 0.52
+      const r = R0 * (t < 0.2 ? 1.0 + t * 0.6
+        : 1.12 - Math.pow((t - 0.2) / 0.8, 0.85) * 0.60);
+      ringAt(r, baseY + (BODY / N) * k, BODY / N + 0.06, M.yellow);
+    }
+    // the amalaka: flattened lotus-petal discs of decreasing diameter
+    for (let k = 0; k < 3; k++) {
+      ringAt(R0 * (0.60 - k * 0.11), baseY + BODY + k * (top * 0.055),
+        top * 0.048, k % 2 ? M.yellow : M.rose);
+    }
+    // the kalasha bulb, gold
+    const kb = new THREE.SphereGeometry(R0 * 0.32, 12, 8);
+    kb.translate(cx2, SEAT + baseY + BODY + top * 0.20, cz2);
+    api.merge(kb, M.gold, ob.cx, ob.cz);
+    // neck, then the Om disc — a FLAT circular disc mounted VERTICALLY
+    ringAt(R0 * 0.10, baseY + BODY + top * 0.22, top * 0.06, M.gold);
+    const dR = R0 * 0.44;
+    api.merge(api.extrudeGeo(
+      [[cx2 - dR, cz2 - 0.09], [cx2 + dR, cz2 - 0.09],
+       [cx2 + dR, cz2 + 0.09], [cx2 - dR, cz2 + 0.09]],
+      dR * 1.9, baseY + BODY + top * 0.27), M.yellow, ob.cx, ob.cz);
+    api.merge(api.extrudeGeo(
+      [[cx2 - dR * 0.5, cz2 - 0.13], [cx2 + dR * 0.5, cz2 - 0.13],
+       [cx2 + dR * 0.5, cz2 + 0.13], [cx2 - dR * 0.5, cz2 + 0.13]],
+      dR * 0.9, baseY + BODY + top * 0.27 + dR * 0.5), M.om, ob.cx, ob.cz);
+  };
+
+  // three spires: one large central, two smaller flanking at 0.85H
+  // THE SPIRES RISE THROUGH THE TERRACE, NOT OFF IT — a judgement, flagged.
+  // The measured ratios are parapet 0.82H, central finial 1.00H, flanking
+  // finials 0.85H. Taken literally that makes the flanking shikharas 0.03H tall
+  // — half a metre — which cannot be right for something plainly visible as a
+  // pair in both the 2016 photograph and the 2026 aerial. The research itself
+  // puts +-15% on these and says the ratios, not the absolutes, are the
+  // deliverable. So the spires are based at 0.72H and keep their published TIP
+  // heights: central to 1.00H, flanking to 0.85H. The order and the tips are
+  // the measured facts; the base is mine.
+  // ON the terrace, and the flanking pair proportioned to the central spire.
+  //
+  // The measured ratios are parapet 0.82H, central finial 1.00H, flanking
+  // 0.85H. The central one is right and is used as measured. The flanking pair
+  // is NOT: 0.85H against a 0.82H parapet leaves them half a metre tall, and
+  // they are plainly a visible pair in both the 2016 photograph and the 2026
+  // aerial. Basing them lower was tried and does not help -- the block simply
+  // hides them. So they are built at 60% of the central spire's height, which
+  // is a JUDGEMENT, and the thing the research is confident about (three
+  // spires, one large and two smaller, all bulbous and waisted) survives.
+  const R = Math.min(ob.halfShort * 0.46, 3.6);
+  const P = (u, v) => [ob.cx + u * ob.ux - v * ob.uz, ob.cz + u * ob.uz + v * ob.ux];
+  spire(ob.bx, ob.bz, R, PARAPET, H);
+  for (const su of [-1, 1]) {
+    const [sx, sz] = P(ob.midU + su * ob.halfLong * 0.50, ob.midV);
+    spire(sx, sz, R * 0.60, PARAPET, PARAPET + (H - PARAPET) * 0.60);
+  }
 }
