@@ -2143,6 +2143,56 @@ const DPR_FORCE = parseFloat(P.get('dpr') || '0');
 // feel broken ("everything lagging" — the user, correctly). The cap now
 // exists only where it earns its keep: ?fps=N explicitly, or the adaptive
 // tier demoting a device that measured under 20fps anyway.
+// THE PHONE FRAME CAP, AND IT DEFAULTS ON. The loop below documents a "RIDING
+// FRAME CAP, phones only: 30fps" and explains that sustained full-rate
+// rendering is what makes the device hot — but this constant defaulted to 0,
+// so the cap only ever applied to a phone the adaptive tier had already
+// demoted, or when ?fps= was passed by hand. Every phone that could hold a
+// decent frame rate ran uncapped: measured on a phone-shaped viewport after
+// the 2026-07-31 sim fix, a sustained ride sits at 52-55fps with the GPU flat
+// out for as long as the rider keeps moving. That is the heat.
+//
+// 30 is the figure the loop already says it uses, and it roughly halves every
+// per-frame cost. Desktop stays uncapped, ?fps=60 still overrides for phones
+// that can take it, and the low tier still drops further to 24.
+// THE PHONE FRAME CAP STAYS OFF BY DEFAULT, and this is a measured decision
+// rather than an oversight.
+//
+// The loop below documents a "RIDING FRAME CAP, phones only: 30fps" and argues
+// that sustained full-rate rendering is what makes a device hot. The reasoning
+// is sound and the constant nevertheless defaults to 0, so the cap has only
+// ever applied to a phone the adaptive tier already demoted. Turning it on
+// looked like restoring intended behaviour. It was left OFF because the benefit
+// could not be established -- and that is a statement about the MEASUREMENT,
+// not a verdict on the cap.
+//
+// WHAT WENT WRONG WITH MEASURING IT, written down so the next person does not
+// repeat it:
+//
+//   - Comparing separate browser launches is worthless on a working machine.
+//     The same uncapped configuration measured 34.3 and then 17.3 rendered fps
+//     twenty minutes apart.
+//   - Measuring while riding is worse. The streamer never settles, and every
+//     reading lands between 2 and 7 fps whatever the cap is set to.
+//   - Counting requestAnimationFrame ticks measures MAIN-THREAD LOAD, not
+//     render rate: rAF keeps firing at display rate through every frame the cap
+//     deliberately skips. Every "fps" number gathered that way overstates what
+//     is actually being drawn.
+//
+// A trustworthy answer needs one page, one settled location, the cap toggled
+// underneath it -- window.__fpsCap exists for exactly that -- and medians of
+// alternating passes. Until someone does that, switching this on by default
+// would be shipping a change nobody has shown to help.
+//
+// Heat is better served by what already works and WAS measured cleanly, in one
+// page, back to back, one variable at a time: the idle cooler
+// that drops a parked phone to ~24fps, the 1.5x pixel ratio, and above all the
+// 2026-07-31 change that stopped simulating crowds and traffic for districts
+// the rider cannot see — that is a genuine reduction in sustained CPU work per
+// frame, which is what actually warms a phone.
+//
+// ?fps=N still works for anyone who wants to pin a rate, and the adaptive tier
+// still drops a genuinely weak phone to 24.
 let FPS_CAP = TOUCH ? (parseFloat(P.get('fps') || '0') || 0) : 0;
 // ADAPTIVE TIER: a phone that cannot hold ~20fps at the standard settings
 // demotes itself once — dpr 1.25, cap 24 — and remembers, so weaker phones
@@ -2151,6 +2201,9 @@ let FPS_CAP = TOUCH ? (parseFloat(P.get('fps') || '0') || 0) : 0;
 // win, and a saved verdict applies from the next boot's first frame.
 let TIER_DPR = 0;
 const tierFps = [];
+// The default cap above must NOT count as "the user chose a frame rate":
+// only an explicit ?fps= or ?dpr= disables the adaptive tier, otherwise
+// turning the cap on would have switched the tier off for every phone.
 let tierDone = !TOUCH || !!P.get('fps') || !!P.get('dpr');
 try {
   if (!tierDone && localStorage.getItem('sg_tier') === 'low') {
@@ -2206,6 +2259,11 @@ let last = performance.now(), frames = 0, t0 = last, fps = 0, lastCoolT = 0;
 // screenshot carries so "still laggy" becomes measurable (shows as jN)
 let jankCount = 0, jankWindowEnd = 0;
 let lastCapT = 0, shadowFlip = true;
+// A/B THE FRAME CAP INSIDE ONE PAGE. Comparing two browser launches on a busy
+// machine is worthless -- the same uncapped configuration measured 34.3 and
+// 17.3 rendered fps twenty minutes apart -- so the cap has to be switched
+// under a single settled world with everything else held still.
+window.__fpsCap = (n) => { FPS_CAP = +n || 0; lastCapT = 0; return FPS_CAP; };
 
 function loop(now) {
   const rawDt = (now - last) / 1000;
@@ -2242,8 +2300,27 @@ function loop(now) {
   // sustained full-rate rendering — the cap halves every per-frame cost at
   // a smoothness loss that reads fine from a saddle. Desktop stays uncapped;
   // ?fps=60 overrides for the phones that can take it.
-  if (TOUCH && FPS_CAP && now - lastCapT < 1000 / FPS_CAP - 2) { requestAnimationFrame(loop); return; }
-  lastCapT = now;
+  // THE CAP MUST NEVER MAKE A SLOW DEVICE SLOWER, and as written it did.
+  //
+  // `lastCapT = now` snaps the clock to the moment a frame STARTED being
+  // allowed. If the device is already slower than the cap — say a frame takes
+  // 29ms against a 33ms budget — the next animation-frame callback arrives too
+  // early by a hair, gets skipped, and the one after it lands a whole vsync
+  // later. The device ends up rendering at half the rate it could manage.
+  //
+  // Measured on a phone viewport, 2026-07-31, riding: 34.5 rendered fps
+  // uncapped, 14.3 with a 30fps cap. The cap cost 20 frames a second while
+  // trying to save power.
+  //
+  // Advancing by whole intervals instead paces a fast device at the cap and
+  // leaves a slow one alone: if more than two intervals have already gone by,
+  // the device is not keeping up and the clock resyncs to now rather than
+  // accumulating a debt of skips it can never repay.
+  if (TOUCH && FPS_CAP) {
+    const interval = 1000 / FPS_CAP;
+    if (now - lastCapT < interval - 2) { requestAnimationFrame(loop); return; }
+    lastCapT = (now - lastCapT > interval * 2) ? now : lastCapT + interval;
+  }
   // Shadows refresh EVERY frame again. The alternate-frame "optimisation"
   // made every pedestrian's shadow jerk behind them at half rate — the
   // "people glitching" the user reported. Half-size maps stay: invisible.
