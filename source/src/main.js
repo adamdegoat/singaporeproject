@@ -669,6 +669,87 @@ const extraCrowds = [];
 // carriageways did not. Same lifecycle: built with the chunk, ticked only
 // while it is loaded, dropped when it unloads.
 const extraTraffic = [];
+
+// SIMULATE WHAT THE RIDER CAN SEE, NOT WHAT HAPPENS TO BE LOADED.
+//
+// Every streamed district builds its own Crowd and its own Traffic, and both
+// were stepped every frame for every district that was resident — however far
+// away it was. At the Bugis end of Victoria Street six districts sit within
+// NEAR of each other, so the frame was stepping six crowds and six traffic
+// systems while the rider could see one.
+//
+// Measured on a phone viewport, 2026-07-31, standing at that spot:
+//
+//     six districts, as shipped          13.6 fps
+//     the same, sims frozen              40.8 fps
+//     only two districts even visible    50.3 fps
+//
+// Three times the frame rate, and it is not a rendering problem: dropping the
+// pixel ratio from 3 to 1 at the same spot moved it from 12.8 to 13.8 fps, so
+// nine times fewer pixels bought one frame. This is CPU, and it is these two
+// loops.
+//
+// MEASURED TO THE DISTRICT'S AXIS, NOT ITS BOX, and that distinction is the
+// whole fix. The content boxes overlap heavily on purpose so the region closes
+// with no seam holes, which means at Bugis the rider is INSIDE five or six of
+// them at once and a box-distance test excludes nothing — the first version of
+// this guard used boxes and bought exactly zero frames.
+//
+// The axis is the district's main street, and it is also the line the Crowd and
+// the Traffic are actually built along, so it is the honest measure of "are
+// these agents anywhere near the rider".
+//
+// 450m: beyond anything a pedestrian is legible at, and a district's own axis
+// comes within that well before the rider reaches it. A frozen far district's
+// cars stay where they are; nobody can see them, and collision against a
+// stationary car 600m away is not a thing anyone can hit.
+let SIM_X = 0, SIM_Z = 0;
+const SIM_RADIUS = 450;
+const SIM_R2 = SIM_RADIUS * SIM_RADIUS;
+// AND A HARD CAP ON HOW MANY, because a radius alone does not bound this.
+// Eight district axes converge around Bugis and Bras Basah; several are
+// genuinely within 450m of each other, so the radius let four through and the
+// frame was still paying for three streets the rider cannot see. Two is what
+// the rider can actually be near: the street they are on and the one they are
+// approaching.
+const SIM_MAX = 2;
+const _simActive = new Set();
+let _simAt = -1e9;
+function simAxDist2(o) {
+  const ax = o && o.__ax;
+  if (!ax || ax.length < 2) return -1;          // no axis: always simulate
+  let best = Infinity;
+  for (let i = 0; i < ax.length; i += 3) {
+    const dx = ax[i][0] - SIM_X, dz = ax[i][1] - SIM_Z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < best) best = d2;
+  }
+  return best;
+}
+// Recomputed a few times a second, not per frame: the rider covers ~14m in
+// 250ms at 200km/h and the radius is 450m, so nothing can slip in unnoticed.
+function simRefresh(x, z, now) {
+  SIM_X = x; SIM_Z = z;
+  if (now - _simAt < 0.25) return;
+  _simAt = now;
+  _simActive.clear();
+  const rank = [];
+  for (const arr of [extraTraffic, extraCrowds]) {
+    for (const o of arr) {
+      const d2 = simAxDist2(o);
+      if (d2 < 0) { _simActive.add(o); continue; }
+      if (d2 <= SIM_R2) rank.push([d2, o]);
+    }
+  }
+  rank.sort((a, b) => a[0] - b[0]);
+  // SIM_MAX of each KIND, so a crowd is never starved by two traffic systems.
+  let nc = 0, nt = 0;
+  for (const [, o] of rank) {
+    const isC = extraCrowds.indexOf(o) >= 0;
+    if (isC ? nc < SIM_MAX : nt < SIM_MAX) { _simActive.add(o); isC ? nc++ : nt++; }
+  }
+}
+function simNear(o) { return _simActive.has(o); }
 // The ride, the walker and the engine sound must consider EVERY fleet, not
 // just the spawn district's. A car you can see but ride straight through is
 // worse than no car.
@@ -1028,6 +1109,7 @@ async function addChunk(ch, id, Y, rec = {}) {
       const cr = new Crowd(ax, wb, pop, chunkSides);
       cr.build(g);
       if (window.__crossings) cr.setCrossings(window.__crossings);
+      cr.__ax = ax && ax.p;        // see the sim-radius note by simNear()
       extraCrowds.push(cr);
       rec.crowd = cr;
       await Y();
@@ -1064,6 +1146,7 @@ async function addChunk(ch, id, Y, rec = {}) {
       const buses = Math.max(4, Math.min(16, Math.round(alen / 170)));
       const tr = new Traffic(ax, cars, buses, axisSpec(ax, ch));
       tr.build(g, 0);
+      tr.__ax = ax && ax.p;
       extraTraffic.push(tr);
       rec.traffic = tr;
       await Y();
@@ -1102,6 +1185,51 @@ function unloadChunk(rec) {
   for (let i = LODI.length - 1; i >= 0; i--) if (inG.has(LODI[i].o)) LODI.splice(i, 1);
   world.remove(rec.group);
   rec.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+
+  // AND THE MATERIALS AND TEXTURES, which this used to leave behind entirely.
+  //
+  // THE BUG THIS FIXES, measured 2026-07-31. Teleporting round the eight
+  // district spots twice: geometries rose and fell correctly, 1389 -> 2972 ->
+  // 1926, so the geometry dispose above was doing its job. Textures only ever
+  // ROSE — 214 at boot to 671 after two laps, +208 per lap, at the SAME eight
+  // places. Every street-name plate, direction gantry and MRT sign builds its
+  // own CanvasTexture with no cache, and nothing ever freed them. On a phone
+  // that is real GPU memory that only grows, and the tab is eventually killed:
+  // the user reported the page "crashing or rebooting itself" after teleporting
+  // around, which is exactly this.
+  //
+  // WHY IT IS DONE BY LIVE-SET AND NOT BY A FLAG. Most materials here ARE
+  // shared on purpose — sharedMats, tintedMats, shopHouseMats, LMAT, MAT, the
+  // per-recipe module-level palettes — and disposing one of those would pull
+  // the texture out from under every other district using it. Flagging them all
+  // means finding every creation site and never missing one, which is the kind
+  // of rule that holds until someone adds a material. Asking the scene instead
+  // cannot be got wrong: collect what the dying group used, then walk what is
+  // LEFT, and free only what nothing else still points at.
+  //
+  // It is also recoverable if the rule is ever too aggressive. dispose() frees
+  // the GPU resource, not the JavaScript object — three.js re-uploads from
+  // `texture.image` the next time the material is drawn — so the worst case is
+  // one re-upload, not a black building.
+  const doomedMats = new Set(), doomedTexs = new Set();
+  const collect = (root, mats, texs) => root.traverse((o) => {
+    const m = o.material;
+    if (!m) return;
+    for (const mm of (Array.isArray(m) ? m : [m])) {
+      mats.add(mm);
+      for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap',
+                       'emissiveMap', 'aoMap', 'alphaMap', 'bumpMap']) {
+        if (mm[k]) texs.add(mm[k]);
+      }
+    }
+  });
+  collect(rec.group, doomedMats, doomedTexs);
+  const liveMats = new Set(), liveTexs = new Set();
+  collect(scene, liveMats, liveTexs);
+  let freedM = 0, freedT = 0;
+  for (const t of doomedTexs) if (!liveTexs.has(t)) { t.dispose(); freedT++; }
+  for (const m of doomedMats) if (!liveMats.has(m)) { m.dispose(); freedM++; }
+  rec.freed = { mats: freedM, texs: freedT };
   if (rec.signals) {
     const i = extraSignals.indexOf(rec.signals);
     if (i >= 0) extraSignals.splice(i, 1);
@@ -1762,9 +1890,10 @@ async function buildRegion(data, opts = {}) {
         if (signals) signals.update(tSim);
         for (const es of extraSignals) es.update(tSim);
         if (trafficSys) trafficSys.update(tSim, 0.0166, signals, S.x, S.z);
-        for (const t of extraTraffic) t.update(tSim, 0.0166, signals, S.x, S.z);
+        simRefresh(S.x, S.z, tSim);
+        for (const t of extraTraffic) if (simNear(t)) t.update(tSim, 0.0166, signals, S.x, S.z);
         if (crowdSys) crowdSys.update(tSim, 0.0166, S.x, S.z, signals);
-        for (const c of extraCrowds) c.update(tSim, 0.0166, S.x, S.z, signals);
+        for (const c of extraCrowds) if (simNear(c)) c.update(tSim, 0.0166, S.x, S.z, signals);
         if ((k & 15) === 0) await bstep(0.99, 'waking the street');
       }
     }
@@ -2197,9 +2326,10 @@ function loop(now) {
     for (const es of extraSignals) es.update(clock);
       for (const es of extraSignals) es.update(clock);
       if (trafficSys) trafficSys.update(clock, dt, signals, walker.x, walker.z);
-      for (const t of extraTraffic) t.update(clock, dt, signals, walker.x, walker.z);
+      simRefresh(walker.x, walker.z, clock);
+      for (const t of extraTraffic) if (simNear(t)) t.update(clock, dt, signals, walker.x, walker.z);
       if (crowdSys) crowdSys.update(clock, dt, walker.x, walker.z, signals);
-      for (const c of extraCrowds) c.update(clock, dt, walker.x, walker.z, signals);
+      for (const c of extraCrowds) if (simNear(c)) c.update(clock, dt, walker.x, walker.z, signals);
       if (wayfinder) wayfinder.update(walker, dt);
       sound.update(0, 'walk', walker.speed, walker.phase, trafficNearest(walker.x, walker.z));
       if (SPEC) driveCamera(dt); else walkCamera(dt);
@@ -2286,10 +2416,11 @@ function loop(now) {
     if (signals) signals.update(clock);
     fmk('signals');
     if (trafficSys) trafficSys.update(clock, dt, signals, S.x, S.z);
-    for (const t of extraTraffic) t.update(clock, dt, signals, S.x, S.z);
+    simRefresh(S.x, S.z, clock);
+    for (const t of extraTraffic) if (simNear(t)) t.update(clock, dt, signals, S.x, S.z);
     fmk('traffic');
     if (crowdSys) crowdSys.update(clock, dt, S.x, S.z, signals);
-    for (const c of extraCrowds) c.update(clock, dt, S.x, S.z, signals);
+    for (const c of extraCrowds) if (simNear(c)) c.update(clock, dt, S.x, S.z, signals);
     fmk('crowd');
     if (wayfinder) wayfinder.update(S, dt);
     fmk('wayfind');
