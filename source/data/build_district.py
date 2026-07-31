@@ -139,7 +139,17 @@ def fetch(d, force=False):
         # among them the ArtScience Museum, The Shoppes, Victoria Theatre,
         # Parliament House and Clifford Pier. A way-only query loses them all
         # and looks like a clean fetch.
-        "buildings": f'way["building"]({bbox});rel["building"]({bbox});',
+        # AND building:part. The note above is right and stopped one step short:
+        # a query that asks only for `building` ALSO looks like a clean fetch
+        # while losing every way tagged only `building:part`. That is 99 ways in
+        # the Orchard bbox alone, and it is why One Raffles Place Tower 1 -- a
+        # 283m landmark, mapped, with its height on it -- appeared to have no
+        # footprint at all. process.py already promotes a part to a building
+        # when it carries a height, levels or a name; the fetch simply never
+        # delivered one. Also unlocks Lucky Plaza Residence, Ngee Ann City's
+        # stepped Tower A/B massing and the Grand Hyatt tower.
+        "buildings": (f'way["building"]({bbox});rel["building"]({bbox});'
+                      f'way["building:part"]({bbox});rel["building:part"]({bbox});'),
         "roads": (f'way["highway"~"^(trunk|primary|secondary|tertiary|residential|'
                   f'service|unclassified|living_street|pedestrian)$"]({bbox});'),
         "paths": f'way["highway"="footway"]({bbox});',

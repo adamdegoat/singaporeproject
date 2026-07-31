@@ -86,9 +86,28 @@ LANDMARKS = {
     # 50 with no source. research/sota.md has the full build spec.
     "school of the arts":     {"h": 56},
     "lucky plaza":            {"h": 85},
-    "far east plaza":         {"h": 70},
-    "paragon":                {"h": 78, "podium": 24},   # VERIFIED 6 retail + 20-storey tower
-    "orchard towers":         {"h": 60},
+    # 20m PODIUM (5 retail levels, published), not the tower's height. As 70 it
+    # buried "Far East Plaza Residence", which stands on it.
+    "far east plaza residence": {"h": 95},
+    "far east plaza":         {"h": 20},
+    # 24m PODIUM (6 retail storeys, published), with the medical tower keyed
+    # separately. As 78 the site buried its own tower.
+    #
+    # The old comment here said "20-storey tower". That is WRONG and its source
+    # was Wikipedia, uncited -- whose own infobox says 6 retail / 14 medical.
+    # The owner, Paragon Medical and DP Architects all say FOURTEEN on a
+    # six-storey podium. (The architect is DP Architects, not KPF.)
+    #
+    # `podium:` is dead weight: only the Ngee Ann City recipe reads it.
+    "paragon medical":        {"h": 78},
+    "paragon":                {"h": 24},
+    # 79m, and this key lands on BOTH of the complex's footprints (3,264 and
+    # 2,221 m2), which are its 18- and 17-storey blocks. OSM's levels=4 and
+    # levels=8 are both wrong. Researched 2026-07-31,
+    # research/orchard-frontage-facades.md. The tower is mid-AEI with a facade
+    # re-clad announced Dec 2023 and no confirmed completion, so the CURRENT
+    # skin is not reliably known -- height only.
+    "orchard towers":         {"h": 79},
     "palais renaissance":     {"h": 55},
     "hilton singapore orchard": {"h": 152},   # VERIFIED taller of two towers
     "grand hyatt":            {"h": 60},
@@ -131,9 +150,21 @@ LANDMARKS = {
     "313 somerset":           {"h": 28},   # VERIFIED, same mall
     "wheelock place":         {"h": 109, "key": True},   # VERIFIED 21 storeys
     "tripleone somerset":     {"h": 110, "key": True},
-    "cairnhill nine":         {"h": 130, "key": True},
+    # "Cairnhill Nine" is a TOWER's name sitting on the SITE polygon, and at
+    # 130 it buried two towers -- the Ascott and an unnamed 30-storey CapitaLand
+    # block. 20m is the 6-storey carpark with its 7th-storey deck. The tower
+    # itself is unreachable by name and is set by postcode instead: CapitaLand
+    # publishes it "towering at 122 metres with 30 storeys", so the old 130 was
+    # 8m over AND on the wrong polygon. There is no 39-storey tower here.
+    #
+    # DO NOT key "cairnhill" (matches three buildings, and Cairnhill Plaza is
+    # separately tagged 122.4) or "ascott" (matches Ascott Raffles Place, the
+    # 1954 Asia Insurance Building).
+    "cairnhill nine":         {"h": 20},
     "orchard gateway":        {"h": 45},
-    "midpoint orchard":       {"h": 45},
+    # FIVE storeys, not 45m. 45 was a hand-typed override with no source; the
+    # building is a 5-storey block. Height CLASS, not a published figure.
+    "midpoint orchard":       {"h": 23},
     # Research 2026-07-29 (research/concorde.md): NOT a tower — 9 storeys
     # total (3-storey podium, hotel L4-9, Mingtiandi sale particulars), and
     # the OSM way carries no height tag at all, so the old 70 was our own
@@ -366,6 +397,25 @@ LANDMARKS = {
     # audit and the ledger all read one number.
     "lasalle":                {"h": 26},
 
+    # ---- Orchard Road frontage, researched 2026-07-31
+    # (research/orchard-frontage-facades.md) ----
+    #
+    # Orchard 22 is the former MIDFILM HOUSE, 1921: a three-storey rendered
+    # conservation shophouse with a Dutch scrolled gable, on a 333 m2 sliver.
+    # OSM tags it height=40 AND building:levels=3 -- 13.3m per floor, which no
+    # building has. The junk-tag guard only rejects heights under 2.5m, so the
+    # 40 sailed through and put a 40-metre slab in a row of three-storey
+    # shophouses. At 16m it also falls into the shophouse() path, which is what
+    # it actually is.
+    #
+    # NOTE, measured while fixing this: 175 of the 1,421 buildings that carry
+    # BOTH height and levels imply an implausible floor height. A general guard
+    # was considered and REJECTED -- the ratio does not say which tag is wrong.
+    # Hilton Singapore Orchard is height=90 levels=2, where the HEIGHT is right;
+    # Orchard 22 is the reverse. Preferring either tag mechanically would
+    # flatten real towers. Fix them individually, with a source.
+    "orchard 22":             {"h": 16},
+
     # The Warehouse Hotel, 320/326/332 Havelock Road. Researched 2026-07-30,
     # research/robertson-rivervalley.md. THREE two-storey gabled godowns
     # standing shoulder to shoulder -- and it was carrying a TYPE_DEFAULT guess
@@ -560,6 +610,9 @@ POSTCODE_HEIGHT = {
     # The complex is branded UE BizHub CITY now; only the mall still trades as
     # UE Square.
     "239920": 91.6,
+    # Cairnhill Nine's residential tower, 122m published by CapitaLand. Its OSM
+    # way is unnamed, so no name key can reach it.
+    "229723": 122,
 }
 
 HDB_STOREYS = {
@@ -1160,7 +1213,12 @@ def main():
             # The renderer decides what to draw; the data only records what the
             # map says. Re-check this list when the tags are refetched.
             if tags.get("building") == "construction":
-                if not re.search(r"piccadilly", (tags.get("name") or ""), re.I):
+                # NoMad Singapore (the Faber House site) is EXTERNALLY COMPLETE
+                # -- June 2026 photographs show full glazing, planting and the
+                # rooftop sign in place, with only the five-foot way hoarded.
+                # Its building=construction tag is stale, and drawing a finished
+                # hotel as a hoarded site is worse than the tag is wrong.
+                if not re.search(r"piccadilly|nomad", (tags.get("name") or ""), re.I):
                     b["con"] = 1
             # AND BY NAME, where OSM still tags a demolished building as a
             # building. One Sophia does not exist: Peace Centre and Peace

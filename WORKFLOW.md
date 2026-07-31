@@ -438,3 +438,50 @@ Not understood. What is known:
     instead of the building's: no change, still invisible. Ruled out.
 
 If you are chasing a recipe whose geometry will not appear, check this first.
+
+## The fetch decides what can ever exist
+
+`build_district.py`'s buildings query asked for `way["building"]` and
+`rel["building"]`. It did NOT ask for `building:part`, and a way tagged ONLY
+`building:part` therefore never entered this world at all — no error, no gap in
+any count, just a building that is not there.
+
+That is why One Raffles Place Tower 1 looked like it had no footprint. It has
+two, both mapped, both carrying their own heights (283m and 215m), and the
+research that first looked at it concluded "OSM has no way for Tower 1" because
+the fetch had never delivered one. A second pass caught it.
+
+The comment already sitting above that query says relations were added because a
+way-only query "loses them all and looks like a clean fetch". Exactly the same
+sentence applies one step further out, and it took two months to notice.
+
+WHEN A BUILDING IS MISSING, CHECK THE QUERY BEFORE CHECKING THE DATA. The chain
+is: Overpass query -> raw/<district>.json -> process.py -> scene. A thing absent
+from step 1 is invisible at every later step, and every later step will look
+healthy.
+
+Also unlocked by asking for parts: Lucky Plaza Residence, Ngee Ann City Tower
+A/B's stepped massing (which the recipe currently invents), the Grand Hyatt
+tower, and Masjid Al-Falah inside the Cairnhill site.
+
+REFETCHING IS NOT FREE, AND IT WAS TRIED AND REVERTED. 2026-07-31: Orchard was
+refetched with the parts query added, backed up first. Result:
+
+    BEFORE  6,661 elements  1,602 buildings  3,865 highways  4 parts
+    AFTER   6,059 elements  1,430 buildings  3,292 highways  200 parts
+
+It gained the 196 parts it was sent for and LOST 172 buildings and 573 roads.
+That is not OSM changing — that is flaky mirrors returning partial layers, and
+the fetch log is full of `attempt N failed ... HTTPError` with per-layer
+fallbacks. The scene came out 848 KB against 984 KB. Backup restored, Orchard
+rebuilt, verified back at 1,626 buildings and 985 KB.
+
+THE QUERY CHANGE IS KEPT because it is correct; the refetch is not. Whoever
+does it next:
+  - back up `data/raw/*.json` (that is what made this reversible),
+  - refetch ONE district,
+  - COMPARE ELEMENT COUNTS PER LAYER before rebuilding anything,
+  - treat any layer that lost elements as a failed fetch and retry it, not as
+    news about the world.
+Overpass mirrors are flaky — run it with nohup, never through a pipe that can
+SIGPIPE it, and never inside a tool timeout shorter than the fetch.
