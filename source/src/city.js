@@ -946,10 +946,20 @@ export async function buildBuildings(world, data, Y = null) {
   const SOLO = (VP.get('solo') || '').toLowerCase();
   const NORECIPE = VP.has('norecipe');
 
-  let _yi = 0;
+  // YIELD ON ELAPSED TIME, NOT ON A COUNT. Every 16 buildings sounds frequent
+  // and is not: a plain shophouse costs a fraction of a millisecond and a
+  // landmark recipe builds hundreds of pieces of geometry, so sixteen of the
+  // wrong ones in a row is half a second with no frame drawn. Measured with
+  // PerformanceObserver, the two worst blocking tasks after the loading screen
+  // were 506ms and 424ms, and this loop is where they came from.
+  //
+  // Checking the clock bounds a stall to the budget whatever lands in it, which
+  // is the property a count can never have. 8ms leaves room for the frame
+  // itself inside a 16ms slot.
+  let _yt = performance.now();
   for (const b of data.buildings) {
     // cooperative yield for the runtime streamer; null during boot
-    if (Y && (++_yi & 15) === 0) await Y();
+    if (Y && performance.now() - _yt > 8) { await Y(); _yt = performance.now(); }
     const pts = b.p;
     if (pts.length < 3) continue;
     if (SOLO && !((b.n || '').toLowerCase().includes(SOLO))) continue;
@@ -1432,9 +1442,9 @@ export async function buildRoads(world, data, Y = null) {
   const yellowGeos = [];
   const centreGeos = [];
   let mainAxis = null, bestLen = Infinity;
-  let _yi = 0;
+  let _yt2 = performance.now();      // same time budget as buildBuildings
   for (const r of data.roads) {
-    if (Y && (++_yi & 31) === 0) await Y();
+    if (Y && performance.now() - _yt2 > 8) { await Y(); _yt2 = performance.now(); }
     // A CROSSING IS NOT A PAVEMENT. `footway=crossing` is the pedestrian
     // crossing mapped as a way THROUGH the carriageway; surfacing it drew a
     // pale band across the road at every crossing -- 155 of them in Orchard --

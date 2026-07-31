@@ -32,7 +32,11 @@ export function buildVespa() {
   g.add(part(hip, body, 0.26, 0.52, -0.30));
   g.add(part(hip, body, -0.26, 0.52, -0.30));
   const hipL = g.children[g.children.length - 1], hipR = g.children[g.children.length - 2];
-  hipL.scale.set(0.72, 0.95, 1.55); hipR.scale.set(0.72, 0.95, 1.55);
+  // A VESPA'S REAR BODY IS NOT AN EGG. At 1.55 in z these two spheres came out
+  // 0.93m long on a 1.7m scooter and swallowed the seat, the rider's legs and
+  // most of the frame — from the saddle it read as a pale blob with a person
+  // balanced on it. The real cowl is about 0.6m from the seat nose to the tail.
+  hipL.scale.set(0.68, 0.86, 1.02); hipR.scale.set(0.68, 0.86, 1.02);
 
   g.add(part(new THREE.BoxGeometry(0.42, 0.30, 0.86), body, 0, 0.56, -0.26));      // spine
   g.add(part(new THREE.BoxGeometry(0.46, 0.055, 0.62), cream, 0, 0.30, 0.28));      // floorboard
@@ -91,7 +95,17 @@ export function buildRider() {
   g.add(torso);
   const head = part(new THREE.SphereGeometry(0.135, 14, 12), helmet, 0, 1.55, -0.02);
   g.add(head);
-  g.add(part(new THREE.SphereGeometry(0.118, 12, 10), visor, 0, 1.545, 0.055));
+  // A HELMET, not a ball with a dark ball inside it. The visor is a band across
+  // the front rather than a second sphere, and the peak above it is what makes
+  // the silhouette read as headgear from behind — which is the only angle the
+  // rider ever sees themselves from.
+  const vis = part(new THREE.SphereGeometry(0.126, 14, 10, 0, Math.PI * 2, Math.PI * 0.30, Math.PI * 0.34),
+    visor, 0, 1.556, 0.030, -0.20);
+  g.add(vis);
+  const peak = part(new THREE.BoxGeometry(0.20, 0.022, 0.10), helmet, 0, 1.606, 0.105, -0.28);
+  g.add(peak);
+  // neck, so the head is attached to something
+  g.add(part(new THREE.CylinderGeometry(0.052, 0.058, 0.10, 8), skin, 0, 1.44, -0.035));
   // thighs forward, shins down: the seated scooter pose
   for (const sx of [-0.13, 0.13]) {
     g.add(part(new THREE.CapsuleGeometry(0.085, 0.30, 4, 8), jeans, sx, 0.90, 0.10, Math.PI / 2.3));

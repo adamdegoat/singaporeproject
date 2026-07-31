@@ -279,8 +279,21 @@ def fetch(d, force=False):
             was = None
         if was:
             now = _census(merged)
+            # 0.98 WAS TOO LOOSE, and it cost an hour on 2026-07-31. River
+            # Valley's refetch came back 19 road ways short — 2,105 to 2,086,
+            # a 0.9% loss — sailed through this guard, and the audit then
+            # caught the consequence as two new road-network islands. The
+            # refetch had to be reverted and its 202 building:part masses went
+            # with it.
+            #
+            # A refetch is a whole-district re-pull of the same bounding box
+            # from the same source. It should return the same features. Any
+            # loss at all is a flaky mirror, not news about the world, so the
+            # threshold is now a hair under parity rather than a 2% allowance:
+            # 0.998 tolerates a single element moving in or out of the box on
+            # a large category and nothing more.
             lost = [(k, was[k], now[k]) for k in was
-                    if was[k] > 20 and now[k] < was[k] * 0.98]
+                    if was[k] > 20 and now[k] < was[k] * 0.998]
             if lost:
                 rej = path + ".rejected"
                 json.dump({"elements": merged}, open(rej, "w"))

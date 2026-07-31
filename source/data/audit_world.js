@@ -579,6 +579,21 @@ window.__auditWorld = async function auditWorld() {
       // rather than by a list of capsule dimensions that goes stale the moment
       // the figure is retuned.
       if (p.crowd) continue;
+      // A VEHICLE IN THE CARRIAGEWAY IS THE CARRIAGEWAY DOING ITS JOB, and it
+      // is exempt by MECHANISM for the same reason the crowd above is. Cars
+      // and buses were listed by geometry parameters — 'BoxGeometry(1.78,0.62,
+      // 4.32)' and friends — and on 2026-07-31 the car was remodelled with a
+      // sill, a bonnet, a boot, raked screens, lamps, mirrors and hubs, and its
+      // body went from 0.62 tall to 0.54. Every one of those signatures missed
+      // and 462 pieces of traffic appeared as blockers in the road.
+      //
+      // That is the third time this file has been bitten by the same thing: it
+      // already says a signature allowlist "fails OPEN for new shapes and fails
+      // CLOSED for changed ones, and only the second is safe". `userData.actor`
+      // is set on every instanced mesh the Traffic system builds and is already
+      // collected above; the car signatures stay in ROAD_OK only so an older
+      // scene still passes.
+      if (p.actor) continue;
       if (ROAD_OK.has(p.sig)) {
         const up = terr ? p.y - terr.at(p.x, p.z) : 99;
         if (LOW_OK.has(p.sig) || up >= OVERHEAD_MIN) continue;
@@ -1164,8 +1179,24 @@ window.__auditWorld = async function auditWorld() {
     const people = window.__crowdPositions ? window.__crowdPositions() : [];
     const off = people.filter((p) => axisDist(p[0], p[1]) >= 30).length;
     const pct = people.length ? Math.round((off / people.length) * 100) : 0;
-    add('C4', 'pedestrians away from the main street', 'MAJOR', pct, 35,
-        `${off} of ${people.length} off-axis (${pct}%, want above 35%)`, []);
+    // THIS WORLD HAS NO PEDESTRIANS SINCE 2026-07-31. C4 exists to prove the
+    // crowd spreads off the main street rather than lining one avenue, and a
+    // check about a feature that no longer exists must not report a number
+    // either way: failing it says the crowd is badly distributed, and passing
+    // it says the crowd is well distributed, and both are lies about an empty
+    // pavement.
+    //
+    // Reported, not silently dropped — the same treatment the MRT-absent WARN
+    // gets — so that if the crowd ever comes back (`?people`) the gate is
+    // still here and still means what it meant.
+    if (!people.length) {
+      add('C4', 'pedestrians away from the main street', 'WARN', 0, null,
+          'no crowd in this world: pedestrians were removed on 2026-07-31 '
+          + '(?people restores them, and this check with them)', []);
+    } else {
+      add('C4', 'pedestrians away from the main street', 'MAJOR', pct, 35,
+          `${off} of ${people.length} off-axis (${pct}%, want above 35%)`, []);
+    }
   }
   {
     const bare = dressed.filter(([, e]) => !nearAny(e.pts, isTree, 45)).map(([n]) => n);
@@ -1544,7 +1575,11 @@ window.__auditWorld = async function auditWorld() {
       // T-checks about a blocked carriageway are about geometry that will not
       // move. Exempt by mechanism, same as P1 and P4; the pedestrian entries
       // in ROAD_OK below are superseded and kept only as a record.
-      if (p.flat || p.crowd || ROAD_OK.has(p.sig)) return false;
+      // `p.actor` covers the traffic for the same reason `p.crowd` covers the
+      // pedestrians: a moving vehicle is not geometry standing in the road. The
+      // car signatures in ROAD_OK went stale the day the car was remodelled —
+      // see the note in P1.
+      if (p.flat || p.crowd || p.actor || ROAD_OK.has(p.sig)) return false;
       if (!terr) return true;
       const up = p.y - terr.at(p.x, p.z);
       return up >= RIDER_LOW && up <= RIDER_HIGH;

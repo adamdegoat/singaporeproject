@@ -793,6 +793,25 @@ const LODT = [];
 // rider actually sees. If the measurement says the crowd is not where the time
 // goes, this number should go back up rather than down.
 const PHONE = TOUCH && !P.has('full');
+
+// NO PEDESTRIANS. The rider asked for an empty-of-people city on 2026-07-31,
+// after a measurement showed what they cost. Same spot, alternating passes,
+// rendered frames counted from renderer.info.render.frame:
+//
+//     as shipped                    37.0 fps   boot 7.9s
+//     no pedestrians                55.0 fps   boot 6.9s
+//     no pedestrians, no traffic    55.1 fps   boot 6.9s
+//     as shipped (repeat)           35.9 fps   boot 7.9s
+//
+// Fifty per cent, and it is the PEOPLE, not the vehicles: removing traffic on
+// top bought 0.1 fps. Worth knowing WHY, because it is no longer the walking
+// simulation — after the draw-cull fix earlier the same day the crowd is about
+// 6% of a CPU profile. The cost is pushing 2,200 people x 14 body parts of
+// instance matrices to the GPU every frame. That is bandwidth, which is
+// exactly what a phone has least of.
+//
+// `?people` restores them for anyone who wants the old street.
+const PEOPLE = P.has('people');
 const LOD_FAR = PHONE ? 340 : 500;
 // static instanced sets (trees, lamps, posts, stripes) with per-instance
 // distance culling — the sets span the whole region in one bounding sphere,
@@ -1111,7 +1130,7 @@ async function addChunk(ch, id, Y, rec = {}) {
       extraSignals.push(es);
       rec.signals = es;
     }
-    if (!P.has('nopeople')) {
+    if (PEOPLE) {
       mk('crowd');
       // population scales with the main street, same density class as the
       // spawn district (2,200 over 2,586m); walkers beyond 105m cost no
@@ -1167,8 +1186,8 @@ async function addChunk(ch, id, Y, rec = {}) {
       // rider is ever drawn. Vehicles are placed at path.len/n with +-6m of
       // jitter, so at 25m nominal the closest pair sits ~13m apart against a
       // ~4.5m car -- no overlap, which D34 gates anyway.
-      const cars = Math.round(Math.max(24, Math.min(120, alen / 25)) * (PHONE ? 0.62 : 1));
-      const buses = Math.round(Math.max(4, Math.min(16, alen / 170)) * (PHONE ? 0.62 : 1));
+      const cars = Math.round(Math.max(48, Math.min(240, alen / 12.5)) * (PHONE ? 0.62 : 1));
+      const buses = Math.round(Math.max(8, Math.min(32, alen / 85)) * (PHONE ? 0.62 : 1));
       const tr = new Traffic(ax, cars, buses, axisSpec(ax, ch));
       tr.build(g, 0);
       tr.__ax = ax && ax.p;
@@ -1186,12 +1205,44 @@ async function addChunk(ch, id, Y, rec = {}) {
   await Y();
   mk('consolidate');
   if (!P.has('raw')) {
+    // FOUR HEAVY PASSES BACK TO BACK WITH NOTHING BETWEEN THEM. Each one walks
+    // the whole district — dedupe scans every material, consolidate merges every
+    // mesh by material and tile, trimShadowCasters walks the graph again, and
+    // registerLod copies every instanced set's matrices. Run together they were
+    // the two longest blocking tasks in the whole session: 506ms at +1.9s after
+    // the loading screen clears and 424ms at +3.1s, measured with
+    // PerformanceObserver's longtask entries.
+    //
+    // A yield between them does not make the work smaller, but it lets the
+    // frame in between actually draw, which is the difference between "the
+    // world stutters as it loads" and "the world freezes twice".
     dedupeMaterials(world);
+    await Y();
     consolidate(g);
+    await Y();
     trimShadowCasters(g);
+    await Y();
     if (!P.has('nolod')) registerLod(world);
+    await Y();
   }
   if (wayfinder) wayfinder.refresh();   // minimap + names learn the new district
+
+  // COMPILE THIS DISTRICT'S SHADERS BEFORE IT IS DRAWN, not during.
+  //
+  // Boot compiles the whole scene twice — once for the primary region and once
+  // after the envMap flips USE_ENVMAP on the glass — and that is why the first
+  // district appears cleanly. Nothing did it for a STREAMED district, so every
+  // new material variant a chunk brings compiled synchronously inside the first
+  // frame that drew it. `onFirstUse` was 1.4% of a boot-window profile, and
+  // shader compilation does not spread itself over frames: it lands in one, as
+  // a hitch, right after the loading screen clears and the neighbouring
+  // districts arrive. That is the "still lags when I first load in".
+  //
+  // Scoped to THIS GROUP with the scene passed as the lighting context, so it
+  // compiles the handful of new programs rather than re-walking the world on
+  // every chunk. Failure is not fatal — without KHR_parallel_shader_compile it
+  // falls back to compiling at first draw, which is exactly today's behaviour.
+  try { await renderer.compileAsync(g, camera, scene); } catch (e) { /* falls back */ }
 
   // A BUILDING DOES NOT MOVE, SO STOP RECOMPUTING ITS MATRIX EVERY FRAME.
   //
@@ -1415,9 +1466,35 @@ async function streamRest(rest) {
       window.__stats.roads = window.__data.roads.length;
     }
   };
+  // EVICT BEFORE YOU BUILD. This sweep used to live after the build branch,
+  // which `continue`s — so while ANYTHING was still loading, nothing was ever
+  // unloaded and the resident cap never ran at all. Riding or teleporting means
+  // there is nearly always something loading, so a ten-lap soak found FOUR
+  // districts resident against a cap of three and the node count back at
+  // 12,343 after the cap was supposed to hold it near 4,300.
+  //
+  // Freeing first also lowers the peak: on a teleport the far districts go
+  // before the new ones arrive, instead of both being held at once.
+  const evict = () => {
+    if (ALL) return;
+    let n = 0;
+    for (const r of recs) {
+      if (r.group && nearDist(r) > FAR) { unloadChunk(r); n++; }
+    }
+    const live = recs.filter((r) => r.group);
+    if (live.length > MAX_RESIDENT) {
+      live.sort((a, b) => axDist(b) - axDist(a));
+      for (const r of live.slice(0, live.length - MAX_RESIDENT)) { unloadChunk(r); n++; }
+    }
+    if (n) { window.__streamState.unloads += n; syncState(); }
+  };
   for (;;) {
+    evict();
     let cand = recs.filter((r) => !r.group);
     if (!ALL) cand = cand.filter((r) => nearDist(r) < NEAR);
+    // Never exceed the ceiling by building: if the resident set is already at
+    // the cap, the nearest candidate has to wait for something to leave.
+    if (!ALL && recs.filter((r) => r.group).length >= MAX_RESIDENT) cand = [];
     if (cand.length) {
       // Nearest content first; where two districts both contain you (the
       // bboxes overlap by design so the region closes with no seam holes)
@@ -1437,24 +1514,6 @@ async function streamRest(rest) {
       continue;
     }
     if (ALL) { syncState(); return; }   // drained: the gates' mode is done
-    for (const r of recs) {
-      if (r.group && nearDist(r) > FAR) {
-        unloadChunk(r);
-        window.__streamState.unloads++;
-        syncState();
-      }
-    }
-    // over the ceiling: drop the farthest by AXIS distance, which is the one
-    // whose street the rider is least likely to be looking down
-    const live = recs.filter((r) => r.group);
-    if (live.length > MAX_RESIDENT) {
-      live.sort((a, b) => axDist(b) - axDist(a));
-      for (const r of live.slice(0, live.length - MAX_RESIDENT)) {
-        unloadChunk(r);
-        window.__streamState.unloads++;
-      }
-      syncState();
-    }
     await new Promise((r) => setTimeout(r, 1500));
   }
 }
@@ -1676,7 +1735,7 @@ async function buildRegion(data, opts = {}) {
   }
   if (!P.has('notraffic') && axis) {
     // Five lanes one way carrying 21 vehicles over 2,586m is a road at 4am.
-    trafficSys = new Traffic(axis, PHONE ? 74 : 120, PHONE ? 10 : 16, axis && axisSpec(axis, data));
+    trafficSys = new Traffic(axis, PHONE ? 150 : 240, PHONE ? 20 : 32, axis && axisSpec(axis, data));
     trafficSys.build(world, trafficSys.path.nearestS(S.x, S.z));
     // The system itself, so a probe can DRIVE the tick instead of waiting on
     // requestAnimationFrame -- a spawned browser is throttled and its loop may
@@ -1733,7 +1792,7 @@ async function buildRegion(data, opts = {}) {
   // crowd is handed the same grid, so a route that goes through a wall is a
   // route it can see.
   await bstep(0.66, 'waking the crowd');
-  if (!P.has('nopeople') && axis) {
+  if (PEOPLE && axis) {
     // spread over the whole dressed network, not just the main street. Only the
     // few dozen in view are ever drawn, so a bigger population is nearly free.
     // 460 was a correct system with nothing in it. Fourteen matched-angle

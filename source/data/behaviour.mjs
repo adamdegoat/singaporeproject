@@ -62,6 +62,9 @@ const motion = await page.evaluate(async ([VISIBLE]) => {
     sc.traverse((o) => {
       if (!o.isInstancedMesh) return;
       const g = o.geometry.parameters || {};
+      // The car's MAIN BODY, matched on its plan only — the height changed from
+      // 0.62 to 0.54 when the car was remodelled on 2026-07-31 and a
+      // three-parameter match would have silently found no cars at all.
       const isCar = Math.abs((g.width || 0) - 1.78) < 0.01 && Math.abs((g.depth || 0) - 4.32) < 0.01;
       const isBus = Math.abs((g.width || 0) - 2.5) < 0.01 && Math.abs((g.depth || 0) - 11.8) < 0.01;
       if (!isCar && !isBus) return;
@@ -74,7 +77,12 @@ const motion = await page.evaluate(async ([VISIBLE]) => {
   };
   const snap = () => {
     const st = window.__state ? window.__state() : { x: 0, z: 0 };
-    return { t: performance.now(), px: st.x, pz: st.z, ped: window.__crowdPositions(), ...vehicles() };
+    // `__crowdPositions` only exists when the crowd was built, and this world
+    // has had no pedestrians since 2026-07-31. An empty list keeps every
+    // vehicle check running; the pedestrian checks below see nothing and say
+    // so rather than crashing the whole gate on a missing function.
+    const ped = window.__crowdPositions ? window.__crowdPositions() : [];
+    return { t: performance.now(), px: st.x, pz: st.z, ped, ...vehicles() };
   };
   const fr = [];
   for (let k = 0; k < 60; k++) { fr.push(snap()); await new Promise((r) => setTimeout(r, 150)); }
@@ -167,7 +175,11 @@ const rider = await page.evaluate(() => {
 /* ---------- B3: walk every path, look for discontinuities ---------- */
 
 const frames = await page.evaluate(([JUMP_MAX]) => {
-  const paths = window.__crowdPaths();
+  // Same reason as the crowd positions above: no crowd, no crowd paths. B3
+  // asks whether a walker could step off a pavement edge into geometry, and
+  // with no walkers there is nothing to ask. It reports zero over zero rather
+  // than throwing, and the check stays live for `?people`.
+  const paths = window.__crowdPaths ? window.__crowdPaths() : [];
   const bad = [];
   let worst = 0, worstAt = null;
   for (const pt of paths) {

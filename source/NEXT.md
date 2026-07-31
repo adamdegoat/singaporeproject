@@ -3558,3 +3558,85 @@ Square's 19 storeys, Alex Residences' 40 and Echelon's 41 land at all.
   research/robertson-district-heights.md (salmon-pink Redhill, magenta Bukit
   Merah, mint-green Havelock). Not applied — the renderer takes one colour per
   building and these are wall-plus-accent schemes.
+
+# 2026-07-31 evening — the mobile session
+
+The rider reported three things in one afternoon and all three were real.
+
+## "The page crashes or reboots itself when I teleport around"
+
+TWO causes, found in that order, and the first was not enough on its own.
+
+**A texture leak.** `unloadChunk` disposed geometry and nothing else. Every
+street-name plate, direction gantry and MRT sign builds its own CanvasTexture
+with no cache, so two laps of the eight district spots took the texture count
+from 214 to 671 and it only ever rose. Fixed by disposing materials and maps
+that nothing left in the scene still references — a live-set test rather than a
+flag, because most materials here ARE shared on purpose and a flag rule holds
+only until someone adds a material.
+
+**Residency, which was the bigger half.** After the leak fix, six laps hold
+geometries, textures, programs and node counts flat — and the heap still
+plateaus around 1,220 MB, because at 480/1000 as many as SIX districts stayed
+resident and 184 MB of the heap is the CPU-side copy of 4,414 geometries that
+three.js keeps after upload. Desktop Chrome allows 3,586 MB. A phone does not.
+A phone now runs 380/640 with at most three resident districts: scene nodes
+11,377 -> 4,281, geometries 2,419 -> 1,824.
+
+## "It runs hot"
+
+Four measured reductions, none of them guessed:
+
+  - the streamed districts' crowds and traffic were stepped for every resident
+    district however far away. 13.6 -> 40.8 fps with them frozen, measured
+    back to back in one page. Now the two nearest by AXIS (the boxes overlap by
+    design, so a box test excludes nothing).
+  - `walkBlocked` was 9.7% of every frame, the largest single application cost
+    in the world, asking whether people beyond the 105m draw cull were standing
+    inside a building. The cull moved three lines earlier. Idle 37% -> 50%.
+  - the 30fps phone cap the loop always documented had never actually been on.
+  - fewer agents and shorter sight on phones only.
+
+## "The first ten seconds lag"
+
+A CPU profile of the boot window, not a guess:
+
+  - `junctionsNear` 4.5% — walked every road vertex in the district against
+    every segment of every street run, once per run.
+  - `buildSurround` 3.6% — tested every horizon cell against all 2,294 building
+    boxes.
+
+Both spatially indexed. Both gone from the profile. The surround index is
+provably lossless (a box can only match a point inside its expanded bounds, and
+it is registered in every cell those bounds cover) and the determinism gate
+confirms the placement RNG stream is untouched — which matters more than the
+speed, because rnd() is called after that predicate.
+
+## "Riding beside a bus auto-brakes"
+
+The collision box was 1.35m half-width against a 1.27m mesh, and the rider was
+padded by a 0.55m CIRCLE when a Vespa is 0.33m across the handlebars. Contact
+fired at 1.90m where the meshes touch at 1.60m. Padding is now directional —
+narrow across, still generous fore-and-aft — and fires at 1.61m.
+
+## HOW TO MEASURE ANY OF THIS AGAIN
+
+See WORKFLOW.md, "How to measure performance here". Three separate wrong
+answers came out of counting requestAnimationFrame ticks, comparing browser
+launches on a busy machine, and not noticing the idle cooler pinning every
+reading to 20.0.
+
+## STILL OPEN
+
+  - **Orchard and River Valley have no building:part masses.** Three of four
+    Overpass mirrors are down and the survivor returns 14% short on roads; the
+    loss guard correctly rejects it. A patient retry loop is running. Orchard is
+    the biggest district in the world and this is the largest single block of
+    missing towers left.
+  - River Valley's earlier refetch DID land and was reverted, because it lost 19
+    road ways under the 2% guard threshold and the audit caught the islands.
+    Worth lowering that threshold.
+  - Tanjong Pagar Plaza Blk 1 (24 storeys, 163 units, 1976) is absent from OSM
+    entirely. OneMap places blk 1 and blk 3 seven metres apart, so the geocode
+    does not resolve which footprint is which and it stays UNBUILT rather than
+    guessed.

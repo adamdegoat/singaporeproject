@@ -1151,10 +1151,41 @@ export class Traffic {
     const glass = new THREE.MeshStandardMaterial({ color: 0x2a323a, roughness: 0.12, metalness: 0.2 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x24272b, roughness: 0.85 });
 
-    this.body = mk(new THREE.BoxGeometry(1.78, 0.62, 4.32), paint, n);
-    this.roof = mk(new THREE.BoxGeometry(1.64, 0.50, 2.10), paint, n);
-    this.glaze = mk(new THREE.BoxGeometry(1.69, 0.38, 2.00), glass, n);
-    this.wheel = mk(new THREE.CylinderGeometry(0.31, 0.31, 0.2, 10), dark, n * 4);
+    // A CAR MADE OF FOUR BOXES READS AS A BRICK. It was body, roof, one pane of
+    // glass and four wheels — no bonnet, no boot, no lights, nothing to catch
+    // the sun. Every extra part costs ONE draw call for the whole fleet, not
+    // one per car, and the 2,200 pedestrians that came out of this world on
+    // 2026-07-31 freed far more than this spends.
+    //
+    // The shape now steps: a low full-length sill, a wider mid body, a shorter
+    // cabin set back off centre, a raked windscreen and backlight, and lit
+    // lamps at both ends. Lights are emissive so they read at dusk and in the
+    // shade of the towers, which is most of this city at street level.
+    const lamp = new THREE.MeshStandardMaterial({
+      color: 0xfff4dc, emissive: 0xffe9b8, emissiveIntensity: 0.85, roughness: 0.3 });
+    const tail = new THREE.MeshStandardMaterial({
+      color: 0x8c1a17, emissive: 0xd83a2c, emissiveIntensity: 0.7, roughness: 0.35 });
+    const trim = new THREE.MeshStandardMaterial({
+      color: 0x1e2124, roughness: 0.55, metalness: 0.45 });
+
+    this.sill = mk(new THREE.BoxGeometry(1.84, 0.24, 4.34), trim, n);
+    this.body = mk(new THREE.BoxGeometry(1.78, 0.54, 4.32), paint, n);
+    this.bonnet = mk(new THREE.BoxGeometry(1.68, 0.18, 1.46), paint, n);
+    this.boot = mk(new THREE.BoxGeometry(1.68, 0.20, 1.10), paint, n);
+    // THE CABIN IS A GLASS BAND WITH A THIN PAINTED CAP, not a painted box with
+    // a glass box inside it. The first attempt made the roof and the glaze
+    // almost the same size at almost the same height, so the dark glass won
+    // every pixel and the car photographed as a pickup with a black canopy.
+    this.roof = mk(new THREE.BoxGeometry(1.56, 0.09, 1.74), paint, n);
+    this.glaze = mk(new THREE.BoxGeometry(1.62, 0.40, 1.78), glass, n);
+    this.wind = mk(new THREE.BoxGeometry(1.58, 0.46, 0.09), glass, n);
+    this.rear = mk(new THREE.BoxGeometry(1.54, 0.42, 0.09), glass, n);
+    this.lampL = mk(new THREE.BoxGeometry(0.42, 0.15, 0.09), lamp, n * 2);
+    this.tailL = mk(new THREE.BoxGeometry(0.40, 0.14, 0.09), tail, n * 2);
+    this.mirror = mk(new THREE.BoxGeometry(0.20, 0.09, 0.09), trim, n * 2);
+    this.wheel = mk(new THREE.CylinderGeometry(0.32, 0.32, 0.22, 12), dark, n * 4);
+    this.hub = mk(new THREE.CylinderGeometry(0.17, 0.17, 0.24, 10),
+      new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.4, metalness: 0.6 }), n * 4);
 
     // Singapore liveries: the LTA green most of the fleet wears, and SBS red
     this.busBody = mk(new THREE.BoxGeometry(2.5, 2.5, 11.8),
@@ -1180,8 +1211,9 @@ export class Traffic {
       col.setHex(cc);
       this.body.setColorAt(i, col); this.roof.setColorAt(i, col);
     }
-    if (this.body.instanceColor) this.body.instanceColor.needsUpdate = true;
-    if (this.roof.instanceColor) this.roof.instanceColor.needsUpdate = true;
+    for (const mesh of [this.body, this.roof, this.bonnet, this.boot]) {
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
     const BUS_LIVERY = [0x3f7d46, 0x3f7d46, 0xc4342f];   // LTA green, green, SBS red
     const bcol = new THREE.Color();
     for (let i = 0; i < b; i++) {
@@ -1453,17 +1485,43 @@ export class Traffic {
         this._cv = this._cv || new THREE.Color();
         this._cv.setHex(it.col);
         if (it.kind === 'car') {
-          if (this.body.instanceColor) { this.body.setColorAt(si, this._cv); this.roof.setColorAt(si, this._cv); }
+          if (this.body.instanceColor) {
+            this.body.setColorAt(si, this._cv); this.roof.setColorAt(si, this._cv);
+            this.bonnet.setColorAt(si, this._cv); this.boot.setColorAt(si, this._cv);
+          }
         } else if (this.busBody.instanceColor) {
           this.busBody.setColorAt(si, this._cv);
         }
       }
       if (it.kind === 'car') {
         const gy = surfaceAt(x, z);
-        p.set(x, gy + 0.62, z); m.compose(p, q, s); this.body.setMatrixAt(si, m);
-        p.set(x - ux * 0.35 * it.dir, gy + 1.14, z - uz * 0.35 * it.dir);
-        m.compose(p, q, s); this.roof.setMatrixAt(si, m);
-        m.compose(p, q, s); this.glaze.setMatrixAt(si, m);
+        const fwd = it.dir;                       // +1 nose along the path
+        const put = (mesh, idx, along, across, up, rot) => {
+          p.set(x + ux * along * fwd + nx * across, gy + up, z + uz * along * fwd + nz * across);
+          if (rot === undefined) { m.compose(p, q, s); } else {
+            e.set(rot, heading, 0, 'YXZ');
+            this._q3 = this._q3 || new THREE.Quaternion();
+            this._q3.setFromEuler(e);
+            m.compose(p, this._q3, s);
+          }
+          mesh.setMatrixAt(idx, m);
+        };
+        put(this.sill, si, 0, 0, 0.33);
+        put(this.body, si, 0, 0, 0.68);
+        put(this.bonnet, si, 1.36, 0, 0.99);
+        put(this.boot, si, -1.56, 0, 1.00);
+        // cabin a little behind centre, which is what makes a car read as a car
+        put(this.glaze, si, -0.22, 0, 1.14);
+        put(this.roof, si, -0.22, 0, 1.38);
+        // raked screens at both ends of the cabin
+        put(this.wind, si, 0.72, 0, 1.14, -0.58);
+        put(this.rear, si, -1.16, 0, 1.14, 0.66);
+        for (let k = 0; k < 2; k++) {
+          const side = k ? 0.60 : -0.60;
+          put(this.lampL, si * 2 + k, 2.12, side, 0.82);
+          put(this.tailL, si * 2 + k, -2.12, side, 0.90);
+          put(this.mirror, si * 2 + k, 0.66, k ? 0.97 : -0.97, 1.10);
+        }
         for (let w = 0; w < 4; w++) {
           const along = (w < 2 ? 1.4 : -1.4) * it.dir;
           const across = (w % 2 ? 0.86 : -0.86);
@@ -1480,6 +1538,7 @@ export class Traffic {
           this._q2.setFromEuler(e);
           m.compose(p, this._q2, s);
           this.wheel.setMatrixAt(si * 4 + w, m);
+          this.hub.setMatrixAt(si * 4 + w, m);
         }
       } else {
         const gyb = surfaceAt(x, z);
@@ -1505,19 +1564,27 @@ export class Traffic {
     // whatever the matrices say. Parking a far vehicle off-screen would have
     // cost exactly as much as drawing it — the lesson already written down for
     // the crowd.
-    for (const part of [this.body, this.roof, this.glaze,
+    for (const part of [this.body, this.roof, this.glaze, this.sill,
+      this.bonnet, this.boot, this.wind, this.rear, this.lampL, this.tailL,
+      this.mirror, this.hub,
       this.busBody, this.busSkirt, this.busGlaze, this.busBlind]) {
       part.instanceMatrix.needsUpdate = true;
     }
+    // EVERY new part needs its count set too, or it draws the whole buffer
+    // including the slots this frame never wrote — cars stacked at the origin.
     this.body.count = this.roof.count = this.glaze.count = carSlot;
-    this.wheel.count = carSlot * 4;
+    this.sill.count = this.bonnet.count = this.boot.count = carSlot;
+    this.wind.count = this.rear.count = carSlot;
+    this.lampL.count = this.tailL.count = this.mirror.count = carSlot * 2;
+    this.wheel.count = this.hub.count = carSlot * 4;
     this.busBody.count = this.busSkirt.count = this.busGlaze.count
       = this.busBlind.count = busSlot;
     this.busWheel.count = busSlot * 4;
     this.wheel.instanceMatrix.needsUpdate = true;
     this.busWheel.instanceMatrix.needsUpdate = true;
-    if (this.body.instanceColor) this.body.instanceColor.needsUpdate = true;
-    if (this.roof.instanceColor) this.roof.instanceColor.needsUpdate = true;
+    for (const mesh of [this.body, this.roof, this.bonnet, this.boot]) {
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
     if (this.busBody.instanceColor) this.busBody.instanceColor.needsUpdate = true;
   }
 }
