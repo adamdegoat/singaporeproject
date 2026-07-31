@@ -1493,13 +1493,44 @@ export function shophouse(api, b) {
   // A pitched roof whose eaves reach over the road becomes the flat-roofed
   // later-infill variant instead of being drawn into the traffic. The flat one
   // is built from grow(), which pulls its ring back out of a carriageway.
-  let pitched = false;
+  // THE GUARD WAS REFUSING 23% OF CHINATOWN'S ROOFS FOR NO REASON.
+  //
+  // Measured: 893 pitched, 497 deliberately flat later-infill, and 416 that
+  // WANTED a pitch and were refused -- so nearly a quarter of the district's
+  // shophouses stood under an office block's flat cap on the most
+  // photographed conserved streets in Singapore.
+  //
+  // The test was rectClear over span*0.51 by rad, which is the building's OWN
+  // FOOTPRINT. A shophouse fronts directly onto the five-foot way, so its
+  // footprint touches the kerb by definition and the guard failed for the one
+  // building type it was written to protect.
+  //
+  // It is also unnecessary in that direction: `rad` is at most
+  // halfShort * 0.77, so the roof cylinder is strictly NARROWER than the
+  // footprint it sits on and cannot reach past a wall that is already clear.
+  // Along the ridge it is span * 1.02 -- one percent proud at each end -- and
+  // the gable ends below still test themselves individually, which is where a
+  // real overhang would happen. P1b watches the result either way.
+  // A ROOF THAT DOES NOT FIT SHOULD GET SMALLER, NOT DISAPPEAR.
+  //
+  // The original guard was right that some of these reach a carriageway --
+  // removing it put clay tile over Cecil Street within one audit. But its
+  // answer was all-or-nothing, and 416 of Chinatown's 1,806 shophouses (23%)
+  // were left under an office block's flat cap because their full-size roof
+  // did not fit. A shallower pitch fits where a deep one does not, and a
+  // shallow tiled roof is far closer to the truth than no roof at all.
+  //
+  // Tried at full depth, then two thirds, then a little under half. P1b is the
+  // arbiter, as it was for the version that skipped the test entirely.
+  let rad = 0;
   if (variant < 3) {
-    const rad = Math.min(3.4, ob.halfShort * (0.5 + variant * 0.09));
-    pitched = rectClear(ob.cx, ob.cz, ob.ux, ob.uz, span * 0.51, rad);
+    const full = Math.min(3.4, ob.halfShort * (0.5 + variant * 0.09));
+    for (const f of [1, 0.66, 0.45]) {
+      if (rectClear(ob.cx, ob.cz, ob.ux, ob.uz, span * 0.51, full * f)) { rad = full * f; break; }
+    }
   }
+  const pitched = rad > 0;
   if (pitched) {
-    const rad = Math.min(3.4, ob.halfShort * (0.5 + variant * 0.09));
     // A SURVEYED ROOF COLOUR beats the default clay. `roof:colour` is tagged on
     // 29 footprints in Bras Basah, which is conservation shophouse country, and
     // it was being carried into the scene file and then ignored -- which is the

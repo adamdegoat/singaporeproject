@@ -3705,3 +3705,38 @@ back per the rule in data/landmark.mjs.
 - D34 (bus pair overlapping) was real: the build-time separation sorts by arc
   length and walks FORWARD, so it never compared the last vehicle with the first.
   The road is a loop. Seam pass added.
+
+## Conserved shophouse roofs — partially done, and the open question is precise
+
+**Done and verified:**
+- Long conserved TERRACES now get a tiled roof. OSM draws a run of fifteen
+  shophouses as one 1,800 m2 way, which is over the 520 m2 limit for the
+  shophouse recipe, so those terraces were falling through to the generic path
+  and getting an office block's flat parapet — most of what you see down a
+  conserved street. Gate is now "conserved and low", not footprint size.
+- The eave is a FIXED 0.32m overhang, computed from each footprint's own mean
+  radius, not a 5% growth. At 5% a 100m terrace threw 2.5m of tile into Tan Tye
+  Place and P1b blocked the deploy.
+- `MAT.clayTile` now exists. It was only in LMAT, so the first attempt drew
+  nothing at all for 633 qualifying buildings and the merger accepted the
+  undefined material in silence.
+- Cost measured: +1,252 triangles (0.18%), ZERO extra draw calls — the roofs
+  merge into existing clay-tile tiles.
+- Every scene audits clean, 42/42.
+
+**Open, with the numbers that matter:**
+Chinatown has 1,806 shophouses through the `shophouse()` recipe: 893 pitched,
+497 deliberately flat later-infill, and **416 that want a pitch and are refused
+by `rectClear`**. Letting them all through put clay tile over Cecil Street
+within one audit, so the guard is catching something real.
+
+Shrinking the roof until it fits (tried at 1, 0.66, 0.45 of full depth) rescued
+only SEVEN of the 416 — measured, 6,188 -> 6,272 clay-tile triangles. So those
+roofs are not refused for being too WIDE. The guard tests `span * 0.51` along
+the building, and for a long terrace that rect reaches a cross street the
+building itself never touches. **The guard is failing on LENGTH, not width.**
+
+The fix is therefore to test the ridge in segments and draw the clear ones,
+exactly as `crystalMesh` was changed to do for its facade panels this session —
+not to shrink the roof. Whole district total is only 6,272 clay-tile triangles,
+so there is a lot of roof missing and it is cheap to add.

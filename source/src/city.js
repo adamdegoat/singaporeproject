@@ -172,7 +172,15 @@ export function setEraMix(buildings) {
   return ERA_MIX;
 }
 
+// The conserved shophouse roof tile. It lives HERE and not only in LMAT (the
+// landmark palette) because it is now drawn for two thousand ordinary
+// footprints, not just for the handful of recipes that name it -- and a
+// material referenced as MAT.clayTile when it only exists as LMAT.clayTile is
+// `undefined`, which the merger accepts in silence and then draws nothing.
+// That is exactly what happened on the first attempt: 633 qualifying buildings
+// in Bugis alone and not one visible tile.
 export const MAT = {
+  clayTile: new THREE.MeshStandardMaterial({ color: 0x9c5a44, roughness: 0.82 }),
   asphalt: new THREE.MeshStandardMaterial({ map: TEX.asphalt, roughness: 0.95 }),
   // Orchard's granite is 1.8m per tile, so the pavement maps at a real size
   paving: new THREE.MeshStandardMaterial({ map: TEX.paving, roughness: 0.88 }),
@@ -1076,8 +1084,59 @@ export async function buildBuildings(world, data, Y = null) {
     } else {
       const cB = centroid(pts);
       merger.add(flattenRoofUV(scaleUV(extrudeGeo(pts, h), 1 / 26, 1 / 28)), mat, cB[0], cB[1]);
-      // parapet cap so roofs are not a raw extruded edge
-      if (h > 8) {
+      // A CONSERVED SHOPHOUSE HAS A PITCHED CLAY-TILE ROOF, and until now every
+      // one of them in this world had a flat concrete parapet like an office
+      // block. That is the single most recognisable thing about Chinatown,
+      // Little India and Kampong Glam -- URA's own conservation guidelines
+      // define all six shophouse styles with a tiled pitched roof, and 2,000+
+      // footprints here are inside a gazetted area (research/conservation-
+      // littleindia.md section 5 counts 2,118 across four areas alone).
+      //
+      // Drawn as a squat truncated pyramid: the ring inset and lifted, which
+      // from the street reads as tile sloping up behind the facade. It is ONE
+      // merged geometry per building in the existing clay-tile material, so it
+      // costs no extra draw call -- which matters at this count.
+      //
+      // Gated on all three of conserved, shophouse-sized and low, so a
+      // conserved CHURCH or a conserved warehouse does not get a tiled cap it
+      // never had.
+      // NOT gated on footprint size, and that is the whole point. The
+      // shophouse branch above already draws a pitched tiled roof, but it only
+      // accepts footprints under 520 m2 -- and OSM maps a whole TERRACE as a
+      // single way, so a run of fifteen units is one 1,800 m2 footprint that
+      // falls through to here and gets an office block's flat parapet. Those
+      // long terraces are most of what you actually see down a conserved
+      // street, which is why the aerial over Kampong Glam was a field of flat
+      // white roofs while the individual units behind them were correctly
+      // tiled. Conserved and low is the test; how OSM chose to draw the
+      // outline is not a fact about the building.
+      const shopRoof = b.cons && h <= 20 && h > 4;
+      if (shopRoof) {
+        const c = centroid(pts);
+        // AN EAVE IS A FIXED OVERHANG, NOT A PERCENTAGE, and getting that
+        // wrong is the third time tonight a geometric rule has been written
+        // without a scale in it (the despike had no length, the crystalMesh
+        // road guard had no width). Grown by 5%, a 30m shop projects 0.75m of
+        // tile and a 100m terrace projects 2.5m -- straight into Tan Tye
+        // Place, which P1b duly blocked.
+        //
+        // 0.32m of overhang whatever the building's size, converted to the
+        // ratio `grow` wants using the footprint's own mean radius. Same for
+        // the pitch: a fixed 28% slope inset reads as a roof on a shop and as
+        // a mesa on a terrace, so the inset is capped in METRES too.
+        let rSum = 0;
+        for (const [x, z] of pts) rSum += Math.hypot(x - c[0], z - c[1]);
+        const rMean = Math.max(2, rSum / pts.length);
+        const kIn = Math.max(0.5, 1 - Math.min(3.2, rMean * 0.28) / rMean);
+        const kOut = 1 + 0.32 / rMean;
+        const inset = pts.map(([x, z]) => [c[0] + (x - c[0]) * kIn, c[1] + (z - c[1]) * kIn]);
+        // eaves first: a thin tiled lip a little proud of the wall, which is
+        // what actually catches the eye at street level
+        const eave = pts.map(([x, z]) => [c[0] + (x - c[0]) * kOut, c[1] + (z - c[1]) * kOut]);
+        merger.add(extrudeGeo(eave, 0.28, h), MAT.clayTile, c[0], c[1]);
+        merger.add(extrudeGeo(inset, 1.5, h + 0.28), MAT.clayTile, c[0], c[1]);
+      } else if (h > 8) {
+        // parapet cap so roofs are not a raw extruded edge
         const c = centroid(pts);
         const out = pts.map(([x, z]) => [c[0] + (x - c[0]) * 1.008, c[1] + (z - c[1]) * 1.008]);
         merger.add(extrudeGeo(out, 0.7, h), MAT.trim, c[0], c[1]);
