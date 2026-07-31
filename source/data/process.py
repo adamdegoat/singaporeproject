@@ -664,6 +664,37 @@ STOREY_COUNTS = {
     # The developer's own page says 18; OSM's building:levels says 19. Prefer
     # the developer.
     "lyf farrer park":  [{"st": 18}],
+
+    # ---- research/orchard-hinterland.md
+    # 34 storeys, 65 Cairnhill Road, TOP 2011. Standing at the 20m retail
+    # default, which is what TYPE_DEFAULT gives a 737 m2 footprint with no tag.
+    "ritz-carlton residences": [{"st": 34}],
+
+    # ---- research/robertson-district-heights.md
+    # 40 occupied levels. The 39-vs-40 conflict in the sources is not a
+    # conflict: flats stop at L39 and L40 is the rooftop facility deck.
+    # OSM names it "Alex Residence"; the building is "Alex Residences".
+    "alex residence":   [{"st": 40}],
+    # 41 vs 43 across aggregators. 41 is the better bet -- the sources saying
+    # 43 also say "2 blocks", which OneMap contradicts and our own data
+    # contradicts (three footprints), so that pair looks like one stale
+    # datasheet copied around. Taken as weak, and 41 over the 40m residential
+    # default is an improvement either way.
+    "echelon":          [{"st": 41}],
+
+    # SINGLE-STOREY MARKET HALLS, standing at 20 and 30 metres.
+    #
+    # These are the type defaults for a big footprint with no tag, and they put
+    # a 2,394 m2 hawker centre up as a ten-storey block on Redhill Lane. HDB's
+    # own dataset says one storey, completed 2005.
+    #
+    # `per` overrides the floor height because a market hall is ONE TALL VOLUME,
+    # not a residential storey -- the same reasoning the HDB join already
+    # applies to market_hawker blocks, and for the same reason: 3.4m would be
+    # shorter than the building's own roof trusses.
+    "redhill wet market":               [{"st": 1, "per": 7.5}],
+    "beo crescent food centre":         [{"st": 1, "per": 7.0}],
+    "havelock road cooked food centre": [{"st": 1, "per": 7.0}],
 }
 STOREY_FLOOR_M = 3.4
 
@@ -676,7 +707,7 @@ def storey_record(name, area):
         for sp in specs:
             if area < sp.get("amin", 0) or area > sp.get("amax", 1e12):
                 continue
-            return sp["st"]
+            return sp["st"], sp.get("per", STOREY_FLOOR_M)
     return None
 
 
@@ -1689,10 +1720,17 @@ def main():
                 # "override" (published metres). Those are measurements, and a
                 # storey count must never displace one.
                 if b.get("hs") in (None, "levels"):
-                    _st = storey_record(_nm, b.get("a") or 0)
-                    if _st:
-                        b["h"] = round(_st * STOREY_FLOOR_M, 1)
+                    _sr = storey_record(_nm, b.get("a") or 0)
+                    if _sr:
+                        b["h"] = round(_sr[0] * _sr[1], 1)
                         b["hs"] = "levels"
+                        # A published single storey over a big plan is a market
+                        # hall, not a squashed tower. Flagged so check.py's
+                        # squat-footprint gate — which is right about every
+                        # other case — does not report the correct answer as a
+                        # defect. Set only from a source, never from a guess.
+                        if _sr[0] <= 1:
+                            b["low"] = 1
             # Remember WHICH HDB record this height came from, so the pass at
             # the end of build() can catch the case where several footprints
             # claim the same block. Stripped before the file is written.

@@ -90,7 +90,19 @@ def check(did):
     # 2. no implausibly short big footprint
     # building=roof is excluded by kind, not by fudging the threshold: a roof
     # structure is a wide low canopy by definition.
-    squat = [b for b in B if b["h"] < 8 and b["a"] > 600 and not b.get("roof")]
+    # A PUBLISHED SINGLE STOREY IS NOT A SQUAT DEFECT EITHER. This check exists
+    # to catch a site polygon wearing a podium's height, and it is good at it.
+    # But Singapore's market and hawker halls really are one tall volume over a
+    # big plan: Redhill Market is 2,394 m2 and HDB's own dataset says one
+    # storey, completed 2005. It was standing at the 30m type default until
+    # that was applied, which is the fault this check was written for, and then
+    # the correct answer tripped it.
+    #
+    # `low` is set only where a SOURCE says one storey — not by the pipeline
+    # guessing. Same reasoning as `roof` above: excluded by kind, not by
+    # fudging the threshold.
+    squat = [b for b in B if b["h"] < 8 and b["a"] > 600
+             and not b.get("roof") and not b.get("low")]
     if squat:
         fail(f"{len(squat)} footprints over 600 m2 shorter than 8m")
 

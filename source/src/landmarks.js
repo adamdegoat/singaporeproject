@@ -4512,6 +4512,9 @@ export const RECIPES = [
   [/^golden mile complex$/i, goldenMileComplex],
   [/^raffles hotel$/i, rafflesHotel],
   [/srinivasa perumal/i, perumalGopuram],
+  // kampongKaporChurch IS WRITTEN AND IS DELIBERATELY NOT WIRED. See the note
+  // at the head of the function. It would belong here, before the generic
+  // gothicChurch pattern that matches /methodist church/.
   // PARKED 2026-07-30 midday after round 1: The Foundry's OSM footprint is
   // a chunky pentagon, not the 115x57 slab the research measured (the
   // research measured the ROOF outline from satellite; the ground footprint
@@ -6336,4 +6339,242 @@ function lakshminarayan(api, b) {
     const [sx, sz] = P(ob.midU + su * ob.halfLong * 0.50, ob.midV);
     spire(sx, sz, R * 0.60, PARAPET, PARAPET + (H - PARAPET) * 0.60);
   }
+}
+
+
+// KAMPONG KAPOR METHODIST CHURCH (Bishop Bickley Memorial), 1 Kampong Kapor Road.
+// Swan and Maclaren, foundation stone 3 June 1929, dedicated 1930. URA conserved
+// 1989. Spec in research/littleindia-worship-2.md section 3.
+//
+// WHY IT NEEDS A RECIPE. The generic church family draws a Gothic mass, and this
+// is not Gothic — Roots calls it "quasi-Art Deco" and Wikipedia "stripped-back
+// Art Deco". What actually identifies it from Kampong Kapor Road is a pair of
+// multi-curved Dutch-Deco PARAPET GABLES stepping down to square pinnacle
+// finials, and a square bell tower with a shallow DOMED CUPOLA — not a spire,
+// which is what Wikipedia calls it and what the photographs disprove.
+//
+// THE ONE HEIGHT IS WEAK AND IS TREATED AS SUCH. "The tower is eighty-eight feet
+// tall" (26.82m) appears only in an uncited Wikipedia sentence in an article
+// carrying a primary-sources banner. It is used here because a SECOND,
+// independent route agrees with it: the tower reads as roughly twice the
+// sanctuary gable in the 2018 aerial, and the gable is about the data's own
+// 16m, which lands at 28-30m. Two routes agreeing is the best evidence there is
+// for this building, and it is still not a citation — so the tower is derived
+// from b.h rather than hard-coded, and if the height data ever improves the
+// whole composition follows it.
+//
+// EVERY ORNAMENT ON THIS BUILDING IS A CROSS. Wikipedia: "the finials, tower
+// windows and exterior walls' ornament all derived from it", and the
+// photographs bear it out — circle-with-inscribed-cross reliefs on the fence
+// piers, quatrefoil roundels in the gable, cross-patterned louvres in the
+// belfry. That is the motif system, and dropping it would lose the building.
+const KKAPOR_MAT = {
+  // Warm off-white render. Sampled #88959A raw off the 2018-08-19 aerial and
+  // white-balanced to about #F2F2F2; drawn a shade warm so it does not read as
+  // a modern white box beside the shophouses.
+  white: new THREE.MeshStandardMaterial({ color: 0xefece5, roughness: 0.9 }),
+  // Red-terracotta clay tile, #9C4334 to #A04B3C with weathered #6A1F11.
+  clay: new THREE.MeshStandardMaterial({ color: 0x9c4334, roughness: 0.88 }),
+  dark: new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: 0.5, metalness: 0.25 }),
+  rail: new THREE.MeshStandardMaterial({ color: 0x8d9195, roughness: 0.55, metalness: 0.35 }),
+  // The Methodist flame emblem on the front wall, and the belfry lit warm gold
+  // through its louvres.
+  flame: new THREE.MeshStandardMaterial({ color: 0xb03a2e, roughness: 0.6 }),
+  belfry: new THREE.MeshStandardMaterial({
+    color: 0x6b5a3a, emissive: 0xc79a4a, emissiveIntensity: 0.5, roughness: 0.6 }),
+  brick: new THREE.MeshStandardMaterial({ color: 0xa8705a, roughness: 0.92 }),
+};
+
+// NOT WIRED, 2026-07-31. Two vetting rounds and it still loses to the generic:
+//
+//   1. The two masses come out as one white cube. Sanctuary and education block
+//      are both at 0.70 of the gable height and abut, so from the street they
+//      read as a single 25m box with a tower stuck on it. The research is
+//      explicit that they are different heights and different characters.
+//   2. The clay roof reads as a red STRIPE, not a roof. Thickening the courses
+//      and oversailing the eaves (round two) moved the stripe rather than
+//      fixing it -- the courses are sitting visually below the block top and I
+//      have not established why. Something about the seat the merged extrusion
+//      takes versus the seat slab() takes needs bottoming out first.
+//   3. The parapet crosses photographed as a row of TV aerials in round one.
+//      Round two made them masonry-thick and dropped the second pinnacle pair,
+//      which helped, but the parapet still does not read as the multi-curved
+//      Dutch-Deco gable that is the whole point of the building.
+//
+// What DOES work and is worth keeping: the bell tower. Stepped Deco shaft,
+// gold-lit belfry with cross louvres, shallow domed cupola, cross finial —
+// that composition is right and is the one thing the generic church cannot do.
+//
+// The research (research/littleindia-worship-2.md section 3) is good and is not
+// the problem. The next attempt should start from the mass heights: build the
+// sanctuary LOW with a steep visible roof, the education block a clear storey
+// taller and flat, and only then hang the parapet on the sanctuary.
+function kampongKaporChurch(api, b) {
+  const ob = orientedBox(b.p);
+  const M = KKAPOR_MAT;
+  const SEAT = api.footingY(b.p);
+  // T is the cross tip. The data's h is the GABLE, and the research's own
+  // cross-check is that the tower is about twice it.
+  const gable = Math.max(11, b.h || 16);
+  const T = gable / 0.53;
+  const P = (u, v) => [ob.cx + u * ob.ux - v * ob.uz, ob.cz + u * ob.uz + v * ob.ux];
+  const rect = (u0, v0, hu, hv) => [P(u0 - hu, v0 - hv), P(u0 + hu, v0 - hv),
+                                    P(u0 + hu, v0 + hv), P(u0 - hu, v0 + hv)];
+
+  const sw = streetward(api, ob);
+  // +v toward the street, so the two ceremonial gables land on the right faces.
+  const side = ((sw.nx * -ob.uz + sw.nz * ob.ux) > 0) ? 1 : -1;
+  const L = ob.halfLong, S = ob.halfShort;
+
+  // The complex is a THROUGH-BLOCK with a ceremonial gable at BOTH ends: the
+  // street front on Kampong Kapor Road and a second, symmetrical one on Cuff
+  // Road with no tower. Missing that turns a two-fronted building into a
+  // building with a back.
+
+  // 1. the sanctuary hall, the south-west third of the frontage
+  const sanU = ob.midU - L * 0.42;
+  const sanHU = L * 0.32;
+  api.merge(api.extrudeGeo(rect(sanU, ob.midV, sanHU, S * 0.94), gable * 0.70, SEAT),
+    M.white, ob.cx, ob.cz);
+  // Pitched clay roof, ridge running back from the street. Built as four thick
+  // narrowing courses rather than a dozen thin ones: thin steps read as red
+  // pinstripes sandwiched in the white wall from the street, which is what the
+  // first version did. The lowest course OVERSAILS the wall, because the eaves
+  // overhang is most of what says "tiled roof" at a distance.
+  for (let i = 0; i < 4; i++) {
+    const t = i / 3;
+    const w = sanHU * 2 * (1.06 - t * 0.80);
+    slab(api, ob, sanU, ob.midV, w, S * 1.88 * (1.05 - t * 0.04),
+      SEAT + gable * 0.70 + t * gable * 0.145, gable * 0.155, M.clay);
+  }
+
+  // 2. the education block, 1987, the north-east half. Three storeys, wider
+  //    than the sanctuary front, flat white with horizontal window bands —
+  //    the giveaway that it is modern — and its own matched Deco gables.
+  const eduU = ob.midU + L * 0.36;
+  const eduHU = L * 0.44;
+  api.merge(api.extrudeGeo(rect(eduU, ob.midV, eduHU, S * 0.94), gable * 0.70, SEAT),
+    M.white, ob.cx, ob.cz);
+  for (let f = 0; f < 3; f++) {
+    slab(api, ob, eduU, ob.midV + side * S * 0.95, eduHU * 1.9, 0.30,
+      SEAT + gable * (0.16 + f * 0.19), gable * 0.09, M.dark);
+  }
+  for (let i = 0; i < 3; i++) {
+    const t = i / 2;
+    slab(api, ob, eduU, ob.midV, eduHU * 2 * (1.05 - t * 0.72), S * 1.88 * (1.04 - t * 0.03),
+      SEAT + gable * 0.70 + t * gable * 0.13, gable * 0.14, M.clay);
+  }
+
+  // 3. THE PARAPET GABLES. A raised central bay, ogee curves stepping down to
+  //    square stepped pinnacle finials, then a second lower pair beyond, with
+  //    crosses in relief on the central bay and the pinnacle caps. Built as a
+  //    stepped profile because that is what a Dutch-Deco parapet reads as at
+  //    riding speed, and drawn on BOTH the Kampong Kapor and the Cuff Road
+  //    face of the sanctuary.
+  const gableAt = (u, hu, vSign) => {
+    const v = ob.midV + vSign * S * 0.96;
+    // central raised bay to 0.53T
+    slab(api, ob, u, v, hu * 0.46, 0.55, SEAT + gable * 0.62, gable * 0.38, M.white);
+    // ogee shoulders, stepping down
+    for (const s of [-1, 1]) {
+      slab(api, ob, u + s * hu * 0.40, v, hu * 0.34, 0.5,
+        SEAT + gable * 0.62, gable * 0.20, M.white);
+      // stepped pinnacle finial at 0.37T
+      slab(api, ob, u + s * hu * 0.62, v, hu * 0.14, 0.62,
+        SEAT + gable * 0.62, gable * 0.32, M.white);
+      slab(api, ob, u + s * hu * 0.62, v, hu * 0.09, 0.45,
+        SEAT + gable * 0.94, gable * 0.10, M.white);
+      // The second, lower pinnacle pair the research describes is deliberately
+      // NOT built. With crosses on it too, the parapet came out as six thin
+      // verticals in a row and read as a rank of TV aerials rather than as
+      // masonry. The central cross and the two pinnacle caps carry the motif.
+      slab(api, ob, u + s * hu * 0.84, v, hu * 0.11, 0.55,
+        SEAT + gable * 0.62, gable * 0.16, M.white);
+    }
+    // the tall narrow glazed strip under its flat hood — the enlarged
+    // stained-glass window that replaced the demolished central portal
+    slab(api, ob, u, v + vSign * 0.30, hu * 0.15, 0.22,
+      SEAT + gable * 0.24, gable * 0.50, M.dark);
+    slab(api, ob, u, v + vSign * 0.55, hu * 0.26, 0.5,
+      SEAT + gable * 0.76, gable * 0.05, M.white);
+    // round quatrefoil windows flanking it, a circle with a cross inscribed
+    for (const s of [-1, 1]) {
+      const rx = u + s * hu * 0.36;
+      const disc = new THREE.Mesh(
+        new THREE.CylinderGeometry(gable * 0.075, gable * 0.075, 0.30, 18), M.dark);
+      const p0 = P(rx, v + vSign * 0.34);
+      disc.position.set(p0[0], SEAT + gable * 0.44, p0[1]);
+      disc.rotation.x = Math.PI / 2;
+      disc.rotation.y = -ob.ang;
+      disc.castShadow = true;
+      api.world.add(disc);
+    }
+    cross(u, v, gable * 0.10, SEAT + gable * 1.00);
+  };
+
+  // Masonry crosses, not metal ones: a relief cross on a 1929 parapet is a
+  // chunky moulded thing. The first version used 0.24m bars and photographed
+  // as wire.
+  function cross(u, v, size, y) {
+    slab(api, ob, u, v, size * 0.38, 0.46, y, size * 1.45, M.white);
+    slab(api, ob, u, v, size * 1.05, 0.46, y + size * 0.80, size * 0.36, M.white);
+  }
+
+  gableAt(sanU, sanHU, side);        // Kampong Kapor Road
+  gableAt(sanU, sanHU, -side);       // Cuff Road, symmetrical, no tower
+  // the education block's own matched gables, smaller and plainer
+  gableAt(eduU, eduHU * 0.52, side);
+
+  // 4. THE BELL TOWER, attached to the north-east side of the sanctuary,
+  //    immediately beside the street gable and projecting about a metre
+  //    forward of it. Square in plan at roughly 0.15T.
+  const twU = sanU + sanHU * 1.02;
+  const twV = ob.midV + side * (S * 0.96 + 0.9);
+  const tw = Math.max(2.6, T * 0.15);
+  // stepped Art Deco shaft to 0.855T
+  slab(api, ob, twU, twV, tw, tw, SEAT, T * 0.60, M.white);
+  slab(api, ob, twU, twV, tw * 0.92, tw * 0.92, SEAT + T * 0.60, T * 0.255, M.white);
+  // stepped pinnacle finials on the shaft shoulders
+  for (const s of [-1, 1]) {
+    slab(api, ob, twU + s * tw * 0.52, twV, tw * 0.16, tw * 0.16,
+      SEAT + T * 0.80, T * 0.09, M.white);
+  }
+  // the open belfry: tall arched louvre panels whose louvres form cross
+  // patterns, lit warm gold from inside at night
+  slab(api, ob, twU, twV, tw * 0.86, tw * 0.86, SEAT + T * 0.855, T * 0.075, M.belfry);
+  for (let k = 0; k < 4; k++) {
+    const a = k * Math.PI / 2;
+    const du = Math.cos(a) * tw * 0.44, dv = Math.sin(a) * tw * 0.44;
+    slab(api, ob, twU + du, twV + dv, tw * 0.62, 0.20,
+      SEAT + T * 0.855, T * 0.075, M.dark, a);
+  }
+  // moulded cornice, then the SHALLOW DOMED CUPOLA — not a spire
+  slab(api, ob, twU, twV, tw * 1.10, tw * 1.10, SEAT + T * 0.930, T * 0.022, M.white);
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(tw * 0.52, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.46), M.white);
+  const dp = P(twU, twV);
+  dome.position.set(dp[0], SEAT + T * 0.952, dp[1]);
+  dome.castShadow = true;
+  api.world.add(dome);
+  cross(twU, twV, T * 0.045, SEAT + T * 0.965);
+
+  // 5. the low white front wall on its plinth: square piers carrying the
+  //    circle-and-cross relief, railings between, red brick forecourt behind.
+  //    Same treatment at the Cuff Road end.
+  for (const vs of [side, -side]) {
+    const v = ob.midV + vs * S * 1.30;
+    if (Math.abs(S * 1.30) > Math.abs(S) + 6) continue;
+    const piers = 7;
+    for (let i = 0; i <= piers; i++) {
+      const u = ob.midU - L * 0.82 + (i / piers) * L * 1.64;
+      slab(api, ob, u, v, 0.52, 0.52, SEAT, 1.55, M.white);
+    }
+    slab(api, ob, ob.midU, v, L * 1.66, 0.16, SEAT + 0.55, 0.85, M.rail);
+    slab(api, ob, ob.midU, v, L * 1.66, 0.30, SEAT, 0.45, M.white);
+  }
+  // the Methodist flame emblem, red, on the street wall
+  slab(api, ob, sanU, ob.midV + side * (S * 1.30 + 0.18), 0.5, 0.14, SEAT + 0.75, 0.55, M.flame);
+  // red brick forecourt
+  api.merge(api.extrudeGeo(rect(ob.midU, ob.midV + side * S * 1.12, L * 0.86, S * 0.16),
+    0.12, SEAT), M.brick, ob.cx, ob.cz);
 }
