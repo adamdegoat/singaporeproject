@@ -81,6 +81,29 @@ function familyFor(b) {
     return { pool: CURTAINS, rough: 0.36, metal: 0.08, src: 'yr' };
   }
 
+  // NO DATE OF ITS OWN, BUT A GAZETTED CONSERVATION AREA AROUND IT.
+  //
+  // `era` is a [from, to] band that URA publishes for the AREA, not for this
+  // building: the styles its stock is built in, and the years those styles
+  // span. It arrives on 3,059 buildings that carry no date at all, almost all
+  // of them conserved shophouses in Little India, Chinatown and Kampong Glam,
+  // and until it existed every one of them picked its facade by hashing its
+  // own footprint.
+  //
+  // The year is drawn from the band by the SAME hash, so a terrace does not
+  // come out as one repeated building and two neighbours do not land on the
+  // same year — but it stays inside a range this project can point at a source
+  // for. Read after `yr` and before the district mix: a surveyed date for this
+  // building beats a published band for its street, and the band beats a rule
+  // we invented.
+  const era = b.era;
+  if (era && era.length === 2) {
+    const y = era[0] + (h % Math.max(1, era[1] - era[0] + 1));
+    if (y <= 1945) return { pool: STONE, rough: 0.9, metal: 0, src: 'era' };
+    if (y <= 1978) return { pool: PUNCHED, rough: 0.88, metal: 0, src: 'era' };
+    return { pool: BALCONY, rough: 0.8, metal: 0, src: 'era' };
+  }
+
   // A BUILDING WITH NO DATE LOOKS LIKE ITS NEIGHBOURS THAT HAVE ONE.
   //
   // The fallback was a fixed 34/18/22/26 split across punched, balcony, stone

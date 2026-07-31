@@ -28,6 +28,9 @@ def build_ledger(d):
     B = d.get("buildings", [])
     R = d.get("roads", [])
     hs = collections.Counter(b.get("hs", "guess") for b in B)
+    # "levels" is a storey count times an assumed 3.4m. It is real information
+    # and much better than a type default, but it is NOT a surveyed metre
+    # figure, so it does not get counted as one here. See height_for().
     real_h = hs["osm"] + hs["named"]
     named = sum(1 for b in B if b.get("n"))
     massed = sum(1 for b in B if b.get("k"))
@@ -153,11 +156,13 @@ def frontage_coverage(d, reach=45.0):
     if not front:
         return None
     real_h = sum(1 for b in front if b.get("hs") in ("osm", "named"))
+    lvl_h = sum(1 for b in front if b.get("hs") == "levels")
     named = sum(1 for b in front if b.get("n"))
-    era = sum(1 for b in front if b.get("mat") or b.get("yr"))
+    era = sum(1 for b in front if b.get("mat") or b.get("yr") or b.get("era"))
     return {
         "total": len(front),
         "heights": (real_h, len(front)),
+        "levels": (lvl_h, len(front)),
         "named": (named, len(front)),
         "era": (era, len(front)),
     }
@@ -204,10 +209,17 @@ def coverage(d):
     R = d.get("roads", [])
     hs = collections.Counter(b.get("hs", "guess") for b in B)
     return [
-        ("building heights", hs["osm"] + hs["named"], len(B),
-         "OSM height/levels or a published figure"),
-        ("building facades", sum(1 for b in B if b.get("mat") or b.get("yr")), len(B),
+        ("building heights, surveyed", hs["osm"] + hs["named"], len(B),
+         "an OSM height= tag or a published figure — metres someone measured"),
+        ("building heights, from storeys", hs["levels"], len(B),
+         "building:levels x 3.4m — a derivation, not a measurement; kept separate "
+         "because every research brief this project sends out forbids exactly it"),
+        ("building facades, this building", sum(1 for b in B if b.get("mat") or b.get("yr")), len(B),
          "building:material or start_date steers the family; the rest is a hash"),
+        ("building facades, from its conservation area", sum(1 for b in B if b.get("era")
+                                                             and not b.get("yr")), len(B),
+         "URA gazettes the area and publishes the styles its stock is built in; the "
+         "years come from those styles, so this is a fact about the STREET, not the building"),
         ("named buildings", sum(1 for b in B if b.get("n")), len(B),
          "OSM name — an unnamed block behind the frontage is honest background"),
         # `k` is the LANDMARK FLAG THE DATA CARRIES, not "this building has a
@@ -294,7 +306,8 @@ def main():
         print(f"   FRONTAGE — the {fc['total']} buildings within 45m of the main")
         print("   street, which are the ones a rider actually sees. THIS is the")
         print("   number the finish line is written against:")
-        for label, (got, tot) in (("heights from real data", fc["heights"]),
+        for label, (got, tot) in (("heights, surveyed metres", fc["heights"]),
+                                  ("heights, derived from storeys", fc["levels"]),
                                   ("named", fc["named"]),
                                   ("era or material known", fc["era"])):
             bar = "#" * round(20 * got / tot)

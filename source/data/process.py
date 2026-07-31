@@ -627,6 +627,177 @@ HDB_STOREYS = {
     "210664": 4,     # OSM says building:levels=3; HDB says 4, and HDB is the authority
 }
 HDB_FLOOR_M = 2.9
+# Lift-motor room, water tanks and parapet, which every HDB block above about
+# five storeys carries and none of the storey counts include. Calibrated
+# against the three Tekka slabs, whose heights were estimated independently
+# from photographs and typology in research/littleindia-hdb-towers.md at 70-75,
+# 64-69 and 59-63m for 25, 23 and 21 storeys; 2.9m a floor plus this lands at
+# 74.5, 68.7 and 62.9. Not applied below six storeys, where there is no lift
+# motor room to model and the same allowance made blk 664 read too tall.
+HDB_ROOF_PLANT_M = 2.0
+
+
+# ---------------------------------------------------------------------------
+# HDB PROPERTY INFORMATION — the join that dates and sizes the public housing.
+#
+# Until this existed, an HDB block whose OSM way carried the junk `height=0`
+# tag that most of them carry fell through to TYPE_DEFAULT["residential"] = 40.
+# Every slab in the world was 40m: the 25-storey one, the 21-storey one beside
+# it, and the 12-storey one down the road. Little India held a real height on
+# four buildings out of 2,087.
+#
+# HDB publishes `max_floor_lvl` and `year_completed` for all 13,357 blocks in
+# Singapore. Both are authoritative -- they are HDB's own building records --
+# and they are keyed by block number and street, which is exactly what these
+# OSM ways already carry as addr:housenumber and addr:street. data/hdb_fetch.py
+# caches the table; this joins to it.
+#
+# TWO DIFFERENT KINDS OF FACT COME OUT OF THIS JOIN, and they are not recorded
+# the same way. `year_completed` is PUBLISHED and goes straight into `yr` as
+# the fact it is. The height is a storey count times an assumed floor height --
+# a derivation, the one this project has a standing rule against dressing up --
+# so it is recorded as "levels" provenance alongside OSM's building:levels, and
+# the accuracy ledger counts it under "heights, from storeys" rather than as a
+# surveyed metre.
+#
+# WHY THE STREET NAMES NEED WORK. HDB writes "BUFFALO RD" and "UPP CROSS ST";
+# OSM writes "Buffalo Road" and "Upper Cross Street". Both sides are normalised
+# to one expanded uppercase form before the lookup. The block number is the
+# other half of the key and Singapore addressing makes the pair unique, so a
+# false join needs BOTH halves to be wrong at once.
+# ---------------------------------------------------------------------------
+HDB_ABBR = {
+    "RD": "ROAD", "AVE": "AVENUE", "ST": "STREET", "CRES": "CRESCENT",
+    "LOR": "LORONG", "JLN": "JALAN", "BT": "BUKIT", "STH": "SOUTH",
+    "NTH": "NORTH", "UPP": "UPPER", "CTRL": "CENTRAL", "DR": "DRIVE",
+    "TER": "TERRACE", "PL": "PLACE", "CL": "CLOSE", "PK": "PARK",
+    "GDNS": "GARDENS", "GDN": "GARDEN", "MKT": "MARKET", "HTS": "HEIGHTS",
+    "C'WEALTH": "COMMONWEALTH", "IND": "INDUSTRIAL", "EST": "ESTATE",
+    "KG": "KAMPONG", "SQ": "SQUARE", "VW": "VIEW", "WK": "WALK",
+    "CTR": "CENTRE", "MT": "MOUNT", "TG": "TANJONG",
+}
+_HDB_TABLE = None
+HDB_JOINS = []          # (blk, street, storeys, year) for the build report
+
+
+def _hdb_norm(s):
+    s = (s or "").upper().replace(".", "").replace(",", "")
+    s = re.sub(r"[^A-Z0-9' ]", " ", s)
+    return " ".join(HDB_ABBR.get(w, w) for w in s.split())
+
+
+def hdb_table():
+    """The block table, loaded once. Absent cache is not fatal but IS loud."""
+    global _HDB_TABLE
+    if _HDB_TABLE is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hdb_blocks.json")
+        if not os.path.exists(path):
+            print("  ! data/hdb_blocks.json missing — run data/hdb_fetch.py. "
+                  "Every HDB block will fall back to the 40m residential default.")
+            _HDB_TABLE = {}
+        else:
+            _HDB_TABLE = {(_hdb_norm(b["blk_no"]), _hdb_norm(b["street"])): b
+                          for b in json.load(open(path))["blocks"]}
+    return _HDB_TABLE
+
+
+_CONS_CACHE = None
+
+
+def _point_in_ring(x, z, ring):
+    """Ray cast. The rings come straight from URA and are not guaranteed to
+    wind consistently, so this must not depend on winding."""
+    inside = False
+    n = len(ring)
+    j = n - 1
+    for i in range(n):
+        xi, zi = ring[i]
+        xj, zj = ring[j]
+        if (zi > z) != (zj > z) and x < (xj - xi) * (z - zi) / ((zj - zi) or 1e-12) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _conservation_areas():
+    """URA's gazetted boundaries, projected into world metres once.
+
+    Absent cache is not fatal but IS loud: without it every conserved shophouse
+    silently falls back to guessing its era from its footprint shape, which
+    looks identical to working and is not.
+    """
+    global _CONS_CACHE
+    if _CONS_CACHE is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "conservation.json")
+        if not os.path.exists(path):
+            print("  ! data/conservation.json missing — run data/conservation_fetch.py. "
+                  "No building will get a conservation-area era band.")
+            _CONS_CACHE = []
+            return _CONS_CACHE
+        out = []
+        for a in json.load(open(path))["areas"]:
+            rings = []
+            for r in a["rings"]:
+                rings.append([list(proj(c[1], c[0])) for c in r])
+            xs = [p[0] for r in rings for p in r]
+            zs = [p[1] for r in rings for p in r]
+            # Ring area decides which of two nested polygons is the more
+            # specific one, so it is computed here rather than trusted from
+            # URA's SHAPE.AREA column, which is in a different projection.
+            tot = 0.0
+            for r in rings:
+                s = 0.0
+                for i in range(len(r)):
+                    x1, z1 = r[i]
+                    x2, z2 = r[(i + 1) % len(r)]
+                    s += x1 * z2 - x2 * z1
+                tot += abs(s) / 2.0
+            out.append({"name": a["name"], "rings": rings, "area": tot,
+                        "box": (min(xs), min(zs), max(xs), max(zs))})
+        _CONS_CACHE = out
+    return _CONS_CACHE
+
+
+def _hdb_height(storeys, rec=None):
+    """Storeys to metres, at the floor height the BLOCK TYPE actually has.
+
+    A flat rate of 2.9m a storey is right for a residential slab and wrong for
+    everything else HDB builds. It put a single-storey wet market at 2.9m --
+    shorter than its own doorway -- and Chinatown Complex, a four-storey market
+    and food centre, at 11.6m. HDB's own flags say which kind of block this is,
+    so use them:
+
+      market / hawker centre   5.0   a market hall is one tall volume, not a
+                                     stack of rooms; the roof clears the stalls
+      precinct pavilion        4.0   an open single-storey shelter
+      multi-storey car park    2.8   the shallowest deck HDB builds
+      other non-residential    4.2   shops and offices; a retail storey is
+                                     about half a storey taller than a flat
+      residential              2.9   calibrated in HDB_FLOOR_M above
+
+    A residential block with shops at its base gets one taller storey added
+    once, not a taller rate for all of them -- the flats above are still flats.
+    """
+    if rec and rec.get("residential") != "Y":
+        if rec.get("market_hawker") == "Y":
+            per, extra = 5.0, 0.0
+        elif rec.get("precinct_pavilion") == "Y":
+            per, extra = 4.0, 0.0
+        elif rec.get("multistorey_carpark") == "Y":
+            per, extra = 2.8, 0.0
+        else:
+            per, extra = 4.2, 0.0
+    else:
+        per = HDB_FLOOR_M
+        extra = 1.5 if (rec and rec.get("commercial") == "Y") else 0.0
+    return storeys * per + extra + (HDB_ROOF_PLANT_M if storeys >= 6 else 0.0)
+
+
+def hdb_record(tags):
+    hn, stt = tags.get("addr:housenumber"), tags.get("addr:street")
+    if not (hn and stt):
+        return None
+    return hdb_table().get((_hdb_norm(hn), _hdb_norm(stt)))
 
 # Buildings OSM identifies by wikidata id but never names. Each entry has been
 # checked against the Wikidata entity itself -- this is a lookup of verified
@@ -667,6 +838,158 @@ FRONTAGE_FACADE = {
     "peranakan place":         (1902, "#c5b4a4"),
     "claymore connect":        (2015, None),      # no dated photo found
     "orchard 22":              (1921, "#dee1dc"),
+}
+
+# ---------------------------------------------------------------------------
+# GAZETTED CONSERVATION AREAS -> A CONSTRUCTION-PERIOD BAND.
+#
+# A shophouse inside the Little India Conservation Area is a pre-war shophouse.
+# That is WHY it is conserved, and it is a published fact about the area rather
+# than a guess about the building. It is also NOT the same as knowing the year
+# that particular terrace went up, so the band goes into `era` and never into
+# `yr`; the accuracy ledger reports the two on separate lines and the finish
+# line is written against the surveyed one.
+#
+# Only areas with a CITED period appear here. An area whose stock has not been
+# researched gets no band -- it keeps the footprint-shape fallback in city.js,
+# which at least says of itself that it is a rule we chose. Filling this table
+# by eye would be exactly the fabrication this project has already been bitten
+# by once.
+#
+# Sources are per row. The boundaries come from URA's own Master Plan 2025 SDCP
+# Conservation Area layer via data/conservation_fetch.py -- not from prose
+# descriptions of which streets bound what, which research/conservation-
+# littleindia.md found to be wrong for Little India in both directions (Sungei
+# Road is outside the polygon; Serangoon Road runs through the district rather
+# than around it).
+# ---------------------------------------------------------------------------
+#
+# TWO RESEARCHERS DISAGREED ABOUT WHETHER THESE DATES EXIST AT ALL. One
+# reported them as published by URA; the other rendered all six of URA's
+# shophouse-style sheets, found no date on any of them, and concluded URA
+# publishes no date ranges. Both were partly right, and the question was
+# settled here by fetching the page rather than by preferring an agent: the
+# STYLE SHEETS carry no dates, the AREA PAGES do. URA's Little India portal
+# page, read directly on 2026-07-31, says word for word:
+#
+#   "The shophouse designs in Little India range from the Early (1840-1900),
+#    First Transitional, Late (1900-1940), and Second Transitional to Art Deco
+#    (1930-1960) styles."
+#
+# WHY THE BANDS BELOW ARE NARROWER THAN THE PUBLISHED SPAN, and this is a
+# JUDGEMENT, not a fact. The full published span for Little India is 1840-1960.
+# city.js turns a year into a facade family at hard boundaries -- 1945 and 1978
+# -- so a band that crossed 1945 would deal roughly a tenth of a conserved
+# masonry terrace the punched-concrete family of the 1960s. Every one of the
+# four styles URA lists IS a masonry shophouse. So the band is set to the
+# dominant style's range, which URA's own historic-districts page supports
+# ("largely intact from the late 19th and early 20th centuries"), and the tails
+# are deliberately dropped rather than modelled wrong.
+# THE STYLE -> DATE MAPPING, and where it comes from.
+#
+# Only ONE area page on URA's portal carries explicit years: Little India's,
+# quoted above. Every other area page names the STYLES its stock is built in
+# and gives no dates -- "It features two- and three-storey shophouses built in
+# the Transitional, Late and Art Deco styles" (Kreta Ayer), and so on. All
+# twenty were fetched and read on 2026-07-31; the sentences are in
+# research/conservation-chinatown.md and conservation-central.md.
+#
+# So the dates come from the style names, and the style names come from URA.
+# The mapping below is URA's own, from the Little India page, corroborated
+# independently by NHB's "The Singapore Shophouses" on Roots.gov.sg: Early
+# 1840s-1900s, First Transitional early 1900s, Late 1900-1940, Second
+# Transitional late 1930s, Art Deco 1930-1960, Modern 1950-1960. Two sources,
+# one of them the same authority that draws the boundaries.
+#
+# What this is NOT: a claim about any individual building. It says the stock in
+# this gazetted area is of these styles and those styles span these years. The
+# band lands in `era`, never in `yr`.
+SHOPHOUSE_STYLE_YEARS = {
+    "early": (1840, 1900),
+    "transitional": (1900, 1920),        # URA writes "Transitional" for both
+    "first transitional": (1900, 1920),
+    "late": (1900, 1940),
+    "second transitional": (1930, 1940),
+    "art deco": (1930, 1960),
+    "neo-classical": (1900, 1940),       # Beach Road; not in the shophouse run
+    "modern": (1950, 1965),
+    "early modern": (1950, 1965),
+}
+
+# The styles URA names for each area, transcribed from its own portal page.
+# Keys are the NAME field of the Master Plan conservation layer, so that the
+# join is exact and an area URA renames simply stops matching rather than
+# silently taking a neighbour's era.
+CONSERVATION_STYLES = {
+    "CHINATOWN (KRETA AYER)": ("transitional", "late", "art deco"),
+    "CHINATOWN HISTORIC DISTRICT CORE AREA - KRETA AYER":
+        ("transitional", "late", "art deco"),
+    "CHINATOWN (TELOK AYER)": ("early", "transitional", "late", "art deco"),
+    "CHINATOWN (TANJONG PAGAR)": ("early", "transitional", "late"),
+    "CHINATOWN (BUKIT PASOH)": ("transitional", "late", "art deco"),
+    "BOAT QUAY": ("early", "transitional", "art deco"),
+    "CLARKE QUAY": ("transitional",),
+    "CHINA SQUARE": ("transitional", "art deco", "early modern"),
+    "MAGAZINE ROAD": ("early", "art deco"),
+    "RIVER VALLEY": ("late", "transitional"),
+    "EMERALD HILL": ("transitional", "late", "art deco"),
+    "CAIRNHILL": ("late", "art deco"),
+    "BEACH ROAD": ("art deco", "neo-classical"),
+    "SHORT STREET": ("early", "transitional"),
+    "KAMPONG GLAM": ("early", "transitional"),
+    "KAMPONG GLAM HISTORIC DISTRICT CORE AREA": ("early", "transitional"),
+    "JALAN BESAR": ("late", "transitional", "art deco"),
+    "BLAIR PLAIN": ("transitional", "late"),
+    # Tiong Bahru is the one area here that is not shophouses at all. URA /tnbhr/:
+    # "The estate is characterised by the Streamline Moderne style, with Art Deco
+    # motifs". The CONSERVED blocks are Alfred G. Church's pre-war SIT flats,
+    # 1936-1941 (research/robertson-rivervalley.md, cited to URA) -- the post-war
+    # 1948-54 blocks around Lim Liak and Seng Poh are plainer International Style
+    # and are NOT conserved, so they fall outside the polygon and keep the
+    # fallback. A tight band, because the source is tight.
+    "TIONG BAHRU": ("streamline moderne",),
+}
+SHOPHOUSE_STYLE_YEARS["streamline moderne"] = (1936, 1941)
+
+# Where URA publishes a development date that overrides the style span's start.
+# Jalan Besar is reclaimed swamp that was ribbon-developed AFTER the First World
+# War, so it has no Early stock at all whatever the style names would allow.
+CONSERVATION_EARLIEST = {"JALAN BESAR": 1918}
+
+CONSERVATION_ERA = {
+    # Little India is the one area with published years of its own, so it does
+    # not derive its band from style names. Published span 1840-1960; banded to
+    # the dominant Late style for the reason given above.
+    "LITTLE INDIA": (1900, 1940),
+    "LITTLE INDIA HISTORIC DISTRICT CORE AREA": (1900, 1940),
+}
+for _nm, _styles in CONSERVATION_STYLES.items():
+    if _nm in CONSERVATION_ERA:
+        continue
+    _lo = min(SHOPHOUSE_STYLE_YEARS[s][0] for s in _styles)
+    _hi = max(SHOPHOUSE_STYLE_YEARS[s][1] for s in _styles)
+    CONSERVATION_ERA[_nm] = (max(_lo, CONSERVATION_EARLIEST.get(_nm, 0)), _hi)
+
+# WHEN EACH AREA WAS GAZETTED. Not decoration -- it is the test that catches
+# OSM's restoration dates. URA conserves buildings BECAUSE they are already
+# old, so a conserved building cannot have been built after its own gazette.
+# OSM tags 326 buildings in Chinatown (Tanjong Pagar) with start_date=1990, one
+# year after the 1989 gazette: that is the date the terrace was restored, not
+# built, and read as a construction date it dealt 461 conserved shophouses the
+# balconied-slab facade of the 1980s.
+CONSERVATION_GAZETTE = {
+    "CHINATOWN (KRETA AYER)": 1989, "CHINATOWN (TELOK AYER)": 1989,
+    "CHINATOWN (TANJONG PAGAR)": 1989, "CHINATOWN (BUKIT PASOH)": 1989,
+    "CHINATOWN HISTORIC DISTRICT CORE AREA - KRETA AYER": 1989,
+    "LITTLE INDIA": 1989, "LITTLE INDIA HISTORIC DISTRICT CORE AREA": 1989,
+    "KAMPONG GLAM": 1989, "KAMPONG GLAM HISTORIC DISTRICT CORE AREA": 1989,
+    "BOAT QUAY": 1989, "CLARKE QUAY": 1989,
+    "CAIRNHILL": 1989, "EMERALD HILL": 1989,
+    "RIVER VALLEY": 1991, "BEACH ROAD": 1991, "JALAN BESAR": 1991,
+    "MAGAZINE ROAD": 1992, "QUEEN STREET": 1993, "SHORT STREET": 1994,
+    "CHINA SQUARE": 1997, "UPPER CIRCULAR ROAD": 2004, "PEARL'S HILL": 2008,
+    "BLAIR PLAIN": 1991, "TIONG BAHRU": 2003,
+    "ROBERTSON QUAY": 2014,
 }
 
 TYPE_DEFAULT = {
@@ -760,14 +1083,45 @@ def height_for(tags):
         if v is not None:
             BAD_HEIGHT_TAGS.append((tags.get("name") or "(unnamed)", v))
     if pc in HDB_STOREYS:
-        # a guess, and recorded as one -- the storeys are authoritative, the
-        # metres are storeys x an assumption
-        return HDB_STOREYS[pc] * HDB_FLOOR_M, False, "guess", None
+        # a derivation, and recorded as one -- the storeys are authoritative,
+        # the metres are storeys x an assumption. This hand-entered table is
+        # kept ahead of the general HDB join below because each of its four
+        # entries was checked individually; the join agrees with all four.
+        return _hdb_height(HDB_STOREYS[pc], hdb_record(tags)), False, "levels", None
+    rec = hdb_record(tags)
+    if rec:
+        try:
+            st = int(rec["max_floor_lvl"])
+        except (TypeError, ValueError):
+            st = 0
+        if st >= 1:
+            HDB_JOINS.append((rec["blk_no"], rec["street"], st, rec.get("year_completed")))
+            return _hdb_height(st, rec), False, "levels", None
     lv = tags.get("building:levels")
     if lv:
         try:
-            # 3.4m per storey is closer for SG commercial than 3.6
-            return max(3.5, float(lv) * 3.4), False, "osm", None
+            # 3.4m per storey is closer for SG commercial than 3.6.
+            #
+            # RECORDED AS "levels", NOT AS "osm". This is a storey count times an
+            # assumed floor height, which is the one derivation this project has
+            # a standing rule against -- every research brief sent out says
+            # "never convert a storey count into a height in metres", and then
+            # the pipeline did exactly that and filed the result under the same
+            # provenance as a surveyed `height=` tag. Two lines above, the HDB
+            # storey table is honest about this and calls itself a guess, on
+            # BETTER data (HDB's own storey counts beat OSM's).
+            #
+            # It matters at scale: 3,077 buildings, 40% of the world, carry a
+            # height that came from this line, including every 122.4m (36 x 3.4)
+            # and 159.8m (47 x 3.4) tower in River Valley and Little India. The
+            # ledger was calling all of them surveyed.
+            #
+            # The VALUE is unchanged -- a storey count is real information and a
+            # far better estimate than a type default, so it stays. Only the
+            # label changes, so that the accuracy ledger can report three tiers
+            # (surveyed metres / derived from storeys / guessed) instead of
+            # flattening the first two together. Nothing in the world moves.
+            return max(3.5, float(lv) * 3.4), False, "levels", None
         except ValueError:
             pass
     return TYPE_DEFAULT.get(tags.get("building", "yes"), 18), False, "guess", None
@@ -1210,6 +1564,19 @@ def main():
                 b["k"] = 1
             if hsrc != "guess":
                 b["hs"] = hsrc          # height provenance, for the accuracy ledger
+            # Remember WHICH HDB record this height came from, so the pass at
+            # the end of build() can catch the case where several footprints
+            # claim the same block. Stripped before the file is written.
+            _hrec = hdb_record(tags)
+            if _hrec and hsrc == "levels":
+                b["_hdb"] = f"{_hrec['blk_no']}|{_hrec['street']}"
+                # Floor-to-floor is not the height of a standalone single-storey
+                # building: 2.9m is the gap between two slabs in a stack, and a
+                # thing standing on its own has a roof and a parapet above that.
+                # Left at 2.9 this tripped the "under 3m tall" gate, which is
+                # right to complain -- nothing you can walk into is 2.9m to the
+                # top.
+                b["_hdbone"] = round(max(4.0, _hdb_height(1, _hrec)), 1)
             if podium:
                 b["pod"] = podium       # researched podium height, read by the recipe
             # A SURVEYED COLOUR BEATS A HASHED ONE, the same way a surveyed
@@ -1250,6 +1617,23 @@ def main():
                 y = int(m.group(1))
                 if 1800 < y <= 2030:
                     b["yr"] = y
+            # HDB'S OWN COMPLETION YEAR, which is a published fact and not a
+            # derivation -- unlike the storey count in the same record, which
+            # only becomes a height by assumption. It goes in behind OSM's
+            # start_date rather than over it, because start_date is a survey of
+            # this particular building while the HDB row is a survey of the
+            # block, and where they disagree the more specific one should win.
+            #
+            # This matters more than the heights do. Era is what steers the
+            # facade family, and a public housing slab from 1968 does not look
+            # like one from 1997; both were being dealt a family by hashing the
+            # footprint because nothing in the pipeline knew when they went up.
+            if not b.get("yr"):
+                _rec = hdb_record(tags)
+                if _rec:
+                    _m = re.match(r"^(\d{4})", str(_rec.get("year_completed") or "").strip())
+                    if _m and 1930 < int(_m.group(1)) <= 2030:
+                        b["yr"] = int(_m.group(1))
             for tk, key_out in (("building:material", "mat"),
                                 ("building:colour", "col"),
                                 ("roof:shape", "rs")):
@@ -1668,6 +2052,99 @@ def main():
           f"across {again_b} buildings")
 
     buildings.sort(key=lambda b: -b["a"])
+
+    # ONE HDB RECORD, ONE BLOCK. An HDB row describes a whole block, but a block
+    # address gets tagged on more than one footprint: the ancillary shop unit at
+    # its foot, a link bridge, a bin centre. Those inherited the block's storey
+    # count and stood up as tall as the slab -- "Essen @ The Pinnacle", a 395 m2
+    # retail unit at the base of Pinnacle@Duxton, took the block's height off a
+    # 50-storey record.
+    #
+    # The block itself is the largest footprint carrying the address. But NOT
+    # every other footprint on that address is an annexe: plenty of HDB blocks
+    # are mapped as two or three wings meeting at a stair core, and each wing is
+    # as tall as the block. Demoting those would be a far worse error than the
+    # one this guard exists to fix.
+    #
+    # So size decides. A footprint under a third of the block's is an appendage
+    # and gets ONE storey at the block's own floor rate; anything comparable is
+    # treated as another wing and keeps the block's height. The demoted ones
+    # also lose their "levels" provenance, because the ledger must not go on
+    # counting a height this pass has just thrown away.
+    #
+    # One storey, not the type default: falling back to TYPE_DEFAULT["yes"] = 18
+    # stood a 75 m2 appendage up as an 18m needle in a back lane and failed the
+    # gate that exists to catch exactly that shape.
+    _by_rec = {}
+    for b in buildings:
+        if b.get("_hdb"):
+            _by_rec.setdefault(b["_hdb"], []).append(b)
+    _demoted = 0
+    for _k, _group in _by_rec.items():
+        if len(_group) < 2:
+            continue
+        _group.sort(key=lambda b: -b["a"])
+        _blockarea = _group[0]["a"]
+        for b in _group[1:]:
+            if b["a"] >= 0.35 * _blockarea:
+                continue                       # another wing of the same block
+            b["h"] = b.get("_hdbone", 4.0)
+            b.pop("hs", None)
+            _demoted += 1
+    if _demoted:
+        print(f"  HDB join: {_demoted} ancillary footprints sharing a block "
+              f"address demoted off the block's storey count")
+    for b in buildings:
+        b.pop("_hdb", None)
+        b.pop("_hdbone", None)
+
+    # WHICH GAZETTED CONSERVATION AREA IS THIS BUILDING STANDING IN?
+    #
+    # Nested polygons are the reason this takes the SMALLEST containing area
+    # rather than the first hit: "Little India" and "Little India Historic
+    # District Core Area" are two polygons, one inside the other, and the core
+    # is the more specific statement about the ground.
+    _cons = _conservation_areas()
+    if _cons:
+        _tagged = _dated = _restored = 0
+        for b in buildings:
+            p = b.get("p") or []
+            if len(p) < 3:
+                continue
+            cx = sum(q[0] for q in p) / len(p)
+            cz = sum(q[1] for q in p) / len(p)
+            best = None
+            for _ca in _cons:
+                x0, z0, x1, z1 = _ca["box"]
+                if cx < x0 or cx > x1 or cz < z0 or cz > z1:
+                    continue
+                if not any(_point_in_ring(cx, cz, r) for r in _ca["rings"]):
+                    continue
+                if best is None or _ca["area"] < best["area"]:
+                    best = _ca
+            if not best:
+                continue
+            b["cons"] = best["name"]
+            _tagged += 1
+            # A CONSERVED BUILDING CANNOT POST-DATE ITS OWN GAZETTE. URA
+            # conserves what is already old, so a start_date at or after the
+            # gazette year is a RESTORATION date wearing a construction date's
+            # tag. OSM carries start_date=1990 on 326 buildings in Chinatown
+            # (Tanjong Pagar), gazetted 1989, and 1990 puts a pre-war masonry
+            # terrace in the balconied-slab family of the eighties.
+            _gaz = CONSERVATION_GAZETTE.get(best["name"])
+            if _gaz and b.get("yr") and b["yr"] >= _gaz:
+                b.pop("yr", None)
+                _restored += 1
+            band = CONSERVATION_ERA.get(best["name"])
+            if band and not b.get("yr"):
+                b["era"] = list(band)
+                _dated += 1
+        if _tagged:
+            print(f"  conservation: {_tagged} buildings inside a gazetted area, "
+                  f"{_dated} given a construction-period band"
+                  + (f", {_restored} restoration dates dropped" if _restored else ""))
+
     # Drop footprints with no area. A ring that encloses nothing extrudes into a
     # zero-width sliver: invisible, but it still costs a draw and still answers
     # point-in-polygon tests unpredictably.
@@ -2344,6 +2821,10 @@ def main():
           f"{len(busstops)} bus stops, {len(mrt)} MRT, {len(taxis)} taxi ranks")
     print(f"  real structures: {len(bridges)} ped bridges, {len(covered)} covered walkways, "
           f"{len(shops)} named shops")
+    if HDB_JOINS:
+        _tall = sorted(HDB_JOINS, key=lambda r: -r[2])[:3]
+        print(f"  HDB join: {len(HDB_JOINS)} blocks matched to HDB storey records "
+              f"(tallest {', '.join(f'{r[0]} {r[1]} {r[2]}st' for r in _tall)})")
     if BAD_HEIGHT_TAGS:
         names = ", ".join(n for n, _ in BAD_HEIGHT_TAGS[:4])
         print(f"  refused {len(BAD_HEIGHT_TAGS)} implausible height tags "
