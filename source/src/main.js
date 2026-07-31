@@ -753,9 +753,9 @@ function simNear(o) { return _simActive.has(o); }
 // The ride, the walker and the engine sound must consider EVERY fleet, not
 // just the spawn district's. A car you can see but ride straight through is
 // worse than no car.
-const trafficHits = (x, z, r) => {
-  if (trafficSys && trafficSys.hits(x, z, r)) return true;
-  for (const t of extraTraffic) if (t.hits(x, z, r)) return true;
+const trafficHits = (x, z, r, lat) => {
+  if (trafficSys && trafficSys.hits(x, z, r, lat)) return true;
+  for (const t of extraTraffic) if (t.hits(x, z, r, lat)) return true;
   return false;
 };
 const trafficNearest = (x, z) => {
@@ -768,7 +768,32 @@ const trafficNearest = (x, z) => {
 const dressedStreets = new Set();
 // merged tiles of sub-4m detail, hidden beyond LOD_FAR (see the LOD pass)
 const LODT = [];
-const LOD_FAR = 500;
+
+// THE PHONE TIER. Every distance and every agent count in this world was chosen
+// on a desktop and then shipped unchanged to a phone: 2,200 pedestrians, 120
+// vehicles, small detail drawn out to 500m, instanced sets out to 600.
+//
+// The device the user actually rides on is a phone, and the complaint that
+// started this was that it gets hot. Heat is sustained work, and sustained work
+// here is dominated by how many things are simulated and how far away they are
+// still being drawn — not by pixels (dropping the pixel ratio from 3 to 1 at
+// the busiest spot in the world bought one frame per second) and not by shadows
+// (5%).
+//
+// So the phone gets shorter sight and a slightly quieter street. `?full`
+// restores the desktop figures on a phone for anyone who wants to compare, and
+// desktop is untouched.
+//
+// THE CROWD IS CUT LEAST, ON PURPOSE. Sight distance and vehicle count are
+// nearly invisible to a rider — detail beyond 340m on a phone screen is a few
+// pixels, and nobody counts cars. Pedestrian DENSITY is the opposite: the crowd
+// is culled from drawing at 105m, so every person removed is one fewer person
+// in the only range where they are visible at all. A first pass at 1,150 halved
+// the street; 1,700 is a 23% trim that costs proportionally less of what a
+// rider actually sees. If the measurement says the crowd is not where the time
+// goes, this number should go back up rather than down.
+const PHONE = TOUCH && !P.has('full');
+const LOD_FAR = PHONE ? 340 : 500;
 // static instanced sets (trees, lamps, posts, stripes) with per-instance
 // distance culling — the sets span the whole region in one bounding sphere,
 // so without this every leaf in the world is vertex-shaded every frame, in
@@ -819,7 +844,7 @@ function registerLod(root) {
     if (LODI.length >= ilodMax) return;
     if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
     const r = o.geometry.boundingSphere.radius;
-    const far = r < 0.5 ? 300 : r < 2 ? 450 : 600;
+    const far = (r < 0.5 ? 300 : r < 2 ? 450 : 600) * (PHONE ? 0.68 : 1);
     const n = o.count;
     const src = o.instanceMatrix.array.slice(0, n * 16);
     const col = o.instanceColor ? o.instanceColor.array.slice(0, n * 3) : null;
@@ -1103,7 +1128,7 @@ async function addChunk(ch, id, Y, rec = {}) {
         axLen += Math.hypot(ch.axis.p[i][0] - ch.axis.p[i - 1][0],
                             ch.axis.p[i][1] - ch.axis.p[i - 1][1]);
       }
-      const pop = Math.min(1600, Math.max(400, Math.round(axLen * 0.6)));
+      const pop = Math.round(Math.min(1600, Math.max(400, axLen * 0.6)) * (PHONE ? 0.75 : 1));
       const wb = WALLSREF ? (x2, z2) => blocked(x2, z2) || WALLSREF.at(x2, z2) : blocked;
       const chunkSides = selectSideStreets(ch, ax);
       const cr = new Crowd(ax, wb, pop, chunkSides);
@@ -1142,8 +1167,8 @@ async function addChunk(ch, id, Y, rec = {}) {
       // rider is ever drawn. Vehicles are placed at path.len/n with +-6m of
       // jitter, so at 25m nominal the closest pair sits ~13m apart against a
       // ~4.5m car -- no overlap, which D34 gates anyway.
-      const cars = Math.max(24, Math.min(120, Math.round(alen / 25)));
-      const buses = Math.max(4, Math.min(16, Math.round(alen / 170)));
+      const cars = Math.round(Math.max(24, Math.min(120, alen / 25)) * (PHONE ? 0.62 : 1));
+      const buses = Math.round(Math.max(4, Math.min(16, alen / 170)) * (PHONE ? 0.62 : 1));
       const tr = new Traffic(ax, cars, buses, axisSpec(ax, ch));
       tr.build(g, 0);
       tr.__ax = ax && ax.p;
@@ -1167,6 +1192,35 @@ async function addChunk(ch, id, Y, rec = {}) {
     if (!P.has('nolod')) registerLod(world);
   }
   if (wayfinder) wayfinder.refresh();   // minimap + names learn the new district
+
+  // A BUILDING DOES NOT MOVE, SO STOP RECOMPUTING ITS MATRIX EVERY FRAME.
+  //
+  // three.js walks the whole graph each frame and rebuilds the world matrix of
+  // anything with matrixAutoUpdate set. A settled world holds 5,220 objects and
+  // 3,462 of them still had it on, nearly all static district geometry —
+  // recipe masses, props, poles, signs — placed once and never touched again.
+  // updateMatrixWorld was 5% of a profiled phone frame.
+  //
+  // WHAT IS DELIBERATELY LEFT ALONE, and why the test is by TYPE rather than by
+  // a list of names: the district's Crowd and its Traffic live inside this same
+  // group, and they are InstancedMeshes whose object matrix is identity while
+  // the motion lives in instanceMatrix. Skipping every InstancedMesh means the
+  // rule cannot freeze a pedestrian or a car even if one of those systems
+  // starts moving its container later. Groups are skipped for the same reason:
+  // a Group is what an animated assembly hangs off.
+  //
+  // The matrix is computed once here before the flag goes off, so nothing is
+  // left at the origin — the bug this shape of optimisation usually causes.
+  {
+    let frozen = 0;
+    g.traverse((o) => {
+      if (o === g || o.isInstancedMesh || o.isGroup || !o.isMesh) return;
+      o.updateMatrix();
+      o.matrixAutoUpdate = false;
+      frozen++;
+    });
+    if (window.__stats) window.__stats.staticMeshes = frozen;
+  }
   rec.group = g;
 }
 
@@ -1328,7 +1382,29 @@ async function streamRest(rest) {
   // neighbour well before you arrive (top speed is 41.8 km/h, so that is
   // forty seconds of warning), and a district you are STANDING IN is still
   // distance zero and loads first, which is the whole point of the change.
-  const NEAR = 480, FAR = 1000;
+  // RESIDENCY IS THE MOBILE CRASH, and it is a different problem from the
+  // texture leak fixed earlier the same day.
+  //
+  // That leak was real and is gone -- six laps of the eight district spots now
+  // hold geometries, textures, programs and node counts flat. But the heap
+  // still plateaus around 1,220 MB, because at 480/1000 as many as SIX
+  // districts stay resident at once around Bugis, and 184 MB of the heap is
+  // the CPU-side copy of 4,414 geometries that three.js keeps after upload.
+  // Desktop Chrome allows 3,586 MB and never notices. A phone browser reaps a
+  // tab far below that, which is the "plays a while then crashes" the rider
+  // reported after the leak was already fixed.
+  //
+  // So a phone keeps a smaller world around itself. 380 still loads a
+  // neighbouring district roughly thirty seconds before the rider reaches it at
+  // top speed, and 640 unloads it once it is well behind. `?full` restores the
+  // desktop figures.
+  const NEAR = PHONE ? 380 : 480, FAR = PHONE ? 640 : 1000;
+  // AND A HARD CEILING ON HOW MANY. Distance alone does not bound this: the
+  // district boxes overlap by design, so at Bugis the rider is inside five of
+  // them and every one reads as near. Beyond this many, the farthest by axis is
+  // unloaded even if it is inside NEAR — the rider cannot see six districts and
+  // a phone cannot hold them.
+  const MAX_RESIDENT = PHONE ? 3 : 99;
   const recs = rest.map((r) => ({ ...r, pushed: false, group: null, signals: null, dressedDelta: null }));
   window.__streamState = { pending: recs.map((r) => r.id), building: null, done: [], unloads: 0 };
   window.__streamRecs = recs;
@@ -1367,6 +1443,17 @@ async function streamRest(rest) {
         window.__streamState.unloads++;
         syncState();
       }
+    }
+    // over the ceiling: drop the farthest by AXIS distance, which is the one
+    // whose street the rider is least likely to be looking down
+    const live = recs.filter((r) => r.group);
+    if (live.length > MAX_RESIDENT) {
+      live.sort((a, b) => axDist(b) - axDist(a));
+      for (const r of live.slice(0, live.length - MAX_RESIDENT)) {
+        unloadChunk(r);
+        window.__streamState.unloads++;
+      }
+      syncState();
     }
     await new Promise((r) => setTimeout(r, 1500));
   }
@@ -1589,7 +1676,7 @@ async function buildRegion(data, opts = {}) {
   }
   if (!P.has('notraffic') && axis) {
     // Five lanes one way carrying 21 vehicles over 2,586m is a road at 4am.
-    trafficSys = new Traffic(axis, 120, 16, axis && axisSpec(axis, data));
+    trafficSys = new Traffic(axis, PHONE ? 74 : 120, PHONE ? 10 : 16, axis && axisSpec(axis, data));
     trafficSys.build(world, trafficSys.path.nearestS(S.x, S.z));
     // The system itself, so a probe can DRIVE the tick instead of waiting on
     // requestAnimationFrame -- a spawned browser is throttled and its loop may
@@ -1658,7 +1745,7 @@ async function buildRegion(data, opts = {}) {
     // Everyone beyond 105m is skipped before any matrix is written, so the cost
     // of a bigger population is the path evaluation and a grid lookup per
     // person per frame, not draw calls. Measured either side: see NEXT.md.
-    crowdSys = new Crowd(axis, walkBlocked, 2200, sideStreets);
+    crowdSys = new Crowd(axis, walkBlocked, PHONE ? 1700 : 2200, sideStreets);
     crowdSys.build(world);
     // must come after construction, or the handover is a no-op
     if (window.__crossings) crowdSys.setCrossings(window.__crossings);
@@ -2155,45 +2242,47 @@ const DPR_FORCE = parseFloat(P.get('dpr') || '0');
 // 30 is the figure the loop already says it uses, and it roughly halves every
 // per-frame cost. Desktop stays uncapped, ?fps=60 still overrides for phones
 // that can take it, and the low tier still drops further to 24.
-// THE PHONE FRAME CAP STAYS OFF BY DEFAULT, and this is a measured decision
-// rather than an oversight.
+// THE PHONE FRAME CAP IS ON, AT 30, AND THIS TOOK THREE ATTEMPTS TO MEASURE.
 //
-// The loop below documents a "RIDING FRAME CAP, phones only: 30fps" and argues
-// that sustained full-rate rendering is what makes a device hot. The reasoning
-// is sound and the constant nevertheless defaults to 0, so the cap has only
-// ever applied to a phone the adaptive tier already demoted. Turning it on
-// looked like restoring intended behaviour. It was left OFF because the benefit
-// could not be established -- and that is a statement about the MEASUREMENT,
-// not a verdict on the cap.
+// The loop below has always documented a "RIDING FRAME CAP, phones only: 30fps"
+// and argued that sustained full-rate rendering is what makes a device hot. The
+// constant nevertheless defaulted to 0, so the cap only ever applied to a phone
+// the adaptive tier had already demoted.
 //
-// WHAT WENT WRONG WITH MEASURING IT, written down so the next person does not
-// repeat it:
+// FIRST ATTEMPT, WRONG. Turned it on, measured 34.3 uncapped against 16.3
+// capped, concluded the cap was harmful, reverted it. Every one of those
+// readings came from a SEPARATE browser launch on a machine that was also
+// running an Overpass refetch — the same uncapped configuration measured 34.3
+// and then 17.3 twenty minutes apart. That is the machine, not the cap.
 //
-//   - Comparing separate browser launches is worthless on a working machine.
-//     The same uncapped configuration measured 34.3 and then 17.3 rendered fps
-//     twenty minutes apart.
-//   - Measuring while riding is worse. The streamer never settles, and every
-//     reading lands between 2 and 7 fps whatever the cap is set to.
-//   - Counting requestAnimationFrame ticks measures MAIN-THREAD LOAD, not
-//     render rate: rAF keeps firing at display rate through every frame the cap
-//     deliberately skips. Every "fps" number gathered that way overstates what
-//     is actually being drawn.
+// SECOND ATTEMPT, ALSO WRONG. Measured parked, and got exactly 20.0 for four
+// different levers, because a parked phone with no gesture for six seconds is
+// already held at ~24fps by the idle cooler further down. Nothing could be
+// told apart through it.
 //
-// A trustworthy answer needs one page, one settled location, the cap toggled
-// underneath it -- window.__fpsCap exists for exactly that -- and medians of
-// alternating passes. Until someone does that, switching this on by default
-// would be shipping a change nobody has shown to help.
+// THIRD ATTEMPT, TRUSTWORTHY. One page, one settled location, a touch every two
+// seconds so the idle cooler stays off, the cap toggled underneath it through
+// window.__fpsCap, alternating passes, medians of rendered frames counted from
+// renderer.info.render.frame:
 //
-// Heat is better served by what already works and WAS measured cleanly, in one
-// page, back to back, one variable at a time: the idle cooler
-// that drops a parked phone to ~24fps, the 1.5x pixel ratio, and above all the
-// 2026-07-31 change that stopped simulating crowds and traffic for districts
-// the rider cannot see — that is a genuine reduction in sustained CPU work per
-// frame, which is what actually warms a phone.
+//     cap off      43.5  36.3  29.1     median 36.3
+//     cap 40       36    36    25.1     median 36
+//     cap 30       30    30    26.6     median 30
+//     cap 24       24    24    22.6     median 24
 //
-// ?fps=N still works for anyone who wants to pin a rate, and the adaptive tier
-// still drops a genuinely weak phone to 24.
-let FPS_CAP = TOUCH ? (parseFloat(P.get('fps') || '0') || 0) : 0;
+// The cap is precise: ask for 30 and you get 30, ask for 24 and you get 24. It
+// holds because of the accumulator fix in the loop, which advances by whole
+// intervals instead of snapping the clock to now.
+//
+// So 30 costs about six frames a second against a device managing 36, and buys
+// a ~17% reduction in sustained per-frame work for as long as the rider keeps
+// moving. That is the lever the loop always said it was, and it is worth having
+// on a phone the user has told us gets hot.
+//
+// ?fps=60 still overrides for anyone who wants the smoothness, the adaptive
+// tier still drops a genuinely weak phone to 24, and window.__fpsCap is there
+// so the next person can re-run the A/B above rather than take this on trust.
+let FPS_CAP = TOUCH ? (parseFloat(P.get('fps') || '0') || 30) : 0;
 // ADAPTIVE TIER: a phone that cannot hold ~20fps at the standard settings
 // demotes itself once — dpr 1.25, cap 24 — and remembers, so weaker phones
 // run cool and smooth without a settings screen. Verdict from the median of
@@ -2439,10 +2528,15 @@ function loop(now) {
     // the speed on any overlap, so riding parallel to traffic in the next
     // lane kept dead-stopping the bike (user bug report, 2026-07-30).
     {
+      // Fore-and-aft keeps the old generous radius -- nosing into the back of a
+      // bus should stop you early. ACROSS is the scooter's real half-width at
+      // the handlebars, 0.33m, which is what stops the phantom braking when
+      // riding alongside. A car in car-mode is 1.78 wide, half 0.89.
       const rr = vehicleKind === 'car' ? 0.95 : 0.55;
-      if (trafficHits(S.x, S.z, rr)) {
-        if (!trafficHits(S.x, pz, rr)) { S.z = pz; S.speed *= 0.9; }
-        else if (!trafficHits(px, S.z, rr)) { S.x = px; S.speed *= 0.9; }
+      const rlat = vehicleKind === 'car' ? 0.89 : 0.34;
+      if (trafficHits(S.x, S.z, rr, rlat)) {
+        if (!trafficHits(S.x, pz, rr, rlat)) { S.z = pz; S.speed *= 0.9; }
+        else if (!trafficHits(px, S.z, rr, rlat)) { S.x = px; S.speed *= 0.9; }
         else {
           S.x = px; S.z = pz;
           S.speed *= -0.12;             // head-on: a small bounce, then stopped

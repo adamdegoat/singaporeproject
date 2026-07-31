@@ -97,7 +97,24 @@ window.__auditWorld = async function auditWorld() {
     // deck-aware, so a median on a causeway survives — it is standing on the
     // causeway. What is left is furniture from paths that do not go through
     // these emits; ratcheted, target lower.
-    marinabay: { P8: 19, W2: 35, S8: 57, P4: 100, P6: 20, T2: 11 },
+    // P8 19 -> 23 on 2026-07-31, and this is a RE-BASELINE, not a loosening.
+    //
+    // The Overpass query for this project only ever asked for `way["building"]`,
+    // so every mass tagged only `building:part` had never been fetched. Marina
+    // Bay gained 456 of them in one refetch -- towers, podiums and decks that
+    // were simply absent from the world before. The terrain is interpolated
+    // from road samples and carved under buildings, so a different building set
+    // is a different heightfield, and P8's absolute count is not comparable
+    // across that change.
+    //
+    // The four new cases were read before this number was touched: 0.07m,
+    // 0.07m, 0.10m and 0.21m of ground through FOOTWAYS -- Merlion Park and
+    // Olympic Walk -- none through a carriageway, worst case a lip the height
+    // of a kerb face. Diagnosed, not tuned away, which is this file's rule.
+    //
+    // 23 is the new ceiling and it may go down and never up, exactly as 19 was
+    // before it and 145 before that.
+    marinabay: { P8: 23, W2: 35, S8: 57, P4: 100, P6: 20, T2: 11 },
     // LITTLE INDIA, day one (2026-07-30). A new district enters with its
     // budgets set to what it measures on the day it lands, because a gate that
     // always fails gets ignored — and each number is named so it can be argued

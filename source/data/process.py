@@ -751,6 +751,51 @@ STOREY_COUNTS = {
     "guoco midtown office":      [{"st": 30}],   # was 45m
     "midtown bay":               [{"st": 32}],   # was 40m
 
+    # ---- research/orchard-guessed-heights.md. No published METRE height exists
+    # for any of these; the storey counts do, and every one of them was
+    # standing on a type default.
+    "block 9":                   [{"st": 30}],   # Ardmore Park Block 9, was 45m
+    "the st. regis singapore":   [{"st": 23}],   # CTBUH; was 55m
+    "saint regis residences":    [{"st": 23}],   # both towers; was 40m
+    "artyzen singapore":         [{"st": 20}],   # operator's own site; was 55m
+    "orchard rendezvous":        [{"st": 17}],   # was 55m
+    "cavenagh house":            [{"st": 14}],   # was 45m
+    "8 @ mount sophia":          [{"st": 12}],   # was 20m
+    "regency house":             [{"st": 10}],   # was 45m
+    "alfa centre":               [{"st": 9}],    # weakest figure in the set
+    "mama shelter":              [{"st": 7}],    # was 55m
+    "siew building":             [{"st": 6}],    # OSM's name; it is Boon Siew Building
+    "the tanglin club":          [{"st": 4}],    # was 20m
+    "tanglin place":             [{"st": 4}],    # was 20m
+    "cairnhill arts centre":     [{"st": 3}],    # was 20m
+    "david elias":               [{"st": 3}],    # was 20m
+    "sri temasek":               [{"st": 2}],    # in the Istana grounds; was 20m
+    # A single-storey building over a big plan, and a conserved one: the
+    # Teochew mansion is one storey plus a 2-storey 1906 dormitory wing.
+    "house of tan yeok nee":     [{"st": 1, "per": 8.0}],
+    # One storey plus the cupola on its tower. The church recipe adds the tower.
+    "orchard road presbyterian": [{"st": 1, "per": 9.0}],
+
+    # ---- research/robertson-district-heights.md
+    # OSM tags Mill Point height=30, which over 19 storeys is 1.6m a floor and
+    # cannot be right; the storey count beats the tag here. Flagged weak: one
+    # source says 20.
+    # `beats_osm` because OSM tags this height=30 and 30m over 19 storeys is
+    # 1.6m a floor -- shorter than a door. The standing rule is that a storey
+    # count NEVER displaces a surveyed metre figure, and that rule is right;
+    # this is the documented exception, where the "measurement" is refuted by
+    # the building's own storey count. Flagged weak either way: one source says
+    # 20 storeys.
+    "mill point":                [{"st": 19, "beats_osm": True}],
+    # SEAB's own Annual Report 2019/20: "The nine-storey building...". SLEB says
+    # 8, probably excluding a plant level. Was standing at the 20m civic
+    # default.
+    "singapore examinations":    [{"st": 9}],
+    # Central block 3 storeys, flanking wings 2, read off the MFA elevation
+    # photograph. No published text figure exists, so this is the weakest entry
+    # in the table and is still better than a 20m box on a 2,146 m2 footprint.
+    "high commission of brunei": [{"st": 3}],
+
     "redhill wet market":               [{"st": 1, "per": 7.5}],
     "beo crescent food centre":         [{"st": 1, "per": 7.0}],
     "havelock road cooked food centre": [{"st": 1, "per": 7.0}],
@@ -766,7 +811,7 @@ def storey_record(name, area):
         for sp in specs:
             if area < sp.get("amin", 0) or area > sp.get("amax", 1e12):
                 continue
-            return sp["st"], sp.get("per", STOREY_FLOOR_M)
+            return sp["st"], sp.get("per", STOREY_FLOOR_M), sp.get("beats_osm", False)
     return None
 
 
@@ -795,6 +840,10 @@ NAME_STRIP = (
     "parksuites showflat",
     "canninghill piers showflat",
     "fdawu tower",
+    # research/orchard-guessed-heights.md: SLA has no campus of this name
+    # anywhere near that footprint, and the OSM way is addressed to 50A Lloyd
+    # Road. We do not know what it is.
+    "odyssey the global preschool",
 )
 
 # Structures that begin in the air, where OSM records no min_height. Without
@@ -1885,8 +1934,9 @@ def main():
                 # NOT applied over "osm" (a surveyed `height=` tag), "named" or
                 # "override" (published metres). Those are measurements, and a
                 # storey count must never displace one.
-                if b.get("hs") in (None, "levels"):
-                    _sr = storey_record(_nm, b.get("a") or 0)
+                _sr0 = storey_record(_nm, b.get("a") or 0)
+                if b.get("hs") in (None, "levels") or (_sr0 and _sr0[2]):
+                    _sr = _sr0
                     if _sr:
                         b["h"] = round(_sr[0] * _sr[1], 1)
                         b["hs"] = "levels"

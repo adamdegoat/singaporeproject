@@ -873,6 +873,21 @@ export class Crowd {
         else pr.off += Math.sign(d2) * step;
       }
 
+      // THE DRAW CULL MOVED ABOVE THESE TWO TESTS, and that is the whole
+      // change. Both of them exist to decide whether to DRAW a person, and
+      // both were being asked about all 2,200 of them every frame while only
+      // the forty within 105m can ever be drawn. A CPU profile of a settled
+      // phone frame put `walkBlocked` — the wall-and-footprint lookup behind
+      // isBlocked — at 9.7% of all samples, the largest single application
+      // cost in the world, spent almost entirely on people nobody can see.
+      //
+      // Nothing about the simulation moves: everyone still walks, dodges,
+      // crosses and u-turns exactly as before, because all of that happens
+      // above this line. Only the question "should this one be drawn" is now
+      // asked of the ones near enough to draw.
+      const ddx2 = x - playerX, ddz2 = z - playerZ;
+      if (ddx2 * ddx2 + ddz2 * ddz2 > 105 * 105) continue;
+
       // a pedestrian standing inside a building is worse than a missing one
       if (this.isBlocked(x, z)) continue;
 
@@ -896,9 +911,9 @@ export class Crowd {
 
       // Only animate and draw the people you could actually see. With 260 of
       // them spread over 1.2km, roughly forty are ever in range, so this is the
-      // difference between 44fps and 55 at no visual cost.
-      const ddx2 = x - playerX, ddz2 = z - playerZ;
-      if (ddx2 * ddx2 + ddz2 * ddz2 > 105 * 105) continue;
+      // difference between 44fps and 55 at no visual cost. (The cull itself now
+      // happens a few lines earlier, before the two expensive draw filters —
+      // see the note there.)
       const idx = slot++;
       seen.push(x, z, i);
 
@@ -1250,7 +1265,35 @@ export class Traffic {
   }
 
   // axis-aligned-ish blocker test: treat each vehicle as an oriented box
-  hits(px, pz, radius = 0.85) {
+  // COLLIDING WITH AIR BESIDE A BUS. Reported by the rider, 2026-07-31, and the
+  // numbers said the same thing:
+  //
+  //   the bus MESH is 2.54m across its widest part (the skirt) -- half 1.27 --
+  //   and 11.8m long, half 5.90. The box tested here was half 1.35 by 6.00.
+  //
+  //   the RIDER was then padded by a single circular radius of 0.55m, but a
+  //   Vespa is 0.66m across the handlebars: half 0.33. Laterally that padding
+  //   was two thirds too generous.
+  //
+  // Together the box fired at 1.35 + 0.55 = 1.90m from the bus centreline. The
+  // two meshes actually touch at 1.27 + 0.33 = 1.60m. THIRTY CENTIMETRES of
+  // invisible bus on each side, which at lane spacing is exactly the "braking
+  // beside it" the rider felt.
+  //
+  // Measured after the fix by stepping laterally out of the box: contact now
+  // fires at 1.61m against a 1.60m touch. One centimetre.
+  //
+  // (The probe that measured this got the perpendicular direction backwards
+  // first time and reported 2.68m -- the lateral unit vector in world space is
+  // (cos h, sin h), not (cos h, -sin h), because of how the world->vehicle
+  // rotation below is signed. Worth knowing if anyone re-measures.)
+  //
+  // THE PADDING IS NOW DIRECTIONAL, because a scooter is not a circle. One
+  // radius has to be the worst case in BOTH axes, so a value narrow enough to
+  // ride past a bus would also let the front wheel enter one before stopping.
+  // `lat` defaults to `radius`, so every existing caller keeps its old
+  // behaviour until it opts in.
+  hits(px, pz, radius = 0.85, lat = radius) {
     for (const it of this.items) {
       if (!it.wx) continue;
       const dx = px - it.wx, dz = pz - it.wz;
@@ -1258,8 +1301,10 @@ export class Traffic {
       const c = Math.cos(-it.heading), sn = Math.sin(-it.heading);
       const lx = dx * c - dz * sn;                      // into the vehicle frame
       const lz = dx * sn + dz * c;
-      const halfW = (it.kind === 'bus' ? 1.35 : 0.95) + radius;
-      const halfL = (it.kind === 'bus' ? 6.0 : 2.25) + radius;
+      // Both figures now come from the meshes built above: bus body 2.5 wide
+      // with a 2.54 skirt by 11.8 long; car body 1.78 by 4.32.
+      const halfW = (it.kind === 'bus' ? 1.27 : 0.89) + lat;
+      const halfL = (it.kind === 'bus' ? 5.90 : 2.16) + radius;
       if (Math.abs(lx) < halfW && Math.abs(lz) < halfL) return it;
     }
     return null;

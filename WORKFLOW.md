@@ -525,3 +525,37 @@ building is rebuilt", two sections above, and the same as the district list
 that lived in three files until four districts shipped ungated.
 
 When you add an output, ask which file the USER's browser opens, and gate that.
+
+## How to measure performance here, and three ways I got it wrong (2026-07-31)
+
+The world is CPU-bound, not fill-rate bound. Dropping the pixel ratio from 3 to
+1 at the worst spot in the world — nine times fewer pixels — bought one frame
+per second. Shadows off bought 5%. If a frame is slow here, the answer is
+almost always in JavaScript, and the way to find it is a CPU profile, not a
+guess about the renderer.
+
+**1. Counting requestAnimationFrame ticks is not counting frames.** rAF keeps
+firing at display rate through every frame the app deliberately skips, so an
+rAF counter measures MAIN-THREAD LOAD and silently ignores any frame cap. It is
+a useful load proxy and it is not a frame rate. Count
+`renderer.info.render.frame` instead; it increments once per real render.
+
+**2. Comparing two browser launches on a working machine measures the machine.**
+The same uncapped configuration measured 34.3 and then 17.3 rendered fps twenty
+minutes apart, because the second run shared the machine with an Overpass
+refetch. Every cross-launch conclusion drawn that afternoon was worthless. The
+only method that produced repeatable answers was: ONE page, ONE settled
+location, toggle the variable underneath it, alternate passes, take medians.
+`window.__fpsCap` and the sim-freeze probe exist for exactly that.
+
+**3. A parked phone is capped at ~24fps by the idle cooler, by design.** Every
+reading in one A/B came back as exactly 20.0 because of it, and four different
+levers all looked identical. Dispatch a touch every couple of seconds while
+measuring, which is what a rider's hand does anyway.
+
+**And check what the profile actually says before optimising.** The largest
+single application cost in this world was `walkBlocked` at 9.7% of all samples
+— the crowd asking, for all 2,200 pedestrians every frame, whether someone
+beyond the 105m draw cull was standing inside a building. Moving the cull three
+lines earlier removed it from the profile entirely and took idle headroom from
+37% to 50%. Nobody would have guessed that; the profile said it in one line.
