@@ -710,3 +710,18 @@ audit, because the timestamps end up in the right order anyway.
 
 Deploy is a read-only operation on the data. Nothing that writes `data/*.json`
 may run at the same time — check with `pgrep -f build_district` first.
+
+### The live-check triangle count is not a measurement
+
+deploy.sh prints a HUD line from one page load at the spawn. Between two deploys
+it read 2,382k then 2,753k triangles and it looked like the shophouse roofs had
+added 15%. They had not: an A/B on one page, same position, same load, put the
+roofs at **+2,400 triangles (0.12%) and zero extra draw calls**.
+
+That line samples whenever the check happens to look, with whichever districts
+are resident and wherever the camera has settled. It is a smoke test — "does it
+load and run" — and it is good at that. It is not a budget, and comparing it
+across deploys will send you chasing regressions that do not exist.
+
+Controlled comparisons only: one page load, one position, toggle the thing under
+test, read both numbers. Same rule as the frame-rate work earlier the same day.

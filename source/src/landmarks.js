@@ -1493,54 +1493,51 @@ export function shophouse(api, b) {
   // A pitched roof whose eaves reach over the road becomes the flat-roofed
   // later-infill variant instead of being drawn into the traffic. The flat one
   // is built from grow(), which pulls its ring back out of a carriageway.
-  // THE GUARD WAS REFUSING 23% OF CHINATOWN'S ROOFS FOR NO REASON.
+  // SEGMENT THE RIDGE. THE GUARD WAS FAILING ON LENGTH, NOT WIDTH.
   //
-  // Measured: 893 pitched, 497 deliberately flat later-infill, and 416 that
-  // WANTED a pitch and were refused -- so nearly a quarter of the district's
-  // shophouses stood under an office block's flat cap on the most
-  // photographed conserved streets in Singapore.
+  // Measured in Chinatown: 893 shophouses pitched, 497 deliberately flat
+  // later-infill, and 416 that wanted a pitch and were refused -- nearly a
+  // quarter of the district standing under an office block's flat cap on the
+  // most photographed conserved streets in Singapore.
   //
-  // The test was rectClear over span*0.51 by rad, which is the building's OWN
-  // FOOTPRINT. A shophouse fronts directly onto the five-foot way, so its
-  // footprint touches the kerb by definition and the guard failed for the one
-  // building type it was written to protect.
+  // Two wrong diagnoses first, both disproved by measurement:
+  //   * "the guard is unnecessary" -- removing it put clay tile over Cecil
+  //     Street within one audit, so it is catching something real;
+  //   * "the roofs are too WIDE" -- shrinking the pitch to 66% and then 45%
+  //     of full depth rescued SEVEN of the 416 (6,188 -> 6,272 clay-tile
+  //     triangles). Width was never the problem.
   //
-  // It is also unnecessary in that direction: `rad` is at most
-  // halfShort * 0.77, so the roof cylinder is strictly NARROWER than the
-  // footprint it sits on and cannot reach past a wall that is already clear.
-  // Along the ridge it is span * 1.02 -- one percent proud at each end -- and
-  // the gable ends below still test themselves individually, which is where a
-  // real overhang would happen. P1b watches the result either way.
-  // A ROOF THAT DOES NOT FIT SHOULD GET SMALLER, NOT DISAPPEAR.
+  // The test is rectClear over `span * 0.51` ALONG the building. For a long
+  // terrace that reach crosses a side street the building itself never
+  // touches, so the whole roof is refused because of a road forty metres away
+  // at the far end. `rad` is at most halfShort * 0.77, so the roof is strictly
+  // narrower than the footprint carrying it; across the depth it cannot
+  // overhang anything the walls do not.
   //
-  // The original guard was right that some of these reach a carriageway --
-  // removing it put clay tile over Cecil Street within one audit. But its
-  // answer was all-or-nothing, and 416 of Chinatown's 1,806 shophouses (23%)
-  // were left under an office block's flat cap because their full-size roof
-  // did not fit. A shallower pitch fits where a deep one does not, and a
-  // shallow tiled roof is far closer to the truth than no roof at all.
-  //
-  // Tried at full depth, then two thirds, then a little under half. P1b is the
-  // arbiter, as it was for the version that skipped the test entirely.
-  let rad = 0;
-  if (variant < 3) {
-    const full = Math.min(3.4, ob.halfShort * (0.5 + variant * 0.09));
-    for (const f of [1, 0.66, 0.45]) {
-      if (rectClear(ob.cx, ob.cz, ob.ux, ob.uz, span * 0.51, full * f)) { rad = full * f; break; }
-    }
-  }
-  const pitched = rad > 0;
-  if (pitched) {
-    // A SURVEYED ROOF COLOUR beats the default clay. `roof:colour` is tagged on
-    // 29 footprints in Bras Basah, which is conservation shophouse country, and
-    // it was being carried into the scene file and then ignored -- which is the
-    // same sin as not carrying it at all.
+  // So the ridge is now built in segments and each one is tested on its own,
+  // exactly as crystalMesh's facade panels were fixed in this same session.
+  // A terrace whose middle passes a lane keeps the roof over the rest of
+  // itself instead of losing all of it. P1b remains the arbiter.
+  const rad = variant < 3 ? Math.min(3.4, ob.halfShort * (0.5 + variant * 0.09)) : 0;
+  // ~9m of ridge per segment, so a single shop is one piece and a terrace is
+  // several; never fewer than one, never so many that the merge cost matters.
+  const RSEG = rad > 0 ? Math.max(1, Math.min(14, Math.round(span / 9))) : 0;
+  const segLen = RSEG ? (span * 1.02) / RSEG : 0;
+  let anyRoof = false;
+  for (let i = 0; i < RSEG; i++) {
+    const off = (i + 0.5) / RSEG * span * 1.02 - span * 0.51;
+    const sx = ob.cx + ob.ux * off, sz = ob.cz + ob.uz * off;
+    if (!rectClear(sx, sz, ob.ux, ob.uz, segLen * 0.5, rad)) continue;
+    anyRoof = true;
     const roofMat = b.rcol ? api.mat.roofTint(b.rcol) : tile;
-    const rg = new THREE.CylinderGeometry(rad, rad, span * 1.02, 3, 1, false);
+    const rg = new THREE.CylinderGeometry(rad, rad, segLen, 3, 1, false);
     rg.rotateZ(Math.PI / 2);
     rg.rotateY(-ob.ang);
-    rg.translate(ob.cx, b.h + rad * 0.30, ob.cz);
+    rg.translate(sx, b.h + rad * 0.30, sz);
     api.merge(rg, roofMat, cx0, cz0);
+  }
+  const pitched = anyRoof;
+  if (pitched) {
     // gable ends, so a row is read as separate houses rather than one long shed
     for (const sgn of [-1, 1]) {
       const gx = ob.cx + ob.ux * sgn * (span / 2), gz = ob.cz + ob.uz * sgn * (span / 2);

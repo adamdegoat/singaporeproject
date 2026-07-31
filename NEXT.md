@@ -3724,7 +3724,15 @@ back per the rule in data/landmark.mjs.
   merge into existing clay-tile tiles.
 - Every scene audits clean, 42/42.
 
-**Open, with the numbers that matter:**
+**RESOLVED the same session — segment the ridge.** 893 -> 1,295 pitched roofs,
+and the 416 refusals are down to FOURTEEN. Clay-tile geometry 6,272 -> 12,248
+triangles. Every scene still audits 42/42, so nothing landed over a road. The
+497 that remain flat are the deliberate later-infill variant, which is design.
+
+The diagnosis below is kept because the two WRONG diagnoses in it are the
+useful part: the guard was not unnecessary, and the roofs were not too wide.
+
+**What the numbers said at the time:**
 Chinatown has 1,806 shophouses through the `shophouse()` recipe: 893 pitched,
 497 deliberately flat later-infill, and **416 that want a pitch and are refused
 by `rectClear`**. Letting them all through put clay tile over Cecil Street
@@ -3740,3 +3748,15 @@ The fix is therefore to test the ridge in segments and draw the clear ones,
 exactly as `crystalMesh` was changed to do for its facade panels this session —
 not to shrink the roof. Whole district total is only 6,272 clay-tile triangles,
 so there is a lot of roof missing and it is cheap to add.
+
+## Orchard and River Valley building:part — blocked upstream, not by us
+
+The patient retry loop ran six rounds through the night (last attempt 04:33) and
+EVERY one was rejected by build_district's own loss guard: "using 1 live
+mirror(s)" each time, and the survivor returns short. Counts are unchanged --
+orchard 4 `building:part`, rivervalley 1, against the 20+ that a healthy fetch
+gives. The guard is working exactly as intended; the data on disk is untouched.
+
+This is an upstream outage, not a bug here. Three of the four Overpass mirrors
+have been down since 2026-07-31. Retry occasionally rather than in a tight loop:
+the CPU is better spent elsewhere and hammering a struggling mirror is rude.
