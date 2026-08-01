@@ -176,6 +176,25 @@ views in a focused browser.
 | A1 | Feature classes sourced from real data | MAJOR | > 60% |
 | A2 | Invented positions where real data existed and was not used | BLOCKER | 0 |
 | A3 | Landmark stretch matches reference imagery on massing and material | MAJOR | reviewed |
+| A4 | Modelled ground agrees with published ground levels | BLOCKER | within 10m of the published band |
+
+**A4 (`data/groundcheck.py`, added 2026-08-01) is the first check in this
+standard that compares the world against something OUTSIDE it.** Every other
+one compares the world with itself, and that is precisely how Marina Bay stood
+twenty-five metres too high for the whole life of the district while 42 audit
+checks, 35 defect classes, behaviour, determinism and a live check all passed:
+V3 tests that the terrain has no step sharper than 1:1 and V4 that its scale is
+sane, and a smooth plateau at the wrong height satisfies both. Raffles Avenue
+modelled 29.6m on reclaimed land published at 3-5m.
+
+Its tolerance is deliberately wide and must stay that way. The anchor positions
+are read off descriptions of sites and tunnel chainages rather than surveyed,
+and the model's grid is 35m, so this is not a precision instrument — it is a
+guard against being wrong by more than a building. It was verified to FAIL on
+the pre-fix terrain (21.6m and 20.3m against 3-5m) before being wired in, which
+is the only way to know a gate is a gate. Anchors and their sources are listed
+in HANDOFF.md under "PUBLISHED GROUND LEVELS, BANKED"; add to them whenever
+research turns up a citable level.
 
 A2 is the one that has been wrong twice: pedestrian crossings were tagged in OSM
 the whole time while being placed at invented intervals, and `sidewalk=left/

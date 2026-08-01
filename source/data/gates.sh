@@ -34,6 +34,9 @@ for s in $SCENES; do
   python3 data/check.py "$s" 2>&1 | tail -3 || FAILED=1
 done
 
+hr "ground vs published levels"
+python3 data/groundcheck.py 2>&1 | tail -3 || FAILED=1
+
 hr "road overlap (analytic)"
 for s in $SCENES; do
   python3 data/audit_roads.py "$s" 2>&1 | grep -E "^==|building EDGES|NON-service" || true

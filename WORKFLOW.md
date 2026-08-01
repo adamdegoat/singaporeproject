@@ -756,3 +756,60 @@ the actual plan.
 replaces, and be willing to throw it away. Three of this session's changes
 survived that test and two did not, and the two that did not cost an hour
 between them — far less than shipping either would have cost later.
+
+## Measure the DATA before you design a filter for it (2026-08-01)
+
+Marina Bay's ground was twenty-five metres too high and the write-up in NEXT.md
+had it diagnosed, with three ranked candidate fixes, none of which would have
+worked. The whole day turned on one measurement that nobody had made: what does
+the elevation dataset actually say, binned by distance to the nearest building?
+
+    dist   0- 10m  median 17.0m      dist  55- 80m  median 11.5m
+    dist  10- 34m  median 13.0m      dist  80-131m  median 11.0m, range -19 to +32
+
+The proposed fix was "filter samples by distance to the nearest building". The
+table says a sample 130m clear of every footprint is still wrong by the same
+amount as one standing on a roof, and open water in the middle of the bay read
+6m and 16m against a datum of zero. There was nothing to filter FOR. Every
+free web API here returns the same SRTM, so no amount of cleverness above it
+would have helped, and a lower-envelope estimator was tried across four
+percentiles and three radii to be sure before the dataset was replaced.
+
+**The general form:** when a derived value is wrong, measure the INPUT
+distribution before designing anything that processes it. A filter is a theory
+about where the signal is, and a theory deserves a measurement first.
+
+## A gate that has never failed is not a gate (2026-08-01)
+
+`data/groundcheck.py` (check A4) compares the modelled ground against published
+levels. Before wiring it into deploy.sh it was run against the PRE-FIX terrain,
+where it reported Raffles Avenue at 21.6m and Temasek Avenue at 20.3m against a
+published 3-5m and exited non-zero. Only then was it trusted.
+
+This costs about two minutes — keep a copy of the broken artefact, point the new
+check at it, watch it fail — and it is the difference between a check and a
+decoration. Related: A4 is the FIRST check in this project that compares the
+world against something outside it. Everything else compares the world with
+itself, which is precisely why a ground that was smooth, self-consistent and
+twenty-five metres wrong passed 42 audit checks, 35 defect classes, behaviour,
+determinism and a live check for the entire life of the district.
+
+## Count what you suppress, and read the count (2026-08-01)
+
+Lane lines were being painted straight across junction mouths. The first fix
+asked "is this mark inside some other street's carriageway" — which sounds
+exactly right and is not, because OSM maps an arterial with slip roads, bus-lane
+ways and unnamed fragments running alongside it for its whole length. It dropped
+**80% of Bras Basah Road's lane marks and 68% of Orchard's**.
+
+Nothing on screen said so. A street with no lane lines still looks like a
+street, and the vet frame of the junction looked BETTER, because the defect
+being fixed was genuinely gone. What caught it was a counter printed beside the
+mark total. The corrected version finds where roads actually CROSS the axis
+(with a 25-degree angle gate, so a parallel way is never a junction) and drops
+6-11%, which is what junctions cost.
+
+**Any rule that removes things must report how many**, next to the total, every
+build. "No silent caps" is not a style preference — an over-broad filter and a
+correct one produce frames that look the same, and only the number tells them
+apart.
