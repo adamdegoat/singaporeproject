@@ -38,7 +38,12 @@ POLL = f"https://api-open.data.gov.sg/v1/public/api/datasets/{DATASET}/poll-down
 # The world's bounding box, generously padded. The national layer is 1 MB and
 # 298 polygons; there is no reason to carry Sembawang around in a repo about
 # the city centre, and a smaller cache is a faster point-in-polygon pass.
-BOX = (103.800, 1.260, 103.885, 1.330)
+# WIDENED EAST 2026-08-02 for tanjongrhu, whose bbox reaches 103.8860 — 100m
+# past the old 103.885 edge, so its conserved fabric would have fallen
+# outside the cache and been silently treated as unconserved. The national
+# layer is ~1MB, so a wider box costs nothing; kept ahead of the ring so
+# marinasouth, keppel, harbourfront and sentosa are already inside it.
+BOX = (103.780, 1.230, 103.900, 1.330)
 
 
 def _get(url, timeout=90):

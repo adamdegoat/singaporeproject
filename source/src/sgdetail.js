@@ -433,9 +433,32 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     return dir;
   };
 
+  // Is there any road within `m` metres? Used by the MRT siting below, which
+  // must not judge an entrance by its distance from the MAIN STREET in a
+  // district whose main street is not where the stations are.
+  const nearAnyRoad = (x, z, m) => {
+    const m2 = m * m;
+    for (const r of (data.roads || [])) {
+      const q = r.p;
+      if (!q || q.length < 2) continue;
+      for (let i = 0; i + 1 < q.length; i++) {
+        const ax = q[i][0], az = q[i][1], bx = q[i + 1][0], bz = q[i + 1][1];
+        if (Math.min(ax, bx) - m > x || Math.max(ax, bx) + m < x) continue;
+        if (Math.min(az, bz) - m > z || Math.max(az, bz) + m < z) continue;
+        const vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz;
+        if (L2 < 1e-9) continue;
+        let t = ((x - ax) * vx + (z - az) * vz) / L2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+        if (dx * dx + dz * dz < m2) return true;
+      }
+    }
+    return false;
+  };
+
   // MRT entrances at the coordinates OSM records for them, rather than at two
   // arbitrary points along the street.
-  let realMrt = 0, droppedMrt = 0;
+  let realMrt = 0, droppedMrt = 0, farFromAxis = 0;
   for (const m of (data.mrt || [])) {
     if (m.kind !== 'subway_entrance') continue;
     const [mx, mz] = m.p;
@@ -452,7 +475,24 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     // Entrances up to the edge of the dressed area, not just the ones on the
     // main street: Dhoby Ghaut and Somerset put exits a long way down the side
     // roads, and they are real places you ride past.
-    if (Math.sqrt(bd) > 230) continue;
+    //
+    // ...AND THE AXIS IS THE WRONG THING TO MEASURE AGAINST IN A DISTRICT THAT
+    // IS NOT ITS MAIN STREET. This was a bare `> 230 from the axis` test, which
+    // works where the district IS the road (Orchard) and fails completely
+    // where it is not: marinaeast's axis is 851m of Marina East Drive, and all
+    // FIVE of its surveyed entrances — real Bayfront and Gardens by the Bay
+    // exits — sit further than 230m from it and were dropped. A2 caught it as
+    // "real data present but unused", which is exactly what it was.
+    //
+    // Worse, the skip was SILENT: it incremented neither realMrt nor
+    // droppedMrt, so the counts said five entrances existed and nothing said
+    // what became of them. "Count what you suppress, and read the count"
+    // (WORKFLOW.md) — a rule that removes things must report how many.
+    //
+    // An entrance is a SURVEYED POSITION, so the question is whether a rider
+    // can get near it, not whether it is on the main street. Near the axis, or
+    // near any road this chunk knows about.
+    if (Math.sqrt(bd) > 230 && !nearAnyRoad(mx, mz, 90)) { farFromAxis++; continue; }
     let vx, vz;
     if (Math.sqrt(bd) < 60) {
       const [x1, z1] = P[bi], [x2, z2] = P[bi + 1];
@@ -530,6 +570,11 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   // kallang landed and A2 failed the world scene while a probe on the same
   // URL read 37 crossings. Same one-global-many-chunks family as __onRoad,
   // and `__realErp` two lines away has always done it correctly.
+  if (farFromAxis) {
+    // Reported, never silent: a rule that removes things must say how many.
+    console.log(`  mrt: ${farFromAxis} entrance(s) skipped, far from the axis `
+      + `and not within 90m of any road`);
+  }
   window.__realMrt = (window.__realMrt || 0) + realMrt;
   window.__droppedMrt = (window.__droppedMrt || 0) + droppedMrt;
 

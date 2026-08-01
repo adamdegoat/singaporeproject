@@ -212,6 +212,26 @@ window.__auditWorld = async function auditWorld() {
     // "two measures of one fact" gap between the plate walk and __nearestStreet,
     // small and real.
     kallang: { T2: 52, S8: 42, S2: 3 },
+    // MARINAEAST enters 2026-08-02, and it is the FIRST DISTRICT IN THIS
+    // PROJECT WITH REAL OPEN SEA — the Straits south of Marina Barrage, built
+    // by data/coastline.py. The water checks are the ones that mattered and
+    // all three pass on day one: W1 0, W2 1 of 12, W3 0. Nothing is built in
+    // the sea and there is no open water a rider can ride into.
+    //
+    // S8 0: this is a GARDEN district, not a shopping street. All 21 of its
+    // mapped tenants are inside the conservatories, upstairs, or on a face
+    // with no street frontage — every one of them has a recorded reason in
+    // `__shopSkips`. Zero is the correct answer, not a backlog, which is why
+    // A2 was taught to tell "read and declined" from "never read".
+    //
+    // T2 84: the highest in the project, and structural. Marina East is a
+    // barrage, two conservatories and a promenade between two bodies of water;
+    // its roads reach marinabay to the west and marinasouth to the south, and
+    // BOTH of those junctions are outside this bbox. Same mechanism as
+    // kallang's 52 and rivervalley's 11, at a district that is mostly water
+    // and garden. EXPECT IT TO FALL when marinasouth and tanjongrhu land; if
+    // it does not, the joins are genuinely missing and that is a real defect.
+    marinaeast: { T2: 84, S8: 0 },
     // River Valley C7 33: the district DELIBERATELY takes the east 1.6km of
     // a 4.9km road (declared partialMainStreet in districts.json; the west
     // belongs to a future Robertson Quay district). C7 measures against the
@@ -502,6 +522,8 @@ window.__auditWorld = async function auditWorld() {
       // answer is to stop describing a person by their measurements.
       props.push({ sig, mat: matId, x: v3.x, y: v3.y, z: v3.z, sy: sc3.y,
                    crowd: !!o.userData.crowdPart,
+                   // leaves and branches are not paint; see P7
+                   foliage: !!o.userData.treeFoliage,
                    // A PARKED CAR BELONGS IN THE CARRIAGEWAY. It is placed from
                    // the map's own `parking:lane:*` tags, in the bay the map
                    // says is there, so it is as legitimate on the tarmac as a
@@ -1135,6 +1157,11 @@ window.__auditWorld = async function auditWorld() {
     let sunk = 0; const ex = [];
     for (const p of props) {
       if (!p.flat || !terr) continue;
+      // A LEAF IS NOT PAINT. Tree foliage is instanced flat cards, and one
+      // lying near-horizontal a few mm above the ground on a low tree looks
+      // exactly like a buried marking to a shape-based test. Flagged at the
+      // mesh (userData.treeFoliage), never by its dimensions.
+      if (p.foliage) continue;
       const above = p.y - terr.at(p.x, p.z);
       if (above < 0.001) continue;              // not a road marking at all
       if (above > 0.5) continue;                // signage, not paint
@@ -1143,8 +1170,13 @@ window.__auditWorld = async function auditWorld() {
       if (above < floor) {
         sunk++;
         if (ex.length < 6) {
+          // WHERE, AND WHAT. Millimetres alone cannot be diagnosed: this said
+          // "marking 4mm up, footway at 20mm" and named neither the place nor
+          // the prop, so finding it meant hunting by hand. Same fix W2's
+          // example line got, for the same reason.
           ex.push(`marking ${(above * 1000) | 0}mm up, `
-            + `${onPath ? 'footway' : 'tarmac'} at ${(floor * 1000) | 0}mm`);
+            + `${onPath ? 'footway' : 'tarmac'} at ${(floor * 1000) | 0}mm`
+            + ` — ${p.sig} at ${p.x | 0},${p.z | 0}`);
         }
       }
     }
@@ -2111,7 +2143,20 @@ window.__auditWorld = async function auditWorld() {
     const unused = [];
     if ((data.crossings || []).length && !window.__realCrossings) unused.push('crossings');
     if ((data.mrt || []).length && !window.__realMrt) unused.push('mrt');
-    if ((data.shops || []).length && !(window.__stats || {}).realShops) unused.push('shops');
+    // READ-AND-REJECTED IS NOT UNREAD, AND A2 COULD NOT TELL THEM APART.
+    //
+    // This asked "did the layer produce output", which is the right question
+    // for a layer nobody wired up and the wrong one for a layer that was fully
+    // considered and correctly declined. marinaeast is a garden district: all
+    // 21 of its shops sit INSIDE the conservatories, upstairs, or on a facade
+    // with no street frontage, and `__shopSkips` records a reason for every
+    // one of them. Zero shopfronts is the correct answer there, and A2 called
+    // it a blocker.
+    //
+    // The honest test is whether the builder LOOKED. A skip list with an entry
+    // per shop is proof it did.
+    if ((data.shops || []).length && !(window.__stats || {}).realShops
+        && !((window.__shopSkips || []).length)) unused.push('shops');
     add('A2', 'real data present but unused', 'BLOCKER', unused.length, 0,
         unused.length ? `unused: ${unused.join(', ')}` : 'every fetched layer is placed', unused);
   }

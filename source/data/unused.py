@@ -171,6 +171,13 @@ DEFERRED = {
     # hundred metres, and the National Stadium recipe written this session
     # had to hand-carry a shape the map was already telling us.
     "roof:shape":          "roof surfaces are only modelled on shophouses so far; the shape is the more valuable half of this pair and should be read first",
+    # marinaeast 2026-08-02, 11% of its buildings. The parkfurn layer added
+    # the same night DOES draw shelters, but as one generic form -- this tag
+    # says whether a thing is a bus shelter, a picnic shelter, a gazebo or a
+    # sun shelter, and those are four different silhouettes. Worth reading
+    # when the shelter form is next touched; deferred, not ignored, because
+    # it would change what is drawn rather than merely describe it.
+    "shelter_type":        "shelters are drawn as one generic form; this would give bus / picnic / gazebo / sun their own shapes",
 }
 
 

@@ -2110,6 +2110,16 @@ export class TreeField {
     // Measured 2026-08-01: 5,255 'trunks' in Robertson against 266 real trees,
     // and six building columns reported as trees growing through walls.
     trunks.userData.treeTrunk = true;
+    // AND THE FOLIAGE, BY MECHANISM. A leaf card is a 1 x 0.55 plane and some
+    // of them lie nearly flat a few millimetres off the ground on a low tree —
+    // which is indistinguishable, by shape, from a road marking. P7 ("road
+    // markings under the tarmac") duly reported one at 4mm and blocked a
+    // deploy. Marked here rather than exempted by geometry parameters, for the
+    // reason the comment directly above already gives: D6 and D37 both tried
+    // to identify trees by signature and both were wrong.
+    cards.userData.treeFoliage = true;
+    blobs.userData.treeFoliage = true;
+    branches.userData.treeFoliage = true;
 
     const m = new THREE.Matrix4(), e = new THREE.Euler(), q = new THREE.Quaternion();
     const p = new THREE.Vector3(), sc = new THREE.Vector3();

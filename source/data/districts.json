@@ -99,6 +99,15 @@
    "status": "live",
    "notes": "Ring 1 north-east. National Stadium, Indoor Stadium, Kallang Wave, the 1937 Kallang Airport terminal, Kallang Riverside Park and the west half of the Benjamin Sheares Bridge. Overlaps bugis (940x223m, Nicoll Highway and Crawford Street cross that seam) and marinabay (166x668m, the Sheares approach), and in doing so CLOSES a pre-existing gap between bugis's south edge and marinabay's north edge east of 103.8640. Long side 1,990m, inside Marina Bay's proven 2,003m. Its water is MARINA RESERVOIR, not sea: the same natural=water multipolygon already drawn in three built districts, so no natural=coastline reader is needed. OSM height tags in this bbox are FABRICATED and suppressed in process.py (HEIGHT_TAG_SUPPRESS) -- the National Stadium is tagged 10m against a published 83m dome. AXIS IS NICOLL HIGHWAY, not 'Stadium Boulevard' -- that name does not exist in OSM (the real roads are Stadium Drive / Road / Walk / Place). Nicoll Highway is 3,892m, trunk, 3,561m of it inside the bbox, and it is the road a rider arrives on from bugis. Brief: research/coastal-expansion.md.",
    "queued_after": "littleindia"
+  },
+  {
+   "id": "marinaeast",
+   "name": "Marina East / Marina Barrage",
+   "bbox": "1.2740,103.8620,1.2920,103.8780",
+   "axis": "marina east drive",
+   "status": "live",
+   "notes": "Ring 1 due east: Marina Barrage, Bay East Garden and the Marina East promenade, closing the last of the Marina Reservoir rim. Overlaps marinabay 1,769x668m and later kallang, tanjongrhu and marinasouth, so the eastern group closes into one block. THE FIRST DISTRICT WITH REAL OPEN SEA: the Straits lie south of the barrage, read by data/coastline.py, which stitches natural=coastline, clips it to this bbox and closes the ring on the seaward side (land-on-left). Verified against known sea and land points before building. Brief: research/coastal-expansion.md candidate 2.",
+   "queued_after": "kallang"
   }
  ]
 }

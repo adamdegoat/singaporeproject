@@ -358,6 +358,7 @@ def process(d, raw_path):
     env["SG_LAT0"] = str(REG["island_origin"][0])
     env["SG_LON0"] = str(REG["island_origin"][1])
     env["SG_AXIS"] = d.get("axis", "")
+    env["SG_BBOX"] = d["bbox"]
     r = subprocess.run([sys.executable, os.path.join(HERE, "process.py")],
                        env=env, capture_output=True, text=True)
     print(r.stdout.rstrip())

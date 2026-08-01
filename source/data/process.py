@@ -26,6 +26,11 @@ if len(sys.argv) > 1:
 RAW_PATH = os.environ.get("SG_RAW") or os.path.join(HERE, "raw.json")
 OUT_PATH = os.environ.get("SG_OUT") or os.path.join(HERE, "orchard.json")
 AXIS_NAME = os.environ.get("SG_AXIS") or "orchard road"
+# The district bbox, "s,w,n,e", set by build_district.py from the registry.
+# Needed by the coastline reader, which has to close the shoreline against
+# the district edge to make a sea polygon. Empty when process.py is run by
+# hand, in which case the sea is skipped and says so rather than guessing.
+BBOX = os.environ.get("SG_BBOX") or ""
 # which district this run is, taken from the output filename -- process.py is
 # driven entirely by the environment and never sees the districts.json record
 DIST_ID = os.path.splitext(os.path.basename(OUT_PATH))[0]
@@ -3918,6 +3923,55 @@ def main():
                 continue
             water.append({"p": [[round(x, 1), round(z, 1)] for x, z in pts],
                           "a": round(warea)})
+
+    # ---- THE SEA -----------------------------------------------------------
+    # `natural=coastline` has been fetched since the fetch was written and read
+    # by NOTHING. Every district so far is inland or faces the reservoir, so it
+    # never showed; five of the six left in the ring face open sea, and without
+    # this they render the Straits as dry land a rider can ride out onto.
+    #
+    # OSM does not map the sea as a polygon. It maps the shoreline as open ways
+    # whose DIRECTION carries the meaning -- land on the left -- so the sea has
+    # to be constructed: stitch the fragments, clip to the bbox, and close the
+    # ring around the right-hand side. data/coastline.py does that and checks
+    # the result against points of known side, because a ring wound the wrong
+    # way floods the city and looks entirely plausible doing it (it did, first
+    # try: Bay East Garden came out as sea).
+    #
+    # Emitted as ordinary `water` with `k: "sea"` ON PURPOSE. The sink rule,
+    # the dry() placement guards, standable(), and W1/W2/W3 all already work on
+    # `water`, so the sea behaves correctly the day it lands with no new
+    # drawing code and no new checks. `k` is carried so anything that later
+    # needs to tell sea from reservoir still can.
+    _coast_ways = [e for e in els
+                   if (e.get("tags") or {}).get("natural") == "coastline"
+                   and e.get("geometry")]
+    if _coast_ways and not BBOX:
+        print(f"  ! {len(_coast_ways)} coastline ways present but SG_BBOX is unset — "
+              f"cannot close the shore against the district edge; sea SKIPPED")
+    if _coast_ways and BBOX:
+        try:
+            sys.path.insert(0, HERE)
+            import coastline as _cl
+            _rings = _cl.sea_polygons(_coast_ways, BBOX)
+            _added = 0
+            for _r in _rings:
+                pts = [proj(q["lat"], q["lon"]) for q in _r]
+                if len(pts) < 4:
+                    continue
+                a2 = 0.0
+                for i in range(len(pts)):
+                    q1, q2 = pts[i], pts[(i + 1) % len(pts)]
+                    a2 += q1[0] * q2[1] - q2[0] * q1[1]
+                water.append({"p": [[round(x, 1), round(z, 1)] for x, z in pts],
+                              "a": round(abs(a2) / 2), "k": "sea"})
+                _added += 1
+            print(f"  sea: {len(_coast_ways)} coastline ways -> {_added} polygon(s) "
+                  f"({sum(w['a'] for w in water if w.get('k') == 'sea'):,} m2)")
+        except Exception as _e:
+            print(f"  ! coastline reader failed ({type(_e).__name__}: {_e}); "
+                  f"THE SEA WILL RENDER AS LAND. Do not ship this district.")
+
     # ---- GREEN SPACE -------------------------------------------------------
     # Singapore is a garden city and this pipeline drew none of it. Every park,
     # garden, field, wood and the whole of the Istana grounds came out as bare
