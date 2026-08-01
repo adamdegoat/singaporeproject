@@ -1323,6 +1323,96 @@ const found = await page.evaluate(() => {
            `${trunks} trunks`);
   }
 
+  /* D38  a named building whose lowest drawn mass is not on the ground.
+     WHAT THIS WAS WRITTEN FOR, 2026-08-01. `extrudeGeo` seats a mass at
+     `foot + y0 + h`, so its `y0` argument is measured FROM THE SEAT — but
+     `api.footingY()` returns the seat as an ABSOLUTE world height, and eighteen
+     calls across seven recipes passed one into the other. That double-counts
+     the ground, so every one of those masses floated by exactly the height of
+     the ground under it: zero in a district built near sea level, and 10.7m in
+     Chinatown, where SRI MARIAMMAN TEMPLE'S MAIN HALL was hanging in the air
+     above its own gopuram. It shipped, and it survived 42 audit checks, 35
+     defect classes, behaviour, determinism, a live check and five rounds of
+     vetting, because every one of those looks at the world in PLAN or asks
+     about props, and this is a defect in SECTION on merged building geometry.
+     Same family as the roof-datum bug of 2026-07-30 and found the same way:
+     by measuring the built scene instead of looking at another frame.
+
+     Only NAMED buildings, because they are the ones a recipe touches, and only
+     the mass that should be sitting on the ground — a mass with `mh` starts in
+     the air by definition (SkyPark), and so does anything on a bridge. */
+  {
+    const bad = [];
+    const named = data.buildings.filter((b) => b.n && !b.mh && b.p && b.p.length > 2);
+    // ASK ABOUT A POINT, NOT ABOUT A RING. The first version attributed a mesh
+    // to a building when the MESH's centre fell inside the ring, which misfires
+    // twice over: an L-shaped plan's main mass has its centre outside its own
+    // ring, so only high pieces got attributed, and a mesh over a shared wall
+    // was attributed to whichever neighbour came first. Instead: pick a point
+    // that is definitely inside this building, and ask what the lowest thing
+    // over that point is. A footprint's centroid can fall outside a concave
+    // ring, so it is nudged until it is inside or the building is skipped.
+    const probe = new Map();
+    for (const b of named) {
+      let cx = 0, cz = 0;
+      for (const q of b.p) { cx += q[0]; cz += q[1]; }
+      cx /= b.p.length; cz /= b.p.length;
+      if (!inPoly(b.p, cx, cz)) {
+        let found = false;
+        for (let i = 0; i < b.p.length && !found; i++) {
+          const a2 = b.p[i], c2 = b.p[(i + 1) % b.p.length];
+          const mx = (a2[0] + c2[0]) / 2, mz = (a2[1] + c2[1]) / 2;
+          for (const t of [0.25, 0.5, 0.75]) {
+            const px = mx + (cx - mx) * t, pz = mz + (cz - mz) * t;
+            if (inPoly(b.p, px, pz)) { cx = px; cz = pz; found = true; break; }
+          }
+        }
+        if (!found) continue;
+      }
+      probe.set(b, [cx, cz]);
+    }
+    const low = new Map();
+    sc.traverse((o) => {
+      if (!o.isMesh || !o.geometry || o.userData.crowdPart) return;
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      const bb = o.geometry.boundingBox;
+      if (!bb) return;
+      const w = bb.clone().applyMatrix4(o.matrixWorld);
+      const sz = w.getSize(new T.Vector3());
+      if (sz.x > 120 || sz.z > 120) return;          // terrain and surround
+      if (sz.y < 1.5) return;                        // trims, copings, paint
+      for (const [b, pt] of probe) {
+        if (pt[0] < w.min.x || pt[0] > w.max.x || pt[1] < w.min.z || pt[1] > w.max.z) continue;
+        const cur = low.get(b);
+        if (cur === undefined || w.min.y < cur) low.set(b, w.min.y);
+      }
+    });
+    for (const [b, y] of low) {
+      const [cx, cz] = probe.get(b);
+      // window.__groundAt DOES NOT EXIST. Writing it here made D38 skip every
+      // building and report a clean zero — a check that cannot see is worse
+      // than no check, and this file has caught that four times now. The
+      // terrain object itself is exposed as window.__terrain.
+      const g = window.__terrain ? window.__terrain.at(cx, cz) : null;
+      if (g === null || !isFinite(g)) continue;
+      if (y - g > 2.5) {
+        bad.push(`"${b.n}" lowest mass starts ${(y - g).toFixed(1)}m above its `
+          + `own ground at ${cx | 0},${cz | 0}`);
+      }
+    }
+    // KNOWN RESIDUE, 4 of 417 on Chinatown the day this was written, and both
+    // causes are the probe rather than the world. One Fullerton is eleven
+    // segments along the waterfront and its probe points fall over grid cells
+    // that the terrain build deliberately SANK under a water polygon, so the
+    // ground beneath them is the bay floor rather than the quay. URA Centre
+    // (East Wing) is a footprint overlapping its own parent, i.e. a tower whose
+    // podium is a separate ring. Neither is worth a special case until the
+    // number moves: what this check exists to catch is a whole recipe adrift by
+    // the height of its district, which reads as 10m and 24m, not 4m.
+    report('D38', 'a named building floating above its own ground', bad,
+           `${low.size} named buildings measured`);
+  }
+
   /* D23 DELETED.
    *
    * It counted how many distinct geometry signatures shared a square metre and

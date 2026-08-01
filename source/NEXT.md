@@ -212,6 +212,34 @@ permissive. It stays outside the repo and is used to measure, not to ship.
   deploy.sh refused to publish. The gates read world.json and riders read the
   chunks; that guard is the only thing standing between those two facts.
 
+## MASJID JAMAE IS WIRED, AND WHAT IT COST TO GET THERE
+
+Round 1 and round 2 both failed the vet and both failures were MY OWN
+arithmetic, not the design: the terracotta roof was placed at an absolute y that
+had nothing to do with the hall's top and floated 2.6m clear of it, and the
+compound wall — `api.extrude(b.p, 2.6, green, g0)`, the same call sriMariamman
+makes — landed at **y 18.1 to 20.7 on ground of 9.0**, a 63x43m green slab nine
+metres in the air over the whole site. Both frames read as "a green blob" and
+neither told me why.
+
+**What broke the loop was instrumenting instead of looking again.** Dumping
+every mesh's world bounding box near the footprint took one probe and gave the
+answer in one line; the minarets had been correct at 14.8m the whole time and
+were simply being buried by the floating slab. That is the Clarke Quay lesson
+written down again: INSTRUMENT THE COMPUTED POSITIONS BEFORE PLACING ANYTHING,
+and when a frame is confusing, measure the scene rather than take another frame.
+
+Round 3 replaced the extrude with a placed box and passed: the gateway, the two
+seven-tier banded octagonal minarets with onion domes, and the white
+domed-kiosk screen between them all read from the rider's seat, against a
+generic that read as a glazed two-storey shophouse block. Chinatown still passes
+42 checks with P1b 0.
+
+STILL OWED on this one: the hall roof is a flat slab where it should be hipped,
+and the compound is a solid pad where it should be a wall around a courtyard —
+from above it reads as green paint. Neither is visible from the street, which is
+why it shipped.
+
 ## WHERE THE EIGHT ACTUALLY STAND (frontage, from data/accuracy.py)
 
 The frontage is what the finish line is written against. "height" below is

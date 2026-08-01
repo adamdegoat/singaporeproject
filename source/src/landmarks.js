@@ -1809,13 +1809,13 @@ function buddhaTooth(api, b) {
   // each skirt roof wraps a real step instead of slicing through a
   // monolith — round 2's remaining fault. White spandrel band at each
   // step head, granite plinth below.
-  api.world.add(api.extrude(api.grow(b.p, 1.004), 1.0, api.mat.conc, g0));
-  api.world.add(api.extrude(b.p, 11.0, red, g0 + 1.0));
-  api.world.add(api.extrude(api.grow(b.p, 1.006), 1.1, white, g0 + 10.4));
-  api.world.add(api.extrude(api.grow(b.p, 0.93), 6.2, red, g0 + 12.0));
-  api.world.add(api.extrude(api.grow(b.p, 0.936), 1.0, white, g0 + 17.3));
-  api.world.add(api.extrude(api.grow(b.p, 0.85), 5.6, red, g0 + 18.4));
-  api.world.add(api.extrude(api.grow(b.p, 0.856), 1.0, white, g0 + 23.0));
+  api.world.add(api.extrude(api.grow(b.p, 1.004), 1.0, api.mat.conc, 0));
+  api.world.add(api.extrude(b.p, 11.0, red, 1.0));
+  api.world.add(api.extrude(api.grow(b.p, 1.006), 1.1, white, 10.4));
+  api.world.add(api.extrude(api.grow(b.p, 0.93), 6.2, red, 12.0));
+  api.world.add(api.extrude(api.grow(b.p, 0.936), 1.0, white, 17.3));
+  api.world.add(api.extrude(api.grow(b.p, 0.85), 5.6, red, 18.4));
+  api.world.add(api.extrude(api.grow(b.p, 0.856), 1.0, white, 23.0));
   // stacked hip roofs: 4-gon frusta in BLUE-GREY (researched: not gold, not
   // terracotta), thin gilt strip along each eave. R3 slightly wider than R2
   // by publication — no uniform pagoda taper.
@@ -1887,8 +1887,8 @@ function sriMariamman(api, b) {
   const gold = new THREE.MeshStandardMaterial({ color: 0xd9ae52, roughness: 0.4, metalness: 0.5 });
   const cow = new THREE.MeshStandardMaterial({ color: 0xdcdcd6, roughness: 0.85 });
   // the low hall: cream walls with green shallow barrel-vault roofs
-  api.world.add(api.extrude(b.p, 8.6, cream, g0));
-  api.world.add(api.extrude(api.grow(b.p, 1.005), 0.5, terra, g0 + 8.6));
+  api.world.add(api.extrude(b.p, 8.6, cream, 0));
+  api.world.add(api.extrude(api.grow(b.p, 1.005), 0.5, terra, 8.6));
   // street frame from the SURVEYED street, not from a guessed edge: the
   // gopuram stands flush with the South Bridge Road boundary, ~60% along
   // the frontage from the SSW end (researched; NOT centred)
@@ -2070,8 +2070,8 @@ function peoplesPark(api, b) {
   const crownM = new THREE.MeshStandardMaterial({ color: 0xb9b7b2, roughness: 0.85 });
   const win = new THREE.MeshStandardMaterial({ color: 0x3b4145, roughness: 0.5 });
   // podium: the real footprint, red, with a white frieze band at its head
-  api.world.add(api.extrude(b.p, 25.0, red, g0));
-  api.world.add(api.extrude(api.grow(b.p, 1.005), 1.4, white, g0 + 21.6));
+  api.world.add(api.extrude(b.p, 25.0, red, 0));
+  api.world.add(api.extrude(api.grow(b.p, 1.005), 1.4, white, 21.6));
   // the slab: 96 x 15 along the long axis, base at the podium head
   const yawL = Math.atan2(ob.ux, ob.uz);
   const at = (mesh, lx, y, lz) => {
@@ -2155,7 +2155,7 @@ function thianHockKeng(api, b) {
   const W = Math.min(43, uMx - uMn);
   // plinth + the dark courtyard interior mass (so the compound reads
   // enclosed, not hollow)
-  api.world.add(api.extrude(b.p, 0.45, granite, g0));
+  api.world.add(api.extrude(b.p, 0.45, granite, 0));
   api.world.add(api.extrude(api.grow(b.p, 0.94), 3.4,
     new THREE.MeshStandardMaterial({ color: 0x2a241d, roughness: 1 }), g0 + 0.45));
   // one hall: walls + striped hip roof + pale ridge spine + upturned
@@ -2239,8 +2239,8 @@ function cqWarehouse(api, b) {
     api.world.add(mesh);
   };
   // cream body to the tall-godown eave, white barge trim at the head
-  api.world.add(api.extrude(b.p, 8.5, cream, g0));
-  api.world.add(api.extrude(api.grow(b.p, 1.005), 0.4, trim, g0 + 8.2));
+  api.world.add(api.extrude(b.p, 8.5, cream, 0));
+  api.world.add(api.extrude(api.grow(b.p, 1.005), 0.4, trim, 8.2));
   // RING extents, not the oriented box: The Foundry's ground footprint is
   // a chunky pentagon and box-extent ranges landed outside the walls
   // (round 1's failure, same lesson as buddhaTooth's roofs)
@@ -2310,7 +2310,7 @@ function cqShophouses(api, b) {
     api.world.add(seg);
   }
   // white trim band + the continuous terracotta pantile roof
-  api.world.add(api.extrude(api.grow(b.p, 1.008), 0.5, trim, g0 + 6.6));
+  api.world.add(api.extrude(api.grow(b.p, 1.008), 0.5, trim, 6.6));
   const g = new THREE.CylinderGeometry(0.05, 0.71, 1, 4);
   g.rotateY(Math.PI / 4);
   g.scale(W2 * 1.02, 3.2, L2 * 1.0);
@@ -2733,9 +2733,9 @@ function oldHillStreet(api, b) {
   const mats = RAINBOW.map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7 }));
   const H = Math.min(30, b.h || 30);
   // the body: arcade base, cream shaft, white parapet
-  api.world.add(api.extrude(b.p, 4.5, base, g0));
-  api.world.add(api.extrude(b.p, H - 6.5, cream, g0 + 4.5));
-  api.world.add(api.extrude(api.grow(b.p, 1.006), 2.0, white, g0 + H - 2.0));
+  api.world.add(api.extrude(b.p, 4.5, base, 0));
+  api.world.add(api.extrude(b.p, H - 6.5, cream, 4.5));
+  api.world.add(api.extrude(api.grow(b.p, 1.006), 2.0, white, H - 2.0));
   // the rainbow shutters: window rows along every facade edge, colour
   // cycling per window, five upper floors
   let wi = 0;
