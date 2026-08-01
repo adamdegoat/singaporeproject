@@ -687,6 +687,24 @@ SOURCED_LOW = {
     # 30m type default -- a two-storey 1950s services club drawn as a nine-
     # storey block. research/bugis-marina-guessed-heights.md.
     "nco club",
+    # ELLISON BUILDING, 1924, the corner of Selegie Road and Bukit Timah Road.
+    # Built by Isaac Ellison; curved facade, a semi-circular cupola at each end,
+    # upper balconies, and a pediment carrying a Star of David and the year
+    # 1924. Gazetted for conservation 5 December 2008. It is one of the most
+    # recognisable buildings on Selegie Road and it stands on a street the rider
+    # uses.
+    #
+    # THREE INDEPENDENT SOURCES SAY TWO STOREYS and they agree with each other:
+    # OSM way 231927792 tags `building:levels=2`; Wikipedia says "two storeys";
+    # Remember Singapore says "16 double-storey units". The guard was throwing
+    # all three away — at 1,538 m2 the footprint is over the 600 m2 line and
+    # 2 x 3.4 = 6.8m is under the 8m line, so a 1924 two-storey conserved
+    # terrace was being drawn at TYPE_DEFAULT = 24m, which is about seven
+    # storeys, with its height provenance honestly recorded as "guess".
+    #
+    # Identical in shape to the NCO Club above, and exactly what the note beside
+    # the guard asks for: "Fix those individually with a source."
+    "ellison building",
 }
 
 

@@ -1,3 +1,219 @@
+# SESSION RECORD — 2026-08-01 evening (Opus 5)
+#
+# Four things shipped and one recorded "lesson" turned out to be wrong. The
+# wrong lesson is the most useful item here, so it is first.
+
+## 1. api.grow()'s recorded lesson was a MISDIAGNOSIS
+
+HANDOFF and the comment block in `istana()` both said: "api.grow() cannot be
+used on an OSM ring with near-collinear vertices — grow() miters each corner and
+a miter between two almost-parallel edges is arbitrarily long; asking for a 1.9m
+eaves overhang on the Istana's 54-point cross plan returned a ring hundreds of
+metres across." colonialHotel was said to "get away with it because Raffles
+Hotel is a clean rectangle."
+
+Every clause is false. `grow(pts, f)` at **city.js:949** is ALREADY a centroid
+scale. It miters nothing — there is no edge-normal offset and no join anywhere
+in it. And its second argument is a **FACTOR, not a distance**: every other
+caller in the tree passes 1.008, 1.012, 1.055. So `grow(b.p, 1.9)` asked for a
+ring **90% bigger**, which on a 45m mean radius is a 40m overhang. Two roof
+planes over half of Orchard is the correct answer to the question that was
+actually asked. colonialHotel is safe because it passes **1.008**, not because
+Raffles Hotel is rectangular.
+
+The real rule was already in the tree, at the shophouse roof in **city.js:1174**:
+decide the offset IN METRES, convert to the ratio grow wants using the
+footprint's own mean radius, and CAP IT IN METRES. Both comments are corrected.
+
+**Why it matters beyond one function:** the false lesson would have stopped the
+next person using grow() at all on any complex footprint, which is most of them.
+A lesson written from a symptom, without reading the function it blames, cost
+more than the bug did.
+
+## 2. The Civic District colonial set — SHIPPED
+
+`civicPalladian()` in landmarks.js, wired to The Arts House (1827, old
+Parliament), Victoria Theatre and Concert Hall (1862 + 1905, with the clock
+tower) and the Asian Civilisations Museum (Empress Place, 1860s). All three were
+drawing as modern glass-and-panel blocks — the same fault the Istana had.
+
+Three vet rounds, and rounds 1 and 2 were both rejected from the rider's seat:
+
+- **Round 1 — orange layer cakes.** The roof was two steps, `inset(-2.4)` under
+  a 1.4m riser and `inset(-7.0)` under a 1.2m riser. A 1.4m riser is a TERRACE,
+  not a pitch, and the inset was uncapped in metres — on the ACM's 40-point
+  cross plan −7.0 at a 28m mean radius pulls the wing tips in eleven metres and
+  the arms collapse into each other, which opened dark notches. The clock tower
+  was one 9m box under a cone and read as a **grain silo**.
+- **Round 2 — corduroy.** Six thin lifts instead of two thick ones. Worse:
+  `inset` scales about the centroid, so along a long flank (small radius) six
+  rings land almost on top of each other and read as ribbing, while at the ends
+  (large radius) they fan out. **Stepping is the wrong instrument at any step
+  size.** The clocks, at 2.5m radius in near-black, read as a pair of eyes.
+- **Round 3 — shipped.** TWO pieces, which is exactly what city.js already draws
+  on every shophouse in the city: a tiled lip proud of the wall, and one inset
+  cap above it, run capped at `min(3.0, R*0.15)`. Tower got a broader pier, a
+  string course, a narrower shaft, a clock stage and a pale-stone-ringed dial at
+  a third the diameter.
+
+Two things worth keeping: the tower is centred on **ob.bx,bz** and not cx,cz
+(the vertex mean of a 31-point ring is not the middle of the building — the trap
+orientedBox's own comment documents), and the clock discs need
+`rotateY(PI/2 - a)`, not the `rotateY(-a)` every BOX in the file uses, or they
+sit edge-on to the street.
+
+## 3. B2 was a flapping gate with a real defect standing next to it
+
+A deploy died on B2 with unchanged code. Five re-runs: 15.33, 16.15, 16.06,
+15.67, 16.42 against a budget of 16.7 — 92-97% of budget, failing about one run
+in six. That teaches everyone to re-run the gate, which is worse than no gate.
+
+Cars are `base = rand(7, 12)` m/s and the speed rule only ever brakes. Measured
+peak speed per car over 40 frames on `world`:
+
+    n=21   min 0.01   p50 9.63   p90 13.96   max 15.22   over 12.05: 5
+
+**p50 9.63 against a configured median of 9.5 means the clock is right.** A
+wrong dt scales every car and the median is what would have moved — so this is
+NOT the half-speed-clock family. The tail is a quarter of cars at 1.15-1.27x
+their own base, always bounded: the outside of a bend covers more ground than
+the centreline by 1 + offset/radius, and an outer lane 8m out on a 30-50m bend
+gives exactly 1.16-1.27. Real traffic does the same thing.
+
+Budget resized to **25 m/s**, with the whole measurement written into
+data/behaviour.mjs. The check's one job is catching a vehicle that MOVED WITHOUT
+DRIVING; a recycle is ~1,700 m/s, so nothing lives in the gap.
+
+**The real defect:** vehicles recycled at **190m** from the player while B2
+watched to **200m** — a 20m band in which a legitimate recycle is measured, and
+seen, as a teleport. The camera's far plane is 520m, so it was visible to a
+rider too. Raised to 240m in actors.js with a note that it must stay above
+VISIBLE. B2 now prints WHERE its worst sample was; a bare number cannot be
+diagnosed.
+
+## 4. Duplicate street-name plates — 79 pairs, closest 3.2m apart
+
+Riding Marina Bay showed three signposts reading BAYFRONT AVENUE in one frame,
+two of them overlapping. Measured across the world scene: **632 plates, 79
+same-name pairs within 40m.**
+
+Cause: districts are fetched with OVERLAPPING boxes; `trimAxes()` only clips an
+axis against others in ITS OWN CHUNK, and `dressSideStreets` keeps its `plated`
+set local to one call. So a street reached from two chunks is plated twice.
+
+`plateTaken()` in wayfind.js, used by both placement sites. **12m**, and the
+number comes from the measurement: pair distances are 3.2, 4.6, 8.8 and then a
+hard jump to a cluster at exactly 16.2 — below nine metres they are stacked,
+above sixteen they are the two OPPOSITE KERBS of one street, which is what a
+real street has and must be kept.
+
+**It shipped as a silent no-op first.** The guard walked parents looking for
+`window.__scene`, which main.js assigns AFTER the boot build runs — so on the
+first build the comparison never matched and every call returned false. Caught
+only because the re-measurement came back byte-identical: 632 plates, 79 pairs.
+Now it walks to the root and asks `root.isScene`. **A fix that changes nothing
+is a fix that did not run — re-measure, and be suspicious of an identical
+number.**
+
+## 5. Mount Sophia — the last era gap, closed with sources that are not URA
+
+HANDOFF carried it as "149 buildings and no published style ... not researchable
+from URA". URA really does publish nothing, checked a third time: both
+`.../Secondary-Settlements/mtsophia` and the portal's
+`History?bldgid=MTSOPH` return **404**.
+
+But URA is not the only authority. NHB (Roots), NLB and the gazette citations
+date five conserved buildings inside the polygon by name: Tower House 1892
+(Crane Brothers), Sophia Flats 1920-or-1930s (disputed), **Olson Building 1928
+(Frank Wilmin Brewer)**, former Nan Hwa Girls' High School 1939, Trinity
+Theological College Chapel 1969 (Chan Kui Chuan). Full trail, including the two
+contested dates and the facade descriptions, in **research/mount-sophia.md**.
+
+Two rows in process.py: `CONSERVATION_ERA["MOUNT SOPHIA"] = (1900, 1940)` and
+`CONSERVATION_GAZETTE["MOUNT SOPHIA"] = 2003`. Result after rebuilding orchard
+and littleindia: **all 149 banded, 5 restoration dates dropped.**
+
+The band drops the 1892 and 1969 tails deliberately — they cross city.js's 1945
+facade boundary, and both are individually named buildings that can be carried
+properly rather than smeared across 149 neighbours. Same reasoning Little
+India's band already uses.
+
+**And the data bug it caught:** the Olson Building sat at **yr=2017**, which is
+when Hoi Hup Sunway finished restoring it as the Sophia Hills clubhouse. It is a
+1928 classroom block. `CONSERVATION_GAZETTE` exists precisely to catch
+restoration-dates-read-as-build-dates, and it went straight through because the
+area had no row in the table. **An empty row in a guard table is a guard that
+does not run, and it looks exactly like a guard that passed.**
+
+## 7. THE SQUAT GUARD IS INFLATING 15 NAMED BUILDINGS — a work list, not a fix
+
+Found while checking one building. The guard in process.py replaces any height
+under 8m on a footprint over 600 m2 with a type default, because a 3,000 m2
+building 3.5m tall is usually a bad tag. Its own comment says "Fix those
+individually with a source", and `SOURCED_LOW` is that list.
+
+Joining OSM's `building:levels` against the built scene files — positive levels
+yielding under 8m, footprint over 600 m2, and no height source surviving — gives
+**15 named buildings still being inflated**:
+
+    building                        drawn   levels x 3.4   area   district
+    Guoco Midtown II                   40            6.8  11250   bugis
+    Live!@313                          22            6.8   3074   orchard
+    Riverside 48                       40            6.8   2911   rivervalley
+    Fort Canning Centre                24            6.8   2021   brasbasah
+    Bugis Street                        5            5.1   1589   bugis
+    Ellison Building                   24            6.8   1538   orchard   <- FIXED
+    Bangkok Bank                       20            3.4   1304   chinatown
+    The Working Capitol                20            6.8   1246   chinatown
+    Surf Arena                         20            6.8   1040   orchard
+    Old Command Block                  30            6.8    906   brasbasah
+    The Pavilion                        5            3.4    742   chinatown
+    Snow Arena                         20            6.8    740   orchard
+    Promenade Peak showflat            20            3.4    653   rivervalley
+    Pat's Schoolhouse Mount Emily      24            3.4    651   orchard
+    Sri Krishnan Temple                24            6.8    604   bugis
+
+**THE GUARD IS RIGHT ABOUT SOME OF THEM, AND THAT IS THE POINT OF THE LIST.**
+Two already checked:
+
+- **Guoco Midtown II** is 11,250 m2 with `building:levels=2`. It is a
+  residential tower. The tag is a mis-tag and the guard is correct to override
+  it. Do not "fix" this one.
+- **Sri Krishnan Temple** — I was about to add it, and the research stopped it.
+  It "comprises a large prayer hall and a **massive four-storeyed annexe**"
+  (NLB; HEB, the temple's own board). OSM's levels=2 UNDERCOUNTS it. 6.8m would
+  be worse than the 24m it has now. The right figure is neither: the vimana is
+  published at "approximately eight metres" and the annexe is four storeys.
+  **Do not add this to SOURCED_LOW.**
+
+So each remaining row needs its own source before it moves, exactly as the
+guard's comment demands. **Ellison Building** was the one that cleared that bar
+this session — three independent sources agreeing on two storeys (OSM way
+231927792 `building:levels=2`, Wikipedia "two storeys", Remember Singapore "16
+double-storey units") on a 1924 conserved landmark that a rider passes on
+Selegie Road, drawn at 24m with its provenance honestly recorded as "guess".
+
+**Fort Canning Centre is the best next candidate and it is NOT yet sourced.**
+NHB Roots gives 1926, Neo-Classical with streamlined motifs, "a pitched roof
+with wide overhanging eaves" and "long wide-open corridors on both wings" — a
+barracks block, not a tower — but **states no storey count**, and OSM's levels=2
+is the only number. It stands in a park with nothing tall near it, so a 24m box
+is conspicuous. Find a published storey count and it is a one-line change.
+
+## 6. A floating sign that was not there — the THIRD time
+
+A gold banner hanging in open sky over Little India was chased through a
+scene-wide floater probe (26,552 false hits), a pixel raycast, and a rebuild
+before the re-shot frame showed it attached to a lamp-post arm all along. The
+first frame had been taken before the pole streamed in.
+
+`data/streetshot.mjs` already documents this in its own settle comment: "that
+has been mistaken for a floating sign TWICE". This was the third. **The sweep's
+settle is not reliable enough to trust a single frame — re-shoot the one spot
+before believing anything floats.**
+
+---
+
 # TAKEOVER BRIEF — for the next lead (written 2026-07-30 ~14:40 SGT by Fable)
 # The user is handing the main loop to Opus 5. Read this, then the rest of
 # this file, then WORKFLOW.md and STANDARD.md. Everything below is law that
