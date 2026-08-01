@@ -59,7 +59,22 @@ PBF = os.path.join(HERE, "osm", "singapore.osm.pbf")
 # We only need the element type and the tag predicates; the bbox is passed in
 # separately by the caller because every statement in this repo uses the same
 # {bbox} placeholder.
-_STMT = re.compile(r'\s*(way|node|rel|relation)\s*((?:\[[^\]]*\]\s*)*)\s*\(\s*\{?bbox\}?[^)]*\)\s*;')
+# THE BBOX MAY BE THE PLACEHOLDER **OR** THE NUMBERS, AND MISSING THAT MADE
+# THIS WHOLE MODULE A NO-OP FOR EVERY REAL BUILD.
+#
+# The first version matched only a literal `{bbox}`. `topup.py` and
+# `build_district.py` both substitute the real coordinates BEFORE handing the
+# query over -- `f'way["building"]({bbox});'` -- so what actually arrives is
+# `way["building"](1.2600,103.8110,1.2760,103.8290);`, which did not match,
+# so parse_query raised Unsupported, so every layer of every district fell
+# silently back to Overpass. Five districts were built that way believing they
+# were reading the local file. It passed my own tests because those tests
+# passed the placeholder form, which is the one shape production never uses.
+#
+# TEST WITH THE STRING THE CALLER REALLY SENDS. A fixture that is easier to
+# write than the real input is a fixture that tests the wrong thing.
+_STMT = re.compile(r'\s*(way|node|rel|relation)\s*((?:\[[^\]]*\]\s*)*)'
+                   r'\s*\(\s*(?:\{bbox\}|[-0-9.,\s]+)\s*\)\s*;')
 _PRED = re.compile(r'\[\s*"([^"]+)"\s*(?:(=|!=|~|!~)\s*"([^"]*)"\s*)?\]')
 
 

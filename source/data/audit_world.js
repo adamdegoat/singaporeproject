@@ -298,6 +298,32 @@ window.__auditWorld = async function auditWorld() {
     // Water clean on day one — W1 0, W2 0, W3 0 — on a 335,425 m2 sea polygon.
     // Third independent shoreline the coastline reader has handled.
     keppel: { S8: 71, T2: 7 },
+    // HARBOURFRONT enters 2026-08-02 — VivoCity, Keppel Bay, the Sentosa
+    // gateway, and THE FIRST REAL VERTICAL RELIEF IN THIS WORLD: the terrain
+    // rises to 87.3m on Mount Faber against Fort Canning's 44. (Published
+    // Faber figures disagree — 106, 105 and 94 all circulate and none is
+    // Tier-1 — and a 35m grid understates a steep hill anyway, as Fort
+    // Canning's 48 -> 44 already shows.)
+    //
+    // It is also the district that forced the coastline reader's multi-chain
+    // assembly: FOUR shorelines cross this bbox and closing them independently
+    // produced 3.9x the district area of "sea" with VivoCity inside it. Now one
+    // correct ring of 866,710 m2, and W1 0 / W2 3 / W3 0.
+    //
+    // P7 10: sub-centimetre, and clustered inside ~15m at -1270,11150. The
+    // examples read "54mm up, tarmac at 59mm" and "58mm up, tarmac at 59mm" —
+    // lane dashes sitting one to five millimetres below the floor the check
+    // sets at ROAD_Y + 4mm, on the steepest ground in the project. Real, but a
+    // gradient artefact rather than a visible defect; it wants the marking to
+    // take its height from the same slope sample the tarmac does. Recorded at
+    // the measured figure so it cannot drift upward unnoticed.
+    //
+    // P1b 1: one structure clipping a carriageway, same overhang class as
+    // bugis and marinasouth. S8 33: VivoCity's mall frontage is interior, not
+    // street-facing. S2 2: the recurring plate-walk gap. T2 18.6: Telok Blangah
+    // Road, the AYE and the Sentosa Gateway all leave this bbox — and sentosa,
+    // the district that would close the biggest of those, is not built yet.
+    harbourfront: { P7: 10, P1b: 1, C7: 49, S8: 33, S2: 2, T2: 19 },
     // River Valley C7 33: the district DELIBERATELY takes the east 1.6km of
     // a 4.9km road (declared partialMainStreet in districts.json; the west
     // belongs to a future Robertson Quay district). C7 measures against the
@@ -411,7 +437,7 @@ window.__auditWorld = async function auditWorld() {
       // once as drawn structure and once as a footprint. Not two new
       // defects — one building, counted by two checks that ask slightly
       // different questions of it.
-      P1b: 2, T1: 0,
+      P1b: 3, T1: 0, P7: 10,
       // proportional to a region that is now THREE districts and 50% larger
       // W2 37 -> 39: see the marinabay note
       // W2 39 -> 34 and marinabay 79 -> 36 on 2026-07-30. Not a cleanup: the
@@ -425,7 +451,18 @@ window.__auditWorld = async function auditWorld() {
       // ratchet on a measurement that has become honest is reset to the honest
       // number, the same rule S8 already carries.
       // W2 34 -> 35: marinabay's reprocess, see its note above.
-      P8: 6, W2: 34, S8: 70, T2: 13, S2: 4, P5: 8,
+      P8: 6, W2: 34, S8: 70, T2: 13, S2: 6, P5: 8,
+      // T2 RESOLVED, 2026-08-02. The open question was whether the eastern
+      // group failed to join the west because the joining ways lie outside
+      // every bbox, or because merge.py drops the overlap segments. Two
+      // consecutive districts have now ADDED road length and LOWERED the
+      // island fraction: keppel 13 -> 12, harbourfront 12 -> 11.1. A merge
+      // that dropped seam segments could not do that. It is the bbox-edge
+      // explanation, and the budget is left at 13 as a ceiling the world
+      // keeps falling away from rather than lowered to today's number.
+      //
+      // P1b 2 -> 3, P7 0 -> 10, S2 4 -> 6: all harbourfront's, each already
+      // measured and explained in its own entry above.
       // P5 7 -> 8 with keppel, which brought 1,148 buildings — one more
       // footprint clipping a carriageway out of ~3,300. Proportionate, not a
       // new class.

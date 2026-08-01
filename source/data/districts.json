@@ -137,6 +137,16 @@
    "status": "live",
    "notes": "THE CONNECTOR, and the reason it is on the list rather than its own ride. It closes the 3.27km between chinatown and Keppel Bay in the only way a district of normal size can: overlaps chinatown 774x334m on the Keppel Road / Anson Road side, and will overlap harbourfront 1,216x334m. Its own ride is the weakest in the brief — mostly the Tanjong Pagar container terminal, the Keppel Viaduct and the AYE — but it carries real coastline (the Keppel Harbour wharves) and without it harbourfront and sentosa are unreachable. The brief warns it is the thinnest-sourced candidate: expect a low named-building share and do not mistake that for a failed fetch. Brief: research/coastal-expansion.md candidate 5.",
    "queued_after": "marinasouth"
+  },
+  {
+   "id": "harbourfront",
+   "name": "HarbourFront / Keppel Bay",
+   "bbox": "1.2600,103.8110,1.2760,103.8290",
+   "axis": "telok blangah road",
+   "status": "live",
+   "notes": "VivoCity, the Keppel Bay marina and Libeskind's Reflections, the Sentosa gateway and the cable car, under Mount Faber. Ring 2: it borders no district of its own — its east edge sits 1.30km from chinatown — so KEPPEL HAD TO BE BUILT FIRST, and was (2026-08-02); they overlap 1,216x334m. Real open sea (Keppel Harbour and the Sentosa channel), read by data/coastline.py. The only district with real vertical relief: Telok Blangah Road climbs a 106m hill, more than twice Fort Canning's 48m — but NOTE the 35m grid already reads Fort Canning 3-4m low and will understate a steeper hill by more. Mount Faber's elevation has NO Tier-1 source: 106m, 105m and 94m all circulate. Brief: research/coastal-expansion.md candidate 3.",
+   "queued_after": "keppel",
+   "partialMainStreet": "deliberate: Telok Blangah Road runs ~4km from HarbourFront west past Telok Blangah Rise toward Pasir Panjang. This district takes its eastern 2km — the HarbourFront / Keppel Bay end, VivoCity, the Sentosa gateway and the climb onto Mount Faber, which is what the district exists for. The western reach is Pasir Panjang's, which research/coastal-expansion.md Part 3 assessed and did not shortlist, so nothing is waiting on it. Decided 2026-08-02: the bbox was drawn to overlap keppel by 1,216x334m, not to follow the road."
   }
  ]
 }

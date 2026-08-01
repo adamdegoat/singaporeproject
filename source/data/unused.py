@@ -54,6 +54,12 @@ IGNORED = {
     # instruction, so there is nothing it could ever steer.
     "horse": "access permission for horse riding; no geometry, and this "
              "world has no horses",
+    # harbourfront 2026-08-02, 9% of its buildings. The NEIGHBOURHOOD in a
+    # postal address ("HarbourFront", "Telok Blangah") — a district name, not
+    # a building name, so unlike addr:housename it can never fill the `n`
+    # field with anything useful. This project already models districts, and
+    # a rider cannot see a postal subdivision from the saddle.
+    "addr:neighbourhood": "the district in a postal address; not a building name and nothing visible from the street",
     "network": "transit operator name on a stop; carries no geometry and "
                "nothing visible from the street",
     "network:short": "abbreviation of the same",

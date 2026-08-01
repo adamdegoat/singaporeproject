@@ -171,7 +171,32 @@ def fetch(d, force=False):
         print(f"  raw cache hit ({size:.0f} KB) — pass --force to refetch")
         return path
     bbox = d["bbox"]
-    ring = order_mirrors()
+    # DO NOT QUEUE FOR A SERVICE YOU ARE NOT GOING TO USE.
+    #
+    # `order_mirrors()` probes all four Overpass hosts and, if every one is
+    # rate-limited, waits 60 + 150 + 300 + 600 seconds before giving up. That
+    # was right when Overpass was the only source. With the local extract in
+    # place it is eighteen minutes of waiting for an answer already sitting on
+    # disk — and it does not merely waste the time, it EXITS, so harbourfront's
+    # first build failed at 05:20 having fetched nothing while a 36MB file that
+    # could answer every layer sat unread beside it.
+    #
+    # Probe the mirrors only when the local extract cannot serve as the primary
+    # source. The per-layer fallback further down still reaches the network for
+    # anything the reader cannot parse; it just does so without a queue in
+    # front of it.
+    _have_local = False
+    try:
+        sys.path.insert(0, HERE)
+        import osmlocal as _ol
+        _have_local = os.path.exists(_ol.PBF)
+    except Exception:
+        _have_local = False
+    if _have_local:
+        print("  local extract present — skipping the Overpass mirror probe", flush=True)
+        ring = MIRRORS
+    else:
+        ring = order_mirrors()
     parts = {
         # Relations too: 11 of Marina Bay's buildings are multipolygons,
         # among them the ArtScience Museum, The Shoppes, Victoria Theatre,

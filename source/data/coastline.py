@@ -226,16 +226,146 @@ def point_in(ring, lat, lon):
     return hit
 
 
+def _on_edge(p, box, tol=1e-9):
+    """Is this point on the bbox boundary? Runs are clipped so their ends land
+    exactly on an edge; anything else is an interior island."""
+    s, w, n, e = box
+    return (abs(p["lat"] - s) < tol or abs(p["lat"] - n) < tol
+            or abs(p["lon"] - w) < tol or abs(p["lon"] - e) < tol)
+
+
+def _seaward(run, box):
+    """Which way round the rectangle keeps the SEA inside. Derived from the
+    data — a probe one metre to the right of the shoreline, by the
+    land-on-left rule — never argued from the geometry, because the version
+    that argued it got it backwards and put Bay East Garden under water."""
+    probe = _right_probe(run)
+    if probe is None:
+        return True
+    return point_in(_walk(run, box, True), probe[0], probe[1])
+
+
+def _corners_between(a, b, box, forward):
+    """The bbox corners passed walking the perimeter from position `a` to `b`."""
+    total = 2 * ((box[3] - box[1]) + (box[2] - box[0]))
+    sgn = 1.0 if forward else -1.0
+    span = (sgn * (b - a)) % total
+    out = []
+    for c in _CORNERS(box):
+        d = (sgn * (_perimeter_pos(c, box) - a)) % total
+        if 1e-12 < d < span:
+            out.append((d, c))
+    out.sort(key=lambda t: t[0])
+    return [c for _, c in out]
+
+
 def sea_polygons(coast_ways, bbox):
-    """The public entry point. bbox is the districts.json 's,w,n,e' string."""
+    """The public entry point. bbox is the districts.json 's,w,n,e' string.
+
+    RETURNS [] RATHER THAN SOMETHING WRONG. Each chain is closed against the
+    bbox INDEPENDENTLY, which is correct only while there is one shoreline
+    crossing the box. harbourfront has FOUR — the mainland shore, Sentosa's
+    shore and two islands — and independently closed rings then overlap and
+    contradict each other: measured 13.65 km2 of "sea" inside a 3.54 km2
+    district, with VivoCity and Telok Blangah both inside it.
+
+    So there is a hard sanity test, and it is a geometric certainty rather
+    than a tuned threshold: clipped sea rings partition part of the bbox, so
+    their total area CANNOT exceed the bbox itself. If it does, the closure is
+    wrong and the honest output is nothing at all — a district with no sea
+    renders the Straits as land, which is bad; a district whose sea covers the
+    shopping centre is worse, and it is the kind of wrong that looks
+    deliberate.
+    """
     s, w, n, e = (float(v) for v in str(bbox).split(","))
     box = (s, w, n, e)
-    out = []
+
+    # ASSEMBLE ACROSS ALL CHAINS, NOT ONE RING PER CHAIN.
+    #
+    # Closing each chain against the bbox on its own is right while exactly one
+    # shoreline crosses the box, and it built marinaeast and marinasouth
+    # correctly. harbourfront has FOUR — the mainland shore, Sentosa's shore and
+    # two islands — and independent closure gave five overlapping rings covering
+    # 3.9x the district, with VivoCity inside the sea.
+    #
+    # The real shape of the problem: every clipped run enters and leaves on the
+    # boundary, and the sea is the region bounded by ALL of them together. So
+    # walk it as one circuit — follow a run to its exit, travel the perimeter in
+    # the seaward direction to the NEXT run's entry (whichever chain that
+    # belongs to), continue along it, and close when you arrive back where you
+    # started. This is the assembly osmcoastline uses to cut the world's
+    # coastline into tiles, and it degenerates to the old behaviour when there
+    # is only one run.
+    runs = []
+    interior = 0
     for chain in stitch(coast_ways):
         for run in clip_chain(chain, box):
-            ring = close_ring(run, box)
-            if len(ring) > 3:
-                out.append(ring)
+            if _on_edge(run[0], box) and _on_edge(run[-1], box):
+                runs.append(run)
+            else:
+                # A closed island wholly inside the box is a HOLE in the sea,
+                # not a piece of its edge, and this assembly cannot express a
+                # hole. Counted out loud rather than folded in, because folding
+                # it in is what put a shopping centre under water.
+                interior += 1
+    if interior:
+        print(f"  ! {interior} coastline run(s) lie wholly inside the bbox "
+              f"(islands). They are holes in the sea and are not modelled; the "
+              f"surrounding water is still built.")
+    if not runs:
+        return []
+
+    total_p = 2 * ((e - w) + (n - s))
+    forward = _seaward(runs[0], box)
+
+    def ahead(a, b):
+        d = ((b - a) if forward else (a - b)) % total_p
+        return d
+
+    out = []
+    used = set()
+    for i0 in range(len(runs)):
+        if i0 in used:
+            continue
+        ring, i = [], i0
+        for _ in range(len(runs) * 2 + 8):
+            used.add(i)
+            ring.extend(runs[i])
+            pos = _perimeter_pos(runs[i][-1], box)
+            best = None
+            for j, r in enumerate(runs):
+                if j in used and j != i0:
+                    continue
+                d = ahead(pos, _perimeter_pos(r[0], box))
+                if d > 1e-12 and (best is None or d < best[0]):
+                    best = (d, j)
+            if best is None:
+                break
+            ring.extend(_corners_between(pos, _perimeter_pos(runs[best[1]][0], box),
+                                         box, forward))
+            if best[1] == i0:
+                break
+            i = best[1]
+        if len(ring) > 3:
+            out.append(ring)
+    if not out:
+        return out
+    # ring areas in square degrees, compared against the box's own
+    def _area(r):
+        a = 0.0
+        for i in range(len(r)):
+            p, q = r[i], r[i - 1]
+            a += p["lon"] * q["lat"] - q["lon"] * p["lat"]
+        return abs(a) / 2
+    total = sum(_area(r) for r in out)
+    boxarea = (n - s) * (e - w)
+    if total > boxarea * 1.001:
+        print(f"  ! COASTLINE CLOSURE FAILED: {len(out)} sea rings totalling "
+              f"{total / boxarea:.1f}x the district area. That is impossible for "
+              f"clipped rings and means several shorelines cross this bbox and "
+              f"were closed independently. Emitting NO sea rather than a sea over "
+              f"the land — see data/coastline.py sea_polygons().")
+        return []
     return out
 
 
