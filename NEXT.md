@@ -235,6 +235,66 @@ parks, forecourts, institutional grounds. Neutral tints, because the point is
 to stop a condo garden and a car-park apron being the same sand, not to paint
 the city.
 
+**THE SINGAPORE RIVER WAS BURIED UNDER FIVE METRES OF GROUND.**
+
+Found by the user asking, in passing, whether water was included. It was — 626
+hectares across the eight districts, and `waterSurface` spanned the whole river
+at y=0.57, which is the CORRECT level (Marina Barrage holds the entire basin at
+one height). The terrain over it stood at 3-8m. Boat Quay, Clarke Quay and
+Robertson Quay were a dry canyon.
+
+`data/terrain.py` does sink water, and the sink rule is not what is wrong. **The
+SCALE is.** Measured on Robertson's ring: the river is 1,786m long and its
+widest point is 11.1m from a bank — about 22m across. The height grid is 35m.
+Seventeen cells do sink, but they are isolated islands among cells that did not,
+and the bilinear read in `at()` pulls the surface straight back up between them.
+A grid coarser than the river cannot hold the river, and no tuning of the inset
+changes that. (Fourth time this file has been bitten by "a geometric rule needs
+a SCALE"; this is the first time the rule was right and the RESOLUTION was not.)
+
+Fixed at the only place fine enough to hold it: the drawn mesh subdivides each
+cell 24 ways, ~1.46m, twenty times finer than the grid. `Terrain.setWaterRings()`
+hashes the rings and `vertexY()` clamps to `ringLevel - 1.4` inside them.
+
+**NOT in `at()`** — that is what placement, collision and every check measure
+against, and dropping it under the water would move the ground out from under
+the quay beside it. Only what is DRAWN goes down. The step from bank to bed
+lands in one mesh interval and reads as a vertical quay wall, which is what the
+Singapore River actually has.
+
+Verified narrow, not global: the clamp fires on 102 of 2,375 sampled points
+(4.3%), and a transect at x=-1400 shows it confined to z 8230-8240 — the river's
+actual width — with `at()` unchanged either side. Robertson holds at 1 finding.
+
+**Read the frame, not the first impression.** The first vet frame looked like
+catastrophic terrain corruption — jagged trenches, buildings on pedestals — and
+the instinct was to revert. Instrumenting instead showed the cut was correct and
+narrow; the shallow camera angle was showing the quay walls and the far bank
+edge-on. A frame is evidence about pixels, not about geometry.
+
+**AND THE WATER SURFACE WAS FACING DOWNWARDS.** Cutting the riverbed exposed a
+second bug the first one had been hiding. The user looked at the vet frame and
+asked why there was still no water; there wasn't.
+
+`ShapeGeometry` builds in the XY plane with its normal at +Z. `rotateX(+90)`
+puts the polygon in the right PLACE -- (x, y, 0) becomes (x, 0, y) -- but it
+also carries +Z to -Y, so every water triangle pointed at the seabed. The
+material is FrontSide, so from any camera above the water there was nothing
+there. Measured on Robertson: 43 triangles spanning the river's full bounding
+box, and a downward ray hit the surface at **0 of 319 points inside the ring**.
+After reversing the winding: **319 of 319**.
+
+Flipping to `rotateX(-90)` is NOT the fix -- it sends y to -z and mirrors the
+polygon into the wrong half of the world. Reverse the triangle winding and
+recompute normals, which turns the faces over where they already are.
+
+**Two bugs that hid each other.** The water had presumably been invisible since
+the layer was written, and nothing caught it because the terrain was covering
+the river anyway: a missing water surface and a buried one are the same picture.
+W2 and W3 both passed throughout -- they ask what is built IN water, never
+whether the water is drawn. Neither did any frame, because nobody had reason to
+look at a river that was supposed to be dry.
+
 **TREES IN THE PARKS — and the layer that was written and never read.**
 Painting the parks green made them green LAWNS. The Istana's forty hectares had
 nine trees on it, all on the perimeter road, because every tree in this world

@@ -2201,7 +2201,32 @@ export function buildWater(world, data) {
     if (!isFinite(lo)) continue;
     const level = lo - 0.35;
     const geo = new THREE.ShapeGeometry(shapeFrom(pts));
+    // THE WATER WAS FACING DOWNWARDS AND NOBODY COULD SEE IT.
+    //
+    // ShapeGeometry builds in the XY plane with its normal at +Z. rotateX(+90)
+    // maps the shape correctly into the XZ plane -- (x, y, 0) becomes
+    // (x, 0, y), which is why the polygon lands in the right PLACE -- but it
+    // also carries +Z to -Y, so every triangle ended up pointing at the seabed.
+    // The material is FrontSide, so from any camera above the water there was
+    // nothing there: you saw straight through to the bed.
+    //
+    // Measured on Robertson 2026-08-01: 43 triangles spanning the river's full
+    // bounding box, and a downward ray hit the surface at 0 of 319 points
+    // inside the ring. It has presumably been invisible since the layer was
+    // written; it went unnoticed because the terrain was ALSO covering the
+    // river, so a missing water surface and a buried one look identical.
+    //
+    // Flipping the rotation is NOT the fix -- rotateX(-90) sends y to -z and
+    // mirrors the polygon into the wrong half of the world. Reverse the
+    // winding instead, which turns the faces over where they already are.
     geo.rotateX(Math.PI / 2);
+    const idx = geo.index;
+    if (idx) {
+      const a = idx.array;
+      for (let i = 0; i < a.length; i += 3) { const t = a[i]; a[i] = a[i + 2]; a[i + 2] = t; }
+      idx.needsUpdate = true;
+    }
+    geo.computeVertexNormals();
     geo.translate(0, level, 0);
     // ShapeGeometry lays UVs out in the shape's own coordinates, which here are
     // metres from the island origin, so one tile per metre. A water texture at

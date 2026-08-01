@@ -83,10 +83,86 @@ export class Terrain {
     return false;
   }
 
+  // THE RIVERBED, CUT AT MESH RESOLUTION INSTEAD OF GRID RESOLUTION.
+  //
+  // The Singapore River was buried under five metres of ground. Its water plane
+  // was drawn correctly at 0.57m (Marina Barrage holds the whole basin at one
+  // level) and the terrain over it stood at 3-8m, so Boat Quay, Clarke Quay and
+  // Robertson Quay were a dry canyon.
+  //
+  // data/terrain.py DOES try to sink water, and it is not the sink rule that is
+  // wrong — it is the SCALE. Measured 2026-08-01 on Robertson's ring: the river
+  // is 1,786m long and its widest point is 11.1m from a bank, i.e. about 22m
+  // across. The height grid is 35m. Seventeen cells do get sunk, but they are
+  // isolated islands among cells that were not, and the bilinear read in at()
+  // pulls the surface straight back up between them. A grid coarser than the
+  // river cannot hold the river, and no tuning of the inset changes that.
+  //
+  // The drawn MESH is subdivided 24 ways per cell — about 1.46m — which is
+  // twenty times finer than the grid and comfortably finer than the river. So
+  // the cut belongs here, on the vertex, and NOT in at(): at() is what
+  // placement, collision and every check measure against, and dropping it under
+  // the water would move the ground out from under the quay beside it. Only
+  // what is DRAWN goes down.
+  //
+  // The step from bank to bed lands in one mesh interval, which reads as a
+  // vertical quay wall — which is what the Singapore River actually has.
+  setWaterRings(rings) {
+    this.wr = [];
+    this.wrGrid = new Map();
+    this.wrCell = 60;
+    for (const ring of rings || []) {
+      if (!ring || ring.length < 4) continue;
+      let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity, lo = Infinity;
+      for (const [x, z] of ring) {
+        if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+        if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+        const g = this.at(x, z);       // the UNCLAMPED grid, exactly as buildWater reads it
+        if (g < lo) lo = g;
+      }
+      if (!isFinite(lo)) continue;
+      // buildWater() puts the surface at rim - 0.35. Sit the bed 1.4m under it
+      // so there is visible depth rather than z-fighting.
+      const id = this.wr.length;
+      this.wr.push({ ring, floor: lo - 0.35 - 1.4, bb: [mnx, mnz, mxx, mxz] });
+      for (let cx = Math.floor(mnx / this.wrCell); cx <= Math.floor(mxx / this.wrCell); cx++)
+        for (let cz = Math.floor(mnz / this.wrCell); cz <= Math.floor(mxz / this.wrCell); cz++) {
+          const k = cx + ',' + cz;
+          let l = this.wrGrid.get(k);
+          if (!l) { l = []; this.wrGrid.set(k, l); }
+          l.push(id);
+        }
+    }
+  }
+
+  // the bed height under a point inside a water ring, or null on dry land
+  waterFloor(x, z) {
+    if (!this.wrGrid) return null;
+    const l = this.wrGrid.get(Math.floor(x / this.wrCell) + ',' + Math.floor(z / this.wrCell));
+    if (!l) return null;
+    let best = null;
+    for (const id of l) {
+      const w = this.wr[id];
+      if (x < w.bb[0] || x > w.bb[2] || z < w.bb[1] || z > w.bb[3]) continue;
+      let hit = false;
+      const r = w.ring;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const xi = r[i][0], zi = r[i][1], xj = r[j][0], zj = r[j][1];
+        if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
+      }
+      // deepest wins where two rings overlap, so a river mouth meeting the bay
+      // does not leave a ridge on the seam
+      if (hit && (best === null || w.floor < best)) best = w.floor;
+    }
+    return best;
+  }
+
   // the height a DRAWN terrain vertex takes at a point: the bilinear ground,
   // dropped 6cm so props seat into it, and carved under roads
   vertexY(x, z) {
-    return this.at(x, z) - (this.inRoad(x, z) ? 0.51 : 0.06);
+    const y = this.at(x, z) - (this.inRoad(x, z) ? 0.51 : 0.06);
+    const bed = this.waterFloor(x, z);
+    return bed === null ? y : Math.min(y, bed);
   }
 
   // bilinear height at a world point; 0 everywhere if the district has no grid

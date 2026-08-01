@@ -1819,7 +1819,14 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // live by the time it is consulted.
   const water = P.has('nowater') ? { water: 0, waterArea: 0 } : buildWater(world, data);
   if (!P.has('nowater')) buildPiers(world, data);
-  if (!P.has('nowater')) setWater(((opts.regionData || data).water || []).map((w) => w.p));
+  if (!P.has('nowater')) {
+    const wrings = ((opts.regionData || data).water || []).map((w) => w.p);
+    setWater(wrings);
+    // The terrain mesh is cut for the water BEFORE it is built, so the
+    // riverbed exists in the geometry rather than being hidden by it.
+    // See setWaterRings() in terrain.js for why the grid cannot do this.
+    terrain.setWaterRings(wrings);
+  }
   bmark('setup+water');
 
   await bstep(0.09, `raising ${(data.buildings || []).length.toLocaleString()} buildings`);
