@@ -1580,6 +1580,43 @@ CONSERVATION_ERA = {
     # bungalow "was likely to have been built in the 1920s".
     # ura.gov.sg .../perhl/.
     "PEARL'S HILL": (1920, 1939),
+    # ---- MOUNT SOPHIA, 2026-08-01. THE ONE AREA HERE WHOSE BAND DOES NOT COME
+    # FROM URA AT ALL, and it is a judgement rather than a transcription.
+    #
+    # URA publishes nothing usable for this area and that has now been checked
+    # three times: no About, no History, no Architecture, and the two obvious
+    # endpoints -- the Secondary-Settlements page .../mtsophia and the portal's
+    # /Conservation-Portal/Explore/History?bldgid=MTSOPH -- both return 404.
+    # HANDOFF.md carried it as "the largest single era gap left and it is not
+    # researchable from URA", and that sentence is still true about URA.
+    #
+    # It is not true about the AREA. NHB (Roots.gov.sg), NLB and the gazette
+    # citations date five conserved buildings inside the polygon by name:
+    #
+    #   Tower House, 12 Mount Sophia                   1892  Crane Brothers
+    #   Sophia Flats, 28-34 Wilkie Road                1920 or 1930s -- disputed
+    #   Olson Building (Blk 11A), 29 Mount Sophia      1928  Frank Wilmin Brewer
+    #   former Nan Hwa Girls' High School              1939
+    #   Trinity Theological College Chapel, 7 Mt S.    1969  Chan Kui Chuan
+    #
+    # Dated buildings are a better basis than a style sentence would have been,
+    # because they skip the style-name-to-years mapping entirely.
+    #
+    # 1900-1940 AND NOT 1892-1969. The full dated span crosses BOTH of city.js's
+    # facade-family boundaries (1945 and 1978), so handing it over whole would
+    # deal part of a conserved pre-war hill the punched-concrete family of the
+    # 1960s -- the identical trap the Little India note above describes, and the
+    # reason that band drops its own tails. Four of the five dated buildings sit
+    # inside or on the edge of 1900-1940. The 1892 and 1969 tails are dropped
+    # deliberately: both are INDIVIDUALLY NAMED buildings that can be carried
+    # properly one day, and neither should be smeared across 149 neighbours.
+    #
+    # Corroborating, not decisive: URA's Secondary Settlement category groups
+    # Mount Sophia with River Valley, Joo Chiat and Jalan Besar, and every one
+    # of those already lands on a 1900-1940-centred band above.
+    #
+    # Full trail, including the two contested dates, in research/mount-sophia.md.
+    "MOUNT SOPHIA": (1900, 1940),
 }
 for _nm, _styles in CONSERVATION_STYLES.items():
     if _nm in CONSERVATION_ERA:
@@ -1617,6 +1654,19 @@ CONSERVATION_GAZETTE = {
     "CHINA SQUARE": 1997, "UPPER CIRCULAR ROAD": 2004, "PEARL'S HILL": 2008,
     "BLAIR PLAIN": 1991, "TIONG BAHRU": 2003,
     "ROBERTSON QUAY": 2014,
+    # MOUNT SOPHIA was gazetted IN STAGES, which is why a single date was never
+    # found: "more than 80 buildings around Mount Sophia were given conservation
+    # status in 2003 and 2011", and the Olson Building carries its own 2012
+    # gazette. Earliest of the staged dates, which is the precedent this table
+    # already set for CANTONMENT ROAD.
+    #
+    # THIS ROW IS THE POINT OF THE EXERCISE. Our own data had the Olson Building
+    # -- 29 Mount Sophia, Blk 11A, a 1928 Frank Brewer classroom block -- at
+    # yr=2017, which is when Hoi Hup Sunway finished restoring it as the Sophia
+    # Hills clubhouse. That is precisely the restoration-date-read-as-build-date
+    # this guard exists to catch, and it went straight through for one reason:
+    # the area had no row here, so the guard never ran on it.
+    "MOUNT SOPHIA": 2003,
 }
 
 TYPE_DEFAULT = {
