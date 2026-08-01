@@ -11,7 +11,7 @@ import { R, rand, chance } from './tex.js';
 // 6cm road offset and the deck in one call, so the threading is an import.
 import { MAT, groundAt, surfaceAt } from './city.js';
 import { claim } from './roads.js';
-import { texStreetName } from './wayfind.js';
+import { texStreetName, plateTaken } from './wayfind.js';
 
 // The carriageway surface is drawn at this height (see buildRoads in city.js).
 // Every marking is stacked above it: lowering them below the tarmac buries them,
@@ -674,6 +674,9 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
         // most repeated bug in this project, so this now computes the same
         // distance S2 does and cannot disagree with it.
         if (nearerOtherStreet(data, r.n, sx, sz)) continue;
+        // see plateTaken() in wayfind.js: `plated` above is local to this
+        // call, so a street reached from two chunks was plated twice
+        if (plateTaken(r.n, sx, sz)) continue;
         const g = new THREE.Group();
         const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 6), MAT.metal);
         pole.position.y = 1.3; g.add(pole);
@@ -696,7 +699,7 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
         g.rotation.y = Math.atan2(u0x, u0z) + Math.PI / 2;
         world.add(g);
         (window.__signage = window.__signage || [])
-          .push({ kind: 'plate', x: sx, z: sz, text: r.n });
+          .push({ kind: 'plate', x: sx, z: sz, text: r.n, obj: g });
         plated.add(r.n);
         break outer;
       }

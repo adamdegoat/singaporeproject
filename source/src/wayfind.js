@@ -63,6 +63,53 @@ export function texStreetName(name) {
   });
 }
 
+// A PLATE IS A DUPLICATE IF ONE SAYING THE SAME THING ALREADY STANDS ON TOP
+// OF IT.
+//
+// Districts are fetched with OVERLAPPING boxes, and trimAxes() in main.js only
+// clips an axis against the others in ITS OWN CHUNK -- so two districts that
+// both carry Bayfront Avenue each ran the every-150m plate loop down it, and
+// dressSideStreets keeps its `plated` set local to one call, so a side street
+// reached from two chunks is plated twice. Measured on the world scene before
+// this guard: 632 plates, 79 same-name pairs within 40m, the closest 3.2m
+// apart. A rider on Bayfront Avenue had three signposts reading BAYFRONT
+// AVENUE in one frame, two of them overlapping.
+//
+// 12m, and the number comes out of the measurement rather than taste. The pair
+// distances are 3.2, 4.6, 8.8 and then a hard jump to a cluster at exactly
+// 16.2 -- the stacked ones below nine metres, and above sixteen the pairs that
+// sit on OPPOSITE KERBS of one street, which is what a real street has and
+// must be kept. 12 is in the gap and nothing lands near it.
+// IT MUST STILL BE STANDING. window.__signage is a write-only log -- nothing
+// has ever removed an entry from it -- and plates are children of a STREAMED
+// CHUNK, which is dropped from the scene when the rider gets 1.7km away. A
+// guard that trusted the log would let a street lose its name the second time
+// you rode down it: the chunk rebuilds, the log still remembers the plate that
+// went with the old one, and the new plate is skipped as a duplicate. So each
+// record carries its object and the guard asks whether that object is still
+// attached to the scene, which makes the whole thing self-healing and needs no
+// unload hook to be kept in step.
+export function plateTaken(text, x, z, near = 12) {
+  const said = window.__signage;
+  if (!said) return false;
+  const n2 = near * near;
+  for (const q of said) {
+    if (q.kind !== 'plate' || q.text !== text) continue;
+    if ((q.x - x) ** 2 + (q.z - z) ** 2 >= n2) continue;
+    if (!q.obj) return true;                 // pre-streaming record, trust it
+    // WALK TO THE ROOT AND ASK WHETHER IT IS A SCENE -- do NOT compare against
+    // window.__scene. main.js assigns window.__scene AFTER the boot build has
+    // run, so on the first build the comparison never matched, every call
+    // returned false and this guard was a silent no-op: 632 plates and 79
+    // duplicate pairs before and after, byte for byte, which is what caught it.
+    // A live chunk's root is the Scene; a dropped chunk's root is its own group.
+    let o = q.obj;
+    while (o.parent) o = o.parent;
+    if (o.isScene) return true;
+  }
+  return false;
+}
+
 /* ---------------- place the signage ---------------- */
 export function buildSignage(world, axis, data, isBlocked) {
   const pts = axis.p, half = axis.w / 2;
@@ -200,6 +247,7 @@ export function buildSignage(world, axis, data, isBlocked) {
           // to the one it names, which makes the plate a lie
           const own = axis.n || 'Orchard Road';
           if (window.__nearestStreet && window.__nearestStreet(sx, sz) !== own) continue;
+          if (plateTaken(own, sx, sz)) continue;
           const g = new THREE.Group();
           const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 6), MAT.metal);
           pole.position.y = 1.3; pole.castShadow = true; g.add(pole);
@@ -213,7 +261,7 @@ export function buildSignage(world, axis, data, isBlocked) {
             if (face < 0) plate.rotation.y = Math.PI;
             g.add(plate);
           }
-          said.push({ kind: 'plate', x: sx, z: sz, text: axis.n || 'Orchard Road' });
+          said.push({ kind: 'plate', x: sx, z: sz, text: axis.n || 'Orchard Road', obj: g });
           g.position.set(sx, groundAt(sx, sz), sz);
           g.rotation.y = ang + Math.PI / 2;
           world.add(g);
