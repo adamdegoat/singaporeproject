@@ -318,6 +318,36 @@ on one plane found by marching out from the centroid, and this ring has a
 published 26.5 x 11.6m notch cut from its SW corner, so the street face is not
 one plane. Cosmetic; the massing is the correction that mattered.
 
+## FOOK HAI IS WIRED; TEKKA PLACE IS PARKED AT ROUND 3
+
+**Fook Hai** took three rounds and every one of them was a scale or a
+visibility mistake, not a design one:
+1. The recessed bands were inset by 1.2% of a 45m plan — 27cm — and read as
+   pencil lines instead of shadow-slots. A PROPORTIONAL inset has to be checked
+   against the real metres it produces. (Fifth time in this project.)
+2. Deepening the inset to 4.5% changed nothing, because **a recess cut into a
+   solid mass is invisible**: the full-height mass is already drawn and anything
+   grown inward from it is buried inside it. Exactly the trap that hid the
+   second face of the direction gantries.
+3. Drawing the dark band slightly PROUD instead gives the elevation the
+   alternating projecting-slab-and-dark-band read it actually has.
+
+Also recorded in the recipe: SkyDB's "21 floors, completed 1974" is wrong (21
+floors inside OSM's 32m is 1.5m per floor), and OSM's `height=32` is not a
+survey — hand-entered in 2020, no source tag, "Bing" imagery.
+
+**Tekka Place is written, diagnosed and NOT wired.** After three rounds its
+ninety-metre lotus screen still lands on the annex's twenty-metre END face, and
+what is left is a bare charcoal slab — worse than the glazed block the generic
+draws, which is the definition of a regression here. The diagnosis is at the
+head of `tekkaPlace()`: the face chooser drops the long-flank candidates before
+scoring them, and the only exit from that loop is `e <= 0`, i.e. the outward
+march from the centroid never leaves the ring — which is what a long, thin,
+CONCAVE ring does, because its centroid is outside it. D38 had to nudge around
+the same concavity an hour earlier in the same session. **Next step is to
+instrument the three candidates' (extent, edge) pairs before touching anything**
+— that is what ended the Masjid Jamae loop after two wasted rounds.
+
 ## WHERE THE EIGHT ACTUALLY STAND (frontage, from data/accuracy.py)
 
 The frontage is what the finish line is written against. "height" below is
