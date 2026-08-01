@@ -185,6 +185,60 @@ permissive. It stays outside the repo and is used to measure, not to ship.
   fetched before `building:part` existed in the pipeline and carried 4 and 1 of
   them against Chinatown's 505. Topped up rather than refetched, so the loss
   guard was never risked: +196 and +201 elements, +33 and +51 buildings.
+- **LANE LINES RAN THROUGH JUNCTION MOUTHS.** The double yellows and the
+  side-street centre lines were fixed for this in the streetRuns rewrite; the
+  axis's own dashes and edge line were emitted by walking the axis directly and
+  were missed. The FIRST fix asked "is this mark inside some other street's
+  carriageway" and dropped **80% of Bras Basah Road's marks and 68% of
+  Orchard's** — because OSM maps an arterial with slip roads, bus-lane ways and
+  unnamed fragments running alongside it the whole way, and every one of those
+  is "some other street". Nothing on screen said so; a street with no lane lines
+  still looks like a street, and the junction frame looked BETTER. A counter
+  printed beside the mark total is what caught it. The kept version finds where
+  roads actually CROSS the axis, with a 25-degree angle gate so a parallel way
+  is never a junction, and drops 6-11%.
+- **A4 / `data/groundcheck.py`, the first gate here that looks outside the
+  world.** Six published anchors, 10m tolerance, wired into deploy.sh and
+  gates.sh, and VERIFIED TO FAIL on the pre-fix terrain (Raffles Ave 21.6m,
+  Temasek 20.3m against 3-5m) before being trusted. Add anchors whenever
+  research turns up a citable level; the table is in HANDOFF.md.
+- **A trap that cost a whole deploy: never `pkill -f "node server.cjs"`.** The
+  deploy runs its OWN snapshot server on 8934 so you can keep working while it
+  audits, and a vet run tidying up after itself killed it — the deploy then died
+  with ERR_CONNECTION_REFUSED mid-audit, which reads exactly like a code
+  failure. Capture your own server's PID and kill that.
+- **The stale-chunk guard earned its keep.** Restoring marinabay.json during the
+  A4 gate test left it newer than its stream chunk with identical content, and
+  deploy.sh refused to publish. The gates read world.json and riders read the
+  chunks; that guard is the only thing standing between those two facts.
+
+## WHERE THE EIGHT ACTUALLY STAND (frontage, from data/accuracy.py)
+
+The frontage is what the finish line is written against. "height" below is
+surveyed metres + storey-derived; era is a conservation-area band or a material.
+
+    district      height   era    named    the gap
+    chinatown      92%     99%     13%     essentially done
+    marinabay      95%     79%     16%     essentially done
+    robertson      94%     27%     33%     ERA — Robertson Quay, Chatsworth Park
+    rivervalley    82%     41%     20%     ERA — River Valley, Robertson Quay
+    orchard        85%     61%     64%     era
+    brasbasah      82%     78%     43%     balanced
+    bugis          54%     78%     19%     HEIGHT
+    littleindia    45%     92%     22%     HEIGHT
+
+Two things are worth chasing and one is not. **Era** is chaseable: ~370
+buildings sit inside gazetted conservation areas that have no entry in
+CONSERVATION_STYLES (Mount Sophia 149, Upper Circular Road 127, Fort
+Canning/Coleman 33, Cheang Jim Chwan 26, Chatsworth Park 21, Pearl's Hill 11),
+and URA publishes the styles for each. **Recipes** are chaseable. **Heights are
+mostly not**: Little India's 123 unsourced frontage buildings are 117 shophouses
+under 400 m2, OSM carries 21 height tags for its 2,134 buildings, the HDB join
+is already fully exploited (every HDB block that lands inside a footprint has a
+source), and no one publishes a metre height for a shophouse. They are drawn at
+2-4 storeys by a shape rule, which is honest and looks right; the ledger scores
+them zero because it refuses to call a rule a measurement, and that is correct.
+Do not "fix" this by laundering the rule into a source.
 
 # OPEN, MEASURED, NOT SOLVED — PEDESTRIANS ACCUMULATE IN CARRIAGEWAYS
 

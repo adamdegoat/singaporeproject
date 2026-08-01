@@ -713,8 +713,19 @@ SOURCED_LOW = {
 STOREY_COUNTS = {
     # research/littleindia-frontage-heights.md
     "centrium square":  [{"st": 19}],                       # officesolutions.com.sg
-    "tekka place":      [{"st": 10, "amin": 2700},          # ONG&ONG: main block
-                         {"st": 7,  "amax": 2700}],         # ONG&ONG: annex + roof deck
+    # THE TWO BLOCKS WERE THE WRONG WAY ROUND (fixed 2026-08-01). The rule read
+    # amin/amax 2700 on the assumption that the taller block is the bigger one.
+    # It is not: the 10-storey main block on the Serangoon Road corner is the
+    # SMALLER footprint at 2,446 m2, and the 7-storey block is the 3,083 m2
+    # annex. Two independent confirmations, neither of them a guess about size:
+    # OSM tags the 3,083 m2 way `amenity=parking, parking=multi-storey` — it is
+    # the car park, and ONG&ONG's own description is "5 levels of parking" with
+    # a rooftop deck — and Wikidata Q121834063's coordinate for "Tekka Place"
+    # lands on the 2,446 m2 way, which is the one carrying Citadines Rochor
+    # above. So the model had three storeys of mass on the wrong block, over the
+    # annex's roof deck, on the corner a rider actually passes.
+    "tekka place":      [{"st": 10, "amax": 2700},          # ONG&ONG: main block
+                         {"st": 7,  "amin": 2700}],         # ONG&ONG: annex + roof deck
     # The developer's own page says 18; OSM's building:levels says 19. Prefer
     # the developer.
     "lyf farrer park":  [{"st": 18}],
@@ -1491,6 +1502,31 @@ CONSERVATION_STYLES = {
     "KAMPONG GLAM HISTORIC DISTRICT CORE AREA": ("early", "transitional"),
     "JALAN BESAR": ("late", "transitional", "art deco"),
     "BLAIR PLAIN": ("transitional", "late"),
+    # ---- AREAS ADDED 2026-08-01, transcribed from URA's own portal pages.
+    # 370 buildings sat inside gazetted polygons with no band at all because the
+    # area simply had no entry here. Only areas whose STOCK URA describes are
+    # added; where URA names no style the area is left out rather than guessed,
+    # and where the published fact is a YEAR it goes in CONSERVATION_ERA below
+    # instead of being reverse-engineered into a style.
+    #
+    # "the conservation area comprises 29 units of two-storey shophouses mainly
+    # of the Early Shophouse style" — ura.gov.sg .../cjcpl/
+    "CHEANG JIM CHWAN PLACE": ("early",),
+    # "13 units of two- and three-storey buildings ... ranging from the Eclectic
+    # with its ornate and decorative Classical features to simple Art Deco
+    # Style" — ura.gov.sg .../orch01/. "Eclectic" is not in the vocabulary above
+    # and is deliberately NOT forced into "late" or "transitional".
+    "ORCHARD ROAD NO. 14-38 (EVEN)": ("art deco",),
+    # Unit by unit on URA's page: No. 231 "Art Deco", Nos. 233/235/237 "both
+    # Neo-Classical and Art Deco styles", No. 239 "Neo-Classical", No. 243
+    # "Modern style" — ura.gov.sg .../cttr/. TERRACE HOUSES, URA's own word,
+    # not shophouses.
+    "CANTONMENT ROAD": ("art deco", "neo-classical", "modern"),
+    # "7 units of four-storey Art Deco buildings skillfully designed as a
+    # cohesive development, with a specially treated splayed corner" —
+    # ura.gov.sg .../aslys/. The former MPH Building in the same polygon is
+    # 1908 Edwardian in red facing brick and does not belong to this band.
+    "ARMENIAN STREET AND LOKE YEW STREET": ("art deco",),
     # Tiong Bahru is the one area here that is not shophouses at all. URA /tnbhr/:
     # "The estate is characterised by the Streamline Moderne style, with Art Deco
     # motifs". The CONSERVED blocks are Alfred G. Church's pre-war SIT flats,
@@ -1513,6 +1549,34 @@ CONSERVATION_ERA = {
     # the dominant Late style for the reason given above.
     "LITTLE INDIA": (1900, 1940),
     "LITTLE INDIA HISTORIC DISTRICT CORE AREA": (1900, 1940),
+    # ---- AREAS WHOSE PUBLISHED FACT IS A YEAR, NOT A STYLE (2026-08-01).
+    # The style vocabulary above is a shophouse vocabulary. Four of these areas
+    # are not shophouses at all, and forcing them through it would be inventing
+    # a category as well as a date, so they carry URA's own published span.
+    #
+    # Robertson Quay is GODOWNS. "Nos. 17, 19 and 21 Jiak Kim Street — These
+    # three single storey buildings were built in 1919"; No. 63 Caseen Road
+    # carries "The year (1921)" on its own facade. Gazetted 6 June 2014, nine
+    # buildings. ura.gov.sg .../rbsq/. An earlier read of this area from a
+    # boundary file said 1895-1921; 1895 is The Warehouse Hotel on Havelock
+    # Road, which is NOT in this gazette, so the span is tightened to what URA
+    # publishes for the area itself.
+    "ROBERTSON QUAY": (1919, 1921),
+    # NOT shophouses either, and the single largest correction in this batch:
+    # "It contains mainly three- to five-storey buildings built mainly in the
+    # 1930s to the late 1960s and are of different Modern architectural styles."
+    # ura.gov.sg .../uppcirrd/. 127 buildings, all of which the shape fallback
+    # would otherwise deal a pre-war shophouse facade.
+    "UPPER CIRCULAR ROAD": (1930, 1969),
+    # BUNGALOWS. "This conservation area consists of 27 conserved bungalows
+    # mainly of the Art Deco and 'Black and White' Bungalow styles" and "The
+    # conserved houses presently in the area were built in the 1920s and 1930s."
+    # ura.gov.sg .../chpk/.
+    "CHATSWORTH PARK": (1920, 1939),
+    # BARRACKS. "The Lower and Upper Barracks were built in the 1930s"; the
+    # bungalow "was likely to have been built in the 1920s".
+    # ura.gov.sg .../perhl/.
+    "PEARL'S HILL": (1920, 1939),
 }
 for _nm, _styles in CONSERVATION_STYLES.items():
     if _nm in CONSERVATION_ERA:
@@ -1529,6 +1593,15 @@ for _nm, _styles in CONSERVATION_STYLES.items():
 # built, and read as a construction date it dealt 461 conserved shophouses the
 # balconied-slab facade of the 1980s.
 CONSERVATION_GAZETTE = {
+    # gazette dates for the areas added 2026-08-01, each from its own URA page
+    "UPPER CIRCULAR ROAD": 2004,            # 4 November 2004
+    "CHEANG JIM CHWAN PLACE": 1994,         # 28 October 1994
+    "CHATSWORTH PARK": 1991,                # 29 November 1991
+    "PEARL'S HILL": 2008,                   # 5 December 2008
+    "ROBERTSON QUAY": 2014,                 # 6 June 2014
+    "ORCHARD ROAD NO. 14-38 (EVEN)": 2000,  # 21 November 2000
+    "CANTONMENT ROAD": 2005,                # earliest of 2005 / 2007 / 2011
+    "ARMENIAN STREET AND LOKE YEW STREET": 2001,   # 13 October 2001
     "CHINATOWN (KRETA AYER)": 1989, "CHINATOWN (TELOK AYER)": 1989,
     "CHINATOWN (TANJONG PAGAR)": 1989, "CHINATOWN (BUKIT PASOH)": 1989,
     "CHINATOWN HISTORIC DISTRICT CORE AREA - KRETA AYER": 1989,
