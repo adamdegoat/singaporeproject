@@ -521,8 +521,17 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     mrtEntrance(world, ex, ez, ang, label);
     realMrt++;
   }
-  window.__realMrt = realMrt;
-  window.__droppedMrt = droppedMrt;
+  // ACCUMULATE, DO NOT OVERWRITE. This is ONE GLOBAL written by EVERY
+  // streamed chunk, so a plain assignment leaves whatever the LAST chunk
+  // happened to build -- and A2 ("real data present but unused") reads it as
+  // a boolean. A chunk with none of this layer therefore reported the whole
+  // world as not drawing it, and a chunk with some reported it fine: the
+  // check's answer depended on manifest order, not on the world. Caught when
+  // kallang landed and A2 failed the world scene while a probe on the same
+  // URL read 37 crossings. Same one-global-many-chunks family as __onRoad,
+  // and `__realErp` two lines away has always done it correctly.
+  window.__realMrt = (window.__realMrt || 0) + realMrt;
+  window.__droppedMrt = (window.__droppedMrt || 0) + droppedMrt;
 
   // Overhead bridges at the positions OSM records, spanning the way it maps.
   let realBridges = 0, droppedBridges = 0;
@@ -564,8 +573,9 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     if (pedBridge(world, cx, cz, ang + Math.PI / 2, Math.max(16, straight - 14))) realBridges++;
     else droppedBridges++;
   }
-  window.__realBridges = realBridges;
-  window.__droppedBridges = droppedBridges;
+  // same accumulate-not-overwrite rule as __realMrt above
+  window.__realBridges = (window.__realBridges || 0) + realBridges;
+  window.__droppedBridges = (window.__droppedBridges || 0) + droppedBridges;
 
   // The real ERP gantries, from LTA's published layer.
   //

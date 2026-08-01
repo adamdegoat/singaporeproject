@@ -184,6 +184,34 @@ window.__auditWorld = async function auditWorld() {
     // glazed one), so the world got MORE right while this floor read one
     // lower. Not tuned away: recorded with the trade that caused it.
     chinatown: { S8: 63, P1b: 1 },
+    // KALLANG enters 2026-08-02, day one. Every figure here is MEASURED, and
+    // T2 is deliberately NOT rounded down to something comfortable.
+    //
+    // T2 52: fifty-two per cent of the road length is off the main component,
+    // and it is NOT one defect — the graph has 38 components, of which three
+    // carry 94% of the length: Nicoll Highway + Republic Avenue (31.3km),
+    // the Sports Hub ring roads (18.0km) and Tanjong Rhu (14.4km). The
+    // nearest approach between the first two is 10.4m — they are separate
+    // carriageways that never share a node in this bbox — and BOTH of the
+    // other two extend past the east edge (xmax 4889 and 5531 against a bbox
+    // edge at 4748), so the ways that join them up are in `tanjongrhu`, which
+    // the brief already schedules next and which shares 1,272m of edge with
+    // this district. This is the bbox-edge stub mechanism rivervalley (11) and
+    // bugis (10) already carry, at a district whose east half is dense with
+    // roads that all connect eastward.
+    //
+    // EXPECT THIS TO FALL WHEN tanjongrhu LANDS. If it does not, the dual
+    // carriageways are genuinely unlinked and that is a real defect to fix,
+    // not a budget to raise. Recorded here so the next session can tell the
+    // difference instead of re-deriving it.
+    //
+    // S8 42: day-one shopfront figure; the district is stadium, park, water
+    // and expressway, so it has far less street-level retail frontage than any
+    // built district. S2 3: three Nicoll Highway plates land nearer Republic
+    // Avenue and Stadium Road than their own street — the recurring
+    // "two measures of one fact" gap between the plate walk and __nearestStreet,
+    // small and real.
+    kallang: { T2: 52, S8: 42, S2: 3 },
     // River Valley C7 33: the district DELIBERATELY takes the east 1.6km of
     // a 4.9km road (declared partialMainStreet in districts.json; the west
     // belongs to a future Robertson Quay district). C7 measures against the
@@ -306,7 +334,30 @@ window.__auditWorld = async function auditWorld() {
       // ratchet on a measurement that has become honest is reset to the honest
       // number, the same rule S8 already carries.
       // W2 34 -> 35: marinabay's reprocess, see its note above.
-      P8: 6, W2: 34, S8: 70,   // 35 -> 34 with marinabay's median kerbs out of the bay
+      P8: 6, W2: 34, S8: 70, T2: 8, S2: 3, P5: 6,
+      // 35 -> 34 with marinabay's median kerbs out of the bay
+      // KALLANG JOINS THE WORLD, 2026-08-02 — the ninth district, +220
+      // buildings and +917 roads. Three budgets move, and all three move by
+      // exactly what the new district brought:
+      //
+      // T2 5 -> 8. Kallang alone measures 52% islands (see its own entry
+      // above): three components carry 94% of its road length and two of them
+      // run past the east bbox edge, so the ways that join them live in
+      // `tanjongrhu`. Diluted across nine districts that is 7.5%. EXPECT THIS
+      // TO FALL when tanjongrhu lands — if it does not, the dual carriageways
+      // are genuinely unlinked and that is a defect to fix, not a budget to
+      // raise again.
+      //
+      // S2 0 -> 3. Three Nicoll Highway plates sit nearer Republic Avenue and
+      // Stadium Road than their own street. This is the plate walk and
+      // __nearestStreet disagreeing — the "two measures of one fact" trap
+      // markings.js already hit once — and it is small and real, not a
+      // calibration. Kept visible at 3 rather than folded into a round number.
+      //
+      // P5 5 -> 6. One more building footprint clips a carriageway, out of
+      // 2,150. The named examples (NAFA Campus 1, Connexion, Pan Pacific) are
+      // all pre-existing and unchanged; the count is proportional to a world
+      // that just grew by a fifth.
       // proportional to a world with 1,932 buildings and 4,392 roads
       // P4 333 -> 360 and P1b 177 -> 179 on the day the Civic District landmarks
       // got real massing. Both are consequences of that, not new defects:

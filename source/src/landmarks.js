@@ -1922,6 +1922,102 @@ function civicDome(api, b, opts = {}) {
   api.world.add(drum);
 }
 
+// THE NATIONAL STADIUM — the largest single object in this world, and the
+// generic fabric was drawing it as a 310m glazed office drum with a flat top.
+//
+// PUBLISHED, and every figure here is sourced (research/coastal-expansion.md
+// addendum, 2026-08-02): dome INTERNAL height 83m over a 310m clear span, the
+// world's largest free-spanning dome; 20,000 m2 of ultra-thin steel roof
+// weighing 8,057 tonnes; arch trusses 5m deep at the crown tapering to 2.5m at
+// the base, carried on a post-tensioned concrete ring beam. About a third of
+// the roof retracts, in two segments. Arup (structure) with DP Architects.
+//
+// Two things make it read, and neither is detail:
+//   1. IT HAS NO WINDOWS. A stadium bowl is precast concrete and metal
+//      cladding. The curtain-wall grid was the single most wrong thing about
+//      it -- at 310m across, an office window pattern reads as an office block
+//      the size of a district.
+//   2. THE DOME IS THE BUILDING. 83m of it, and the bowl below is barely a
+//      third of that. A flat top loses the only silhouette anyone recognises.
+//
+// The cladding colour is UNPUBLISHED in every source read -- the roof is
+// described only as insulated metal "to reflect sunlight" -- so this is a pale
+// warm grey, chosen to read as bright metal against sky and explicitly NOT
+// presented as researched.
+function nationalStadium(api, b) {
+  const ob = orientedBox(b.p);
+  const cx = ob.cx, cz = ob.cz;
+  const g = api.groundAt(cx, cz);
+  const H = b.h || 83;                       // published dome height
+  const BOWL = Math.min(H * 0.42, 34);       // the concrete bowl under the roof
+
+  const shell = new THREE.MeshStandardMaterial({
+    color: 0xd9d7d0, roughness: 0.62, metalness: 0.22,
+  });
+  const concrete = new THREE.MeshStandardMaterial({ color: 0xc9c5bb, roughness: 0.9 });
+
+  // the bowl, and a shadow gap at its foot so it does not read as one poured mass
+  api.merge(api.extrudeGeo(b.p, BOWL), concrete, cx, cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.006), 1.6), concrete, cx, cz);
+
+  // THE DOME. An ellipsoid cap, not a sphere: the footprint is a 35-point ring
+  // about 310 x 250m, and a spherical cap sized to the long axis would stand
+  // proud of the short one by thirty metres. Scaled per axis from the oriented
+  // box, which is the same thing every other recipe in this file uses to find a
+  // building's real extents.
+  const ry = H - BOWL;
+  // SCALE, THEN ROTATE, THEN TRANSLATE — in that order. Rotating after the
+  // translate spins the dome about the world origin and throws it kilometres
+  // off the building; the same ordering trap the stair cheeks hit with
+  // rotateX/rotateY two sessions ago.
+  const dome = new THREE.SphereGeometry(1, 48, 20, 0, Math.PI * 2, 0, Math.PI * 0.5);
+  dome.scale(ob.halfLong * 1.005, ry, ob.halfShort * 1.005);
+  dome.rotateY(Math.atan2(ob.ux, ob.uz));
+  dome.translate(cx, g + BOWL, cz);
+  const mesh = new THREE.Mesh(dome, shell);
+  mesh.castShadow = true;
+  api.world.add(mesh);
+
+  // The ring beam the dome sits on: a band of shadow between bowl and roof,
+  // which is what separates the two in every photograph of the building.
+  const beam = new THREE.CylinderGeometry(1, 1, 2.4, 48, 1, true);
+  beam.scale(ob.halfLong * 1.012, 1, ob.halfShort * 1.012);
+  beam.rotateY(Math.atan2(ob.ux, ob.uz));
+  beam.translate(cx, g + BOWL - 0.6, cz);
+  api.merge(beam, api.mat.metal, cx, cz);
+}
+
+// The Singapore Indoor Stadium, Kenzo Tange, opened December 1989. 47m, and
+// NLB calls it one of the tallest single-storey buildings in Asia. Its roof is
+// a CONE modelled on a Shinto temple, not a dome -- the distinction is the
+// whole building, and it was drawing as a flat-topped block.
+function indoorStadium(api, b) {
+  const ob = orientedBox(b.p);
+  const cx = ob.cx, cz = ob.cz;
+  const g = api.groundAt(cx, cz);
+  const H = b.h || 47;
+  const BASE = H * 0.54;
+  const wall = new THREE.MeshStandardMaterial({ color: 0xd2cec4, roughness: 0.86 });
+  const roof = new THREE.MeshStandardMaterial({
+    color: 0x8d9298, roughness: 0.55, metalness: 0.3,
+  });
+  api.merge(api.extrudeGeo(b.p, BASE), wall, cx, cz);
+  const cone = new THREE.ConeGeometry(1, H - BASE, 4, 1);
+  // four-sided and turned 45 degrees so the ridges face the corners, which is
+  // what gives the Tange roof its folded-plate look rather than a tent.
+  //
+  // ROUND 1 SCALED THIS 1.34 AND IT WAS A MARQUEE. A cone scaled 34% past the
+  // footprint on a 150m building is a fifty-metre eaves overhang: the roof came
+  // down to ground level on both flanks and swallowed the neighbouring plots.
+  // Same failure as the Istana's grow(1.9) -- a RATIO applied to a large
+  // footprint is a distance nobody intended. 1.05 is about a four-metre eave,
+  // which is what the photographs show.
+  cone.scale(ob.halfLong * 1.05, 1, ob.halfShort * 1.05);
+  cone.rotateY(Math.atan2(ob.ux, ob.uz) + Math.PI / 4);
+  cone.translate(cx, g + BASE + (H - BASE) / 2, cz);
+  api.merge(cone, roof, cx, cz);
+}
+
 function nationalMuseum(api, b) {
   // fish-scale tiles on the original dome, not the copper of the Supreme Court
   civicDome(api, b, { columns: 12, domeColor: 0xb9b2a4 });
@@ -5580,6 +5676,11 @@ export const RECIPES = [
   // as /^istana$/ further up so the Heritage Gallery still lands here.
   [/waterloo centre|wilkie edge|one sophia|penang road|lazada|cuppage|school of|lasalle|singapore management|nanyang academy|the atrium|manulife|winsland|somerset house|orchard shopping/i,
    finnedSlab],
+  // KALLANG. Anchored with ^ and $ so "Singapore Sports Museum" and
+  // "Sports Hub Library" keep the generic fabric -- the same containment trap
+  // that gave the Singapore Flyer Car Park the wheel's 165m.
+  [/^national stadium$/i, nationalStadium],
+  [/^singapore indoor stadium$/i, indoorStadium],
 ];
 
 // Recipes whose buildings have no shopfront. A cathedral, a museum, a national
@@ -5591,6 +5692,8 @@ export const RECIPES = [
 // unbroken white petals, which is the same mistake the Esplanade and the
 // National Gallery are already in this set for.
 const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery,
+                              // A stadium bowl has no street-level retail bays.
+                              nationalStadium, indoorStadium,
                               gothicChurch, colonialHotel, artScienceMuseum,
                               // The President's residence has no shops in it.
                               istana,

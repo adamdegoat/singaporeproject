@@ -621,6 +621,79 @@ LANDMARKS = {
     "gardens by the bay":     {"h": 20},
     "flower dome":            {"h": 38, "key": True},
     "cloud forest":           {"h": 58, "key": True},
+
+    # ---- KALLANG / SPORTS HUB -------------------------------------------
+    #
+    # THESE ARE LOAD-BEARING, NOT DECORATION. HEIGHT_TAG_SUPPRESS drops the OSM
+    # `height` tag across this bbox because it is fabricated, which makes
+    # `building:levels` the fallback -- and the National Stadium is tagged
+    # `building:levels=2`. Without a row here the suppression would draw the
+    # largest object in the country about SEVEN METRES TALL, which is worse
+    # than the wrong tag it removed. A suppression rule and its replacement
+    # source are one change, not two.
+    #
+    # National Stadium: dome INTERNAL height 83m over a 310m clear span, the
+    # world's largest free-spanning dome; 20,000 m2 of ultra-thin steel roof,
+    # 8,057 tonnes, arch trusses 5m deep at the crown and 2.5m at the base on a
+    # post-tensioned concrete ring beam. Arup (structure) with DP Architects.
+    # The 310m span was carried as UNVERIFIED in the brief and is now confirmed
+    # against Dezeen and the IES Journal paper "Designing the world's largest
+    # dome". 83 is the height of the DOME, which is the thing a rider sees.
+    "national stadium":       {"h": 83, "key": True},
+    # 47m, "one of the tallest single-storey buildings in Asia", Kenzo Tange,
+    # opened December 1989. Was UNPUBLISHED in the brief; closed against NLB
+    # (T1). The cone roof is a Shinto-temple form, not a dome.
+    "singapore indoor stadium": {"h": 47, "key": True},
+    "indoor stadium":         {"h": 47, "key": True},
+    # STILL UNPUBLISHED in metres, so these are DERIVED from the surveyed
+    # storey count at a hall floor-to-floor, and they are marked key=False so
+    # nothing treats them as researched figures. OCBC Aquatic Centre and Arena
+    # are both `building:levels=4` over double-height halls; Kallang Wave is
+    # tagged 1 level and is demonstrably multi-storey (its water play area is
+    # on the THIRD storey and the climbing wall now being built goes to 21m
+    # through the mall roof), so 3 levels is the floor, not the tag.
+    "ocbc aquatic centre":    {"h": 24},
+    "ocbc arena":             {"h": 24},
+    "kallang wave":           {"h": 18},
+
+    # ---- BEACH ROAD, and these were NOT caught by the suppression rule ----
+    #
+    # All three carry `height=0` in OSM, which the under-2.5m guard in
+    # height_for() already refused long before this district existed -- so they
+    # were falling through to a TYPE DEFAULT and would have been drawn at 22m
+    # whatever happened with the Kallang height tags. Found by reading the
+    # build's own "largest by footprint" table and not believing it.
+    #
+    # Golden Mile Complex: 89m, 16 storeys, 1973, Gan Eng Oon / William Lim /
+    # Tay Kheng Soon of Design Partnership (now DP Architects). The stepped
+    # terraced brutalist section held up by two end pillars is the whole point
+    # of the building and it was being drawn as a 22m box -- SIXTY-SEVEN metres
+    # short, on a gazetted conservation icon. [NLB BiblioAsia, Docomomo SG]
+    "golden mile complex":    {"h": 89, "key": True},
+    # Golden Mile Tower: 90m, 24 storeys, 1974. Different building, next door.
+    "golden mile tower":      {"h": 90, "key": True},
+    # The Concourse: 175m, 41-storey office tower over a 3-level retail podium
+    # plus nine storeys of serviced apartments. Paul Rudolph with Architects 61,
+    # completed 5 February 1994. This is the tallest thing in the district by a
+    # wide margin and OSM says zero. [Paul Rudolph Foundation, Docomomo SG]
+    "the concourse office tower": {"h": 175, "key": True},
+    # ...and the COMPLEX footprint is the PODIUM, not a second tower. OSM maps
+    # both: 4,801 m2 named "The Concourse" and 3,911 m2 named "The Concourse
+    # Office Tower". Giving the published 175m to each drew two towers where
+    # there is one. The published description is a 41-storey tower over a
+    # THREE-LEVEL retail podium, so the complex ring gets the podium and the
+    # tower ring gets the tower -- the same podium-and-tower split this file
+    # already applies at Ngee Ann City and ION. Longest-match ordering makes
+    # this safe: "the concourse office tower" beats "the concourse".
+    "the concourse":          {"h": 15},
+    # Concourse Skyline, 298-300 Beach Road, Hong Fok, completed 2013. THREE
+    # towers stepping 20 -> 28 and 34 -> 40 storeys; the metre height is
+    # UNPUBLISHED in every source reached, so this is 40 storeys at a 3.2m
+    # residential floor-to-floor and is marked key=False because it is DERIVED.
+    # It was falling through to a type default of 40m, which is a coincidence
+    # worth noticing: the guess happened to equal the STOREY COUNT, so a
+    # 40-storey tower was being drawn one metre per floor.
+    "concourse skyline":      {"h": 128},
 }
 
 # HDB STOREY COUNTS, KEYED BY POSTCODE.
@@ -1753,6 +1826,19 @@ BAD_HEIGHT_TAGS = []
 # buildings of different heights. This is the same failure family as Fook Hai's
 # hand-typed `height=32` (research/chinatown-littleindia-landmarks.md: "plausible,
 # but not evidence"), except systematic rather than isolated.
+#
+# RE-MEASURED AGAINST LIVE OVERPASS 2026-08-01 before relying on the brief, and
+# it is worse than the brief said. 85 buildings in the bbox carry a height tag:
+#
+#   value 56  on 23 buildings, levels 6 / 9 / 12 / 14 / 16 / 18  -> 3.1-9.3 m per level
+#   value 74  on 20 buildings, one of which carries levels 10    -> 7.4 m per level
+#   value 57  on  6 buildings, none carrying levels
+#   value 10  on  9 buildings incl. the National Stadium (levels 2)
+#   value  0  on  9 buildings incl. Golden Mile Tower, The Concourse, the ICA
+#
+# The zeros are already refused by the under-2.5m guard in height_for(). The
+# three blanket constants are not refusable per building, which is the whole
+# reason this rule is scoped by PLACE.
 #
 # So inside these boxes the tag is dropped and geometry comes from
 # `building:levels`, which IS surveyed here, via the normal fallback. `hs`
@@ -2893,9 +2979,49 @@ def main():
         alen = sum(math.dist(axis[i], axis[i + 1]) for i in range(len(axis) - 1))
         print(f"  stitched axis '{AXIS_NAME}': {len(axis)} pts, {alen:.0f} m")
     else:
-        print("  ! could not stitch an axis, falling back")
-        axis = [[round(x, 1), round(z, 1)] for x, z in
-                (proj(la, lo) for la, lo in FALLBACK_ORCHARD)]
+        # AN AXIS THAT IS NOT IN THIS DISTRICT IS WORSE THAN NO AXIS.
+        #
+        # This fell straight back to FALLBACK_ORCHARD -- a hardcoded Orchard
+        # Road polyline -- for ANY district whose axis name failed to stitch,
+        # and printed one soft line while doing it. kallang was built with
+        # `axis: "stadium boulevard"`, a name that does not exist in OSM (the
+        # real roads are Stadium Drive, Road, Walk and Place), so a district at
+        # x 3190-4748 was given a spine at x -731..553 -- FOUR KILOMETRES
+        # outside its own bbox, in another district entirely.
+        #
+        # It did not just look wrong, it corrupted the build: the fake axis
+        # joins `roads`, terrain.py sizes the heightfield to reach every road
+        # point, and the grid went from the 1.5km the district needs to 6.4km
+        # wide -- 13,875 cells of which 2,565 are in the district. Worse, the
+        # merge weights each district's grid by how far INSIDE it a point sits,
+        # so kallang's grid centre landed over Chinatown carrying maximum
+        # weight for ground it has no samples anywhere near.
+        #
+        # The right fallback is the district's OWN longest named road. It is
+        # always in the extract, it is always in the bbox, and if it is the
+        # wrong choice the coverage checks say so out loud instead of a
+        # heightfield quietly growing four times too big.
+        _by_name = {}
+        for r in roads:
+            nm = (r.get("n") or "").strip()
+            if not nm or len(r.get("p") or []) < 2:
+                continue
+            _by_name[nm] = _by_name.get(nm, 0.0) + sum(
+                math.dist(r["p"][i], r["p"][i + 1]) for i in range(len(r["p"]) - 1))
+        if _by_name:
+            _pick = max(_by_name, key=_by_name.get)
+            print(f"  ! could not stitch an axis named '{AXIS_NAME}' -- no such road "
+                  f"in this extract. Falling back to the longest road that IS here: "
+                  f"'{_pick}' ({_by_name[_pick]:.0f}m). FIX districts.json.")
+            axis = stitch(re.escape(_pick)) or []
+            axis_name = _pick
+        else:
+            axis = []
+        if len(axis) < 2:
+            print("  ! no named road in this extract either — falling back to the "
+                  "hardcoded Orchard polyline. This is almost certainly wrong.")
+            axis = [[round(x, 1), round(z, 1)] for x, z in
+                    (proj(la, lo) for la, lo in FALLBACK_ORCHARD)]
 
     # ---- keep buildings out of the carriageway -------------------------------
     # OSM footprints and OSM centrelines are surveyed separately, and our road

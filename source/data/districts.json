@@ -90,6 +90,15 @@
    "status": "building",
    "notes": "Serangoon Road from the Rochor end up past Farrer Park, with Race Course Road, Buffalo Road, Dunlop Street, Campbell Lane, Kerbau Road and the Tekka/Mustafa blocks. Chosen as the first expansion after the polish pass because it is the most recognisable quarter still missing and because it CLOSES A HOLE rather than reaching into empty map: it overlaps bugis (south edge 1.3030 under its 1.3040 north edge) and orchard (west edge 103.8490 under its 103.8505 east edge), so the region stays one block with no seam gap. Long side 1,224m, inside the ~1.2km Overpass ceiling the readme sets. Conservation shophouse country, so it exercises the shophouse path the way chinatown does rather than the tower path. Built 2026-07-30: 2,088 buildings, 1,662 roads, 756 named shopfronts, 217 mapped crossings, terrain pinned to opentopodata like every other district. Overpass had three of four mirrors down that evening, which is what added the live-mirror probe to build_district.py.",
    "queued_after": "robertson"
+  },
+  {
+   "id": "kallang",
+   "name": "Kallang Basin / Sports Hub",
+   "bbox": "1.2905,103.8620,1.3085,103.8760",
+   "axis": "nicoll highway",
+   "status": "live",
+   "notes": "Ring 1 north-east. National Stadium, Indoor Stadium, Kallang Wave, the 1937 Kallang Airport terminal, Kallang Riverside Park and the west half of the Benjamin Sheares Bridge. Overlaps bugis (940x223m, Nicoll Highway and Crawford Street cross that seam) and marinabay (166x668m, the Sheares approach), and in doing so CLOSES a pre-existing gap between bugis's south edge and marinabay's north edge east of 103.8640. Long side 1,990m, inside Marina Bay's proven 2,003m. Its water is MARINA RESERVOIR, not sea: the same natural=water multipolygon already drawn in three built districts, so no natural=coastline reader is needed. OSM height tags in this bbox are FABRICATED and suppressed in process.py (HEIGHT_TAG_SUPPRESS) -- the National Stadium is tagged 10m against a published 83m dome. AXIS IS NICOLL HIGHWAY, not 'Stadium Boulevard' -- that name does not exist in OSM (the real roads are Stadium Drive / Road / Walk / Place). Nicoll Highway is 3,892m, trunk, 3,561m of it inside the bbox, and it is the road a rider arrives on from bugis. Brief: research/coastal-expansion.md.",
+   "queued_after": "littleindia"
   }
  ]
 }

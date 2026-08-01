@@ -496,7 +496,16 @@ function dressStreet(data, axis, target = world) {
     crossingS.push(Math.round(arc));
     realCrossings++;
   }
-  window.__realCrossings = realCrossings;
+  // ACCUMULATE, DO NOT OVERWRITE. This is ONE GLOBAL written by EVERY
+  // streamed chunk, so a plain assignment leaves whatever the LAST chunk
+  // happened to build -- and A2 ("real data present but unused") reads it as
+  // a boolean. A chunk with none of this layer therefore reported the whole
+  // world as not drawing it, and a chunk with some reported it fine: the
+  // check's answer depended on manifest order, not on the world. Caught when
+  // kallang landed and A2 failed the world scene while a probe on the same
+  // URL read 37 crossings. Same one-global-many-chunks family as __onRoad,
+  // and `__realErp` two lines away has always done it correctly.
+  window.__realCrossings = (window.__realCrossings || 0) + realCrossings;
   window.__tactilePads = tactilePads;
 
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();

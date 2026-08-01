@@ -47,6 +47,13 @@ IGNORED = {
     # its abbreviation and its wikidata id tell a rider nothing they can see
     # from the seat, and we already carry the stop's NAME and position, which
     # are what the wayfinder reads.
+    # kallang 2026-08-02, 6% of its roads -- Nicoll Highway and the park
+    # connectors carry it. It is an ACCESS permission for horse riding,
+    # and it changes nothing about geometry, width, surface or what is
+    # drawn. This world has vehicles only, by the owner's explicit
+    # instruction, so there is nothing it could ever steer.
+    "horse": "access permission for horse riding; no geometry, and this "
+             "world has no horses",
     "network": "transit operator name on a stop; carries no geometry and "
                "nothing visible from the street",
     "network:short": "abbreviation of the same",
@@ -157,6 +164,13 @@ DEFERRED = {
     "crossing:markings":   "zebra vs ladder vs dashes; all drawn as zebra",
     "amenity":             "building use; the facade family uses material and era instead",
     "roof:material":       "roof surfaces are only modelled on shophouses so far",
+    # kallang 2026-08-02, 12% of its buildings. Same deferral as
+    # roof:material and for the same reason -- but worth more than that
+    # sibling when it is picked up: `dome`, `pyramidal`, `gabled` and
+    # `hipped` are the SILHOUETTE, which is what a rider sees from four
+    # hundred metres, and the National Stadium recipe written this session
+    # had to hand-carry a shape the map was already telling us.
+    "roof:shape":          "roof surfaces are only modelled on shophouses so far; the shape is the more valuable half of this pair and should be read first",
 }
 
 
