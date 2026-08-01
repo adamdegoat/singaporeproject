@@ -342,6 +342,12 @@ export class Terrain {
           pool:  [0.36, 0.62, 0.76],
           wood:  [0.34, 0.55, 0.32],
           scrub: [0.62, 0.72, 0.46],
+          // Beach sand. Warm and pale, and deliberately not the old ground
+          // fallback colour — that was warm sand too, and it was the
+          // BRIGHTEST surface in the world because land tints multiply
+          // downward. This one is a real surface being painted, not a
+          // stand-in for one that is missing.
+          sand:  [0.88, 0.82, 0.66],
           resi:  [0.86, 0.86, 0.78],
           comm:  [0.90, 0.89, 0.86],
           civic: [0.88, 0.87, 0.82],

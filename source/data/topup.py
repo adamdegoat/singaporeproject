@@ -41,6 +41,14 @@ LAYERS = {
     # being drawn as bare terrain the colour of sand — the user's own words,
     # riding Orchard Road: "istana all still empty place". The extract carries
     # 72 individual trees and not one park polygon.
+    # SAND. `natural=beach` and `natural=sand` are fetched by nothing and read
+    # by nothing anywhere in this pipeline — the gap research/coastal-expansion.md
+    # 0.3 flags as "one that no code path anywhere touches". It did not matter
+    # while every district was inland; Sentosa's Siloso, Palawan and Tanjong
+    # beaches are the reason the island is famous and would have drawn as the
+    # world's neutral fallback ground.
+    "beach": ('way["natural"~"^(beach|sand|shingle)$"]({bbox});'
+              'rel["natural"~"^(beach|sand|shingle)$"]({bbox});'),
     "green": ('way["leisure"~"^(park|garden|pitch|golf_course|common)$"]({bbox});'
               'rel["leisure"~"^(park|garden|pitch|golf_course|common)$"]({bbox});'
               'way["landuse"~"^(grass|forest|recreation_ground|cemetery|village_green|meadow|greenfield)$"]({bbox});'

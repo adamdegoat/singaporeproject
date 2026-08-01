@@ -4052,6 +4052,9 @@ def main():
         # lose to being drawn the colour of a lawn.
         "track": "track", "swimming_pool": "pool",
         "forest": "wood", "wood": "wood", "scrub": "scrub", "heath": "scrub",
+        # Sand reads as a distinct surface from any distance and there is
+        # nothing else this colour in the world.
+        "beach": "sand", "sand": "sand", "shingle": "sand",
     }
     green = []
     for e in els:

@@ -2184,6 +2184,19 @@ window.__auditWorld = async function auditWorld() {
         if (p.actor) continue;
         if (OVERHANGS.has(p.sig)) continue;
         if (!inWater(p.x, p.z)) continue;
+        // A PROP ON A BRIDGE DECK IS ON THE BRIDGE, and this loop never knew
+        // that while the vertex loop below always did. The two halves of one
+        // check disagreed about the same question: the mesh pass exempts
+        // anything with a deck over it "by MECHANISM, not by signature", and
+        // the props pass counted every kerb, lamp, railing and sign standing on
+        // a causeway as built in open water.
+        //
+        // It surfaced on sentosa, where the Gateway causeway crosses the
+        // channel: 168 findings, and probing four of them found bridgeDeckAt
+        // returning a real deck height at some and null at others — so the
+        // count was a mix of legitimate bridge dressing and genuine strays,
+        // with no way to tell them apart from the number.
+        if (window.__bridgeDeckAt && window.__bridgeDeckAt(p.x, p.z) !== null) continue;
         inW++;
         if (exW2.length < 6) exW2.push(`${p.sig} in open water at ${p.x | 0},${p.z | 0}`);
       }
@@ -2191,6 +2204,16 @@ window.__auditWorld = async function auditWorld() {
       sc.traverse((o) => {
         if (!o.isMesh || o.isInstancedMesh) return;
         if (o.name === 'waterSurface' || o.name === 'terrainSurface') return;
+        // A PIER IS OVER WATER BY DEFINITION — that is what makes it a pier.
+        // `buildPiers()` deliberately seats them at the water rim + 1.15m
+        // rather than on the terrain, on the correct reasoning that the ground
+        // under a pier is the seabed. W2 has always exempted bridges and was
+        // never taught the same about jetties, so sentosa — an island whose
+        // waterfront is piers and ferry berths — reported its entire marine
+        // layer as a defect. Matched on the NAME the builder sets, not on a
+        // shape, for the reason this file gives every time a signature list
+        // has rotted.
+        if (typeof o.name === 'string' && o.name.startsWith('pier')) return;
         if (o.name === 'roadSurface' || o.name === 'pavementSurface'
           || o.name === 'roadMarking') return;
         for (let q = o; q; q = q.parent) if (q.name === 'playerRig') return;

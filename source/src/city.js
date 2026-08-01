@@ -1411,8 +1411,18 @@ function addShopfront(world, b, per, merger, clearance) {
       while (w > 4 && [-1, 1].some((s2) => {
         const [px2, pz2] = postAt(w, s2); return onCarriageway(px2, pz2);
       })) w *= 0.75;
+      // ...AND NOT IN THE SEA. This asked only "is the post in a carriageway",
+      // which is every question worth asking inland and half of one on a
+      // waterfront. Sentosa's hotels, ferry terminals and Resorts World all
+      // front open water, so their entrance canopies reached out over it: 157
+      // six-metre columns standing in the channel, which W2 reported the day
+      // the island was built and no district before it could have shown.
+      //
+      // Both posts must be clear, because a canopy needs both — half a canopy
+      // is worse than none.
       const clear = ![-1, 1].some((s2) => {
-        const [px2, pz2] = postAt(w, s2); return onCarriageway(px2, pz2);
+        const [px2, pz2] = postAt(w, s2);
+        return onCarriageway(px2, pz2) || !standable(px2, pz2);
       });
       if (clear) {
         // Seated on the building, not on the datum. These were at an absolute

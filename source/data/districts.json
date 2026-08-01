@@ -147,6 +147,16 @@
    "notes": "VivoCity, the Keppel Bay marina and Libeskind's Reflections, the Sentosa gateway and the cable car, under Mount Faber. Ring 2: it borders no district of its own — its east edge sits 1.30km from chinatown — so KEPPEL HAD TO BE BUILT FIRST, and was (2026-08-02); they overlap 1,216x334m. Real open sea (Keppel Harbour and the Sentosa channel), read by data/coastline.py. The only district with real vertical relief: Telok Blangah Road climbs a 106m hill, more than twice Fort Canning's 48m — but NOTE the 35m grid already reads Fort Canning 3-4m low and will understate a steeper hill by more. Mount Faber's elevation has NO Tier-1 source: 106m, 105m and 94m all circulate. Brief: research/coastal-expansion.md candidate 3.",
    "queued_after": "keppel",
    "partialMainStreet": "deliberate: Telok Blangah Road runs ~4km from HarbourFront west past Telok Blangah Rise toward Pasir Panjang. This district takes its eastern 2km — the HarbourFront / Keppel Bay end, VivoCity, the Sentosa gateway and the climb onto Mount Faber, which is what the district exists for. The western reach is Pasir Panjang's, which research/coastal-expansion.md Part 3 assessed and did not shortlist, so nothing is waiting on it. Decided 2026-08-02: the bbox was drawn to overlap keppel by 1,216x334m, not to follow the road."
+  },
+  {
+   "id": "sentosa",
+   "name": "Sentosa",
+   "bbox": "1.2480,103.8150,1.2620,103.8330",
+   "axis": "sentosa gateway",
+   "status": "planned",
+   "notes": "Ring 3, two districts out from anything that existed before tonight: it overlaps harbourfront 221x1,558m and nothing else, and harbourfront in turn needed keppel. Both are now built. THE RIDER CAN GET THERE — the road causeway opened in 1992 and cars have been allowed since 1998, so Sentosa Gateway is a real vehicular road and the crossing is a bridge, not a ferry. But the overlap band with harbourfront is mostly WATER, so the seam depends on that bridge deck AND on the coastline reader, which now handles multiple shorelines (this bbox has 27 coastline ways). The box takes the northern two thirds of a ~5 km2 island: Resorts World, Imbiah, Siloso and the Gateway. Siloso, Palawan and Tanjong beaches need the `beach` layer added 2026-08-02 — sand had never been fetched, parsed or coloured anywhere in this pipeline. Brief: research/coastal-expansion.md candidate 7.",
+   "queued_after": "harbourfront",
+   "noSignals": "verified against the local extract 2026-08-02 (node[highway=traffic_signals] in this bbox: 0 elements): Sentosa has no signalised junctions. The island's road network is roundabouts, give-way junctions and the Gateway toll plaza, which is correct for a resort island and is not a failed fetch — the build's own EMPTY warning fired and was checked rather than assumed."
   }
  ]
 }

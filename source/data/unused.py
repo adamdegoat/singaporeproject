@@ -60,6 +60,11 @@ IGNORED = {
     # field with anything useful. This project already models districts, and
     # a rider cannot see a postal subdivision from the saddle.
     "addr:neighbourhood": "the district in a postal address; not a building name and nothing visible from the street",
+    # An operator's internal inventory number for a stop, lamp or cabinet.
+    # It identifies an asset in a maintenance database and says nothing about
+    # where the thing is, how big it is or what it looks like — the same
+    # reasoning as `network` below, one field further into the same records.
+    "asset_ref": "an operator's internal asset number; no geometry and nothing visible from the street",
     "network": "transit operator name on a stop; carries no geometry and "
                "nothing visible from the street",
     "network:short": "abbreviation of the same",
