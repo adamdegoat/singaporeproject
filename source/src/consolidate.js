@@ -17,8 +17,36 @@
 // than not merging: a mesh spanning the whole map is never frustum-culled, so
 // every triangle in it draws no matter which way you face.
 import * as THREE from '../lib/three.module.js';
+import { TOUCH } from './input.js';
 
-const TILE = 110;
+// TILE SIZE IS THE PHONE'S FRAME RATE, and 110 was costing a quarter of it.
+//
+// The user's phone starts at 60fps and settles at ~30 after a few minutes. His
+// two HUD readings at the fast and slow moments are identical in every quantity
+// -- 1,907k vs 1,897k triangles, 740 vs 761 draws, same resolution -- so the
+// work never changed and the phone is THERMALLY THROTTLING. `?dpr=1` (2.25x
+// fewer pixels) changed nothing for him either, which rules out fill rate and
+// leaves the CPU: JS plus draw-call submission.
+//
+// So draw calls are the lever, and tile size is what sets them. Measured at
+// 844x390, TOUCH forced, 4x CPU throttle, scene=world:
+//
+//     tile 110m   19 fps   1,903k tris   723 draws     <- was
+//     tile 170m   21 fps   1,908k tris   690 draws
+//     tile 240m   24 fps   1,912k tris   638 draws     <- knee
+//     tile 320m   23 fps   1,914k tris   614 draws
+//     tile 420m   23 fps   1,925k tris   624 draws
+//
+// +26% frame rate for 0.5% more triangles, and NOTHING LOOKS DIFFERENT --
+// consolidation only decides how meshes are grouped. Coarser frustum culling
+// costs almost nothing here because the city is dense in every direction
+// anyway: 1,888k of the 1,903k triangles are already within 320m of the rider.
+// Boot is unchanged (9.2s vs 9.0s), which was the risk worth checking -- a
+// bigger merge is a longer uninterrupted call, see the freeze note below.
+//
+// Desktop stays at 110: it is not draw-call bound, so the trade buys nothing
+// there and finer culling is the better default. ?tile=N overrides both.
+const TILE = +new URLSearchParams(location.search).get('tile') || (TOUCH ? 240 : 110);
 
 // Everything that changes how a material renders. Two materials with the same
 // signature are interchangeable, so one can stand in for all of them.

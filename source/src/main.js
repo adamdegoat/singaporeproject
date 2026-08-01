@@ -94,6 +94,25 @@ sun.castShadow = true;
 // phones carry half the shadow texels: at 1.5x render density the extra
 // resolution is invisible and the pass is the documented frame-cost hog
 sun.shadow.mapSize.set(TOUCH ? 1024 : 2048, TOUCH ? 1024 : 2048);
+// DO NOT SHRINK THE SHADOW BOX TO BUY FRAMES. It was tried on 2026-08-01 and
+// measured, and it buys nothing.
+//
+// The reasoning that led there was: shadows cost 3 fps on the phone path
+// (13 -> 16 at 844x390 under 4x CPU throttle, 2,043k tris -> 1,620k), every
+// caster in this box is drawn a second time into the depth map, and the box
+// follows the rider — so halving its area should halve the pass. It does not.
+// A/B with TOUCH forced, 95 against 70:
+//
+//     shadowbox=95   20 fps   1,903k tris   723 draws
+//     shadowbox=70   19 fps   1,899k tris   714 draws
+//
+// Four thousand triangles and nine draws. The cost of shadows here is almost
+// all the PER-PIXEL LOOKUP in the main pass, which is a function of screen
+// pixels and does not care how big the box is. Caster geometry was never the
+// expensive part — castersDropped already sheds 405 of them.
+//
+// So the remaining shadow levers are map resolution and switching them off, not
+// coverage. 95m stays: it is free.
 sun.shadow.camera.left = -95; sun.shadow.camera.right = 95;
 sun.shadow.camera.top = 95; sun.shadow.camera.bottom = -95;
 sun.shadow.camera.near = 1; sun.shadow.camera.far = 460;
