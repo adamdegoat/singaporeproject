@@ -3282,28 +3282,39 @@ def main():
             j = i
         return hit
 
-    _CELL = 60.0
-    _grid = {}
-    for _b in buildings:
-        _xs = [q[0] for q in _b["p"]]; _zs = [q[1] for q in _b["p"]]
-        _b["_bb"] = (min(_xs), min(_zs), max(_xs), max(_zs))
-        for _cx in range(int(min(_xs) // _CELL), int(max(_xs) // _CELL) + 1):
-            for _cz in range(int(min(_zs) // _CELL), int(max(_zs) // _CELL) + 1):
-                _grid.setdefault((_cx, _cz), []).append(_b)
-    _buried = []
-    for _b in buildings:
-        mnx, mnz, mxx, mxz = _b["_bb"]
-        _in = _n = 0
-        for i in range(1, 5):
-            for j in range(1, 5):
-                x = mnx + (mxx - mnx) * i / 5
-                z = mnz + (mxz - mnz) * j / 5
-                if not _inpoly(_b["p"], x, z):
-                    continue
-                _n += 1
-                for _o in _grid.get((int(x // _CELL), int(z // _CELL)), []):
-                    if _o is _b or not _inpoly(_o["p"], x, z):
+    def _find_buried(buildings):
+        """Which of these footprints are completely inside a larger, at-least-
+        as-tall one. Made a function on 2026-08-01 so it can run a SECOND time
+        after the polygon surgery below, which is where six of them came from:
+        the surgery segments a long terrace every ~16m and splits rings a road
+        runs through, so it MANUFACTURES footprints after this test has already
+        run. Four 44-114 m2 pieces ended up entirely inside The Riverside Piazza
+        and two inside Fraser Residence Promenade, invisible and z-fighting,
+        and D10 found them the moment building:part arrived and gave the
+        surgery more to cut. A filter that runs before the thing that creates
+        its inputs is not a filter."""
+        _CELL = 60.0
+        _grid = {}
+        for _b in buildings:
+            _xs = [q[0] for q in _b["p"]]; _zs = [q[1] for q in _b["p"]]
+            _b["_bb"] = (min(_xs), min(_zs), max(_xs), max(_zs))
+            for _cx in range(int(min(_xs) // _CELL), int(max(_xs) // _CELL) + 1):
+                for _cz in range(int(min(_zs) // _CELL), int(max(_zs) // _CELL) + 1):
+                    _grid.setdefault((_cx, _cz), []).append(_b)
+        _buried = []
+        for _b in buildings:
+            mnx, mnz, mxx, mxz = _b["_bb"]
+            _in = _n = 0
+            for i in range(1, 5):
+                for j in range(1, 5):
+                    x = mnx + (mxx - mnx) * i / 5
+                    z = mnz + (mxz - mnz) * j / 5
+                    if not _inpoly(_b["p"], x, z):
                         continue
+                    _n += 1
+                    for _o in _grid.get((int(x // _CELL), int(z // _CELL)), []):
+                        if _o is _b or not _inpoly(_o["p"], x, z):
+                            continue
                     # A MASS THAT STARTS IN THE AIR BURIES NOTHING. SkyPark is
                     # 12,455 m2 at h=207 with min_height 193 -- a 14m deck in
                     # the sky -- and it sits over all three Marina Bay Sands
@@ -3311,12 +3322,12 @@ def main():
                     # of the three were dropped, along with both Asia Square
                     # towers under their own outline. A footprint with
                     # min_height does not occupy the ground beneath it.
-                    if _o.get("mh"):
-                        continue
-                    if _area(_o["p"]) > _area(_b["p"]) * 1.05 \
-                            and (_o.get("h") or 0) >= (_b.get("h") or 0):
-                        _in += 1
-                        break
+                        if _o.get("mh"):
+                            continue
+                        if _area(_o["p"]) > _area(_b["p"]) * 1.05 \
+                                and (_o.get("h") or 0) >= (_b.get("h") or 0):
+                            _in += 1
+                            break
         # WHY THERE IS NO "NAMED TOWERS ARE EXEMPT" GUARD HERE.
         #
         # This filter drops ELEVEN NAMED CBD TOWERS -- Asia Square Tower 2,
@@ -3338,16 +3349,23 @@ def main():
         # split podium from towers, as done for One Raffles Quay above -- which
         # needs a podium height per site, i.e. research, not a filter change.
         # Logged in NEXT.md.
-        if _n >= 4 and _in / _n > 0.8:
-            _buried.append(_b)
-    for _b in buildings:
-        _b.pop("_bb", None)
-    if _buried:
+            if _n >= 4 and _in / _n > 0.8:
+                _buried.append(_b)
+        for _b in buildings:
+            _b.pop("_bb", None)
+        return _buried
+
+    def _drop_buried(blds, when=""):
+        _buried = _find_buried(blds)
+        if not _buried:
+            return blds
         _names = ", ".join((b.get("n") or "(unnamed)") for b in _buried[:3])
-        print(f"  dropped {len(_buried)} footprints buried inside a taller building: {_names}"
-              + ("..." if len(_buried) > 3 else ""))
+        print(f"  dropped {len(_buried)} footprints buried inside a taller "
+              f"building{when}: {_names}" + ("..." if len(_buried) > 3 else ""))
         _bset = {id(b) for b in _buried}
-        buildings = [b for b in buildings if id(b) not in _bset]
+        return [b for b in blds if id(b) not in _bset]
+
+    buildings = _drop_buried(buildings)
 
     # ---- POLYGON SURGERY (data/split.py, sweep-2 items 18 and 14) ----------
     # Rings a carriageway runs THROUGH split into a piece per side (Plaza
@@ -3394,6 +3412,9 @@ def main():
         buildings = _out2
     except Exception as e:                     # surgery must never kill a build
         print(f"  polygon surgery SKIPPED: {e}")
+
+    # AND AGAIN, because the surgery just made new footprints. See _find_buried.
+    buildings = _drop_buried(buildings, " (after surgery)")
 
     # ---- FREE-STANDING TOWERS (the Supertrees) -----------------------------
     # OSM maps the Supertrees individually as `man_made=tower` with REAL

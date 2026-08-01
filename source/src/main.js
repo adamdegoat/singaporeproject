@@ -671,6 +671,8 @@ const extraCrowds = [];
 // carriageways did not. Same lifecycle: built with the chunk, ticked only
 // while it is loaded, dropped when it unloads.
 const extraTraffic = [];
+// exposed so __trafficState can report every fleet, not only the spawn one
+window.__extraTraffic = extraTraffic;
 
 // SIMULATE WHAT THE RIDER CAN SEE, NOT WHAT HAPPENS TO BE LOADED.
 //
@@ -1839,10 +1841,30 @@ async function buildRegion(data, opts = {}) {
     // Where every vehicle actually is, which nothing could ask before. A fleet
     // of 21 spaced over 2,586m could not collide with itself by accident; 90
     // can, and the spacing was never sized for it.
-    window.__trafficState = () => (trafficSys.items || []).map((it) => ({
-      kind: it.kind, x: it.wx, z: it.wz, lane: it.lane, dir: it.dir,
-      heading: it.heading, speed: +it.speed.toFixed(2), s: +it.s.toFixed(1),
-    }));
+    // EVERY FLEET, not just the one the rider spawned in.
+    //
+    // This read `trafficSys.items` alone from the day district traffic landed,
+    // so D34 and D35 have been auditing 272 vehicles out of about 630 — the
+    // seven streamed districts drove entirely unwatched. It also returned `s`
+    // as if it were a world coordinate: `s` is an arclength along ONE path, so
+    // comparing a River Valley car's `s` with a Robertson car's is comparing
+    // two rulers with different origins. Every item now says which fleet it
+    // belongs to, so a check can tell when it may compare arclengths and when
+    // it has to use the world.
+    window.__trafficState = () => {
+      const fleets = [trafficSys, ...(window.__extraTraffic || [])].filter(Boolean);
+      const out = [];
+      fleets.forEach((sys, fi) => {
+        for (const it of (sys.items || [])) {
+          out.push({
+            kind: it.kind, x: it.wx, z: it.wz, lane: it.lane, dir: it.dir,
+            heading: it.heading, speed: +it.speed.toFixed(2), s: +it.s.toFixed(1),
+            fleet: fi,
+          });
+        }
+      });
+      return out;
+    };
   }
   bmark('traffic');
   const furniture = {};

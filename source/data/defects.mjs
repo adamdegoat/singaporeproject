@@ -1166,24 +1166,87 @@ const found = await page.evaluate(() => {
     // gap along the street is less than their combined half-lengths. A road is
     // not a plane, it is a set of lanes, and a check that forgets that reports
     // ordinary traffic as a pile-up.
+    // ...AND IN THE WORLD FRAME WHEN THE TWO ARE NOT ON THE SAME PATH.
+    //
+    // The lane/arclength form above is right for one fleet and blind between
+    // fleets. `s` is measured along ONE path from ONE origin, and there are
+    // eight fleets in the region — River Valley Road carries two of them,
+    // because River Valley and Robertson both claim it as their axis and 28 of
+    // its 79 points lie within 12m of the other. Two cars a metre apart on
+    // those two paths have `s` values hundreds of metres apart, so this check
+    // called them clear. Fifth instance of the same disease: measuring one
+    // fact with the wrong ruler.
+    //
+    // So: same fleet -> the lane/arclength test, which knows about lanes.
+    // Different fleets -> overlap of the two oriented rectangles on the ground,
+    // which needs no shared ruler at all.
     const tr = window.__trafficState ? window.__trafficState() : [];
     const LEN = { car: 4.32, bus: 11.8 };
+    const WID = { car: 1.82, bus: 2.55 };
     const bad = [];
-    for (let i = 0; i < tr.length; i++) {
-      for (let j = i + 1; j < tr.length; j++) {
+    // separating-axis test on two oriented rectangles
+    const corners = (v) => {
+      const h = (v.heading || 0), L = LEN[v.kind] / 2, W = WID[v.kind] / 2;
+      const cx = Math.cos(h), sx = Math.sin(h);
+      const out = [];
+      for (const [dl, dw] of [[1, 1], [1, -1], [-1, -1], [-1, 1]]) {
+        out.push([v.x + sx * L * dl + cx * W * dw, v.z + cx * L * dl - sx * W * dw]);
+      }
+      return out;
+    };
+    const overlap = (A, B) => {
+      for (const P of [A, B]) {
+        for (let i = 0; i < 4; i++) {
+          const ax = P[(i + 1) % 4][0] - P[i][0], az = P[(i + 1) % 4][1] - P[i][1];
+          const nx = -az, nz = ax;
+          let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+          for (const q of A) { const d = q[0] * nx + q[1] * nz; a0 = Math.min(a0, d); a1 = Math.max(a1, d); }
+          for (const q of B) { const d = q[0] * nx + q[1] * nz; b0 = Math.min(b0, d); b1 = Math.max(b1, d); }
+          if (a1 < b0 || b1 < a0) return false;      // a separating axis exists
+        }
+      }
+      return true;
+    };
+    // only test pairs that are close enough to possibly touch
+    const CELL = 16, grid = new Map();
+    tr.forEach((v, i) => {
+      if (v.x === undefined) return;
+      const k = Math.floor(v.x / CELL) + ',' + Math.floor(v.z / CELL);
+      let l = grid.get(k); if (!l) { l = []; grid.set(k, l); }
+      l.push(i);
+    });
+    const seen = new Set();
+    for (const [k, list] of grid) {
+      const [gx, gz] = k.split(',').map(Number);
+      const near = [];
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+        const l = grid.get((gx + dx) + ',' + (gz + dz));
+        if (l) near.push(...l);
+      }
+      for (const i of list) for (const j of near) {
+        if (i >= j) continue;
+        const key = i + ':' + j;
+        if (seen.has(key)) continue;
+        seen.add(key);
         const a = tr[i], b = tr[j];
-        if (a.x === undefined || b.x === undefined) continue;
-        if (a.dir !== b.dir) continue;                       // opposing flows
-        if (Math.abs(a.lane - b.lane) > 2.6) continue;       // different lanes
-        const gap = Math.abs(a.s - b.s);
-        const need = (LEN[a.kind] + LEN[b.kind]) / 2;
-        if (gap < need) {
-          bad.push(`${a.kind} and ${b.kind} share a lane with ${gap.toFixed(1)}m `
-            + `between centres at ${a.x | 0},${a.z | 0} (needs ${need.toFixed(1)}m)`);
+        if (a.fleet === b.fleet) {
+          if (a.dir !== b.dir) continue;                     // opposing flows
+          if (Math.abs(a.lane - b.lane) > 2.6) continue;     // different lanes
+          const gap = Math.abs(a.s - b.s);
+          const need = (LEN[a.kind] + LEN[b.kind]) / 2;
+          if (gap < need) {
+            bad.push(`${a.kind} and ${b.kind} share a lane with ${gap.toFixed(1)}m `
+              + `between centres at ${a.x | 0},${a.z | 0} (needs ${need.toFixed(1)}m)`);
+          }
+        } else if (overlap(corners(a), corners(b))) {
+          bad.push(`${a.kind} (fleet ${a.fleet}) and ${b.kind} (fleet ${b.fleet}) `
+            + `occupy the same tarmac at ${a.x | 0},${a.z | 0}`);
         }
       }
     }
-    report('D34', 'vehicles overlapping each other', bad, `${tr.length} vehicles`);
+    const fleets = new Set(tr.map((v) => v.fleet)).size;
+    report('D34', 'vehicles overlapping each other', bad,
+      `${tr.length} vehicles in ${fleets} fleet(s)`);
   }
 
   /* D35  a vehicle not on the road.

@@ -108,31 +108,60 @@ def drop_roofed(pts, data, keep_min=0.30):
 def contam_fn(data):
     """`near(x, z)` -> is this sample's DEM cell contaminated by a building or
     standing on water? Returns None when the district has neither."""
+    # HOW FAR A BUILDING REACHES DEPENDS ON HOW TALL IT IS.
+    #
+    # This was a flat 34m for every footprint, which is the same mistake this
+    # project has now made four times: a geometric rule with no SCALE. A
+    # three-storey shophouse and Marina Bay Sands do not contaminate the same
+    # radius of a surface model, and treating them alike is why Marina Bay was
+    # still reading 7.7m at Raffles Avenue after the dataset was fixed.
+    #
+    # Measured 2026-08-01 against PUBLISHED ground levels rather than tuned by
+    # eye. Published anchors: Marina Bay Sands site +3.0 to +3.5m (Arup Journal,
+    # Pappin 2013), Thomson Line contract T228 across Marina Bay RL+103 to +105
+    # i.e. +3 to +5m, Serangoon Road +3.0m (Halim 2008, NEL Farrer Park-KK
+    # CH 31+895), and PUB's Code of Practice on Surface Water Drainage minimum
+    # platform level of 4.0m SHD on the southern coast.
+    #
+    #                        flat 34m      24 + 0.45h
+    #   Marina Bay Sands       7.1            5.0        published 3.0-3.5
+    #   Raffles Avenue         7.7            5.3        published 3-5
+    #   Bayfront Avenue        5.4            4.2        published 3-5
+    #   Serangoon Road         4.9            5.1        published 3.0
+    #   Fort Canning          44.0           44.0        published 48
+    #
+    # A flat 60m or 90m pad was tried first and is WORSE, not better: it fixes
+    # Marina Bay and pushes Serangoon Road from 4.9 to 6.3, because a low-rise
+    # district does not need the correction at all and a wide pad only throws
+    # away the honest samples it has. That is the research's own finding --
+    # every DEM is within about a metre in low-rise Singapore and runs +2 to +6
+    # high under megastructures -- so the pad has to scale, not grow.
     polys = [b["p"] for b in data.get("buildings", []) if len(b.get("p", [])) > 2]
+    pads = [max(24.0, min(120.0, 24.0 + 0.45 * (b.get("h") or 12.0)))
+            for b in data.get("buildings", []) if len(b.get("p", [])) > 2]
     # A water ring contaminates the reading INSIDE it, not for 34m around it:
     # the quay beside the river is real ground. So water rings are carried in
     # the same index but tested with a zero pad.
     nb = len(polys)
     polys += [w["p"] for w in data.get("water", []) if len(w.get("p", [])) > 2]
+    pads += [0.0] * (len(polys) - nb)
     if not polys:
         return None
-    CELLB = 60.0
+    CELLB = 80.0
     grid = {}
     for idx, ring in enumerate(polys):
         xs = [q[0] for q in ring]; zs = [q[1] for q in ring]
-        for gx in range(int((min(xs) - 22) // CELLB), int((max(xs) + 22) // CELLB) + 1):
-            for gz in range(int((min(zs) - 22) // CELLB), int((max(zs) + 22) // CELLB) + 1):
+        m = pads[idx]
+        for gx in range(int((min(xs) - m) // CELLB), int((max(xs) + m) // CELLB) + 1):
+            for gz in range(int((min(zs) - m) // CELLB), int((max(zs) + m) // CELLB) + 1):
                 grid.setdefault((gx, gz), []).append(idx)
 
-    # 34m, not 22: the DEM cell is 30m across, so a sample has to be more than
-    # half a cell clear of a footprint before the cell stops containing it.
-    # At 22m Collyer Quay still read 50m against a real ground of about 5m.
-    def near_building(x, z, pad=34.0):
+    def near_building(x, z, pad=None):
         for idx in grid.get((int(x // CELLB), int(z // CELLB)), ()):
             ring = polys[idx]
-            # a LOCAL name: reassigning `pad` itself would leak the water rule
-            # onto every building ring later in the same cell
-            rpad = 0.0 if idx >= nb else pad     # water: inside only
+            # a LOCAL name: reassigning `pad` itself would leak one ring's rule
+            # onto every ring later in the same cell
+            rpad = pads[idx] if pad is None else (0.0 if idx >= nb else pad)
             # inside?
             c = False
             j = len(ring) - 1
