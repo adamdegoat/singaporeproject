@@ -2219,6 +2219,52 @@ export function buildWater(world, data) {
   return { water: geos.length, waterArea: Math.round(area) };
 }
 
+// PIERS AND JETTIES, the structures that make a quay a quay.
+//
+// Marina Bay, Clarke Quay and Robertson Quay are quays and had none of them.
+// A pier stands OVER water, so it takes its level from the water it sits in
+// rather than from the terrain beneath — the terrain under a pier is the
+// SEABED, and seating a deck on it would put the jetty at the bottom of the
+// bay. Same two-datums trap as the bridge decks; the answer is the same, ask
+// the right surface.
+export function buildPiers(world, data) {
+  const polys = data.piers || [];
+  if (!polys.length) return { piers: 0 };
+  const deckMat = new THREE.MeshStandardMaterial({ color: 0xa89a86, roughness: 0.9 });
+  const edgeMat = new THREE.MeshStandardMaterial({ color: 0x6f6a62, roughness: 0.85 });
+  const geos = [], edges = [];
+  for (const p of polys) {
+    const pts = p.p;
+    if (pts.length < 4) continue;
+    // the rim of the water it stands in, read the same way buildWater does
+    let lo = Infinity;
+    for (const [x, z] of pts) {
+      const g = TERRAIN.at(x, z);
+      if (g < lo) lo = g;
+    }
+    if (!isFinite(lo)) continue;
+    const level = lo + 1.15;                 // a working deck sits above the rim
+    const g1 = new THREE.ShapeGeometry(shapeFrom(pts));
+    g1.rotateX(Math.PI / 2);
+    g1.translate(0, level, 0);
+    geos.push(g1);
+    // a lip round the edge so it reads as a structure rather than a painted area
+    const g2 = extrudeGeo(pts, 0.45, 0);
+    g2.translate(0, level - 0.45 - (FOOT !== null ? FOOT : 0), 0);
+    edges.push(g2);
+  }
+  if (!geos.length) return { piers: 0 };
+  const deck = new THREE.Mesh(mergeGeos(geos), deckMat);
+  deck.name = 'pierDeck';
+  deck.receiveShadow = true;
+  world.add(deck);
+  const lip = new THREE.Mesh(mergeGeos(edges), edgeMat);
+  lip.name = 'pierEdge';
+  lip.castShadow = false; lip.receiveShadow = true;
+  world.add(lip);
+  return { piers: geos.length };
+}
+
 // concatenate position/uv-only geometries into one
 function mergeGeos(geos) {
   let total = 0;

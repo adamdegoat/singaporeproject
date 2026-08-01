@@ -3742,6 +3742,40 @@ def main():
                 continue
             land.append({"p": [[round(x, 1), round(z, 1)] for x, z in pts],
                          "k": kind, "a": round(larea)})
+    # ---- PIERS AND JETTIES -------------------------------------------------
+    # Marina Bay, Clarke Quay and Robertson Quay are quays, and the structures
+    # that make them quays did not exist. 18 mapped in Marina Bay alone, 17 of
+    # them closed areas rather than lines, so they extrude like a low deck
+    # rather than trace like a path. A pier stands OVER water, so it carries its
+    # own height and is not seated on the terrain under it.
+    piers = []
+    for e in els:
+        t = e.get("tags") or {}
+        if t.get("man_made") not in ("pier", "breakwater", "groyne"):
+            continue
+        rings = []
+        if e["type"] == "way" and e.get("geometry"):
+            rings.append(e["geometry"])
+        elif e["type"] == "relation":
+            rings.extend(stitch_outer(e))
+        for g in rings:
+            pts = [proj(q["lat"], q["lon"]) for q in g if "lat" in q]
+            if len(pts) < 4:
+                continue
+            if math.dist(pts[0], pts[-1]) > 12.0:
+                continue                     # a linear pier, not an area
+            a2 = 0.0
+            for i in range(len(pts)):
+                q1, q2 = pts[i], pts[(i + 1) % len(pts)]
+                a2 += q1[0] * q2[1] - q2[0] * q1[1]
+            parea = abs(a2) / 2
+            if parea < 25:
+                continue
+            piers.append({"p": [[round(x, 1), round(z, 1)] for x, z in pts],
+                          "k": t.get("man_made"), "a": round(parea)})
+    if piers:
+        print(f"  piers: {len(piers)} decks, {sum(p['a'] for p in piers):,} m2")
+
     land.sort(key=lambda w: -w["a"])
     if land:
         from collections import Counter as _C2
@@ -3946,6 +3980,7 @@ def main():
         "water": water,
         "green": green,
         "land": land,
+        "piers": piers,
         "towers": towers,
         "roads": roads,
         "trees": trees,

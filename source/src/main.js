@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance } from './tex.js';
-import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, buildSurround, buildWater, buildSupertrees } from './city.js';
+import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, buildSurround, buildWater, buildSupertrees, buildPiers } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
@@ -868,6 +868,18 @@ const PHONE = TOUCH && !P.has('full');
 // exactly what a phone has least of.
 //
 // `?people` restores them for anyone who wants the old street.
+// NO PEOPLE IN THIS WORLD. THE RIDER'S DECISION, NOT A BUG — 2026-08-01.
+//
+// This is opt-IN on purpose: the crowd is only built with ?people. It looks
+// exactly like a mistake, because every other layer here is opt-OUT
+// (nofoliage, notraffic, noshops, nomarks, nosigns) and the comment at the
+// construction site below argues for a BIGGER population and says "an empty
+// Orchard Road on a Saturday is still obviously not Orchard Road". It was
+// changed to opt-out on that reasoning and the rider said, plainly: "i dont
+// want any ppl in the world. Only vehicles can." Reverted the same minute.
+//
+// DO NOT "FIX" THIS AGAIN. Vehicles yes, pedestrians no. The whole crowd
+// system stays in the tree and stays correct behind the flag.
 const PEOPLE = P.has('people');
 const LOD_FAR = PHONE ? 340 : 500;
 // static instanced sets (trees, lamps, posts, stripes) with per-instance
@@ -1066,7 +1078,7 @@ async function buildStreamed(mani) {
   // the ground and the surround must know the WHOLE region at boot: the
   // heightfield mesh is built once, and grey massing must never stand where
   // a later chunk will build the real buildings
-  const LAYERS = ['water', 'green', 'land', 'buildings', 'roads', 'bridges', 'covered', 'towers',
+  const LAYERS = ['water', 'green', 'land', 'piers', 'buildings', 'roads', 'bridges', 'covered', 'towers',
     'trees', 'crossings', 'signals', 'busstops', 'mrt', 'taxis', 'shops',
     'gantries', 'lamps'];
   const regionData = { origin: mani.origin, water: [], green: [], land: [], buildings: [], roads: [] };
@@ -1144,6 +1156,7 @@ async function addChunk(ch, id, Y, rec = {}) {
   world.add(g);
   mk('water');
   if (!P.has('nowater')) buildWater(g, ch);
+  if (!P.has('nowater')) buildPiers(g, ch);
   if (!P.has('notowers')) buildSupertrees(g, ch);
   await Y();
   mk('buildings');
@@ -1785,6 +1798,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // this. Water depends on nothing, so it goes first and every later guard is
   // live by the time it is consulted.
   const water = P.has('nowater') ? { water: 0, waterArea: 0 } : buildWater(world, data);
+  if (!P.has('nowater')) buildPiers(world, data);
   if (!P.has('nowater')) setWater(((opts.regionData || data).water || []).map((w) => w.p));
   bmark('setup+water');
 

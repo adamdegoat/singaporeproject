@@ -328,6 +328,21 @@ def main():
         print(f"  {'green':<10} {len(out['green']):>5}  "
               f"({sum(w.get('a', 0) for w in out['green']):,} m2)")
 
+    out["piers"] = []
+    _pseen = set()
+    _piers_by = {}
+    for si, sc in enumerate(scenes):
+        for w in sc.get("piers", []):
+            k = (round(w["p"][0][0]), round(w["p"][0][1]), len(w["p"]), w.get("a"))
+            if k in _pseen:
+                continue
+            _pseen.add(k)
+            out["piers"].append(w)
+            _piers_by.setdefault(si, []).append(w)
+    if out["piers"]:
+        print(f"  {'piers':<10} {len(out['piers']):>5}  "
+              f"({sum(w.get('a', 0) for w in out['piers']):,} m2)")
+
     out["land"] = []
     _lseen = set()
     _land_by = {}
@@ -432,6 +447,7 @@ def main():
             ch["water"] = _water_by.get(si, [])
             ch["green"] = _green_by.get(si, [])
             ch["land"] = _land_by.get(si, [])
+            ch["piers"] = _piers_by.get(si, [])
             ch["axis"] = scenes[si].get("axis")
             t = scenes[si].get("terrain") or {}
             box = [t.get("x0", 0), t.get("z0", 0),
