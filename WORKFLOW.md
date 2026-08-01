@@ -725,3 +725,34 @@ across deploys will send you chasing regressions that do not exist.
 
 Controlled comparisons only: one page load, one position, toggle the thing under
 test, read both numbers. Same rule as the frame-rate work earlier the same day.
+
+## Two things built this session and deliberately not shipped
+
+Both were withdrawn under rules this project had already written down, and both
+are worth more as records than they would have been as commits.
+
+**A 1970s walk-up recipe for River Valley Apartments.** Judged side by side
+against the generic facade family it would replace (data/landmark.mjs exists for
+exactly this): the generic gives the block three storeys of real windows and a
+warm painted wall; the recipe replaced all of it with a blank ivory box whose
+access galleries did not survive the carriageway test. One 662 m2 building is
+not worth losing a window grid. Held back, kept in the file with its research.
+
+**The Pinnacle@Duxton's two 500m sky gardens.** Genuinely missing and genuinely
+the building's signature. Published: floors 26 and 50, 500m each, all seven
+towers linked, 156m over 50 storeys. NOT published: the gardens' plan. The
+attempt chained the seven surveyed tower centres along the shortest route
+reaching all of them and rendered as stubs poking out of tower faces and
+stopping in mid-air — because a centre-to-centre chain spends most of each span
+inside a tower. Withdrawn under authored.json's own rule: "if that claim is
+wrong the world is worse than the hole was."
+
+The capability built for it was KEPT: `shape: "deck"` takes a polyline, a width
+and a `min_h`, and emits geometry lifted clear of the ground through the same
+`mh` path city.js uses for SkyPark. Tested, unused, and there when someone has
+the actual plan.
+
+**The pattern worth keeping:** build it, render it, judge it against what it
+replaces, and be willing to throw it away. Three of this session's changes
+survived that test and two did not, and the two that did not cost an hour
+between them — far less than shipping either would have cost later.

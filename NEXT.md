@@ -3896,3 +3896,17 @@ the ground via the same `mh` path city.js uses for Marina Bay Sands' SkyPark.
 That capability is real and tested; only this particular claim was not good
 enough. Whoever picks this up needs the gardens' actual plan, and should draw
 tower FACE to tower FACE rather than centre to centre.
+
+### Verified after the whole night's changes, 2026-08-01 08:15
+
+Riding from the instant the loading screen clears: **49-61 fps, ZERO hitches
+over 100ms, worst frame 33ms.** Teleport to Bugis then riding: the same, zero
+hitches, worst 33ms. Both measured on a phone-shaped viewport after every
+change in this session — tiled roofs on ~1,300 shophouses, 95 newly named
+buildings, the segmented ridges and the frame-loop fixes.
+
+Orchard's refetch was attempted again at 08:10 and rejected again: three of the
+four Overpass mirrors are still down and the survivor returns a partial. The
+guard's own words — "this is a flaky-mirror partial, not news about the world".
+orchard.json verified intact afterwards: 1,626 buildings, 3,015 roads, audit
+42/42. That guard has now correctly refused seven bad refetches in a row.
