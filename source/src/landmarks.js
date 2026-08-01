@@ -1653,6 +1653,78 @@ function colonialHotel(api, b) {
   api.merge(rg, api.mat.clayTile, cx0, cz0);
 }
 
+// THE ISTANA. Government House, 1867-69, by Colonial Engineer J F A McNair and
+// built by Indian convict labour: Neo-Palladian, two principal storeys over a
+// raised basement, WHITE PLASTERED MASONRY, deep columned verandahs on both
+// floors, a low-pitched overhanging roof and a central tower. It sits on a rise
+// in 43 hectares of grounds.
+//
+// It was drawing as a blue glass-and-slab office block, which is what the
+// generic facade family gives any unrecipe'd 16m mass. The grounds around it
+// are the thing the rider actually sees from Orchard Road, and they now have
+// their trees; the house behind them should not be an office.
+//
+// The plan is a 54-point cross, so the roof CANNOT be colonialHotel's cylinder
+// -- that spans the bounding box and would roof the courtyards between the
+// wings. A stepped inset extrusion follows the real ring instead and reads as a
+// hipped roof from any angle a rider can reach.
+function istana(api, b) {
+  const ob = orientedBox(b.p);
+  const cx0 = ob.cx, cz0 = ob.cz;
+  const white = new THREE.MeshStandardMaterial({ color: 0xf0ebe0, roughness: 0.88 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x5a5f5c, roughness: 0.7 });
+  const h = Math.max(12, Math.min(b.h, 17));
+  // EVERY OFFSET IN THIS RECIPE IS A CENTROID SCALE, NOT api.grow().
+  //
+  // grow() offsets each edge along its normal and joins them with a miter, and
+  // a miter between two nearly-collinear edges is arbitrarily long. This ring
+  // is 54 OSM points around a cross plan and is full of near-collinear pairs,
+  // so grow(b.p, 1.9) -- a request for a 1.9m eaves overhang -- returned a ring
+  // hundreds of metres across, and the first build put two roof planes over
+  // half of Orchard. colonialHotel gets away with grow() because Raffles Hotel
+  // is a clean rectangle.
+  //
+  // A scale about the centroid cannot self-intersect and cannot miter, at the
+  // cost of being proportional rather than uniform: the wing tips move further
+  // than the flanks. At 1.5m on a 45m mean radius that difference is under a
+  // metre and invisible; an exploded ring is not.
+  let rsum = 0;
+  for (const [x, z] of b.p) rsum += Math.hypot(x - cx0, z - cz0);
+  const R = Math.max(8, rsum / b.p.length);
+  const inset = (d) => b.p.map(([x, z]) =>
+    [cx0 + (x - cx0) * (1 + d / R), cz0 + (z - cz0) * (1 + d / R)]);
+  // raised basement: the house stands on a plinth, which is why the entrance
+  // has a flight of steps under its portico
+  api.merge(api.extrudeGeo(inset(1.6), 1.5), api.mat.paleStone, cx0, cz0);
+  api.merge(api.extrudeGeo(b.p, h, 1.5), white, cx0, cz0);
+  // The two verandahs. A projecting slab plus a rail above it is the same
+  // device colonialHotel uses and it is what reads at riding distance: the
+  // column shafts behind are lost in shadow long before the shadow line is.
+  for (let f = 1; f <= 2; f++) {
+    const y = 1.5 + (h / 2.35) * f;
+    if (y > h) break;
+    api.merge(api.extrudeGeo(inset(1.5), 0.32, y), api.mat.trim, cx0, cz0);
+    api.merge(api.extrudeGeo(inset(1.35), 0.16, y + 1.1), api.mat.trim, cx0, cz0);
+  }
+  // Low hipped roof, stepped in twice so the silhouette falls away from the
+  // eaves instead of ending in a parapet.
+  //
+  const top = 1.5 + h;
+  api.merge(api.extrudeGeo(inset(1.9), 0.4, top), roofMat, cx0, cz0);
+  api.merge(api.extrudeGeo(inset(-2.6), 1.5, top + 0.4), roofMat, cx0, cz0);
+  api.merge(api.extrudeGeo(inset(-8.0), 1.3, top + 1.9), roofMat, cx0, cz0);
+  // the central tower, on the centroid of the cross
+  const g0 = api.groundAt(cx0, cz0);
+  const tw = new THREE.BoxGeometry(7.5, 6.0, 7.5);
+  tw.rotateY(-ob.ang);
+  tw.translate(cx0, g0 + top + 3.0, cz0);
+  api.merge(tw, white, cx0, cz0);
+  const cap = new THREE.ConeGeometry(6.2, 3.4, 4);
+  cap.rotateY(-ob.ang + Math.PI / 4);
+  cap.translate(cx0, g0 + top + 7.7, cz0);
+  api.merge(cap, roofMat, cx0, cz0);
+}
+
 // The neoclassical civic set: the National Museum's rotunda under a fish-scale
 // dome, and the National Gallery, which is the former Supreme Court's
 // copper-green dome beside City Hall's row of Corinthian columns facing the
@@ -5234,6 +5306,9 @@ export const RECIPES = [
   [/^the warehouse$/i, warehouseGodowns],
   [/^golden mile complex$/i, goldenMileComplex],
   [/^raffles hotel$/i, rafflesHotel],
+  // Anchored so "Istana Heritage Gallery" and "Istana Park" keep the
+  // generic treatment: only the house itself gets the house.
+  [/^istana$/i, istana],
   [/srinivasa perumal/i, perumalGopuram],
   // Matched on the full name because "Pickering" alone also hits "Pickering
   // Operation Complex" and "One Upper Pickering", two different buildings on
@@ -5341,12 +5416,9 @@ export const RECIPES = [
    hotel],
   // offices, schools and civic blocks: concrete frames with vertical fins, which
   // is what most of this stock actually is
-  // `istana` REMOVED 2026-08-01: the Istana is an 1869 colonial palace with a
-  // pitched roof and a colonnade, and this family draws vertical concrete fins.
-  // It also caught "Istana Heritage Gallery". It is 350m back from Orchard Road
-  // behind its own trees so nothing about it is loud, but a finned slab is a
-  // wrong answer where generic fabric is merely a plain one. It deserves a real
-  // recipe; until then it takes the same fabric as its neighbours.
+  // `istana` REMOVED 2026-08-01: this family draws vertical concrete fins and
+  // the Istana is an 1869 colonial palace. It now has its own recipe, anchored
+  // as /^istana$/ further up so the Heritage Gallery still lands here.
   [/waterloo centre|wilkie edge|one sophia|penang road|lazada|cuppage|school of|lasalle|singapore management|nanyang academy|the atrium|manulife|winsland|somerset house|orchard shopping/i,
    finnedSlab],
 ];
@@ -5361,6 +5433,8 @@ export const RECIPES = [
 // National Gallery are already in this set for.
 const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery,
                               gothicChurch, colonialHotel, artScienceMuseum,
+                              // The President's residence has no shops in it.
+                              istana,
                               merlion, singaporeFlyer,
                               // Tekka Centre's ground floor is an OPEN market -- columns and
                               // louvres, 284 wet stalls and 119 hawker stalls straight off the

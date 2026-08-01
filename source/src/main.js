@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance } from './tex.js';
-import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, buildSurround, buildWater, buildSupertrees, buildPiers } from './city.js';
+import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, buildSurround, buildWater, buildSupertrees, buildPiers, plantSurveyed } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
@@ -1158,6 +1158,7 @@ async function addChunk(ch, id, Y, rec = {}) {
   if (!P.has('nowater')) buildWater(g, ch);
   if (!P.has('nowater')) buildPiers(g, ch);
   if (!P.has('notowers')) buildSupertrees(g, ch);
+  if (!P.has('nofoliage')) plantSurveyed(g, ch, place);
   await Y();
   mk('buildings');
   if (!P.has('nobuild')) await buildBuildings(g, ch, Y);
@@ -1820,8 +1821,15 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // the ground itself, from the heightfield
   // vertexColors so the ground can carry its own green space — see setGreen()
   // in terrain.js. White vertices leave this colour exactly as it was.
+  // 0x9a9384 was a WARM SAND, and every land tint in terrain.js MULTIPLIES it
+  // downward — so the brightest surface anywhere in the world was the ground we
+  // know least about, and it read as desert. Central Singapore has essentially
+  // no bare earth in it: the interstitial ground between mapped things is
+  // concrete apron, tarmac and mown grass. A cool neutral lets the tinted
+  // surfaces stay tinted and lets the unknown recede, which is the right way
+  // round. See the matching change to the untinted vertex in terrain.js.
   const groundMat = new THREE.MeshStandardMaterial({
-    color: 0x9a9384, roughness: 0.95, vertexColors: true,
+    color: 0x9d9e99, roughness: 0.95, vertexColors: true,
   });
   await bstep(0.31, 'shaping the ground');
   // EVERY district's green, not just the spawn one: the ground mesh is built
@@ -1843,6 +1851,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // of the bay rather than built across it.
   await bstep(0.34, 'raising the skyline');
   const trees2 = P.has('notowers') ? { supertrees: 0 } : buildSupertrees(world, data);
+  const surveyed = P.has('nofoliage') ? { surveyedTrees: 0 } : plantSurveyed(world, data, place);
   const surround = P.has('nosurround') ? 0 : buildSurround(world, opts.regionData || data);
   bmark('surround');
 
@@ -2067,7 +2076,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   window.__roadList = data.roads.filter((r) => r.k !== 'footway' && r.k !== 'pedestrian');
   const people = crowdSys ? crowdSys.people.length : 0;
 
-  stats = { surround, ...water, ...trees2, marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...furniture, ...signage, ...shopf };
+  stats = { surround, ...water, ...trees2, marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...surveyed, ...furniture, ...signage, ...shopf };
   // one pass over the finished district: share identical materials, then batch
   // small static meshes per 110m tile. See consolidate.js.
   // Solidity is rasterised from the finished district and BEFORE the meshes are

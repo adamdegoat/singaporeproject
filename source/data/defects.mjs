@@ -1326,12 +1326,23 @@ const found = await page.evaluate(() => {
       if (!o.isInstancedMesh) return;
       const pr = o.geometry.parameters || {};
       if (o.geometry.type !== 'CylinderGeometry') return;
-      // the avenue's trunk: a tapered cylinder well over two metres tall
-      if (!(pr.height > 3 && (pr.radiusBottom || 0) > 0.18)) return;
+      // THE HEIGHT IS IN THE INSTANCE MATRIX, NOT IN THE GEOMETRY.
+      //
+      // TreeField builds one trunk as CylinderGeometry(0.30, 0.62, 1, 8) — a
+      // UNIT cylinder — and scales each instance to its real height. This test
+      // read `pr.height > 3` and so excluded every tree in the world; the 19
+      // trunks it has been reporting were other cylinders entirely, and D37 has
+      // never once looked at a tree. It said PASS the whole time.
+      //
+      // Caught on 2026-08-01 when 2,205 park and surveyed trees were added and
+      // the trunk count did not move. Match the SHAPE here — a stout tapered
+      // cylinder — and take the height from the decomposed scale below.
+      if (!((pr.radiusBottom || 0) > 0.18 && (pr.radiusTop || 0) < (pr.radiusBottom || 0))) return;
       for (let i = 0; i < o.count; i++) {
         o.getMatrixAt(i, m4); m4.decompose(p4, q4, s4);
         p4.applyMatrix4(o.matrixWorld);
         if (p4.y < -900) continue;
+        if ((pr.height || 1) * s4.y <= 3) continue;   // a bollard is not a tree
         trunks++;
         const b = buildingAt(p4.x, p4.z);
         if (b && bad.length < 6) bad.push(`a tree trunk stands inside "${b.n || '(unnamed)'}" at ${p4.x | 0},${p4.z | 0}`);
@@ -1430,6 +1441,69 @@ const found = await page.evaluate(() => {
     // the height of its district, which reads as 10m and 24m, not 4m.
     report('D38', 'a named building floating above its own ground', bad,
            `${low.size} named buildings measured`);
+  }
+
+  /* D39  a scene layer that is written and never drawn.
+   *
+   * `data.trees` -- the surveyed OSM tree nodes, 449 of them in Orchard -- was
+   * in every district file from the first build and NOTHING IN THE WORLD READ
+   * IT. Every tree ever drawn came from the avenue walk in markings.js. The
+   * parks were bald and no check noticed, because every check asks whether what
+   * IS drawn is drawn correctly, and this layer drew nothing at all.
+   *
+   * It surfaced only because a change to that layer produced a pixel-identical
+   * frame. That is a terrible way to find a bug and it is the fourth time
+   * something in this project has shipped blind, so it gets a ratchet.
+   *
+   * The check is deliberately crude: for each layer the scene populates, count
+   * the drawn things that could only have come from it. It cannot verify a
+   * layer is drawn WELL, only that the wire is connected -- which is the exact
+   * failure it exists to catch. A layer legitimately empty for this district is
+   * skipped, so Robertson having no MRT entrance is not a defect.
+   */
+  {
+    const drawn = window.__stats || {};
+    // layer key -> the stat that must move when it is drawn. Where a layer has
+    // no counter of its own, the geometry it makes is named in the scene.
+    // Every pair below was READ OFF A LIVE SCENE, not guessed. An earlier draft
+    // guessed five of them; three were wrong and the check skipped those layers
+    // in silence, which is the same blindness D38 shipped with.
+    const WIRED = [
+      ['trees', 'surveyedTrees'],
+      ['towers', 'supertrees'],
+      ['busstops', 'realBusStops'],
+      ['mrt', 'mrt'],
+      ['taxis', 'realTaxis'],
+      ['shops', 'realShops'],
+      ['crossings', 'realCrossings'],
+      ['signals', 'realSignals'],
+      ['covered', 'realCovered'],
+      ['gantries', 'gantries'],
+      ['bridges', 'bridges'],
+    ];
+    const dead = [];
+    for (const [key, stat] of WIRED) {
+      const have = (data[key] || []).length;
+      if (!have) continue;                       // nothing to draw is not a defect
+      // ONE SAMPLE CANNOT DISPROVE A WIRE. The street furniture pass only
+      // dresses within 60m of the axis, so a single taxi rank on a back street
+      // legitimately draws nothing — Robertson has exactly one and this check
+      // reported it as a dead layer on its first run. A genuinely unwired layer
+      // shows up as 49 entries and 0 drawn (Orchard's taxis) or 75 and 0
+      // (Chinatown's), never as 1 and 0. Five is the point where "none of them
+      // drew" stops being explicable by reach alone.
+      if (have < 5) continue;
+      // A MISSING COUNTER IS A DEFECT, NOT A SKIP. If the stat gets renamed,
+      // silently passing would leave this check watching nothing -- which is
+      // precisely the failure it was written to catch.
+      if (!(stat in drawn)) {
+        dead.push(`no counter named '${stat}' — D39 cannot see the ${key} layer any more`);
+        continue;
+      }
+      if (!drawn[stat]) dead.push(`scene has ${have} ${key} and the world drew none of them`);
+    }
+    report('D39', 'a scene layer written but never drawn', dead,
+           `${WIRED.length} layers wired`);
   }
 
   /* D23 DELETED.

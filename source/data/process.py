@@ -7,7 +7,7 @@ OSM heights are unreliable here (Hilton is tagged 2 levels but 90m), so the
 landmarks that carry recognition get hand-set heights and the rest fall back to
 floor count, then to a per-type default.
 """
-import json, math, os, re, sys
+import json, math, os, random, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -3666,6 +3666,10 @@ def main():
         "grass": "grass", "meadow": "grass", "grassland": "grass",
         "greenfield": "grass", "cemetery": "grass",
         "pitch": "pitch", "golf_course": "pitch",
+        # A track and a pool are not green and must not average into it. Both
+        # are also small, so they lose to the 60 m2 floor less often than they
+        # lose to being drawn the colour of a lawn.
+        "track": "track", "swimming_pool": "pool",
         "forest": "wood", "wood": "wood", "scrub": "scrub", "heath": "scrub",
     }
     green = []
@@ -3973,6 +3977,118 @@ def main():
     if _dupes:
         buildings = _keep
         print(f"  deduped {_dupes} coincident footprint(s) mapped twice by OSM")
+
+    # ---- TREES IN THE PARKS ------------------------------------------------
+    # Every tree in the world came from a surveyed OSM node or a tree_row, and
+    # OSM surveys STREET trees. Parks are mapped as a polygon and left empty,
+    # so the moment the green layer landed, the Istana grounds became forty
+    # hectares of mown lawn with nine trees on it -- and the real Istana is
+    # closed-canopy parkland. Same for Fort Canning, Hong Lim, Pearl's Hill.
+    #
+    # Scattered HERE and not at runtime because this is the only place that
+    # holds the park rings, the building footprints and the road centrelines at
+    # once, and a tree is only right if it is inside the first and clear of the
+    # other two. Runtime gets a plain [x, z] appended to the list it already
+    # draws, so nothing downstream changes.
+    #
+    # Density is per KIND, not per park: a wood is closed canopy, a park is
+    # specimen trees over grass, scrub is bushes with the odd tree. Rejecting a
+    # candidate is cheap; the sample count is set from the ring's own area so a
+    # small garden gets a few and the Istana gets a thousand.
+    PLANT = {"wood": 170.0, "park": 400.0, "scrub": 900.0}
+    _rt = random.Random(20260801)
+
+    def _in_ring(ring, x, z):
+        inside = False
+        n = len(ring)
+        for i in range(n):
+            x1, z1 = ring[i]
+            x2, z2 = ring[(i + 1) % n]
+            if (z1 > z) != (z2 > z) and x < x1 + (z - z1) * (x2 - x1) / (z2 - z1):
+                inside = not inside
+        return inside
+
+    # REJECTION HAS TO BE MEASURED, NOT DILATED.
+    #
+    # The first version rasterised buildings and roads into a 12m grid and grew
+    # the road cells by one cell in each direction, which excludes everything
+    # within 12-24m of any centreline. In a park the size of the Istana grounds
+    # that costs nothing. In Little India it excluded EVERY candidate: 13
+    # qualifying rings, 5 trees. Bugis got 12. The districts where a park is
+    # small and hemmed in by streets are exactly the districts the rider spends
+    # their time in, so the dense half of the world got no park trees at all.
+    #
+    # Buildings keep a grid, because a footprint is an area and a 6m cell with a
+    # 2m pad is honest about it. Roads get a real distance test against sampled
+    # centreline points in a spatial hash: 9m clears the carriageway and the
+    # pavement, and is what the street walk itself uses when it plants at
+    # half-width + 2.8m.
+    _CELL = 6.0
+    _occ = set()
+    for _b in buildings:
+        _p = _b.get("p") or []
+        if len(_p) < 3:
+            continue
+        _xs = [q[0] for q in _p]
+        _zs = [q[1] for q in _p]
+        for _gx in range(int((min(_xs) - 2) // _CELL), int((max(_xs) + 2) // _CELL) + 1):
+            for _gz in range(int((min(_zs) - 2) // _CELL), int((max(_zs) + 2) // _CELL) + 1):
+                _occ.add((_gx, _gz))
+    _ROADCLEAR = 9.0
+    _rhash = {}
+    for _r in roads:
+        _p = _r.get("p") or []
+        for _i in range(len(_p) - 1):
+            _a0, _a1 = _p[_i], _p[_i + 1]
+            _L = math.hypot(_a1[0] - _a0[0], _a1[1] - _a0[1])
+            for _k in range(int(_L // 4) + 1):
+                _t = _k * 4.0 / _L if _L else 0
+                _x = _a0[0] + (_a1[0] - _a0[0]) * _t
+                _z = _a0[1] + (_a1[1] - _a0[1]) * _t
+                _rhash.setdefault((int(_x // _CELL), int(_z // _CELL)), []).append((_x, _z))
+
+    def _near_road(x, z):
+        _gx, _gz = int(x // _CELL), int(z // _CELL)
+        # 9m clearance on a 6m grid reaches two cells, so check 5x5.
+        for _dx in range(-2, 3):
+            for _dz in range(-2, 3):
+                for (_rx, _rz) in _rhash.get((_gx + _dx, _gz + _dz), ()):
+                    if math.hypot(x - _rx, z - _rz) < _ROADCLEAR:
+                        return True
+        return False
+
+    _planted = 0
+    for _g in green:
+        _per = PLANT.get(_g["k"])
+        if not _per:
+            continue
+        _ring = _g["p"]
+        _xs = [q[0] for q in _ring]
+        _zs = [q[1] for q in _ring]
+        _want = int(_g["a"] / _per)
+        if _want < 1:
+            continue
+        # Sample the bounding box: rings are irregular, so ask for enough
+        # candidates that the in-ring hit rate still lands near the target.
+        _tries = int(_want * 3.2) + 8
+        _hit = 0
+        for _ in range(_tries):
+            if _hit >= _want:
+                break
+            _x = _rt.uniform(min(_xs), max(_xs))
+            _z = _rt.uniform(min(_zs), max(_zs))
+            if (int(_x // _CELL), int(_z // _CELL)) in _occ:
+                continue
+            if not _in_ring(_ring, _x, _z):
+                continue
+            if _near_road(_x, _z):
+                continue
+            trees.append([round(_x, 1), round(_z, 1)])
+            _hit += 1
+        _planted += _hit
+    if _planted:
+        print(f"  planted {_planted} trees across {len([g for g in green if g['k'] in PLANT])} "
+              f"park/wood/scrub rings")
 
     out = {
         "origin": {"lat": LAT0, "lon": LON0},

@@ -235,6 +235,43 @@ parks, forecourts, institutional grounds. Neutral tints, because the point is
 to stop a condo garden and a car-park apron being the same sand, not to paint
 the city.
 
+**TREES IN THE PARKS — and the layer that was written and never read.**
+Painting the parks green made them green LAWNS. The Istana's forty hectares had
+nine trees on it, all on the perimeter road, because every tree in this world
+came from the avenue walk in `markings.js`, which plants one every 44 metres
+along a road it is dressing. No road, no trees.
+
+Two separate things were wrong and the second one hid the first:
+
+1. **Nothing scattered trees inside a park polygon.** Now done in `process.py`,
+   because that is the only place holding the park rings, the building
+   footprints and the road centrelines at once — and a tree is only right if it
+   is inside the first and clear of the other two. Density is per KIND: a wood
+   is closed canopy at 170 m2/tree, a park is specimen trees at 400, scrub is
+   900. Rejection is via a 12m occupancy grid over footprints and road
+   centrelines, which errs toward not planting. Orchard alone: **1,876 trees**.
+2. **`data.trees` HAD NEVER BEEN READ BY ANYTHING.** 449 surveyed OSM
+   `natural=tree` nodes per district, in every scene file since the first build,
+   drawn by nothing. Found because planting 1,876 new trees produced a frame
+   that was PIXEL-IDENTICAL to the one before it. A layer that is written and
+   never read looks exactly like a layer that works. Fixed with
+   `plantSurveyed()` in city.js, called ONCE per district (not per axis — same
+   trap as `buildParkedCars`). Orchard now draws 2,205 surveyed/park trees
+   against 250 street trees: **the world had ten times fewer trees than its own
+   data described.**
+
+**Cost: +102k triangles on a 1,338k baseline, 7.6%** — measured by A/B against
+`?nofoliage`, not estimated. Leaf cards are 2 triangles each; the first estimate
+was 4x too pessimistic and would have talked me out of it.
+
+**A sweep for the same bug elsewhere came back clean.** Every one of the twenty
+scene layers is read by something; `trees` was the only orphan. **D39** now
+ratchets it: for each layer the scene populates, a counter that must move when
+it is drawn. A layer legitimately empty for a district is skipped; a MISSING
+COUNTER is reported as a defect rather than skipped, because a silent skip is
+the exact blindness the check exists to catch. Every one of the eleven pairs was
+read off a live scene — an earlier draft guessed five and three were wrong.
+
 **PARKED CARS — from `parking:lane:*`, which the map has carried all along.**
 1,135 tags across the eight districts: 716 parallel, 299 perpendicular, 26
 diagonal. `data/unused.py` has listed them as DEFERRED for weeks with the note
@@ -274,9 +311,16 @@ district mix (a surveyed tag beats a rule we invented): housing gets balconies,
 low commercial gets punched masonry, a commercial tower over 28m gets glass,
 civic gets stone.
 
-**STILL NOT FETCHED:** expressways and tunnels, railway and MRT viaducts, piers
-and jetties, sports facilities, barriers. Same method each time — fetch,
-process, draw, ride it.
+**PIERS AND JETTIES — 12 decks, 5,950 m2.** Marina Bay is a quay and had none of
+the structures that make it one. 18 mapped, 17 of them closed areas rather than
+lines, so they extrude as a low deck. A pier stands OVER water and takes its
+level from the water's rim, NOT from the terrain beneath it — the ground under a
+jetty is the seabed, and seating the deck on it would put the jetty at the
+bottom of the bay. Same two-datums trap as the bridge decks.
+
+**STILL NOT FETCHED:** expressways and tunnels, railway and MRT viaducts, sports
+facilities, barriers. Same method each time — fetch, process, draw, ride it.
+Overpass throttles hard after a few of these; expect to spread them out.
 
 ## THE DEFECT LEDGER, PER DISTRICT (first honest run, 2026-08-01)
 

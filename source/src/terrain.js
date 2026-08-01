@@ -257,6 +257,13 @@ export class Terrain {
           park:  [0.52, 0.78, 0.46],
           grass: [0.58, 0.80, 0.50],
           pitch: [0.46, 0.74, 0.42],
+          // A running track is red-brown rubber and a pool is blue, and both
+          // are read from a bridge before anything else on the ground is: they
+          // are the only two surfaces in the city with a colour nothing else
+          // has. Jalan Besar, Farrer Park and the River Valley complex all sit
+          // inside these districts and were drawing as ordinary green.
+          track: [0.72, 0.36, 0.28],
+          pool:  [0.36, 0.62, 0.76],
           wood:  [0.34, 0.55, 0.32],
           scrub: [0.62, 0.72, 0.46],
           resi:  [0.86, 0.86, 0.78],
@@ -275,7 +282,13 @@ export class Terrain {
             const x = g.x0 + (qx / 24) * g.cell, z = g.z0 + (qz / 24) * g.cell;
             pos.push(x, this.vertexY(x, z), z);
             const t = this.gGrid ? TINT[this.greenAt(x, z)] : null;
-            if (t) col.push(t[0], t[1], t[2]); else col.push(1, 1, 1);
+            // Untinted ground used to push (1,1,1) — the material colour
+            // straight through, which made UNCLASSIFIED ground the brightest
+            // surface in the world. It is the one thing we know least about, so
+            // it should be the quietest. A faint grey-green knocks it back
+            // behind the paved tints and reads as the scrubby concrete-and-
+            // grass mix that unmapped ground in this city actually is.
+            if (t) col.push(t[0], t[1], t[2]); else col.push(0.84, 0.87, 0.80);
             verts.set(k, id);
           }
           return id;

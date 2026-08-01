@@ -2299,6 +2299,37 @@ function mergeGeos(geos) {
 // OSM footprint radius, which is surveyed. That is the honest source for it;
 // inventing a number and writing it down as if researched would be worse than
 // saying where it came from.
+// THE SURVEYED TREES. Every district scene has carried a `trees` list since the
+// first build -- OSM `natural=tree` nodes and tree_row lines, 449 of them in
+// Orchard alone -- and NOTHING IN THE WORLD HAS EVER READ IT. The only trees
+// ever drawn came from the avenue walk in markings.js, which plants one every
+// 44 metres along a road it is dressing. So every tree in the world stood on a
+// street, and the parks were bald: the Istana's forty hectares had nine trees
+// on it, all of them on the perimeter road.
+//
+// Found by planting park trees in process.py, rebuilding, and getting a frame
+// that was pixel-identical to the one before. A layer that is written and never
+// read looks exactly like a layer that works.
+//
+// Planted ONCE per district and not per axis -- the list is the whole scene, so
+// inside the axis loop a two-axis district would grow two trees per node. Same
+// trap as buildParkedCars.
+export function plantSurveyed(world, data, blocked) {
+  const list = data.trees || [];
+  if (!list.length) return { surveyedTrees: 0 };
+  const f = new TreeField();
+  for (const t of list) {
+    const x = t[0], z = t[1];
+    // The street walk already planted its own trees off the kerb line, and a
+    // surveyed node within a crown radius of one is the same tree twice.
+    if (blocked && blocked(x, z)) continue;
+    // Park trees are older and bigger than the pruned street stock; the scale
+    // spread is wider so a wood does not read as a plantation.
+    f.add(x, z, 0.7 + ((x * 7.3 + z * 3.1) % 100) / 250);
+  }
+  return { surveyedTrees: f.build(world) };
+}
+
 export function buildSupertrees(world, data) {
   const list = data.towers || [];
   if (!list.length) return { supertrees: 0 };
