@@ -2672,13 +2672,29 @@ function centriumSquare(api, b) {
     }
   }
   // and the same pattern on the podium's street face, quieter
+  // FOLLOW THE WALL, COLUMN BY COLUMN — same fix as tekkaPlace, and for the same
+  // reason. The cladding was drawn on ONE plane at a single `edge` distance, so
+  // on a ring with a published 26.5 x 11.6m notch cut out of it, every column
+  // that did not lie on that plane was buried inside the mass and the facade
+  // appeared to stop halfway along.
+  // PER-COLUMN WALL FOLLOWING WAS TRIED HERE AND REVERTED, 2026-08-01.
+  //
+  // tekkaPlace does follow its wall column by column and it works there, but
+  // this recipe's `at()` helper measures `into` in the MINUS-normal direction
+  // while the march measures it in the plus direction, and two attempts at
+  // reconciling that produced three narrow strips and then four. The cladding
+  // on one plane covers most of this frontage and reads correctly from the
+  // street, which is the bar; a sign convention that has already eaten two
+  // rounds is not worth a third without instrumenting the frame directions
+  // first. The notch means the far end of the podium stays bare.
   let fi = 0;
   for (let u = CU - CW / 2 + 0.7; u < CU + CW / 2 - 0.7; u += 1.05, fi++) {
+    const e2 = edge;
     let fj = 0;
     for (let y = 1.2; y < POD - 0.8; y += 1.05, fj++) {
       const m = accent(fi, fj) || TONES[(fi + fj) % 3];
       const tile = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.92, 0.10), m);
-      at(tile, u, g0 + y, -(edge + 0.06), false);
+      at(tile, u, g0 + y, -(e2 + 0.06), false);
     }
   }
   // free-standing columns under the canopy, clad in the same cubes
@@ -2823,18 +2839,39 @@ function tekkaPlace(api, b) {
     { nx: -ob.uz, nz: ob.ux },
     { nx: ob.uz, nz: -ob.ux },
   ];
+  // MARCH FROM A POINT THAT IS ACTUALLY INSIDE THE RING.
+  //
+  // This marched outward from the oriented box's CENTRE, and a long thin
+  // concave footprint — which is exactly what a ninety-metre car-park annex
+  // wrapped round a corner is — does not contain its own centre. The march then
+  // left the ring on its very first step, every long-flank candidate scored
+  // `e = 0.5` or was dropped outright, and the screen ended up on the twenty-
+  // metre END face three rounds running. D38 had to nudge around the same
+  // concavity an hour earlier in the same session; this is the same nudge.
+  let ix = ob.cx, iz = ob.cz;
+  if (!pointInRing(ix, iz, b.p)) {
+    let found = false;
+    for (let i = 0; i < b.p.length && !found; i++) {
+      const q1 = b.p[i], q2 = b.p[(i + 1) % b.p.length];
+      const mx = (q1[0] + q2[0]) / 2, mz = (q1[1] + q2[1]) / 2;
+      for (const t of [0.2, 0.4, 0.6, 0.8]) {
+        const px = mx + (ob.cx - mx) * t, pz = mz + (ob.cz - mz) * t;
+        if (pointInRing(px, pz, b.p)) { ix = px; iz = pz; found = true; break; }
+      }
+    }
+  }
   let best = null;
   for (const f of faces) {
     const ax = -f.nz, az = f.nx;
     let a0 = Infinity, a1 = -Infinity;
     for (const q of b.p) {
-      const u = (q[0] - ob.cx) * ax + (q[1] - ob.cz) * az;
+      const u = (q[0] - ix) * ax + (q[1] - iz) * az;
       if (u < a0) a0 = u;
       if (u > a1) a1 = u;
     }
     let e = 0;
     for (let d = 1; d < 90; d += 0.5) {
-      if (!pointInRing(ob.cx + f.nx * d, ob.cz + f.nz * d, b.p)) { e = d - 0.5; break; }
+      if (!pointInRing(ix + f.nx * d, iz + f.nz * d, b.p)) { e = d - 0.5; break; }
     }
     // a face is only a candidate if it actually faces outward from the block
     if (e <= 0) continue;
@@ -2852,7 +2889,7 @@ function tekkaPlace(api, b) {
   const nX = best.f.nx, nZ = best.f.nz;
   const at = (mesh, u, y, into, cast = true) => {
     mesh.rotation.y = yaw;
-    mesh.position.set(ob.cx + tX * u - nX * into, y, ob.cz + tZ * u - nZ * into);
+    mesh.position.set(ix + tX * u - nX * into, y, iz + tZ * u - nZ * into);
     mesh.castShadow = cast;
     api.world.add(mesh);
   };
@@ -2869,19 +2906,41 @@ function tekkaPlace(api, b) {
     const r = (h % 1000) / 1000;
     return r < 0.14 ? char : r < 0.22 ? creamM : r < 0.60 ? rust : clay;
   };
+  // THE SCREEN FOLLOWS THE WALL, COLUMN BY COLUMN.
+  //
+  // INSTRUMENTED at round 5 rather than guessed at again: the face chooser was
+  // never the problem. Logging its candidates showed it picking the annex's
+  // long flank correctly — extent 145.5m against 38.7m for the street face.
+  // What was wrong is that the screen was then drawn as ONE FLAT PLANE at a
+  // single `edge` distance across that whole 145m, and this footprint is an L.
+  // Every panel whose column does not happen to lie on that plane is buried
+  // inside the mass, invisible, which is why three rounds of frames showed a
+  // small patch of lattice and a bare slab — the panels were all being built,
+  // just not on the wall.
+  //
+  // So each column marches out to find the wall AT ITS OWN u. A column that
+  // finds nothing (past the end of the L) simply gets no panels.
+  const wallAt = (u) => {
+    const bx = ix + tX * u, bz = iz + tZ * u;
+    for (let d = 90; d > 0; d -= 0.5) {
+      if (pointInRing(bx + nX * d, bz + nZ * d, b.p)) return d;
+    }
+    return null;
+  };
   let pi = 0;
   for (let u = FU - FW / 2 + 0.8; u < FU + FW / 2 - 0.8; u += 1.55, pi++) {
+    const e2 = wallAt(u);
+    if (e2 === null) continue;
     let pj = 0;
     for (let y = 1.6; y < TOP; y += 1.55, pj++) {
       const panel = new THREE.Mesh(new THREE.BoxGeometry(1.34, 1.34, 0.16), tone(pi, pj));
-      at(panel, u, g0 + y, -(edge + 0.30), false);
+      at(panel, u, g0 + y, -(e2 + 0.30), false);
     }
-  }
-  // planting spilling over the top edge of the screen
-  for (let u = FU - FW / 2 + 1.0; u < FU + FW / 2 - 1.0; u += 2.2) {
-    const bush = new THREE.Mesh(new THREE.SphereGeometry(0.85, 8, 6), leaf);
-    bush.scale.set(1.25, 0.8, 0.9);
-    at(bush, u, g0 + TOP + 0.5, -(edge + 0.25), false);
+    if (pi % 2 === 0) {
+      const bush = new THREE.Mesh(new THREE.SphereGeometry(0.85, 8, 6), leaf);
+      bush.scale.set(1.25, 0.8, 0.9);
+      at(bush, u, g0 + TOP + 0.5, -(e2 + 0.25), false);
+    }
   }
 
   if (!ANNEX) {
@@ -5158,6 +5217,7 @@ export const RECIPES = [
   [/^masjid jamae/i, masjidJamae],
   [/^centrium square$/i, centriumSquare],
   [/^fook hai building$/i, fookHai],
+  [/^tekka place$/i, tekkaPlace],
   [/^uob plaza/i, uobPlaza],
   [/^ocbc bank$/i, ocbcCentre],
   [/^republic plaza$/i, republicPlaza],

@@ -487,7 +487,35 @@ Also recorded in the recipe: SkyDB's "21 floors, completed 1974" is wrong (21
 floors inside OSM's 32m is 1.5m per floor), and OSM's `height=32` is not a
 survey — hand-entered in 2020, no source tag, "Bing" imagery.
 
-**Tekka Place is written, diagnosed and NOT wired.** After three rounds its
+**TEKKA PLACE IS WIRED AFTER ALL — round 5, and the diagnosis in the park note
+was WRONG.** Worth reading as a lesson in what parking a thing is for.
+
+The park note blamed the face chooser: the ninety-metre screen kept landing on
+the annex's twenty-metre end, so the chooser must be dropping the long-flank
+candidates. It is not. **Instrumenting it — printing every candidate's extent
+and edge, which is what the note itself said to do first — showed the chooser
+picking correctly all along:**
+
+    annex (3,083 m2)   street face  extent  38.7   long flanks  extent 145.5
+    main  (2,446 m2)   street face  extent  44.6   long flanks  extent  67.9
+
+The screen WAS on the long flank. What was wrong is that it was drawn as ONE
+FLAT PLANE at a single `edge` distance across all 145m, and this footprint is an
+L: every column not lying on that plane was built INSIDE the mass, invisible. So
+three rounds of frames showed a small patch of lattice and a bare slab, and the
+panels were all present the whole time.
+
+Each column now marches out to find the wall at its own `u`, and a column that
+finds nothing simply gets no panels. Ninety metres of rust-red lotus lattice
+with planting spilling over the top, which is what the research describes.
+
+**The same fix was tried on centriumSquare and REVERTED**: its `at()` helper
+measures `into` in the minus-normal direction while the march measures plus, and
+two attempts at reconciling that gave three narrow strips and then four. Its
+single-plane cladding covers most of the frontage and reads correctly, which is
+the bar. Instrument the frame directions before trying again.
+
+**(historical) Tekka Place is written, diagnosed and NOT wired.** After three rounds its
 ninety-metre lotus screen still lands on the annex's twenty-metre END face, and
 what is left is a bare charcoal slab — worse than the glazed block the generic
 draws, which is the definition of a regression here. The diagnosis is at the
