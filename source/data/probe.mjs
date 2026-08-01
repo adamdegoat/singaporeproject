@@ -7,7 +7,13 @@ const { chromium } = await import(
   process.env.PLAYWRIGHT_PATH || '/Users/ZY/receptionig/node_modules/playwright/index.mjs');
 
 const browser = await chromium.launch({
-  args: ['--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding',
+  // --use-gl=angle OR THIS TOOL RUNS ON SwiftShader. Every other headless tool
+  // here passes it (WORKFLOW.md, "The deploy takes five minutes, not fifty");
+  // probe.mjs was the one that got missed, so every measurement taken through
+  // it was software-rasterised. The tell is in its own output: `fps: 1` on a
+  // scene the gated audits draw in hardware.
+  args: ['--use-gl=angle',
+         '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding',
          '--disable-features=CalculateNativeWinOcclusion'],
 });
 const page = await browser.newPage({ viewport: { width: 1100, height: 620 } });

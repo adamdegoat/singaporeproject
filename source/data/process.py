@@ -1671,6 +1671,12 @@ CONSERVATION_GAZETTE = {
     "MAGAZINE ROAD": 1992, "QUEEN STREET": 1993, "SHORT STREET": 1994,
     "CHINA SQUARE": 1997, "UPPER CIRCULAR ROAD": 2004, "PEARL'S HILL": 2008,
     "BLAIR PLAIN": 1991, "TIONG BAHRU": 2003,
+    # The polygon is already in data/conservation.json (216 cached areas) but
+    # had no row here, so the restoration-date-read-as-build-date guard never
+    # ran on it -- the exact gap that put the Olson Building in our data at its
+    # 2017 restoration date. Kallang Airport terminal, Frank Dorrington Ward,
+    # 1937; conserved 2008. Needed before the kallang district is built.
+    "FORMER KALLANG AIRPORT": 2008,
     "ROBERTSON QUAY": 2014,
     # MOUNT SOPHIA was gazetted IN STAGES, which is why a single date was never
     # found: "more than 80 buildings around Mount Sophia were given conservation
@@ -1728,6 +1734,36 @@ if _bad_keys:
 
 # Every height tag we refused, so the count is printed rather than swallowed.
 BAD_HEIGHT_TAGS = []
+
+# WHERE THE OSM `height` TAG IS NOT EVIDENCE, AND MUST BE READ AS ABSENT.
+#
+# The per-tag guard in height_for() refuses a value under 2.5m, which catches
+# `height=0` and `height=1`. It cannot catch a tag that is individually
+# plausible and collectively fabricated, and the Kallang Basin / Tanjong Rhu box
+# is full of exactly that. Measured over 1.290-1.310 / 103.865-103.885:
+#
+#   National Stadium      levels 2   height 10   published dome height 83m
+#   OCBC Aquatic Centre   levels 4   height 20   a 3,000-seat aquatic hall
+#   Kallang Wave Mall     levels 1   height 5    a multi-level mall
+#   Costa Rhu, Rhu Cross  levels 12, 14, 16, 18  height 56 ON ALL FOUR
+#   Meyer Road 51/53/55   levels 23, 23, 24      height 80 ON ALL THREE
+#
+# 56/12 and 56/18 are both plausible floor-to-floor figures, so no per-building
+# test can reject them; what marks them is that ONE constant was pasted across
+# buildings of different heights. This is the same failure family as Fook Hai's
+# hand-typed `height=32` (research/chinatown-littleindia-landmarks.md: "plausible,
+# but not evidence"), except systematic rather than isolated.
+#
+# So inside these boxes the tag is dropped and geometry comes from
+# `building:levels`, which IS surveyed here, via the normal fallback. `hs`
+# provenance then records the derivation honestly instead of laundering a
+# placeholder as a survey. Full trail: research/coastal-expansion.md section 0.6.
+#
+# (south, west, north, east) -- one box covering both kallang and tanjongrhu.
+HEIGHT_TAG_SUPPRESS = [
+    (1.2890, 103.8600, 1.3100, 103.8880),
+]
+SUPPRESSED_HEIGHT_TAGS = []
 
 
 def height_for(tags):
@@ -2292,6 +2328,21 @@ def main():
             per = sum(math.dist(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts)))
             if per > 0 and (4 * math.pi * a) / (per * per) < 0.03:
                 continue
+            # Drop a fabricated height tag before it is ever read. Done here and
+            # not in height_for() because the rule is about WHERE the building
+            # is, and height_for() is given only tags.
+            if tags.get("height") and HEIGHT_TAG_SUPPRESS:
+                _gm = e.get("geometry") or []
+                if _gm:
+                    _la = sum(p["lat"] for p in _gm) / len(_gm)
+                    _lo = sum(p["lon"] for p in _gm) / len(_gm)
+                    for _s, _w, _n, _e in HEIGHT_TAG_SUPPRESS:
+                        if _s <= _la <= _n and _w <= _lo <= _e:
+                            SUPPRESSED_HEIGHT_TAGS.append(
+                                (tags.get("name") or "(unnamed)", tags["height"]))
+                            tags = dict(tags)
+                            tags.pop("height", None)
+                            break
             h, key, hsrc, podium = height_for(tags)
             # a 3,000 m2 footprint is never 3.5m tall: that is a bad tag, not a
             # single-storey building. Fall back to the type default.
@@ -4355,6 +4406,14 @@ def main():
         _tall = sorted(HDB_JOINS, key=lambda r: -r[2])[:3]
         print(f"  HDB join: {len(HDB_JOINS)} blocks matched to HDB storey records "
               f"(tallest {', '.join(f'{r[0]} {r[1]} {r[2]}st' for r in _tall)})")
+    # COUNT WHAT YOU SUPPRESS, AND READ THE COUNT (WORKFLOW.md, 2026-08-01).
+    # A suppression nobody can see is indistinguishable from a bbox that never
+    # matched, which is how a rule silently stops applying.
+    if SUPPRESSED_HEIGHT_TAGS:
+        _sn = ", ".join(f"{n} ({v})" for n, v in SUPPRESSED_HEIGHT_TAGS[:4])
+        print(f"  dropped {len(SUPPRESSED_HEIGHT_TAGS)} fabricated height tags "
+              f"in the Kallang/Tanjong Rhu box: {_sn}"
+              f"{'...' if len(SUPPRESSED_HEIGHT_TAGS) > 4 else ''}")
     if BAD_HEIGHT_TAGS:
         names = ", ".join(n for n, _ in BAD_HEIGHT_TAGS[:4])
         print(f"  refused {len(BAD_HEIGHT_TAGS)} implausible height tags "

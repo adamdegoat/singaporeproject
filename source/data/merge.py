@@ -213,6 +213,50 @@ def inset(t, x, z):
 
 
 def merge_terrain(ts, cover=None):
+    # EVERY DISTRICT'S FIELD IS STORED RELATIVE TO ITS OWN LOWEST POINT, AND
+    # BLENDING THEM WITHOUT SAYING SO PUTS THE DISTRICTS AT DIFFERENT DATUMS.
+    #
+    # terrain.py:766 does `base = min(h); h = [v - base]; grid["base"] = base`,
+    # so `h` is metres above THAT DISTRICT'S lowest cell and `base` is the only
+    # thing that ties it to sea level. Nothing in `src/` reads `base` back
+    # [grepped], which is harmless inside one district scene -- a constant
+    # offset under everything moves nothing relative to anything else -- and is
+    # NOT harmless here, because this function used to blend the raw `h` arrays
+    # and stamp `base=0.0` on the result.
+    #
+    # Measured across the built eight: orchard +3.10, rivervalley +2.52,
+    # brasbasah +1.61, littleindia +2.87, bugis 0.00, chinatown -1.77,
+    # robertson -1.79, marinabay -1.96. So in the merged world **Orchard's
+    # ground sat 5.06m low relative to Marina Bay's**. The merge weights by how
+    # far inside each grid a point falls, so the error appears at a seam as a
+    # RAMP rather than a cliff, which is why no check ever caught it -- every
+    # other gate compares the world with itself, the same blind spot that let
+    # Marina Bay stand 25m too high for as long as the district existed.
+    #
+    # A coastal district makes it acute rather than merely wrong: `base` is a
+    # MINIMUM, and the sink rule puts a water bed at rim - 2.0, so a district
+    # holding open sea takes a base two to four metres below any inland
+    # neighbour and everything in it lifts by that much. The same body of water
+    # would then sit at two heights on either side of one seam.
+    #
+    # MEASURED A/B, 1,424 sample points across the eight districts, comparing
+    # each district's own absolute height with the merged world's at the same
+    # x,z (both with `base` added back):
+    #
+    #     BEFORE (blend raw h, base=0)   median 1.96m   p95 5.29m   worst 18.39m
+    #     AFTER  (common datum)          median 0.26m   p95 4.79m   worst 19.29m
+    #
+    # The systematic offset is gone. The TAIL is barely touched and that is
+    # expected -- it is not this bug. It is a 35m grid interpolating Fort
+    # Canning's slopes, the open item HANDOFF records as "hill summits read 3-4m
+    # low", and it wants a finer grid, not a datum.
+    #
+    # Put every grid on the common datum first, blend, then re-zero the result
+    # and record the offset the same way terrain.py does -- so world.json keeps
+    # the same shape of contract as a district file, and groundcheck.py (which
+    # DOES add base back, at line 83) keeps reading absolute metres.
+    ts = [dict(t, h=[v + t.get("base", 0.0) for v in t["h"]], base=0.0)
+          for t in ts]
     cell = ts[0]["cell"]
     x0 = min(t["x0"] for t in ts)
     z0 = min(t["z0"] for t in ts)
@@ -259,8 +303,12 @@ def merge_terrain(ts, cover=None):
                 if hits > 1:
                     blended += 1
                 h.append(round(num / den, 2))
+    # Re-zero on the merged minimum, exactly as terrain.py does for a district,
+    # so `h` stays a small positive number and `base` carries the datum.
+    mn = min(h) if h else 0.0
+    h = [round(v - mn, 2) for v in h]
     return dict(x0=round(x0, 1), z0=round(z0, 1), cell=cell, nx=nx, nz=nz, h=h,
-                base=0.0, src="merged"), blended
+                base=round(mn, 2), src="merged"), blended
 
 
 def main():

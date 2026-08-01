@@ -813,3 +813,95 @@ mark total. The corrected version finds where roads actually CROSS the axis
 build. "No silent caps" is not a style preference — an over-broad filter and a
 correct one produce frames that look the same, and only the number tells them
 apart.
+
+## A POINT GUARD CANNOT POLICE A SLAB (2026-08-01, evening)
+
+This one cost a whole session before it was found, and it is the FIFTH time
+"a geometric rule needs a SCALE" has been the answer here — the third in
+`sgdetail.js` alone.
+
+`buildWalkable()` refused to draw a stair tread standing in a carriageway by
+asking `anyRoad(centreX, centreZ)`. P1b kept reporting one flight in Cross
+Street anyway. Five attempts went into reconciling the two — widening the
+margin, testing `surfaceAt - groundAt` at one end, at both ends, against a
+bridge-deck threshold, and computing a second road predicate from the chunk's
+own roads. Every one of them was aimed at the theory that "`__onRoad` and P1b
+disagree about where Cross Street is."
+
+**They did disagree, and it was not the cause.** The flight carries a surveyed
+`step_count` of FOUR over a way 25.1m long, so `depth = total / n` made each
+drawn tread a slab **6.28 metres deep**. Its centre stood 9.6m clear of the
+road and passed. Its leading edge was 3.7m from the centreline of a road 14.8m
+wide. P1b was reporting the corner, and P1b was right every time.
+
+The guard now walks the box's own footprint at 2m spacing (`boxClear`), which
+is the same figure the barrier walk arrived at, for the same reason, two
+sessions earlier.
+
+**The generalisation, and it is worth applying by hand to every guard in this
+repo:** a predicate that samples ONE POINT can only ever be correct about
+geometry smaller than the thing it is guarding against. Before trusting any
+placement guard, ask what the largest object it must refuse actually measures.
+The three earlier instances — a spur test with no length, a road check with no
+width, a roof eave sized as a percentage — all read as correct code.
+
+**And the process lesson, which is the expensive half:** five of the six
+attempts changed code without first proving which branch ran. The finding came
+from printing the check's own example line and reading the numbers in it. When
+a fix does not take, instrument before editing.
+
+## `Terrain.at()` IS HIGH INSIDE A WATER RING ON PURPOSE (2026-08-01, evening)
+
+The Singapore River fix cut the riverbed into `vertexY()` — what is DRAWN —
+and deliberately NOT into `at()`, so the quay beside the river keeps its
+ground. That decision is right and is documented at the top of NEXT.md.
+
+The consequence is not documented anywhere, and it bit immediately: **anything
+seated with `surfaceAt()` inside a water ring is placed on a surface that is
+not drawn.** A flight of eleven steps at 1697-1704, 8507-8512 in brasbasah
+shares a node with the river's own bank ring — a real landing stair down to the
+water — and was drawn at `at()` = 14.7m while the water surface there is at
+-0.05m. Sixteen metres of stair, cheek and handrail standing in mid-air.
+
+Any layer seated on `surfaceAt` needs a `dryHere()` guard: not in open water,
+unless a bridge deck is over it. Exempt by MECHANISM, not by signature — the
+same sentence W2's own comment already argues for.
+
+It also shows how these hide. W2 counts a mesh only when most of its sampled
+vertices are over water, and everything here goes through the Merger — so while
+the offending treads shared a merged tile with geometry on dry land, the tile
+did not qualify and the defect was invisible to the check that was built to
+find it. It surfaced only when an unrelated fix changed which treads were drawn
+and therefore how the tiles packed. **A merged-geometry check can be masked by
+what a mesh happens to be packed with.**
+
+## THE ONE TOOL THAT WAS STILL ON SwiftShader (2026-08-01, evening)
+
+"The deploy takes five minutes, not fifty" above says any new tool that opens a
+browser must pass `--use-gl=angle`. `data/probe.mjs` never got it. Every
+measurement taken through the project's main ad-hoc measuring tool was
+software-rasterised, and the tell was printed in its own output on every run:
+`render: {"fps":1,...}` on a scene the gated audits draw in hardware.
+
+Fixed. **If a diagnostic prints `fps: 1`, suspect the harness before the world.**
+
+## A FAILING DEPLOY MUST NAME WHAT FAILED (2026-08-01, evening)
+
+`deploy.sh`'s per-district audit loop pipes each run through `tail -2`, so a
+refused deploy prints:
+
+    FAIL  0 blockers, 1 majors over budget
+
+— no check id, no place, no count. Diagnosing it meant re-running the whole
+district by hand. `gates.sh` has printed the failing lines for weeks
+(`grep -E "^   FAIL"`); deploy.sh simply never got the same treatment, and the
+two have drifted the way every duplicated list in this file eventually does.
+
+Same family as B2's "a bare number cannot be diagnosed", and as W2's example
+line, which said only `BufferGeometry entirely over water` — and since
+everything the Merger emits is a `BufferGeometry`, that named neither the place
+nor the layer. It now prints position, colour and bbox, and that single change
+turned a blind diagnosis into a five-minute one.
+
+**A gate's failure message is part of the gate.** If it cannot be acted on
+without re-running the thing that produced it, it is not finished.
