@@ -163,7 +163,10 @@ LANDMARKS = {
     #
     # DO NOT key "cairnhill" (matches three buildings, and Cairnhill Plaza is
     # separately tagged 122.4) or "ascott" (matches Ascott Raffles Place, the
-    # 1954 Asia Insurance Building).
+    # Asia Insurance Building — URA: "Completed in 1955", 18 storeys, at
+    # **2 Finlayson Green**, not 1954 and not 2 Raffles Quay as this comment and
+    # research/orchard-podiums.md line 650 both had it until 2026-08-01;
+    # research/conservation-missing-areas.md carries URA's own wording).
     "cairnhill nine":         {"h": 20},
     "orchard gateway":        {"h": 45},
     # FIVE storeys, not 45m. 45 was a hand-typed override with no source; the

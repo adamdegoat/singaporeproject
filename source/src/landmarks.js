@@ -2419,6 +2419,151 @@ function sultanMosque(api, b) {
 }
 
 
+// MASJID JAMAE (CHULIA), 218 South Bridge Road. 1830-35, National Monument.
+// research/chinatown-littleindia-landmarks.md section 1.
+//
+// WHY IT NEEDED A RECIPE AT ALL. OSM tags it `height=10, building:levels=2,
+// source=Kaart Ground Survey 2017` and that survey is of the LOW MASS. The
+// minarets are roughly 40% taller than the whole building we were drawing, so
+// the one thing on South Bridge Road that everybody recognises was a 10m box.
+//
+// AND IT IS GREEN. Pale olive with white trim, and has been since the early
+// 1990s; the generic fabric painted it beige, which is thirty years out of
+// date.
+//
+// No metre height is published for the gateway, the minarets or the halls —
+// the figures below are photo-estimates scaled against the adjoining
+// two-storey shophouse parapet (taken at 8.5-9.0m) and are labelled as such in
+// the research file. What IS published is the composition: a pair of octagonal
+// minarets of SEVEN tiers of double arch-shaped niches, a "miniature palace"
+// screen on the gateway roof, and terracotta-tiled hipped halls behind.
+function masjidJamae(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const sw = streetward(api, ob);
+  const green = new THREE.MeshStandardMaterial({ color: 0x7e8c6a, roughness: 0.9 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xf2efe4, roughness: 0.85 });
+  const terra = new THREE.MeshStandardMaterial({ color: 0xa8543a, roughness: 0.9 });
+  const domeM = new THREE.MeshStandardMaterial({ color: 0xdfe3cf, roughness: 0.7 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x3b3f36, roughness: 0.95 });
+
+  // the street edge, walked out from the centroid exactly as sriMariamman does
+  let edge = 0;
+  for (let d = 1; d < 45; d += 0.5) {
+    if (!pointInRing(ob.cx + sw.nx * d, ob.cz + sw.nz * d, b.p)) { edge = d - 0.5; break; }
+  }
+  const yaw = Math.atan2(sw.nx, sw.nz);       // facing the street
+  const tX = -sw.nz, tZ = sw.nx;              // along the street
+  const put = (mesh, u, y, into, cast = true) => {
+    mesh.rotation.y = yaw;
+    mesh.position.set(ob.cx + sw.nx * (edge - into) + tX * u,
+                      y, ob.cz + sw.nz * (edge - into) + tZ * u);
+    mesh.castShadow = cast;
+    api.world.add(mesh);
+  };
+
+  // THE COMPOUND. A low green perimeter — wall to the street, arcaded halls
+  // behind — rather than one solid mass: the whole ground floor of this site
+  // is a courtyard entered through the gateway arch, and extruding the ring
+  // solid would fill it in.
+  // NO api.extrude FOR THE COMPOUND WALL. Round 2 called
+  // `api.extrude(b.p, 2.6, green, g0)` — the same call sriMariamman makes — and
+  // INSTRUMENTING the result (rather than looking at another frame and
+  // guessing, which is how Clarke Quay burned three rounds) showed it landing
+  // at y 18.1 to 20.7 on ground of 9.0: a 63x43m green slab floating nine
+  // metres up over the whole site, which is what made both vet frames read as a
+  // green blob. Whatever that call resolves to on this footprint, it is not the
+  // seat this recipe wants, and every piece placed through put() below measured
+  // exactly where it was asked to be. So the wall is a placed box like
+  // everything else here.
+  const CW = ob.halfShort * 2 * 0.96, CD = ob.halfLong * 2 * 0.90;
+  put(new THREE.Mesh(new THREE.BoxGeometry(CW, 2.6, CD), green), 0, g0 + 1.3, CD * 0.5, false);
+  // The halls: a single arcaded storey in the rear of the compound under a
+  // terracotta hipped roof. Kept LOW and kept BACK on purpose — the whole
+  // identity of this site is that the gateway and its minarets are the tallest
+  // thing on it, and round 1 built a hall so large it read as the building.
+  const HW = ob.halfShort * 2 * 0.55, HL = ob.halfLong * 2 * 0.34;
+  const HH = 5.6, HY = g0 + HH / 2;
+  const HINTO = edge * 0.62 + HL * 0.5;
+  put(new THREE.Mesh(new THREE.BoxGeometry(HW, HH, HL), white), 0, HY, HINTO);
+  // ...and the roof SITS ON IT. Round 1 put the cap at an absolute y that had
+  // nothing to do with the hall's top and it floated 2.6m clear of it — two
+  // red shelves in the sky, which is the same "a mass and its cap chose
+  // different datums" family the extrudeGeo footing bug came from.
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(HW * 1.08, 1.3, HL * 1.08), terra);
+  put(roof, 0, g0 + HH + 0.65, HINTO, false);
+
+  // THE GATEWAY: a solid green block standing hard on the pavement, 5.5m to a
+  // deep white cornice. ~9m of street frontage — OSM traces the PASSAGE (5.9m),
+  // not the gateway wall, so the traced width is not the built width.
+  const GW = 9.0, GD = 3.6, GH = 5.5;
+  put(new THREE.Mesh(new THREE.BoxGeometry(GW, GH, GD), green), 0, g0 + GH / 2, GD / 2);
+  // the pointed-arch opening, as a recessed dark reveal with a white surround
+  put(new THREE.Mesh(new THREE.BoxGeometry(3.0, 4.0, 0.35), white), 0, g0 + 2.0, GD - 0.12);
+  put(new THREE.Mesh(new THREE.BoxGeometry(2.3, 3.5, 0.3), dark), 0, g0 + 1.75, GD - 0.30);
+  // THREE white horizontal mouldings on each pier — the strongest small-scale
+  // rhythm on the whole thing, and the one that reads at riding speed
+  for (const y of [1.7, 3.1, 4.5]) {
+    for (const sgn of [-1, 1]) {
+      put(new THREE.Mesh(new THREE.BoxGeometry(GW / 2 - 1.6, 0.22, GD + 0.14),
+                         white), sgn * (GW / 4 + 0.8), g0 + y, GD / 2, false);
+    }
+  }
+  // the deep projecting cornice, green over a white lower moulding
+  put(new THREE.Mesh(new THREE.BoxGeometry(GW + 0.7, 0.28, GD + 0.7), white),
+      0, g0 + GH - 0.16, GD / 2, false);
+  put(new THREE.Mesh(new THREE.BoxGeometry(GW + 0.6, 0.5, GD + 0.6), green),
+      0, g0 + GH + 0.25, GD / 2, false);
+
+  // THE MINIATURE PALACE on the gateway deck: two tiers of tiny arched
+  // openings, a balustraded parapet, and a row of about six small onion domes.
+  const PW = 6.0, PH = 2.2, PY = g0 + GH + 0.5;
+  put(new THREE.Mesh(new THREE.BoxGeometry(PW, PH, 1.1), white), 0, PY + PH / 2, GD / 2 + 0.2);
+  for (const ty of [0.55, 1.45]) {
+    for (let k = -4; k <= 4; k++) {
+      put(new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.46, 0.10), dark),
+          k * 0.62, PY + ty, GD / 2 + 0.75, false);
+    }
+  }
+  put(new THREE.Mesh(new THREE.BoxGeometry(PW + 0.3, 0.30, 1.3), white),
+      0, PY + PH + 0.15, GD / 2 + 0.2, false);
+  for (let k = -2.5; k <= 2.5; k += 1) {
+    const kiosk = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8), domeM);
+    kiosk.scale.y = 1.25;
+    put(kiosk, k * 1.05, PY + PH + 0.55, GD / 2 + 0.2, false);
+  }
+
+  // THE TWO MINARETS. Octagonal, seven tiers divided by white bands, each
+  // pierced by double arch-shaped niches, capped by a ribbed onion dome with a
+  // spike finial. ~14m to the finial, which is the whole point of the recipe.
+  const MR = 0.85, TOP = 13.2;
+  for (const sgn of [-1, 1]) {
+    const u = sgn * (GW / 2 - 0.9);
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(MR * 0.86, MR, TOP, 8), green);
+    put(shaft, u, g0 + TOP / 2, GD / 2);
+    for (let t = 1; t <= 7; t++) {
+      const y = g0 + TOP * (t / 7.6);
+      put(new THREE.Mesh(new THREE.CylinderGeometry(MR * 1.06, MR * 1.06, 0.22, 8), white),
+          u, y, GD / 2, false);
+      // the double niche: two dark slots per tier on the street face
+      for (const o of [-0.28, 0.28]) {
+        put(new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.62, 0.10), dark),
+            u + o, y + 0.62, GD / 2 + MR * 0.92, false);
+      }
+    }
+    // ribbed onion dome + finial
+    const prof = [[0, 0.92], [0.30, 1.06], [0.62, 1.02], [0.88, 0.86],
+                  [1.12, 0.60], [1.30, 0.30], [1.42, 0.001]];
+    const dome = new THREE.Mesh(
+      new THREE.LatheGeometry(prof.map(([h, r]) => new THREE.Vector2(r * MR * 1.25, h * MR * 1.25)), 12),
+      domeM);
+    put(dome, u, g0 + TOP, GD / 2);
+    put(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.09, 1.0, 6), domeM),
+        u, g0 + TOP + 1.9, GD / 2, false);
+  }
+}
+
+
 // THE CBD TRIO, researched 2026-07-30 (research/sultanmosque-cbdtrio.md).
 // The regulatory fact that shapes the skyline: UOB Plaza One, Republic
 // Plaza and One Raffles Place are ALL exactly 280m (the CBD cap from Paya
@@ -4669,6 +4814,9 @@ export const RECIPES = [
   [/^people's park complex$/i, peoplesPark],
   [/^thian hock keng$/i, thianHockKeng],
   [/^masjid sultan$/i, sultanMosque],
+  // "Masjid Jamae (Chulia)" is the OSM name. Anchored to the start so it cannot
+  // also take "Jamae Chulia Heritage", a separate 155 m2 footprint next door.
+  [/^masjid jamae/i, masjidJamae],
   [/^uob plaza/i, uobPlaza],
   [/^ocbc bank$/i, ocbcCentre],
   [/^republic plaza$/i, republicPlaza],
