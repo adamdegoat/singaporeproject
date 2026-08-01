@@ -2042,6 +2042,13 @@ export class TreeField {
     const cards = new THREE.InstancedMesh(
       new THREE.PlaneGeometry(1, 0.55), MAT.leaf, n * CARDS);
     trunks.castShadow = branches.castShadow = blobs.castShadow = cards.castShadow = true;
+    // THE ONLY RELIABLE WAY TO KNOW A TRUNK IS A TRUNK. D6 and D37 both used
+    // to find trees by geometry signature -- a tapered instanced cylinder in a
+    // radius band -- and asserted in a comment that nothing else in the world
+    // shared it. Colonnade piers, structural columns and canopy posts all do.
+    // Measured 2026-08-01: 5,255 'trunks' in Robertson against 266 real trees,
+    // and six building columns reported as trees growing through walls.
+    trunks.userData.treeTrunk = true;
 
     const m = new THREE.Matrix4(), e = new THREE.Euler(), q = new THREE.Quaternion();
     const p = new THREE.Vector3(), sc = new THREE.Vector3();

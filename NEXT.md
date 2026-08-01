@@ -264,6 +264,33 @@ Two separate things were wrong and the second one hid the first:
 `?nofoliage`, not estimated. Leaf cards are 2 triangles each; the first estimate
 was 4x too pessimistic and would have talked me out of it.
 
+**THEN THE CHECK ITSELF WAS WRONG, TWICE, IN OPPOSITE DIRECTIONS.** D37 ("street
+trees standing inside a building") tried to recognise a tree by its geometry:
+
+1. It required `geometry.parameters.height > 3`. TreeField's trunk is a UNIT
+   cylinder scaled by the instance matrix, so its geometry height is 1 — the
+   test excluded every tree in the world. The 19 "trunks" it had been reporting
+   were other cylinders entirely. **D37 had never once looked at a tree and said
+   PASS the whole time.** Found only because 2,205 trees were added and the
+   trunk count did not move.
+2. So it matched the SHAPE instead — stout, tapered, height from the decomposed
+   scale. That went to **5,255 trunks against 266 real trees** in Robertson,
+   because colonnade piers, lamp columns and walkway posts are stout tapered
+   cylinders too, and they stand inside buildings quite legitimately. It
+   reported six of them as trees growing through walls, and I wrote them up as a
+   pre-existing bug before probing them. `blocked()` was right; the check was
+   not. **No building contains those points** — measured, not argued.
+
+Fixed by tagging: `TreeField` sets `userData.treeTrunk` and both D6 and D37 ask
+for the tag. D6 carried the same assumption in a comment — "the only instanced
+cylinder with this profile" — which is false, and it was reporting zero by luck
+rather than by correctness. Robertson went **8 findings to 1**; D37 now walks 995
+trunks and finds none in a building.
+
+**A geometry signature is a guess about who made something.** Third time this
+project has paid for that guess (walkway roofs, parked cars, now trunks), and
+the fix is the same every time: identify by MECHANISM.
+
 **A sweep for the same bug elsewhere came back clean.** Every one of the twenty
 scene layers is read by something; `trees` was the only orphan. **D39** now
 ratchets it: for each layer the scene populates, a counter that must move when

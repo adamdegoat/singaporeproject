@@ -175,10 +175,11 @@ const found = await page.evaluate(() => {
     const qd = new T.Quaternion(), sd = new T.Vector3();
     sc.traverse((o) => {
       if (!o.isInstancedMesh) return;
-      const pr = o.geometry.parameters || {};
-      if (o.geometry.type !== 'CylinderGeometry') return;
-      // a trunk: tapered, and the only instanced cylinder with this profile
-      if (!(pr.radiusBottom > 0.25 && pr.radiusBottom < 0.8 && pr.radiusTop < pr.radiusBottom)) return;
+      // IT IS NOT the only instanced cylinder with that profile -- that claim
+      // was tested on 2026-08-01 and is false. TreeField tags its own trunks;
+      // ask for the tag. (Only visible under ?raw=1, which is what this loads:
+      // consolidate() merges the instanced meshes away.)
+      if (!o.userData.treeTrunk) return;
       for (let i = 0; i < o.count; i++) {
         o.getMatrixAt(i, m4d); m4d.decompose(pd, qd, sd);
         pd.applyMatrix4(o.matrixWorld);
@@ -1324,25 +1325,31 @@ const found = await page.evaluate(() => {
     let trunks = 0;
     sc.traverse((o) => {
       if (!o.isInstancedMesh) return;
-      const pr = o.geometry.parameters || {};
-      if (o.geometry.type !== 'CylinderGeometry') return;
-      // THE HEIGHT IS IN THE INSTANCE MATRIX, NOT IN THE GEOMETRY.
+      // ASK THE BUILDER WHAT IT BUILT. Two wrong versions before this one, both
+      // trying to recognise a tree by its geometry:
       //
-      // TreeField builds one trunk as CylinderGeometry(0.30, 0.62, 1, 8) — a
-      // UNIT cylinder — and scales each instance to its real height. This test
-      // read `pr.height > 3` and so excluded every tree in the world; the 19
-      // trunks it has been reporting were other cylinders entirely, and D37 has
-      // never once looked at a tree. It said PASS the whole time.
+      //   1. `pr.height > 3` — but TreeField's trunk is a UNIT cylinder scaled
+      //      by the instance matrix, so its geometry height is 1. This excluded
+      //      every tree in the world. The 19 "trunks" it reported were other
+      //      cylinders entirely: D37 never once looked at a tree and said PASS
+      //      the whole time. Found only when 2,205 trees were added on
+      //      2026-08-01 and the trunk count did not move.
+      //   2. Matching the SHAPE instead — a stout tapered cylinder, height from
+      //      the decomposed scale. That went to 5,255 trunks against 266 real
+      //      trees in Robertson, because colonnade piers, lamp columns and
+      //      walkway posts are stout tapered cylinders too, and they stand
+      //      inside buildings quite legitimately. It reported six of them as
+      //      trees growing through walls.
       //
-      // Caught on 2026-08-01 when 2,205 park and surveyed trees were added and
-      // the trunk count did not move. Match the SHAPE here — a stout tapered
-      // cylinder — and take the height from the decomposed scale below.
-      if (!((pr.radiusBottom || 0) > 0.18 && (pr.radiusTop || 0) < (pr.radiusBottom || 0))) return;
+      // A geometry signature is a guess about who made something. TreeField
+      // tags its own trunks; ask for the tag. Same fix D20 got with
+      // walkwayRoof, and the same lesson this project keeps relearning:
+      // identify by MECHANISM, not by shape.
+      if (!o.userData.treeTrunk) return;
       for (let i = 0; i < o.count; i++) {
         o.getMatrixAt(i, m4); m4.decompose(p4, q4, s4);
         p4.applyMatrix4(o.matrixWorld);
         if (p4.y < -900) continue;
-        if ((pr.height || 1) * s4.y <= 3) continue;   // a bollard is not a tree
         trunks++;
         const b = buildingAt(p4.x, p4.z);
         if (b && bad.length < 6) bad.push(`a tree trunk stands inside "${b.n || '(unnamed)'}" at ${p4.x | 0},${p4.z | 0}`);
