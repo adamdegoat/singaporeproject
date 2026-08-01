@@ -134,7 +134,13 @@ export function buildSignage(world, axis, data, isBlocked) {
           new THREE.PlaneGeometry(4.6, 1.72),
           new THREE.MeshBasicMaterial({ map: texDirection(rows) })
         );
-        face.position.set(nx * (half * 0.42), 5.9, nz * (half * 0.42));
+        // OFF THE FACE OF THE BACKER, NOT INSIDE IT. The backer below is a box
+        // 9cm deep at this same centre, so a plane placed exactly here is
+        // buried in it -- which is what happened to the second face on the
+        // first attempt: added, audited clean, and completely invisible.
+        // Each face sits just proud of its own side.
+        const _sx = Math.sin(ang), _sz = Math.cos(ang);
+        face.position.set(nx * (half * 0.42) - _sx * 0.06, 5.9, nz * (half * 0.42) - _sz * 0.06);
         face.rotation.y = ang + Math.PI;
         g.add(face);
         // THE BACK OF A DIRECTION SIGN IS GREY ALUMINIUM. In darkMetal it is
@@ -146,10 +152,39 @@ export function buildSignage(world, axis, data, isBlocked) {
         // in the sky looks exactly like a missing texture. The sign is correct;
         // the colour was not.
         const backer = new THREE.Mesh(new THREE.BoxGeometry(4.6, 1.72, 0.09), SIGN_BACK);
-        backer.position.copy(face.position);
-        backer.position.y -= 0.0;
+        backer.position.set(nx * (half * 0.42), 5.9, nz * (half * 0.42));
         backer.rotation.y = ang;
         backer.castShadow = true; g.add(backer);
+        // AND A FACE FOR THE OTHER CARRIAGEWAY.
+        //
+        // A single face pointing at oncoming traffic leaves everyone on the
+        // other side of the road looking at a blank panel in the sky. That has
+        // now been investigated FOUR times in this project -- written up as a
+        // defect, chased through probes on Victoria Street, again on Serangoon
+        // Road, and again on 2026-08-01 -- and each time the answer was "the
+        // sign is correct, the back of a sign is grey". Four investigations is
+        // the code telling you something: a rider meets these backs constantly,
+        // because half of every dual carriageway faces one.
+        //
+        // The street-name plates a few lines below already solve this the right
+        // way -- "two back-to-back faces so the name reads correctly from both
+        // sides" -- and a real gantry does carry a sign for each direction.
+        //
+        // LEFT AND RIGHT SWAP. The cross street on your left driving one way is
+        // on your right driving the other, so the second face is not a copy: it
+        // is the same junction described from the opposite direction.
+        if (rows.length) {
+          const flip = rows.map((r2) => ({
+            text: r2.text, dir: r2.dir === 'left' ? 'right' : 'left',
+          }));
+          const back = new THREE.Mesh(
+            new THREE.PlaneGeometry(4.6, 1.72),
+            new THREE.MeshBasicMaterial({ map: texDirection(flip) })
+          );
+          back.position.set(nx * (half * 0.42) + _sx * 0.06, 5.9, nz * (half * 0.42) + _sz * 0.06);
+          back.rotation.y = ang;
+          g.add(back);
+        }
 
         g.position.set(px, groundAt(px, pz), pz);
         world.add(g);

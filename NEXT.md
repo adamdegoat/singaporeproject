@@ -3910,3 +3910,100 @@ four Overpass mirrors are still down and the survivor returns a partial. The
 guard's own words — "this is a flaky-mirror partial, not news about the world".
 orchard.json verified intact afterwards: 1,626 buildings, 3,015 roads, audit
 42/42. That guard has now correctly refused seven bad refetches in a row.
+
+## The blank panel over Victoria Street — investigated four times, now actually fixed
+
+Those grey rectangles hanging over the road are the BACKS of direction signs,
+and the comment in src/wayfind.js records this being chased three separate times
+before today: "written up as a defect once, then chased through probes on
+Victoria Street and again on Serangoon Road, because a black panel in the sky
+looks exactly like a missing texture. The sign is correct; the colour was not."
+
+I became the fourth. Four investigations is the code telling you something: a
+rider meets these constantly, because half of every dual carriageway faces one.
+
+**A real gantry carries a sign for each direction, and the street-name plates
+forty lines below in the same file already do exactly that** — "two back-to-back
+faces so the name reads correctly from both sides". The gantry now does too, and
+LEFT AND RIGHT SWAP on the second face: the cross street on your left driving
+one way is on your right driving the other, so it is the same junction described
+from the opposite direction, not a copy.
+
+**The first attempt was invisible.** The backer is a box 9cm deep at the same
+centre, so a plane placed exactly there is buried inside it — added, audited
+clean, and completely absent from the render. Both faces now sit 6cm proud of
+their own side. Verified: Victoria Street's gantry reads "Middle Road <-,
+Manila Street ->" from the carriageway that used to get a blank slab.
+
+**Also, a harness note:** data/streetshot.mjs timed out repeatedly during this
+work and it was NOT the change — it fails the same way with the change reverted.
+Confirmed by A/B before blaming the code.
+
+## FOUND, NOT FIXED: the Bayfront bridge deck renders as bare terrain
+
+Marina Bay, on Bayfront Avenue where it crosses the bridge (world 3064,8622:
+`__bridgeDeckAt` = 25.52m over terrain at 12.65m, `__onRoad` true, street
+"Bayfront Avenue").
+
+A rider there sees a huge featureless PALE expanse with kerbs, railings, lamp
+posts and trees standing on it, and only a narrow strip of asphalt. The same
+avenue 400m away, off the bridge (2892,9320), renders perfectly: asphalt, lane
+markings, direction signs, traffic lights. Two frames saved as
+shots/mb_offbridge.jpg and shots/mb_onbridge.jpg — the contrast is the finding.
+
+So the carriageway and pavement surfacing that works on the ground does not
+reach the deck. Not diagnosed further: it needs the terrain-versus-deck
+rendering path read properly, and guessing at it is how three of tonight's
+other bugs got their first two wrong diagnoses.
+
+**Do not confuse this with the streetshot warning.** data/streetshot.mjs already
+documents "a frame of bare terrain with no tarmac, which looks exactly like a
+catastrophic world bug and is not one" — that case is a district that has not
+STREAMED yet. This one is a fully built single-district scene with every other
+prop present, which is a different thing.
+
+## DIAGNOSED, NOT FIXED: Marina Bay's ground is ~25m too high
+
+Measured in the built world (scene=marinabay):
+
+| where | modelled ground | reality |
+|---|---|---|
+| Raffles Avenue  3050,8500 | **29.6m** | ~5m |
+| Temasek Avenue  3100,8450 | **28.3m** | ~5m |
+| Bayfront Ave (flat) 2892,9320 | **15.3m** | ~5m |
+| Esplanade 2700,8700 | 7.0m | plausible |
+
+Marina Bay is flat reclaimed land. A 30m plateau across Raffles and Temasek
+Avenue is wrong by about twenty-five metres, and it is why the Bayfront frames
+show kerbs, railings, lamps and trees standing on a featureless pale expanse:
+that is bare terrain raised to roof height with no road or pavement on it.
+
+**Root cause, established rather than guessed.** terrain.py already excludes
+bridges (the Benjamin Sheares deck once put a 53m ridge across the district, and
+that is fixed). This is different: I asked BOTH elevation sources directly about
+four flat Marina Bay points and they AGREE —
+
+    open-elevation   [34.0, 29.0, 8.0, 11.0]
+    opentopodata     [36.0, 32.0,  4.0,  8.0]
+
+Both are SURFACE models at ~30m resolution. Between Suntec, Marina Square and
+Millenia the cell simply contains more roof than street, so the reading is the
+roof. Sampling along road centrelines and median-filtering spikes cannot rescue
+that, because every sample in the run is high together.
+
+**No gate catches it.** V3 (terrain steps sharper than 1:1) passes because the
+plateau is smooth; V4 scale sanity passes. A wrong-but-smooth ground is
+invisible to every check in the suite.
+
+**Candidate fix, in order of how principled it is:**
+1. Filter samples by DISTANCE TO THE NEAREST BUILDING — we already know every
+   footprint. A road point 40m from any building is reading sky-to-ground; one
+   threading between towers is reading roofs. Marina Bay has wide promenades and
+   a bay edge that would still supply plenty of honest samples.
+2. Cross-check the two sources and take the LOWER. A surface model's error is
+   always upward. Cheap, but it would not have helped here — they agree.
+3. A published ground band per district. Accurate and unscalable.
+
+Do NOT reach for a blanket "take the minimum": Fort Canning is genuinely 60m and
+Orchard Road genuinely climbs 14m over its length, which is the whole reason the
+heightfield exists.
