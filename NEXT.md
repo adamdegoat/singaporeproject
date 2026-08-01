@@ -289,6 +289,35 @@ and the compound is a solid pad where it should be a wall around a courtyard —
 from above it reads as green paint. Neither is visible from the street, which is
 why it shipped.
 
+## CENTRIUM SQUARE IS WIRED — and the generic was drawing an 80m-wide tower
+
+The clearest case yet for judging a recipe against what it replaces. Centrium
+Square's OSM ring is **3,699 m2 against a published site of 6,365.8 m2**, and
+the published office plate is ~904 m2 — about a QUARTER of the ring. So the ring
+is the PODIUM, and extruding it to 19 storeys, which is what the generic family
+did, draws an eighty-metre-wide nineteen-storey glass slab on Serangoon Road.
+The A/B frames are unambiguous.
+
+The recipe divides `b.h` by the published floor stack (L1-2 retail, L3-4 car
+park, L5 facilities deck, L6-8 medical, L9-19 offices) rather than inventing a
+metre figure — no metre height is published for this building and `b.h` is our
+own 19 x 3.4 carrying `levels` provenance.
+
+Two rounds of vet corrections, both mine:
+- **The street face was sized from the oriented box's SHORT side**, and this
+  building's 80.1m frontage is its LONG one, so the cube cladding covered the
+  middle quarter of the facade. An oriented box has two dimensions and nothing
+  about the box says which meets the road — the frontage is now measured by
+  projecting the ring onto the along-street axis.
+- **Random cube colours read as confetti**, with far too much red. Tumbling
+  blocks is a REGULAR pattern; the tone now comes from the cell's coordinates
+  and the vermillion/mustard are sparse deterministic accents.
+
+STILL OWED: the panel field stops partway along the podium because it is placed
+on one plane found by marching out from the centroid, and this ring has a
+published 26.5 x 11.6m notch cut from its SW corner, so the street face is not
+one plane. Cosmetic; the massing is the correction that mattered.
+
 ## WHERE THE EIGHT ACTUALLY STAND (frontage, from data/accuracy.py)
 
 The frontage is what the finish line is written against. "height" below is

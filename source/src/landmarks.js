@@ -2692,6 +2692,217 @@ function centriumSquare(api, b) {
 }
 
 
+// FOOK HAI BUILDING, 150 South Bridge Road. A 1970s strata mall.
+// research/chinatown-littleindia-landmarks.md section 2.
+//
+// THE STOREY COUNT IN CIRCULATION IS WRONG. SkyDB says "21 floors, completed
+// 1974"; photographs show nine to eleven, and 21 floors inside OSM's 32m would
+// be 1.5m per floor. Completion is disputed three ways (1974 / 1976 / 1977) and
+// no source is preferred here because the recipe does not need one.
+//
+// OSM's height=32 is kept — it is the only figure available and it is
+// consistent with 9-10 storeys at 3.2-3.5m — but it is NOT a survey: it was
+// hand-entered in 2020 by a mapper with sixteen changesets, comment "Height
+// Info", imagery "Bing", no source tag. Recorded so nobody later mistakes it
+// for one.
+//
+// WHAT MAKES IT READ is not the height at all. It is a horizontal building:
+// a stack of deeply recessed access-corridor bands, projecting slabs with dark
+// voids between them, unbroken across the full width, with no vertical order
+// anywhere — over a canopy with a ribbed soffit. And BOTH STREET CORNERS ARE
+// CHAMFERED (9.0m and 9.1m), which the OSM ring already carries, so the mass
+// gets that for free; it is what makes the block read as 1970s rather than as
+// a box.
+function fookHai(api, b) {
+  const H = b.h || 32;
+  const pale = new THREE.MeshStandardMaterial({ color: 0xcfcabf, roughness: 0.85 });
+  const slate = new THREE.MeshStandardMaterial({ color: 0x3f4a52, roughness: 0.7 });
+  const cream = new THREE.MeshStandardMaterial({ color: 0xe6e0d2, roughness: 0.85 });
+
+  // the mass, with its chamfers, and a plain parapet — flat top, no setback.
+  // The tall slabs behind it in photographs are the 20-storey HDB blocks at
+  // 533/535 Upper Cross Street, 54m away, and are a different building.
+  api.world.add(api.extrude(b.p, H, pale, 0));
+  api.world.add(api.extrude(api.grow(b.p, 1.006), 0.8, pale, H));
+
+  // L1 shopfronts sit under a projecting canopy with a ribbed soffit
+  const CAN = 4.4;
+  api.world.add(api.extrude(api.grow(b.p, 1.035), 0.45, cream, CAN));
+  api.world.add(api.extrude(api.grow(b.p, 1.030), 0.22, slate, CAN - 0.22));
+  // L2, the near-blank mezzanine: a dark spandrel with one narrow glazing strip
+  api.world.add(api.extrude(api.grow(b.p, 1.004), 2.6, slate, CAN + 0.45));
+  // L3 is deliberately nothing — a large blank pale wall, because the mall
+  // floors behind it are internalised. That blankness is half the building.
+
+  // L4 upward: the corridor bands. A projecting slab edge, then a recessed
+  // void, repeating to the parapet. Six or seven of them across the full width.
+  const START = CAN + 0.45 + 2.6 + 3.2;
+  const STEP = (H - 1.2 - START) / 6;
+  for (let y = START; y < H - 1.4; y += STEP) {
+    // DEEP ENOUGH TO CAST A SHADOW. Round 1 recessed the void by 1.2% of a 45m
+    // plan — about 27cm — and the bands read as pencil lines instead of the
+    // horizontal shadow-slots that are the whole character of the block. A
+    // proportional inset needs to be checked against the real metres it makes.
+    // A RECESS CUT INTO A SOLID MASS IS INVISIBLE. Round 2 deepened the inset
+    // to 4.5% and nothing changed, because the full-height mass is already
+    // drawn and anything grown INWARD from it is buried inside it — the same
+    // trap that hid the second face of the direction gantries (a plane at the
+    // backer's own centre is inside the backer). The void is drawn slightly
+    // PROUD instead, so the elevation reads as what it is from the street:
+    // alternating projecting slab and dark band.
+    api.world.add(api.extrude(api.grow(b.p, 1.022), 0.34, pale, y));
+    api.world.add(api.extrude(api.grow(b.p, 1.004), STEP - 0.34, slate, y + 0.34));
+  }
+}
+
+
+// TEKKA PLACE — PARKED AT ROUND 3, 2026-08-01, AND DELIBERATELY NOT WIRED UP.
+//
+// The rule in this project is that a bespoke recipe which does not beat the
+// generic is a regression, and after three rounds this one does not: the
+// ninety-metre lotus screen keeps landing on the annex's twenty-metre END face
+// instead of its long flank, and what is left is a bare charcoal slab, which is
+// worse than the glazed block the generic draws.
+//
+// DIAGNOSED, so the next attempt does not start from zero. The face chooser
+// offers three candidates — the streetward normal and the two normals
+// perpendicular to the oriented box's long axis — and scores them by the extent
+// of the ring projected onto each tangent. Removing the 1.15x "prefer the
+// street" bias changed NOTHING, which means the long-flank candidates are being
+// dropped before scoring: the only way out of that loop is `e <= 0`, i.e. the
+// outward march from the centroid never leaves the ring. This annex's ring is
+// long, thin and concave, so its centroid is very likely OUTSIDE it — the same
+// concavity that D38 had to nudge around an hour earlier in the same session.
+//
+// THE NEXT STEP IS TO INSTRUMENT, NOT TO LOOK: print the three candidates'
+// (extent, edge) pairs for both footprints before changing anything. That is
+// what broke the Masjid Jamae loop after two wasted rounds, and it is written
+// in WORKFLOW.md as the rule for exactly this situation.
+//
+// TEKKA PLACE, 2 Serangoon Road. ONG&ONG, 2019.
+// research/chinatown-littleindia-landmarks.md section 4.
+//
+// TWO FOOTPRINTS, ONE NAME, AND THEY ARE DIFFERENT BUILDINGS. A 10-storey main
+// block on the Serangoon Road corner with Citadines Rochor above it (2,446 m2),
+// and a 7-storey car-park annex running about ninety metres along Rochor Canal
+// (3,083 m2). They touch at one corner: an L, not one mass. Told apart by area
+// here, because that is the only thing the recipe is handed — and the heights
+// themselves were the wrong way round in the data until 2026-08-01, when OSM's
+// own `parking=multi-storey` tag on the larger ring settled it.
+//
+// THE IDENTITY IS THE SCREEN: a perforated facade standing off the structure,
+// square panels each cut with a four-petal lotus, referencing the louvred
+// windows of the Little India shophouses. Terracotta and rust-clay, checkered
+// with charcoal and cream. Ninety metres of it, with planting spilling over the
+// top — which is what a rider actually gets, not the tower.
+function tekkaPlace(api, b) {
+  const H = b.h || 24;
+  const ANNEX = (b.a || 0) > 2700;
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const sw = streetward(api, ob);
+  const rust = new THREE.MeshStandardMaterial({ color: 0xa8552f, roughness: 0.85 });
+  const clay = new THREE.MeshStandardMaterial({ color: 0x8d4526, roughness: 0.85 });
+  const char = new THREE.MeshStandardMaterial({ color: 0x3a3a38, roughness: 0.8 });
+  const creamM = new THREE.MeshStandardMaterial({ color: 0xded6c6, roughness: 0.85 });
+  const glass = new THREE.MeshStandardMaterial({
+    color: 0x35393d, roughness: 0.2, metalness: 0.5 });
+  const leaf = new THREE.MeshStandardMaterial({ color: 0x4d6b3c, roughness: 0.95 });
+
+  api.world.add(api.extrude(b.p, H, char, 0));
+
+  // THE SCREEN GOES ON THE WIDEST FACE, WHICH IS NOT ALWAYS THE ONE FACING THE
+  // DISTRICT AXIS. `streetward` measures to the nearest point of the district's
+  // MAIN street, and the annex's ninety-metre flank runs along Rochor Canal,
+  // roughly perpendicular to Serangoon Road. Taking that as the frontage put
+  // the whole screen in one 1.5m-wide stripe on the short end. So both
+  // candidate faces are measured and the wider one wins — which is also the
+  // right answer for the main block, whose widest face IS the Serangoon corner.
+  const faces = [
+    { nx: sw.nx, nz: sw.nz },
+    { nx: -ob.uz, nz: ob.ux },
+    { nx: ob.uz, nz: -ob.ux },
+  ];
+  let best = null;
+  for (const f of faces) {
+    const ax = -f.nz, az = f.nx;
+    let a0 = Infinity, a1 = -Infinity;
+    for (const q of b.p) {
+      const u = (q[0] - ob.cx) * ax + (q[1] - ob.cz) * az;
+      if (u < a0) a0 = u;
+      if (u > a1) a1 = u;
+    }
+    let e = 0;
+    for (let d = 1; d < 90; d += 0.5) {
+      if (!pointInRing(ob.cx + f.nx * d, ob.cz + f.nz * d, b.p)) { e = d - 0.5; break; }
+    }
+    // a face is only a candidate if it actually faces outward from the block
+    if (e <= 0) continue;
+    // NO "PREFER THE STREET" BIAS. It was 1.15x and it beat a face four times
+    // wider: the annex's ninety-metre lattice went onto its twenty-metre END,
+    // because the district axis happens to lie off that end. The screen is the
+    // long elevation by definition — ONG&ONG's own description is a facade
+    // that wraps the flank — so the widest face wins outright.
+    const score = (a1 - a0);
+    if (!best || score > best.score) best = { f, ax, az, a0, a1, e, score };
+  }
+  if (!best) return;
+  const yaw = Math.atan2(best.f.nx, best.f.nz);
+  const tX = best.ax, tZ = best.az;
+  const nX = best.f.nx, nZ = best.f.nz;
+  const at = (mesh, u, y, into, cast = true) => {
+    mesh.rotation.y = yaw;
+    mesh.position.set(ob.cx + tX * u - nX * into, y, ob.cz + tZ * u - nZ * into);
+    mesh.castShadow = cast;
+    api.world.add(mesh);
+  };
+  const edge = best.e;
+  const FW = (best.a1 - best.a0) * 0.96, FU = (best.a0 + best.a1) / 2;
+
+  // THE SCREEN. Panels standing 30cm off the wall with a gap between them, so
+  // it reads as a lattice rather than as cladding. On the annex it runs the
+  // whole height; on the main block it stops at the podium and the scalloped
+  // Citadines bands take over.
+  const TOP = ANNEX ? H - 1.2 : H * 0.45;
+  const tone = (i, j) => {
+    const h = ((i * 73856093) ^ (j * 19349663)) & 0x7fffffff;
+    const r = (h % 1000) / 1000;
+    return r < 0.14 ? char : r < 0.22 ? creamM : r < 0.60 ? rust : clay;
+  };
+  let pi = 0;
+  for (let u = FU - FW / 2 + 0.8; u < FU + FW / 2 - 0.8; u += 1.55, pi++) {
+    let pj = 0;
+    for (let y = 1.6; y < TOP; y += 1.55, pj++) {
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(1.34, 1.34, 0.16), tone(pi, pj));
+      at(panel, u, g0 + y, -(edge + 0.30), false);
+    }
+  }
+  // planting spilling over the top edge of the screen
+  for (let u = FU - FW / 2 + 1.0; u < FU + FW / 2 - 1.0; u += 2.2) {
+    const bush = new THREE.Mesh(new THREE.SphereGeometry(0.85, 8, 6), leaf);
+    bush.scale.set(1.25, 0.8, 0.9);
+    at(bush, u, g0 + TOP + 0.5, -(edge + 0.25), false);
+  }
+
+  if (!ANNEX) {
+    // CITADINES ROCHOR above: continuous curved balcony bands in the same
+    // terracotta alternating with dark glass, strongly horizontal.
+    for (let y = TOP + 0.6; y < H - 1.0; y += 3.2) {
+      api.world.add(api.extrude(api.grow(b.p, 1.016), 0.55, rust, y));
+      api.world.add(api.extrude(api.grow(b.p, 1.002), 2.6, glass, y + 0.55));
+    }
+  } else {
+    // the annex's roof is a planted DECK, not a lid
+    api.world.add(api.extrude(api.grow(b.p, 1.004), 0.5, creamM, H));
+    for (let u = FU - FW / 2 + 2.0; u < FU + FW / 2 - 2.0; u += 3.4) {
+      const t = new THREE.Mesh(new THREE.SphereGeometry(1.1, 8, 6), leaf);
+      t.scale.y = 0.75;
+      at(t, u, g0 + H + 1.2, -(edge - 4.0), false);
+    }
+  }
+}
+
+
 // THE CBD TRIO, researched 2026-07-30 (research/sultanmosque-cbdtrio.md).
 // The regulatory fact that shapes the skyline: UOB Plaza One, Republic
 // Plaza and One Raffles Place are ALL exactly 280m (the CBD cap from Paya
@@ -4946,6 +5157,7 @@ export const RECIPES = [
   // also take "Jamae Chulia Heritage", a separate 155 m2 footprint next door.
   [/^masjid jamae/i, masjidJamae],
   [/^centrium square$/i, centriumSquare],
+  [/^fook hai building$/i, fookHai],
   [/^uob plaza/i, uobPlaza],
   [/^ocbc bank$/i, ocbcCentre],
   [/^republic plaza$/i, republicPlaza],
