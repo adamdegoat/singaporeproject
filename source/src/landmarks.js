@@ -4764,7 +4764,14 @@ export const RECIPES = [
   // water and "Marina Bay Sands Theatres" is a hall inside the podium; both
   // contain the name and neither is a hotel tower.
   [/marina bay sands tower/i, marinaBaySands],
-  [/singapore flyer/i, singaporeFlyer],
+  // ANCHORED, because "Singapore Flyer Car Park" contains "Singapore Flyer" and
+  // was being handed its own 165m observation wheel. Two wheels stood side by
+  // side 125m apart in every frame looking north up Temasek Avenue — the single
+  // most recognisable object in Marina Bay, duplicated, and no check could see
+  // it because both were built exactly as the recipe intended. Fourth time a
+  // recipe pattern has over-matched (Grand Park City Hall, Esplanade Theatre,
+  // ArtScience Museum were the others): a landmark name is a WHOLE name.
+  [/^singapore flyer$/i, singaporeFlyer],
   [/fullerton hotel|^the fullerton$|fullerton building/i, fullerton],
   [/^merlion|merlion park/i, merlion],
   [/artscience/i, artScienceMuseum],
@@ -4785,7 +4792,13 @@ export const RECIPES = [
    hotel],
   // offices, schools and civic blocks: concrete frames with vertical fins, which
   // is what most of this stock actually is
-  [/waterloo centre|wilkie edge|one sophia|penang road|lazada|cuppage|school of|lasalle|singapore management|nanyang academy|istana|the atrium|manulife|winsland|somerset house|orchard shopping/i,
+  // `istana` REMOVED 2026-08-01: the Istana is an 1869 colonial palace with a
+  // pitched roof and a colonnade, and this family draws vertical concrete fins.
+  // It also caught "Istana Heritage Gallery". It is 350m back from Orchard Road
+  // behind its own trees so nothing about it is loud, but a finned slab is a
+  // wrong answer where generic fabric is merely a plain one. It deserves a real
+  // recipe; until then it takes the same fabric as its neighbours.
+  [/waterloo centre|wilkie edge|one sophia|penang road|lazada|cuppage|school of|lasalle|singapore management|nanyang academy|the atrium|manulife|winsland|somerset house|orchard shopping/i,
    finnedSlab],
 ];
 

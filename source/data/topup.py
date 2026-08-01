@@ -28,6 +28,14 @@ LAYERS = {
             'node["railway"="station"]({bbox});'
             'way["railway"="subway_entrance"]({bbox});'),
     "buildrel": 'rel["building"]({bbox});',
+    # A tower on a podium is TWO shapes, and OSM maps the second one as
+    # building:part. Orchard and River Valley were fetched before this layer
+    # existed and carry 4 and 1 of them against Chinatown's 505, so every
+    # podium-and-tower up there is drawn as one box to the tower's height.
+    # Topped up rather than refetched: a full refetch has been refused seven
+    # times by the loss guard and there is no reason to risk an eighth.
+    "buildpart": ('way["building:part"]({bbox});'
+                  'rel["building:part"]({bbox});'),
 }
 
 
