@@ -1192,6 +1192,53 @@ LANDMARK_MIN_HEIGHT = {
     "canninghill piers skybridge": (94.0, 100.0),
 }
 
+# BUILDINGS NAMED AND SIZED BY SURVEYED COORDINATE, BECAUSE OSM NAMES NONE OF
+# THEM.
+#
+# Tanjong Rhu is two kilometres of 1990s waterfront condominium and it is the
+# whole character of the district — and NOT ONE of Pebble Bay, Costa Rhu, Water
+# Place, Sanctuary Green, Casuarina Cove, Camelot by-the-Water, Tanjong Ria or
+# Parkshore carries a `name` tag. They exist only as unnamed footprints inside a
+# `landuse=residential` polygon, so the LANDMARKS table above — which matches on
+# name — can never reach them, and the whole wall renders at a type default.
+#
+# Coordinates are SLA OneMap / Nominatim (T1). STOREYS are portal data (T4) and
+# EVERY METRE HEIGHT IS UNPUBLISHED, so heights here are DERIVED at a 3.1m
+# residential floor-to-floor plus a roof-plant allowance, and are recorded as
+# derived — `hs` says "site", never "osm" and never "named". Do not let these
+# be quoted back as surveyed figures: that is the Raffles Hospital mistake,
+# where our own levels x 3.4 was laundered into a brief as an OSM survey.
+#
+# Where a development lists several storey counts the LOWEST credible published
+# figure is used, because over-tall is the more visible error against a
+# waterfront skyline the brief is explicit about:
+#   "THE TALLEST RESIDENTIAL MASS IN TANJONG RHU IS HDB, NOT THE CONDOMINIUMS.
+#    Any skyline that puts the condos on top is wrong."
+# The 27-30 storey HDB blocks already come through correctly from OSM levels.
+#
+# (lat, lon, name, storeys, radius_m) — every unnamed footprint within `radius`
+# of the point takes the name and the height, because a development is a
+# cluster of blocks around one address, not a single ring.
+SITE_HEIGHTS = [
+    (1.29758, 103.88309, "The Waterside",          23, 90),
+    (1.29757, 103.87159, "Pebble Bay",             16, 90),
+    (1.29639, 103.86688, "Costa Rhu",              17, 95),
+    (1.29655, 103.87250, "Water Place",            20, 80),
+    (1.29592, 103.87101, "Sanctuary Green",        15, 90),
+    (1.29770, 103.87447, "Casuarina Cove",         14, 70),
+    (1.29749, 103.87563, "Camelot by-the-Water",   19, 60),
+    (1.29691, 103.87453, "Tanjong Ria",            17, 55),
+    (1.29667, 103.87063, "Parkshore",              14, 55),
+    (1.29858, 103.88433, "The Line @ Tanjong Rhu", 20, 45),
+    (1.29884, 103.88383, "Crystal Rhu",            16, 40),
+    (1.29918, 103.88383, "Palazzetto",             18, 40),
+    (1.29962, 103.88378, "Emerald East",           18, 40),
+    (1.29881, 103.88435, "De Centurion",           16, 40),
+    (1.29867, 103.88480, "Fulcrum",                24, 40),
+]
+SITE_FLOOR_M = 3.1
+SITE_PLANT_M = 2.5
+
 HDB_STOREYS = {
     "210661": 23,    # Buffalo Road, corridor-access slab
     "210662": 25,    # the tallest of the group
@@ -4559,6 +4606,33 @@ def main():
     if _planted:
         print(f"  planted {_planted} trees across {len([g for g in green if g['k'] in PLANT])} "
               f"park/wood/scrub rings")
+
+    # NAME AND SIZE THE DEVELOPMENTS OSM LEAVES ANONYMOUS. Applied here, after
+    # every other height source has had its turn, so it can only ever fill a
+    # gap: a footprint that already carries a name or a real height keeps it.
+    _site_hit = {}
+    for _slat, _slon, _sname, _sst, _srad in SITE_HEIGHTS:
+        _sx, _sz = proj(_slat, _slon)
+        _h = round(_sst * SITE_FLOOR_M + SITE_PLANT_M, 1)
+        for _b in buildings:
+            if _b.get("n") or _b.get("hs") in ("osm", "named", "override"):
+                continue
+            _cx = sum(p[0] for p in _b["p"]) / len(_b["p"])
+            _cz = sum(p[1] for p in _b["p"]) / len(_b["p"])
+            if math.hypot(_cx - _sx, _cz - _sz) > _srad:
+                continue
+            # a bin store next to a tower block is not part of the tower block
+            if (_b.get("a") or 0) < 200:
+                continue
+            _b["n"] = _sname
+            _b["h"] = _h
+            _b["hs"] = "site"          # DERIVED from storeys, never a survey
+            _site_hit[_sname] = _site_hit.get(_sname, 0) + 1
+    if _site_hit:
+        print(f"  named+sized {sum(_site_hit.values())} anonymous footprint(s) from "
+              f"surveyed site coordinates (storeys x {SITE_FLOOR_M}m, DERIVED): "
+              + ", ".join(f"{k} x{v}" for k, v in sorted(_site_hit.items())[:4])
+              + ("..." if len(_site_hit) > 4 else ""))
 
     out = {
         "origin": {"lat": LAT0, "lon": LON0},

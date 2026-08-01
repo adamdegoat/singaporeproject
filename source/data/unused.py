@@ -122,6 +122,17 @@ IGNORED = {
 CARRIED_ELSEWHERE = {
     "tactile_paving": "crossings[] third element; drawn as the yellow kerb pad",
     "crossing:island": "crossings[] fourth element; drawn as a raised refuge",
+    # READ, JUST NOT VISIBLE TO THIS SCAN. process.py falls back to
+    # `addr:housename` when a building carries no `name`, and the value lands
+    # in the scene's generic `n` field, so nothing here can tell it apart from
+    # a name that came from `name`. Verified rather than assumed on
+    # 2026-08-02: tanjongrhu flagged it at 9%, and all seven of its
+    # addr:housename developments -- The Waterside, Emerald East, De
+    # Centurion, Crystal Rhu, Fulcrum, Riveredge, The Line @ Tanjong Rhu --
+    # are in the built scene under exactly those names. It is a FALSE
+    # POSITIVE in this check, not a gap in the pipeline, and it belongs here
+    # rather than in IGNORED, which would have said the opposite of the truth.
+    "addr:housename": "building name fallback when `name` is absent; lands in the scene's `n` field so this scan cannot see it (process.py, _nm)",
 }
 
 # Tags we SHOULD read and have not yet. These print every run and do not fail

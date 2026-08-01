@@ -108,6 +108,16 @@
    "status": "live",
    "notes": "Ring 1 due east: Marina Barrage, Bay East Garden and the Marina East promenade, closing the last of the Marina Reservoir rim. Overlaps marinabay 1,769x668m and later kallang, tanjongrhu and marinasouth, so the eastern group closes into one block. THE FIRST DISTRICT WITH REAL OPEN SEA: the Straits lie south of the barrage, read by data/coastline.py, which stitches natural=coastline, clips it to this bbox and closes the ring on the seaward side (land-on-left). Verified against known sea and land points before building. Brief: research/coastal-expansion.md candidate 2.",
    "queued_after": "kallang"
+  },
+  {
+   "id": "tanjongrhu",
+   "name": "Tanjong Rhu",
+   "bbox": "1.2900,103.8700,1.3020,103.8860",
+   "axis": "tanjong rhu road",
+   "status": "live",
+   "notes": "The peninsula east of Kallang Basin: two kilometres of 1990s waterfront condominium wall, the Tanjong Rhu promenade and suspension bridge, and the east half of the Benjamin Sheares Bridge. Ring 2 — it borders no district on its own, but shares 1,272x668m with kallang and 221x890m with marinaeast, both of which are built, so it closes rather than opens a gap. OSM heights here are FABRICATED and suppressed (HEIGHT_TAG_SUPPRESS covers this bbox): Costa Rhu's four blocks of 12/14/16/18 storeys all carry one blanket 56. conservation_fetch.py's BOX was widened east to 103.900 for this district. Brief: research/coastal-expansion.md candidate 4.",
+   "queued_after": "kallang",
+   "partialMainStreet": "deliberate: Tanjong Rhu Road runs ~4.5km from the Sports Hub east along the peninsula and on into Mountbatten and Katong. This district takes its WESTERN 2.3km — the reclaimed peninsula between Kallang Basin and the reservoir, which is the waterfront condominium wall the district exists for. The eastern reach is Katong's, which research/coastal-expansion.md Part 3 assessed and REJECTED as a candidate, so nothing is waiting on it. Decided 2026-08-02, not an accident of the bbox: the east edge 103.8860 was chosen to close against kallang and marinaeast, not to follow the road."
   }
  ]
 }

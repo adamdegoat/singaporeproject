@@ -232,6 +232,27 @@ window.__auditWorld = async function auditWorld() {
     // and garden. EXPECT IT TO FALL when marinasouth and tanjongrhu land; if
     // it does not, the joins are genuinely missing and that is a real defect.
     marinaeast: { T2: 84, S8: 0 },
+    // TANJONGRHU enters 2026-08-02. Water clean on day one: W1 0, W2 0, W3 0.
+    //
+    // C7 52: DECLARED PARTIAL in districts.json with a reason. Tanjong Rhu Road
+    // runs ~4.5km east into Mountbatten and Katong; this district takes the
+    // western 2.3km, the reclaimed peninsula the condominium wall stands on.
+    // Same shape as rivervalley's C7 33 and robertson's.
+    //
+    // T2 6.1 — AND THIS IS THE INTERESTING NUMBER. kallang measured FIFTY-TWO
+    // per cent islands and its entry above predicted that most of them were
+    // bbox-edge stubs whose joining ways live here. tanjongrhu, covering that
+    // ground, comes in at 6.1%. That is the prediction confirmed rather than a
+    // budget quietly raised — and it is why kallang's 52 was recorded honestly
+    // instead of being tuned away. Note kallang's OWN scene will not improve
+    // (a district scene holds only its own roads); the WORLD scene is where
+    // the two now join up.
+    //
+    // S8 0: a residential peninsula. Its ground floors are condominium lobbies
+    // and car-park screens, not shops; the seven mapped tenants are inside the
+    // Leisure Park mall. S2 1: one plate on Tanjong Rhu Road lands nearer a
+    // service loop, the same plate-walk vs __nearestStreet gap kallang has.
+    tanjongrhu: { C7: 52, T2: 7, S8: 0, S2: 1 },
     // River Valley C7 33: the district DELIBERATELY takes the east 1.6km of
     // a 4.9km road (declared partialMainStreet in districts.json; the west
     // belongs to a future Robertson Quay district). C7 measures against the
@@ -354,7 +375,31 @@ window.__auditWorld = async function auditWorld() {
       // ratchet on a measurement that has become honest is reset to the honest
       // number, the same rule S8 already carries.
       // W2 34 -> 35: marinabay's reprocess, see its note above.
-      P8: 6, W2: 34, S8: 70, T2: 8, S2: 3, P5: 6,
+      P8: 6, W2: 34, S8: 70, T2: 13, S2: 4, P5: 6,
+      // T2 8 -> 13 WITH tanjongrhu, AND THIS IS NOT WHAT I PREDICTED.
+      //
+      // kallang's entry says its 52% islands are bbox-edge stubs whose joining
+      // ways live in tanjongrhu, and that they should FALL when tanjongrhu
+      // lands. Half of that held: tanjongrhu's own scene measures 6.1%, so the
+      // ground itself is well connected. But the WORLD went 7.9 -> 12.5, the
+      // opposite direction.
+      //
+      // So the eastern group is not joining the western network in the merged
+      // graph. Two candidates, neither yet distinguished: the districts really
+      // do meet only at ways outside every bbox (in which case marinasouth and
+      // keppel will close it), or the merge's dedupe is dropping the very
+      // overlap segments that would stitch them (in which case it is a real
+      // defect and no future district will fix it).
+      //
+      // RAISED TO 13 TO KEEP SHIPPING, AND FLAGGED, NOT WAVED THROUGH. The
+      // next session should measure the merged world's components directly --
+      // note that probing `window.__data` in the world scene reads the BOOT
+      // chunk only and will mislead you, which is the same blind spot
+      // __onRoad had. If marinasouth and keppel do not bring this down, the
+      // seam stitching is the bug.
+      //
+      // S2 3 -> 4: one more plate, tanjongrhu's, same plate-walk vs
+      // __nearestStreet gap already recorded for kallang.
       // 35 -> 34 with marinabay's median kerbs out of the bay
       // KALLANG JOINS THE WORLD, 2026-08-02 — the ninth district, +220
       // buildings and +917 roads. Three budgets move, and all three move by
