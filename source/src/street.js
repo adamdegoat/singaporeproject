@@ -3,7 +3,10 @@
 // Everything is instanced and placed by walking the street axis.
 import * as THREE from '../lib/three.module.js';
 import { R, rand, pick, chance } from './tex.js';
-import { MAT, groundAt, standable } from './city.js';
+// surfaceAt for anything standing ON the road. See the note in main.js's
+// blocked(): a bridge deck is the road surface where a bridge crosses, and
+// every prop this file places was seated on the terrain under it.
+import { MAT, groundAt, surfaceAt, standable } from './city.js';
 import { claim } from './roads.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d, 0xcf6b3a, 0x2b2f33];
@@ -187,19 +190,19 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     }
     return last;
   };
-  const yaw = (r) => { p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
+  const yaw = (r) => { p.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
 
   // railing: a top rail and a lower rail, the classic grey tube barrier
   emit(new THREE.BoxGeometry(0.06, 0.05, 2.0), MAT.metal, railT, yaw);
   emit(new THREE.BoxGeometry(0.05, 0.04, 2.0), MAT.metal, railT, (r) => {
-    p.set(r[0], groundAt(r[0], r[2]) + 0.62, r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+    p.set(r[0], surfaceAt(r[0], r[2]) + 0.62, r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   emit(new THREE.CylinderGeometry(0.035, 0.035, 1.0, 6), MAT.metal, postT, yaw);
 
   // planters and bins
   emit(new THREE.CylinderGeometry(0.55, 0.46, 0.64, 10), MAT.conc, planterT, yaw);
   emit(new THREE.SphereGeometry(0.52, 8, 6), MAT.canopy, planterT, (r) => {
-    p.set(r[0], groundAt(r[0], r[2]) + 0.86, r[2]); q.identity();
+    p.set(r[0], surfaceAt(r[0], r[2]) + 0.86, r[2]); q.identity();
   });
   emit(new THREE.CylinderGeometry(0.24, 0.2, 0.9, 8), MAT.darkMetal, binT, yaw);
 
@@ -207,7 +210,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
   const cc = new THREE.Color();
   emit(new THREE.BoxGeometry(0.28, 1.05, 2.6),
     new THREE.MeshStandardMaterial({ roughness: 0.55 }), signT,
-    (r) => { p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); },
+    (r) => { p.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); },
     () => cc.setHex(pick(SIGN_COLS)));
 
   // Bus stops. Every mapped stop gets a pole and a flag, because a stop is a
@@ -266,7 +269,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     const flag = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.42, 0.05),
       new THREE.MeshStandardMaterial({ color: 0x2f6b3d, roughness: 0.4 }));
     flag.position.set(0.34, 2.75, 0); flag.castShadow = true; gp.add(flag);
-    gp.position.set(px, groundAt(px, pz), pz);
+    gp.position.set(px, surfaceAt(px, pz), pz);
     gp.rotation.y = ang;
     world.add(gp);
     poles++;
@@ -342,7 +345,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
       const band = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.13, 8), MAT.hiVis);
       band.position.set(k * 3.0, 0.92, 2.05); g.add(band);
     }
-    g.position.set(bx2, groundAt(bx2, bz2), bz2); g.rotation.y = ang;
+    g.position.set(bx2, surfaceAt(bx2, bz2), bz2); g.rotation.y = ang;
     world.add(g);
   }
 
@@ -390,7 +393,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     const mv = window.__pushClear ? window.__pushClear(lx, lz, -0.6, 18) : [lx, lz];
     if (!mv) continue;
     const [lx2, lz2] = mv;
-    g.position.set(lx2, groundAt(lx2, lz2), lz2); g.rotation.y = ang;
+    g.position.set(lx2, surfaceAt(lx2, lz2), lz2); g.rotation.y = ang;
     world.add(g);
 
     if (!signals.has(atS)) signals.set(atS, { s: atS, lenses: [], phase: signals.size * 5.5 });
@@ -499,7 +502,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
       placed = true; break;
     }
     if (!placed) noCabAtRank++;
-    g.position.set(tx2, groundAt(tx2, tz2), tz2); g.rotation.y = ang;
+    g.position.set(tx2, surfaceAt(tx2, tz2), tz2); g.rotation.y = ang;
     world.add(g);
   }
 

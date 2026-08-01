@@ -5,7 +5,11 @@
 // surface, all in two draw calls.
 import * as THREE from '../lib/three.module.js';
 import { R, rand, chance } from './tex.js';
-import { MAT, groundAt } from './city.js';
+// surfaceAt as well as groundAt. This file's own note says a bridge deck "would
+// need the same treatment threaded through four placement paths", and that was
+// true when it was written — surfaceAt() is exported now and answers both the
+// 6cm road offset and the deck in one call, so the threading is an import.
+import { MAT, groundAt, surfaceAt } from './city.js';
 import { claim } from './roads.js';
 import { texStreetName } from './wayfind.js';
 
@@ -103,7 +107,7 @@ function emitFlat(world, list, w, l, mat) {
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
   const p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1);
   list.forEach((r, i) => {
-    p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
+    p.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]);
     e.set(-Math.PI / 2, r[3], 0, 'YXZ');
     q.setFromEuler(e);
     m.compose(p, q, s);
@@ -688,7 +692,7 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
           if (face < 0) plate.rotation.y = Math.PI;
           g.add(plate);
         }
-        g.position.set(sx, groundAt(sx, sz), sz);
+        g.position.set(sx, surfaceAt(sx, sz), sz);
         g.rotation.y = Math.atan2(u0x, u0z) + Math.PI / 2;
         world.add(g);
         (window.__signage = window.__signage || [])
@@ -813,7 +817,7 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     im.castShadow = false; im.receiveShadow = true;
     world.add(im);
   };
-  const yaw = (r) => { p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
+  const yaw = (r) => { p.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
   // DEDUPE KERBS BEFORE EMITTING. With the dressing reach raised to cover the
   // whole district, three times as many streets are kerbed and every junction
   // where two of them meet can lay two kerbs on one spot. `claim` cannot stop
@@ -847,7 +851,7 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     zebra = dry(zebra);
     const im = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.62, 1), WHITE, zebra.length);
     zebra.forEach((r, i) => {
-      p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
+      p.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]);
       e.set(-Math.PI / 2, r[3], 0, 'YXZ'); q.setFromEuler(e);
       s.set(1, r[4], 1);
       m.compose(p, q, s); im.setMatrixAt(i, m);
@@ -926,7 +930,7 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
 
   emit(new THREE.CylinderGeometry(0.09, 0.13, 7.2, 8), MAT.metal, lamp, yaw);
   emit(new THREE.BoxGeometry(0.9, 0.16, 0.4), MAT.trim, lampArm, (r) => {
-    p.set(r[0], groundAt(r[5], r[6]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+    p.set(r[0], surfaceAt(r[5], r[6]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   const treeCount = trees.build(world);
   return { sideRoads: roads, sideSkipped: skipped, sideTrees: treeCount,

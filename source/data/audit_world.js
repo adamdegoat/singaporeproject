@@ -1967,7 +1967,17 @@ window.__auditWorld = async function auditWorld() {
         let hit = 0;
         for (let i = 0; i < pos.count; i += Math.max(1, Math.floor(pos.count / 24))) {
           vv2.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
-          if (inWater(vv2.x, vv2.z)) hit++;
+          // EXEMPT BY MECHANISM, NOT BY SIGNATURE. Water with a bridge deck
+          // over it is not open water — it is a road, and things stand on it.
+          // The signature allowlist below (deck / bridge part / rail) is the
+          // fourth geometry-signature allowlist in this project and it broke the
+          // same way the other three did: the moment blocked() was taught that a
+          // deck is rideable, the dressing put kerbs, lamps and plates on the
+          // Bayfront bridge and W2 reported 706 of them, because a kerb is not
+          // in its list of bridge shapes. standable(), blocked() and now this
+          // all ask the same question of the same function.
+          if (inWater(vv2.x, vv2.z)
+              && !(window.__bridgeDeckAt && window.__bridgeDeckAt(vv2.x, vv2.z) !== null)) hit++;
         }
         // A BRIDGE OVER THE BAY IS ENTIRELY OVER WATER BY DESIGN. The comment
         // here already said a bridge legitimately reaches over water, and then

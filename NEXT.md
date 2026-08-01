@@ -212,6 +212,61 @@ permissive. It stays outside the repo and is used to measure, not to ship.
   deploy.sh refused to publish. The gates read world.json and riders read the
   chunks; that guard is the only thing standing between those two facts.
 
+# THE DEFECT HUNT HAS BEEN RUNNING ON A SCENE THAT DOES NOT CONTAIN THE WORLD
+
+**deploy.sh runs `SG_SCENE=world node data/defects.mjs`, and with streaming the
+world scene never builds most districts.** Run per district and Marina Bay alone
+reports 291 findings against the world scene's 0. They are not new — the same
+counts appear on the pre-terrain-fix scene file, so they have been there for as
+long as streaming has, invisible.
+
+    orchard      4     rivervalley 1     bugis 4     robertson 1
+    marinabay  291  <-- D2 119, D9 167, D20 1, D38 4
+
+**FIX THE COVERAGE FIRST**: defects.mjs should run per district in deploy.sh, or
+the world run should force every chunk built. Until then the hunt is a hunt of
+one district.
+
+## D9: 500m OF MARINA BAY'S MAIN STREET IS NOT RIDEABLE, and the one-line fix
+## is wrong on its own
+
+Bayfront Avenue crosses the bay twice. `blocked()` in main.js returns true for
+every point inside a water polygon; `standable()` in city.js was taught about
+bridge decks when median kerbs were found standing in the bay, and `blocked()`
+never was. So 167 points on the district's own centreline — about 500m — are
+solid to a rider who is standing on a bridge.
+
+`if (inWater(x, z) && bridgeDeckAt(x, z) === null) return true;` **fixes D9
+completely: 167 -> 0.** It was tried, measured, and REVERTED, because the same
+predicate gates where the dressing may place things and **W2 went from 32 to 706
+things built in open water.** Making W2 deck-aware recovered only 7 of them,
+which is the measurement that matters: the other 670 are in the BAY, not on the
+deck. The dressing's reach has to be bounded to the deck's actual footprint
+FIRST, and then both numbers re-measured together. The diagnosis is written into
+blocked() itself so the next attempt starts from it.
+
+**Kept from that attempt, because they are right regardless:**
+- **W2 now exempts bridges BY MECHANISM** (`__bridgeDeckAt` over the sample
+  point) instead of by a geometry-signature allowlist of deck/bridge-part/rail
+  shapes. That allowlist was the FOURTH in this project and it broke the same
+  way the other three did — a kerb is not in its list of bridge shapes. W2 fell
+  32 -> 25 on Marina Bay as a side effect, which is 7 real things that were on a
+  deck and being counted as in the water.
+- **Every prop placement now uses `surfaceAt`, not `groundAt`** — main.js (8
+  sites, including the PLAIN kerb emitter, whose PAINTED twin ten lines above
+  had already been fixed and it alone was missed: one defect, two emitters),
+  street.js (8), markings.js (5) and sgdetail.js (8). The road is not the
+  terrain: it is drawn 6cm above it and it is the DECK where a bridge crosses.
+  This is the same two-numbers trap that had the bike riding 5.5cm under the
+  road for the whole project, one storey up.
+
+**STILL OPEN, MEASURED: D2 = 348 kerbs off their surface on Marina Bay** (12% of
+2,852, in two meshes that now both call surfaceAt). Since the call is right, the
+likely cause is ORDER — the kerbs are placed before `addBridgeWay` has
+registered the decks, so `surfaceAt` answers with the terrain at placement time
+and the deck at check time. Same family as "buildRoadIndex ran AFTER
+buildBuildings". Instrument the placement order before changing anything.
+
 # SEVEN LANDMARK RECIPES WERE FLOATING, AND SRI MARIAMMAN'S HALL HUNG 10.7m
 # ABOVE ITS OWN GOPURAM
 

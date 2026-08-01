@@ -201,6 +201,22 @@ function inWater(x, z) {
 }
 function blocked(x, z) {
   if (SOLID && SOLID.at(x, z)) return true;
+  // WATER IS A WALL — and teaching this otherwise needs the DRESSING fixed in
+  // the same batch, which is why the attempt on 2026-08-01 was reverted.
+  //
+  // The defect is real and stands: D9 reports 167 points on Bayfront Avenue's
+  // own centreline as blocked, about 500m of Marina Bay's main street that a
+  // rider cannot cross, because the bay has a bridge over it and this test does
+  // not know about decks (standable() in city.js does). Changing it to
+  // `inWater(x, z) && bridgeDeckAt(x, z) === null` DOES fix that — D9 went 167
+  // to 0 — but the same predicate gates where the dressing may place things,
+  // and W2 immediately went from 32 to 706 things built in open water. Making
+  // W2 deck-aware only recovered 7 of them, which is the measurement that
+  // matters: the other 670 are in the BAY, not on the deck, so the dressing's
+  // own reach is what has to be bounded first.
+  //
+  // Next attempt: bound the dressing to the deck's actual footprint before
+  // unblocking, and re-measure W2 and D9 together. Do not unblock alone.
   if (inWater(x, z)) return true;
   const list = colGrid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));
   if (!list) return false;
@@ -502,7 +518,12 @@ function dressStreet(data, axis, target = world) {
     return true;
   });
   emit(new THREE.BoxGeometry(0.42, 0.3, 2.0), MAT.kerb, dedupeProps(kerbT2, 0.6), (r) => {
-    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+  // surfaceAt, NOT groundAt — ONE DEFECT, TWO EMITTERS, and only one of them
+  // was ever fixed. The PAINTED kerbs a few lines above already used surfaceAt;
+  // these plain ones did not, so on the Bayfront bridge 119 of them sat 1.7m
+  // below the deck they belong to. Every prop on this list stands on the road
+  // surface, and the road surface is the deck where a bridge crosses.
+    p3.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   // THE LAMP POST, to LTA's published form.
   //
@@ -524,10 +545,10 @@ function dressStreet(data, axis, target = world) {
   // because it is one extra instanced draw either way and nobody can see the
   // difference at 8m up.
   emit(new THREE.CylinderGeometry(0.042, 0.10, 8.5, 8), MAT.galv, lampT, (r) => {
-    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); q.identity();
+    p3.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]); q.identity();
   });
   emit(new THREE.CylinderGeometry(0.07, 0.07, 2.4, 6), MAT.galv, armT, (r) => {
-    p3.set(r[0], groundAt(r[5], r[6]) + r[1], r[2]);
+    p3.set(r[0], surfaceAt(r[5], r[6]) + r[1], r[2]);
     e.set(0, r[3], Math.PI / 2 - 0.2 * r[4]); q.setFromEuler(e);
   });
   // THE BRACKET ARM stays a straight cantilever for now.
@@ -544,7 +565,7 @@ function dressStreet(data, axis, target = world) {
   // existing anchor and yaw place it unchanged. The pole below is already
   // right: octagonal, continuously tapered, bare hot-dip galvanised.
   emit(new THREE.BoxGeometry(1.0, 0.2, 0.44), MAT.trim, headT, (r) => {
-    p3.set(r[0], groundAt(r[4], r[5]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+    p3.set(r[0], surfaceAt(r[4], r[5]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   // Same ground-sharing rule as markings.js: `claim` is a single-cell hash and
   // lets near-boundary pairs through, so the axis pass drops any square that
@@ -571,21 +592,21 @@ function dressStreet(data, axis, target = world) {
   const onRoadOnly = (list) => (window.__onRoad
     ? list.filter((r) => window.__onRoad(r[0], r[2], 0.15)) : list);
   emit(new THREE.PlaneGeometry(0.20, 0.20), MAT.white, dedupeFlatT(onRoadOnly(dotT)), (r) => {
-    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
+    p3.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]);
     e.set(-Math.PI / 2, r[3], 0, 'YXZ'); q.setFromEuler(e);
   });
   emit(new THREE.PlaneGeometry(0.62, axis.w), MAT.white, zebraT, (r) => {
-    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
+    p3.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]);
     e.set(-Math.PI / 2, r[3], 0, 'YXZ');
     q.setFromEuler(e);
   });
   // the refuge: a low kerbed island in the middle of the crossing
   emit(new THREE.BoxGeometry(2.0, 0.22, 3.4), MAT.kerb, refugeT, (r) => {
-    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+    p3.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
   });
   // the tactile pad: a 1.2m by 0.9m yellow panel laid flat at the kerb
   emit(new THREE.PlaneGeometry(1.2, 0.9), MAT.tactile, tactileT, (r) => {
-    p3.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]);
+    p3.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]);
     e.set(-Math.PI / 2, r[3], 0, 'YXZ');
     q.setFromEuler(e);
   });

@@ -5,7 +5,14 @@
 // No brand marks anywhere: signage is colour and form only.
 import * as THREE from '../lib/three.module.js';
 import { R, rand, pick, chance, rng, SignAtlas } from './tex.js';
-import { MAT, groundAt, Merger, standable } from './city.js';
+// surfaceAt, NOT groundAt. Everything this file places stands on the ROAD, and
+// the road is not the terrain: it is drawn 6cm above it, and where a bridge
+// crosses it is the DECK, which can be metres above the ground. Using groundAt
+// put 119 median kerbs on the Bayfront bridge 1.7m below the deck they belong
+// to — the same two-numbers trap that had the bike riding 5.5cm under the road
+// for the whole project, one storey up. surfaceAt() answers both cases and is
+// the single function main.js already uses for the ride and the walker.
+import { MAT, groundAt, surfaceAt, Merger, standable } from './city.js';
 import { recipeFor } from './landmarks.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d,
@@ -95,7 +102,7 @@ function erpGantry(world, px, pz, ang, width, surveyed = false) {
     if (!mv2) return;
     [px2, pz2] = mv2;
   }
-  g.position.set(px2, groundAt(px2, pz2), pz2);
+  g.position.set(px2, surfaceAt(px2, pz2), pz2);
   g.rotation.y = ang;
   world.add(g);
 }
@@ -201,7 +208,7 @@ function pedBridge(world, px, pz, ang, width) {
         sx, 0.5 + s * 0.46, sgn * (1.9 + s * 0.2), 0));
     }
   }
-  g.position.set(px2, groundAt(px2, pz2), pz2);
+  g.position.set(px2, surfaceAt(px2, pz2), pz2);
   g.rotation.y = ang;
   world.add(g);
   return true;
@@ -338,7 +345,7 @@ function mrtEntrance(world, px, pz, ang, label) {
     if (!placed) return;
   }
 
-  g.position.set(px2, groundAt(px2, pz2), pz2);
+  g.position.set(px2, surfaceAt(px2, pz2), pz2);
   g.rotation.y = ang;
   world.add(g);
 }
@@ -637,7 +644,7 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     im.castShadow = false; im.receiveShadow = true;
     world.add(im);
   };
-  const yaw = (r) => { p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
+  const yaw = (r) => { p.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
 
   // The median, along the line BETWEEN each anti-parallel pair rather than
   // along whichever street the axis happens to be. Deduped on a 3m grid because
@@ -702,14 +709,14 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   emit(new THREE.BoxGeometry(2.1, 0.34, 3.0), MAT.kerb, medianKerb, yaw);
   emit(new THREE.SphereGeometry(0.66, 7, 5),
     new THREE.MeshLambertMaterial({ color: 0x3f5c33 }), medianShrub, (r) => {
-      p.set(r[0], groundAt(r[0], r[2]) + 0.72, r[2]); q.identity(); s.set(1, 0.78, 1);
+      p.set(r[0], surfaceAt(r[0], r[2]) + 0.72, r[2]); q.identity(); s.set(1, 0.78, 1);
     });
   s.set(1, 1, 1);
   stats.medianPlants = medianShrub.length;
 
   // slim median palms: trunk plus a fan of fronds
   emit(new THREE.CylinderGeometry(0.14, 0.2, 6.4, 7), MAT.trunk, medianPalm, (r) => {
-    p.set(r[0], groundAt(r[0], r[2]) + 3.2, r[2]); q.identity();
+    p.set(r[0], surfaceAt(r[0], r[2]) + 3.2, r[2]); q.identity();
   });
   const frond = [];
   for (const [x, , z] of medianPalm) {
@@ -717,7 +724,7 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   }
   emit(new THREE.PlaneGeometry(3.2, 0.8), MAT.leaf, frond, (r) => {
     p.set(r[0] + Math.sin(r[3]) * 1.4,
-          groundAt(r[0], r[2]) + r[1] - 0.35,
+          surfaceAt(r[0], r[2]) + r[1] - 0.35,
           r[2] + Math.cos(r[3]) * 1.4);
     e.set(-0.95, r[3] + Math.PI / 2, 0, 'YXZ'); q.setFromEuler(e);
   });
@@ -822,7 +829,7 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 3.2, 0.5),
       new THREE.MeshStandardMaterial({ roughness: 0.6 }), roofSign.length);
     roofSign.forEach((r, i) => {
-      p.set(r[0], groundAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+      p.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
       s.set(r[4], 1, 1);
       m.compose(p, q, s); im.setMatrixAt(i, m);
       im.setColorAt(i, cc.setHex(pick(SIGN_COLS)));
