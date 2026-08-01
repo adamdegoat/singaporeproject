@@ -2333,6 +2333,18 @@ def main():
                 b["n"] = _nm
             if key:
                 b["k"] = 1
+            # WHAT KIND OF BUILDING IT IS, which the facade family never asked.
+            # 2,057 of 8,740 footprints (24%) carry a specific `building=` value
+            # — 864 of them residential, apartments or house, 597 retail,
+            # commercial or office — and city.js chose a facade from a date, an
+            # area's era band, or a hash, never from what the building IS. A
+            # Singapore condo has balconies and service yards; drawing one as a
+            # curtain-wall office because its footprint hashed that way is a
+            # guess made in front of a fact. `yes` carries no information and is
+            # not stored.
+            _bt = tags.get("building")
+            if _bt and _bt not in ("yes", "construction"):
+                b["bt"] = _bt
             if hsrc != "guess":
                 b["hs"] = hsrc          # height provenance, for the accuracy ledger
             # AFTER the provenance line, not before it: set here first, hsrc

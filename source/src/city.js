@@ -104,6 +104,36 @@ function familyFor(b) {
     return { pool: BALCONY, rough: 0.8, metal: 0, src: 'era' };
   }
 
+  // WHAT THE BUILDING IS, when the map says so and no date does.
+  //
+  // Read AFTER `yr` and `era` — a surveyed date for this building, or a
+  // published band for its conservation area, both beat a type — and BEFORE the
+  // district mix, because the mix is a rule we invented and this is a tag
+  // somebody surveyed. 2,057 footprints carry one: 864 residential, apartments
+  // or house, 597 retail, commercial or office. Until now the facade came from
+  // a hash of the footprint, so River Valley — which is condo country — dealt
+  // curtain walls and pre-war stone to blocks of flats at the same rate as the
+  // CBD.
+  const bt = b.bt;
+  if (bt) {
+    if (/^(apartments|residential|house|terrace|dormitory|bungalow)$/.test(bt)) {
+      // Singapore housing reads as balconies and service yards, at every price
+      return { pool: BALCONY, rough: 0.8, metal: 0, src: 'type' };
+    }
+    if (/^(retail|commercial|office|hotel|supermarket)$/.test(bt)) {
+      // low commercial is punched masonry; a tower is glass
+      return (b.h || 0) >= 28
+        ? { pool: CURTAINS, rough: 0.36, metal: 0.08, src: 'type' }
+        : { pool: PUNCHED, rough: 0.86, metal: 0, src: 'type' };
+    }
+    if (/^(industrial|warehouse|service|garage|garages|carport)$/.test(bt)) {
+      return { pool: PUNCHED, rough: 0.9, metal: 0, src: 'type' };
+    }
+    if (/^(church|temple|mosque|cathedral|school|university|college|civic|public|government|hospital|train_station)$/.test(bt)) {
+      return { pool: STONE, rough: 0.9, metal: 0, src: 'type' };
+    }
+  }
+
   // A BUILDING WITH NO DATE LOOKS LIKE ITS NEIGHBOURS THAT HAVE ONE.
   //
   // The fallback was a fixed 34/18/22/26 split across punched, balcony, stone
