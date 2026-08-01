@@ -250,6 +250,98 @@ export function buildMarkings(world, axis, data = {}) {
   let half = axis.w / 2;
   const dash = [], edge = [], yellowL = [], stopL = [], arrowShaft = [], arrowHead = [];
 
+  // A LANE LINE STOPS AT THE JUNCTION MOUTH.
+  //
+  // The dashes and the edge line were emitted every few metres along the whole
+  // axis with nothing to say about junctions, so at every crossroads the axis
+  // painted its lane lines straight across the other street's carriageway and
+  // the other street painted its centre line back — a grid of white dashes
+  // filling the junction box, which is not how any Singapore junction is
+  // marked. Bras Basah Road at the Victoria Street junction is the clearest
+  // frame of it.
+  //
+  // The double yellows and the side-street centre lines were fixed for exactly
+  // this in the streetRuns rewrite (city.js) and this emitter was missed
+  // because it walks the axis directly instead of going through runs.
+  //
+  // -0.6m of margin: strictly INSIDE the other carriageway, so a mark merely
+  // touching a kerb line at a tangent junction is not suppressed.
+  const axisName = (axis.n || '').toLowerCase();
+  // A JUNCTION IS WHERE A ROAD CROSSES YOU, not where one overlaps you.
+  //
+  // The first version asked `__onRoad(x, z, -0.6, axisName)` — "is this mark
+  // inside some other street's carriageway" — and the counter below said it
+  // dropped 80% of Bras Basah Road's lane marks and 68% of Orchard's. That is
+  // not a junction rule, it is a description of how OSM maps an arterial:
+  // slip roads, bus-lane ways, service roads and unnamed fragments run
+  // alongside and overlap the axis for its whole length, and every one of them
+  // is "some other street". The number is what caught it — the frame looked
+  // fine because a street with no lane lines still looks like a street.
+  //
+  // So: find where other carriageways actually CROSS the axis, once, and break
+  // only within the crossing street's own half-width of those points. Angle
+  // gate of 25 degrees so a way running parallel is never a junction.
+  const JX = [];
+  {
+    const A = axis.p;
+    const CELL = 60, agrid = new Map();
+    for (let i = 0; i < A.length - 1; i++) {
+      const x0 = Math.min(A[i][0], A[i + 1][0]), x1 = Math.max(A[i][0], A[i + 1][0]);
+      const z0 = Math.min(A[i][1], A[i + 1][1]), z1 = Math.max(A[i][1], A[i + 1][1]);
+      for (let gx = Math.floor(x0 / CELL); gx <= Math.floor(x1 / CELL); gx++) {
+        for (let gz = Math.floor(z0 / CELL); gz <= Math.floor(z1 / CELL); gz++) {
+          const k = gx + ',' + gz;
+          let l = agrid.get(k); if (!l) { l = []; agrid.set(k, l); }
+          l.push(i);
+        }
+      }
+    }
+    const seg = (ax, az, bx, bz, cx, cz, dx2, dz2) => {
+      const r1 = bx - ax, r2 = bz - az, s1 = dx2 - cx, s2 = dz2 - cz;
+      const den = r1 * s2 - r2 * s1;
+      if (Math.abs(den) < 1e-9) return null;              // parallel
+      const t = ((cx - ax) * s2 - (cz - az) * s1) / den;
+      const u = ((cx - ax) * r2 - (cz - az) * r1) / den;
+      if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+      // angle between them; a way that merely grazes the axis is not a junction
+      const l1 = Math.hypot(r1, r2) || 1, l2 = Math.hypot(s1, s2) || 1;
+      const cos = Math.abs((r1 * s1 + r2 * s2) / (l1 * l2));
+      if (cos > 0.906) return null;                       // within 25 degrees
+      return [ax + r1 * t, az + r2 * t];
+    };
+    for (const r of (data.roads || [])) {
+      if (!r.p || r.p.length < 2) continue;
+      if (r.k === 'footway' || r.k === 'pedestrian') continue;
+      if ((r.n || '').toLowerCase() === axisName) continue;
+      const rad = Math.max(3.5, (r.w || 6) / 2 + 1.0);
+      for (let j = 0; j < r.p.length - 1; j++) {
+        const c = r.p[j], d = r.p[j + 1];
+        const gx0 = Math.floor(Math.min(c[0], d[0]) / CELL), gx1 = Math.floor(Math.max(c[0], d[0]) / CELL);
+        const gz0 = Math.floor(Math.min(c[1], d[1]) / CELL), gz1 = Math.floor(Math.max(c[1], d[1]) / CELL);
+        for (let gx = gx0; gx <= gx1; gx++) {
+          for (let gz = gz0; gz <= gz1; gz++) {
+            for (const i of (agrid.get(gx + ',' + gz) || [])) {
+              const hit = seg(A[i][0], A[i][1], A[i + 1][0], A[i + 1][1], c[0], c[1], d[0], d[1]);
+              if (hit) JX.push([hit[0], hit[1], rad * rad]);
+            }
+          }
+        }
+      }
+    }
+  }
+  // COUNTED, not silent. A break that quietly ate half the street's lane lines
+  // would look like a rendering bug and read like a design decision, so the
+  // number goes on the console beside the mark total.
+  let junctionBreaks = 0, junctionCandidates = 0;
+  const inJunction = (x, z) => {
+    junctionCandidates++;
+    for (const [jx, jz, r2] of JX) {
+      const dx2 = x - jx, dz2 = z - jz;
+      if (dx2 * dx2 + dz2 * dz2 < r2) { junctionBreaks++; return true; }
+    }
+    return false;
+  };
+
   const spec = axisSpec(axis, data);
   const laneCount = spec.count, laneW = spec.laneW;
   // divider offsets: evenly split the carriageway by the real lane count
@@ -316,15 +408,19 @@ export function buildMarkings(world, axis, data = {}) {
       // memory. (Type B1, 2m/10m, is expressway only and we have none.)
       if (acc % 6 < 2) {
         for (const off of dividers) {
-          if (claim('dash', px + nx * off, pz + nz * off, 1.2))
-            dash.push([px + nx * off, MARK.dash, pz + nz * off, ang]);
+          const dx2 = px + nx * off, dz2 = pz + nz * off;
+          if (inJunction(dx2, dz2)) continue;
+          if (claim('dash', dx2, dz2, 1.2))
+            dash.push([dx2, MARK.dash, dz2, ang]);
         }
       }
       // solid white edge line just inside the kerb
       if (acc % 2 === 0) {
         for (const sgn of [-1, 1]) {
-          if (claim('edge', px + nx * (half - 0.55) * sgn, pz + nz * (half - 0.55) * sgn, 1.2))
-            edge.push([px + nx * (half - 0.55) * sgn, MARK.edge, pz + nz * (half - 0.55) * sgn, ang]);
+          const ex2 = px + nx * (half - 0.55) * sgn, ez2 = pz + nz * (half - 0.55) * sgn;
+          if (inJunction(ex2, ez2)) continue;
+          if (claim('edge', ex2, ez2, 1.2))
+            edge.push([ex2, MARK.edge, ez2, ang]);
         }
       }
       // The kerbside double yellow is NOT painted here any more. Since
@@ -356,6 +452,11 @@ export function buildMarkings(world, axis, data = {}) {
   n += emitFlat(world, stopL, 0.42, half * 0.92, WHITE);
   n += emitFlat(world, arrowShaft, 0.28, 3.2, WHITE);
   n += emitFlat(world, arrowHead, 0.92, 0.9, WHITE);
+  if (junctionBreaks) {
+    console.log(`  markings ${axis.n || '?'}: ${n} marks, ${junctionBreaks} of `
+      + `${junctionCandidates} lane marks dropped at junction mouths `
+      + `(${(100 * junctionBreaks / junctionCandidates).toFixed(0)}%)`);
+  }
   return n;
 }
 

@@ -70,6 +70,122 @@
 8. Boat Quay river-row colour treatment; more CBD facades; then ASK THE
    USER about expanding (Little India / civic core / Tiong Bahru).
 
+# 2026-08-01 (Opus 5) — THE GROUND WAS THE DATASET, NOT THE FILTER
+
+The top item in HANDOFF.md was "Marina Bay's ground is ~25m too high", diagnosed
+as rooftop contamination of a 30m DEM cell with three ranked fixes. The
+diagnosis was half right and the ranked fixes would all have failed. What
+actually settled it was measuring the DEM instead of reasoning about it.
+
+**Candidate fix 1 (filter samples by distance to the nearest building) is dead,
+and the measurement kills it in one line.** Marina Bay road samples binned by
+their distance to any mapped footprint:
+
+    dist   0- 10m  n= 294  min= -2.0  p10= 6.0  median=17.0  p90=56.5  max=87.0
+    dist  10- 34m  n= 615  min=-27.0  p10= 5.6  median=13.0  p90=31.0  max=95.0
+    dist  34- 55m  n= 142  min=-38.0  p10= 1.6  median=12.0  p90=24.7  max=55.0
+    dist  55- 80m  n=  98  min=-23.0  p10= 0.9  median=11.5  p90=22.0  max=32.0
+    dist  80-131m  n= 280  min=-19.0  p10= 2.0  median=11.0  p90=21.0  max=32.0
+
+A sample 130m from every building still has a median of 11m and a range of -19
+to +32 on ground that is about 5m. That is not roof contamination, it is noise.
+Open water in the middle of the bay came back at 6m and 16m where the datum
+says 0. A lower-envelope estimator was then tried across four percentiles and
+three radii on the same data: the best it could do at Raffles Avenue was 10m,
+because there is no honest sample within 400m of Marina Centre to find. **You
+cannot filter your way out of a dataset with no signal**, and every free web
+API here returns the same SRTM: open-elevation, opentopodata/srtm30m and mapzen
+all agree with each other and all are wrong.
+
+**COPERNICUS GLO-30, READ FROM DISK.** The tile for all of central Singapore is
+one 30MB COG in a public AWS bucket with no key and no account:
+`https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N01_00_E103_00_DEM/...`.
+It answers the same probes as:
+
+    Raffles Avenue    4.8m   (SRTM 25m)        Fort Canning   49.4m  (published 48)
+    Esplanade         4.8m   (SRTM 19m)        Marina Barrage  0.0m  (water)
+    Raffles Place     7.0m                     Gunung Pulai  653.1m  (published 654)
+
+Downloading it also removed the constraint that shaped the whole sampler.
+Sampling is no longer rationed: roads every 20m instead of 45m, plus a 35m
+lattice over every patch of open ground in the district (`open_samples`). That
+lattice is what made the rooftop correction work at all — see below.
+
+**THREE BUGS FOUND WHILE DOING IT, all of them silent:**
+
+1. **The rooftop correction had been switched off in seven districts of eight.**
+   It was gated on 30% of samples coming back clean, and only Marina Bay met
+   that. Orchard, River Valley, Bras Basah and Chinatown had all been shipping
+   ground they knew was reading rooftops, behind a printed message nobody read.
+   A district-wide FRACTION was the wrong test: whether a given sample has
+   honest ground near enough to borrow is a local question. Now every sample is
+   repaired if clean ground exists within 300m, and the ones that do not are
+   counted out loud.
+2. **`drop_roofed` lied about what it filtered** — when the floor was not met it
+   returned EVERY index as "clean", so a caller that stopped reading the flag
+   (me, same day) silently corrected nothing in three districts for one build.
+3. **The repair took the median of every clean sample within the radius**, which
+   on a hill is wrong by the height of the hill: Pearl's Hill is roofed end to
+   end, so every sample on it was re-read from the streets at its foot and the
+   hill came out at 30m against ~43m. Now the median of the FIVE NEAREST, which
+   is what the comment always claimed. Pearl's Hill 30 -> 39.5m.
+
+**AND A GEOMETRIC RULE WITH NO SCALE, for the fourth time in this project.** The
+clearance pad was a flat 34m for every footprint, so a three-storey shophouse
+and Marina Bay Sands were treated as contaminating the same radius. A flat 60m
+or 90m pad was tried and is WORSE: it fixes Marina Bay and pushes Serangoon Road
+from 4.9 to 6.3, because a low-rise district does not need the correction and a
+wide pad only discards the honest samples it has. The pad now scales with the
+building's height (`24 + 0.45h`, clamped 24-120m), and it is validated against
+PUBLISHED levels rather than tuned by eye — the table is in `contam_fn`, the
+figures are banked in HANDOFF.md.
+
+**WHERE IT LANDED** (published figure in brackets): Raffles Avenue 29.6 -> 5.3m
+[3-5], Temasek Avenue 28.3 -> 7.9m [3-5], Bayfront 15.3 -> 4.2m [3-5], Marina
+Bay Sands site 5.0m [3.0-3.5], Serangoon Road 5.1m [3.0], Fort Canning 44-45.8m
+[48]. Against FABDEM bare earth over 24,193 road points: median +0.98m.
+
+**FABDEM IS THE VALIDATION SET AND DELIBERATELY NOT THE BUILD INPUT.** It is
+bare-earth and slightly better than what we build, and it is CC BY-NC-SA — a
+non-commercial share-alike licence, on a public repo, where Copernicus is
+permissive. It stays outside the repo and is used to measure, not to ship.
+
+## OTHER THINGS THIS SESSION FOUND
+
+- **TWO SINGAPORE FLYERS.** `/singapore flyer/i` also matches "Singapore Flyer
+  Car Park", so the car park was given its own 165m observation wheel: two
+  wheels 125m apart in every frame looking up Temasek Avenue. Fourth
+  over-matching recipe pattern (Grand Park City Hall, Esplanade Theatre,
+  ArtScience Museum). A landmark name is a WHOLE name — anchored to
+  `/^singapore flyer$/i`. All 79 patterns were then swept against all 1,174
+  building names in the region; the rest are deliberate families. The Istana was
+  the other real hit: an 1869 palace in the finned-concrete-slab family.
+- **The buried-footprint filter ran before the thing that creates its inputs.**
+  Polygon surgery segments terraces every ~16m and splits rings a road runs
+  through — AFTER the burial test. Six 44-114 m2 pieces ended up entirely inside
+  The Riverside Piazza and Fraser Residence Promenade. The filter is a function
+  now and runs a second time after surgery (`_drop_buried`).
+- **D34 was auditing 272 of about 630 vehicles**, because `__trafficState`
+  returned only the spawn district's fleet. It also compared `a.s` with `b.s`
+  across fleets, and `s` is an arclength along ONE path — two cars a metre apart
+  on two paths have `s` hundreds of metres apart. Fifth instance of measuring
+  one fact with the wrong ruler. Now: same fleet -> the lane/arclength test,
+  different fleets -> separating-axis overlap of the two oriented rectangles.
+  Result: 479 vehicles across 3 fleets, ZERO overlaps — the interpenetration I
+  thought I saw in three vet frames was perspective, and the check now says so
+  rather than being unable to see either way.
+- **`deploy.sh` exported `SG_PORT=8934` and `defects.mjs` never read it.** Only
+  3 of 14 browser tools honoured it; the deploy had been relying on a long-lived
+  dev server happening to be up on 8933. All 14 honour it now.
+- **`data/tidy.sh` reported "browsers still running: 0" while two Chrome
+  instances held the debug port.** It matched `Chromium --headless`, and the
+  browser this project actually launches is Google Chrome. It matches the temp
+  PROFILE now, so the user's own windows are never touched.
+- **`data/topup.py` gained a `buildpart` layer** — Orchard and River Valley were
+  fetched before `building:part` existed in the pipeline and carried 4 and 1 of
+  them against Chinatown's 505. Topped up rather than refetched, so the loss
+  guard was never risked: +196 and +201 elements, +33 and +51 buildings.
+
 # OPEN, MEASURED, NOT SOLVED — PEDESTRIANS ACCUMULATE IN CARRIAGEWAYS
 
 Found by riding: a walker standing in the middle of River Valley Road in the
