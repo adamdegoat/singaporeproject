@@ -39,7 +39,7 @@ for (const name of names) {
       + `&nopeople&notraffic&nofurniture&noside&nosg&nosigns&nomarks&nosurround`
       + `&noshops&nofoliage`
       + (variant === 'generic' ? '&norecipe' : '');
-    await page.goto(`http://localhost:8933/?${q}`, { waitUntil: 'load' });
+    await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/?${q}`, { waitUntil: 'load' });
     await page.waitForFunction('window.__ready === true || window.__bootError', null, { timeout: 120000 });
     const err = await page.evaluate(() => window.__bootError || null);
     if (err) { console.error(`  ${name} (${variant}) boot failed: ${String(err).slice(0, 200)}`); await page.close(); continue; }

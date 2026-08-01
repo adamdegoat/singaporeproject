@@ -19,7 +19,7 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.setDefaultTimeout(180000);
-await page.goto(`http://localhost:8933/?raw=1&dpr=1&scene=${process.env.SG_SCENE || 'orchard'}`,
+await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/?raw=1&dpr=1&scene=${process.env.SG_SCENE || 'orchard'}`,
   { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true || window.__bootError', null, { timeout: 180000 });
 const err = await page.evaluate(() => window.__bootError || null);

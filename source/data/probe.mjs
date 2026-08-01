@@ -13,7 +13,7 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 1100, height: 620 } });
 page.setDefaultTimeout(120000);
 const q = process.env.SG_QUERY || 'dpr=1';
-await page.goto(`http://localhost:8933/?${q}&scene=${process.env.SG_SCENE || 'orchard'}`,
+await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/?${q}&scene=${process.env.SG_SCENE || 'orchard'}`,
   { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true || window.__bootError', null, { timeout: 120000 });
 const err = await page.evaluate(() => window.__bootError || null);

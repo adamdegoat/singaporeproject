@@ -21,7 +21,7 @@ const SCENE = process.env.SG_SCENE || 'world';
 const browser = await chromium.launch({ args: ['--use-gl=angle'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 500 } });
 page.on('pageerror', (e) => console.log('  page error:', e.message));
-await page.goto(`http://localhost:8933/index.html?dpr=1&raw=1&scene=${SCENE}`, { waitUntil: 'load' });
+await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/index.html?dpr=1&raw=1&scene=${SCENE}`, { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true', null, { timeout: 180000 });
 
 const found = await page.evaluate(() => {

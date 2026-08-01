@@ -102,7 +102,7 @@ page.on('pageerror', (e) => errors.push(e.message.slice(0, 200)));
 
 // SG_SCENE picks the district (flat path — single-district scenes have no
 // manifest); streamall makes a manifest scene build fully before the sweep
-await page.goto(`http://localhost:8933/?dpr=2&touch=1&streamall=1&scene=${process.env.SG_SCENE || 'world'}`, { waitUntil: 'load' });
+await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/?dpr=2&touch=1&streamall=1&scene=${process.env.SG_SCENE || 'world'}`, { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true || window.__bootError',
                            null, { timeout: 120000 });
 const bootErr = await page.evaluate(() => window.__bootError || null);

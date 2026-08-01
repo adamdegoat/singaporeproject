@@ -17,11 +17,22 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REG = json.load(open(os.path.join(HERE, "districts.json")))
 
 SOURCES = [
+    # LOCAL FIRST, and it is not a preference — it is a different quality of data.
+    # See local_elev() for the measurements that put it here.
+    ("cop30", None),
     ("open-elevation", "https://api.open-elevation.com/api/v1/lookup?locations={}"),
     ("opentopodata", "https://api.opentopodata.org/v1/srtm30m?locations={}"),
 ]
+DEM_DIR = os.path.join(HERE, "dem")
+COP30_URL = ("https://copernicus-dem-30m.s3.amazonaws.com/"
+             "{name}/{name}.tif")
 CELL = 35.0          # grid resolution in metres
-SAMPLE_EVERY = 45.0  # along-road sampling interval
+# 45m was the spacing a free web API could afford: 1,429 points for Marina Bay
+# was already sixteen requests and a polite sleep between each. The DEM is read
+# from disk now, so density costs nothing but a second of arithmetic, and
+# density is what makes a road sit on its own terrain rather than on its
+# neighbour's.
+SAMPLE_EVERY = 20.0  # along-road sampling interval
 
 
 def district(did):
@@ -53,7 +64,14 @@ def scene_path(did):
 
 
 def drop_roofed(pts, data, keep_min=0.30):
-    """Discard samples whose cell is contaminated by a building.
+    """Discard samples whose cell is contaminated by a building OR by water.
+
+    WATER, added 2026-08-01. A radar DEM over water returns whatever the water
+    scattered, which is nothing useful: Kim Seng Road sampled the Singapore
+    River at -16.2m and Delta Road at -7.0m, and both are ordinary streets about
+    five metres above the sea. The river is MAPPED, so a sample standing on it
+    is as knowably contaminated as one standing on a roof, and it takes the same
+    treatment -- position kept, value re-read from the nearest clean ground.
 
     Every global elevation dataset available here is a SURFACE model, not bare
     earth: srtm30m, mapzen and aster30m all report about 104m at Raffles Place,
@@ -74,9 +92,30 @@ def drop_roofed(pts, data, keep_min=0.30):
     the district keeps its contaminated field, loudly. A worse ground is better
     than no ground.
     """
-    polys = [b["p"] for b in data.get("buildings", []) if len(b.get("p", [])) > 2]
-    if not polys:
+    near_building = contam_fn(data)
+    if near_building is None:
         return list(range(len(pts))), len(pts), len(pts), False
+    keep = [i for i, (x, z) in enumerate(pts) if not near_building(x, z)]
+    # Returns the REAL clean list, always. It used to hand back every index when
+    # the clean fraction fell under keep_min, which made "correction abandoned"
+    # indistinguishable from "nothing needed correcting" to the caller — and the
+    # caller stopped reading the flag on 2026-08-01 and silently corrected
+    # nothing in three districts for one build. A filter that lies about what it
+    # filtered is worse than no filter.
+    return keep, len(keep), len(pts), len(keep) >= keep_min * len(pts)
+
+
+def contam_fn(data):
+    """`near(x, z)` -> is this sample's DEM cell contaminated by a building or
+    standing on water? Returns None when the district has neither."""
+    polys = [b["p"] for b in data.get("buildings", []) if len(b.get("p", [])) > 2]
+    # A water ring contaminates the reading INSIDE it, not for 34m around it:
+    # the quay beside the river is real ground. So water rings are carried in
+    # the same index but tested with a zero pad.
+    nb = len(polys)
+    polys += [w["p"] for w in data.get("water", []) if len(w.get("p", [])) > 2]
+    if not polys:
+        return None
     CELLB = 60.0
     grid = {}
     for idx, ring in enumerate(polys):
@@ -91,6 +130,9 @@ def drop_roofed(pts, data, keep_min=0.30):
     def near_building(x, z, pad=34.0):
         for idx in grid.get((int(x // CELLB), int(z // CELLB)), ()):
             ring = polys[idx]
+            # a LOCAL name: reassigning `pad` itself would leak the water rule
+            # onto every building ring later in the same cell
+            rpad = 0.0 if idx >= nb else pad     # water: inside only
             # inside?
             c = False
             j = len(ring) - 1
@@ -107,13 +149,43 @@ def drop_roofed(pts, data, keep_min=0.30):
                 vx, vz = bx - ax, bz - az
                 L2 = vx * vx + vz * vz
                 t = 0.0 if L2 < 1e-9 else max(0.0, min(1.0, ((x - ax) * vx + (z - az) * vz) / L2))
-                if math.dist((x, z), (ax + vx * t, az + vz * t)) < pad:
+                if math.dist((x, z), (ax + vx * t, az + vz * t)) < rpad:
                     return True
         return False
 
-    keep = [i for i, (x, z) in enumerate(pts) if not near_building(x, z)]
-    applied = len(keep) >= keep_min * len(pts)
-    return (keep if applied else list(range(len(pts)))), len(keep), len(pts), applied
+    return near_building
+
+
+def open_samples(data, extent, step=35.0):
+    """Every patch of OPEN GROUND in the district, on a lattice.
+
+    Roads were the only thing sampled for as long as elevation cost a web
+    request each: 1,429 points was already sixteen calls and a polite sleep.
+    That made the correction for rooftop contamination fragile, because a dense
+    district has almost no clean ROAD -- River Valley came out at 371 clean
+    samples of 2,844 (13%), under the 30% floor, so the correction was abandoned
+    and the district kept a ground it knew was wrong.
+
+    Reading the DEM from disk removes the reason for the restriction. The car
+    parks, the padang, the river banks, the school fields, the reservoir edge
+    and the gaps between blocks are all open sky and all real ground, and they
+    are exactly where the honest samples live. They are only used where they are
+    CLEAN, so this adds anchors without adding assumptions.
+    """
+    near = contam_fn(data)
+    xs = [p[0] for p in extent]; zs = [p[1] for p in extent]
+    x0, x1 = min(xs), max(xs)
+    z0, z1 = min(zs), max(zs)
+    out = []
+    z = z0
+    while z <= z1:
+        x = x0
+        while x <= x1:
+            if near is None or not near(x, z):
+                out.append((x, z))
+            x += step
+        z += step
+    return out
 
 
 def road_samples(data):
@@ -152,6 +224,113 @@ def road_samples(data):
 
 
 USED_SOURCE = [None]
+_TILES = {}
+
+
+def _tile_name(lat_deg, lon_deg):
+    ns = "N" if lat_deg >= 0 else "S"
+    ew = "E" if lon_deg >= 0 else "W"
+    return (f"Copernicus_DSM_COG_10_{ns}{abs(lat_deg):02d}_00_"
+            f"{ew}{abs(lon_deg):03d}_00_DEM")
+
+
+def _tile(lat_deg, lon_deg):
+    """Load one 1x1 degree Copernicus tile, downloading it once if needed.
+
+    Cached as .npy beside the .tif because decoding a 30MB float predictor
+    TIFF takes seconds and every district would pay it again.
+    """
+    key = (lat_deg, lon_deg)
+    if key in _TILES:
+        return _TILES[key]
+    import numpy as np
+    os.makedirs(DEM_DIR, exist_ok=True)
+    name = _tile_name(lat_deg, lon_deg)
+    npy = os.path.join(DEM_DIR, name + ".npy")
+    meta = os.path.join(DEM_DIR, name + ".json")
+    if not (os.path.exists(npy) and os.path.exists(meta)):
+        tif = os.path.join(DEM_DIR, name + ".tif")
+        if not os.path.exists(tif):
+            url = COP30_URL.format(name=name)
+            print(f"    downloading {name} ...", flush=True)
+            urllib.request.urlretrieve(url, tif)
+        try:
+            import tifffile
+        except ImportError:
+            sys.exit("    cop30 needs tifffile + imagecodecs: "
+                     "python3 -m pip install --user tifffile imagecodecs")
+        with tifffile.TiffFile(tif) as f:
+            page = f.pages[0]
+            tie = page.tags["ModelTiepointTag"].value
+            scale = page.tags["ModelPixelScaleTag"].value
+            arr = page.asarray().astype(np.float32)
+        # Copernicus COGs are RasterPixelIsPoint: the tiepoint is the CENTRE of
+        # pixel (0,0), not its corner. Half a pixel is 15m, which is a kerb.
+        info = dict(lon0=float(tie[3]), lat0=float(tie[4]),
+                    dlon=float(scale[0]), dlat=float(scale[1]),
+                    h=int(arr.shape[0]), w=int(arr.shape[1]))
+        np.save(npy, arr)
+        json.dump(info, open(meta, "w"))
+    info = json.load(open(meta))
+    arr = np.load(npy, mmap_mode="r")
+    _TILES[key] = (arr, info)
+    return _TILES[key]
+
+
+def local_elev(latlons):
+    """Sample Copernicus GLO-30 from disk. No key, no rate limit, no batching.
+
+    WHY THIS REPLACED THE WEB APIS, measured 2026-08-01 rather than assumed.
+    Marina Bay modelled its ground about 25m too high and the diagnosis in
+    NEXT.md blamed rooftops in a 30m cell. That was only half of it: SRTM (which
+    is what open-elevation, opentopodata/srtm30m and mapzen all return here) is
+    simply NOISE over this city. Road samples 80-130m from ANY mapped building
+    ran min -19m, median 11m, max +32m, and open water in the middle of Marina
+    Bay came back at 6m and 16m where the datum says 0. A lower-envelope
+    estimator was tried against that noise across four percentiles and three
+    radii and the best it could do at Raffles Avenue was 10m against a real ~5m,
+    because there is no clean sample within 400m of Marina Centre to find.
+    You cannot filter your way out of a dataset that has no signal.
+
+    Copernicus GLO-30, read at full resolution, answers the same probes:
+
+        Raffles Avenue    4.8m   (SRTM 25m, reality ~5m)
+        Esplanade         4.8m   (SRTM 19m)
+        Raffles Place     7.0m   (SRTM's own docs' example failure, 104m)
+        Fort Canning     49.4m   (published summit 48m)
+        Marina Barrage    0.0m   (water, datum 0)
+        Gunung Pulai    653.1m   (Johor, in the same tile; published 654m)
+
+    It is still a SURFACE model, so drop_roofed() below still earns its keep --
+    but it starts from ground that is right rather than ground that is 20m out.
+    Heights are orthometric (EGM2008), which is what the world wants: a metre
+    here is a metre above the sea you can see from the promenade.
+    """
+    import numpy as np
+    out = []
+    for lat, lon in latlons:
+        arr, info = _tile(math.floor(lat), math.floor(lon))
+        c = (lon - info["lon0"]) / info["dlon"]
+        r = (info["lat0"] - lat) / info["dlat"]
+        c = max(0.0, min(info["w"] - 1.001, c))
+        r = max(0.0, min(info["h"] - 1.001, r))
+        c0, r0 = int(c), int(r)
+        fc, fr = c - c0, r - r0
+        a = float(arr[r0, c0]); b = float(arr[r0, c0 + 1])
+        d = float(arr[r0 + 1, c0]); e = float(arr[r0 + 1, c0 + 1])
+        # a tile has no explicit nodata; anything this far below the geoid is
+        # the ocean mask, and nearest-real is better than blending with it
+        vals = [v for v in (a, b, d, e) if v > -100.0]
+        if not vals:
+            out.append(0.0); continue
+        if len(vals) < 4:
+            out.append(float(np.median(vals))); continue
+        out.append((a * (1 - fc) + b * fc) * (1 - fr) +
+                   (d * (1 - fc) + e * fc) * fr)
+    USED_SOURCE[0] = "cop30"
+    print(f"    cop30 (local Copernicus GLO-30): {len(out)}/{len(latlons)}",
+          flush=True)
+    return out
 
 
 def fetch_elev(latlons, source_idx=0):
@@ -170,6 +349,8 @@ def fetch_elev(latlons, source_idx=0):
     """
     out = []
     name, tmpl = SOURCES[source_idx]
+    if tmpl is None:
+        return local_elev(latlons)
     B = 90
     for i in range(0, len(latlons), B):
         chunk = latlons[i:i + B]
@@ -247,7 +428,13 @@ def despike(pts, elev, radius=110.0, tol=4.5, tol_down=7.0):
     return kept, fixed
 
 
-REACH = 240.0     # how far a road sample influences a grid cell
+# How far a sample influences a grid cell. 240m was sized for road samples 45m
+# apart bought one web request at a time; with the DEM on disk the world is
+# sampled every 20m along every road plus a 35m lattice over all open ground, so
+# a 240m reach now averages a hill flat against hundreds of neighbours. Cells
+# with nothing in reach widen their search rather than falling back to zero —
+# the interior of a large mall has neither road nor open ground in it.
+REACH = 140.0
 
 
 def build_grid(pts, elev, pad=90.0, extent=None):
@@ -293,18 +480,39 @@ def build_grid(pts, elev, pad=90.0, extent=None):
                             continue
                         w = 1.0 / (d2 + 25.0)
                         num += elev[k] * w; den += w
+            ring = 1
+            while den == 0.0 and ring < 8:
+                # widen a ring at a time. A zero here used to be written as a
+                # literal 0.0m of ground, which is a hole the size of a city
+                # block, so this cannot be allowed to give up quietly.
+                ring += 1
+                for dx in range(-ring, ring + 1):
+                    for dz in range(-ring, ring + 1):
+                        if max(abs(dx), abs(dz)) != ring:
+                            continue
+                        for k in shash.get((cgx + dx, cgz + dz), ()):
+                            px, pz = pts[k]
+                            d2 = (gx - px) ** 2 + (gz - pz) ** 2
+                            w = 1.0 / (d2 + 25.0)
+                            num += elev[k] * w; den += w
             grid.append(round(num / den, 2) if den else 0.0)
-    # one smoothing pass, so buildings never sit on a step
+    # One smoothing pass, so buildings never sit on a step — but WEIGHTED to the
+    # centre. A flat 3x3 box over a 35m grid is a 105m window, and a 105m window
+    # takes the top off any hill smaller than itself: Pearl's Hill came out 13m
+    # short and Fort Canning 7m short of its published 48m, while flat ground was
+    # accurate to a metre or two. Weighting the centre four times keeps the step
+    # removal (the thing this pass exists for) and gives the peaks back.
     sm = list(grid)
     for j in range(nz):
         for i in range(nx):
-            acc = n = 0
+            acc = w = 0.0
             for dj in (-1, 0, 1):
                 for di in (-1, 0, 1):
                     a, b = i + di, j + dj
                     if 0 <= a < nx and 0 <= b < nz:
-                        acc += grid[b * nx + a]; n += 1
-            sm[j * nx + i] = round(acc / n, 2)
+                        k = 4.0 if (di == 0 and dj == 0) else 1.0
+                        acc += grid[b * nx + a] * k; w += k
+            sm[j * nx + i] = round(acc / w, 2)
     return dict(x0=round(minx, 1), z0=round(minz, 1), cell=CELL, nx=nx, nz=nz, h=sm)
 
 
@@ -335,6 +543,11 @@ def main():
     pts = road_samples(data)
     print(f"== terrain: {a.id}")
     print(f"   {len(pts)} road samples at {SAMPLE_EVERY:.0f}m spacing")
+    extent_pts = [tuple(q) for r in data["roads"] for q in r["p"]]
+    opens = open_samples(data, extent_pts)
+    n_road = len(pts)
+    pts = pts + opens
+    print(f"   + {len(opens)} open-ground samples on a {35:.0f}m lattice")
 
     latlons = [(lat0 - z / m_lat, lon0 + x / m_lon) for x, z in pts]
     start = 0
@@ -348,57 +561,87 @@ def main():
         sys.exit(f"   got {len(elev)} elevations for {len(pts)} points")
 
     raw_range = (min(elev), max(elev))
-    keep, n_clean, n_all, applied = drop_roofed(pts, data)
-    if applied:
-        # CORRECT them, do not DELETE them.
-        #
-        # Dropping 893 of Marina Bay's 1,428 samples removed the rooftop bias
-        # and took the ground under its roads with it: the grid then
-        # interpolated those roads from whatever was left hundreds of metres
-        # away, and P8 ("ground standing through the carriageway") went to 197.
-        # A sample's POSITION is good even when its VALUE is a roof, so the
-        # position is kept and the value is replaced by the nearest clean
-        # ground. Density is what makes a road sit on its own terrain.
-        clean = set(keep)
-        chash = _hash_points([pts[i] for i in keep], 220.0)
-        cpts = [pts[i] for i in keep]
-        cel = [elev[i] for i in keep]
-        fixed_roof = 0
-        for i in range(len(pts)):
-            if i in clean:
-                continue
-            x, z = pts[i]
-            gx, gz = int(x // 220.0), int(z // 220.0)
-            near = []
-            for dx in (-1, 0, 1):
-                for dz in (-1, 0, 1):
-                    for j in chash.get((gx + dx, gz + dz), ()):
-                        near.append(cel[j])
-            if near:
-                elev[i] = statistics.median(near)
-                fixed_roof += 1
-            else:
-                elev[i] = None
-        drop = [i for i, v in enumerate(elev) if v is None]
-        if drop:
-            dset = set(drop)
-            pts = [p for i, p in enumerate(pts) if i not in dset]
-            elev = [v for i, v in enumerate(elev) if i not in dset]
-        print(f"   {n_all - n_clean} of {n_all} samples were on a building (the DEM "
-              f"is a surface model): {fixed_roof} re-read from the nearest clean "
-              f"ground, {len(drop)} dropped with none in reach")
-    else:
-        print(f"   NOT correcting roofed samples: only {n_clean} of {n_all} "
-              f"({100*n_clean/max(1,n_all):.0f}%) are clean, below the 30% floor")
+    keep, n_clean, n_all, _ = drop_roofed(pts, data)
+    # CORRECT them, do not DELETE them.
+    #
+    # Dropping 893 of Marina Bay's 1,428 samples removed the rooftop bias
+    # and took the ground under its roads with it: the grid then
+    # interpolated those roads from whatever was left hundreds of metres
+    # away, and P8 ("ground standing through the carriageway") went to 197.
+    # A sample's POSITION is good even when its VALUE is a roof, so the
+    # position is kept and the value is replaced by the nearest clean
+    # ground. Density is what makes a road sit on its own terrain.
+    #
+    # THE ALL-OR-NOTHING FLOOR IS GONE, 2026-08-01, and it had been costing the
+    # whole world. The correction used to be abandoned unless 30% of samples
+    # came back clean; measured on this build, that floor was met by exactly ONE
+    # district of eight (Marina Bay). Orchard, River Valley, Bras Basah and
+    # Chinatown had all been shipping ground they knew was reading rooftops,
+    # silently, behind a message nobody was reading. A district-wide fraction
+    # was the wrong test anyway: what matters is whether THIS sample has honest
+    # ground near enough to borrow, which is a local question with a local
+    # answer. A roofed sample with no clean ground within REPAIR keeps its own
+    # value and stays visible in the count below, rather than the fix being
+    # switched off everywhere because one quarter is dense.
+    REPAIR = 300.0
+    clean = set(keep)
+    chash = _hash_points([pts[i] for i in keep], REPAIR)
+    cpts = [pts[i] for i in keep]
+    cel = [elev[i] for i in keep]
+    fixed_roof = orphan = 0
+    for i in range(len(pts)):
+        if i in clean:
+            continue
+        x, z = pts[i]
+        gx, gz = int(x // REPAIR), int(z // REPAIR)
+        near = []
+        for dx in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                for j in chash.get((gx + dx, gz + dz), ()):
+                    d = math.dist(cpts[j], (x, z))
+                    if d <= REPAIR:
+                        near.append((d, cel[j]))
+        if near:
+            # THE NEAREST clean ground, which is what this always claimed to do.
+            # It took the median of EVERY clean sample within the radius, and on
+            # a hill that is the wrong answer by the height of the hill: Pearl's
+            # Hill is roofed almost end to end, so every sample on it was
+            # re-read from the flat streets at its foot and the hill came out at
+            # 30m against a real 43m. A slope needs its LOCAL neighbours; the
+            # median of the five nearest still ignores an outlier without
+            # dragging the sample down to the district's average ground.
+            near.sort(key=lambda t: t[0])
+            elev[i] = statistics.median([v for _, v in near[:5]])
+            fixed_roof += 1
+        else:
+            orphan += 1        # keep the raw value; it is all we have here
+    print(f"   {n_all - n_clean} of {n_all} samples read a building or water "
+          f"({100*n_clean/max(1,n_all):.0f}% clean): {fixed_roof} re-read from "
+          f"clean ground within {REPAIR:.0f}m, {orphan} left uncorrected")
     elev, fixed = despike(pts, elev)
+    # A LAND SAMPLE BELOW THE SEA IS NOT A MEASUREMENT.
+    #
+    # Central Singapore has no land below mean sea level -- the lowest reclaimed
+    # ground is held at about +4m and the Marina Barrage keeps the reservoir near
+    # 0 -- so a road sample at -16.2m (Kim Seng Road, over the river) or -7.0m
+    # (Delta Road) is the radar returning what water scattered. Mapped water is
+    # already excluded above; this catches the water that is NOT mapped, which is
+    # most canals and every river drawn as a centreline rather than an area.
+    # This is a floor on an impossible value, not the blanket "take the minimum"
+    # that NEXT.md warns against: Fort Canning stays at 48m and Orchard still
+    # climbs, because nothing up there is negative.
+    below = sum(1 for v in elev if v < 0.0)
+    if below:
+        elev = [max(0.0, v) for v in elev]
     print(f"   raw range {raw_range[0]:.0f}-{raw_range[1]:.0f}m; "
-          f"despiked {fixed} rooftop samples")
+          f"despiked {fixed} rooftop samples; "
+          f"{below} below sea level clamped to 0")
     print(f"   ground range {min(elev):.0f}-{max(elev):.0f}m "
           f"(relief {max(elev)-min(elev):.0f}m)")
 
     # every road point, bridges included, purely so the grid REACHES them —
-    # bridges are still excluded from the samples above
-    extent_pts = [tuple(q) for r in data["roads"] for q in r["p"]]
+    # bridges are still excluded from the samples above (extent_pts is built
+    # once, above, because the open-ground lattice is laid over the same span)
     grid = build_grid(pts, elev, extent=extent_pts)
 
     # ---- SINK THE GROUND UNDER WATER ---------------------------------------
@@ -425,6 +668,34 @@ def main():
                 j = i
             return c
 
+        def edge_dist(px, pz, ring):
+            best = 1e9
+            for i in range(len(ring)):
+                ax, az = ring[i]
+                bx, bz = ring[(i + 1) % len(ring)]
+                vx, vz = bx - ax, bz - az
+                L2 = vx * vx + vz * vz
+                t = 0.0 if L2 < 1e-9 else max(0.0, min(1.0, ((px - ax) * vx + (pz - az) * vz) / L2))
+                d = math.dist((px, pz), (ax + vx * t, az + vz * t))
+                if d < best:
+                    best = d
+            return best
+
+        # Sink the OPEN water, not the shoreline cell.
+        #
+        # A grid cell is 35m across and the quay is a line, so a cell whose
+        # centre is just inside the ring is half road. Sinking it to rim-2 drags
+        # the promenade under with it through the bilinear read: with the ground
+        # finally correct at Marina Bay (2026-08-01), Esplanade Drive came out at
+        # -1.7m — a carriageway below sea level, beside the water it runs along.
+        # An inset of a cell and a bit keeps the edge at land height, which is
+        # what a quay wall IS, and still sinks everything you can see water on.
+        # ...but an inset needs a SCALE, which is the mistake this file has made
+        # in three other places. A flat 42m inset sinks nothing at all in the
+        # Singapore River, which is about 50m wide: every cell in it is within
+        # 42m of a bank. So the inset is capped at a fraction of how wide the
+        # ring actually is, measured from the cells inside it.
+        INSET = CELL * 1.2
         sunk = 0
         for ring in rings:
             rim = min((grid_at(grid, x, z) for x, z in ring), default=None)
@@ -433,6 +704,19 @@ def main():
             floor = rim - 2.0
             rx0 = min(p[0] for p in ring); rx1 = max(p[0] for p in ring)
             rz0 = min(p[1] for p in ring); rz1 = max(p[1] for p in ring)
+            # first pass: how wide is this ring, in cells that are inside it
+            widest = 0.0
+            for j in range(grid["nz"]):
+                gz = grid["z0"] + j * CELL
+                if gz < rz0 - CELL or gz > rz1 + CELL:
+                    continue
+                for i in range(grid["nx"]):
+                    gx = grid["x0"] + i * CELL
+                    if gx < rx0 - CELL or gx > rx1 + CELL:
+                        continue
+                    if inside(gx, gz, ring):
+                        widest = max(widest, edge_dist(gx, gz, ring))
+            inset = min(INSET, widest * 0.45)
             for j in range(grid["nz"]):
                 gz = grid["z0"] + j * CELL
                 if gz < rz0 - CELL or gz > rz1 + CELL:
@@ -442,7 +726,8 @@ def main():
                     if gx < rx0 - CELL or gx > rx1 + CELL:
                         continue
                     k = j * grid["nx"] + i
-                    if grid["h"][k] > floor and inside(gx, gz, ring):
+                    if (grid["h"][k] > floor and inside(gx, gz, ring)
+                            and edge_dist(gx, gz, ring) >= inset):
                         grid["h"][k] = floor
                         sunk += 1
         if sunk:

@@ -33,7 +33,7 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1400, height: 860 }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.log('  page error:', e.message));
-await page.goto(`http://localhost:8933/index.html?dpr=1&scene=${SCENE}`, { waitUntil: 'load' });
+await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/index.html?dpr=1&scene=${SCENE}`, { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true', null, { polling: 300, timeout: 240000 });
 await page.evaluate(() => window.__ui(false));
 

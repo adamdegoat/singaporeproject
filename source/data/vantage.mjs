@@ -327,7 +327,7 @@ page.on('pageerror', (e) => console.log('  page error:', e.message));
 // proximity streamer has no reason to have built what such a camera is looking
 // at. Chasing that produced two rounds of empty frames.
 const ALLQ = SHOTS.some((s) => s.kind === 'crown') ? '&streamall' : '';
-await page.goto(`http://localhost:8933/index.html?dpr=1&scene=${SCENE}${ALLQ}`, { waitUntil: 'load' });
+await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/index.html?dpr=1&scene=${SCENE}${ALLQ}`, { waitUntil: 'load' });
 // HOW LONG TO ALLOW FOR BOOT. `?nostream` builds all eight districts inline
 // in one go, which is the heaviest thing this project ever asks a browser to
 // do: measured 115s and 140s on two consecutive clean runs, 2026-07-31. The
