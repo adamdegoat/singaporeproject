@@ -3666,6 +3666,56 @@ def main():
                 continue
             green.append({"p": [[round(x, 1), round(z, 1)] for x, z in pts],
                           "k": kind, "a": round(garea)})
+    # ---- THE GROUND BETWEEN EVERYTHING ------------------------------------
+    # A sampled grid over Orchard came back 55% neither building, park nor road
+    # even after the green landed: the sand between everything. In the real city
+    # that is residential compounds, car parks, plazas and forecourts, and OSM
+    # maps most of it as landuse. Kept in its own list so the green figures stay
+    # honest — a car park is not parkland.
+    LAND_KIND = {
+        "residential": "resi", "institutional": "civic", "education": "civic",
+        "religious": "civic", "commercial": "comm", "retail": "comm",
+        "industrial": "indus", "railway": "indus",
+        "construction": "works", "brownfield": "works",
+    }
+    land = []
+    for e in els:
+        t = e.get("tags") or {}
+        kind = LAND_KIND.get(t.get("landuse"))
+        if not kind and t.get("amenity") == "parking":
+            kind = "parking"
+        if not kind and (t.get("place") == "square"
+                         or (t.get("highway") == "pedestrian" and t.get("area") == "yes")):
+            kind = "plaza"
+        if not kind:
+            continue
+        rings = []
+        if e["type"] == "way" and e.get("geometry"):
+            rings.append(e["geometry"])
+        elif e["type"] == "relation":
+            rings.extend(stitch_outer(e))
+        for g in rings:
+            pts = [proj(q["lat"], q["lon"]) for q in g if "lat" in q]
+            if len(pts) < 4:
+                continue
+            if math.dist(pts[0], pts[-1]) > 25.0:
+                continue
+            a2 = 0.0
+            for i in range(len(pts)):
+                q1, q2 = pts[i], pts[(i + 1) % len(pts)]
+                a2 += q1[0] * q2[1] - q2[0] * q1[1]
+            larea = abs(a2) / 2
+            if larea < 60:
+                continue
+            land.append({"p": [[round(x, 1), round(z, 1)] for x, z in pts],
+                         "k": kind, "a": round(larea)})
+    land.sort(key=lambda w: -w["a"])
+    if land:
+        from collections import Counter as _C2
+        _lc = _C2(g["k"] for g in land)
+        print(f"  land:  {len(land)} polygons, {sum(g['a'] for g in land):,} m2 "
+              f"({', '.join(f'{k} {n}' for k, n in _lc.most_common())})")
+
     green.sort(key=lambda w: -w["a"])
     if green:
         from collections import Counter as _C
@@ -3862,6 +3912,7 @@ def main():
         "buildings": buildings,
         "water": water,
         "green": green,
+        "land": land,
         "towers": towers,
         "roads": roads,
         "trees": trees,

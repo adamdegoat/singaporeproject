@@ -250,12 +250,22 @@ export class Terrain {
         const verts = new Map();   // "qx,qz" -> index within THIS tile
         const pos = [], idx = [], col = [];
         // one tint per green kind; white leaves the ground material untouched
+        // Green reads as green; the built-up kinds only shift the sand a little,
+        // because the point is to stop a condo garden, a car-park apron and a
+        // mall forecourt all being the same colour — not to paint the city.
         const TINT = {
           park:  [0.52, 0.78, 0.46],
           grass: [0.58, 0.80, 0.50],
           pitch: [0.46, 0.74, 0.42],
           wood:  [0.34, 0.55, 0.32],
           scrub: [0.62, 0.72, 0.46],
+          resi:  [0.86, 0.86, 0.78],
+          comm:  [0.90, 0.89, 0.86],
+          civic: [0.88, 0.87, 0.82],
+          indus: [0.80, 0.79, 0.76],
+          works: [0.84, 0.80, 0.72],
+          parking: [0.72, 0.71, 0.70],
+          plaza: [0.93, 0.91, 0.87],
         };
         const vid = (qx, qz) => {
           const k = qx + ',' + qz;

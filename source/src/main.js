@@ -1066,13 +1066,13 @@ async function buildStreamed(mani) {
   // the ground and the surround must know the WHOLE region at boot: the
   // heightfield mesh is built once, and grey massing must never stand where
   // a later chunk will build the real buildings
-  const LAYERS = ['water', 'green', 'buildings', 'roads', 'bridges', 'covered', 'towers',
+  const LAYERS = ['water', 'green', 'land', 'buildings', 'roads', 'bridges', 'covered', 'towers',
     'trees', 'crossings', 'signals', 'busstops', 'mrt', 'taxis', 'shops',
     'gantries', 'lamps'];
-  const regionData = { origin: mani.origin, water: [], green: [], buildings: [], roads: [] };
+  const regionData = { origin: mani.origin, water: [], green: [], land: [], buildings: [], roads: [] };
   // the ground mesh is built ONCE for the whole region, so every chunk's green
   // has to be in hand before terrain.build() runs — not streamed in later
-  window.__allGreen = chunks.flatMap((c) => c.green || []);
+  window.__allGreen = chunks.flatMap((c) => [...(c.green || []), ...(c.land || [])]);
   // kept for the streamed chunk builds: the shopfront pass needs to see
   // buildings in OTHER chunks or it sites bays into them at the seam
   REGIONB = regionData;
@@ -1815,6 +1815,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   {
     const allGreen = [];
     if (data.green) allGreen.push(...data.green);
+    if (data.land) allGreen.push(...data.land);
     if (window.__allGreen) allGreen.push(...window.__allGreen);
     terrain.setGreen(allGreen);
   }

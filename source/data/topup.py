@@ -47,6 +47,17 @@ LAYERS = {
               'rel["landuse"~"^(grass|forest|recreation_ground|cemetery|village_green|meadow|greenfield)$"]({bbox});'
               'way["natural"~"^(wood|scrub|grassland|heath)$"]({bbox});'
               'rel["natural"~"^(wood|scrub|grassland|heath)$"]({bbox});'),
+    # THE OTHER 55%. With green space in, a sampled grid over Orchard still came
+    # back 55% neither building, park nor road — the sand between everything.
+    # In the real city that is residential compounds, car parks, plazas and
+    # forecourts, and OSM maps most of it as landuse. Without it the ground has
+    # one colour for a condo garden, a multi-storey car park apron and a
+    # shopping-mall forecourt.
+    "landuse": ('way["landuse"~"^(residential|commercial|retail|industrial|institutional|education|religious|construction|brownfield|railway)$"]({bbox});'
+                'rel["landuse"~"^(residential|commercial|retail|industrial|institutional|education|religious|construction|brownfield|railway)$"]({bbox});'
+                'way["amenity"="parking"]({bbox});rel["amenity"="parking"]({bbox});'
+                'way["highway"="pedestrian"]["area"="yes"]({bbox});'
+                'way["place"="square"]({bbox});'),
 }
 
 
