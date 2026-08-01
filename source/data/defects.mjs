@@ -604,9 +604,9 @@ const found = await page.evaluate(() => {
     const posts = [];
     sc.traverse((o) => {
       if (!o.isInstancedMesh) return;
-      const pr = o.geometry.parameters || {};
-      if (o.geometry.type !== 'CylinderGeometry') return;
-      if (Math.abs((pr.radiusTop || 0) - 0.07) > 0.02) return;
+      // BY MECHANISM. See street.js's emit(): the walkway's roof and posts now
+      // carry userData flags, so this stops guessing from radii and widths.
+      if (!o.userData.walkwayPost) return;
       const m4 = new T.Matrix4(), v3 = new T.Vector3();
       for (let i = 0; i < o.count; i++) {
         o.getMatrixAt(i, m4); v3.setFromMatrixPosition(m4);
@@ -615,10 +615,7 @@ const found = await page.evaluate(() => {
     });
     sc.traverse((o) => {
       if (!o.isInstancedMesh) return;
-      const pr = o.geometry.parameters || {};
-      // the walkway roof panel
-      if (o.geometry.type !== 'BoxGeometry') return;
-      if (!((pr.width || 0) > 2.4 && (pr.width || 0) < 4.2 && (pr.height || 0) < 0.35)) return;
+      if (!o.userData.walkwayRoof) return;
       const m4 = new T.Matrix4(), v3 = new T.Vector3();
       let orphan = 0;
       for (let i = 0; i < o.count; i++) {

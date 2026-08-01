@@ -263,9 +263,47 @@ fetching. Marina Bay and Little India have PARTIAL land cover (26 and 15
 polygons against a few hundred elsewhere) because every mirror failed on retry.
 Re-run `python3 data/topup.py <id> landuse` from a fresh session.
 
+**THE FACADE FAMILY NEVER ASKED WHAT THE BUILDING IS.** `facadeFor()` chose from
+a surveyed date, then a conservation-area era band, then a district mix, then a
+hash of the footprint — and skipped straight past `building=`. **2,085 of 9,274
+footprints (22%) carry a specific type**: 864 residential/apartments/house, 597
+retail/commercial/office, plus schools, churches and stations. River Valley is
+condo country and was being dealt curtain walls and pre-war stone by a hash.
+Now read AFTER `yr` and `era` (a surveyed date beats a type) and BEFORE the
+district mix (a surveyed tag beats a rule we invented): housing gets balconies,
+low commercial gets punched masonry, a commercial tower over 28m gets glass,
+civic gets stone.
+
 **STILL NOT FETCHED:** expressways and tunnels, railway and MRT viaducts, piers
 and jetties, sports facilities, barriers. Same method each time — fetch,
 process, draw, ride it.
+
+## THE DEFECT LEDGER, PER DISTRICT (first honest run, 2026-08-01)
+
+    orchard   D25 1, D26 3        rivervalley  D38 1
+    bugis     D19 3, D38 1        chinatown    D19 1, D25 1, D26 1, D38 4
+    brasbasah D20 1, D26 1,       robertson    D20 1
+              D34 2, D38 1        littleindia  CLEAN
+    marinabay D2 87, D20 1, D38 4
+
+22 findings outside Marina Bay, and most are not what they look like:
+
+- **D19 (4) is REAL DATA, not a defect.** Each is a surveyed
+  `highway=traffic_signals` node with nothing else tagged near it — checked in
+  the raw extract. Singapore maps standalone pedestrian signals; the CHECK
+  assumes a signal must serve a junction or a mapped crossing. Do not delete
+  surveyed positions to make a check green.
+- **D26 (5) is 5 bays in ~2,400 sampled**, 0.2%, every one of them a ray that
+  hits the building's own grown mass a metre out. Not visible from the street.
+- **D2 (87) at Marina Bay** is the bridge-ramp question written up above.
+- **D38 (7)** are the probe cases already documented: a footprint over sunk
+  water, a tower whose podium is a separate ring.
+
+The genuinely visible one left is **D20 — a covered-walkway roof panel with no
+post under it**, 1 on Bras Basah, 1-2 on Robertson. street.js ALREADY refuses to
+draw a roof whose posts both fail (`if (!posts) continue`), so these come from
+somewhere else: find which emitter produces a `BoxGeometry(3.4,0.13,4.1)` that
+the walkway builder did not, before changing the walkway builder again.
 
 # THE DEFECT HUNT HAS BEEN RUNNING ON A SCENE THAT DOES NOT CONTAIN THE WORLD
 

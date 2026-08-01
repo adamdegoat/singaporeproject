@@ -164,7 +164,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
   // Chunk instanced runs by ~260m so distant sections frustum-cull. A single
   // mesh spanning 2.4km of street is never culled and always drawn in full.
   const CHUNK = 260;
-  const emit = (geo, mat, list, fn, colFn) => {
+  const emit = (geo, mat, list, fn, colFn, tag) => {
     // Street furniture is not built on water either. blocked() knows about the
     // reservoir, but several of these lists are filled by paths that never ask
     // it -- the same reason markings.js needed one guard at the emit point.
@@ -185,6 +185,13 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
       });
       if (im.instanceColor) im.instanceColor.needsUpdate = true;
       im.castShadow = false; im.receiveShadow = true;
+      // TAGGED AT THE MESH so a check can ask what a thing IS rather than
+      // recognising it by its measurements. D20 identified the covered-walkway
+      // roof as "a box 2.4-4.2m wide and under 35cm thick", which is a
+      // description several other emitters also satisfy — the fifth geometry
+      // signature allowlist in this project, and they have broken in the same
+      // way every time.
+      if (tag) im.userData[tag] = true;
       world.add(im);
       last = im;
     }
@@ -541,9 +548,9 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
       }
     }
   }
-  emit(new THREE.BoxGeometry(3.4, 0.13, 4.1), MAT.trim, linkRoof, yaw);
+  emit(new THREE.BoxGeometry(3.4, 0.13, 4.1), MAT.trim, linkRoof, yaw, null, 'walkwayRoof');
   emit(new THREE.BoxGeometry(0.18, 0.22, 4.1), MAT.metal, linkBeam, yaw);
-  emit(new THREE.CylinderGeometry(0.075, 0.075, 3.2, 8), MAT.metal, linkPost, yaw);
+  emit(new THREE.CylinderGeometry(0.075, 0.075, 3.2, 8), MAT.metal, linkPost, yaw, null, 'walkwayPost');
 
   const signalList = [...signals.values()];
 

@@ -58,6 +58,17 @@ LAYERS = {
                 'way["amenity"="parking"]({bbox});rel["amenity"="parking"]({bbox});'
                 'way["highway"="pedestrian"]["area"="yes"]({bbox});'
                 'way["place"="square"]({bbox});'),
+    # The waterfront and the rail. Clarke Quay, Robertson Quay and Marina Bay
+    # are quays with jetties and pontoons on them, and none of it existed.
+    "marine": ('way["man_made"~"^(pier|breakwater|groyne)$"]({bbox});'
+               'way["waterway"="dock"]({bbox});'
+               'way["amenity"="ferry_terminal"]({bbox});'
+               'node["amenity"="ferry_terminal"]({bbox});'),
+    "rail": ('way["railway"~"^(rail|light_rail|subway|monorail|tram)$"]({bbox});'
+             'way["railway"="platform"]({bbox});'
+             'rel["railway"="platform"]({bbox});'),
+    "sport": ('way["leisure"~"^(sports_centre|stadium|track|swimming_pool|fitness_station)$"]({bbox});'
+              'rel["leisure"~"^(sports_centre|stadium|track|swimming_pool)$"]({bbox});'),
 }
 
 
