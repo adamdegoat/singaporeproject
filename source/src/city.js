@@ -492,6 +492,59 @@ const SURFACE_PATH = 0.024;
 // affordable. Cells are 40m, which is larger than any single segment's reach.
 const BR_CELL = 40;
 const BRIDGES = { cells: new Map(), segs: [] };
+
+// WALKABLE SURFACES THAT ARE NOT BRIDGES — stair treads, and whatever else
+// later needs a person to stand ON it rather than beside it.
+//
+// A SEPARATE REGISTRY, DELIBERATELY, AND THIS IS THE WHOLE REASON IT EXISTS.
+// The obvious implementation is to push treads into BRIDGES: addBridgeWay
+// already does exactly this job and surfaceAt already reads it. That would
+// silently undo two things. `standable()` and W2's "things built in open
+// water" both exempt anything with a deck over it, and sgdetail's `dryHere`
+// guard — added 2026-08-01 after eleven steps were found standing sixteen
+// metres in mid-air over the Singapore River — asks the same question. A
+// staircase that registered itself as a bridge would exempt itself from the
+// check that catches it, and the next one over water would pass in silence.
+//
+// So: stairs get their own registry, `surfaceAt` reads both, and every
+// water/bridge exemption keeps reading BRIDGES alone.
+//
+// Unlike a bridge deck, a flight CLIMBS, so the height cannot be one number
+// per way. Each tread registers its own segment at its own height and the
+// lookup takes the highest match — which is what you are standing on when two
+// treads overlap at a turn.
+const WALKS = { cells: new Map(), segs: [] };
+
+export function addWalkSurface(x1, z1, x2, z2, half, y) {
+  const idx = WALKS.segs.length;
+  WALKS.segs.push([x1, z1, x2, z2, half, y]);
+  const mnx = Math.min(x1, x2) - half, mxx = Math.max(x1, x2) + half;
+  const mnz = Math.min(z1, z2) - half, mxz = Math.max(z1, z2) + half;
+  for (let cx = Math.floor(mnx / BR_CELL); cx <= Math.floor(mxx / BR_CELL); cx++) {
+    for (let cz = Math.floor(mnz / BR_CELL); cz <= Math.floor(mxz / BR_CELL); cz++) {
+      const k = cx + ',' + cz;
+      let l = WALKS.cells.get(k);
+      if (!l) { l = []; WALKS.cells.set(k, l); }
+      l.push(idx);
+    }
+  }
+}
+
+export function walkSurfaceAt(x, z) {
+  const l = WALKS.cells.get(Math.floor(x / BR_CELL) + ',' + Math.floor(z / BR_CELL));
+  if (!l) return null;
+  let best = null;
+  for (const i of l) {
+    const s = WALKS.segs[i];
+    const vx = s[2] - s[0], vz = s[3] - s[1];
+    const l2 = vx * vx + vz * vz || 1;
+    let t = ((x - s[0]) * vx + (z - s[1]) * vz) / l2;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const dx = x - (s[0] + vx * t), dz = z - (s[1] + vz * t);
+    if (dx * dx + dz * dz <= s[4] * s[4] && (best === null || s[5] > best)) best = s[5];
+  }
+  return best;
+}
 export function clearBridges() { BRIDGES.cells.clear(); BRIDGES.segs.length = 0; }
 export function addBridgeWay(pts, width) {
   if (!pts || pts.length < 2) return;
@@ -551,6 +604,14 @@ export function standable(x, z) {
 export function surfaceAt(x, z) {
   const deck = bridgeDeckAt(x, z);
   if (deck !== null) return deck + SURFACE_ROAD;
+  // A STAIR TREAD IS GROUND WHEN YOU ARE ON IT. Checked after the deck so a
+  // flight under a bridge does not lift a rider off the carriageway, and
+  // before the terrain so a walker climbing Fort Canning rises with the steps
+  // instead of walking through them. main.js seats the walker with exactly
+  // this function (`walkerRig.group.position.set(walker.x, surfaceAt(...))`),
+  // which is why the stairs were drawn but not climbable until now.
+  const step = walkSurfaceAt(x, z);
+  if (step !== null) return step;
   const g = TERRAIN.at(x, z);
   if (window.__onRoad && window.__onRoad(x, z, 0.4)) return g + SURFACE_ROAD;
   return g + SURFACE_PATH;

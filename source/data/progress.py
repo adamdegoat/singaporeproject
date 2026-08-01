@@ -92,7 +92,12 @@ def main():
                           ("frontage height", "frontage named", "frontage era/mat",
                            "frontage recipe", "all heights", "named recipe"))
         print(f"  {did:<13} {t:5.0f}%   {cells}    ({nb} buildings, {nf} on the axis)")
-    print(f"\n  ALL EIGHT: {tot/len(ids):.0f}% by this measure.")
+    # COUNTED, NOT TYPED. This said "ALL EIGHT" as a literal string and went
+    # stale the moment kallang made it nine -- the maths was always right,
+    # only the label lied. Same one-list-written-twice trap that left four
+    # districts with no deploy gate for a week; deploy.sh and gates.sh both
+    # read the registry for exactly this reason.
+    print(f"\n  ALL {len(ids)} DISTRICTS: {tot/len(ids):.0f}% by this measure.")
     print("  Weights: frontage 60% (height 20, named 15, era/material 15, recipe 10),")
     print("           whole district 40% (heights 20, named-with-recipe 20).")
 

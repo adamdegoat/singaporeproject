@@ -4097,6 +4097,74 @@ def main():
               f"of stair, {_sn} with a surveyed step count")
 
     # Walls, fences, hedges and railings. The same question from the other side:
+    # ---- PARK FURNITURE ----------------------------------------------------
+    # The things that make a park somewhere you would stop rather than somewhere
+    # you cross. `topup.py` has had a `parkfurn` layer since the walkable-world
+    # work began and it had NEVER BEEN FETCHED FOR ANY DISTRICT, and nothing
+    # parsed or drew it -- the fetch existed, the other two thirds did not. In
+    # the brasbasah bbox alone the extract carries 60 benches, 17 memorials and
+    # monuments, 15 fountains, 6 shelters and 6 playgrounds, all of it drawn as
+    # bare grass.
+    #
+    # This is the tenth time in this project that real data was simply not
+    # asked for, and the second time the ASKING existed but nothing read the
+    # answer (see `data.trees`, surveyed into every scene file since the first
+    # build and drawn by nothing until 2026-08-01).
+    #
+    # Nodes give a point; ways give a footprint whose centroid is the point and
+    # whose area sizes the thing. A playground mapped as a 400 m2 polygon and a
+    # playground mapped as a single node are the same playground, so both are
+    # carried as (position, kind, radius) and the radius is what differs.
+    PARKFURN_KIND = {
+        "memorial": "memorial", "monument": "memorial",
+        "artwork": "artwork",
+        "bench": "bench", "fountain": "fountain",
+        "shelter": "shelter", "playground": "playground",
+    }
+    parkfurn = []
+    for e in els:
+        t = e.get("tags") or {}
+        kind = None
+        for key in ("historic", "tourism", "amenity", "leisure"):
+            v = t.get(key)
+            if v in PARKFURN_KIND:
+                kind = PARKFURN_KIND[v]
+                break
+        if not kind:
+            continue
+        px = pz = None
+        rad = 0.0
+        if e["type"] == "node" and "lat" in e:
+            px, pz = proj(e["lat"], e["lon"])
+        elif e.get("geometry"):
+            pts = [proj(q["lat"], q["lon"]) for q in e["geometry"] if "lat" in q]
+            if len(pts) < 3:
+                continue
+            px = sum(q[0] for q in pts) / len(pts)
+            pz = sum(q[1] for q in pts) / len(pts)
+            # radius of the circle with the ring's area, capped: an OSM
+            # "playground" polygon sometimes covers a whole park corner, and a
+            # 40m climbing frame is not a thing.
+            a2 = 0.0
+            for i in range(len(pts)):
+                q1, q2 = pts[i], pts[(i + 1) % len(pts)]
+                a2 += q1[0] * q2[1] - q2[0] * q1[1]
+            rad = min(14.0, math.sqrt(abs(a2) / 2 / math.pi))
+        if px is None:
+            continue
+        rec = {"p": [round(px, 1), round(pz, 1)], "k": kind}
+        if rad > 1.0:
+            rec["r"] = round(rad, 1)
+        nm = (t.get("name") or "").strip()
+        if nm:
+            rec["n"] = nm[:60]
+        parkfurn.append(rec)
+    if parkfurn:
+        _pfc = {}
+        for r in parkfurn:
+            _pfc[r["k"]] = _pfc.get(r["k"], 0) + 1
+        print("  parkfurn: " + ", ".join(f"{v} {k}" for k, v in sorted(_pfc.items())))
+
     # a walkable world needs to say where you may NOT walk, and 29 of these in
     # brasbasah alone are currently drawn as open air you can stroll through.
     barriers = []
@@ -4447,6 +4515,7 @@ def main():
         "piers": piers,
         "steps": steps_out,
         "barriers": barriers,
+        "parkfurn": parkfurn,
         "towers": towers,
         "roads": roads,
         "trees": trees,

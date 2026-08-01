@@ -12,7 +12,7 @@ import { R, rand, pick, chance, rng, SignAtlas } from './tex.js';
 // to — the same two-numbers trap that had the bike riding 5.5cm under the road
 // for the whole project, one storey up. surfaceAt() answers both cases and is
 // the single function main.js already uses for the ride and the walker.
-import { MAT, groundAt, surfaceAt, Merger, standable } from './city.js';
+import { MAT, groundAt, surfaceAt, Merger, standable, addWalkSurface } from './city.js';
 import { recipeFor } from './landmarks.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d,
@@ -884,7 +884,7 @@ const WALK_MAT = {
 };
 
 export function buildWalkable(world, data) {
-  const out = { stairFlights: 0, stairTreads: 0, barrierRuns: 0, offRoad: 0 };
+  const out = { stairFlights: 0, stairTreads: 0, barrierRuns: 0, offRoad: 0, parkFurn: 0 };
   const merger = new Merger();
 
   // NOTHING HERE MAY STAND IN A CARRIAGEWAY, and the first build of this
@@ -1132,6 +1132,21 @@ export function buildWalkable(world, data) {
         }
       }
     }
+    // NOW MAKE IT CLIMBABLE. Every tread that was actually DRAWN — so
+    // anything the road and water guards refused is not registered, and a
+    // walker cannot climb a flight that is not there — becomes a walkable
+    // surface at its own height. Registered AFTER the flight is built, never
+    // before, because the tread heights above are read from `surfaceAt` and a
+    // flight that registered itself mid-loop would start standing on itself.
+    for (let k = 0; k < tread.length; k++) {
+      const [ax, ay, az] = tread[k];
+      const nx2 = k + 1 < tread.length ? tread[k + 1] : tread[k - 1] || tread[k];
+      // a segment spanning this tread, half the flight's width plus a little,
+      // so the walkable strip is continuous rather than a row of islands
+      const ex = nx2 === tread[k] ? ax : (ax + nx2[0]) / 2;
+      const ez = nx2 === tread[k] ? az : (az + nx2[2]) / 2;
+      addWalkSurface(ax, az, ex, ez, W / 2 + 0.15, ay);
+    }
     out.stairFlights++;
     out.stairTreads += rec.treads;
   }
@@ -1194,6 +1209,108 @@ export function buildWalkable(world, data) {
       }
     }
     out.barrierRuns++;
+  }
+
+  // ---- PARK FURNITURE ------------------------------------------------------
+  //
+  // The things that make a park somewhere you would STOP. Benches, fountains,
+  // shelters, playgrounds, memorials and public artwork were all surveyed, all
+  // fetched into `data.parkfurn`, and all drawn as bare grass.
+  //
+  // Drawn HERE rather than in its own pass so it inherits this function's two
+  // guards for free: nothing in a carriageway, and nothing seated where the
+  // drawn ground has been cut away under water. Furniture is the layer most
+  // likely to sit near a quay edge, so the second one matters.
+  //
+  // Sizes are real-world and FIXED, not scaled from the OSM footprint: a bench
+  // is 1.7m whether it was mapped as a node or a polygon. Only the things that
+  // genuinely vary with their mapped area -- the playground and the fountain --
+  // read `r`, and both are capped in process.py.
+  const PF = {
+    seat: new THREE.MeshStandardMaterial({ color: 0x8a6a44, roughness: 0.85 }),
+    stone: new THREE.MeshStandardMaterial({ color: 0xcfc9bc, roughness: 0.88 }),
+    water: new THREE.MeshStandardMaterial({
+      color: 0x5f8fa6, roughness: 0.25, metalness: 0.1,
+    }),
+    play: new THREE.MeshStandardMaterial({ color: 0xc4603f, roughness: 0.8 }),
+    roof: new THREE.MeshStandardMaterial({ color: 0x7d8a7a, roughness: 0.8 }),
+  };
+  for (const f of data.parkfurn || []) {
+    const px = f.p[0], pz = f.p[1];
+    if (anyRoad(px, pz, 0.4) || !dryHere(px, pz)) { out.offRoad++; continue; }
+    const y = surfaceAt(px, pz);
+    const r = f.r || 0;
+    // a stable per-item angle from the position, so nothing spins between
+    // builds and the determinism check stays happy
+    const ang = ((px * 7.3 + pz * 3.1) % Math.PI);
+    if (f.k === 'bench') {
+      const s = new THREE.BoxGeometry(1.7, 0.09, 0.46);
+      s.rotateY(ang); s.translate(px, y + 0.44, pz);
+      merger.add(s, PF.seat, px, pz);
+      const bk = new THREE.BoxGeometry(1.7, 0.42, 0.07);
+      bk.rotateY(ang);
+      bk.translate(px - Math.cos(ang) * 0.2, y + 0.66, pz + Math.sin(ang) * 0.2);
+      merger.add(bk, PF.seat, px, pz);
+      for (const sx of [-0.68, 0.68]) {
+        const lg = new THREE.BoxGeometry(0.08, 0.44, 0.4);
+        lg.rotateY(ang);
+        lg.translate(px + Math.sin(ang + Math.PI / 2) * sx, y + 0.22,
+                     pz + Math.cos(ang + Math.PI / 2) * sx);
+        merger.add(lg, MAT.metal, px, pz);
+      }
+    } else if (f.k === 'fountain') {
+      const R = Math.max(2.2, Math.min(r || 3, 9));
+      const basin = new THREE.CylinderGeometry(R, R, 0.55, 20, 1, true);
+      basin.translate(px, y + 0.27, pz);
+      merger.add(basin, PF.stone, px, pz);
+      const disc = new THREE.CylinderGeometry(R - 0.22, R - 0.22, 0.06, 20);
+      disc.translate(px, y + 0.45, pz);
+      merger.add(disc, PF.water, px, pz);
+    } else if (f.k === 'shelter') {
+      const R = Math.max(2.0, Math.min(r || 2.6, 6));
+      for (const [sx, sz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+        const p2 = new THREE.BoxGeometry(0.14, 2.5, 0.14);
+        p2.translate(px + sx * R * 0.8, y + 1.25, pz + sz * R * 0.8);
+        merger.add(p2, MAT.metal, px, pz);
+      }
+      const rf = new THREE.BoxGeometry(R * 1.9, 0.16, R * 1.9);
+      rf.rotateY(ang); rf.translate(px, y + 2.6, pz);
+      merger.add(rf, PF.roof, px, pz);
+    } else if (f.k === 'playground') {
+      const R = Math.max(2.5, Math.min(r || 4, 12));
+      // a frame and a slide, not a literal climbing structure: at the distance
+      // a rider or a walker sees this, the silhouette is two uprights, a
+      // crossbar and a ramp. Anything more is polygons nobody resolves.
+      for (const sx of [-1, 1]) {
+        const p2 = new THREE.BoxGeometry(0.12, 2.2, 0.12);
+        p2.translate(px + sx * R * 0.5, y + 1.1, pz);
+        merger.add(p2, PF.play, px, pz);
+      }
+      const bar = new THREE.BoxGeometry(R * 1.06, 0.12, 0.12);
+      bar.translate(px, y + 2.2, pz);
+      merger.add(bar, PF.play, px, pz);
+      const slide = new THREE.BoxGeometry(0.9, 0.08, R * 0.9);
+      slide.rotateX(-0.5);
+      slide.translate(px, y + 0.85, pz + R * 0.45);
+      merger.add(slide, MAT.metal, px, pz);
+    } else if (f.k === 'memorial') {
+      const base = new THREE.BoxGeometry(1.5, 0.3, 1.5);
+      base.rotateY(ang); base.translate(px, y + 0.15, pz);
+      merger.add(base, PF.stone, px, pz);
+      const col = new THREE.BoxGeometry(0.7, 2.4, 0.7);
+      col.rotateY(ang); col.translate(px, y + 1.5, pz);
+      merger.add(col, PF.stone, px, pz);
+    } else if (f.k === 'artwork') {
+      const plinth = new THREE.CylinderGeometry(0.7, 0.85, 0.6, 12);
+      plinth.translate(px, y + 0.3, pz);
+      merger.add(plinth, PF.stone, px, pz);
+      const form = new THREE.IcosahedronGeometry(0.95, 0);
+      form.rotateY(ang); form.translate(px, y + 1.5, pz);
+      merger.add(form, MAT.metal, px, pz);
+    } else {
+      continue;
+    }
+    out.parkFurn++;
   }
 
   merger.flush(world);

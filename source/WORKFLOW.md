@@ -905,3 +905,164 @@ turned a blind diagnosis into a five-minute one.
 
 **A gate's failure message is part of the gate.** If it cannot be acted on
 without re-running the thing that produced it, it is not finished.
+
+## MEASURE BEFORE YOU LOG IT, NOT AFTER (2026-08-02)
+
+Two "defects" were written into the task list from vet frames this session and
+both turned out not to exist.
+
+"Paved paths stand about a metre proud of the ground on slopes", from a frame at
+Fort Canning. It sat in the notes as an open defect, and TWO further hypotheses
+were built on top of it — a flat-across-the-width ribbon, then a bridge-tagged
+footway drawn flat — before anyone measured the thing itself. When it was
+finally measured: 1,084 `pavementSurface` vertices, height above `TERRAIN.at()`
+**mean 0.02m, maximum 0.02m**. That is `SURFACE_PATH` exactly. The pavement is
+flush everywhere and always was. Both hypotheses were also false, and each cost
+a round of code reading to disprove.
+
+**This is the FOURTH time this project has chased a shallow camera angle.** The
+rule is already written in two places — HANDOFF's "A FRAME IS NOT A DEFECT UNTIL
+IT HAS SETTLED" (a gold banner over Little India, chased three times before
+someone re-shot it and found it attached to a lamp-post arm) and NEXT.md's
+Robertson riverbed entry, where the first frame "looked like catastrophic
+terrain corruption" and instrumenting showed the cut was correct and narrow.
+
+So the rule is not new. What is new is WHERE it failed: not at the fixing stage
+but at the LOGGING stage. A frame is enough to say "look at this". It is not
+enough to write a cause into the notes — and once a cause is written down, the
+next person inherits it as a premise and starts building on it. A wrong entry in
+the notes costs more than the bug would have.
+
+**Before a frame becomes a logged defect, get one number.** A probe that reads
+the geometry's own height against the terrain takes two minutes and is the
+difference between "there is a defect at Fort Canning" and "there is nothing
+here". Log the number, not the impression — and if the number contradicts the
+frame, say so in the entry so nobody re-opens it.
+
+## RESEARCH IS ALWAYS ALLOWED — GO AND LOOK IT UP (owner, 2026-08-02)
+
+Standing instruction from the owner, in his own words: *"rmb to update the
+workflow to rmb that research anytime is allowed too. I want the workflow to be
+able to access anything it needs."*
+
+**So: never guess a real-world fact that is published somewhere.** Web search,
+WebFetch, Overpass, OneMap, URA, NLB, Roots, data.gov.sg, archive.org, a
+published architect's page — all of it is fair game, at any point, without
+asking. There is no budget to protect and no permission to seek. If a number
+about the real Singapore would change what gets built, go and find it.
+
+This is not a small licence. Every landmark this project has got right came from
+looking something up, and **every recipe brief written so far has corrected at
+least one false premise the moment someone actually checked**:
+
+- The National Stadium is tagged `height=10` in OSM against a published **83m**
+  dome, and its 310m span was carried as UNVERIFIED for a whole brief until one
+  search confirmed it.
+- Golden Mile Complex was being drawn at 22m against a published **89m**.
+- The Concourse is tagged `height=0` and is **175m**.
+- Tekka Place's two blocks were the wrong way round in our data.
+- "Raffles Hospital 44.2m" turned out to be our own `levels x 3.4` laundered
+  into a brief as if it were a survey.
+- kallang's axis, "Stadium Boulevard", is a road that does not exist.
+
+**The discipline that goes with the licence, and it is the important half:**
+
+1. **Say what tier it is.** PUBLISHED / MEASURED / UNVERIFIED / UNPUBLISHED, and
+   name the source. A figure without a source is a guess wearing a number.
+2. **UNPUBLISHED is a real and final answer.** URA publishes no storey count and
+   no metre height for a single one of 996 conserved buildings that were
+   checked. Record the absence and stop looking, rather than leaving it to be
+   re-researched by the next session.
+3. **Never launder a derivation into a survey.** If a height came from
+   `levels x floor-to-floor`, `hs` must say so. This has bitten twice.
+4. **Re-measure the claim you are about to depend on.** The kallang height
+   suppression was re-checked against live Overpass before being relied upon and
+   the real numbers were worse than the brief said.
+5. **A search limit is a session limit, not a project limit.** If the budget is
+   exhausted, SAY SO in the handoff so a fresh session can finish the job — one
+   session ended with 200/200 used and left named open items, all of which were
+   closed in minutes the next day.
+
+## `pgrep -f X` MATCHES ITSELF — AND IT BIT AGAIN, FOURTEEN TIMES (2026-08-02)
+
+HANDOFF has warned about this for weeks, in the specific: *"check with
+`ps ax -o args= | grep -E 'MacOS/Python data/build_district\.py'` — and NOT with
+`pgrep -f build_district`, which matches its own command line and hangs forever
+(that trap cost six stuck processes and eight hours)."*
+
+Tonight it cost **fourteen** stuck shells, some looping for over an hour and a
+half, because the warning was read as being about `build_district` rather than
+about `pgrep -f`. Every one of these never terminates:
+
+    until ! pgrep -f "bash ./deploy.sh" >/dev/null; do sleep 20; done
+    until ! pgrep -f "topup.py" >/dev/null; do sleep 30; done
+
+The waiter's OWN command line contains the pattern, so `pgrep -f` finds itself,
+the condition is never false, and it loops until something kills it. It looks
+correct, it runs silently, and the only symptom is a machine slowly filling with
+`sleep` processes — 31 of them here.
+
+**Write the pattern so it cannot match itself.** Any of these work:
+
+    until ! pgrep -f "[b]ash ./deploy.sh" >/dev/null; do sleep 20; done   # bracket trick
+    until [ ! -d /proc/$PID ]; ...                                        # wait on a PID
+    CMD & PID=$!; wait $PID                                               # just wait(1)
+
+**And the general rule, which is the reusable half:** a check whose own
+existence changes the thing it checks is not a check. This is the same shape as
+`__onRoad` being asked about a district it cannot see, and as A2 reading a
+global that every chunk overwrites — all three found in one session. When a
+predicate is about the state of the system, ask whether running it is part of
+that state.
+
+## THE MAP IS A 36MB FILE ON DISK NOW — STOP QUEUING FOR OVERPASS (2026-08-02)
+
+`data/osmlocal.py` answers this project's OSM queries from a local
+`Singapore.osm.pbf` instead of the network. Measured reasons, from the night
+kallang was built:
+
+    one district's fetch          15 queries + 16 RETRIES = 31 round trips
+    one layer across 9 districts  27 minutes (the parkfurn topup)
+    mirrors alive in that hour    1 of 4 answering, 2 dead, 1 rate-limited
+
+Six districts remain in the ring at ~28 queries each: about 170 more throttled
+round trips, any of which can time out at 180s and any of which can trip the
+loss guard.
+
+**The whole island is 36MB.** `download.bbbike.org/osm/bbbike/Singapore/`.
+One pass over it answers EVERY layer of a district in about 95 seconds.
+
+**Ask for all layers together, never one at a time.** A scan costs ~95s
+whatever you ask, so fifteen separate calls is twenty-four minutes and one
+`fetch_many()` is ninety-five seconds. `build_district.py` and `topup.py` both
+go through it and fall back to Overpass per-layer for anything the reader
+cannot parse, so nothing that used to succeed can now fail.
+
+**IT ALSO FIXES A CORRECTNESS BUG, WHICH WAS NOT THE POINT AND IS THE BEST PART.**
+merge.py's dedupe comment records Funan, Old City Hall, Bugis+, Peninsula Plaza
+and NAFA all sitting at a consistent ~11m offset across the seam, "because the
+two district fetches happened at different times and OSM had been edited in
+between". One snapshot makes a build REPRODUCIBLE: two districts read from the
+same file cannot disagree about where a building is. That class of seam defect
+stops existing.
+
+**TWO THINGS TO KNOW BEFORE TOUCHING IT.**
+
+1. **It is validated against Overpass, not assumed equal.** Diffed id-for-id and
+   vertex-for-vertex against the cached responses. The first version returned
+   **1,245 building relations** for a bbox Overpass answers with **three**,
+   because relations were matched on tags with no spatial test at all. A
+   relation has no geometry — `rel(bbox)` means "has a member in the box" — so
+   the in-box node and way ids have to be collected on the way past. A .pbf is
+   ordered nodes, ways, relations, so one pass suffices. **Diff any new backend
+   against a known-good response; plausible counts prove nothing.**
+2. **`data/osm` is a CACHE and must never be committed.** Excluded from the
+   deploy snapshot and from `source/`, exactly like `data/dem` and `data/raw`.
+   data/dem was committed once at 80MB and is still in the git history because
+   only a rewrite could reclaim it.
+
+And one process note worth more than the feature: `bash -n` passed a `tar`
+command this change had broken, because an edit left a BLANK LINE inside a
+backslash continuation — syntactically fine, and it silently ends the command.
+It was caught by actually running the pipeline into a temp dir and checking
+what came out. **Syntax checks do not test behaviour.**

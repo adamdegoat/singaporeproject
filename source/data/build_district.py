@@ -227,9 +227,46 @@ def fetch(d, force=False):
     }
     merged, seen = [], set()
     empty = []
+
+    # ONE PASS OVER THE LOCAL EXTRACT ANSWERS EVERY LAYER AT ONCE.
+    #
+    # This is the whole point, and doing it per-layer would have been pointless:
+    # a scan of the 36MB island file costs ~95s, so fifteen separate scans is
+    # twenty-four minutes and no better than the network. Asked together it is
+    # ONE ~95s scan for the entire district, against the 15 queries + 16 retries
+    # that kallang actually paid over Overpass.
+    #
+    # Validated before wiring: id-for-id and vertex-for-vertex identical to the
+    # cached Overpass responses, including the relation counts (3 building
+    # relations and 1 water relation in the kallang bbox, not the 1,245 an
+    # unfiltered first version returned).
+    #
+    # Anything the local reader cannot answer is simply missing from `local`
+    # and falls through to fetch_part exactly as before. An EMPTY local answer
+    # for a layer that expects data also falls through, because "a part
+    # returning zero must be loud" is a rule this file already enforces and a
+    # deterministic zero deserves the same second opinion as a network one.
+    local = {}
+    try:
+        sys.path.insert(0, HERE)
+        import osmlocal
+        if os.path.exists(osmlocal.PBF):
+            t_loc = time.time()
+            local = osmlocal.fetch_many(bbox, parts) or {}
+            if local:
+                print(f"  local extract answered {len(local)} layers in "
+                      f"{time.time() - t_loc:.0f}s (no network)", flush=True)
+    except Exception as exc:
+        print(f"  local extract unavailable ({type(exc).__name__}); using Overpass", flush=True)
+        local = {}
+
     for label, body in parts.items():
-        got = fetch_part(bbox, body, label, expect=label not in ("water", "coast", "towers"),
-                         mirrors=ring)
+        expect_data = label not in ("water", "coast", "towers")
+        got = local.get(label)
+        if got is not None and (got or not expect_data):
+            print(f"    {label:10s} {len(got):5d} elements via LOCAL", flush=True)
+        else:
+            got = fetch_part(bbox, body, label, expect=expect_data, mirrors=ring)
         if not got and label not in ("water", "coast", "towers", "taxi"):
             empty.append(label)
         for e in got:

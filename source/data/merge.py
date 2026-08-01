@@ -419,6 +419,37 @@ def main():
             print(f"  {_lbl:<10} {len(out[_lay]):>5}  "
                   f"({sum(w.get('L', 0) for w in out[_lay]):,.0f} m)")
 
+    # PARK FURNITURE — points, not lines, so it needs its own dedupe key.
+    #
+    # A LAYER THAT MERGE DOES NOT KNOW ABOUT BUILDS PERFECTLY PER DISTRICT AND
+    # IS SIMPLY ABSENT FROM THE WORLD. That is the D39 defect class this file
+    # already carries a note about ten lines up ("a scene layer written but
+    # never drawn: the district files were right and the world was empty"), and
+    # it would have happened again here — parkfurn was parsed, drawn and
+    # counted, and every per-district scene would have looked correct while the
+    # thing a rider actually loads had none of it.
+    #
+    # Deduped on rounded POSITION AND KIND, because these are points with no
+    # length and no area, and the districts overlap: the same bench arrives
+    # from two scenes. 0.5m is finer than anything OSM places twice on purpose.
+    out["parkfurn"] = []
+    _pfseen = set()
+    _parkfurn_by = {}
+    for si, sc in enumerate(scenes):
+        for f in sc.get("parkfurn", []):
+            k = (round(f["p"][0] * 2) / 2, round(f["p"][1] * 2) / 2, f.get("k"))
+            if k in _pfseen:
+                continue
+            _pfseen.add(k)
+            out["parkfurn"].append(f)
+            _parkfurn_by.setdefault(si, []).append(f)
+    if out["parkfurn"]:
+        _kinds = {}
+        for f in out["parkfurn"]:
+            _kinds[f["k"]] = _kinds.get(f["k"], 0) + 1
+        print(f"  parkfurn   {len(out['parkfurn']):>5}  "
+              f"({', '.join(f'{v} {k}' for k, v in sorted(_kinds.items()))})")
+
     out["land"] = []
     _lseen = set()
     _land_by = {}
@@ -526,6 +557,7 @@ def main():
             ch["piers"] = _piers_by.get(si, [])
             ch["steps"] = globals()["_steps_by"].get(si, [])
             ch["barriers"] = globals()["_barriers_by"].get(si, [])
+            ch["parkfurn"] = _parkfurn_by.get(si, [])
             ch["axis"] = scenes[si].get("axis")
             t = scenes[si].get("terrain") or {}
             box = [t.get("x0", 0), t.get("z0", 0),
@@ -539,9 +571,23 @@ def main():
                   f"box {box[2]-box[0]:.0f}x{box[3]-box[1]:.0f}m")
         # the partition must LOSE nothing: every layer's chunk counts sum to
         # the flat file's count, or the loader would ship a thinner world
+        # THE LIST HAD A HOLE EXACTLY WHERE THE RISK IS. It covered fifteen
+        # layers and not `steps`, `barriers`, `green`, `land`, `piers` or
+        # `parkfurn` — the six that are partitioned by their own hand-written
+        # blocks above rather than by the shared dedupe, and therefore the six
+        # where forgetting one line means the world silently ships without
+        # them. That is the D39 class this file already has a note about, and
+        # `parkfurn` was one line away from repeating it on the day it was
+        # written: parsed, drawn, counted, correct in every district file, and
+        # absent from every chunk a rider loads.
+        #
+        # A check that does not cover the thing most likely to break is not
+        # protecting anything. Same lesson as "a gate that has never failed is
+        # not a gate" in WORKFLOW.md.
         for layer in (["water", "towers", "buildings", "roads", "bridges", "covered"]
                       + ["trees", "crossings", "signals", "busstops", "mrt",
-                         "taxis", "shops", "gantries", "lamps"]):
+                         "taxis", "shops", "gantries", "lamps"]
+                      + ["steps", "barriers", "green", "land", "piers", "parkfurn"]):
             flat_n = len(out.get(layer, []))
             chunk_n = sum(len(c.get(layer, [])) for c in chunks)
             if flat_n != chunk_n:

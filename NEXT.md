@@ -1,3 +1,165 @@
+# SESSION RECORD — 2026-08-02 overnight (Opus 5)
+
+Three green deploys, the ninth district, six real bugs, and TWO OF MY OWN
+DIAGNOSES OVERTURNED BY MEASUREMENT. The overturned ones are first, because a
+wrong diagnosis left in the notes costs more than the bug would have.
+
+## 0. TWO THINGS I REPORTED AS DEFECTS THAT ARE NOT DEFECTS
+
+**"Paved paths stand ~1m proud of the ground on slopes."** Reported from a vet
+frame at Fort Canning, logged as an open defect, and used as the basis for two
+further hypotheses before anyone measured it. MEASURED: 1,084 `pavementSurface`
+vertices over 1560-1720 x 7800-8060, height above `TERRAIN.at()` — **mean 0.02m,
+maximum 0.02m**. That is `SURFACE_PATH` exactly. The pavement is flush
+everywhere and there was never anything wrong with it. What the frame showed was
+a surface seen edge-on at a shallow camera angle.
+
+**THIS IS THE FOURTH TIME.** HANDOFF already carries "A FRAME IS NOT A DEFECT
+UNTIL IT HAS SETTLED" (a gold banner over Little India, chased three times), and
+NEXT.md's own Robertson riverbed entry says "the first vet frame looked like
+catastrophic terrain corruption... instrumenting instead showed the cut was
+correct and narrow; the shallow camera angle was showing the quay walls edge-on."
+The rule is written down and it was not followed. **Measure before logging, not
+after.**
+
+**"ribbon() is flat across its width."** Built on top of the bad reading above.
+False: `ribbon()` at city.js:1475 evaluates `H(v[0], v[2])` at each vertex's OWN
+x,z, including the `ACROSS` subdivision, and the comment right there records that
+exact fix ("the other half of the yellow patches defect"). A second hypothesis —
+a `bridge=yes` footway drawn flat at max-terrain+1.2 — was also tested and is
+also false: 0 of 62 nearby ways carry the tag. Both disproofs are recorded so
+they are not re-derived.
+
+## 1. THE P1b BLOCKER: A POINT GUARD CANNOT POLICE A SLAB
+
+The walkable-world batch had been held back a whole session by one finding.
+Five previous attempts chased "__onRoad and P1b disagree about where Cross
+Street is". They do disagree — and it was never the cause.
+
+The flight carries a surveyed `step_count` of **4** over a way **25.1m** long,
+so `depth = total / n` made each drawn tread a slab **6.28 METRES DEEP**. Its
+centre stood 9.6m clear of the road and passed the guard. Its leading edge was
+3.7m from the centreline of a road 14.8m wide. P1b was reporting the corner and
+P1b was right every time.
+
+Fixed with `boxClear`, which walks the box's own footprint at 2m — the same
+figure the barrier walk arrived at two sessions earlier for the same reason.
+**Fifth instance of "a geometric rule needs a SCALE", third in sgdetail.js.**
+
+The process half is the expensive half: five of six attempts changed code
+without first proving which branch ran. The answer came from printing the
+check's own example line and reading the numbers in it.
+
+## 2. ELEVEN STEPS STANDING SIXTEEN METRES IN MID-AIR OVER THE RIVER
+
+Fixing (1) made brasbasah fail W2. A flight sharing a node with the Singapore
+River's own bank ring was drawn at `at()` = 14.7m while the water surface there
+is at -0.05m.
+
+`Terrain.at()` is HIGH inside a water ring ON PURPOSE — the riverbed cut lives
+only in `vertexY()`, so the quay beside the river keeps its ground. That is
+correct and documented. **The consequence was not documented anywhere: anything
+seated with `surfaceAt` inside a water ring is placed on a surface that is not
+drawn.** Added `dryHere()`; W2 3 -> 0.
+
+And the reason it hid: W2 counts a mesh only when most of its sampled vertices
+are over water, and everything here goes through the Merger. While the offending
+treads shared a tile with geometry on dry land the tile did not qualify. It
+surfaced only when an unrelated fix changed which treads were drawn and
+therefore how the tiles packed. **A merged-geometry check can be masked by what
+a mesh happens to be packed with.**
+
+## 3. THE AXIS FALLBACK POISONED A WHOLE DISTRICT, SILENTLY
+
+`districts.json` gave kallang `axis: "stadium boulevard"` — a road that **does
+not exist in OSM** (the real ones are Stadium Drive, Road, Walk and Place). The
+stitch found nothing and process.py fell straight back to `FALLBACK_ORCHARD`, a
+**hardcoded Orchard Road polyline**, for a district four kilometres away.
+
+That fake road joined `roads`, terrain.py sizes the heightfield to reach every
+road point, and the grid went to **6.4km wide — 13,875 cells of which 2,565 were
+in the district**. Worse, merge weights each grid by how far INSIDE it a point
+sits, so kallang's grid centre landed over Chinatown carrying maximum weight for
+ground it has no samples near. It printed one soft line and reported success.
+
+Fixed: fall back to the district's OWN longest named road and say loudly that
+the registry is wrong. Real axis is **Nicoll Highway** (3,904m). Grid 13,875 ->
+6,525 cells, relief 54m -> 24m.
+
+## 4. A2 HAS BEEN UNRELIABLE FOR THE WHOLE STREAMING ERA
+
+`window.__realCrossings = realCrossings` is ONE GLOBAL written by EVERY streamed
+chunk, and A2 reads it as a boolean. So the check reported whatever the LAST
+chunk happened to build: a chunk with none of a layer condemned the whole world,
+a chunk with some absolved it. The answer depended on manifest order, not on the
+world. Same for `__realMrt` and `__realBridges`; `__realErp` two lines away had
+always accumulated correctly. All three accumulate now.
+
+Same one-global-many-chunks family as the `__onRoad` finding in (1).
+
+## 5. THE SUPPRESSION THAT WOULD HAVE SHIPPED A WORSE WORLD
+
+The kallang brief says to treat OSM `height` as absent in that bbox. Re-measured
+live before relying on it, and it is worse than the brief said: 85 tagged
+buildings, with **56 pasted across 23 buildings of 6/9/12/14/16/18 storeys**, 74
+across 20 more, 57 across 6, and `height=0` on Golden Mile Tower, The Concourse
+and the ICA.
+
+But suppressing it makes `building:levels` the fallback — and the National
+Stadium is tagged **`building:levels=2`**. Without authored heights the
+suppression would have drawn the largest object in the country **seven metres
+tall**, which is worse than the wrong tag it removed. **A suppression rule and
+its replacement source are ONE change, not two.**
+
+Published figures now in LANDMARKS: National Stadium 83m dome / 310m span,
+Indoor Stadium 47m, Golden Mile Complex 89m (was drawn at 22m), Golden Mile
+Tower 90m, The Concourse 175m. Concourse Skyline had been falling through to a
+type default of 40m — a coincidence worth noticing, because the guess happened
+to equal its STOREY COUNT.
+
+## 6. TERRAIN DATUM — every district was on its own zero
+
+`terrain.py` stores `h` relative to each district's own lowest cell and puts the
+offset in `base`. Nothing in `src/` reads `base` back, which is harmless inside
+one district and NOT harmless in `merge_terrain`, which blended the raw arrays
+and stamped `base=0.0`.
+
+Measured across 1,424 points: **median world-vs-district disagreement 1.96m ->
+0.26m**. Orchard had been sitting 5.06m low relative to Marina Bay. The merge
+weights by depth-inside-grid, so the error showed at seams as a RAMP rather than
+a cliff — which is why no check caught it. Every other gate compares the world
+with itself.
+
+The tail (worst ~19m) is unchanged and is NOT this bug: it is a 35m grid
+interpolating Fort Canning's slopes.
+
+## 7. TWO RECIPES, AND ONE RATIO TRAP AGAIN
+
+**National Stadium** was a 310m glazed office drum with a flat top. Now a pale
+concrete bowl under an 83m ellipsoidal dome with a ring-beam shadow line. No
+windows — at 310m across, an office grid reads as an office block the size of a
+district.
+
+**Indoor Stadium** round 1 scaled its cone `1.34` and produced a marquee whose
+roof reached the ground on both flanks. **Same failure as the Istana's
+`grow(1.9)`**: a RATIO applied to a large footprint is a distance nobody
+intended. 1.05 is about a four-metre eave, which is what the photographs show.
+
+## 8. HOUSEKEEPING THAT WAS ACTUALLY A LEAK
+
+`deploy.sh` snapshots ~200MB of the tree and removes it in an EXIT trap — which
+does not fire on SIGKILL or a closed terminal. Two orphans were found holding
+390MB. deploy.sh now sweeps them at startup, checking each PID first so a
+concurrent deploy's snapshot survives.
+
+Also: `probe.mjs` was the one headless tool never given `--use-gl=angle`, so
+every measurement taken through it was software-rasterised — the tell was
+`fps: 1` in its own output. And `progress.py` printed a hardcoded "ALL EIGHT"
+that went stale the moment kallang made it nine.
+
+
+---
+
 # SESSION RECORD — 2026-08-01 evening (Opus 5)
 #
 # Four things shipped and one recorded "lesson" turned out to be wrong. The
