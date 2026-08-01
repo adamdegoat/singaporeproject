@@ -129,15 +129,33 @@ export async function consolidate(root, Y = null) {
       total += g.attributes.position.count;
     }
 
+    // VERTEX COLOUR SURVIVES THE MERGE.
+    //
+    // This copied position, normal and uv and silently dropped everything else.
+    // The moment the ground started carrying its green space as vertex colour,
+    // every park in the world vanished the instant consolidate() ran — the raw
+    // scene showed 12,032 tinted vertices and the shipped one showed a mesh
+    // with no colour attribute at all. A merge that drops an attribute it does
+    // not recognise is a merge that decides what the world is allowed to have.
+    //
+    // Batched by material, and `vertexColors` is part of the material key, so
+    // every part in a batch either has colour or none does; the fallback fills
+    // white, which multiplies to no change.
+    const anyCol = parts.some((g) => g.attributes.color);
     const pos = new Float32Array(total * 3);
     const nor = new Float32Array(total * 3);
     const uv = new Float32Array(total * 2);
+    const col = anyCol ? new Float32Array(total * 3) : null;
     let o3 = 0, o2 = 0;
     for (const g of parts) {
       const n = g.attributes.position.count;
       pos.set(g.attributes.position.array, o3);
       if (g.attributes.normal) nor.set(g.attributes.normal.array, o3);
       if (g.attributes.uv) uv.set(g.attributes.uv.array.subarray(0, n * 2), o2);
+      if (col) {
+        if (g.attributes.color) col.set(g.attributes.color.array.subarray(0, n * 3), o3);
+        else col.fill(1, o3, o3 + n * 3);
+      }
       o3 += n * 3; o2 += n * 2;
       g.dispose();
     }
@@ -146,6 +164,7 @@ export async function consolidate(root, Y = null) {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    if (col) geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     geo.computeBoundingSphere();
 
     const first = list[0];

@@ -3617,6 +3617,62 @@ def main():
                 continue
             water.append({"p": [[round(x, 1), round(z, 1)] for x, z in pts],
                           "a": round(warea)})
+    # ---- GREEN SPACE -------------------------------------------------------
+    # Singapore is a garden city and this pipeline drew none of it. Every park,
+    # garden, field, wood and the whole of the Istana grounds came out as bare
+    # terrain the colour of sand, which is what the rider saw and said: "istana
+    # all still empty place". The tags were never fetched — 72 individual trees
+    # in the Orchard extract and not one park polygon — so this is the ninth
+    # time real data was simply not asked for.
+    #
+    # Kinds are kept separate because they do not look alike: mown grass and a
+    # sports pitch are flat and bright, a wood is dark and wants tree cover.
+    GREEN_KIND = {
+        "park": "park", "garden": "park", "common": "park",
+        "village_green": "park", "recreation_ground": "park",
+        "grass": "grass", "meadow": "grass", "grassland": "grass",
+        "greenfield": "grass", "cemetery": "grass",
+        "pitch": "pitch", "golf_course": "pitch",
+        "forest": "wood", "wood": "wood", "scrub": "scrub", "heath": "scrub",
+    }
+    green = []
+    for e in els:
+        t = e.get("tags") or {}
+        kind = None
+        for key in ("leisure", "landuse", "natural"):
+            v = t.get(key)
+            if v in GREEN_KIND:
+                kind = GREEN_KIND[v]
+                break
+        if not kind:
+            continue
+        rings = []
+        if e["type"] == "way" and e.get("geometry"):
+            rings.append(e["geometry"])
+        elif e["type"] == "relation":
+            rings.extend(stitch_outer(e))
+        for g in rings:
+            pts = [proj(q["lat"], q["lon"]) for q in g if "lat" in q]
+            if len(pts) < 4:
+                continue
+            if math.dist(pts[0], pts[-1]) > 25.0:
+                continue
+            a2 = 0.0
+            for i in range(len(pts)):
+                q1, q2 = pts[i], pts[(i + 1) % len(pts)]
+                a2 += q1[0] * q2[1] - q2[0] * q1[1]
+            garea = abs(a2) / 2
+            if garea < 60:            # a verge smaller than this is dressing
+                continue
+            green.append({"p": [[round(x, 1), round(z, 1)] for x, z in pts],
+                          "k": kind, "a": round(garea)})
+    green.sort(key=lambda w: -w["a"])
+    if green:
+        from collections import Counter as _C
+        _kc = _C(g["k"] for g in green)
+        print(f"  green: {len(green)} polygons, {sum(g['a'] for g in green):,} m2 "
+              f"({', '.join(f'{k} {n}' for k, n in _kc.most_common())})")
+
     water.sort(key=lambda w: -w["a"])
     if water:
         print(f"  water: {len(water)} polygons, largest {water[0]['a']:,} m2, "
@@ -3805,6 +3861,7 @@ def main():
         "origin": {"lat": LAT0, "lon": LON0},
         "buildings": buildings,
         "water": water,
+        "green": green,
         "towers": towers,
         "roads": roads,
         "trees": trees,

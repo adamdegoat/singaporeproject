@@ -160,6 +160,69 @@ export class Terrain {
     return h11 + (h01 - h11) * (1 - tu) + (h10 - h11) * (1 - tv);
   }
 
+  // GREEN SPACE, PAINTED ONTO THE GROUND ITSELF.
+  //
+  // Singapore is a garden city and this world drew none of it: every park,
+  // garden, field and the whole of the Istana grounds was bare terrain the
+  // colour of sand. The rider's words, riding Orchard Road: "istana all still
+  // empty place". Orchard alone turns out to hold 986,000 m2 of mapped green
+  // space and Marina Bay 2.2 km2, none of which had ever been fetched.
+  //
+  // Painted as VERTEX COLOUR on the ground mesh rather than laid over it as a
+  // second surface. A park is not a plane — it climbs Fort Canning and rolls
+  // through the Botanic Gardens — so an overlay would have to match the
+  // terrain's own tessellation exactly or z-fight it. Tinting the ground costs
+  // no extra draw call, no extra triangle, and follows the land by
+  // construction.
+  setGreen(list) {
+    this.green = [];
+    this.gGrid = new Map();
+    this.gCell = 60;
+    for (const p of (list || [])) {
+      if (!p.p || p.p.length < 4) continue;
+      let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+      for (const [x, z] of p.p) {
+        if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+        if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+      }
+      const rec = { ring: p.p, k: p.k || 'grass', bb: [mnx, mnz, mxx, mxz] };
+      const id = this.green.length;
+      this.green.push(rec);
+      for (let cx = Math.floor(mnx / this.gCell); cx <= Math.floor(mxx / this.gCell); cx++) {
+        for (let cz = Math.floor(mnz / this.gCell); cz <= Math.floor(mxz / this.gCell); cz++) {
+          const k = cx + ',' + cz;
+          let l = this.gGrid.get(k);
+          if (!l) { l = []; this.gGrid.set(k, l); }
+          l.push(id);
+        }
+      }
+    }
+  }
+
+  // which green kind covers this point, or null. Smallest-ring-wins so a pitch
+  // inside a park reads as a pitch.
+  greenAt(x, z) {
+    if (!this.gGrid) return null;
+    const l = this.gGrid.get(Math.floor(x / this.gCell) + ',' + Math.floor(z / this.gCell));
+    if (!l) return null;
+    let best = null, bestA = Infinity;
+    for (const id of l) {
+      const r = this.green[id];
+      const [mnx, mnz, mxx, mxz] = r.bb;
+      if (x < mnx || x > mxx || z < mnz || z > mxz) continue;
+      let hit = false;
+      const ring = r.ring;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], zi = ring[i][1], xj = ring[j][0], zj = ring[j][1];
+        if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
+      }
+      if (!hit) continue;
+      const a = (mxx - mnx) * (mxz - mnz);
+      if (a < bestA) { bestA = a; best = r.k; }
+    }
+    return best;
+  }
+
   // the visible ground mesh
   build(material) {
     const g = this.g;
@@ -185,7 +248,15 @@ export class Terrain {
     for (let tj = 0; tj < g.nz - 1; tj += TILE) {
       for (let ti = 0; ti < g.nx - 1; ti += TILE) {
         const verts = new Map();   // "qx,qz" -> index within THIS tile
-        const pos = [], idx = [];
+        const pos = [], idx = [], col = [];
+        // one tint per green kind; white leaves the ground material untouched
+        const TINT = {
+          park:  [0.52, 0.78, 0.46],
+          grass: [0.58, 0.80, 0.50],
+          pitch: [0.46, 0.74, 0.42],
+          wood:  [0.34, 0.55, 0.32],
+          scrub: [0.62, 0.72, 0.46],
+        };
         const vid = (qx, qz) => {
           const k = qx + ',' + qz;
           let id = verts.get(k);
@@ -193,6 +264,8 @@ export class Terrain {
             id = pos.length / 3;
             const x = g.x0 + (qx / 24) * g.cell, z = g.z0 + (qz / 24) * g.cell;
             pos.push(x, this.vertexY(x, z), z);
+            const t = this.gGrid ? TINT[this.greenAt(x, z)] : null;
+            if (t) col.push(t[0], t[1], t[2]); else col.push(1, 1, 1);
             verts.set(k, id);
           }
           return id;
@@ -215,6 +288,7 @@ export class Terrain {
         if (!idx.length) continue;
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
         geo.setIndex(idx);
         geo.computeVertexNormals();
         const mesh = new THREE.Mesh(geo, material);

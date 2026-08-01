@@ -310,6 +310,24 @@ def main():
         print(f"  {'water':<10} {len(out['water']):>5}  "
               f"({sum(w.get('a', 0) for w in out['water']):,} m2, not deduped by design)")
 
+    # GREEN SPACE, deduped exactly like water: neighbouring districts fetch the
+    # same park from overlapping bboxes and tinting the ground twice is free but
+    # carrying the polygon twice is not.
+    out["green"] = []
+    _gseen = set()
+    _green_by = {}
+    for si, sc in enumerate(scenes):
+        for w in sc.get("green", []):
+            k = (round(w["p"][0][0]), round(w["p"][0][1]), len(w["p"]), w.get("a"))
+            if k in _gseen:
+                continue
+            _gseen.add(k)
+            out["green"].append(w)
+            _green_by.setdefault(si, []).append(w)
+    if out["green"]:
+        print(f"  {'green':<10} {len(out['green']):>5}  "
+              f"({sum(w.get('a', 0) for w in out['green']):,} m2)")
+
     # chunks[i] collects district i's share of every deduped layer, so
     # --stream can write per-district files that sum EXACTLY to the flat
     # merge — same dedupe, same keeps, just partitioned by who contributed.
@@ -397,6 +415,7 @@ def main():
         for si, did in enumerate(ids):
             ch = chunks[si]
             ch["water"] = _water_by.get(si, [])
+            ch["green"] = _green_by.get(si, [])
             ch["axis"] = scenes[si].get("axis")
             t = scenes[si].get("terrain") or {}
             box = [t.get("x0", 0), t.get("z0", 0),

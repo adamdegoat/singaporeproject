@@ -36,6 +36,17 @@ LAYERS = {
     # times by the loss guard and there is no reason to risk an eighth.
     "buildpart": ('way["building:part"]({bbox});'
                   'rel["building:part"]({bbox});'),
+    # GREEN SPACE, which this pipeline has never fetched. Singapore is a garden
+    # city and every park, garden, field and the whole of the Istana grounds was
+    # being drawn as bare terrain the colour of sand — the user's own words,
+    # riding Orchard Road: "istana all still empty place". The extract carries
+    # 72 individual trees and not one park polygon.
+    "green": ('way["leisure"~"^(park|garden|pitch|golf_course|common)$"]({bbox});'
+              'rel["leisure"~"^(park|garden|pitch|golf_course|common)$"]({bbox});'
+              'way["landuse"~"^(grass|forest|recreation_ground|cemetery|village_green|meadow|greenfield)$"]({bbox});'
+              'rel["landuse"~"^(grass|forest|recreation_ground|cemetery|village_green|meadow|greenfield)$"]({bbox});'
+              'way["natural"~"^(wood|scrub|grassland|heath)$"]({bbox});'
+              'rel["natural"~"^(wood|scrub|grassland|heath)$"]({bbox});'),
 }
 
 
