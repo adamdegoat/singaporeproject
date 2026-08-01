@@ -3854,3 +3854,45 @@ DENOMINATOR: orchard 39% -> 37%, robertson 27% -> 20%. The world got better and
 the score went down. Do not chase that number by writing recipes for buildings
 that do not need one — an ordinary residential tower looks like an ordinary
 residential tower.
+
+### World-level state, 2026-08-01 after the postcode pass
+
+9,215 buildings across the eight districts, **1,770 named (19%)**.
+Height provenance: 2,826 from storey counts, 2,527 from an OSM height tag, 220
+from a published measurement, 3 authored, 2 postcode overrides — **61% carry a
+source**, 39% are still the footprint-hash fallback.
+
+Those 3,637 are overwhelmingly small back-lane and shophouse footprints that no
+one surveys and no one publishes. Getting them sourced needs primary data this
+project does not have, not more passes over what it does.
+
+## The Pinnacle@Duxton sky gardens — built, judged, and HELD BACK
+
+The two 500m sky gardens on floors 26 and 50 are the building's signature and
+are missing from this world. They were authored and then withdrawn on sight.
+
+**What is published** [Wikipedia "The Pinnacle@Duxton", figures cited there,
+fetched 2026-08-01]: sky gardens on the 26th and 50th floors, 500m each,
+linking all seven towers; 156m at the roof over 50 storeys. So floor 26 sits at
+26 x (156/50) = 81m.
+
+**What is NOT published:** the gardens' plan. No source gives their route.
+
+The attempt linked the seven surveyed tower centres (the `building:part` masses
+tagged height=156, building:levels=50) along the shortest chain that reaches all
+of them — 325m of centreline against the published 500m, the difference being
+the garden's own width and meanders. Rendered, it reads as short STUBS
+projecting from the tower faces and ending in mid-air, not as a bridge: the
+chain runs centre-to-centre, so most of each span is inside a tower and only the
+gap shows.
+
+Withdrawn because authored.json's own rule applies — "if that claim is wrong the
+world is worse than the hole was" — and a guessed route drawn unconvincingly is
+worse than an honest absence.
+
+**The `deck` shape KEPT.** `shape: "deck"` in data/authored.json now takes a
+polyline, a width and a `min_h`, and emits one quad per segment lifted clear of
+the ground via the same `mh` path city.js uses for Marina Bay Sands' SkyPark.
+That capability is real and tested; only this particular claim was not good
+enough. Whoever picks this up needs the gardens' actual plan, and should draw
+tower FACE to tower FACE rather than centre to centre.

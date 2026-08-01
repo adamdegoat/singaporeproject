@@ -3537,6 +3537,33 @@ def main():
             if _e.get("district") != DIST_ID:
                 continue
             _cx, _cz = proj(_e["lat"], _e["lon"])
+            if _e.get("shape") == "deck":
+                # A STRUCTURE THAT BEGINS IN THE SKY. `deck` is a polyline of
+                # surveyed points plus a width, emitted as one quad per
+                # segment, all lifted to `min_h`. Everything else in this file
+                # stands on the ground; a sky bridge does not, and the renderer
+                # already knows how to build a mass from its own base -- that
+                # is the `mh` path city.js uses for Marina Bay Sands' SkyPark.
+                _pts = [proj(la, lo) for la, lo in _e["path"]]
+                _w = float(_e.get("width", 7.0)) / 2.0
+                for _i in range(len(_pts) - 1):
+                    (_ax, _az), (_bx, _bz) = _pts[_i], _pts[_i + 1]
+                    _ddx, _ddz = _bx - _ax, _bz - _az
+                    _dl = math.hypot(_ddx, _ddz) or 1.0
+                    _px, _pz = -_ddz / _dl * _w, _ddx / _dl * _w
+                    _ring = [(_ax + _px, _az + _pz), (_bx + _px, _bz + _pz),
+                             (_bx - _px, _bz - _pz), (_ax - _px, _az - _pz)]
+                    _ar = abs(sum(_ring[_k][0] * _ring[(_k + 1) % 4][1]
+                                  - _ring[(_k + 1) % 4][0] * _ring[_k][1]
+                                  for _k in range(4))) / 2
+                    _b = {"p": [[round(x, 1), round(z, 1)] for x, z in _ring],
+                          "h": _e["h"], "n": _e["n"], "hs": "authored",
+                          "a": round(_ar), "mh": _e["min_h"]}
+                    if _e.get("key"):
+                        _b["key"] = 1
+                    buildings.append(_b)
+                    _added += 1
+                continue
             if _e.get("shape") == "slab":
                 # a straight back face plus a depth: the simplest honest plan
                 # for a long slab block. Terracing, setbacks and anything else
