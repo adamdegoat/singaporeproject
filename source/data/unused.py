@@ -133,6 +133,13 @@ CARRIED_ELSEWHERE = {
     # POSITIVE in this check, not a gap in the pipeline, and it belongs here
     # rather than in IGNORED, which would have said the opposite of the truth.
     "addr:housename": "building name fallback when `name` is absent; lands in the scene's `n` field so this scan cannot see it (process.py, _nm)",
+    # Verified 2026-08-02 on marinasouth, which carries 92 of them: a
+    # part-only way with a height, levels or a name is PROMOTED to a
+    # building (process.py, `tags["building"] = tags.get("building:part")`)
+    # and then travels as an ordinary footprint, so the tag itself never
+    # reaches the scene. This is the mechanism that splits a tower from its
+    # podium; the `buildpart` topup exists to fetch it.
+    "building:part": "promoted to an ordinary building footprint in process.py; the tag does not travel, the geometry does",
 }
 
 # Tags we SHOULD read and have not yet. These print every run and do not fail
@@ -189,6 +196,16 @@ DEFERRED = {
     # when the shelter form is next touched; deferred, not ignored, because
     # it would change what is drawn rather than merely describe it.
     "shelter_type":        "shelters are drawn as one generic form; this would give bus / picnic / gazebo / sun their own shapes",
+    # marinasouth 2026-08-02. A REAL GAP, not a cousin of the ones above:
+    # process.py reads `min_height` in METRES (SkyPark at 193 of 207 is the
+    # case it was written for) but not `building:min_level`, which says the
+    # same thing as a LEVEL INDEX. A part that starts at level 5 and gives
+    # no min_height is currently drawn from the ground, so a sky bridge or
+    # a raised wing sits on the pavement. Convert with the building's own
+    # floor-to-floor the way the levels fallback already does.
+    "building:min_level":  "a part that starts in the air, as a level index; we read min_height in metres but not this, so such parts are drawn from the ground",
+    "office":              "building use; same deferral class as amenity — should eventually steer the facade family toward a commercial look",
+    "roof:levels":         "roof surfaces are only modelled on shophouses so far; same class as roof:material and roof:shape",
 }
 
 

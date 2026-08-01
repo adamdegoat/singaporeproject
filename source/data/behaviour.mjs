@@ -91,8 +91,25 @@ await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/index.html?dpr=
 // old 90s was under that and the gate began failing on the build itself
 // rather than on anything it checks. This limit is a "did it hang" guard, not
 // a performance budget -- the performance budgets live in fps.mjs.
-const BOOT_MS = 300000;
+// 300000 was sized for EIGHT districts at a measured 115-140s. There are now
+// THIRTEEN, each also carrying the green, landuse, parkfurn and steps layers
+// added since, and the gate began failing on the build itself again — exactly
+// the failure mode the note above describes, one ring of districts later.
+//
+// MEASURED 2026-08-02 with thirteen districts: **419s**. So the old guard was
+// not marginally short, it was under the truth by a third, and the deploy it
+// killed was green in every check that actually ran. 900s leaves 2.1x margin
+// at today's size; when the ring is finished, measure again rather than
+// guessing — the printed figure below is there so the next person can.
+//
+// Overridable so a slow machine or a bigger world does not need a code change,
+// and it PRINTS what boot actually took, because a hang guard that never
+// reports its margin cannot tell you it is about to become a budget.
+const BOOT_MS = +(process.env.SG_BOOT_MS || 900000);
+const _t0 = Date.now();
 await page.waitForFunction('window.__ready === true', null, { timeout: BOOT_MS });
+console.log(`  nostream boot ${((Date.now() - _t0) / 1000).toFixed(0)}s `
+  + `(guard ${(BOOT_MS / 1000) | 0}s)`);
 
 /* ---------- B1 and B2: sample the world moving ---------- */
 

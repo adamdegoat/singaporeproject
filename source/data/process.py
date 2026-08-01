@@ -627,6 +627,18 @@ LANDMARKS = {
     "flower dome":            {"h": 38, "key": True},
     "cloud forest":           {"h": 58, "key": True},
 
+    # DO NOT ADD "the pinnacle@duxton" HERE. Checked 2026-08-02 and the
+    # obvious fix is wrong. The build log shows "The Pinnacle@Duxton 9,915 m2
+    # h=24" and it looks like a 156m landmark drawn at twenty-four metres —
+    # but that footprint is the PODIUM, and OSM separately carries two of the
+    # seven towers ("The Pinnacle@duxton", lowercase d, 964 and 812 m2) at
+    # h=150 from real tags against a published 156m roof. A LANDMARKS row
+    # matches by substring, so it would give the 9,915 m2 podium ring the tower
+    # height and extrude a 156m monolith over the whole site. The genuine gap
+    # is that OSM maps only 2 of the 7 towers, which no height table can fix.
+    # Published, for whoever picks this up: 50 storeys, 156m roof, 7 blocks,
+    # sky bridges at the 26th and 50th storey, each 500m long, completed 2009.
+
     # ---- KALLANG / SPORTS HUB -------------------------------------------
     #
     # THESE ARE LOAD-BEARING, NOT DECORATION. HEIGHT_TAG_SUPPRESS drops the OSM
@@ -4606,6 +4618,20 @@ def main():
     if _planted:
         print(f"  planted {_planted} trees across {len([g for g in green if g['k'] in PLANT])} "
               f"park/wood/scrub rings")
+
+    # ONE SHAPE FOR `a`, NORMALISED AT THE BOUNDARY.
+    #
+    # Most footprints get `"a": round(a)` where they are built, but the
+    # multipolygon and ring-surgery paths carry the raw float through: 30 of
+    # marinasouth's 133 buildings came out with areas like
+    # 1126.859887206927, which is fifteen digits of noise per building in a
+    # file the browser downloads. Rather than chase every producer -- there
+    # are nine `"a":` sites and the surgery invents new pieces at runtime --
+    # normalise once, here, where the scene is assembled. A boundary is the
+    # one place a value can be guaranteed to have one shape.
+    for _b in buildings:
+        if isinstance(_b.get("a"), float):
+            _b["a"] = round(_b["a"])
 
     # NAME AND SIZE THE DEVELOPMENTS OSM LEAVES ANONYMOUS. Applied here, after
     # every other height source has had its turn, so it can only ever fill a

@@ -118,6 +118,25 @@
    "notes": "The peninsula east of Kallang Basin: two kilometres of 1990s waterfront condominium wall, the Tanjong Rhu promenade and suspension bridge, and the east half of the Benjamin Sheares Bridge. Ring 2 — it borders no district on its own, but shares 1,272x668m with kallang and 221x890m with marinaeast, both of which are built, so it closes rather than opens a gap. OSM heights here are FABRICATED and suppressed (HEIGHT_TAG_SUPPRESS covers this bbox): Costa Rhu's four blocks of 12/14/16/18 storeys all carry one blanket 56. conservation_fetch.py's BOX was widened east to 103.900 for this district. Brief: research/coastal-expansion.md candidate 4.",
    "queued_after": "kallang",
    "partialMainStreet": "deliberate: Tanjong Rhu Road runs ~4.5km from the Sports Hub east along the peninsula and on into Mountbatten and Katong. This district takes its WESTERN 2.3km — the reclaimed peninsula between Kallang Basin and the reservoir, which is the waterfront condominium wall the district exists for. The eastern reach is Katong's, which research/coastal-expansion.md Part 3 assessed and REJECTED as a candidate, so nothing is waiting on it. Decided 2026-08-02, not an accident of the bbox: the east edge 103.8860 was chosen to close against kallang and marinaeast, not to follow the road."
+  },
+  {
+   "id": "marinasouth",
+   "name": "Marina South",
+   "bbox": "1.2640,103.8490,1.2800,103.8670",
+   "axis": "marina coastal drive",
+   "status": "live",
+   "notes": "Due south of marinabay, and the only candidate overlapping TWO built districts: chinatown 663x779m and marinabay 442x1,892m, plus marinaeast 663x557m. Marina Bay Cruise Centre, Marina South Pier, Marina Coastal Drive and the southern seawall facing the Singapore Strait — REAL OPEN COASTLINE, read by data/coastline.py. Expect a LOW building count for the area: most of the land inside this box is vacant reclaimed ground awaiting the URA's future residential district, which is a fact about Singapore and not a failed fetch. The MCE is tagged tunnel=yes and is correctly dropped by process.py. Brief: research/coastal-expansion.md candidate 6.",
+   "queued_after": "marinaeast",
+   "partialMainStreet": "deliberate: Marina Coastal Drive runs ~3km from the Straits edge north-west under Marina Bay and on toward Keppel. This district takes the eastern 1.75km — the working sea edge, the Cruise Centre and Marina South Pier, which is what the district exists for. The western reach runs into keppel's box (next in the ring, research/coastal-expansion.md Part 4), so it is queued rather than abandoned. Decided 2026-08-02: the bbox was drawn to overlap chinatown and marinabay, not to follow the road."
+  },
+  {
+   "id": "keppel",
+   "name": "Keppel Road / Tanjong Pagar",
+   "bbox": "1.2650,103.8260,1.2810,103.8440",
+   "axis": "keppel road",
+   "status": "live",
+   "notes": "THE CONNECTOR, and the reason it is on the list rather than its own ride. It closes the 3.27km between chinatown and Keppel Bay in the only way a district of normal size can: overlaps chinatown 774x334m on the Keppel Road / Anson Road side, and will overlap harbourfront 1,216x334m. Its own ride is the weakest in the brief — mostly the Tanjong Pagar container terminal, the Keppel Viaduct and the AYE — but it carries real coastline (the Keppel Harbour wharves) and without it harbourfront and sentosa are unreachable. The brief warns it is the thinnest-sourced candidate: expect a low named-building share and do not mistake that for a failed fetch. Brief: research/coastal-expansion.md candidate 5.",
+   "queued_after": "marinasouth"
   }
  ]
 }

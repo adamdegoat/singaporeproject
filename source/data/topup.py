@@ -108,9 +108,55 @@ LAYERS = {
 
 
 def main():
-    did, layer = sys.argv[1], sys.argv[2]
+    did = sys.argv[1]
+    layers = sys.argv[2:]
     d = next(x for x in REG["districts"] if x["id"] == did)
     bbox = d["bbox"]
+
+    # SEVERAL LAYERS IN ONE PASS, BECAUSE A PASS IS THE COST.
+    #
+    # `topup.py <id> <layer>` took one layer, which was right when every layer
+    # was an Overpass round trip and wrong the moment the local extract landed:
+    # a scan of the 36MB island costs ~95s WHATEVER you ask it for, so six
+    # layers across five districts one-at-a-time is thirty scans and about
+    # forty-seven minutes. Asked together it is five scans and eight minutes.
+    #
+    # Same shape as the fix in build_district.py, and the same lesson: with a
+    # local file the per-QUERY cost is nil and the per-PASS cost is everything.
+    if len(layers) > 1:
+        try:
+            sys.path.insert(0, HERE)
+            import osmlocal
+            bodies = {L: LAYERS[L].format(bbox=bbox) for L in layers}
+            res = osmlocal.fetch_many(bbox, bodies)
+            if res:
+                path = os.path.join(HERE, "raw", f"{did}.json")
+                raw = json.load(open(path))
+                seen = {(e["type"], e["id"]) for e in raw["elements"]}
+                total = 0
+                for L in layers:
+                    got = res.get(L)
+                    if got is None:
+                        print(f"  {L}  not answerable locally — rerun alone for Overpass")
+                        continue
+                    added = [e for e in got if (e["type"], e["id"]) not in seen]
+                    for e in added:
+                        seen.add((e["type"], e["id"]))
+                    raw["elements"].extend(added)
+                    total += len(added)
+                    print(f"  {L:10s} {len(got):5d} found, {len(added):5d} new  (LOCAL)")
+                json.dump(raw, open(path, "w"))
+                print(f"  merged {total} new elements into {path} "
+                      f"({len(raw['elements'])} total)")
+                return
+        except Exception as exc:
+            print(f"  batch topup failed ({type(exc).__name__}); "
+                  f"falling back to one layer at a time")
+        for L in layers:
+            os.system(f'python3 {os.path.join(HERE, "topup.py")} {did} {L}')
+        return
+
+    layer = layers[0]
     body = LAYERS[layer].format(bbox=bbox)
     q = f"[out:json][timeout:120];\n({body}\n);\nout geom;"
     got = None

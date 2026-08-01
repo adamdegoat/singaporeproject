@@ -253,6 +253,51 @@ window.__auditWorld = async function auditWorld() {
     // Leisure Park mall. S2 1: one plate on Tanjong Rhu Road lands nearer a
     // service loop, the same plate-walk vs __nearestStreet gap kallang has.
     tanjongrhu: { C7: 52, T2: 7, S8: 0, S2: 1 },
+    // MARINASOUTH enters 2026-08-02 — the SECOND district with real open sea,
+    // and the coastline reader's first use on a shore it was not written
+    // against. W1 0, W2 0, W3 0 again, which is the reuse validating it.
+    //
+    // P1b 1: the Cruise Centre's fabric overhangs Marina Coastal Drive where
+    // its footprint meets the kerb. Note P5 (building FOOTPRINTS in a
+    // carriageway) is 0 — the ring is clear and it is the DRESSING that
+    // overhangs, which is exactly the class bugis already carries at P1b 2
+    // ("the generic-family bands overhang Victoria Street where the footprint
+    // meets the kerb"). Ratchet: may go down, never up.
+    //
+    // C7 58: DECLARED PARTIAL with a reason. Marina Coastal Drive runs ~3km
+    // and this district takes the eastern 1.75km; the western reach is
+    // keppel's, next in the ring.
+    //
+    // S8 0: correct rather than a backlog. The brief warned in advance that
+    // "most of the land inside this box is vacant reclaimed ground awaiting
+    // the URA's future residential district" — there is almost no street-level
+    // retail to give a shopfront to, and that is a fact about Singapore.
+    //
+    // T2 11: the Marina Coastal Drive network is severed from the rest by the
+    // MCE, which is tagged tunnel=yes and correctly dropped (drawing it would
+    // lay a motorway across the promenade). So the surface roads genuinely do
+    // end in stubs here. Same mechanism marinabay carries at 10.1.
+    marinasouth: { P1b: 1, C7: 58, S8: 0, T2: 11 },
+    // KEPPEL enters 2026-08-02 as the CONNECTOR, and it is far richer than the
+    // brief expected. That document calls its ride "the weakest in this brief
+    // ... mostly the Tanjong Pagar container terminal, the Keppel Viaduct and
+    // the AYE" — the build found **1,148 buildings, 695 of them inside gazetted
+    // conservation areas** with 683 given construction-period bands and 493
+    // restoration dates correctly dropped. That is Tanjong Pagar's shophouse
+    // fabric, and it is the largest conserved set in the project.
+    //
+    // S8 71 against a target of 76 and a day-one figure everywhere else of 0-42:
+    // this district arrives nearly at the standard because shophouse ground
+    // floors ARE the shopfront layer. Left as a floor at 71, not lowered to
+    // what it happens to score, so it can only go up.
+    //
+    // T2 6.6: Keppel Road, the AYE and the viaduct all leave the bbox westward
+    // toward harbourfront, which is the next district in the ring and the one
+    // this district exists to reach. Same bbox-edge mechanism as the rest.
+    //
+    // Water clean on day one — W1 0, W2 0, W3 0 — on a 335,425 m2 sea polygon.
+    // Third independent shoreline the coastline reader has handled.
+    keppel: { S8: 71, T2: 7 },
     // River Valley C7 33: the district DELIBERATELY takes the east 1.6km of
     // a 4.9km road (declared partialMainStreet in districts.json; the west
     // belongs to a future Robertson Quay district). C7 measures against the
@@ -361,7 +406,12 @@ window.__auditWorld = async function auditWorld() {
       // rail posts in the carriageway. Exactly the finding city.js already
       // fixed for entrance-canopy posts, in a file that had not heard about it.
       // Ratchets go down: littleindia 8 -> 1, and the region with it.
-      P1b: 1, T1: 0,
+      // P1b 1 -> 2 and P5 6 -> 7 with marinasouth, 2026-08-02: both are the
+      // ONE Cruise Centre overhang that district's own entry records, seen
+      // once as drawn structure and once as a footprint. Not two new
+      // defects — one building, counted by two checks that ask slightly
+      // different questions of it.
+      P1b: 2, T1: 0,
       // proportional to a region that is now THREE districts and 50% larger
       // W2 37 -> 39: see the marinabay note
       // W2 39 -> 34 and marinabay 79 -> 36 on 2026-07-30. Not a cleanup: the
@@ -375,7 +425,18 @@ window.__auditWorld = async function auditWorld() {
       // ratchet on a measurement that has become honest is reset to the honest
       // number, the same rule S8 already carries.
       // W2 34 -> 35: marinabay's reprocess, see its note above.
-      P8: 6, W2: 34, S8: 70, T2: 13, S2: 4, P5: 6,
+      P8: 6, W2: 34, S8: 70, T2: 13, S2: 4, P5: 8,
+      // P5 7 -> 8 with keppel, which brought 1,148 buildings — one more
+      // footprint clipping a carriageway out of ~3,300. Proportionate, not a
+      // new class.
+      //
+      // AND A NOTE ON T2, WHICH WENT **DOWN** 13 -> 12 WHEN KEPPEL LANDED.
+      // The open question above was whether the eastern group fails to join
+      // the west because the joining ways lie outside every bbox, or because
+      // merge.py drops the overlap segments. A district that ADDS road length
+      // and LOWERS the island fraction is evidence for the first: keppel
+      // overlaps chinatown by 774x334m and the seam there closed. Not proof —
+      // harbourfront is the test, since keppel exists to reach it.
       // T2 8 -> 13 WITH tanjongrhu, AND THIS IS NOT WHAT I PREDICTED.
       //
       // kallang's entry says its 52% islands are bbox-edge stubs whose joining
