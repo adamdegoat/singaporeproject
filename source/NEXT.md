@@ -212,6 +212,55 @@ permissive. It stays outside the repo and is used to measure, not to ship.
   deploy.sh refused to publish. The gates read world.json and riders read the
   chunks; that guard is the only thing standing between those two facts.
 
+# SEVEN LANDMARK RECIPES WERE FLOATING, AND SRI MARIAMMAN'S HALL HUNG 10.7m
+# ABOVE ITS OWN GOPURAM
+
+The biggest single defect of the day, and it was found by accident while
+debugging the mosque recipe.
+
+`extrudeGeo(pts, h, y0)` seats a mass at `foot + y0 + h`, so **its `y0` argument
+is measured FROM THE SEAT**. `api.footingY(pts)` returns that seat as an
+**ABSOLUTE world height**. Eighteen calls across seven recipes passed one
+straight into the other:
+
+    api.extrude(b.p, 8.6, cream, g0)        // g0 = api.footingY(b.p)
+
+which double-counts the ground, so the mass floats by exactly the height of the
+ground under it. **Zero in a district built near sea level, and 10.7m in
+Chinatown.** Measured, not inferred — every mesh's world bounding box near the
+footprint:
+
+    Sri Mariamman Temple, BEFORE   cream hall  y 21.5 -> 30.1   ground 10.8
+                          AFTER    cream hall  y 10.8 -> 19.4   ground 10.8
+                                   gopuram     y 10.8 -> 17.0   (always correct)
+
+The gopuram, the cows and every hand-placed piece were right, because those are
+positioned explicitly at `g0 + something`. Only the EXTRUDED masses were wrong.
+So the temple stood on South Bridge Road with its tower on the ground and its
+hall in the sky, and it shipped: five rounds of vetting, 42 audit checks, 35
+defect classes, behaviour, determinism and a live check all passed, because
+every one of them looks at the world in PLAN or asks about props, and this is a
+defect in SECTION on merged building geometry. Same family as the roof-datum bug
+of 2026-07-30, found the same way — by measuring the built scene.
+
+Affected and now fixed: **buddhaTooth, sriMariamman, peoplesPark, thianHockKeng,
+cqWarehouse, cqShophouses, oldHillStreet.** All 18 call sites now pass a
+relative offset. Chinatown, Little India and Bras Basah still pass 42 checks.
+
+**NEW CHECK D38** — "a named building floating above its own ground". It picks a
+point that is definitely inside each named footprint (nudged off the centroid,
+because a concave ring's centroid can fall outside it) and asks what the lowest
+mass over that point is. The FIRST version attributed a mesh to a building when
+the MESH's centre fell inside the ring, and reported 29 of 316 — an L-shaped
+plan's main mass has its centre outside its own ring, so only high pieces got
+attributed. Point attribution reports 4 of 417, and both remaining causes are
+the probe rather than the world (see the note in defects.mjs).
+
+**And D38 shipped broken for one run**: it asked `window.__groundAt`, which does
+not exist, so every building failed the `if (g === null) continue` guard and it
+reported a clean zero. The terrain is `window.__terrain`. Fourth time in this
+project a check has been unable to see and said PASS.
+
 ## MASJID JAMAE IS WIRED, AND WHAT IT COST TO GET THERE
 
 Round 1 and round 2 both failed the vet and both failures were MY OWN

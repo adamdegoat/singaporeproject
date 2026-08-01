@@ -2564,6 +2564,134 @@ function masjidJamae(api, b) {
 }
 
 
+// CENTRIUM SQUARE, 320 Serangoon Road. 19 storeys, completed 2020 on the site
+// of the former Serangoon Plaza. research/chinatown-littleindia-landmarks.md
+// section 3.
+//
+// THE FOOTPRINT IS THE PODIUM. OSM's ring is 3,699 m2 against a published site
+// area of 6,365.8 m2 — the missing 2,667 m2 is the forecourt and vehicle
+// drop-off — and the office plate is a published 9,731 sq ft (~904 m2), about a
+// QUARTER of the ring. Extruding the ring to 19 storeys draws an 80m-wide tower
+// that does not exist, which is what the generic family was doing.
+//
+// NO METRE HEIGHT IS PUBLISHED. `b.h` is our own 19 x 3.4 and carries `levels`
+// provenance; this recipe divides that height by the published floor stack
+// rather than inventing a new figure: L1-2 retail, L3-4 car park, L5 facilities
+// deck, L6-8 medical suites, L9-19 offices.
+//
+// WHAT A RIDER ACTUALLY SEES is not the tower at all — it is the podium's
+// tessellated isometric-cube "tumbling blocks" cladding, and above all the
+// CANOPY SOFFIT, which is the same pattern at its densest in vermillion-red and
+// mustard-yellow, ten metres over their head. That is built here as panels
+// rather than as a texture: a seam in a tiled cube pattern reads as a mistake,
+// and the cubes are a metre across, which is geometry scale.
+function centriumSquare(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const sw = streetward(api, ob);
+  const H = b.h || 64.6;
+  const POD = H * 5 / 19;                      // five levels to the facilities deck
+  const charcoal = new THREE.MeshStandardMaterial({ color: 0x2e3134, roughness: 0.75 });
+  const midGrey = new THREE.MeshStandardMaterial({ color: 0x8d9296, roughness: 0.8 });
+  const offWhite = new THREE.MeshStandardMaterial({ color: 0xe8e6e1, roughness: 0.8 });
+  const red = new THREE.MeshStandardMaterial({ color: 0xc0392b, roughness: 0.7 });
+  const yellow = new THREE.MeshStandardMaterial({ color: 0xd8a72b, roughness: 0.7 });
+  const glass = new THREE.MeshStandardMaterial({
+    color: 0x3d4750, roughness: 0.18, metalness: 0.55,
+  });
+
+  // the podium, on the ring, and the tower set back on top of it
+  api.world.add(api.extrude(b.p, POD, charcoal, 0));
+  const yaw = Math.atan2(sw.nx, sw.nz);
+  const tX = -sw.nz, tZ = sw.nx;
+  const at = (mesh, u, y, into, cast = true) => {
+    mesh.rotation.y = yaw;
+    mesh.position.set(ob.cx + tX * u - sw.nx * into, y, ob.cz + tZ * u - sw.nz * into);
+    mesh.castShadow = cast;
+    api.world.add(mesh);
+  };
+  // A SLIM SLAB, sized from the published plate rather than from the ring:
+  // ~904 m2 over a 3,699 m2 podium. Set BACK from the street so the podium and
+  // its canopy are what the frontage reads as, which is how it is built.
+  const TW = ob.halfShort * 2 * 0.62, TD = ob.halfLong * 2 * 0.30;
+  const TH = H - POD;
+  at(new THREE.Mesh(new THREE.BoxGeometry(TW, TH, TD), glass), 0, g0 + POD + TH / 2,
+     ob.halfLong * 0.30);
+  // the A/C condenser ledges the owner's own page describes, as slab bands
+  for (let y = POD + 3.4; y < H - 2; y += 3.4) {
+    at(new THREE.Mesh(new THREE.BoxGeometry(TW + 0.5, 0.25, TD + 0.5), midGrey),
+       0, g0 + y, ob.halfLong * 0.30, false);
+  }
+
+  // THE CANOPY over the drop-off, and its soffit. Projecting past the podium
+  // face, which is what puts it over a rider's head at the kerb.
+  const CY = g0 + POD * 0.56;
+  // THE FRONTAGE IS MEASURED, NOT ASSUMED. Round 1 took the street face as
+  // `halfShort * 2`, and Centrium Square's street face is its LONG side — 80.1m
+  // to Serangoon Road — so the cube panels covered the middle quarter of the
+  // facade and left the rest bare. An oriented box has two dimensions and
+  // nothing about the box says which one meets the road; the street direction
+  // does. Project the ring onto the along-street axis and use its real extent.
+  let fu0 = Infinity, fu1 = -Infinity;
+  for (const q of b.p) {
+    const u = (q[0] - ob.cx) * tX + (q[1] - ob.cz) * tZ;
+    if (u < fu0) fu0 = u;
+    if (u > fu1) fu1 = u;
+  }
+  const CW = (fu1 - fu0) * 0.94;
+  const CU = (fu0 + fu1) / 2;                 // the frontage is not centred on ob
+  let edge = 0;
+  for (let d = 1; d < 60; d += 0.5) {
+    if (!pointInRing(ob.cx + sw.nx * d, ob.cz + sw.nz * d, b.p)) { edge = d - 0.5; break; }
+  }
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(CW, 0.55, 5.0), charcoal);
+  at(canopy, CU, CY, -(edge - 1.4));
+  // the soffit, in cubes: the densest red and yellow in the whole composition
+  // A TESSELLATION, NOT CONFETTI. Round 2 picked every cube's colour at random
+  // and the facade read as noise with far too much red in it. Tumbling blocks
+  // is a REGULAR pattern — three faces of one cube, three tones, repeating —
+  // so the tone comes from the cell's own coordinates and only a small,
+  // deterministic minority are swapped for the vermillion and mustard accents
+  // that the research describes as "scattered through it".
+  const TONES = [charcoal, midGrey, offWhite];
+  const accent = (i, j) => {
+    const h = ((i * 73856093) ^ (j * 19349663)) & 0x7fffffff;
+    const r = (h % 1000) / 1000;
+    return r < 0.07 ? red : r < 0.12 ? yellow : null;
+  };
+  let ci = 0;
+  for (let u = CU - CW / 2 + 0.6; u < CU + CW / 2 - 0.6; u += 1.05, ci++) {
+    let cj = 0;
+    for (let v = -1.6; v <= 1.6; v += 1.05, cj++) {
+      // the soffit is where the red and yellow are densest — the one thing a
+      // rider passes directly under
+      const a = accent(ci, cj);
+      const m = a || (accent(ci + 7, cj + 3) ? red : TONES[(ci + cj) % 3]);
+      const tile = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.08, 0.92), m);
+      at(tile, u, CY - 0.32, -(edge - 1.4) - v, false);
+    }
+  }
+  // and the same pattern on the podium's street face, quieter
+  let fi = 0;
+  for (let u = CU - CW / 2 + 0.7; u < CU + CW / 2 - 0.7; u += 1.05, fi++) {
+    let fj = 0;
+    for (let y = 1.2; y < POD - 0.8; y += 1.05, fj++) {
+      const m = accent(fi, fj) || TONES[(fi + fj) % 3];
+      const tile = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.92, 0.10), m);
+      at(tile, u, g0 + y, -(edge + 0.06), false);
+    }
+  }
+  // free-standing columns under the canopy, clad in the same cubes
+  for (const u of [CU - CW * 0.34, CU, CU + CW * 0.34]) {
+    const cxp = ob.cx + tX * u - sw.nx * (-(edge - 3.0));
+    const czp = ob.cz + tZ * u - sw.nz * (-(edge - 3.0));
+    if (onCarriageway(cxp, czp, 0.3)) continue;
+    at(new THREE.Mesh(new THREE.BoxGeometry(0.75, CY - g0 - 0.3, 0.75), offWhite),
+       u, g0 + (CY - g0) / 2, -(edge - 3.0));
+  }
+}
+
+
 // THE CBD TRIO, researched 2026-07-30 (research/sultanmosque-cbdtrio.md).
 // The regulatory fact that shapes the skyline: UOB Plaza One, Republic
 // Plaza and One Raffles Place are ALL exactly 280m (the CBD cap from Paya
@@ -4817,6 +4945,7 @@ export const RECIPES = [
   // "Masjid Jamae (Chulia)" is the OSM name. Anchored to the start so it cannot
   // also take "Jamae Chulia Heritage", a separate 155 m2 footprint next door.
   [/^masjid jamae/i, masjidJamae],
+  [/^centrium square$/i, centriumSquare],
   [/^uob plaza/i, uobPlaza],
   [/^ocbc bank$/i, ocbcCentre],
   [/^republic plaza$/i, republicPlaza],
