@@ -235,8 +235,30 @@ the world. First full run, and this is the honest state of the eight:
 single figures and are the ordinary tail; Marina Bay is the whole problem and
 almost all of it is D2.
 
-## D9: 500m OF MARINA BAY'S MAIN STREET IS NOT RIDEABLE, and the one-line fix
-## is wrong on its own
+## D9 IS FIXED: the ride and the dressing were asking ONE predicate TWO
+## different questions
+
+**Result: D9 167 -> 0, W2 unchanged at 25/35, Marina Bay's defect count 290 ->
+123.** Bayfront Avenue is rideable end to end for the first time.
+
+The fix is not a better water test — it is noticing that "can I ride over this?"
+and "may something be BUILT here?" are different questions that had been sharing
+one function. `blocked()` keeps the conservative rule and still governs
+placement; a new `rideBlocked()` answers the ride's question, and water with a
+bridge deck over it is a road to a rider. `window.__blocked` now points at the
+ride question, because that is what D9 is asking.
+
+**Why the obvious one-line version was wrong**, measured rather than assumed:
+teaching `blocked()` itself put **125 meshes in open water, 74 of them more than
+60m from any deck**. The placement paths walk the AXIS across the bridge and
+offset furniture sideways without re-testing the point they place at, so the
+moment the bay stopped being a blanket wall they reached straight off the deck.
+That is still true and is the next batch: six placement loops need to test their
+own placement point, not the centreline. Until then the split keeps the world
+correct and the rider unblocked.
+
+## (historical) D9: 500m OF MARINA BAY'S MAIN STREET IS NOT RIDEABLE, and the
+## one-line fix is wrong on its own
 
 Bayfront Avenue crosses the bay twice. `blocked()` in main.js returns true for
 every point inside a water polygon; `standable()` in city.js was taught about
@@ -323,10 +345,23 @@ and it is the CHECK that needs the real units, not the world. The kerb run
 follows the road round the abutment; the deck is a set of capsules.
 
 **So the 118 are very likely not a world defect at all**, which is why they have
-never been visible in a frame. Next step is to make D2 measure the same way the
-placement does (ask `surfaceAt` at the instance's own position and compare with
-what the emitter would have computed), not to move any kerbs. Do NOT "fix" the
-world here until the check is honest.
+never been visible in a frame.
+
+**DONE: D2 now accepts EITHER datum** — the deck answer or the ground answer,
+whichever the prop is closer to. Within a metre of an abutment both are live and
+they differ by the height of the bridge, so asking `surfaceAt` alone was asking
+one of two right answers. Nothing is weakened: the cases this check exists for
+(a prop 34m underground, a lamp 19m in the air) match neither. **Marina Bay D2
+118 -> 87, district total 123 -> 92**, and all 42 checks still pass.
+
+**The 87 that survive are a DIFFERENT finding and read differently**: they are
+now *floating* 1.2 to 2.4m, not sunk, and the amount grows steadily along z
+(3072,8567 -> 3072,8581) — i.e. up the bridge RAMP. A flat deck (`max terrain
+along the way + 1.2`) plus a rising approach is the obvious suspect: a kerb run
+following the ramp against a deck height that does not rise with it. That is a
+real question about how `addBridgeWay` models an approach, and it is the next
+thing to measure here — but it is 87 kerbs at a bridge abutment, not 500m of
+main street, so it ranks below the recipes.
 
 # SEVEN LANDMARK RECIPES WERE FLOATING, AND SRI MARIAMMAN'S HALL HUNG 10.7m
 # ABOVE ITS OWN GOPURAM

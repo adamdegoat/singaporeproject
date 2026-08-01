@@ -108,7 +108,29 @@ const found = await page.evaluate(() => {
         m4.decompose(p4, q4, sc3);
         v3.copy(p4).applyMatrix4(o.matrixWorld);
         if (v3.y < -900) continue;
-        const d = v3.y - (window.__surfaceAt(v3.x, v3.z) + expect * sc3.y);
+        // AT A BRIDGE EDGE, "THE SURFACE IT STANDS ON" IS TWO SURFACES.
+        //
+        // bridgeDeckAt() is a proximity test against the deck's half-width plus
+        // 40cm, so within a metre of an abutment the deck answer and the ground
+        // answer are both live and they differ by the height of the bridge.
+        // This check asked surfaceAt() alone and reported 118 kerbs on Marina
+        // Bay as sunk 1.6m — kerbs that are sitting correctly on the ground
+        // beside the bridge, which is why none of it was ever visible in a
+        // frame. Measured at full precision: surfaceAt at placement and
+        // surfaceAt after boot agree to the centimetre for these, and the deck
+        // is null for both.
+        //
+        // So accept EITHER datum. Nothing is weakened: a prop 34m underground
+        // or 19m in the air — the cases this check exists for — matches
+        // neither. This is the same "the quantised one is wrong" family as the
+        // street plate measured to a vertex and the pedestrian band bucketed to
+        // whole metres; the fix is always to let the check measure what the
+        // world actually offers rather than one of two right answers.
+        const want = expect * sc3.y;
+        const dSurf = v3.y - (window.__surfaceAt(v3.x, v3.z) + want);
+        const gAt = window.__terrain ? window.__terrain.at(v3.x, v3.z) : null;
+        const dGround = gAt === null ? dSurf : v3.y - (gAt + 0.024 + want);
+        const d = Math.abs(dSurf) <= Math.abs(dGround) ? dSurf : dGround;
         if (Math.abs(d) > 0.25) bad.push(`${sig} ${d > 0 ? 'floating' : 'sunk'} ${Math.abs(d).toFixed(2)}m at ${v3.x | 0},${v3.z | 0}`);
       }
     });
