@@ -223,9 +223,17 @@ long as streaming has, invisible.
     orchard      4     rivervalley 1     bugis 4     robertson 1
     marinabay  291  <-- D2 119, D9 167, D20 1, D38 4
 
-**FIX THE COVERAGE FIRST**: defects.mjs should run per district in deploy.sh, or
-the world run should force every chunk built. Until then the hunt is a hunt of
-one district.
+**COVERAGE IS FIXED**: deploy.sh now runs defects.mjs over `$DISTRICTS` — the
+same one list the registry already provides, not a fourth copy of it — and then
+the world. First full run, and this is the honest state of the eight:
+
+    orchard      4     chinatown    7     robertson    1
+    rivervalley  1     marinabay  290     littleindia  4
+    bugis        4     brasbasah    5     world        0
+
+**316 findings that the world scene reported as 0.** Seven of the eight are in
+single figures and are the ordinary tail; Marina Bay is the whole problem and
+almost all of it is D2.
 
 ## D9: 500m OF MARINA BAY'S MAIN STREET IS NOT RIDEABLE, and the one-line fix
 ## is wrong on its own
@@ -260,12 +268,65 @@ blocked() itself so the next attempt starts from it.
   This is the same two-numbers trap that had the bike riding 5.5cm under the
   road for the whole project, one storey up.
 
-**STILL OPEN, MEASURED: D2 = 348 kerbs off their surface on Marina Bay** (12% of
-2,852, in two meshes that now both call surfaceAt). Since the call is right, the
-likely cause is ORDER — the kerbs are placed before `addBridgeWay` has
-registered the decks, so `surfaceAt` answers with the terrain at placement time
-and the deck at check time. Same family as "buildRoadIndex ran AFTER
-buildBuildings". Instrument the placement order before changing anything.
+**STILL OPEN, AND NOW MEASURED TO THE CENTIMETRE: D2 on Marina Bay.** Both kerb
+emitters call `surfaceAt` — verified by reading the shipped lines, not assumed —
+and the kerbs are still on the terrain. The numbers say exactly why:
+
+    kerb at 3060,8587   drawn y 6.42   ground 6.25   deck 7.81   surfaceAt 7.87
+
+`6.25 + SURFACE_PATH (0.024) + r[1] (0.15) = 6.42`, to the centimetre. So
+`surfaceAt` DID run at placement, and inside it **`bridgeDeckAt` returned null
+and `__onRoad` returned false** — while at check time the same point reports a
+deck at 7.81. The bridge index is therefore EMPTY when the dressing runs and
+populated afterwards.
+
+**THREE THEORIES ARE DEAD. Do not spend the time again.**
+
+1. *"A third kerb emitter somewhere else."* NO — the scene contains exactly two
+   InstancedMeshes with signature `BoxGeometry(0.42,0.3,2)`, and main.js
+   contains exactly two `new THREE.BoxGeometry(0.42, 0.3, 2.0)` sites. They are
+   the painted run and the plain run, and BOTH now read `surfaceAt`; the shipped
+   lines were read, not assumed.
+2. *"sgdetail / street / markings still use groundAt."* NO — all four files were
+   converted (29 sites) and `grep groundAt( src/main.js` returns nothing.
+3. *"The bridge index is empty when the dressing runs."* NO, and this was
+   INSTRUMENTED rather than reasoned: a temporary log showed **15
+   `addBridgeWay` calls all complete before the first `dressStreet` call**, and
+   `bridgeDeckAt(3060, 8587)` already returns **7.806** at dressStreet's first
+   line. `clearBridges()` is exported and never called.
+
+4. *"main.js shadows city.js's surfaceAt with a local one that ignores decks."*
+   NO — main.js imports it on line 3 and never redefines it.
+5. *"`target` carries a transform, so p3 (a world position) is placed relative
+   to it."* Unlikely, and the numbers say so: a group offset would be CONSTANT,
+   and the measured error varies with the ground (1.53, 1.56, 1.60, 1.63m) —
+   the kerbs are tracking the TERRAIN, not sitting at a fixed offset below the
+   deck.
+
+**AND THEN THE PROBE WENT INSIDE THE EMITTER, which is where it should have
+started.** Logging `surfaceAt` and `bridgeDeckAt` for the kerbs themselves, at
+full precision:
+
+    kerb 3059.72, 8587.04   surfaceAt at placement 6.27
+                            surfaceAt after boot   6.27      deck: null (both)
+
+**The kerbs are placed correctly.** There is no deck at their position, at
+placement or afterwards, and `surfaceAt` agrees with itself to the centimetre.
+They sit on the ground because the ground is what is there — they are just
+OUTSIDE the bridge's half-width, at the abutment.
+
+So D2's disagreement is at the DECK BOUNDARY: `bridgeDeckAt` is a proximity test
+against `half + 0.4`, and a kerb 30cm outside that radius is on the ground while
+the check's own sample lands inside it. That is the most repeated bug family in
+this file — *"when two things describe one fact, the quantised one is wrong"* —
+and it is the CHECK that needs the real units, not the world. The kerb run
+follows the road round the abutment; the deck is a set of capsules.
+
+**So the 118 are very likely not a world defect at all**, which is why they have
+never been visible in a frame. Next step is to make D2 measure the same way the
+placement does (ask `surfaceAt` at the instance's own position and compare with
+what the emitter would have computed), not to move any kerbs. Do NOT "fix" the
+world here until the check is honest.
 
 # SEVEN LANDMARK RECIPES WERE FLOATING, AND SRI MARIAMMAN'S HALL HUNG 10.7m
 # ABOVE ITS OWN GOPURAM
@@ -418,12 +479,31 @@ surveyed metres + storey-derived; era is a conservation-area band or a material.
     bugis          54%     78%     19%     HEIGHT
     littleindia    45%     92%     22%     HEIGHT
 
-Two things are worth chasing and one is not. **Era** is chaseable: ~370
-buildings sit inside gazetted conservation areas that have no entry in
-CONSERVATION_STYLES (Mount Sophia 149, Upper Circular Road 127, Fort
-Canning/Coleman 33, Cheang Jim Chwan 26, Chatsworth Park 21, Pearl's Hill 11),
-and URA publishes the styles for each. **Recipes** are chaseable. **Heights are
-mostly not**: Little India's 123 unsourced frontage buildings are 117 shophouses
+## THE SCORECARD HAS A CEILING, AND IT IS THE DATA, NOT THE EFFORT
+
+Measured 2026-08-01, after the conservation bands landed. This is the answer to
+"can these districts be finished" and it should stop anyone grinding at a number
+that cannot move.
+
+**Era, Robertson and River Valley** — the two worst columns at 27% and 40%:
+
+    robertson    42 frontage buildings, 29 with no era/year/material,
+                 of those inside a gazetted conservation area: 0
+    rivervalley  66 frontage buildings, 34 with no era/year/material,
+                 of those inside a gazetted conservation area: 0
+
+Not one. They are modern condominiums on River Valley Road, outside every URA
+gazette, and OSM carries no `start_date` and no `building:material` for them. Of
+the 63, exactly **five are even NAMED** — Yong an Park, Riva Lodge, Valley
+House, an Esso station and a preschool — so there is nothing for a research
+agent to look up for the other 58. The conservation route, which is what raised
+these numbers everywhere else, cannot reach them at all.
+
+**So: era is chaseable where a gazette covers the stock, and nowhere else.** It
+was worth ~370 buildings across the region (Mount Sophia 149, Upper Circular
+Road 127, Fort Canning/Coleman 33, Cheang Jim Chwan 26, Chatsworth Park 21,
+Pearl's Hill 11) and that has now been taken. **Recipes** remain chaseable and
+are the real lever left. **Heights are mostly not**: Little India's 123 unsourced frontage buildings are 117 shophouses
 under 400 m2, OSM carries 21 height tags for its 2,134 buildings, the HDB join
 is already fully exploited (every HDB block that lands inside a footprint has a
 source), and no one publishes a metre height for a shophouse. They are drawn at

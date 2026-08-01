@@ -224,6 +224,38 @@ function blocked(x, z) {
   return false;
 }
 
+// WHAT YOU CAN RIDE OVER, which is not the same question as WHERE A THING MAY
+// BE PLACED — and conflating the two is what made the first attempt at this
+// worse than the defect.
+//
+// Bayfront Avenue crosses the bay twice, and blocked() calls all water a wall,
+// so 167 points on Marina Bay's own centreline — about 500m of its main street
+// — were solid to a rider standing on a bridge. standable() in city.js was
+// taught about decks when median kerbs were found in the bay; the collision
+// test never was.
+//
+// Teaching blocked() itself was tried on 2026-08-01 and reverted: the DRESSING
+// uses the same predicate, and once the bay stopped being a wall it walked the
+// axis across the bridge and offset furniture sideways off the deck. Measured:
+// 125 meshes ended up in open water and **74 of them were more than 60m from
+// any deck** — the placement paths test the centreline, not the point they
+// actually place at. Fixing that is a change to six placement loops and is owed
+// its own batch (see NEXT.md).
+//
+// So the split is by QUESTION, not by caller: placement keeps the conservative
+// rule, and the ride gets the honest one. A rider on a deck is on a road.
+function rideBlocked(x, z) {
+  if (inWater(x, z) && bridgeDeckAt(x, z) !== null) {
+    // over a deck: only real geometry stops you
+    if (SOLID && SOLID.at(x, z)) return true;
+    const l2 = colGrid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));
+    if (!l2) return false;
+    for (const poly of l2) if (inPoly(poly, x, z)) return true;
+    return false;
+  }
+  return blocked(x, z);
+}
+
 /* ---------------- street dressing, all instanced ---------------- */
 // Two main streets must not dress the same tarmac.
 //
@@ -1705,7 +1737,9 @@ async function buildRegion(data, opts = {}) {
   window.__surfaceAt = (x, z) => surfaceAt(x, z);
   // the solidity test the ride and the walker actually use, so a check can ask
   // the same question they do rather than a lookalike
-  window.__blocked = (x, z) => blocked(x, z);
+  // D9 asks whether the RIDE can get down the street, so it gets the ride question
+window.__blocked = (x, z) => rideBlocked(x, z);
+window.__placeBlocked = (x, z) => blocked(x, z);
   window.__data = data;
   // the limit must be passed through: dropping it capped every search at the
   // default 7m, and a stop node on the centreline of a 16m road needs further
@@ -2990,12 +3024,12 @@ function loop(now) {
         }
       }
     }
-    if (blocked(S.x, S.z)) {
+    if (rideBlocked(S.x, S.z)) {
       // slide along the wall rather than dead-stopping: keep whichever single
       // axis of the attempted move is still free
       const tryX = { x: S.x, z: pz }, tryZ = { x: px, z: S.z };
-      if (!blocked(tryX.x, tryX.z)) { S.z = pz; S.speed *= 0.86; }
-      else if (!blocked(tryZ.x, tryZ.z)) { S.x = px; S.speed *= 0.86; }
+      if (!rideBlocked(tryX.x, tryX.z)) { S.z = pz; S.speed *= 0.86; }
+      else if (!rideBlocked(tryZ.x, tryZ.z)) { S.x = px; S.speed *= 0.86; }
       else { S.x = px; S.z = pz; S.speed *= 0.2; }
     }
 
