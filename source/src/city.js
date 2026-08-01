@@ -386,8 +386,29 @@ LMAT.ivory.userData.tile = [9, 9];
 // correct the massing is. Tiled at 5 bays x 9 floors over 17m x 30m, so a bay
 // lands near 3.4m and a floor near 3.3m -- the storey height these blocks are
 // actually built to.
-LMAT.rvRender = new THREE.MeshStandardMaterial({ map: texBalcony(0xd9d2c4), roughness: 0.74 });
-LMAT.rvRender.userData.tile = [17, 30];
+// ONE TYPE, SEVERAL DEVELOPMENTS. Rendered as a single material, River Valley
+// Road came out as one continuous banded facade down both sides -- correct
+// about the TYPE (the research is explicit that these are all 2010s seven-
+// storey freehold blocks built to the same URA height control) and wrong about
+// the street, which is a run of separate developments each with its own render
+// colour. Four warm neutrals, picked per building by a stable hash of its
+// footprint, so a rebuild deals the same street twice.
+// FIRST ATTEMPT WAS TOO TIMID AND MADE IT WORSE. Four near-identical warm
+// neutrals with pale rails to match read as LESS varied than one colour with a
+// strong rail did: the balcony banding is what gives these blocks their
+// character at riding speed, and tinting the rail toward the wall erased it.
+// Wider spread on the wall, and the rail stays firmly blue-grey against all of
+// them.
+const RV_WALLS = [0xdcd5c6, 0xc4c9c9, 0xe4dccb, 0xb9b3a6];
+LMAT.rvRender = RV_WALLS.map((c) => {
+  const m = new THREE.MeshStandardMaterial({ map: texBalcony(c), roughness: 0.74 });
+  m.userData.tile = [17, 30];
+  return m;
+});
+// The balustrade picks up the wall: a cooler glass on the paler renders, a
+// warmer one on the deeper, which is what these blocks actually do.
+LMAT.rvRail = [0x6f8ca6, 0x7d97ad, 0x67839c, 0x8299ae].map((c) =>
+  new THREE.MeshStandardMaterial({ color: c, roughness: 0.16, metalness: 0.22 }));
 // MacDonald House: one tile is one 3.9m structural bay by a 3.5m floor
 LMAT.redBrick = new THREE.MeshStandardMaterial({ map: texRedBrick(), roughness: 0.88 });
 LMAT.redBrick.userData.tile = [3.9, 3.5];

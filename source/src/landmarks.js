@@ -1139,7 +1139,12 @@ function mallPodiumTower(api, b) {
 // any of them. See OSM_WAY in data/process.py.
 function boutiqueApartment(api, b) {
   const ob = orientedBox(b.p);
-  const wall = api.mat.rvRender, glass = api.mat.blueGlass;
+  // A STABLE PER-BUILDING PICK, the same idea the shophouse recipe uses for its
+  // roof variant: hash the footprint so a rebuild deals the same street.
+  let vh = 0;
+  for (const [x, z] of b.p) vh = (vh * 33 + ((x * 7) | 0) + ((z * 13) | 0)) | 0;
+  const vi = Math.abs(vh) % api.mat.rvRender.length;
+  const wall = api.mat.rvRender[vi], glass = api.mat.rvRail[vi];
   const floors = Math.max(3, Math.round(b.h / 3.4));
   const g = 3.9;                                  // recessed ground floor
   // The ground floor is INSET, not flush: it is a car park behind a screen and
