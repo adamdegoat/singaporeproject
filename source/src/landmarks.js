@@ -1674,20 +1674,34 @@ function istana(api, b) {
   const white = new THREE.MeshStandardMaterial({ color: 0xf0ebe0, roughness: 0.88 });
   const roofMat = new THREE.MeshStandardMaterial({ color: 0x5a5f5c, roughness: 0.7 });
   const h = Math.max(12, Math.min(b.h, 17));
-  // EVERY OFFSET IN THIS RECIPE IS A CENTROID SCALE, NOT api.grow().
+  // EVERY OFFSET IN THIS RECIPE IS IN METRES, VIA inset() BELOW.
   //
-  // grow() offsets each edge along its normal and joins them with a miter, and
-  // a miter between two nearly-collinear edges is arbitrarily long. This ring
-  // is 54 OSM points around a cross plan and is full of near-collinear pairs,
-  // so grow(b.p, 1.9) -- a request for a 1.9m eaves overhang -- returned a ring
-  // hundreds of metres across, and the first build put two roof planes over
-  // half of Orchard. colonialHotel gets away with grow() because Raffles Hotel
-  // is a clean rectangle.
+  // CORRECTED 2026-08-01. The note that stood here blamed mitering: it said
+  // grow() offsets each edge along its normal, that a miter between two
+  // near-collinear edges is arbitrarily long, and that this ring's 54 points
+  // around a cross plan were full of such pairs. Every clause of that is wrong,
+  // and the real cause is simpler and worse.
   //
-  // A scale about the centroid cannot self-intersect and cannot miter, at the
-  // cost of being proportional rather than uniform: the wing tips move further
-  // than the flanks. At 1.5m on a 45m mean radius that difference is under a
-  // metre and invisible; an exploded ring is not.
+  // `grow(pts, f)` in city.js:949 IS ALREADY A CENTROID SCALE. It miters
+  // nothing. Its second argument is a FACTOR, not a distance -- every other
+  // caller in the tree passes 1.008, 1.012, 1.055. So `grow(b.p, 1.9)` did not
+  // ask for a 1.9m eaves overhang; it asked for a ring NINETY PER CENT BIGGER,
+  // and on a 45m mean radius that is a 40m overhang. Two roof planes over half
+  // of Orchard is exactly the right answer to the question that was asked.
+  // colonialHotel is not saved by Raffles Hotel being a rectangle either -- it
+  // is saved by passing 1.008.
+  //
+  // So the rule is NOT "never grow() a complex ring". It is the one city.js
+  // already applies to every shophouse roof in the city (see the `kIn` note at
+  // city.js:1174): DECIDE THE OFFSET IN METRES, then convert it to the ratio
+  // grow wants using the footprint's own mean radius, and CAP IT IN METRES.
+  // inset() below is that conversion written locally.
+  //
+  // What survives from the old note is its last paragraph, which was right: a
+  // scale about the centroid is proportional rather than uniform, so wing tips
+  // move further than flanks. Under a metre of difference at 1.5m on a 45m mean
+  // radius, and invisible -- but see the roof note in civicPalladian(), where
+  // the same proportionality at 7m was very visible indeed.
   let rsum = 0;
   for (const [x, z] of b.p) rsum += Math.hypot(x - cx0, z - cz0);
   const R = Math.max(8, rsum / b.p.length);
@@ -1724,6 +1738,146 @@ function istana(api, b) {
   cap.translate(cx0, g0 + top + 7.7, cz0);
   api.merge(cap, roofMat, cx0, cz0);
 }
+
+// THE CIVIC DISTRICT'S COLONIAL SET. Three white neoclassical landmarks stand
+// on the north bank of the Singapore River and all three were drawing as modern
+// glass-and-panel blocks:
+//
+//   The Arts House            1827, the old Parliament House, oldest surviving
+//                             government building in Singapore; Palladian, by
+//                             G D Coleman, two storeys over a rusticated base.
+//   Victoria Theatre          1862 Town Hall + 1905 Memorial Hall, joined by a
+//                             CLOCK TOWER; Victorian classical, white plaster.
+//   Empress Place Building    1860s-1900s, now the Asian Civilisations Museum;
+//                             Neo-Palladian, deep columned verandahs, long
+//                             frontage to the river.
+//
+// One recipe because they ARE one idiom -- white plastered masonry, a plinth,
+// verandah bands at each floor, a low pitched roof -- and the differences that
+// matter at riding distance are height, and whether there is a tower.
+//
+// Offsets are in METRES, via the local inset(). api.grow()'s second argument is
+// a FACTOR, not a distance, and passing metres to it is what put two roof planes
+// over half of Orchard on the Istana -- see the corrected note in istana().
+function civicPalladian(api, b, opts = {}) {
+  const ob = orientedBox(b.p);
+  const cx0 = ob.cx, cz0 = ob.cz;
+  const white = new THREE.MeshStandardMaterial({ color: 0xf2ede2, roughness: 0.88 });
+  const roofMat = api.mat.clayTile || new THREE.MeshStandardMaterial({ color: 0x9c5a44, roughness: 0.82 });
+  const h = Math.max(10, Math.min(b.h, opts.cap || 18));
+
+  let rsum = 0;
+  for (const [x, z] of b.p) rsum += Math.hypot(x - cx0, z - cz0);
+  const R = Math.max(8, rsum / b.p.length);
+  const inset = (d) => b.p.map(([x, z]) =>
+    [cx0 + (x - cx0) * (1 + d / R), cz0 + (z - cz0) * (1 + d / R)]);
+
+  // rusticated plinth: these all stand a step above the promenade
+  api.merge(api.extrudeGeo(inset(1.3), 1.2), api.mat.paleStone, cx0, cz0);
+  api.merge(api.extrudeGeo(b.p, h, 1.2), white, cx0, cz0);
+
+  // Verandah bands. The colonnade shafts behind them are lost in shadow at any
+  // distance a rider sees this from; the shadow LINE is what reads, and that is
+  // what a projecting slab plus a rail gives. Same device colonialHotel uses.
+  const floors = h > 13 ? 2 : 1;
+  for (let f = 1; f <= floors; f++) {
+    const y = 1.2 + (h / (floors + 0.35)) * f;
+    if (y > h) break;
+    api.merge(api.extrudeGeo(inset(1.4), 0.30, y), api.mat.trim, cx0, cz0);
+    api.merge(api.extrudeGeo(inset(1.25), 0.15, y + 1.05), api.mat.trim, cx0, cz0);
+  }
+
+  // LOW HIPPED ROOF. Round 1 of the vet drew this as two steps -- inset(-2.4)
+  // under a 1.4m riser, then inset(-7.0) under a 1.2m riser -- and all three
+  // buildings came back as ORANGE LAYER CAKES. Two things were wrong and they
+  // compounded:
+  //
+  //   * a 1.4m riser is a TERRACE, not a pitch. At any distance a rider sees
+  //     this from, two risers that tall read as two flat platforms stacked, and
+  //     the shadow each one casts on the tray below it opens a dark slot.
+  //   * the inset was uncapped in METRES. `inset(d)` moves a vertex at radius r
+  //     by r*d/R, so on the ACM's 40-point cross plan -7.0 at a 28m mean radius
+  //     pulls the wing tips in eleven metres and the arms collapse into each
+  //     other, which is where the notches came from.
+  //
+  // Six thin lifts instead, and the run capped in metres. city.js already
+  // solved exactly this for every shophouse in the city -- see the `kIn` note
+  // at the pitched-roof branch, which caps its inset at 3.2m for the same
+  // reason -- and the fix is to follow it, not to reinvent it.
+  // Round 2 tried six thin lifts and it came back RIBBED: `inset` scales about
+  // the centroid, so along a long flank (small radius) six rings land almost on
+  // top of each other and read as corduroy, while at the ends (large radius)
+  // they fan out. Stepping is the wrong instrument here whatever the step size.
+  //
+  // So: TWO pieces, exactly what city.js draws on every shophouse in the city
+  // and what has looked right there for weeks -- a tiled lip proud of the wall,
+  // and one inset cap above it. The lip is the line that reads at street level;
+  // the cap only has to close the silhouette.
+  const top = 1.2 + h;
+  const RUN = Math.min(3.0, R * 0.15);
+  api.merge(api.extrudeGeo(inset(0.9), 0.34, top), roofMat, cx0, cz0);
+  api.merge(api.extrudeGeo(inset(-RUN), 1.7, top + 0.34), roofMat, cx0, cz0);
+
+  // VICTORIA'S CLOCK TOWER. 54m to the finial; the mass below is already `h`,
+  // so the tower carries the rest.
+  //
+  // Round 1 drew it as one 9m box under a cone and it read as a GRAIN SILO --
+  // no cornice to break the shaft, no clock, and a slenderness that belongs to
+  // a chimney. What makes a clock tower legible at 150m is three things in this
+  // order: a broader pier at the bottom, a horizontal cornice line under the
+  // belfry, and a DARK DISC high on each face. The disc does the most work.
+  //
+  // Centred on ob.bx,bz, NOT cx0,cz0: the vertex mean of a 31-point ring is not
+  // the middle of the building, and this is the trap orientedBox's own comment
+  // documents (Mustafa's dome, 8.9m off over a 20m mass).
+  if (opts.tower) {
+    const tx = ob.bx, tz = ob.bz;
+    const g0 = api.groundAt(tx, tz);
+    const base = g0 + 1.2 + h;
+    const H = opts.tower - (1.2 + h);
+    const put = (geo, m, y) => {
+      geo.rotateY(-ob.ang); geo.translate(tx, y, tz); api.merge(geo, m, cx0, cz0);
+    };
+    const sq = (w, y0, hh, m) => put(new THREE.BoxGeometry(w, hh, w), m, y0 + hh / 2);
+    sq(12.4, base, H * 0.34, white);                       // pier
+    sq(13.3, base + H * 0.34, 0.6, api.mat.paleStone);     // string course
+    sq(10.6, base + H * 0.34 + 0.6, H * 0.46, white);      // shaft
+    const clockY = base + H * 0.80 + 0.6;
+    sq(11.4, clockY, H * 0.17, white);                     // clock stage
+    // One clock per side. Round 2 drew these at 2.5m radius in near-black and
+    // two of them in one frame read as a pair of eyes; a real dial on an 11m
+    // face is about a third of it. Pale stone surround, dark hands-and-numerals
+    // disc inside it -- the contrast ring is what says CLOCK rather than PORTHOLE.
+    for (let s = 0; s < 4; s++) {
+      const a = ob.ang + s * Math.PI / 2;
+      const nx = Math.cos(a), nz = Math.sin(a);
+      // rotateX puts the disc's axis on +Z; rotateY(PI/2 - a) then swings that
+      // axis onto (cos a, sin a). rotateY(-a) -- the rotation every BOX in this
+      // file uses -- would leave it ninety degrees out, edge-on to the street.
+      const dial = (r, t, off, m) => {
+        const d = new THREE.CylinderGeometry(r, r, t, 16);
+        d.rotateX(Math.PI / 2); d.rotateY(Math.PI / 2 - a);
+        d.translate(tx + nx * off, clockY + H * 0.085, tz + nz * off);
+        api.merge(d, m, cx0, cz0);
+      };
+      dial(2.0, 0.30, 5.76, api.mat.paleStone);
+      dial(1.55, 0.34, 5.84, api.mat.darkMetal || api.mat.trim);
+    }
+    sq(12.6, clockY + H * 0.17, 0.55, api.mat.paleStone);  // cornice
+    const cap = new THREE.ConeGeometry(8.6, 6.4, 4);
+    cap.rotateY(-ob.ang + Math.PI / 4);
+    cap.translate(tx, clockY + H * 0.17 + 0.5 + 3.2, tz);
+    api.merge(cap, roofMat, cx0, cz0);
+  }
+}
+
+// Named wrappers, NOT inline arrows in the RECIPES table: NO_SHOPFRONT tests
+// membership by function identity, and an arrow declared in the table is a
+// different object every time it is read. An arrow there would have glazed
+// retail bays onto all three.
+const artsHouse = (api, b) => civicPalladian(api, b, { cap: 15 });
+const victoriaTheatre = (api, b) => civicPalladian(api, b, { cap: 16, tower: 54 });
+const empressPlace = (api, b) => civicPalladian(api, b, { cap: 16 });
 
 // The neoclassical civic set: the National Museum's rotunda under a fish-scale
 // dome, and the National Gallery, which is the former Supreme Court's
@@ -5309,6 +5463,11 @@ export const RECIPES = [
   // Anchored so "Istana Heritage Gallery" and "Istana Park" keep the
   // generic treatment: only the house itself gets the house.
   [/^istana$/i, istana],
+  // The Civic District colonial set — see civicPalladian(). Anchored tightly so
+  // "Parliament Secretariat's Office" (1999, next door) keeps generic fabric.
+  [/^the arts house$/i, artsHouse],
+  [/^victoria theatre and concert hall$/i, victoriaTheatre],
+  [/^asian civilisations museum$/i, empressPlace],
   [/srinivasa perumal/i, perumalGopuram],
   // Matched on the full name because "Pickering" alone also hits "Pickering
   // Operation Complex" and "One Upper Pickering", two different buildings on
@@ -5435,6 +5594,7 @@ const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery,
                               gothicChurch, colonialHotel, artScienceMuseum,
                               // The President's residence has no shops in it.
                               istana,
+                              artsHouse, victoriaTheatre, empressPlace,
                               merlion, singaporeFlyer,
                               // Tekka Centre's ground floor is an OPEN market -- columns and
                               // louvres, 284 wet stalls and 119 hawker stalls straight off the

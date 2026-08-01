@@ -36,9 +36,43 @@ const { chromium } = await import(
 // A brisk walk is 1.6 m/s and a run is about 5. Anything over 3 is not a
 // pedestrian on a shopping street.
 const PED_MAX = 3.0;
-// 60 km/h. Orchard Road is 50, and this is deliberately loose: the point is to
-// catch a teleport, not to police the speed limit.
-const VEH_MAX = 16.7;
+// RAISED 16.7 -> 25 m/s ON 2026-08-01, WITH THE MEASUREMENT THAT JUSTIFIES IT.
+// This is a budget going the wrong way, so it carries its reasons in full.
+//
+// 16.7 was 60 km/h, chosen as "deliberately loose: catch a teleport, not police
+// the speed limit". It was not loose. It was 1.02x the world's honest worst, and
+// it flapped: five consecutive runs measured 15.33, 16.15, 16.06, 15.67, 16.42,
+// and a deploy died on the sixth. A gate that fails one run in six on unchanged
+// code teaches everyone to re-run it, which is worse than not having it.
+//
+// What the world actually does, measured over 40 frames on `world` (the probe
+// took each car's PEAK speed, so a car braking at a light does not count):
+//
+//     n=21 cars   min 0.01   p50 9.63   p90 13.96   max 15.22   over 12.05: 5
+//
+// Cars are built with `base = rand(7, 12)` (actors.js), and `want` never
+// exceeds `base` -- the speed rule only ever brakes. So:
+//
+//   * p50 9.63 against a configured median of 9.5 says THE CLOCK IS RIGHT.
+//     A wrong dt would scale every car, and the median is the one that would
+//     have moved. This is not the half-speed-clock family of bug.
+//   * a quarter of cars peak 1.15-1.27x above their own base, bounded, never
+//     wilder. That is the outside of a bend covering more ground than the
+//     centreline -- the same effect B3's comment already accepts as legitimate
+//     -- amplifying by 1 + offset/radius. On five-lane Orchard Road the outer
+//     lane sits ~8m out, so a 30-50m radius bend gives exactly 1.16-1.27x.
+//     A real car in a real outside lane does the same thing.
+//
+// So the tail is geometry, not a defect, and this check has exactly one job:
+// catch a vehicle that MOVED WITHOUT DRIVING. A recycle jumps up to 260m in one
+// frame, which is about 1,700 m/s. 25 m/s (90 km/h) sits 1.5x above anything
+// the geometry can produce from a 12 m/s car and 68x below a teleport. There is
+// no defect that lives in the gap.
+//
+// Also fixed the same day, and it WAS a real defect this check could have been
+// pointing at: vehicles recycled at 190m from the player while this gate (and a
+// rider) could see out to 200m. See the note at the recycle in actors.js.
+const VEH_MAX = 25;
 // A visible vehicle is one within the distance the player can see along the
 // street. Beyond that a recycle is a different car arriving, not a teleport.
 const VISIBLE = 200;
@@ -97,6 +131,7 @@ const motion = await page.evaluate(async ([VISIBLE]) => {
   const worst = { ped: 0, car: 0, bus: 0 };
   const over = { ped: 0, car: 0, bus: 0 };
   const seen = { ped: 0, car: 0, bus: 0 };
+  const where = { ped: null, car: null, bus: null };
   const ex = [];
   for (let f = 1; f < fr.length; f++) {
     const dt = (fr[f].t - fr[f - 1].t) / 1000;
@@ -112,11 +147,22 @@ const motion = await page.evaluate(async ([VISIBLE]) => {
         }
         const v = Math.hypot(B[i][0] - A[i][0], B[i][1] - A[i][1]) / dt;
         seen[kind]++;
-        if (v > worst[kind]) worst[kind] = v;
+        if (v > worst[kind]) {
+          worst[kind] = v;
+          // WHERE, not just how fast. A bare number cannot be diagnosed: 16 m/s
+          // is a car on the outside of a tight bend (the rendered position is
+          // the centreline plus a lane offset, and on a bend that offset covers
+          // more ground than the centreline does), while 1,700 m/s is a recycle
+          // that happened on screen. Both fail the same check with the same
+          // word. This records the sample so the next failure names its own
+          // cause instead of costing a session.
+          where[kind] = { from: A[i], to: B[i], dt,
+            distFromPlayer: Math.hypot(A[i][0] - fr[f - 1].px, A[i][1] - fr[f - 1].pz) };
+        }
       }
     }
   }
-  return { worst, seen, ex };
+  return { worst, seen, ex, where };
 }, [VISIBLE]);
 
 /* ---------- B4 and B5: the two the user found by riding ---------- */
@@ -312,8 +358,12 @@ const line = (id, name, value, budget, unit, detail) => {
 console.log('== behaviour audit');
 line('B1', 'fastest pedestrian', motion.worst.ped, PED_MAX, 'm/s',
   `${motion.seen.ped} samples`);
+const wv = motion.worst.car >= motion.worst.bus ? motion.where.car : motion.where.bus;
 line('B2', 'fastest vehicle on screen', Math.max(motion.worst.car, motion.worst.bus), VEH_MAX, 'm/s',
-  `${motion.seen.car + motion.seen.bus} samples within ${VISIBLE}m of the player`);
+  `${motion.seen.car + motion.seen.bus} samples within ${VISIBLE}m of the player`
+  + (wv ? `\n        worst: ${wv.from.map((n) => n.toFixed(0)).join(',')} -> `
+        + `${wv.to.map((n) => n.toFixed(0)).join(',')} in ${(wv.dt * 1000).toFixed(0)}ms, `
+        + `${wv.distFromPlayer.toFixed(0)}m from the player` : ''));
 line('B3', 'path frame continuity', frames.bad.length, 0, 'paths',
   `${frames.paths} paths walked; worst step ${frames.worst}m at path ${frames.worstAt && frames.worstAt.path}, s=${frames.worstAt && frames.worstAt.s}`);
 if (frames.bad.length) {

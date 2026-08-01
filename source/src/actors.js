@@ -1564,8 +1564,20 @@ export class Traffic {
         const L = this.path.len, EDGE = 4;
         const past = it.dir > 0 ? it.s > L - EDGE : it.s < EDGE;
         if (past) {
+          // 240m, RAISED FROM 190m ON 2026-08-01, and the number is not free.
+          // data/behaviour.mjs judges a vehicle's frame-to-frame movement out
+          // to VISIBLE = 200m, so at 190 there was a TWENTY-METRE BAND -- 190 to
+          // 200 from the player -- in which a car was far enough to recycle and
+          // near enough to be watched doing it. A recycle moves a vehicle up to
+          // 260m along its path in one frame, so any sample that lands in that
+          // band is a 1,700 m/s teleport, and B2 has no way to tell it from a
+          // real one. The band is also visible to a RIDER: the camera's far
+          // plane is 520m, and 190m up Orchard Road is a car you can still see.
+          //
+          // Any future change to VISIBLE must move this with it, and this must
+          // stay the larger of the two.
           const far = (it.wx === undefined)
-            || ((it.wx - playerX) ** 2 + (it.wz - playerZ) ** 2) > 190 * 190;
+            || ((it.wx - playerX) ** 2 + (it.wz - playerZ) ** 2) > 240 * 240;
           // Spread them on re-entry. Sending every recycled vehicle to exactly
           // s = EDGE stacked them one inside another at the top of the street,
           // which the audit correctly reported as duplicated props: four cars
