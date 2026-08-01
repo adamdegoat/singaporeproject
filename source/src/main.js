@@ -14,7 +14,7 @@ import { buildShopfronts } from './shopfront.js';
 import { Signals } from './signals.js';
 import { Sound } from './audio.js';
 import { Crowd, Traffic } from './actors.js';
-import { buildFurniture } from './street.js';
+import { buildFurniture, buildParkedCars } from './street.js';
 import { buildSignage, Wayfinder } from './wayfind.js';
 
 const P = new URLSearchParams(location.search);
@@ -1941,6 +1941,14 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   const furniture = {};
   let marks = 0; const side = {}; const sg = {}; const signage = {};
   const dressed = dressedStreets;
+  // ONCE, NOT PER AXIS. buildParkedCars walks data.roads, which is the whole
+  // scene — putting it inside the axis loop would build a full set of parked
+  // cars for every main street in the region, stacked in the same bays. Exactly
+  // the mistake the sweep made with trafficSys.build().
+  if (!P.has('noparked')) {
+    const pc = buildParkedCars(world, data, blocked);
+    furniture.parked = pc.parked;
+  }
   let axi = 0;
   for (const ax of axes) {
     await bstep(0.46 + 0.06 * Math.min(axi++, 2), `dressing ${ax.n || 'the streets'}`);

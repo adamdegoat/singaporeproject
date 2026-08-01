@@ -2565,6 +2565,27 @@ def main():
                     pass
             if tags.get("oneway") == "yes":
                 r["oneway"] = 1
+            # KERBSIDE PARKING, which the map has been carrying all along.
+            # 1,135 `parking:lane:*` tags across the eight districts — 716
+            # parallel, 299 perpendicular, 26 diagonal — and data/unused.py has
+            # been listing them as DEFERRED with the note "the data that will
+            # place parked cars when traffic learns to park". A Singapore street
+            # with no parked cars on it reads as a rendering, not a street.
+            #
+            # The ORIENTATION is the part that matters: a parallel bay, a
+            # nose-in perpendicular bay and a diagonal bay put a car at three
+            # different angles and three different spacings, and guessing one
+            # would have been inventing what the map already states.
+            _pk = {}
+            for _side in ("left", "right", "both"):
+                _v = tags.get(f"parking:lane:{_side}")
+                if _v in ("parallel", "perpendicular", "diagonal"):
+                    if _side == "both":
+                        _pk["left"] = _pk["right"] = _v
+                    else:
+                        _pk[_side] = _v
+            if _pk:
+                r["pk"] = _pk
             for tk in ("turn:lanes", "turn:lanes:forward"):
                 if tags.get(tk):
                     r["turns"] = tags[tk]

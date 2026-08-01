@@ -561,3 +561,95 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     lights: lightAt.length, signs: signT.length, planters: planterT.length,
   };
 }
+
+// PARKED CARS AT THE KERB, from the map's own parking lanes.
+//
+// A Singapore street with no parked cars on it reads as a rendering rather than
+// a street, and the data has been sitting in the extract the whole time:
+// **1,135 `parking:lane:*` tags across the eight districts** — 716 parallel,
+// 299 perpendicular, 26 diagonal. data/unused.py has listed them as DEFERRED
+// for weeks with the note "the data that will place parked cars when traffic
+// learns to park". Tenth instance of real data present and unread.
+//
+// THE ORIENTATION IS THE POINT. A parallel bay, a nose-in perpendicular bay and
+// a diagonal bay put a car at three different angles and three different
+// spacings; the map states which, so none of it is guessed. Parallel sits along
+// the kerb at ~6.4m centres, perpendicular nose-in at ~2.7m, diagonal at ~3.4m
+// and forty-five degrees off.
+export function buildParkedCars(world, data = {}, isBlocked = null) {
+  const roads = data.roads || [];
+  const rows = [];
+  const SPACING = { parallel: 6.4, perpendicular: 2.7, diagonal: 3.4 };
+  const YAWOFF = { parallel: 0, perpendicular: Math.PI / 2, diagonal: Math.PI / 4 };
+  for (const r of roads) {
+    const pk = r.pk;
+    if (!pk || !r.p || r.p.length < 2) continue;
+    if (r.bridge) continue;                     // no kerbside bay on a deck
+    const half = Math.max(2.0, (r.w || 6) / 2);
+    for (const side of ['left', 'right']) {
+      const kind = pk[side];
+      if (!kind) continue;
+      const step = SPACING[kind] || 6.4;
+      const sgn = side === 'left' ? -1 : 1;
+      // the bay sits INSIDE the carriageway edge: a parallel car is about 1.9m
+      // wide and hard against the kerb, a nose-in one reaches further in
+      const off = half - (kind === 'parallel' ? 1.25 : 2.4);
+      if (off <= 0.6) continue;
+      let carry = 0;
+      for (let i = 0; i < r.p.length - 1; i++) {
+        const a = r.p[i], b = r.p[i + 1];
+        const dx = b[0] - a[0], dz = b[1] - a[1];
+        const L = Math.hypot(dx, dz);
+        if (L < 0.01) continue;
+        const ux = dx / L, uz = dz / L;
+        const nx = -uz, nz = ux;
+        for (let t = carry; t < L; t += step) {
+          const x = a[0] + ux * t + nx * off * sgn;
+          const z = a[1] + uz * t + nz * off * sgn;
+          if (isBlocked && isBlocked(x, z)) continue;
+          if (!standable(x, z)) continue;
+          rows.push([x, z, Math.atan2(ux, uz) + YAWOFF[kind] * sgn]);
+        }
+        carry = step - ((L - carry) % step || step);
+      }
+    }
+  }
+  if (!rows.length) return { parked: 0 };
+
+  // one instanced body/roof/glass set, exactly as the moving fleet is built
+  const BODY = [0xdcdcd6, 0x2f3336, 0x8f9498, 0x1f3f6b, 0x7a2727, 0xe8e4d8];
+  const mk = (geo, mat) => {
+    const im = new THREE.InstancedMesh(geo, mat, rows.length);
+    im.castShadow = false; im.receiveShadow = true;
+    // EXEMPT BY MECHANISM, not by shape. A parked car stands IN the carriageway
+    // — that is what a parking lane is — so P1 counts every one of them as a
+    // prop in the road: 6,504 on Little India alone, against a budget of zero.
+    // The fourth signature allowlist in this file is not the answer; the flag
+    // is, exactly as the crowd got userData.crowdPart.
+    im.userData.parked = true;
+    return im;
+  };
+  const paint = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45, metalness: 0.15 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x2a3138, roughness: 0.18, metalness: 0.5 });
+  const body = mk(new THREE.BoxGeometry(1.82, 0.78, 4.32), paint);
+  const roof = mk(new THREE.BoxGeometry(1.62, 0.62, 2.35), paint);
+  const glaz = mk(new THREE.BoxGeometry(1.66, 0.46, 2.40), glass);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  const p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1);
+  const cc = new THREE.Color();
+  rows.forEach((r2, i) => {
+    const g = surfaceAt(r2[0], r2[1]);
+    e.set(0, r2[2], 0); q.setFromEuler(e);
+    p.set(r2[0], g + 0.39, r2[1]); m.compose(p, q, s); body.setMatrixAt(i, m);
+    p.set(r2[0], g + 1.06, r2[1]); m.compose(p, q, s); roof.setMatrixAt(i, m);
+    p.set(r2[0], g + 1.04, r2[1]); m.compose(p, q, s); glaz.setMatrixAt(i, m);
+    // colour keyed off position so a street's parked cars never reshuffle
+    const c = BODY[Math.abs(Math.round(r2[0] * 3 + r2[1] * 7)) % BODY.length];
+    body.setColorAt(i, cc.setHex(c));
+    roof.setColorAt(i, cc.setHex(c));
+  });
+  if (body.instanceColor) body.instanceColor.needsUpdate = true;
+  if (roof.instanceColor) roof.instanceColor.needsUpdate = true;
+  world.add(body); world.add(roof); world.add(glaz);
+  return { parked: rows.length };
+}

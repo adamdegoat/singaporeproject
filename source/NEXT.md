@@ -212,6 +212,61 @@ permissive. It stays outside the repo and is used to measure, not to ship.
   deploy.sh refused to publish. The gates read world.json and riders read the
   chunks; that guard is the only thing standing between those two facts.
 
+# THE WORLD WAS MISSING WHOLE LAYERS OF SINGAPORE, AND THE RIDER SAW IT FIRST
+
+He rode Orchard Road and said: **"istana all still empty place"**, then: *"my
+world needs all this data you can get... Singapore not just buildings right? Got
+park got all those details in land... If you have the data or can get it easily
+then why arent you doing it"*. He is right, and the measurement is brutal — a
+25m sampled grid over Orchard came back:
+
+    buildings 15%   green 0%   road+pavement 18%   BARE 55% (before)
+    buildings 15%   ground cover 32%   road 12%    BARE 41% (after)
+
+**GREEN SPACE — 426 polygons, 3.8 km2.** Parks, gardens, pitches, woods, scrub.
+The extract carried 72 individual trees and NOT ONE park polygon, because the
+fetch had never asked. Painted as VERTEX COLOUR on the ground mesh rather than
+laid over it: a park climbs Fort Canning and rolls through the gardens, so an
+overlay would have to match the terrain's own tessellation exactly or z-fight
+it. Tinting costs no draw call and follows the land by construction.
+
+**LAND COVER — 699 polygons, 6.7 km2.** Residential compounds, plazas, car
+parks, forecourts, institutional grounds. Neutral tints, because the point is
+to stop a condo garden and a car-park apron being the same sand, not to paint
+the city.
+
+**PARKED CARS — from `parking:lane:*`, which the map has carried all along.**
+1,135 tags across the eight districts: 716 parallel, 299 perpendicular, 26
+diagonal. `data/unused.py` has listed them as DEFERRED for weeks with the note
+"the data that will place parked cars when traffic learns to park" — TENTH
+instance of real data present and unread. The ORIENTATION is the whole point: a
+parallel bay, a nose-in bay and a diagonal bay are three different angles and
+three different spacings, all stated by the map. 125 roads in Orchard carry it,
+366 in Little India.
+
+**THREE THINGS THAT BIT, ALL FAMILIAR:**
+1. **consolidate() silently dropped vertex colour.** It copied position, normal
+   and uv and threw away anything it did not recognise, so every park vanished
+   the instant the scene was consolidated — raw showed 12,032 tinted vertices,
+   shipped showed a mesh with no colour attribute at all. A merge that drops an
+   attribute it does not know about decides what the world is allowed to have.
+2. **buildParkedCars was called inside the per-axis loop**, which would have
+   built a full set of parked cars for every main street in the region, stacked
+   in the same bays — the same mistake the sweep made with `trafficSys.build()`.
+3. **P1 reported 6,504 props in a carriageway** on Little India, budget zero.
+   A parked car is IN the carriageway; that is what a parking lane is. Exempt by
+   MECHANISM (`userData.parked`), never by shape — the fourth signature
+   allowlist in that file would have broken the same way the other three did.
+
+**UPSTREAM LIMIT, RECORDED HONESTLY:** Overpass began refusing after all this
+fetching. Marina Bay and Little India have PARTIAL land cover (26 and 15
+polygons against a few hundred elsewhere) because every mirror failed on retry.
+Re-run `python3 data/topup.py <id> landuse` from a fresh session.
+
+**STILL NOT FETCHED:** expressways and tunnels, railway and MRT viaducts, piers
+and jetties, sports facilities, barriers. Same method each time — fetch,
+process, draw, ride it.
+
 # THE DEFECT HUNT HAS BEEN RUNNING ON A SCENE THAT DOES NOT CONTAIN THE WORLD
 
 **deploy.sh runs `SG_SCENE=world node data/defects.mjs`, and with streaming the

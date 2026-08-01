@@ -451,7 +451,13 @@ window.__auditWorld = async function auditWorld() {
       // answer is to stop describing a person by their measurements.
       props.push({ sig, mat: matId, x: v3.x, y: v3.y, z: v3.z, sy: sc3.y,
                    crowd: !!o.userData.crowdPart,
-                   actor: !!(o.userData.actor || o.userData.crowdPart),
+                   // A PARKED CAR BELONGS IN THE CARRIAGEWAY. It is placed from
+                   // the map's own `parking:lane:*` tags, in the bay the map
+                   // says is there, so it is as legitimate on the tarmac as a
+                   // moving vehicle is. Flagged at the mesh, never by shape.
+                   parked: !!o.userData.parked,
+                   actor: !!(o.userData.actor || o.userData.crowdPart
+                             || o.userData.parked),
                    flat: g.type === 'PlaneGeometry' });
     }
   });
