@@ -847,5 +847,345 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   stats.signPages = atlas.finish();
   stats.signMeshes = signs.flush(world);
 
+  Object.assign(stats, buildWalkable(world, data));
   return stats;
+}
+
+// THE WALKABLE WORLD: staircases, and the walls and railings beside them.
+//
+// Every layer this project fetched before these two was chosen for a RIDER.
+// Measured in the brasbasah extract, none of it drawn by anything: 104 flights
+// and 1,953m of stair, and 29 barrier runs over 3,289m. The stairs are the
+// important half — they are every flight on Fort Canning and up Mount Sophia,
+// and without them those hills have no way up at all. A person on foot could
+// reach the bottom of Fort Canning and stop.
+//
+// SEATED ON `surfaceAt`, NOT `groundAt`, for the reason this file's import note
+// already gives: some of these flights land on a bridge deck or a raised
+// podium, and groundAt would bury them in it.
+// MATERIALS AT MODULE SCOPE, NOT PER CALL. The Merger keys its batches by
+// material identity, so a `new MeshStandardMaterial` created inside the loop is
+// a different key every time and every hedge in the district becomes its own
+// draw call. Same trap the recipe table's inline arrows hit for NO_SHOPFRONT.
+const WALK_MAT = {
+  tread: new THREE.MeshStandardMaterial({ color: 0xbdb8ad, roughness: 0.9 }),
+  cheek: new THREE.MeshStandardMaterial({ color: 0xa8a399, roughness: 0.92 }),
+  hedge: new THREE.MeshStandardMaterial({ color: 0x4a6b3c, roughness: 1 }),
+};
+
+export function buildWalkable(world, data) {
+  const out = { stairFlights: 0, stairTreads: 0, barrierRuns: 0, offRoad: 0 };
+  const merger = new Merger();
+
+  // NOTHING HERE MAY STAND IN A CARRIAGEWAY, and the first build of this
+  // function forgot it. 42.7km of surveyed wall and fence went in with no road
+  // test at all and Orchard's gates refused the deploy on the spot: P1b 39
+  // structures in a carriageway, T1 19 carriageways blocked by solid geometry.
+  //
+  // OSM fences legitimately run right up to a kerb, and a few are mapped
+  // straight across a road mouth where a gate stands. Neither is something a
+  // rider should hit at 50km/h. This is the same guard every other placement in
+  // this file already goes through -- see the ERP gantry's leg search and the
+  // pedestrian bridge's tower search -- and the only reason it was missed is
+  // that these two layers arrived as "just draw the surveyed line".
+  //
+  // SKIP, never nudge. A wall's position is surveyed; moving it 3m to clear a
+  // road would put it through a building instead. A segment that cannot be
+  // drawn where it is does not get drawn.
+  const onRoad = (x, z, m = 0.2) => !!(window.__onRoad && window.__onRoad(x, z, m));
+
+  // AND THE CHUNK'S OWN ROADS, BECAUSE __onRoad CANNOT SEE THEM.
+  //
+  // This is the root cause of the one blocker that held this batch back, and it
+  // is worth stating exactly. `window.__onRoad` is ONE GLOBAL, built from the
+  // BOOT scene's road list. Under streaming, every other district's chunk is
+  // built later against that same global -- so when chinatown's chunk drew its
+  // stairs, __onRoad only knew marinabay's roads and answered "no road here"
+  // for a flight standing in CHINATOWN'S OWN Cross Street. Measured:
+  //
+  //   world.d.chinatown.json  owns the flight   AND knows Cross Street (14 ways)
+  //   world.d.marinabay.json  owns neither
+  //   __onRoad(1950, 9502, 1.2) in the marinabay scene -> FALSE
+  //   P1b, reading the drawn geometry -> "structure in a carriageway"
+  //
+  // P1b was right the whole time and I was wrong to read it as an overhead
+  // case: P1b already skips anything more than RIDE_HEIGHT above the TERRAIN,
+  // and these treads passed that filter, which means they sit at rider height
+  // on ground that genuinely reads ~24m there. A staircase standing in a live
+  // carriageway is exactly the defect the check is named for.
+  //
+  // `data` here IS the chunk being built, so its own roads are the ones that
+  // matter. Widths come from the same field the check reads. Service roads are
+  // NOT skipped even though P1b skips them -- being stricter than the gate is
+  // free, and a stair across a service lane is still a stair in a road.
+  const _rds = (data.roads || []).filter((r) => r.k !== 'footway' && r.k !== 'pedestrian'
+                                             && r.p && r.p.length > 1);
+  const inCarriageway = (x, z, pad = 0.4) => {
+    for (const r of _rds) {
+      const half = (r.w || 8) / 2 + pad, q = r.p;
+      for (let i = 0; i + 1 < q.length; i++) {
+        const ax = q[i][0], az = q[i][1], bx = q[i + 1][0], bz = q[i + 1][1];
+        if (Math.min(ax, bx) - half > x || Math.max(ax, bx) + half < x) continue;
+        if (Math.min(az, bz) - half > z || Math.max(az, bz) + half < z) continue;
+        const vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz;
+        if (L2 < 1e-6) continue;
+        let t = ((x - ax) * vx + (z - az) * vz) / L2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+        if (dx * dx + dz * dz < half * half) return true;
+      }
+    }
+    return false;
+  };
+  const anyRoad = (x, z, m) => onRoad(x, z, m) || inCarriageway(x, z);
+
+  // A TREAD IS NOT A POINT, AND THAT IS THE WHOLE OF THE BLOCKER THAT HELD THIS
+  // BATCH BACK FOR A SESSION.
+  //
+  // Measured, so it is never re-derived. The flight at 1942,9506 -> 1961,9493
+  // carries a surveyed `step_count` of FOUR over a way 25.1m long, so
+  // `depth = total / n` makes each drawn tread a slab **6.28m deep**. Its centre
+  // at 1956.4,9501.4 is 9.6m clear of Cross Street and passed the guard; its
+  // leading edge is 3.7m from the centreline of a road 14.8m wide, and that is
+  // the geometry P1b reported at 1958,9499. The check was right every time.
+  //
+  // This is HANDOFF lesson 1 -- "a geometric rule needs a SCALE" -- for the
+  // FIFTH time in this project, and the third time in this one file: a spur test
+  // with no length, a road check with no width, a barrier walked at three points
+  // that a carriageway hid between. A guard that samples one point can only ever
+  // be right about geometry smaller than the thing it is guarding against.
+  //
+  // So walk the box's own FOOTPRINT at a spacing narrower than any carriageway
+  // in this world (2m, the same figure the barrier walk settled on). `u` is the
+  // unit direction the box is laid along; `w` is across it, `d` along it.
+  const boxClear = (cx, cz, ux, uz, w, d, m) => {
+    const na = Math.max(1, Math.ceil(d / 2)), nb = Math.max(1, Math.ceil(w / 2));
+    for (let i = 0; i <= na; i++) {
+      const a = (i / na - 0.5) * d;
+      for (let j = 0; j <= nb; j++) {
+        const b = (j / nb - 0.5) * w;
+        const px = cx + ux * a - uz * b, pz = cz + uz * a + ux * b;
+        if (anyRoad(px, pz, m) || !dryHere(px, pz)) return false;
+      }
+    }
+    return true;
+  };
+
+  // NOR MAY IT STAND WHERE THE DRAWN GROUND HAS BEEN CUT AWAY.
+  //
+  // `surfaceAt` reads `Terrain.at()`, and inside a water ring `at()` is HIGH ON
+  // PURPOSE: the riverbed cut lives only in `vertexY()`, so the mesh dips ~1.4m
+  // below the ring level while `at()` keeps the bank height so the quay beside
+  // it does not lose its ground. That decision is right and is documented at
+  // the top of NEXT.md. The consequence for anything seated with `surfaceAt` is
+  // not: it gets placed on a surface that is not drawn.
+  //
+  // Measured on brasbasah, and it is what W2 was reporting. A flight of eleven
+  // steps at 1697-1704, 8507-8512 shares a node with the Singapore River's own
+  // bank ring -- a real landing stair down to the water -- and was drawn at
+  // `at()` = 14.7m while the water surface there is at -0.05m and the drawn
+  // riverbed is below that. Sixteen metres of stair, cheek and handrail standing
+  // in mid-air over the river.
+  //
+  // EXEMPT BY MECHANISM, NOT BY SIGNATURE -- the same sentence W2's own comment
+  // argues for. Water with a deck over it is a road, and things stand on it.
+  const dryHere = (x, z) => !(window.__inWater && window.__inWater(x, z))
+    || !!(window.__bridgeDeckAt && window.__bridgeDeckAt(x, z) !== null);
+
+
+
+  const TREAD = WALK_MAT.tread, CHEEK = WALK_MAT.cheek, RAIL = MAT.metal;
+
+  for (const s of data.steps || []) {
+    const p = s.p;
+    if (!p || p.length < 2) continue;
+    // Which end is UP is decided by the GROUND, not by `incline`. The tag is
+    // relative to the way's own direction, it is absent more often than not,
+    // and it never says how far the flight climbs. The DEM does.
+    const y0 = surfaceAt(p[0][0], p[0][1]);
+    const y1 = surfaceAt(p[p.length - 1][0], p[p.length - 1][1]);
+    const rise = Math.abs(y1 - y0);
+    const up = y1 >= y0 ? 1 : -1;              // +1: climbs along the way
+    const W = s.w || 1.8;
+    // A flight with no rise at all is a landing or a mis-tag; drawing treads on
+    // it would stripe flat ground with kerbs. 0.25m is one shallow step.
+    if (rise < 0.25) continue;
+
+    // THE BLOCKER THAT USED TO BE DOCUMENTED HERE IS FIXED, AND WHAT IT WAS IS
+    // WORTH KEEPING BECAUSE FIVE ATTEMPTS CHASED THE WRONG THING.
+    //
+    // It was read for a whole session as "P1b and this guard disagree about
+    // where Cross Street is" -- the two-measures-of-one-fact trap -- because
+    // `__onRoad(1950, 9502, 1.2)` answers FALSE at a point P1b complains about.
+    // Both readings were true and neither was the cause. __onRoad IS blind to a
+    // streamed chunk's own roads (see `inCarriageway` above, which fixes that
+    // and is a real improvement), and the point it was asked about genuinely has
+    // no road under it -- because the DEFECT WAS 3.7m AWAY, at the far edge of a
+    // 6.28m slab whose centre was being tested. See `boxClear`.
+    //
+    // Do not repeat any of these, all measured and all dead: widening the
+    // onRoad margin to 1.2 (the answer was already no); skipping a flight by
+    // `surfaceAt - groundAt` at one end, at both ends, or against a 1.5m
+    // bridge-deck threshold (never fired -- the terrain there really does read
+    // ~24m, so it is high ground and not a deck); and giving P1b a height-based
+    // overhead exemption (the treads sit at rider height on real ground, so the
+    // check was never wrong to see them).
+    // Step count: the survey when there is one, otherwise the rise at a normal
+    // riser. 0.15m is the Singapore norm and it is only ever a fallback.
+    let n = s.n || Math.round(rise / 0.15);
+    n = Math.max(2, Math.min(n, 120));
+    const rec = { treads: 0 };
+
+    // walk the polyline by arclength so treads are evenly spaced along a bend
+    const segs = [];
+    let total = 0;
+    for (let i = 0; i < p.length - 1; i++) {
+      const d = Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]);
+      segs.push(d); total += d;
+    }
+    if (total < 0.8) continue;
+    const at = (t) => {                        // t in 0..1 along the flight
+      let want = t * total, i = 0;
+      while (i < segs.length - 1 && want > segs[i]) { want -= segs[i]; i++; }
+      const f = segs[i] ? want / segs[i] : 0;
+      const ax = p[i][0] + (p[i + 1][0] - p[i][0]) * f;
+      const az = p[i][1] + (p[i + 1][1] - p[i][1]) * f;
+      const ux = (p[i + 1][0] - p[i][0]) / (segs[i] || 1);
+      const uz = (p[i + 1][1] - p[i][1]) / (segs[i] || 1);
+      return [ax, az, ux, uz];
+    };
+
+    const lo = Math.min(y0, y1);
+    const depth = total / n;
+    const tread = [];                          // where each tread landed
+    for (let k = 0; k < n; k++) {
+      const t = (k + 0.5) / n;
+      const [ax, az, ux, uz] = at(t);
+      // height climbs with the way when up=+1 and against it when up=-1
+      const frac = up > 0 ? (k + 1) / n : 1 - k / n;
+      const y = lo + rise * frac;
+      // A tread laid across the carriageway is something you ride into, and the
+      // WHOLE tread has to clear it -- see boxClear. Margin 1.2 rather than the
+      // 0.2 the barriers use, because P1b measures the carriageway at
+      // `width/2 - 1.0` and this stands back further than either measure can
+      // argue about.
+      const dep = Math.max(0.22, depth);
+      if (!boxClear(ax, az, ux, uz, W, dep, 1.2)) { out.offRoad++; continue; }
+      const g = new THREE.BoxGeometry(W, 0.16, dep);
+      g.rotateY(Math.atan2(ux, uz));
+      g.translate(ax, y - 0.08, az);
+      merger.add(g, TREAD, ax, az);
+      tread.push([ax, y, az, ux, uz]);
+      rec.treads++;
+    }
+    // THE TWO CHEEKS, AND THEY MUST FOLLOW THE PITCH.
+    //
+    // First build made each cheek ONE box `rise + 0.5` tall spanning the whole
+    // flight at a constant height. On the 63m flight below Fort Canning that is
+    // a wall sixty metres long and as tall as the hill is high, and that is
+    // exactly how it rendered: a giant grey slab lying across the park. A
+    // stringer is a thin plank that CLIMBS, so it is half a metre deep, as long
+    // as the slope's hypotenuse, and tilted by the pitch.
+    // ONE SEGMENT PER TREAD, NOT ONE BOX PER FLIGHT.
+    //
+    // A single straight plank down the middle was the second thing wrong here.
+    // Half these flights BEND -- the ones off Fort Canning Rise curve round the
+    // hill -- and a straight box centred on the midpoint sticks out past both
+    // ends of a curve. On screen that is a pair of thin dark lines flying off
+    // into the park, which is what the vet frame showed. Following the treads
+    // costs a few more boxes and cannot leave the stair.
+    for (let k = 0; k + 1 < tread.length; k++) {
+      const [ax, ay, az] = tread[k];
+      const [bx, by, bz] = tread[k + 1];
+      const dx = bx - ax, dz = bz - az, dy = by - ay;
+      const run = Math.hypot(dx, dz);
+      if (run < 0.01) continue;
+      const ang = Math.atan2(dx, dz);
+      const seg = Math.hypot(run, dy);
+      const nx = -dz / run, nz = dx / run;
+      for (const side of [-1, 1]) {
+        const cx = (ax + bx) / 2 + nx * side * (W / 2);
+        const cz = (az + bz) / 2 + nz * side * (W / 2);
+        const cy = (ay + by) / 2;
+        // rotateX tilts the box in its own YZ plane so it rises along +Z, THEN
+        // rotateY swings that slope onto this segment's bearing. The other
+        // order gives a plank tilted across the stair instead of along it.
+        const c = new THREE.BoxGeometry(0.18, 0.5, seg * 1.06);
+        c.rotateX(-Math.atan2(dy, run)); c.rotateY(ang);
+        c.translate(cx, cy - 0.18, cz);
+        merger.add(c, CHEEK, cx, cz);
+        if (rise > 1.2) {
+          const r = new THREE.BoxGeometry(0.06, 0.06, seg * 1.06);
+          r.rotateX(-Math.atan2(dy, run)); r.rotateY(ang);
+          r.translate(cx, cy + 0.95, cz);
+          merger.add(r, RAIL, cx, cz);
+        }
+      }
+    }
+    out.stairFlights++;
+    out.stairTreads += rec.treads;
+  }
+
+  for (const b of data.barriers || []) {
+    const p = b.p;
+    if (!p || p.length < 2) continue;
+    const h = b.h || 1.6;
+    const solid = b.k === 'wall' || b.k === 'retaining_wall';
+    const mat = b.k === 'hedge' ? WALK_MAT.hedge
+      : (solid ? MAT.paleStone : MAT.metal);
+    // A fence is not a wall: it is posts and rails, and drawn as a solid slab a
+    // 1.6m fence reads as a garden wall down the whole street. Solid barriers
+    // get one slab; open ones get a top rail and a bottom rail only.
+    for (let i = 0; i < p.length - 1; i++) {
+      const x0 = p[i][0], z0 = p[i][1], x1 = p[i + 1][0], z1 = p[i + 1][1];
+      const L = Math.hypot(x1 - x0, z1 - z0);
+      if (L < 0.4) continue;
+      const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+      // WALKED AT A FIXED SPACING, not sampled at three points.
+      //
+      // First it tested the midpoint only, and Orchard's P1b caught 39. Then it
+      // tested both ends and the middle, and Marina Bay's P1b still caught ONE:
+      // a fence segment long enough to cross a carriageway BETWEEN the samples,
+      // with all three of them on clear ground. That is the "a geometric rule
+      // needs a SCALE" lesson in HANDOFF for the fourth time -- three points is
+      // not a rule, it is a hope about how long a segment is. 2m is narrower
+      // than any carriageway in this world, so a road cannot hide between two
+      // samples.
+      let hits = false;
+      const steps2 = Math.max(2, Math.ceil(L / 2));
+      for (let q = 0; q <= steps2 && !hits; q++) {
+        const f2 = q / steps2;
+        const sx = x0 + (x1 - x0) * f2, sz = z0 + (z1 - z0) * f2;
+        hits = anyRoad(sx, sz, 0.2) || !dryHere(sx, sz);
+      }
+      if (hits) { out.offRoad++; continue; }
+      const ang = Math.atan2(x1 - x0, z1 - z0);
+      const base = surfaceAt(mx, mz);
+      if (solid || b.k === 'hedge') {
+        const g = new THREE.BoxGeometry(b.k === 'hedge' ? 0.7 : 0.28, h, L);
+        g.rotateY(ang); g.translate(mx, base + h / 2, mz);
+        merger.add(g, mat, mx, mz);
+      } else {
+        for (const yy of [h * 0.95, h * 0.45]) {
+          const g = new THREE.BoxGeometry(0.05, 0.07, L);
+          g.rotateY(ang); g.translate(mx, base + yy, mz);
+          merger.add(g, mat, mx, mz);
+        }
+        // posts every ~2.4m so it reads as a fence and not two floating wires
+        const nP = Math.max(2, Math.round(L / 2.4));
+        for (let k = 0; k <= nP; k++) {
+          const f = k / nP;
+          const px = x0 + (x1 - x0) * f, pz = z0 + (z1 - z0) * f;
+          if (anyRoad(px, pz, 0.2) || !dryHere(px, pz)) continue;
+          const g = new THREE.BoxGeometry(0.07, h, 0.07);
+          g.translate(px, surfaceAt(px, pz) + h / 2, pz);
+          merger.add(g, mat, px, pz);
+        }
+      }
+    }
+    out.barrierRuns++;
+  }
+
+  merger.flush(world);
+  return out;
 }

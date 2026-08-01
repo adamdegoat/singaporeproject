@@ -2003,7 +2003,21 @@ window.__auditWorld = async function auditWorld() {
           && Math.abs((gpw.radiusTop || 0) - 0.055) < 0.01;
         if (hit >= 20 && !isDeck && !isBridgePart && !isRail) {
           inW++;
-          if (exW2.length < 6) exW2.push(`${o.geometry.type} entirely over water`);
+          // WHERE, AND WHAT COLOUR. This said only "BufferGeometry entirely
+          // over water", and everything the Merger produces is a
+          // BufferGeometry -- so a failing count named neither the place nor
+          // the layer and cost a deploy to diagnose by hand. Same fix B2 got
+          // for the same reason: a bare number cannot be diagnosed.
+          if (exW2.length < 6) {
+            const bbW = new T.Box3().setFromObject(o);
+            const mw = o.material || {};
+            exW2.push(`${o.geometry.type} entirely over water`
+              + ` at ${((bbW.min.x + bbW.max.x) / 2) | 0},${((bbW.min.z + bbW.max.z) / 2) | 0}`
+              + ` [verts=${pos.count} name=${o.name || '-'}`
+              + ` col=${mw.color ? mw.color.getHexString() : '-'}`
+              + ` bbox=${bbW.min.x | 0},${bbW.min.z | 0}..${bbW.max.x | 0},${bbW.max.z | 0}`
+              + ` y=${bbW.min.y.toFixed(1)}..${bbW.max.y.toFixed(1)}]`);
+          }
         }
       });
     }

@@ -193,6 +193,18 @@ this session — three independent sources agreeing on two storeys (OSM way
 double-storey units") on a 1924 conserved landmark that a rider passes on
 Selegie Road, drawn at 24m with its provenance honestly recorded as "guess".
 
+**AND THE ELLISON FIX IS LARGELY INVISIBLE, for an honest reason.** OSM tags way
+231927792 `building=construction` with `check_date=2025-11-04`, so the footprint
+draws as a HOARDED BUILDING SITE — crane columns, a slab and stub columns — and
+not as a building at all. Vetted from two angles; that is what is there.
+
+Do NOT "fix" that tag. The North-South Corridor works on this stretch of Selegie
+Road are real and ongoing (one unit demolished and rebuilt, revised down from
+three in February 2018), and a surveyed tag with a check_date nine months old
+beats an inference from a Wikipedia article. The height record is now correct
+and honest either way — h 6.8m with provenance `levels` instead of 24m with
+provenance `guess` — and it will be right the day the tag flips.
+
 **Fort Canning Centre is the best next candidate and it is NOT yet sourced.**
 NHB Roots gives 1926, Neo-Classical with streamlined motifs, "a pitched roof
 with wide overhanging eaves" and "long wide-open corridors on both wings" — a

@@ -2585,6 +2585,29 @@ def main():
 
         elif "highway" in tags:
             kind = tags["highway"]
+            # STAIRS ARE NOT ROADS, AND A PATH IS A FOOTWAY.
+            #
+            # This branch takes ANY `highway=*`, which was harmless right up to
+            # the moment the walkable-world topup started fetching
+            # `highway=steps` and `highway=path` into the same raw file. They
+            # went straight into data.roads: bugis picked up 26 steps and 3
+            # paths, T2 ("road network islands") went to 10.3% against a budget
+            # of 10 and refused the deploy -- and that was the SMALL symptom.
+            # The real one is that a road is surfaced as carriageway, given
+            # kerbs and lane markings, and offered to the traffic system: cars
+            # would have driven up the steps of Fort Canning.
+            #
+            # Steps are dropped here because they already have a layer of their
+            # own. A path is not dropped -- it is walkable ground and this world
+            # is meant to be walkable -- but it is RENAMED to footway so it
+            # inherits every existing footway rule at once. There are ten
+            # separate `k === 'footway' || k === 'pedestrian'` tests across
+            # city.js, markings.js, wayfind.js and sgdetail.js, and adding an
+            # eleventh kind would have meant finding all ten and missing one.
+            if kind == "steps":
+                continue
+            if kind == "path":
+                kind = "footway"
             # A TUNNEL IS NOT A STREET YOU CAN SEE. 302 ways in Marina Bay are
             # tagged tunnel -- the Marina Coastal Expressway and the network
             # under the reclaimed land -- and drawing them at ground level puts
@@ -3848,6 +3871,86 @@ def main():
     if piers:
         print(f"  piers: {len(piers)} decks, {sum(p['a'] for p in piers):,} m2")
 
+    # STAIRCASES, and the walls and railings that say where you may not walk.
+    #
+    # Nothing in this pipeline has ever fetched `highway=steps`, because every
+    # layer before it was chosen for a rider. There are 107 of them in the
+    # brasbasah bbox alone and they are every flight on Fort Canning and up
+    # Mount Sophia, so until now the hills in this world had NO WAY UP: a person
+    # on foot could reach the bottom of Fort Canning and stop. That is the
+    # single biggest hole in a world whose goal is that you can walk it.
+    #
+    # THE RISE IS NOT TAKEN FROM THE TAGS. `incline=up` is relative to the way's
+    # own direction, `step_count` is present on a minority, and neither says how
+    # far the flight climbs in metres. The terrain already knows: sample the DEM
+    # at both ends and the difference IS the rise, in the same frame everything
+    # else in the scene is built in. A tag that disagrees with the ground would
+    # be a tag describing a different world.
+    steps_out = []
+    for e in els:
+        t = e.get("tags") or {}
+        if t.get("highway") != "steps":
+            continue
+        if e["type"] != "way" or not e.get("geometry"):
+            continue
+        pts = [proj(q["lat"], q["lon"]) for q in e["geometry"] if "lat" in q]
+        if len(pts) < 2:
+            continue
+        L = sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+        if L < 1.2:                       # a doorstep, not a flight
+            continue
+        rec = {"p": [[round(x, 1), round(z, 1)] for x, z in pts], "L": round(L, 1)}
+        sc = (t.get("step_count") or "").strip()
+        if sc.isdigit() and 0 < int(sc) < 400:
+            rec["n"] = int(sc)
+        try:
+            wv = float(re.sub(r"[^0-9.]", "", t.get("width") or "") or 0)
+            if 0.6 <= wv <= 12:
+                rec["w"] = round(wv, 1)
+        except ValueError:
+            pass
+        if t.get("conveying"):            # an escalator, not a stair
+            rec["esc"] = 1
+        if (t.get("covered") or "") == "yes":
+            rec["cov"] = 1
+        steps_out.append(rec)
+    if steps_out:
+        _sn = sum(1 for s in steps_out if "n" in s)
+        print(f"  steps: {len(steps_out)} flights, {sum(s['L'] for s in steps_out):,.0f} m "
+              f"of stair, {_sn} with a surveyed step count")
+
+    # Walls, fences, hedges and railings. The same question from the other side:
+    # a walkable world needs to say where you may NOT walk, and 29 of these in
+    # brasbasah alone are currently drawn as open air you can stroll through.
+    barriers = []
+    _BH = {"wall": 2.0, "retaining_wall": 1.8, "fence": 1.6,
+           "hedge": 1.4, "handrail": 1.0, "guard_rail": 0.8}
+    for e in els:
+        t = e.get("tags") or {}
+        k = t.get("barrier")
+        if k not in _BH or e["type"] != "way" or not e.get("geometry"):
+            continue
+        pts = [proj(q["lat"], q["lon"]) for q in e["geometry"] if "lat" in q]
+        if len(pts) < 2:
+            continue
+        L = sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+        if L < 3.0:
+            continue
+        h = _BH[k]
+        try:
+            hv = float(re.sub(r"[^0-9.]", "", t.get("height") or "") or 0)
+            if 0.3 <= hv <= 6:
+                h = round(hv, 1)          # a surveyed height always wins
+        except ValueError:
+            pass
+        barriers.append({"p": [[round(x, 1), round(z, 1)] for x, z in pts],
+                         "k": k, "h": h, "L": round(L, 1)})
+    if barriers:
+        from collections import Counter as _CB
+        _bc = _CB(b["k"] for b in barriers)
+        print(f"  barriers: {len(barriers)} runs, {sum(b['L'] for b in barriers):,.0f} m "
+              f"({', '.join(f'{k} {n}' for k, n in _bc.most_common())})")
+
     land.sort(key=lambda w: -w["a"])
     if land:
         from collections import Counter as _C2
@@ -4165,6 +4268,8 @@ def main():
         "green": green,
         "land": land,
         "piers": piers,
+        "steps": steps_out,
+        "barriers": barriers,
         "towers": towers,
         "roads": roads,
         "trees": trees,

@@ -69,6 +69,41 @@ LAYERS = {
              'rel["railway"="platform"]({bbox});'),
     "sport": ('way["leisure"~"^(sports_centre|stadium|track|swimming_pool|fitness_station)$"]({bbox});'
               'rel["leisure"~"^(sports_centre|stadium|track|swimming_pool)$"]({bbox});'),
+    # ---- THE WALKABLE WORLD, added 2026-08-01.
+    #
+    # Everything this pipeline fetches was chosen for a RIDER: carriageways,
+    # traffic signals, bus stops, gantries, street trees. The owner's goal is
+    # bigger than that — "it is not just driving around and seeing things from a
+    # vehicle point of view ... I must be able to walk around" — and measured
+    # against that the extract has never been asked for the things a person on
+    # foot actually meets.
+    #
+    # Counted in the brasbasah bbox alone, none of which anything draws today:
+    #
+    #     steps 107 · bench 60 · barrier ways 29 · memorial/monument 17
+    #     fountain 15 · playground 6 · shelter 6 · path 2
+    #
+    # STEPS IS THE ONE THAT MATTERS MOST and 107 is not a rounding error: it is
+    # every staircase on Fort Canning and up Mount Sophia. Without them the
+    # hills have no way up, so a walker cannot reach the top of either — the
+    # single biggest hole in a world you are meant to be able to explore.
+    #
+    # Two layers rather than ten so a throttled Overpass is asked twice per
+    # district instead of ten times. `barrier` rides with the network because it
+    # is the same question from the other side: where you may NOT walk.
+    "steps": ('way["highway"~"^(steps|path)$"]({bbox});'
+              'way["barrier"~"^(wall|fence|hedge|retaining_wall|handrail|guard_rail)$"]({bbox});'
+              'node["barrier"~"^(gate|bollard|lift_gate)$"]({bbox});'),
+    # The things worth WALKING TO. The Cenotaph, the Lim Bo Seng Memorial and
+    # the Tan Kim Seng Fountain all stand on ground we currently draw as empty
+    # grass, and they are exactly the "iconic places" the goal names.
+    "parkfurn": ('node["historic"~"^(memorial|monument)$"]({bbox});'
+                 'way["historic"~"^(memorial|monument)$"]({bbox});'
+                 'node["tourism"="artwork"]({bbox});way["tourism"="artwork"]({bbox});'
+                 'node["amenity"~"^(bench|fountain|shelter)$"]({bbox});'
+                 'way["amenity"~"^(fountain|shelter)$"]({bbox});'
+                 'node["leisure"="playground"]({bbox});'
+                 'way["leisure"="playground"]({bbox});'),
 }
 
 

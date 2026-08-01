@@ -343,6 +343,34 @@ def main():
         print(f"  {'piers':<10} {len(out['piers']):>5}  "
               f"({sum(w.get('a', 0) for w in out['piers']):,} m2)")
 
+    # STAIRS AND BARRIERS. Added 2026-08-01 with the walkable-world layers, and
+    # the first merge after they were built wrote a world scene with ZERO of
+    # either -- 350 flights across eight districts, every one dropped, because a
+    # layer this file has never heard of is simply not copied. Same shape as the
+    # D39 defect class ("a scene layer written but never drawn"): the district
+    # files were right and the world was empty.
+    #
+    # Deduped on the FIRST POINT AND THE LENGTH, not on `a` like the polygons
+    # above: these are lines, they have no area, and districts overlap so the
+    # same flight of stairs arrives from two scenes.
+    for _lay, _lbl in (("steps", "stairs"), ("barriers", "barriers")):
+        out[_lay] = []
+        _seen2 = set()
+        _by = {}
+        for si, sc in enumerate(scenes):
+            for w in sc.get(_lay, []):
+                k = (round(w["p"][0][0], 1), round(w["p"][0][1], 1),
+                     len(w["p"]), w.get("L"), w.get("k"))
+                if k in _seen2:
+                    continue
+                _seen2.add(k)
+                out[_lay].append(w)
+                _by.setdefault(si, []).append(w)
+        globals()["_%s_by" % _lay] = _by
+        if out[_lay]:
+            print(f"  {_lbl:<10} {len(out[_lay]):>5}  "
+                  f"({sum(w.get('L', 0) for w in out[_lay]):,.0f} m)")
+
     out["land"] = []
     _lseen = set()
     _land_by = {}
@@ -448,6 +476,8 @@ def main():
             ch["green"] = _green_by.get(si, [])
             ch["land"] = _land_by.get(si, [])
             ch["piers"] = _piers_by.get(si, [])
+            ch["steps"] = globals()["_steps_by"].get(si, [])
+            ch["barriers"] = globals()["_barriers_by"].get(si, [])
             ch["axis"] = scenes[si].get("axis")
             t = scenes[si].get("terrain") or {}
             box = [t.get("x0", 0), t.get("z0", 0),
