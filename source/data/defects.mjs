@@ -1519,6 +1519,28 @@ const found = await page.evaluate(() => {
       }
       probe.set(b, [cx, cz]);
     }
+    // A BUILDING'S OWN PODIUM IS NOT TERRAIN. The mesh filter below used a
+    // fixed 120m cap to skip terrain and surround, and that cap silently
+    // discarded the ground mass of every building BIGGER than it — Suntec's
+    // 181m podium, the Esplanade's 165m base, Hong Lim's 175m block — so the
+    // lowest mesh D38 could still see was the tower (or a rooftop plant box)
+    // standing on the mass it had refused to look at, and 8 named buildings
+    // across 6 districts were reported floating 9-33m in the air. Measured
+    // 2026-08-02: every one of the 8 has its own base at or below terrain,
+    // and the "float" was exactly the podium height. The cap is therefore
+    // per-building: never smaller than 120 (terrain tiles stay excluded),
+    // but always big enough to see the footprint under test. Re-measured
+    // with this cap: 0 false findings in all six districts, and kallang
+    // 107->109, tanjongrhu 62->63 buildings measurable — coverage went UP.
+    const ringCap = new Map();
+    for (const [b] of probe) {
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (const q of b.p) {
+        x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]);
+        z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]);
+      }
+      ringCap.set(b, Math.max(120, (x1 - x0) + 25, (z1 - z0) + 25));
+    }
     const low = new Map();
     sc.traverse((o) => {
       if (!o.isMesh || !o.geometry || o.userData.crowdPart) return;
@@ -1527,10 +1549,11 @@ const found = await page.evaluate(() => {
       if (!bb) return;
       const w = bb.clone().applyMatrix4(o.matrixWorld);
       const sz = w.getSize(new T.Vector3());
-      if (sz.x > 120 || sz.z > 120) return;          // terrain and surround
       if (sz.y < 1.5) return;                        // trims, copings, paint
       for (const [b, pt] of probe) {
         if (pt[0] < w.min.x || pt[0] > w.max.x || pt[1] < w.min.z || pt[1] > w.max.z) continue;
+        const cap = ringCap.get(b);
+        if (sz.x > cap || sz.z > cap) continue;      // terrain and surround
         const cur = low.get(b);
         if (cur === undefined || w.min.y < cur) low.set(b, w.min.y);
       }

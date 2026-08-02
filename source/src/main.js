@@ -1341,6 +1341,16 @@ async function addChunk(ch, id, Y, rec = {}) {
     let f = {};
     mk('furniture');
     if (!P.has('nofurniture')) f = buildFurniture(g, ax, place, ch);
+    // A STREAMED DISTRICT'S FURNITURE COUNTERS WERE THROWN AWAY — only
+    // f.signals was read below, so in the streamed world __stats reported
+    // realTaxis/realBusStops/realSignals/realCovered = 0 whatever was drawn,
+    // and D39 measured nothing. Same S8 shape the shopfront accumulation
+    // below already patched; numbers accumulate, everything else stays local.
+    if (window.__stats) {
+      for (const [k, v] of Object.entries(f)) {
+        if (typeof v === 'number') window.__stats[k] = (window.__stats[k] || 0) + v;
+      }
+    }
     await Y();
     mk('signage');
     if (!P.has('nosigns')) buildSignage(g, ax, ch, place);
@@ -1825,11 +1835,18 @@ async function streamRest(rest) {
   // water) that must NOT be unloaded with it — so it is written up in
   // HANDOFF.md rather than attempted next to a live crash.
   const MAX_RESIDENT = PHONE ? 3 : 99;
-  // How many BUILDINGS may be resident at once on a phone. 2,600 keeps the
-  // biggest district (chinatown at 2,281) plus a small neighbour, and refuses
-  // the 4,000-building pairs that were still killing the rider's iPhone after
-  // the spawn district became evictable. Desktop is effectively unbounded.
-  const RESIDENT_BUDGET = PHONE ? 2600 : 1e9;
+  // How many BUILDINGS may be resident at once on a phone. Desktop is
+  // effectively unbounded.
+  //
+  // 2,600 was "chinatown plus a small neighbour" and the rider's iPhone still
+  // died at Chinatown a few seconds after arrival — which is exactly when the
+  // marinabay + marinasouth slices stream in on top of it. Measured on the
+  // phone profile 2026-08-02: littleindia resident set (2,082 buildings)
+  // = 206MB of geometry and SURVIVES on his phone; chinatown at 2,600
+  // (2,415 buildings) = 231MB and dies. 2,300 makes chinatown resident ALONE
+  // (~190MB, below the level his phone demonstrably tolerates) while still
+  // letting littleindia+kallang (2,082) and every small-district trio fit.
+  const RESIDENT_BUDGET = PHONE ? 2300 : 1e9;
   const recs = rest.map((r) => ({ ...r, pushed: false, group: null, signals: null, dressedDelta: null }));
   window.__streamState = { pending: recs.map((r) => r.id), building: null, done: [], unloads: 0 };
   window.__streamRecs = recs;
@@ -1872,19 +1889,31 @@ async function streamRest(rest) {
     // big it is — there is nowhere else to be — and neighbours are admitted
     // nearest-first until the budget is gone.
     if (live.length > 1) {
-      live.sort((a, b) => axDist(a) - axDist(b));       // nearest first
-      let load = 0, keep = 0;
-      for (const r of live) {
-        // always keep the nearest, then admit while the budget holds
-        if (keep === 0 || (keep < MAX_RESIDENT && load + wt(r) <= RESIDENT_BUDGET)) {
-          load += wt(r); keep++;
-        } else break;
-      }
-      for (const r of live.slice(keep)) { unloadChunk(r); n++; }
+      const kept = keptSet(live);
+      for (const r of live) if (!kept.has(r)) { unloadChunk(r); n++; }
     }
     if (n) { window.__streamState.unloads += n; syncState(); }
   };
   const wt = (r) => (r.ch && r.ch.buildings ? r.ch.buildings.length : 0);
+  // THE ONE RESIDENCY RULE, used by the sweep, by admission and by the
+  // pre-build evict below — three call sites that MUST agree, because any two
+  // of them disagreeing is an infinite build-evict churn (measured 2026-08-02:
+  // keppel rebuilt 15+ times in 200s at Chinatown when the builder admitted by
+  // headcount while the sweep evicted by weight). Nearest district is always
+  // kept — there is nowhere else to be — then neighbours are admitted
+  // nearest-first while the budget holds; the first that does not fit ends the
+  // admission, exactly as the sweep has always done.
+  const keptSet = (list) => {
+    const sorted = list.slice().sort((a, b) => axDist(a) - axDist(b));
+    const kept = new Set();
+    let load = 0;
+    for (const r of sorted) {
+      if (kept.size === 0 || (kept.size < MAX_RESIDENT && load + wt(r) <= RESIDENT_BUDGET)) {
+        load += wt(r); kept.add(r);
+      } else break;
+    }
+    return kept;
+  };
   // THE BUILDER MUST ASK THE EVICTOR'S QUESTION BEFORE BUILDING. The weight
   // budget above landed in evict() alone while the build loop kept admitting
   // candidates by headcount — so standing at Chinatown, the loop built keppel
@@ -1898,22 +1927,12 @@ async function streamRest(rest) {
   // marinaeast's three small neighbours all fit and never thrashed.
   //
   // wouldKeep answers "if this candidate were built right now, would the
-  // sweep keep it?" using EXACTLY the sweep's rule, so the two can never
-  // disagree again. The nearest district is always admitted (keep === 0),
-  // which is what lets an arrival displace the over-budget district it is
-  // leaving behind.
+  // sweep keep it?" by running the sweep's own keptSet, so the two can never
+  // disagree. The nearest district is always admitted, which is what lets an
+  // arrival displace the over-budget district it is leaving behind.
   const wouldKeep = (c) => {
     if (ALL) return true;
-    const sim = recs.filter((r) => r.group).concat(c)
-      .sort((a, b) => axDist(a) - axDist(b));
-    let load = 0, keep = 0;
-    for (const r of sim) {
-      if (keep === 0 || (keep < MAX_RESIDENT && load + wt(r) <= RESIDENT_BUDGET)) {
-        load += wt(r); keep++;
-        if (r === c) return true;
-      } else if (r === c) return false;
-    }
-    return false;
+    return keptSet(recs.filter((r) => r.group).concat(c)).has(c);
   };
   // A SIGNAL FOR "THE NEIGHBOURHOOD IS UP". The loading screen used to come
   // off with none of these built, and the first thing the rider did was ride
@@ -1938,6 +1957,24 @@ async function streamRest(rest) {
       // actually near — that is the one you are looking down.
       cand.sort((a, b) => (nearDist(a) - nearDist(b)) || (axDist(a) - axDist(b)));
       const next = cand[0];
+      // EVICT THE DOOMED BEFORE BUILDING THE ADMITTED. wouldKeep() says the
+      // sweep will keep `next` — but the sweep only runs at the TOP of this
+      // loop, AFTER the build. Riding from chinatown into littleindia, that
+      // ordering held both fully built at once (2,239 + 1,890 buildings) for
+      // the length of a build: a ~380MB transient on exactly the border a
+      // rider crosses, while a teleport never sees it because the far district
+      // is past FAR and drops first. The rider's report was the measurement:
+      // teleports survived, "play a while" died. So run the sweep's own
+      // simulation WITH the newcomer and unload whatever it would drop, before
+      // the newcomer allocates anything.
+      if (!ALL) {
+        const kept = keptSet(recs.filter((r) => r.group).concat(next));
+        let dropped = 0;
+        for (const r of recs) {
+          if (r.group && !kept.has(r)) { unloadChunk(r); dropped++; }
+        }
+        if (dropped) { window.__streamState.unloads += dropped; syncState(); }
+      }
       window.__streamState.building = next.id;
       try {
         await addChunk(next.ch, next.id, Y, next);

@@ -151,8 +151,17 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     realCount.signals++;
   }
   for (const t of data.taxis || []) {
-    const on = nearestOnAxis(pts, t[0], t[1]);
+    // A RANK ON A BACK STREET IS STILL A RANK. Same fix bus stops and signals
+    // carry above: matched against the main axis alone, 175 of the world's 205
+    // mapped ranks were thrown away and seven districts drew none at all
+    // (kallang, keppel, rivervalley, marinaeast, robertson, sentosa,
+    // tanjongrhu — measured 2026-08-02 against every district file).
+    // The claim() is REQUIRED, not tidy: buildFurniture runs once per axis in
+    // the flat multi-axis path, and matched against ANY road every pass would
+    // place every rank once per axis.
+    const on = nearestOnAnyRoad(t[0], t[1]) || nearestOnAxis(pts, t[0], t[1]);
     if (on.dist > 60) continue;
+    if (!claim('taxirank', t[0], t[1], 8)) continue;
     const ang2 = Math.atan2(on.ux, on.uz);
     const side = ((t[0] - on.x) * -on.uz + (t[1] - on.z) * on.ux) >= 0 ? 1 : -1;
     taxiAt.push([t[0], t[1], ang2, side]);
@@ -419,7 +428,13 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     // of build-then-place in this codebase after the footbridge and the rank's
     // own cab: if a group is positioned after its parts are laid out, no part
     // can be tested against the world it will land in.
-    const mvt = window.__pushClear ? window.__pushClear(tx, tz, -0.6, 18) : [tx, tz];
+    // POSITIVE margin, like the bus shelter's 0.9 above — not the prop
+    // default of -0.6. A negative margin tolerates a sign standing up to
+    // 0.6m INSIDE the carriageway edge, which no orchard rank ever exercised
+    // because their nodes sit on pavements; the first back-street pass placed
+    // a rank board in Republic Avenue (kallang P1b, deploy 2026-08-02) from a
+    // node mapped on the road edge, and the gate caught it.
+    const mvt = window.__pushClear ? window.__pushClear(tx, tz, 0.9, 18) : [tx, tz];
     if (!mvt) continue;
     const [tx2, tz2] = mvt;
     const ca = Math.cos(ang), sa = Math.sin(ang);

@@ -643,6 +643,14 @@ LANDMARKS = {
     "millenia tower":         {"h": 190, "key": True},
     "centennial tower":       {"h": 180, "key": True},
     "the ritzcarlton":       {"h": 130, "key": True},
+    # The Millenia hotel carries NO name tag in OSM, so it is named late from
+    # its postcode as "The Ritz-Carlton, Millenia Singapore" and the late
+    # re-lookup fires on EXACT match only (see its note: the substring version
+    # gave the Cairnhill Residences this hotel's 130m and was reverted). This
+    # is the hand-written longer key that note prescribes -- without it the
+    # 32-storey hotel draws at 10.2m. 130m published (CTBUH via
+    # research/tanjongrhu-marinasouth.md).
+    "the ritzcarlton millenia singapore": {"h": 130, "key": True},
     "pan pacific singapore":  {"h": 130},
     "marina square":          {"h": 40},
     "suntec":                 {"h": 150, "key": True},
@@ -1421,6 +1429,21 @@ HDB_ABBR = {
 _HDB_TABLE = None
 HDB_JOINS = []          # (blk, street, storeys, year) for the build report
 NAMES_STRIPPED = []     # OSM names that are not building names; see NAME_STRIP
+
+# THE MAP CAN CARRY A NAME THE CITY NO LONGER DOES. Keyed by norm() of the
+# mapped name and matched EXACT -- the substring lessons at the late re-lookup
+# apply to names as much as to heights. One entry so far: OSM still labels the
+# 123m tower on Shenton Way "UIC Building, Shenton Way", but the UIC Building
+# was demolished in 2013 and what stands there is V on Shenton's office tower
+# (123m, 23 floors -- research/tanjongrhu-marinasouth.md §11). The drawn height
+# is already right; only the name was wrong.
+NAME_CORRECTIONS = {
+    # Keys are norm() with runs of spaces collapsed, because the mapped name
+    # is "UIC Building , Shenton Way" and norm() keeps the double space the
+    # stripped comma leaves behind; the lookup collapses the same way.
+    "uic building shenton way": "V on Shenton Office Tower",
+}
+NAMES_CORRECTED = []    # (mapped name, corrected name), printed by the build
 
 
 def _hdb_norm(s):
@@ -2865,6 +2888,14 @@ def main():
             if _nm and any(s in _nm.lower() for s in NAME_STRIP):
                 NAMES_STRIPPED.append(_nm)
                 _nm = None
+            # A mapped name that names a demolished building is corrected
+            # before anything downstream (LANDMARKS re-lookup, recipes,
+            # signage) can act on the stale identity. See NAME_CORRECTIONS.
+            if _nm:
+                _fix = NAME_CORRECTIONS.get(" ".join(norm(_nm).split()))
+                if _fix:
+                    NAMES_CORRECTED.append((_nm, _fix))
+                    _nm = _fix
             if _nm:
                 b["n"] = _nm
             # A BUILDING NAMED LATE COULD NEVER INHERIT A RESEARCHED HEIGHT,
@@ -5559,6 +5590,9 @@ def main():
     if NAMES_STRIPPED:
         print(f"  dropped {len(NAMES_STRIPPED)} OSM names that are not building names: "
               f"{', '.join(sorted(set(NAMES_STRIPPED))[:4])}")
+    if NAMES_CORRECTED:
+        print("  corrected stale mapped names: "
+              + ", ".join(f"{a!r} -> {b!r}" for a, b in sorted(set(NAMES_CORRECTED))))
     if HDB_JOINS:
         _tall = sorted(HDB_JOINS, key=lambda r: -r[2])[:3]
         print(f"  HDB join: {len(HDB_JOINS)} blocks matched to HDB storey records "
