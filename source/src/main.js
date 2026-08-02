@@ -1176,11 +1176,49 @@ async function buildStreamed(mani) {
     if (!regionData[k]) regionData[k] = [];
     regionData[k].push(...ch[k]);
   }
-  const spawn = chunks[0];
+  // THE SPAWN DISTRICT IS BUILT INLINE AND CANNOT BE UNLOADED. THIS IS THE
+  // iPHONE CRASH, AND THE FIX IS NOT YET IN.
+  //
+  // buildRegion() builds this district straight into `world` rather than into
+  // a removable group, so it is not in `recs`, is not counted by
+  // MAX_RESIDENT, and can never be evicted. That district is orchard: 1,663
+  // buildings and 3,019 roads, held for the life of the page wherever the
+  // rider goes. Measured on a phone profile arriving at Chinatown, the cap
+  // believed it held three districts and was really holding four, ~5,232
+  // buildings — and the rider's iPhone dies on exactly that teleport.
+  //
+  // THE FIX WAS ATTEMPTED AND REVERTED ON 2026-08-02, and what it cost is
+  // worth writing down so the next attempt starts further along. Emptying the
+  // spawn chunk and letting all 15 districts stream through addChunk DOES
+  // work — measured, geometries at Chinatown halved 1138 -> 574 and orchard
+  // evicted correctly on every teleport. It also surfaced three systems that
+  // quietly assume the spawn district is special:
+  //
+  //   1. addChunk THROWS AWAY buildShopfronts' return, so the world scene's
+  //      S8 has only ever measured the spawn district and called it the
+  //      world. With the spawn empty it read 0; accumulating the per-district
+  //      counts gives the honest world figure of 67 against a budget of 70
+  //      that was really Orchard's.
+  //   2. `spawn.axes` seeded an UNTAGGED copy of the first axis, and trimAxes
+  //      keeps the first entry whole and trims later ones against it — so a
+  //      streamed orchard had its own tagged axis trimmed to nothing.
+  //   3. C3 then reported 38 unlit streets, every one in Orchard, and the
+  //      lamp/dressing coverage question was still open when this was
+  //      reverted.
+  //
+  // None of that is a reason not to do it; it is the work the fix actually
+  // requires, and it wants a session of its own rather than being rushed next
+  // to a live crash. See HANDOFF.md.
+  const spawn = { ...chunks[0] };
   spawn.terrain = mani.terrain;
   spawn.axisFullLength = mani.axisFullLength;
-  spawn.axes = spawn.axis && spawn.axis.p ? [spawn.axis] : [];
-  const rest = mani.districts.slice(1).map((d, i) => ({ id: d.id, box: d.box, ch: chunks[i + 1] }));
+  spawn.axes = [];
+  for (const k of ['buildings', 'roads', 'water', 'green', 'land', 'piers', 'steps',
+    'barriers', 'parkfurn', 'towers', 'cranes', 'trees', 'crossings', 'signals',
+    'busstops', 'mrt', 'taxis', 'bridges', 'covered', 'shops', 'gantries', 'lamps']) {
+    spawn[k] = [];
+  }
+  const rest = mani.districts.map((d, i) => ({ id: d.id, box: d.box, ch: chunks[i] }));
   window.__districts = mani.districts.map((d, i) => {
     const ax = chunks[i].axis;
     return ax && ax.p ? { id: d.id, name: prettyDistrict(d.id), ...axisMidPose(ax) } : null;
@@ -1215,8 +1253,13 @@ async function addChunk(ch, id, Y, rec = {}) {
   // the probe arrays grow ONCE per district — a rebuild after an unload
   // must not double every layer
   if (!rec.pushed) {
+    // `cranes` joined this list the day it was parsed. A layer that is drawn
+    // but never pushed here is invisible to every runtime probe and to the
+    // A2 "real data present but unused" check — the same one-place-missed
+    // shape that left `cranes` out of merge.py and left topup.py asking for
+    // towers only.
     for (const k of ['water', 'buildings', 'roads', 'bridges', 'covered', 'towers',
-      'trees', 'crossings', 'signals', 'busstops', 'mrt', 'taxis', 'shops',
+      'cranes', 'trees', 'crossings', 'signals', 'busstops', 'mrt', 'taxis', 'shops',
       'gantries', 'lamps']) {
       if (Array.isArray(ch[k]) && Array.isArray(data[k])) data[k].push(...ch[k]);
     }
@@ -1355,7 +1398,19 @@ async function addChunk(ch, id, Y, rec = {}) {
   }
   const solidBefore = WALLSREF ? (x, z) => WALLSREF.at(x, z) : null;
   mk('shops');
-  if (!P.has('noshops')) await buildShopfronts(g, ch, ax ? [ax] : [], solidBefore, REGIONB, Y);
+  // ACCUMULATE WHAT IT MEASURES. This call threw the per-district counts away,
+  // so `window.__stats.realShops` and its siblings only ever described the
+  // district built at boot — which meant the world scene's S8 reported
+  // Orchard's coverage and called it the world's. Same shape as the global
+  // lamp one-shot in markings.js: a per-district fact held in one place.
+  if (!P.has('noshops')) {
+    const _sf = await buildShopfronts(g, ch, ax ? [ax] : [], solidBefore, REGIONB, Y);
+    if (_sf && window.__stats) {
+      for (const [k, v] of Object.entries(_sf)) {
+        if (typeof v === 'number') window.__stats[k] = (window.__stats[k] || 0) + v;
+      }
+    }
+  }
   await Y();
   mk('solid');
   if (SOLID) await SOLID.build(g, (x, z) => terrain.at(x, z), { yield: Y });
@@ -1683,6 +1738,34 @@ async function streamRest(rest) {
   // them and every one reads as near. Beyond this many, the farthest by axis is
   // unloaded even if it is inside NEAR — the rider cannot see six districts and
   // a phone cannot hold them.
+  // THE CAP WAS UNDERCOUNTING BY ONE, AND THE ONE IT MISSED IS ORCHARD.
+  //
+  // This bounds `recs`, which is `mani.districts.slice(1)` — the STREAMED
+  // districts. The FIRST district is built inline by buildRegion() straight
+  // into `world`, not into a removable group, so it is not in recs, is not
+  // counted here, and can never be unloaded. That district is orchard: 1,663
+  // buildings and 3,019 roads, held for the whole life of the page no matter
+  // where the rider goes.
+  //
+  // So "3 resident" was really FOUR. Measured on a phone profile arriving at
+  // Chinatown: streamed [chinatown, marinasouth, keppel] = 3,569 buildings,
+  // plus orchard = 5,232. The rider reported his iPhone crashing on exactly
+  // that teleport, and iOS Safari reaps a tab far below what desktop Chrome
+  // tolerates.
+  //
+  // DROPPING THE CAP TO 2 WAS TRIED AND REVERTED, MEASURED NOT ARGUED. On the
+  // Chinatown arrival it evicted marinasouth — the SMALLEST district in the
+  // world at 126 buildings — so the resident total fell only 5,232 -> 5,106,
+  // 2.4%, while every phone paid for it in pop-in. A cap cannot fix this
+  // because the thing that needs evicting is the one it cannot see.
+  //
+  // THE FIX IS TO MAKE THE SPAWN DISTRICT EVICTABLE: build it into its own
+  // group the way addChunk() already builds every other district, so the
+  // residency sweep can drop it and a teleport to Sentosa need not carry
+  // Orchard across the island. That is a restructure of boot — buildRegion()
+  // also does one-time region-wide work (the terrain mesh, the surround, the
+  // water) that must NOT be unloaded with it — so it is written up in
+  // HANDOFF.md rather than attempted next to a live crash.
   const MAX_RESIDENT = PHONE ? 3 : 99;
   const recs = rest.map((r) => ({ ...r, pushed: false, group: null, signals: null, dressedDelta: null }));
   window.__streamState = { pending: recs.map((r) => r.id), building: null, done: [], unloads: 0 };

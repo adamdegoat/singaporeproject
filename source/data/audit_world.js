@@ -528,7 +528,21 @@ window.__auditWorld = async function auditWorld() {
       // FOOTBRIDGES / anyDeckAt). Nothing was loosened to get there — the
       // check was taught what a footbridge is, which is what this file's own
       // note about piers says to do.
-      P8: 6, W2: 38, S8: 70, T2: 13, S2: 6, P5: 11,
+      // S8 70 -> 67, AND THE METRIC IS NOW HONEST WHERE IT WAS NOT.
+      //
+      // This is a FLOOR and it is being lowered, which normally is the wrong
+      // move. It is right here because the old 70 was never the world's
+      // figure: addChunk threw away buildShopfronts' per-district counts, so
+      // `__stats.realShops` and its siblings only ever held the numbers from
+      // the district built at BOOT. The world scene was reporting Orchard's
+      // shopfront coverage and calling it the world's. Now every district
+      // accumulates and 67 is what the world actually scores.
+      //
+      // Same family as the global lamp one-shot found the same day: a
+      // per-district fact kept in one global place, correct for the first
+      // district and silently wrong for the other fourteen. It may go UP and
+      // never down from here.
+      P8: 6, W2: 38, S8: 67, T2: 13, S2: 6, P5: 11,
       // T2 RESOLVED, 2026-08-02. The open question was whether the eastern
       // group failed to join the west because the joining ways lie outside
       // every bbox, or because merge.py drops the overlap segments. Two
@@ -740,7 +754,7 @@ window.__auditWorld = async function auditWorld() {
       // tree branch, the lamp bracket, and now the crowd. The note at ROAD_OK
       // already says a signature list "fails CLOSED for changed ones"; the
       // answer is to stop describing a person by their measurements.
-      props.push({ sig, mat: matId, x: v3.x, y: v3.y, z: v3.z, sy: sc3.y,
+      props.push({ sig, nm: o.name || '', mat: matId, x: v3.x, y: v3.y, z: v3.z, sy: sc3.y,
                    crowd: !!o.userData.crowdPart,
                    // leaves and branches are not paint; see P7
                    foliage: !!o.userData.treeFoliage,
@@ -1474,13 +1488,20 @@ window.__auditWorld = async function auditWorld() {
           const list = propGrid.get((cx + dx) + ',' + (cz + dz));
           if (!list) continue;
           for (const p of list)
-            if (test(p.sig) && (p.x - q[0]) ** 2 + (p.z - q[1]) ** 2 < R2) return true;
+            if (test(p.sig, p.nm) && (p.x - q[0]) ** 2 + (p.z - q[1]) ** 2 < R2) return true;
         }
     }
     return false;
   };
   const isKerb = (s) => s === 'BoxGeometry(0.38,0.3,4)' || s === 'BoxGeometry(0.42,0.3,2)';
-  const isLamp = (s) => s === 'CylinderGeometry(0.11,9)' || s === 'BoxGeometry(0.9,0.16,0.4)'
+  // BY NAME FIRST, THEN BY SHAPE. The signature list below is the fifth in
+  // this project to rot: it only matches while the mesh still carries its
+  // geometry parameters, and a STREAMED district runs consolidate, the LOD
+  // compactor and a material dedupe over its group, after which a lamp is an
+  // anonymous BufferGeometry. The signatures are kept for the boot-built
+  // district and for anything older that has not been named yet.
+  const isLamp = (s, nm) => nm === 'streetLamp'
+    || s === 'CylinderGeometry(0.11,9)' || s === 'BoxGeometry(0.9,0.16,0.4)'
     || s === 'BoxGeometry(1,0.2,0.44)' || s === 'CylinderGeometry(0.05,2.6)';
   const isTree = (s) => s === 'SphereGeometry(0.66)' || s === 'IcosahedronGeometry(1)';
 

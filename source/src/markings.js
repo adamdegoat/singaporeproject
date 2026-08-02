@@ -541,6 +541,8 @@ export function selectSideStreets(data, axis, reach = 230) {
 //
 // Y is optional so the boot-time call, which happens behind the loading screen,
 // is unaffected.
+const LAMPS_DONE = new WeakSet();
+
 export async function dressSideStreets(world, data, axis, blockedIn, TreeField, done = null, reachOverride = 0, Y = null) {
   const trees = new TreeField();
   const kerb = [], lamp = [], lampArm = [];
@@ -812,12 +814,20 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
 
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
   const p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1);
-  const emit = (geo, mat, list, fn) => {
+  // `name` is optional and exists so a CHECK can find a thing by IDENTITY
+  // rather than by geometry signature. C3 ("streets with no lighting") matched
+  // lamps as `CylinderGeometry(0.11,9)` / `BoxGeometry(0.9,0.16,0.4)`, which
+  // works only while the mesh still carries its parameters — the streamed
+  // district path runs consolidate, the LOD compactor and a material dedupe
+  // over its group, and a merged mesh has no parameters left. This is the
+  // fifth geometry-signature allowlist in this project to rot the same way.
+  const emit = (geo, mat, list, fn, name) => {
     list = dry(list);                     // kerbs and lamps are not built on water either
     if (!list.length) return;
     const im = new THREE.InstancedMesh(geo, mat, list.length);
     list.forEach((r, i) => { fn(r); m.compose(p, q, s); im.setMatrixAt(i, m); });
     im.castShadow = false; im.receiveShadow = true;
+    if (name) im.name = name;
     world.add(im);
   };
   const yaw = (r) => { p.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
@@ -870,8 +880,24 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
   // which is what a street lamp is for. Done once for the district, not once per
   // axis, and only for lamps this pass has not already placed, so a region with
   // two axes does not get two lamps in every hole.
-  if (!window.__lampsDone) {
-    window.__lampsDone = true;
+  // ONCE PER DISTRICT, WHICH IS WHAT THE COMMENT ABOVE ALWAYS SAID AND WHAT
+  // THE FLAG NEVER DID.
+  //
+  // `window.__lampsDone` was a single global boolean, so the FIRST district to
+  // dress the world consumed it and every other district was skipped — with
+  // its own `data.lamps` never read. Measured 2026-08-02: orchard placed its
+  // 1,839 lamps at boot and the other fourteen districts placed NONE, leaving
+  // 8,282 surveyed lamp positions unbuilt and every street outside Orchard
+  // unlit. It stayed hidden because the world scene's C3 only measures streets
+  // within 230m of the PRIMARY axis — Orchard Road — so the one district that
+  // did get lamps was the only one ever checked.
+  //
+  // Keyed on the data object rather than a district id: buildRegion calls this
+  // once PER AXIS with the same chunk, which is the double-lamp case the
+  // original guard existed to stop, and addChunk calls it once per district
+  // with a different chunk each time. One WeakSet answers both.
+  if (!LAMPS_DONE.has(data)) {
+    LAMPS_DONE.add(data);
     // Its own spatial index. `__roadDirsNear` walks every road in the district
     // on every call, which is fine for the handful of things that used it and
     // is fifty million iterations across 2,669 lamps.
@@ -923,7 +949,19 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
       const ang2 = Math.atan2(ux2, uz2);
       const nx2 = -uz2, nz2 = ux2;
       // whichever side of the lamp the road is on is the side the arm reaches
-      const sgn2 = window.__onRoad && window.__onRoad(lx + nx2 * 4, lz + nz2 * 4, 0) ? -1 : 1;
+      let sgn2 = window.__onRoad && window.__onRoad(lx + nx2 * 4, lz + nz2 * 4, 0) ? -1 : 1;
+      // AND THE ARM HAS TO STAND CLEAR TOO. Only the POST was ever tested for
+      // clearance; the arm was then offset 0.9m and whatever it hit, it hit.
+      // With lamps building in all fifteen districts instead of one, that put
+      // four luminaires inside facades — Pacific Plaza, Farrer Square, the SMU
+      // law library — which P2 caught. Try the other side before giving up,
+      // and drop the lamp entirely if neither side is clear: a post with its
+      // luminaire buried in a wall is worse than no post.
+      const armClear = (sg) => !blockedIn(lx - nx2 * 0.9 * sg, lz - nz2 * 0.9 * sg);
+      if (!armClear(sgn2)) {
+        if (armClear(-sgn2)) sgn2 = -sgn2;
+        else continue;
+      }
       lamp.push([lx, 3.6, lz, ang2]);
       // the arm grounds at the POLE (lx, lz), not at its own offset — the
       // Leonie Hill floating-luminaire class
@@ -931,10 +969,10 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     }
   }
 
-  emit(new THREE.CylinderGeometry(0.09, 0.13, 7.2, 8), MAT.metal, lamp, yaw);
+  emit(new THREE.CylinderGeometry(0.09, 0.13, 7.2, 8), MAT.metal, lamp, yaw, 'streetLamp');
   emit(new THREE.BoxGeometry(0.9, 0.16, 0.4), MAT.trim, lampArm, (r) => {
     p.set(r[0], surfaceAt(r[5], r[6]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
-  });
+  }, 'streetLamp');
   const treeCount = trees.build(world);
   return { sideRoads: roads, sideSkipped: skipped, sideTrees: treeCount,
            sideKerbs: kerb.length, sideCrossings, sidewalkReal, sidewalkNone,
