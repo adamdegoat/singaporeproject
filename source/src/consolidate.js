@@ -69,6 +69,56 @@ function sig(m) {
   ].join('|');
 }
 
+// CHEAPEN THE SHADER ON PHONES, WHICH IS WHERE THE HEAT IS.
+//
+// MeshStandardMaterial is physically-based: roughness, metalness and an
+// environment term evaluated PER PIXEL. MeshLambertMaterial lights per vertex
+// and is several times cheaper to shade. Measured in chinatown: 2,337 distinct
+// materials, of which 1,359 are matte Standard — plaster, concrete, tarmac,
+// kerbs, tile — and 618 are genuinely shiny.
+//
+// On a fill-rate-bound device that difference is most of the GPU cost, and
+// sustained GPU cost is what makes a phone hot: the rider's report was "after
+// play short time heat up already". A matte surface under one directional
+// light looks near-identical either way; glass, polished metal and water do
+// not, so anything with metalness, a low roughness, transparency or an
+// environment map is LEFT ALONE.
+//
+// PHONE ONLY, deliberately. The desktop keeps the richer picture, and — just
+// as important — every vet frame and every gate is taken on desktop, so the
+// world the checks judge is unchanged by this.
+//
+// Converted materials keep their `name`, because several checks identify
+// geometry by it (busLane, centreLine, streetLamp, quayCrane, bridgeDeck).
+export function lambertise(root, THREE) {
+  const swap = new Map();
+  let done = 0, kept = 0;
+  const conv = (m) => {
+    if (!m || m.type !== 'MeshStandardMaterial') return m;
+    if (swap.has(m.uuid)) return swap.get(m.uuid);
+    const shiny = (m.metalness || 0) > 0.05
+      || (m.roughness !== undefined && m.roughness < 0.7)
+      || m.envMap || m.transparent;
+    if (shiny) { kept++; return m; }
+    const l = new THREE.MeshLambertMaterial({
+      color: m.color, map: m.map || null,
+      emissive: m.emissive, emissiveIntensity: m.emissiveIntensity,
+      side: m.side, opacity: m.opacity, alphaTest: m.alphaTest,
+      vertexColors: m.vertexColors, fog: m.fog,
+    });
+    l.name = m.name;
+    swap.set(m.uuid, l);
+    done++;
+    return l;
+  };
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    if (Array.isArray(o.material)) o.material = o.material.map(conv);
+    else o.material = conv(o.material);
+  });
+  return { lambertised: done, keptStandard: kept };
+}
+
 export function dedupeMaterials(root) {
   const canon = new Map();
   // sig() builds a 25-field string; computed per MESH it ran 7,000+ times

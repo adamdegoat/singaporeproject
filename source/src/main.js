@@ -2,7 +2,7 @@ import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance } from './tex.js';
 import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildCranes, buildPiers, plantSurveyed } from './city.js';
 import { Terrain } from './terrain.js';
-import { dedupeMaterials, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
+import { dedupeMaterials, lambertise, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
 import { Solid } from './solid.js';
 import { buildVespa, buildRider, buildCar, buildSkate, buildSkater, SKATE_WHEEL_X as SK_WHEEL_X, newState, step, RIDE, CAR, SKATE } from './vespa.js';
@@ -1455,6 +1455,8 @@ async function addChunk(ch, id, Y, rec = {}) {
     // frame in between actually draw, which is the difference between "the
     // world stutters as it loads" and "the world freezes twice".
     dedupeMaterials(world);
+    // the cheap shader, on every device — see lambertise()
+    if (!P.has('rich')) lambertise(g, THREE);
     await Y();
     await consolidate(g, Y);
     await Y();
@@ -2311,6 +2313,21 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   const RAW = P.has('raw');       // audit mode: leave objects unbatched
   await bstep(0.84, 'packing the city');
   const dedupe = RAW ? { before: 0, after: 0 } : dedupeMaterials(world);
+  // THE CHEAP SHADER, ON EVERY DEVICE, AND THAT IS THE POINT.
+  //
+  // It was written phone-only at first. The rider asked whether desktop should
+  // match — "if change should change desktop also to make everything same?" —
+  // and he is right, for a reason that is not consistency. EVERY GATE AND
+  // EVERY VET FRAME IN THIS PROJECT RUNS ON DESKTOP. A phone-only visual path
+  // means nothing ever checks the picture the rider actually sees, which is
+  // precisely how the world scene came to measure only Orchard's shopfronts
+  // and only Orchard's street lighting. Same look everywhere, so what is
+  // checked is what ships. ?rich restores the old picture for an A/B.
+  if (!P.has('rich') && !RAW) {
+    const lam = lambertise(world, THREE);
+    window.__lam = lam;
+    if (window.__stats) Object.assign(window.__stats, lam);
+  }
   const cons = RAW ? { removed: 0, merged: 0 } : await consolidate(world);
   bmark('dedupe+consolidate');
   stats.matsBefore = dedupe.before; stats.matsAfter = dedupe.after;
