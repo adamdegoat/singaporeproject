@@ -64,21 +64,33 @@ export const CAR = {
 // on the spot. 1.05 is the value that lands the turn radii where a surf skate's
 // actually are — about 1.4m at walking pace against the scooter's 4.4m, and
 // 5.9m at cruise against the scooter's 8.2m.
+// IT IS AN ELECTRIC ONE, on the rider's ask: "the control feeling can have the
+// surf skate drift effect but acceleration all is auto".
+//
+// So the FEEL stays and the WORK goes. Everything that makes it carve is
+// untouched — the loose trucks (steerMax, steerFalloff), the deep lean, the
+// fast lean rate — and the throttle becomes a motor: `pushMax` is gone, so it
+// pulls at any speed instead of running out at walking pace, and `accel` is an
+// electric hub motor rather than a foot on the road.
+//
+// `pump` STAYS, deliberately. Carving still adds speed on top of the motor, so
+// the board rewards a rider who works the turns without ever requiring it —
+// which is the whole point of "drift effect but acceleration is auto". Leaving
+// it in costs nothing to a rider who just holds the throttle.
 export const SKATE = {
-  vMax: 8.4,           // m/s, ~30 km/h, and only a hill will ever reach it
-  vReverse: 1.1,       // you can scoot it backwards, barely
-  accel: 3.2,          // one foot on the road, not an engine
-  reverseAccel: 1.1,
-  brake: 7.0,          // a foot drag and a slide, not a disc
-  coast: 0.62,         // urethane rolls a long way
+  vMax: 9.2,           // m/s, ~33 km/h — an electric carver, not a scooter
+  vReverse: 1.4,
+  accel: 5.4,          // a hub motor: it pulls from a standstill and keeps pulling
+  reverseAccel: 1.4,
+  brake: 7.5,          // regen plus a foot drag
+  coast: 0.55,         // urethane rolls a long way
   drag: 0.010,
   wheelbase: 1.05,     // EFFECTIVE — see the note above
   steerMax: 0.80,
   steerFalloff: 0.055, // a surf truck keeps its bite at speed
   leanMax: 0.80,       // the deck goes right over in a carve
   leanRate: 8.5,       // and it gets there fast
-  pump: 3.6,
-  pushMax: 4.2,
+  pump: 2.6,           // carving still pays, it is just no longer compulsory
   cam: { back: 3.45, up: 1.95, aim: 5.6, fov: 57 },
 };
 

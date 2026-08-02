@@ -33,6 +33,21 @@ nobody thought about, so the default has to be loud.
 """
 import json, os, sys, collections
 
+# Imported, not reimplemented — see the note at the `building` branch below.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# process.py validates sys.argv at import time and exits if it sees an
+# unexpected one, so the import runs under a blanked argv. It is imported for
+# ONE pure predicate; nothing else in it runs.
+_argv = sys.argv
+try:
+    sys.argv = [_argv[0]]
+    from process import supertree_slice as _supertree_slice
+except Exception:                                  # a scan must never be the
+    def _supertree_slice(_t):                      # thing that blocks a build
+        return False
+finally:
+    sys.argv = _argv
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # A tag is worth an opinion once this share of its element class carries it.
@@ -83,6 +98,13 @@ IGNORED = {
     "old_name":       "historic name; the district is present-day",
     "alt_name":       "secondary name; `name` is what the signs show",
     "name:ms": "other-language name", "name:ta": "other-language name",
+    # Korean, on 14 marinabay buildings. Same class as name:ms and name:ta
+    # above and with LESS claim than either: Malay and Tamil are official
+    # languages here and Korean is not, so no sign in this world is in it.
+    # It crossed the 5% line only because reconciling the Supertrees out of
+    # the building layer shrank marinabay's building count — the tag is not
+    # new. Signage that IS modelled reads `name` and `name:zh`.
+    "name:ko": "other-language name; not a Singapore official language and not on any sign here",
     "name:zh": "carried on shopfront fascias where present",
     "wikidata":       "external identifier",
     "wikipedia":      "external identifier",
@@ -192,6 +214,15 @@ DEFERRED = {
     "kerb":                "lowered/flush/raised; every kerb is drawn the same",
     "crossing:markings":   "zebra vs ladder vs dashes; all drawn as zebra",
     "amenity":             "building use; the facade family uses material and era instead",
+    # Same class as `amenity` above, and it appeared for the same reason the
+    # crossing tags did: reconciling Gardens by the Bay's Supertrees out of the
+    # building layer took marinaeast's building count from 87 to 68, so four
+    # `tourism` buildings went from 4.6% (under the threshold, invisible) to
+    # 5.9% (over it). The tag is not new and nothing regressed — the
+    # DENOMINATOR shrank. Deferred with the same reasoning as amenity rather
+    # than ignored, because a museum or an attraction genuinely should steer
+    # the facade family one day.
+    "tourism":             "building use; same deferral class as amenity — material and era drive the facade today",
     "roof:material":       "roof surfaces are only modelled on shophouses so far",
     # kallang 2026-08-02, 12% of its buildings. Same deferral as
     # roof:material and for the same reason -- but worth more than that
@@ -270,6 +301,17 @@ def audit(did):
         if "highway" in t:
             g = "road" if t["highway"] not in ("bus_stop", "crossing", "traffic_signals") else "node"
         elif "building" in t:
+            # A SUPERTREE SLICE IS NOT A BUILDING AND MUST NOT BE COUNTED AS
+            # ONE. process.py turns Gardens by the Bay's grass-material stacks
+            # into towers and its half-metre mounds into ground, so they leave
+            # the building layer entirely. Counted here they made marinaeast
+            # look like a district where 23% of buildings carry a colour tag
+            # nothing reads — when in truth every element carrying it had
+            # stopped being a building. The predicate is IMPORTED, never
+            # copied: this file and process.py disagreeing about what a
+            # building is would be the same bug in a new place.
+            if _supertree_slice(t):
+                continue
             g = "building"
         else:
             g = "other"

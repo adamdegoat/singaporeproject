@@ -153,27 +153,37 @@ t('top speed is a scooter pace, not a motorway one', () => {
 
 console.log('\nsurf skate');
 
-t('the push alone is a walking-pace shove, not a motor', () => {
+t('the throttle alone gets you there — it is an ELECTRIC board', () => {
+  // The rider asked for "the surf skate drift effect but acceleration all is
+  // auto", so holding the throttle and never carving must reach a real cruise.
+  // The earlier design deliberately ran out at walking pace; this asserts the
+  // opposite so it cannot quietly come back.
   const s = run(newState(), 40, 1, 0, 0, SKATE);
   const kmh = s.speed * 3.6;
-  assert.ok(kmh > 8 && kmh < 15, 'push-only top speed ' + kmh.toFixed(1) + ' km/h');
+  assert.ok(kmh > 26, 'throttle-only top speed too low: ' + kmh.toFixed(1) + ' km/h');
+  assert.ok(s.speed <= SKATE.vMax + 1e-6, 'exceeded vMax');
 });
 
-t('carving BUILDS speed from a standstill push — the whole point', () => {
-  const s = run(newState(), 3, 1, 0, 0, SKATE);      // push off
-  const pushed = s.speed;
-  carve(s, 14, SKATE);                                // then pump, no throttle
-  assert.ok(s.speed > pushed + 1.2,
-    `pumped ${s.speed.toFixed(2)} vs pushed ${pushed.toFixed(2)}`);
-  const kmh = s.speed * 3.6;
-  assert.ok(kmh > 17 && kmh < 27, 'pumped cruise ' + kmh.toFixed(1) + ' km/h');
-});
-
-t('a board left to roll straight coasts DOWN, so you have to keep working', () => {
+t('it pulls from a standstill without being pumped', () => {
   const s = run(newState(), 3, 1, 0, 0, SKATE);
-  carve(s, 14, SKATE);
+  assert.ok(s.speed * 3.6 > 14, 'sluggish off the line: ' + (s.speed * 3.6).toFixed(1) + ' km/h');
+});
+
+t('carving still PAYS on top of the motor, it is just not compulsory', () => {
+  const a = run(newState(), 6, 1, 0, 0, SKATE);       // throttle, straight
+  const b = run(newState(), 6, 1, 0, 0, SKATE);
+  carve(b, 6, SKATE);                                  // then carve, no throttle
+  const c = run(newState(), 6, 1, 0, 0, SKATE);
+  run(c, 6, 0, 0, 0, SKATE);                           // or just coast
+  assert.ok(b.speed > c.speed + 1.0,
+    `carving ${b.speed.toFixed(2)} should beat coasting ${c.speed.toFixed(2)}`);
+  assert.ok(a.speed > 0);
+});
+
+t('let go and it coasts down — the motor is not a cruise control', () => {
+  const s = run(newState(), 12, 1, 0, 0, SKATE);
   const cruise = s.speed;
-  run(s, 3, 0, 0, 0, SKATE);
+  run(s, 4, 0, 0, 0, SKATE);
   assert.ok(s.speed < cruise - 1.2, `held ${s.speed.toFixed(2)} from ${cruise.toFixed(2)}`);
 });
 
@@ -181,13 +191,18 @@ t('the pump cannot run away — it fades out below the board top speed', () => {
   const s = run(newState(), 3, 1, 0, 0, SKATE);
   carve(s, 120, SKATE);
   assert.ok(s.speed <= SKATE.vMax + 1e-6, 'exceeded vMax: ' + s.speed);
-  assert.ok(s.speed < SKATE.vMax * 0.92, 'pump saturates the board: ' + s.speed.toFixed(2));
 });
 
 t('you cannot pump from a standstill — the board has to be rolling', () => {
   const s = newState();
   carve(s, 6, SKATE);
   assert.ok(Math.abs(s.speed) < 0.05, 'carving alone started it: ' + s.speed.toFixed(3));
+});
+
+t('no vehicle has a pushMax any more — the board went electric', () => {
+  for (const [name, P] of [['scooter', RIDE], ['car', CAR], ['skate', SKATE]]) {
+    assert.equal(P.pushMax, undefined, name + ' still runs out of throttle');
+  }
 });
 
 t('the trucks are looser than the scooter at every speed', () => {
@@ -213,7 +228,6 @@ t('it carves deeper than the scooter banks', () => {
 t('neither the scooter nor the car gained a pump', () => {
   for (const [name, P] of [['scooter', RIDE], ['car', CAR]]) {
     assert.equal(P.pump, undefined, name + ' has a pump');
-    assert.equal(P.pushMax, undefined, name + ' lost throttle authority');
     const straight = run(newState(), 8, 1, 0, 0, P);
     const carved = run(newState(), 8, 1, 0, 1, P);
     assert.ok(carved.speed <= straight.speed + 1e-9,

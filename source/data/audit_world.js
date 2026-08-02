@@ -521,7 +521,14 @@ window.__auditWorld = async function auditWorld() {
       // ratchet on a measurement that has become honest is reset to the honest
       // number, the same rule S8 already carries.
       // W2 34 -> 35: marinabay's reprocess, see its note above.
-      P8: 6, W2: 39, S8: 70, T2: 13, S2: 6, P5: 11,
+      // W2 39 -> 38 on 2026-08-02. It is a RATCHET and it went DOWN, so it
+      // is tightened rather than left with slack: the covered walkway on the
+      // Sentosa Boardwalk stopped being counted as two things standing in the
+      // Straits once footbridge decks got a registry W2 can see (city.js,
+      // FOOTBRIDGES / anyDeckAt). Nothing was loosened to get there — the
+      // check was taught what a footbridge is, which is what this file's own
+      // note about piers says to do.
+      P8: 6, W2: 38, S8: 70, T2: 13, S2: 6, P5: 11,
       // T2 RESOLVED, 2026-08-02. The open question was whether the eastern
       // group failed to join the west because the joining ways lie outside
       // every bbox, or because merge.py drops the overlap segments. Two
@@ -2301,7 +2308,13 @@ window.__auditWorld = async function auditWorld() {
         // returning a real deck height at some and null at others — so the
         // count was a mix of legitimate bridge dressing and genuine strays,
         // with no way to tell them apart from the number.
-        if (window.__bridgeDeckAt && window.__bridgeDeckAt(p.x, p.z) !== null) continue;
+        // ANY deck, not just a carriageway one. A covered walkway on the
+        // Sentosa Boardwalk — `bridge=1`, `highway=pedestrian`, 620m across
+        // the channel — was counted as two things standing in the Straits.
+        // A footbridge over the sea is a bridge for THIS question; it is
+        // still not something a rider can be seated on, which is why
+        // city.js keeps footbridges in a separate registry.
+        if (window.__anyDeckAt && window.__anyDeckAt(p.x, p.z) !== null) continue;
         inW++;
         // 40 here too. Raising only the MESH loop's cap left this one at 6,
         // so a 114-finding failure still showed eight lines and the props
@@ -2364,7 +2377,7 @@ window.__auditWorld = async function auditWorld() {
           // in its list of bridge shapes. standable(), blocked() and now this
           // all ask the same question of the same function.
           if (inWater(vv2.x, vv2.z)
-              && !(window.__bridgeDeckAt && window.__bridgeDeckAt(vv2.x, vv2.z) !== null)) hit++;
+              && !(window.__anyDeckAt && window.__anyDeckAt(vv2.x, vv2.z) !== null)) hit++;
         }
         // A BRIDGE OVER THE BAY IS ENTIRELY OVER WATER BY DESIGN. The comment
         // here already said a bridge legitimately reaches over water, and then

@@ -495,6 +495,23 @@ const SURFACE_PATH = 0.024;
 const BR_CELL = 40;
 const BRIDGES = { cells: new Map(), segs: [] };
 
+// FOOTBRIDGES, IN THEIR OWN REGISTRY, AND THAT SEPARATION IS THE POINT.
+//
+// `addBridgeWay` takes CARRIAGEWAYS ONLY, deliberately: `surfaceAt`,
+// `standable()` and the water guard all read BRIDGES, so registering a 2m
+// footbridge there would lift the ride — and the crowd — onto a handrail-width
+// deck. That rule is right and is not being changed.
+//
+// But W2 asks a different question. "Is this thing built in open water?" has
+// the same answer for a footbridge as for a road bridge: a deck over the sea
+// is a deck, not a defect. The Sentosa Boardwalk is `bridge=1`,
+// `highway=pedestrian`, 620m of it across the channel — and the covered
+// walkway ON it was being counted as two things standing in the Straits.
+//
+// So footbridge decks are recorded HERE, where only the question "is there a
+// bridge over this point" can reach them, and nothing that seats a rider can.
+const FOOTBRIDGES = { cells: new Map(), segs: [] };
+
 // WALKABLE SURFACES THAT ARE NOT BRIDGES — stair treads, and whatever else
 // later needs a person to stand ON it rather than beside it.
 //
@@ -548,15 +565,22 @@ export function walkSurfaceAt(x, z) {
   return best;
 }
 export function clearBridges() { BRIDGES.cells.clear(); BRIDGES.segs.length = 0; }
-export function addBridgeWay(pts, width) {
+export function addBridgeWay(pts, width) { return _addSpan(BRIDGES, pts, width); }
+
+// A pedestrian bridge. Same geometry, a registry nothing seats a rider from.
+export function addFootbridgeWay(pts, width) {
+  return _addSpan(FOOTBRIDGES, pts, Math.max(width || 0, 3));
+}
+
+function _addSpan(REG, pts, width) {
   if (!pts || pts.length < 2) return 0;
   let deck = 0;
   for (const q of pts) deck = Math.max(deck, TERRAIN.at(q[0], q[1]));
   deck += 1.2;                        // the deck sits above its abutment
   const half = width / 2;
   for (let i = 0; i < pts.length - 1; i++) {
-    const idx = BRIDGES.segs.length;
-    BRIDGES.segs.push([pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], half, deck]);
+    const idx = REG.segs.length;
+    REG.segs.push([pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], half, deck]);
     const mnx = Math.min(pts[i][0], pts[i + 1][0]) - half;
     const mxx = Math.max(pts[i][0], pts[i + 1][0]) + half;
     const mnz = Math.min(pts[i][1], pts[i + 1][1]) - half;
@@ -564,8 +588,8 @@ export function addBridgeWay(pts, width) {
     for (let cx = Math.floor(mnx / BR_CELL); cx <= Math.floor(mxx / BR_CELL); cx++) {
       for (let cz = Math.floor(mnz / BR_CELL); cz <= Math.floor(mxz / BR_CELL); cz++) {
         const k = cx + ',' + cz;
-        let l = BRIDGES.cells.get(k);
-        if (!l) { l = []; BRIDGES.cells.set(k, l); }
+        let l = REG.cells.get(k);
+        if (!l) { l = []; REG.cells.set(k, l); }
         l.push(idx);
       }
     }
@@ -726,15 +750,26 @@ export function bridgeFabric(pts, width, deck, deckGeos, pierGeos, ownName) {
   }
 }
 
+// Is there a deck of ANY kind over this point — carriageway or footway? Only
+// for "is this built in open water"; never for seating a rider. bridgeDeckAt
+// below stays carriageway-only and is what surfaceAt/standable read.
+export function anyDeckAt(x, z) {
+  const a = bridgeDeckAt(x, z);
+  if (a !== null) return a;
+  return _deckIn(FOOTBRIDGES, x, z);
+}
+
 // The deck height under a point, or null if there is no bridge over it. The
 // widest deck wins where two overlap, which is the ramp rather than the slip
 // road and is the one you are actually riding on.
-export function bridgeDeckAt(x, z) {
-  const l = BRIDGES.cells.get(Math.floor(x / BR_CELL) + ',' + Math.floor(z / BR_CELL));
+export function bridgeDeckAt(x, z) { return _deckIn(BRIDGES, x, z); }
+
+function _deckIn(REG, x, z) {
+  const l = REG.cells.get(Math.floor(x / BR_CELL) + ',' + Math.floor(z / BR_CELL));
   if (!l) return null;
   let best = null, bestHalf = -1;
   for (const i of l) {
-    const s = BRIDGES.segs[i];
+    const s = REG.segs[i];
     const vx = s[2] - s[0], vz = s[3] - s[1];
     const l2 = vx * vx + vz * vz || 1;
     let t = ((x - s[0]) * vx + (z - s[1]) * vz) / l2;
@@ -1812,6 +1847,9 @@ export async function buildRoads(world, data, Y = null) {
     // chunk must not lift a rider standing where it will one day be. Carriage-
     // ways only: a 2m footbridge deck is not something the ride belongs on,
     // and lifting the crowd onto one would put pedestrians in mid-air.
+    // A footbridge over the sea is still a bridge, for the one question W2
+    // asks. It is NOT registered as something to stand on — see FOOTBRIDGES.
+    if (r.bridge && isPath) addFootbridgeWay(r.p, r.w || 3);
     if (r.bridge && !isPath && (r.w || 0) >= 5.5) {
       // The deck height comes back from the registry rather than being worked
       // out again here: ribbon() already computes the same `max terrain + 1.2`

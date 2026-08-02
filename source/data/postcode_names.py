@@ -32,8 +32,23 @@ import json, os, sys, time, urllib.parse, urllib.request, urllib.error
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, "postcode_names.json")
 API = "https://www.onemap.gov.sg/api/common/elastic/search"
-DISTRICTS = ["orchard", "rivervalley", "bugis", "chinatown",
-             "marinabay", "brasbasah", "robertson", "littleindia"]
+# READ THE REGISTRY. NEVER TYPE THE DISTRICT LIST BY HAND.
+#
+# This was a literal list of the original eight, and the coastal ring added
+# seven more on 2026-08-02 without this file noticing — so kallang,
+# marinaeast, tanjongrhu, marinasouth, keppel, harbourfront and sentosa were
+# NEVER ASKED. Measured when it was found: 299 footprints in those seven carry
+# an `addr:postcode` and no name, 178 of them in keppel, which is one of the
+# two worst-named districts in the world at 11.7%.
+#
+# HANDOFF.md already states this rule in as many words for merge.py — "copying
+# it after the ring was built would have silently dropped seven of them" — and
+# it was true here at the same moment it was written there.
+def _districts():
+    reg = json.load(open(os.path.join(HERE, "districts.json")))
+    return [d["id"] for d in reg["districts"]
+            if (d.get("status") or "") not in ("planned",)
+            and "merged" not in (d.get("status") or "")]
 
 # Answers that are not building names. OneMap returns the road name in
 # BUILDING for some records, and "NIL" for anything unnamed.
@@ -43,7 +58,7 @@ NOT_A_NAME = {"NIL", "", "-"}
 def wanted():
     """Every postcode that identifies a footprint OSM has not named."""
     out = {}
-    for d in DISTRICTS:
+    for d in _districts():
         p = os.path.join(HERE, "raw", "%s.json" % d)
         if not os.path.exists(p):
             continue

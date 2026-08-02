@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance } from './tex.js';
-import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, buildSurround, buildWater, buildSupertrees, buildCranes, buildPiers, plantSurveyed } from './city.js';
+import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, anyDeckAt, buildSurround, buildWater, buildSupertrees, buildCranes, buildPiers, plantSurveyed } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
@@ -1791,6 +1791,8 @@ async function buildRegion(data, opts = {}) {
   // the audit needs the same notion of 'ground' the world uses: on a bridge
   // that is the DECK, not the seabed under it
   window.__bridgeDeckAt = bridgeDeckAt;
+  // Carriageway OR footway deck. W2 only — never used to seat a rider.
+  window.__anyDeckAt = anyDeckAt;
   indexBuildings(opts.regionData || data);
 
   // The road index is built FIRST. Buildings carry structural pieces — entrance
@@ -2658,7 +2660,21 @@ function driveCamera(dt) {
     return;
   }
   const fwd = new THREE.Vector3(Math.sin(S.heading), 0, Math.cos(S.heading));
-  const gy = terrain.at(S.x, S.z);
+  // THE CAMERA FOLLOWS THE SURFACE THE RIDE IS ON, NOT THE GROUND UNDER IT.
+  //
+  // This read `terrain.at` in all three places below while the ride itself is
+  // seated with `surfaceAt`, which knows about bridge decks. On flat ground the
+  // two differ by 6cm and nothing showed. ON A BRIDGE THEY DIFFER BY THE WHOLE
+  // SPAN: on the Sentosa Gateway the deck is 8.02m and the terrain beneath is
+  // 3.47m, so the camera was placed 2.2m BELOW the rider's own wheels — under
+  // the deck, looking at its underside.
+  //
+  // It has been wrong since the first bridge and was invisible because a road
+  // bridge had nothing under it to see. Building the soffit and piers on
+  // 2026-08-02 made it visible immediately, and pulling the camera in from
+  // 3.05m to 2.45m made it worse: "i teleport to sentosa now i like glitching
+  // in mid air again. Cant even see myself. Like im under the bridge."
+  const gy = surfaceAt(S.x, S.z);
   // HOW CLOSE THE CHASE CAMERA SITS, PER VEHICLE, AND IT LIVES WITH THE
   // VEHICLE. It used to be two `vehicleKind === 'car' ? a : b` ternaries here,
   // which is fine for two vehicles and wrong for three — the board would have
@@ -2674,9 +2690,9 @@ function driveCamera(dt) {
   const want = new THREE.Vector3(S.x, gy, S.z)
     .addScaledVector(fwd, -C.back)
     .add(new THREE.Vector3(0, C.up, 0));
-  want.y = Math.max(want.y, terrain.at(want.x, want.z) + 1.6);
+  want.y = Math.max(want.y, surfaceAt(want.x, want.z) + 1.6);
   const aim = new THREE.Vector3(S.x, gy + 1.35, S.z).addScaledVector(fwd, C.aim);
-  aim.y = terrain.at(aim.x, aim.z) + 1.35;
+  aim.y = surfaceAt(aim.x, aim.z) + 1.35;
   if (!camInit) { camPos.copy(want); camAim.copy(aim); camInit = true; }
   camPos.lerp(want, Math.min(1, dt * 4.2));
   camAim.lerp(aim, Math.min(1, dt * 6.0));

@@ -1984,6 +1984,35 @@ if _bad_keys:
 BAD_HEIGHT_TAGS = []
 BAD_COLOUR_TAGS = []
 
+# SUPERTREE SLICES ARE NOT BUILDINGS, AND TWO FILES NEED TO AGREE ON THAT.
+#
+# The reconciliation further down turns Gardens by the Bay's grass-material
+# `building:part` stacks into towers and drops them from `buildings`. That is
+# right, and it has a side effect: in marinaeast, where 20 of 87 mapped
+# "buildings" ARE those slices, no shipped building carries `building:colour`
+# any more — so data/unused.py reported the tag as present and unread and
+# refused the deploy. The tag is not unread; the ELEMENT stopped being a
+# building. unused.py imports this predicate rather than growing its own copy,
+# which is the trap that bit topup.py's crane query and the colour guard on the
+# same day.
+SUPERTREE_BAND = (20.0, 60.0)
+
+
+def supertree_slice(tags):
+    """Is this raw element one of Gardens by the Bay's grass Supertree slices,
+    or one of its half-metre planted mounds? Either way it leaves the building
+    layer, so it cannot be judged as a building that failed to carry its tags."""
+    if (tags.get("building:material") != "grass"
+            and tags.get("roof:material") != "grass"):
+        return False
+    try:
+        h = float(str(tags.get("height", "")).replace("m", "").strip())
+    except ValueError:
+        return False
+    if h < 2.5:
+        return True                        # a planted mound: ground, not a mass
+    return SUPERTREE_BAND[0] <= h <= SUPERTREE_BAND[1]
+
 
 def colour_ok(v):
     """Is this a colour value worth carrying into the scene? Refuses the
@@ -2112,7 +2141,23 @@ def height_for(tags):
         # here counted all 28 as heights that came from surveyed data, so the
         # accuracy ledger was reporting garbage as real. Fall through instead,
         # and let it be recorded as the guess it is.
-        if v is not None and v >= 2.5:
+        # A GRASS MOUND REALLY IS HALF A METRE HIGH.
+        #
+        # The 2.5m floor is a plausibility test — "nothing with a building tag
+        # is a metre high" — and it is right about every building. It is wrong
+        # about LANDSCAPE, and Gardens by the Bay is mapped as landscape:
+        # `building:material=grass` + `roof:material=grass` + `height=0.5` on
+        # the planted mounds, several of them also carrying `fixme=height`. Ten
+        # of them in the marinabay extract. Refused here, they fell through to
+        # a type default and were drawn as 7 to 14m green blocks standing in
+        # the middle of the Gardens.
+        #
+        # Same shape as the station-concourse exemption above: the tag is not a
+        # bad tag, it is the correct description of a thing that is genuinely
+        # low. Scoped to grass so the 1m junk on real buildings is untouched.
+        _grass = tags.get("building:material") == "grass" \
+            or tags.get("roof:material") == "grass"
+        if v is not None and (v >= 2.5 or (_grass and v > 0.05)):
             return v, False, "osm", None
         if v is not None:
             BAD_HEIGHT_TAGS.append((tags.get("name") or "(unnamed)", v))
@@ -4563,6 +4608,140 @@ def main():
         except Exception as _e:
             print(f"  ! coastline reader failed ({type(_e).__name__}: {_e}); "
                   f"THE SEA WILL RENDER AS LAND. Do not ship this district.")
+
+    # ---- THE SUPERTREES ARE MODELLED TWICE, AND THE TWO DISAGREE -----------
+    #
+    # Gardens by the Bay is in this world twice over. `man_made=tower` nodes
+    # give 7 of them, snapped to the published 25/30/37/42/50m set. OSM ALSO
+    # models each Supertree as a STACK of `building:part` slices carrying
+    # `building:material=grass` at 30/33/36/41m — and those come through the
+    # ordinary building path as lime-green blocks. Measured in the marinabay
+    # extract: 12 clusters of 3 to 6 slices each, of which FOUR sit within a
+    # metre of a tower node. The published 25m Supertree at 3466,9341 had a 41m
+    # green mass standing through it, and the 30m one at 3449,9362 had another.
+    #
+    # The polygons are the MORE COMPLETE set — 12 clusters against 7 nodes — so
+    # deleting them and keeping the nodes would lose eight Supertrees. Both are
+    # reconciled into the tower path instead: each cluster becomes one
+    # Supertree at its own centroid, height taken from its tallest slice and
+    # snapped to the published set, and the slices are dropped from `buildings`
+    # so nothing is drawn twice.
+    #
+    # THE GUARD THAT MATTERS, AND MEASURING FOUND IT: a thirteenth cluster sits
+    # at 1858,9147 — 1.5km from the Gardens, ONE part, 280m tall, and tagged
+    # grass because it has a planted roof. A rule that said "grass mass = a
+    # Supertree" would have deleted a 280m tower. So a cluster qualifies only
+    # if it is a STACK (2+ slices, which is how OSM models a tapering trunk)
+    # and its height is inside the range a Supertree can be.
+    _ST_LO, _ST_HI, _ST_JOIN = 20.0, 60.0, 14.0
+    _st_cand = []
+    for _b in buildings:
+        if (_b.get("mat") or "") != "grass":
+            continue
+        _h = _b.get("h") or 0
+        if not (_ST_LO <= _h <= _ST_HI):
+            continue
+        _cx = sum(p[0] for p in _b["p"]) / len(_b["p"])
+        _cz = sum(p[1] for p in _b["p"]) / len(_b["p"])
+        _st_cand.append((_cx, _cz, _h, _b))
+    _clusters = []
+    for _cx, _cz, _h, _b in _st_cand:
+        for _c in _clusters:
+            if math.hypot(_cx - _c["x"], _cz - _c["z"]) < _ST_JOIN:
+                _c["members"].append(_b)
+                _c["h"] = max(_c["h"], _h)
+                _c["x"] = sum(sum(q[0] for q in m["p"]) / len(m["p"])
+                              for m in _c["members"]) / len(_c["members"])
+                _c["z"] = sum(sum(q[1] for q in m["p"]) / len(m["p"])
+                              for m in _c["members"]) / len(_c["members"])
+                break
+        else:
+            _clusters.append({"x": _cx, "z": _cz, "h": _h, "members": [_b]})
+    _st_new, _st_dup, _st_drop = 0, 0, 0
+    _st_kill = set()
+    for _c in _clusters:
+        # A LONE GRASS MASS IS A GREEN ROOF — UNLESS IT IS A NEEDLE.
+        #
+        # The 2+ slice test is what protects the 280m planted-roof tower at
+        # 1858,9147, and it is worth keeping. But one Supertree at 3427,9400
+        # lost its siblings to the dedupe and arrived as a cluster of ONE: a
+        # 53 m2 footprint standing 41m tall. Nothing that is 41m tall on 53 m2
+        # is a building — that is an aspect ratio of about 6:1 — while the
+        # tower this rule exists to protect sits on 2,670 m2. So a lone slice
+        # qualifies on SHAPE, which separates the two cleanly, rather than on a
+        # position or a name.
+        _lone_needle = (len(_c["members"]) == 1
+                        and (_c["members"][0].get("a") or 1e9) < 200)
+        if len(_c["members"]) < 2 and not _lone_needle:
+            continue
+        for _m in _c["members"]:
+            _st_kill.add(id(_m))
+        _st_drop += len(_c["members"])
+        _near = None
+        for _t in towers:
+            if math.hypot(_c["x"] - _t["p"][0], _c["z"] - _t["p"][1]) < 15.0:
+                _near = _t
+                break
+        if _near is not None:
+            _st_dup += 1                   # the node already draws this one
+            continue
+        towers.append({"p": [round(_c["x"], 1), round(_c["z"], 1)],
+                       "h": min(SUPERTREE_H, key=lambda v: abs(v - _c["h"])),
+                       "r": 8.0})
+        _st_new += 1
+    # SWEEP UP THE STRAGGLERS INSIDE AN ACCEPTED SUPERTREE.
+    #
+    # The cluster rule needs 2+ slices in the 20-60m band, which is what stops
+    # it eating the 280m planted-roof tower. Two slices at Gardens by the Bay
+    # fell outside it anyway and were left standing as lime-green boxes in the
+    # vet frame: one at 13m (under the band) and one 53 m2 sliver at 41m whose
+    # siblings had already been deduped away, so it was a cluster of one.
+    #
+    # Both sit INSIDE a Supertree this pass has already accepted, so they are
+    # parts of it by position. This does not loosen the cluster test — nothing
+    # new becomes a Supertree — it only says that a grass mass standing inside
+    # one is part of the one that is already there.
+    _stray = 0
+    for _c in _clusters:
+        if len(_c["members"]) < 2:
+            continue
+        for _b in buildings:
+            if id(_b) in _st_kill or (_b.get("mat") or "") != "grass":
+                continue
+            _bx = sum(p[0] for p in _b["p"]) / len(_b["p"])
+            _bz = sum(p[1] for p in _b["p"]) / len(_b["p"])
+            if math.hypot(_bx - _c["x"], _bz - _c["z"]) < _ST_JOIN:
+                _st_kill.add(id(_b))
+                _stray += 1
+    if _stray:
+        print(f"  supertrees: {_stray} stray grass slice(s) inside an accepted "
+              f"supertree swept up with it")
+
+    # AND THE GRASS MOUNDS ARE GROUND, NOT BUILDINGS.
+    #
+    # Reading `height=0.5` honestly (see the grass exemption in height_for)
+    # stopped them being drawn as 7-14m green blocks — and immediately produced
+    # a different wrong thing: V4 "scale sanity" reported "a building shorter
+    # than a door", which is exactly right. A half-metre planted mound is a
+    # LANDFORM. It belongs to the green layer, which already draws the whole of
+    # Gardens by the Bay, and putting it in `buildings` at any height means
+    # claiming it is a structure.
+    #
+    # So: honest height first, then out of the building layer entirely. The two
+    # together are the fix; either alone is a defect.
+    _mound = 0
+    for _b in buildings:
+        if (_b.get("mat") or "") == "grass" and (_b.get("h") or 0) < 2.5:
+            _st_kill.add(id(_b))
+            _mound += 1
+    if _mound:
+        print(f"  dropped {_mound} grass mound(s) under 2.5m from the building layer: "
+              f"a planted landform is ground, and the green layer already draws it")
+    if _st_kill:
+        buildings = [b for b in buildings if id(b) not in _st_kill]
+        print(f"  supertrees: {_st_drop} grass slices reconciled into the tower path "
+              f"({_st_dup} were already a tower node and drawn twice, "
+              f"{_st_new} had no node and are now drawn at all)")
 
     # ---- QUAY CRANES -------------------------------------------------------
     # 25 `man_made=crane` nodes stand along the Keppel quay and NONE of them
