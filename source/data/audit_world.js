@@ -2257,7 +2257,11 @@ window.__auditWorld = async function auditWorld() {
           // BufferGeometry -- so a failing count named neither the place nor
           // the layer and cost a deploy to diagnose by hand. Same fix B2 got
           // for the same reason: a bare number cannot be diagnosed.
-          if (exW2.length < 6) {
+          // 40, NOT 6. Six examples cannot characterise a hundred-finding
+          // failure, and the alternative — rebuilding the check's filters in a
+          // probe — got them subtly wrong twice on sentosa and cost an hour.
+          // The evidence a check collects is worth more than the bytes.
+          if (exW2.length < 40) {
             const bbW = new T.Box3().setFromObject(o);
             const mw = o.material || {};
             exW2.push(`${o.geometry.type} entirely over water`

@@ -37,6 +37,8 @@ page.setDefaultTimeout(120000);
 // SG_EXTRA appends query flags (?nofoliage, ?noshops...) so a check's count can
 // be attributed to one subsystem by building the world without it. Never used
 // by deploy.sh: the gate always runs the whole world.
+await page.addInitScript((c) => { globalThis.SG_EX_CAP = c; },
+  process.env.SG_EX_CAP || '6');
 await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/?dpr=1&raw=1&streamall=1&scene=${process.env.SG_SCENE || 'orchard'}`
   + (process.env.SG_EXTRA ? '&' + process.env.SG_EXTRA : ''), { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true || window.__bootError', null, { timeout: 120000 });
@@ -59,7 +61,12 @@ for (const f of r.findings) {
   const ok = !gated || (floor ? f.count >= f.budget : f.count <= f.budget);
   console.log(`   ${gated ? (ok ? 'PASS' : 'FAIL') : ' -  '} ${f.id.padEnd(3)} `
     + `${String(f.count).padStart(5)}/${String(f.budget ?? '-').padStart(5)}  ${f.name}`);
-  if (!ok) for (const e of f.examples.slice(0, 4)) console.log(`        ${e}`);
+  // FOUR EXAMPLES CANNOT CHARACTERISE A HUNDRED-FINDING FAILURE. Two caps
+  // sat between a failing check and its own evidence — this one and
+  // exW2's — so diagnosing sentosa's W2 meant rebuilding the check's
+  // filters in a probe and getting them subtly wrong twice.
+  const EXN = +(process.env.SG_EX_CAP || 4);
+  if (!ok) for (const e of f.examples.slice(0, EXN)) console.log(`        ${e}`);
 }
 console.log(r.pass
   ? `   PASS  ${r.findings.length} checks, no blockers, nothing over budget`
