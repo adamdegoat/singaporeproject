@@ -1394,7 +1394,7 @@ async function addChunk(ch, id, Y, rec = {}) {
     mk('side');
     if (!P.has('noside')) {
       const before = new Set(dressedStreets);
-      await dressSideStreets(g, ch, ax, place, TreeField, dressedStreets, 0, Y);
+      statAdd(await dressSideStreets(g, ch, ax, place, TreeField, dressedStreets, 0, Y));
       rec.dressedDelta = [...dressedStreets].filter((r) => !before.has(r));
     }
     await Y();

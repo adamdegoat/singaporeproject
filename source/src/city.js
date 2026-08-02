@@ -1319,6 +1319,34 @@ export async function buildBuildings(world, data, Y = null) {
     FOOT = seatY(b);
     STREET = streetY(b);
 
+    // A STREET-SEATED BUILDING ON A REAL SLOPE GETS A SKIRT. seatY hands
+    // low buildings (h <= 16) the street-footing rule, which was written for
+    // shophouse terraces whose ground barely falls — but Canninghill Square
+    // is a 145x157m mall seated on River Valley Road with the ground
+    // dropping 10m to the river under its far side, and The Cannery the same
+    // shape: both hung in open air (measured 2026-08-03 by a full gap-map —
+    // 8-10m of daylight, nothing but terrainSurface beneath). Moving the
+    // seat down instead would bury them from the street they front. So the
+    // seat stays and the building grows a PODIUM SKIRT: a plain walled mass
+    // from the lowest ground up to the seat, which is what the real
+    // buildings do with a slope. Only fires past 2.5m of fall — Emerald
+    // Hill's terraces measure well under that — and never for a mass that
+    // deliberately starts in the air.
+    if (!b.con && !(b.mh && b.mh > 1)) {
+      const _low = footingY(pts);
+      if (FOOT - _low > 2.5) {
+        // MERGED, like every other piece of building fabric — not a bare
+        // ExtrudeGeometry mesh. The first version was one, and D16 flagged
+        // River Valley Apartments' skirt: a deep U-shaped ring's walls
+        // legitimately face the bbox centre, which D16's convexity sampling
+        // reads as inside-out. The merger also batches ~60 skirts into the
+        // per-tile meshes instead of 60 extra draw calls.
+        const _c = centroid(pts);
+        merger.add(extrudeGeo(pts, FOOT - _low, -(FOOT - _low)), MAT.conc, _c[0], _c[1]);
+        stats.skirts = (stats.skirts || 0) + 1;
+      }
+    }
+
     // A SITE IS NOT A BUILDING. Before anything else decides what to draw:
     // building=construction means there is no building there yet, and drawing
     // one asserts something false about the city. Ahead of the shophouse test

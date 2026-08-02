@@ -5501,6 +5501,34 @@ def main():
               + ", ".join(f"{k} x{v}" for k, v in sorted(_site_hit.items())[:4])
               + ("..." if len(_site_hit) > 4 else ""))
 
+    # A SIGNAL WITH NO ROAD IS FURNITURE NOBODY PUT THERE. One node in the
+    # Waterloo Street pedestrian mall stands 36m from the nearest carriageway
+    # (measured 2026-08-03): the runtime's own draw rule already refuses to
+    # build a head more than 30m from a road, so the data carries a signal
+    # nothing will ever draw and the defect hunt reports it forever. Refuse it
+    # HERE, loudly, with the same 30m the drawing uses — one rule, one number.
+    def _near_road(sx, sz, lim=30.0):
+        lim2 = lim * lim
+        for _r in roads:
+            if _r.get("k") in ("footway", "pedestrian"):
+                continue
+            _p = _r["p"]
+            for _i in range(len(_p) - 1):
+                (x1, z1), (x2, z2) = _p[_i], _p[_i + 1]
+                vx, vz = x2 - x1, z2 - z1
+                L2 = vx * vx + vz * vz
+                t = 0 if L2 < 1e-9 else max(0.0, min(1.0, ((sx - x1) * vx + (sz - z1) * vz) / L2))
+                dx, dz = sx - (x1 + vx * t), sz - (z1 + vz * t)
+                if dx * dx + dz * dz < lim2:
+                    return True
+        return False
+    _sig_orphans = [s for s in signals if not _near_road(s[0], s[1])]
+    if _sig_orphans:
+        signals = [s for s in signals if _near_road(s[0], s[1])]
+        print(f"  refused {len(_sig_orphans)} traffic-signal node(s) more than 30m from any "
+              f"carriageway (nothing would ever draw them): "
+              + ", ".join(f"{int(s[0])},{int(s[1])}" for s in _sig_orphans[:4]))
+
     out = {
         "origin": {"lat": LAT0, "lon": LON0},
         "buildings": buildings,

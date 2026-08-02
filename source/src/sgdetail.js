@@ -599,6 +599,16 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     // stairs or kerb cuts, and building a bridge on them drops stair towers
     // into the carriageway
     if (straight < 22 || len > straight * 1.6) continue;
+    // ...AND A 567-METRE WAY IS NOT AN OVERPASS. Kallang carries five
+    // near-straight footbridge ways of 302-769m (elevated linkways along
+    // Nicoll Highway and the stadium concourse). This recipe is ONE rigid
+    // deck at ONE height: seated at the centre of a 567m run whose terrain
+    // falls away, its slab crossed the Kallang shopfronts at chest height —
+    // vetted from 3795,6930, shots/street/d26kal.shot1.jpg, and it is what
+    // D26 was calling two "walled off" bays. A long elevated linkway needs a
+    // segmented recipe that follows the way and the ground; until that
+    // exists, refuse rather than invent — the same rule as the station box.
+    if (straight > 90) { droppedBridges++; continue; }
     // and it must actually cross a carriageway. A 37m footway bridge over a
     // canal is a bridge in the map's sense and not a pedestrian overpass, and
     // building an overpass on it puts a deck and two stair towers over water.
@@ -645,7 +655,7 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   }
 
   const pts = axis.p, half = axis.w / 2;
-  const stats = { erp: 0, bridges: realBridges, banners: 0, medianPlants: 0, roofSigns: 0, banners2: 0, mrt: realMrt };
+  const stats = { erp: 0, bridges: realBridges, bridgesRefused: droppedBridges, banners: 0, medianPlants: 0, roofSigns: 0, banners2: 0, mrt: realMrt };
 
   const bannerT = [], medianKerb = [], medianShrub = [], medianPalm = [];
   let acc = 0;

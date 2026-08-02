@@ -136,10 +136,22 @@ const found = await page.evaluate(() => {
         // the carriageway it joins matched neither datum: 87 findings in
         // marinabay and 228 in kallang, every one of them on a `bridge=1`
         // road, and vetted from the saddle as sitting correctly on the deck.
+        // ...AND AT THE DECK'S EDGE, NOT ONLY OVER ITS MIDDLE. A kerb runs at
+        // the edge of the carriageway, and the deck registry's lateral extent
+        // ends at half-width + 40cm — centimetres short of the kerb line, so
+        // the loop below had no candidates at the kerb's own (x,z) and 228
+        // kallang + 84 marinabay kerbs read as floating 1.2m. Measured at
+        // 3676,7036 on 2026-08-03: bridgeDecksAt() is EMPTY at the kerb and
+        // answers 7.09 one metre inboard, where the kerb origin then matches
+        // to 4cm. Nudge the query around the prop before giving up.
         if (Math.abs(d) > 0.25 && window.__bridgeDecksAt) {
-          for (const deck of window.__bridgeDecksAt(v3.x, v3.z)) {
-            const dd = v3.y - (deck + 0.024 + want);
-            if (Math.abs(dd) < Math.abs(d)) d = dd;
+          for (const [ox, oz] of [[0, 0], [0.7, 0], [-0.7, 0], [0, 0.7], [0, -0.7],
+                                  [1.4, 0], [-1.4, 0], [0, 1.4], [0, -1.4]]) {
+            for (const deck of window.__bridgeDecksAt(v3.x + ox, v3.z + oz)) {
+              const dd = v3.y - (deck + 0.024 + want);
+              if (Math.abs(dd) < Math.abs(d)) d = dd;
+            }
+            if (Math.abs(d) <= 0.25) break;
           }
         }
         if (Math.abs(d) > 0.25) bad.push(`${sig} ${d > 0 ? 'floating' : 'sunk'} ${Math.abs(d).toFixed(2)}m at ${v3.x | 0},${v3.z | 0}`);
@@ -278,15 +290,51 @@ const found = await page.evaluate(() => {
   {
     const ax = window.__axis.p;
     const stuck = [];
+    // A STITCH JUMP IS NOT STREET. The axis is chained from every way
+    // carrying the axis name, and where the chain crosses from one
+    // carriageway of a dual road to the other it draws a JOIN segment that is
+    // on no way at all — Sentosa Gateway's hairpin runs 48.6m across a water
+    // inlet, and its 7 "blocked centreline points" were all on that join
+    // (verified 2026-08-02: the axis point at -1056,12149 is 10.6m from the
+    // nearest Sentosa Gateway way; a reversal-rejecting stitcher was measured
+    // and REVERTED — it collapses chinatown's axis to 20m, because most axes
+    // legitimately run up one carriageway and back the other). So a sampled
+    // point only counts when it lies ON the named street: within the axis's
+    // own half-width + 3m of some way that carries the axis name.
+    const axName = ((data.axis && data.axis.n) || '').toLowerCase();
+    const axWays = (data.roads || []).filter((r) => (r.n || '').toLowerCase() === axName);
+    const onNamedWay = (x, z) => {
+      if (!axWays.length) return true;              // nothing to test against
+      for (const r of axWays) {
+        // EACH WAY'S OWN width, and INSIDE the carriageway: this check is
+        // about the CENTRELINE, so a sampled point counts only when it lies
+        // within the way's own tarmac. On the Gateway bridge (7m wide) a
+        // point 4-5m off the centreline is over the honest water between the
+        // twin decks — not a place a rider can be, not a defect.
+        const lim = Math.max(1.5, (r.w || 8) / 2 - 0.5);
+        for (let i = 0; i < r.p.length - 1; i++) {
+          const [x1, z1] = r.p[i], [x2, z2] = r.p[i + 1];
+          const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
+          let t = L2 < 1e-9 ? 0 : ((x - x1) * vx + (z - z1) * vz) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const dx = x - (x1 + vx * t), dz = z - (z1 + vz * t);
+          if (dx * dx + dz * dz < lim * lim) return true;
+        }
+      }
+      return false;
+    };
+    let offAxis = 0;
     for (let i = 0; i < ax.length - 1; i++) {
       const a = ax[i], c = ax[i + 1];
       const L = Math.hypot(c[0] - a[0], c[1] - a[1]) || 1;
       for (let t = 0; t < L; t += 3) {
         const x = a[0] + (c[0] - a[0]) * (t / L), z = a[1] + (c[1] - a[1]) * (t / L);
+        if (!onNamedWay(x, z)) { offAxis++; continue; }
         if (window.__blocked(x, z)) stuck.push(`main street blocked at ${x | 0},${z | 0}`);
       }
     }
-    report('D9', 'points on the main street centreline that are blocked', stuck);
+    report('D9', 'points on the main street centreline that are blocked', stuck,
+           offAxis ? `${offAxis} stitch-join point(s) on no named way skipped` : undefined);
   }
 
   /* D10  buildings standing inside each other. OSM traces a mall and its own
@@ -619,11 +667,36 @@ const found = await page.evaluate(() => {
       // of a mapped crossing. The real question is whether a signal serves
       // ANYTHING — a junction or a crossing — and one that serves neither is
       // furniture nobody put there.
+      //
+      // 55m, not 45: measured on Rochor Road 2026-08-03, the stop-line signal
+      // at 2366,7080 stands 49.6m from its own mapped crossing node — that is
+      // what an eight-lane trunk approach is like.
       let servesCrossing = false;
       for (const c of data.crossings || []) {
-        if (Math.hypot(c[0] - sx, c[1] - sz) < 45) { servesCrossing = true; break; }
+        if (Math.hypot(c[0] - sx, c[1] - sz) < 55) { servesCrossing = true; break; }
       }
+      // ...and a signal STANDING AT a major carriageway serves it: mid-block
+      // bus-priority and U-turn signals exist on every trunk road here, and
+      // OSM maps the head without any companion crossing (Ophir Road at
+      // 3089,7862, verified against the raw extract — no crossing node and no
+      // cross-way exist to find). Minor roads do not get this pass: a signal
+      // beside a service lane with nothing to serve is still furniture.
+      let atMajor = false;
       if (names.size < 2 && !servesCrossing) {
+        for (const r of data.roads || []) {
+          if (!['trunk', 'primary', 'secondary'].includes(r.k)) continue;
+          for (let i = 0; i < r.p.length - 1 && !atMajor; i++) {
+            const [x1, z1] = r.p[i], [x2, z2] = r.p[i + 1];
+            const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
+            let t = L2 < 1e-9 ? 0 : ((sx - x1) * vx + (sz - z1) * vz) / L2;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            const dx = sx - (x1 + vx * t), dz = sz - (z1 + vz * t);
+            if (dx * dx + dz * dz < 8 * 8) atMajor = true;
+          }
+          if (atMajor) break;
+        }
+      }
+      if (names.size < 2 && !servesCrossing && !atMajor) {
         bad.push(`a signal at ${sx | 0},${sz | 0} serves neither a junction nor a crossing`);
       }
     }
@@ -1691,7 +1764,19 @@ const found = await page.evaluate(() => {
         dead.push(`no counter named '${stat}' — D39 cannot see the ${key} layer any more`);
         continue;
       }
-      if (!drawn[stat]) dead.push(`scene has ${have} ${key} and the world drew none of them`);
+      // Crossings are drawn by TWO passes with two counters: the axis pass
+      // (realCrossings) and the side-street pass in markings.js
+      // (sideCrossings). Reading only the first reported sentosa — an island
+      // whose axis is one gateway road — as "78 crossings and none drawn"
+      // while 70 of them stood painted on Siloso Road (measured 2026-08-03).
+      // Bridges may be REFUSED on purpose: pedBridge declines ways straighter
+      // than 90m of span (elevated linkways this recipe cannot represent —
+      // tanjongrhu's stadium ways are all of them; see the refusal in
+      // sgdetail.js). A counted deliberate refusal is not a dead layer.
+      const n = drawn[stat]
+        + (key === 'crossings' ? (drawn.sideCrossings || 0) : 0)
+        + (key === 'bridges' ? (drawn.bridgesRefused || 0) : 0);
+      if (!n) dead.push(`scene has ${have} ${key} and the world drew none of them`);
     }
     report('D39', 'a scene layer written but never drawn', dead,
            `${WIRED.length} layers wired`);

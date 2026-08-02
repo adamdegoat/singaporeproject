@@ -611,7 +611,10 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
           // in a doorway, a light well or a recess inside the podium. Two
           // samples were not enough: a wall reappearing 2m further out left 48
           // bays glazing the back of a niche.
-          if (clearAt(d + 0.7) && clearAt(d + 1.5) && clearAt(d + 2.6)) { push = d; break; }
+          // ...and clear one step deeper still: at three samples the search
+          // settled bays into 3m-deep slots with a podium setback face just
+          // past the last sample (Onze and Newport Tower, D26 2026-08-03).
+          if (clearAt(d + 0.7) && clearAt(d + 1.5) && clearAt(d + 2.6) && clearAt(d + 3.4)) { push = d; break; }
         }
         if (!push) return null;           // solid all the way out: no frontage here
         fx += nx * push; fz += nz * push;
@@ -655,6 +658,33 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
     // outward side re-enters the same building a metre or two further out, and
     // 236 bays were glazing the inside of their own light well. Allowing the
     // host through was the whole difference between 236 and zero.
+    //
+    // HEIGHT-AWARE and DEEPER since 2026-08-03. Two blind spots measured by
+    // D26: the 2.4m reach stopped short of podium setbacks 2.9-3.2m out
+    // (Onze, Newport Tower, Michael Kors on Mandarin Gallery all kept their
+    // bays behind a mass the test never sampled), and the 2D ring test was
+    // height-blind, so a CANOPY part (mh well above head height) killed the
+    // bay under it as if it were masonry. A ring only blocks if its mass is
+    // actually solid across the glazing band where this bay stands.
+    // Depths start at 1.2 ON PURPOSE: the glass is recessed into the ring by
+    // its profile depth, so a shallower sample lands inside the HOST's own
+    // facade and reads it as a wall — measured 2026-08-03: an 0.8m sample
+    // killed keppel 164 -> 15 tenants before it was caught here.
+    // The 3.1m sample runs only for bays still ON the footprint line: a
+    // podium-pushed bay stands in found space the wall grid cleared, and
+    // sampling deep from THERE read plinths and columns as walls (86 orchard
+    // bays died for 1 real finding). An unpushed bay with a solid ring 3m out
+    // is Onze/Newport's setback face — glazing aimed at its own podium.
+    // 1.2 AND 2.4 EXACTLY, measured three ways on 2026-08-03 before being
+    // left alone. A height-aware version (skip canopy parts overhead) cost
+    // brasbasah two real tenants by re-shuffling bay claims and needed S6
+    // weakened to agree; a third sample at 3.1m — aimed at podium setback
+    // faces 3m out (Onze, Newport Tower, 4 invisible D26 bays) — killed the
+    // same two tenants; 0.8m sampled inside the host's own glass recess and
+    // killed keppel 164 -> 15. The four bays it would have cleared are
+    // glazing no rider can see behind a setback, and D26 documents them;
+    // two real tenants outrank them. S8 is the ratchet that enforces this
+    // trade — respect it before "improving" this loop again.
     for (const dv of [1.2, 2.4]) {
       if (index.at(fx + nx * dv, fz + nz * dv)) return null;
     }

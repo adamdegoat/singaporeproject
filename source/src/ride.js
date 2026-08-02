@@ -106,16 +106,25 @@ export const SKATE = {
   // now nearly zero: any real steer above jogging pace is a slide, deeper
   // input is a deeper slide, and straightening hooks up with a LIGHT scrub
   // (you pay it every turn now, so it must be a toll, not a fine).
+  // SNOWBOARD, NOT GO-KART — second retune on the rider's live feedback:
+  // "the ski feeling can be a lot more... it's hard to play kind. Like those
+  // really snowboarding kind of drifting feel." What made it hard was SPEED
+  // OF ROTATION: driftYaw 1.35 on top of loose trucks spun the board through
+  // its arc in under a second, so a slide was a flick you fought instead of
+  // a sweep you steer. A snowboard game is the opposite: rotation is SLOW
+  // and momentum is long, so you lay into an arc, hang there, and swing out
+  // of it. Yaw now drops BELOW 1 while sliding, the slide lingers (low
+  // chase), and the tolls are near zero so chaining arcs flows.
   driftIn: 0.05,       // ~3 degrees of carve is already sliding
   driftSteer: 0.2,     // any deliberate steer counts; only feather-touches keep grip
   driftMinV: 2.0,      // slides from jogging pace up
-  gripSlide: 0.85,     // the chase rate while sliding — the slide HOLDS
+  gripSlide: 0.5,      // the slide LINGERS — a long floaty pendulum
   slipMaxDrift: 0.95,  // ~54 degrees of slide before it washes out
-  slipDragDrift: 0.8,  // the per-second cost of being sideways
-  driftThrust: 0.35,   // the motor still pulls through a slide — the streets are flat,
-                       // so it plays the role gravity plays on a mountain
-  driftYaw: 1.35,      // the tail kicks round: yaw gain while sliding
-  hookScrub: 0.3,      // hook-up cost: speed * slip * this, paid once on exit
+  slipDragDrift: 0.65, // being sideways costs a little; flow is still the point
+  driftThrust: 0.3,    // the motor pulls through the slide like a slope would —
+                       // sized so a held full slide bleeds ~0.4 m/s², a gentle tax
+  driftYaw: 0.8,       // SLOW rotation in the slide: big sweeping arcs, no spin
+  hookScrub: 0.15,     // a whisper of scrub on hook-up, not a punishment
   cam: { back: 3.45, up: 1.95, aim: 5.6, fov: 57 },
 };
 
