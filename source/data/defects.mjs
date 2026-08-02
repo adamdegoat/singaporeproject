@@ -1296,6 +1296,106 @@ const found = await page.evaluate(() => {
     report('D35', 'vehicles driving off the carriageway', offRoad, `${tr.length} vehicles`);
   }
 
+  /* D40, D41, D42  THE THREE THINGS TODAY'S TRAFFIC REGRESSION DID, none of
+     which any check could see.
+
+     On 2026-08-02 the boot build kept creating its own fleet for a chunk whose
+     roads had been emptied, and the rider reported all three within minutes of
+     it going live: "why now orchard got traffic flowing backwards", "once i
+     load orchard why got vehicles hitting me alr", and a second invisible
+     fleet on the same street. EVERY district passed 42/42 throughout. D34
+     (vehicles overlapping) and D35 (vehicles off the carriageway) were both
+     happy, because a fleet driving the wrong way down its own carriageway is
+     neither overlapping nor off the road.
+
+     A gate that has never failed is not a gate, so all three were TESTED by
+     reintroducing the bug and re-running against the WORLD scene (a district
+     scene cannot show it — its boot chunk has roads either way, which is why
+     the first attempt at this test proved nothing):
+
+       D41  FIRES.  1 finding with the bug, 0 without. This is the real gate.
+       D40  did not fire — the broken spec produced a consistent-but-wrong
+            direction rather than a mixed one, so "both ways on one side" is
+            not the shape that failure took.
+       D42  did not fire at the moment defects.mjs samples.
+
+     D41 is enough on its own, and not by luck: the backwards traffic WAS the
+     duplicate fleet. The boot build's fleet, built from a chunk with no roads
+     to read a direction from, is the same object as the second fleet on the
+     street — kill it and both symptoms go. D40 and D42 are kept as cheap
+     belt-and-braces for variants that would take a different shape, and are
+     honestly labelled here as UNPROVEN rather than counted as gates. */
+  {
+    const tr = window.__trafficState ? window.__trafficState() : [];
+    // D40: on a dual carriageway the side of the axis a vehicle sits decides
+    // which way it goes. `lane` is the signed offset from the centreline and
+    // `dir` is which way it drives, so every vehicle on one side of one fleet
+    // must agree. When axisSpec had no roads to read, they did not.
+    const bySide = new Map();
+    for (const v of tr) {
+      if (v.lane === undefined || v.dir === undefined) continue;
+      const k = v.fleet + '|' + (v.lane < 0 ? 'L' : 'R');
+      if (!bySide.has(k)) bySide.set(k, { plus: 0, minus: 0, x: v.x, z: v.z });
+      const e = bySide.get(k);
+      if (v.dir > 0) e.plus++; else e.minus++;
+    }
+    const wrongWay = [];
+    for (const [k, e] of bySide) {
+      const minority = Math.min(e.plus, e.minus);
+      if (minority > 0) {
+        wrongWay.push(`fleet ${k.split('|')[0]} side ${k.split('|')[1]}: `
+          + `${e.plus} one way and ${e.minus} the other near ${e.x | 0},${e.z | 0}`);
+      }
+    }
+    report('D40', 'vehicles on one side of a street driving both ways', wrongWay,
+           `${tr.length} vehicles, ${bySide.size} fleet-sides`);
+
+    // D41: one street, one fleet. A second fleet on the same stretch is
+    // invisible traffic the rider collides with — which is exactly what
+    // "when i pass nearby a car i will stop" was.
+    const fleets = new Map();
+    for (const v of tr) {
+      if (v.x === undefined) continue;
+      if (!fleets.has(v.fleet)) fleets.set(v.fleet, []);
+      fleets.get(v.fleet).push(v);
+    }
+    const doubled = [];
+    const ids = [...fleets.keys()];
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const A = fleets.get(ids[i]), B = fleets.get(ids[j]);
+        let close = 0, wx = 0, wz = 0;
+        for (const a of A) {
+          for (const b of B) {
+            const dx = a.x - b.x, dz = a.z - b.z;
+            if (dx * dx + dz * dz < 15 * 15) { close++; wx = a.x; wz = a.z; break; }
+          }
+          if (close > 6) break;
+        }
+        if (close > 6) {
+          doubled.push(`fleets ${ids[i]} and ${ids[j]} share a street near ${wx | 0},${wz | 0}`);
+        }
+      }
+    }
+    report('D41', 'two fleets driving the same street', doubled,
+           `${ids.length} fleet(s)`);
+
+    // D42: nothing may be standing on the rider when the world opens.
+    // Traffic.build() leaves a clear zone from avoidS+55 precisely so this
+    // cannot happen, and the streamed path was passing 0 instead.
+    const rp = window.__ridePos ? window.__ridePos() : null;
+    const onTop = [];
+    if (rp) {
+      for (const v of tr) {
+        if (v.x === undefined) continue;
+        const d = Math.hypot(v.x - rp[0], v.z - rp[1]);
+        if (d < 12) onTop.push(`a ${v.kind} ${d.toFixed(1)}m from the rider at ${v.x | 0},${v.z | 0}`);
+      }
+    }
+    report('D42', 'a vehicle standing on the rider at load', onTop,
+           rp ? `rider at ${rp[0] | 0},${rp[1] | 0}` : 'no rider');
+  }
+
   /* D36 SAMPLES ONCE, AND ONCE IS THE LOW-WATER MARK. Walkers accumulate in
      carriageways over the first seconds after load — measured in Robertson
      Quay at 4-second intervals: 54, 47, 37, 37, 40 — and this probe runs

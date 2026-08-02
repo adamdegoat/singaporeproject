@@ -2911,7 +2911,28 @@ const DPR_FORCE = parseFloat(P.get('dpr') || '0');
 // The lesson is not "caps are bad", it is that a saving nobody asked for is
 // not worth a defect the user can see. If heat comes back, it gets solved by
 // doing less work per frame, not by throwing frames away.
-let FPS_CAP = parseFloat(P.get('fps') || '0') || 0;
+// THE PHONE FRAME CAP IS ON BY DEFAULT, AT 30, AND THIS FILE HAS ARGUED FOR
+// THAT FOR TWO SESSIONS WHILE THE CONSTANT SAT AT ZERO.
+//
+// The long note further down measured it properly on the third attempt — one
+// page, one settled spot, the cap toggled underneath through window.__fpsCap,
+// alternating passes, medians of rendered frames:
+//
+//     cap off  36.3   cap 40  36   cap 30  30   cap 24  24
+//
+// So 30 costs about six frames a second against a device managing 36 and buys
+// a ~17% cut in sustained per-frame work — and SUSTAINED WORK IS THE HEAT.
+// It defaulted to 0 regardless, so the cap only ever reached a phone the
+// adaptive tier had already demoted below 20fps. A phone that CAN hold a good
+// rate rendered flat out for as long as the rider kept moving, which is the
+// rider's report: "after play short time heat up already".
+//
+// Desktop is untouched (TOUCH only) and ?fps= still overrides. Critically this
+// must NOT count as the rider choosing a frame rate — `tierDone` below reads
+// P.get('fps'), not this — or turning the cap on would switch the adaptive
+// tier off for every phone, which is the trap the note beside tierDone warns
+// about.
+let FPS_CAP = parseFloat(P.get('fps') || '0') || (TOUCH ? 30 : 0);
 // ADAPTIVE TIER: a phone that cannot hold ~20fps at the standard settings
 // demotes itself once — dpr 1.25, cap 24 — and remembers, so weaker phones
 // run cool and smooth without a settings screen. Verdict from the median of
@@ -2962,6 +2983,14 @@ function tierSample(f) {
     // Comfortably clearing the 30fps cap with room to spare: this phone can
     // afford a sharper picture. Promotion, not demotion -- and it happens
     // once, after the rider is already moving smoothly.
+    //
+    // NOTE, 2026-08-02: with the phone frame cap now defaulting to 30, a
+    // capped phone can never MEASURE 40, so this branch is unreachable on
+    // touch unless ?fps= raises the cap. That is deliberate and is left
+    // as-is: the cap exists because the rider's phone gets hot, and promoting
+    // it to a sharper picture is the opposite of what heat wants. It is
+    // recorded here rather than deleted so the next person does not spend an
+    // hour wondering why phones stopped being promoted.
     TIER_DPR = Math.min(devicePixelRatio || 1, 1.5);
     try { localStorage.setItem('sg_tier', 'high'); } catch (e) { /* fine */ }
     resize();
