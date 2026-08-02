@@ -153,7 +153,7 @@
    "name": "Sentosa",
    "bbox": "1.2480,103.8150,1.2620,103.8330",
    "axis": "sentosa gateway",
-   "status": "planned",
+   "status": "live",
    "notes": "Ring 3, two districts out from anything that existed before tonight: it overlaps harbourfront 221x1,558m and nothing else, and harbourfront in turn needed keppel. Both are now built. THE RIDER CAN GET THERE — the road causeway opened in 1992 and cars have been allowed since 1998, so Sentosa Gateway is a real vehicular road and the crossing is a bridge, not a ferry. But the overlap band with harbourfront is mostly WATER, so the seam depends on that bridge deck AND on the coastline reader, which now handles multiple shorelines (this bbox has 27 coastline ways). The box takes the northern two thirds of a ~5 km2 island: Resorts World, Imbiah, Siloso and the Gateway. Siloso, Palawan and Tanjong beaches need the `beach` layer added 2026-08-02 — sand had never been fetched, parsed or coloured anywhere in this pipeline. Brief: research/coastal-expansion.md candidate 7.",
    "queued_after": "harbourfront",
    "noSignals": "verified against the local extract 2026-08-02 (node[highway=traffic_signals] in this bbox: 0 elements): Sentosa has no signalised junctions. The island's road network is roundabouts, give-way junctions and the Gateway toll plaza, which is correct for a resort island and is not a failed fetch — the build's own EMPTY warning fired and was checked rather than assumed."

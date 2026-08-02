@@ -48,7 +48,34 @@ import math, sys
 
 
 def stitch(ways, tol=1e-7):
-    """Fragments -> chains, joined on shared endpoints."""
+    """Fragments -> chains, joined on shared endpoints.
+
+    TWO KNOWN BUGS LIVE IN THIS FUNCTION. Both were diagnosed on 2026-08-02 and
+    a fix was written, measured and REVERTED — read this before rewriting it,
+    because the obvious fix makes the world worse until a third thing is fixed.
+
+    1. IT REVERSES WAYS TO JOIN THEM. A coastline way is DIRECTED (land on the
+       left) and that winding is the only statement in the data about which side
+       is water. Reversing a fragment inverts that for its whole length.
+
+    2. IT CANNOT SEE A JUNCTION. Where three coastline ways meet, matching "any
+       shared endpoint" joins an arbitrary pair and abandons the third as a
+       spur. Measured on sentosa: fragments of 76 and 3 points BOTH ending at
+       1.26010,103.82419, which the assembly then mislabels as islands, drops,
+       and so draws the sea over Pulau Brani.
+
+    THE FIX THAT WAS TRIED: join END-TO-START ONLY, never reversing. It is
+    correct in principle and it VERIFIED CLEAN on marinaeast, marinasouth and
+    harbourfront. It was reverted anyway, because it also grew harbourfront's
+    sea from 866,710 to 913,164 m2 — more correct in extent — and that larger
+    ring then covers islands the assembly still cannot cut out, taking W2 from
+    3 to 13 on a district that was green and shipped.
+
+    So the ORDER matters: fix the island holes FIRST (see `_punch`, which passes
+    a synthetic square-with-a-square-hole unit test and only needs valid closed
+    input), THEN land the end-to-start stitch. Doing it the other way round
+    trades a latent bug for a visible regression.
+    """
     segs = [list(w["geometry"]) for w in ways if len(w.get("geometry") or []) > 1]
     chains = []
     while segs:
@@ -130,7 +157,31 @@ def clip_chain(chain, box):
                 runs.append(cur); cur = []
     if cur:
         runs.append(cur)
-    return [r for r in runs if len(r) > 1]
+    runs = [r for r in runs if len(r) > 1]
+
+    # A CLOSED RING HAS A SEAM, AND THE SEAM IS NOT A COASTLINE FEATURE.
+    #
+    # An island is one closed way: its first and last vertex are the same point,
+    # chosen arbitrarily by whoever drew it. This loop starts at that vertex, so
+    # if the seam happens to fall INSIDE the bbox the ring comes out as two runs
+    # that meet there — and both then have one end sitting in open space instead
+    # of on the perimeter, which the assembly reads as "not an island edge" and
+    # drops.
+    #
+    # Measured: Pulau Brani is OSM way 16691602, 91 points, start == end ==
+    # 1.260097,103.8241852. Inside sentosa's bbox it split into runs of 76 and 3
+    # points meeting at exactly that vertex. Both were discarded, the sea was
+    # drawn over the island, and every building on it — the MPA Brani Buoy Depot
+    # among them — counted as built in open water. That was sentosa's 114
+    # findings, and it was diagnosed twice as something else first: an
+    # unimplemented island hole, then a three-way junction. It is neither.
+    #
+    # Sewing the seam back up costs three lines and restores the ring.
+    if len(chain) > 2 and _same(chain[0], chain[-1], 1e-9) and len(runs) > 1:
+        if _same(runs[-1][-1], runs[0][0], 1e-9):
+            runs[0] = runs[-1][:-1] + runs[0]
+            runs.pop()
+    return runs
 
 
 _CORNERS = lambda box: [                       # noqa: E731  (s,w,n,e)

@@ -324,6 +324,32 @@ window.__auditWorld = async function auditWorld() {
     // Road, the AYE and the Sentosa Gateway all leave this bbox — and sentosa,
     // the district that would close the biggest of those, is not built yet.
     harbourfront: { P7: 10, P1b: 1, C7: 49, S8: 33, S2: 2, T2: 19 },
+    // SENTOSA enters 2026-08-02, ring 3, two districts out from anything that
+    // existed the day before. It is the district that forced the closed-ring
+    // seam fix: Pulau Brani is OSM way 16691602, a closed island whose seam
+    // vertex falls inside this bbox, so clip_chain split it into two runs the
+    // assembly discarded as "not island edges" — the sea was drawn over the
+    // island and every building on it counted as built in open water.
+    // **W2 114 -> 17** when the seam was sewn back up.
+    //
+    // W2 17: what is left is real overwater structure — the Boardwalk, ferry
+    // berths and the cable-car span — on an island resort built out over the
+    // channel. Recorded at the measured figure, not rounded up.
+    //
+    // P1b 1 and T1 1 are ONE OBJECT counted by two checks: a 7m mass on Siloso
+    // Beach Walk at -1619,12724. Same overhang class as bugis and marinasouth.
+    //
+    // C6 1 (signals) and S8 0 are both CORRECT rather than backlog. Sentosa has
+    // no signalised junctions — verified against the extract, 0 elements, and
+    // declared in districts.json as noSignals — and its ground floors are
+    // attraction frontage, not shophouse retail.
+    //
+    // C3 3: three streets with no lighting, on an island where the lit roads
+    // are the Gateway and the resort loop. T2 27.4: Brani Terminal Avenue and
+    // the causeway approaches all leave this bbox northward into keppel and
+    // harbourfront; this is the far end of the ring and nothing further out
+    // exists to close it.
+    sentosa: { W2: 17, P1b: 1, T1: 1, C6: 1, C3: 3, S8: 0, T2: 28 },
     // River Valley C7 33: the district DELIBERATELY takes the east 1.6km of
     // a 4.9km road (declared partialMainStreet in districts.json; the west
     // belongs to a future Robertson Quay district). C7 measures against the
@@ -437,7 +463,9 @@ window.__auditWorld = async function auditWorld() {
       // once as drawn structure and once as a footprint. Not two new
       // defects — one building, counted by two checks that ask slightly
       // different questions of it.
-      P1b: 3, T1: 0, P7: 10,
+      // +1 P1b, +3 P5, +5 W2 with sentosa, 2026-08-02 — all that district's
+      // day-one figures, each measured and explained in its own entry above.
+      P1b: 4, T1: 0, P7: 10,
       // proportional to a region that is now THREE districts and 50% larger
       // W2 37 -> 39: see the marinabay note
       // W2 39 -> 34 and marinabay 79 -> 36 on 2026-07-30. Not a cleanup: the
@@ -451,7 +479,7 @@ window.__auditWorld = async function auditWorld() {
       // ratchet on a measurement that has become honest is reset to the honest
       // number, the same rule S8 already carries.
       // W2 34 -> 35: marinabay's reprocess, see its note above.
-      P8: 6, W2: 34, S8: 70, T2: 13, S2: 6, P5: 8,
+      P8: 6, W2: 39, S8: 70, T2: 13, S2: 6, P5: 11,
       // T2 RESOLVED, 2026-08-02. The open question was whether the eastern
       // group failed to join the west because the joining ways lie outside
       // every bbox, or because merge.py drops the overlap segments. Two
@@ -2314,8 +2342,16 @@ window.__auditWorld = async function auditWorld() {
     // a hand-typed list of three items cannot find the tag nobody listed.
     // `data/unused.py` enumerates the raw extract instead and runs in deploy.sh.
     const unused = [];
-    if ((data.crossings || []).length && !window.__realCrossings) unused.push('crossings');
-    if ((data.mrt || []).length && !window.__realMrt) unused.push('mrt');
+    // READ-AND-DECLINED IS NOT UNREAD — the same distinction shops already
+    // get. A district whose axis is not its main street skips every
+    // crossing (sentosa: 78 of 78, all off-axis) and every `station`-kind
+    // mrt record (sentosa: 3 of 3, Sentosa Express monorail stops with no
+    // subway entrance to draw). Both now count their skips, so "the
+    // builder looked" is provable.
+    if ((data.crossings || []).length && !window.__realCrossings
+        && !window.__droppedCrossings) unused.push('crossings');
+    if ((data.mrt || []).length && !window.__realMrt
+        && !window.__droppedMrt) unused.push('mrt');
     // READ-AND-REJECTED IS NOT UNREAD, AND A2 COULD NOT TELL THEM APART.
     //
     // This asked "did the layer produce output", which is the right question

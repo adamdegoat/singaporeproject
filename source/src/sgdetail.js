@@ -460,7 +460,14 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   // arbitrary points along the street.
   let realMrt = 0, droppedMrt = 0, farFromAxis = 0;
   for (const m of (data.mrt || [])) {
-    if (m.kind !== 'subway_entrance') continue;
+    // A STATION IS NOT AN ENTRANCE, and declining it silently is what made
+    // A2 call this layer unread. Sentosa's three `mrt` records are all
+    // `kind: "station"` — Sentosa Express monorail stops, which have no
+    // subway entrance to draw — so the loop skipped all three and left
+    // realMrt and droppedMrt both at zero, which is indistinguishable from
+    // never having looked. Counted as dropped: the layer WAS read and the
+    // records were correctly declined.
+    if (m.kind !== 'subway_entrance') { droppedMrt++; continue; }
     const [mx, mz] = m.p;
     let bi = 0, bd = Infinity, bt = 0;
     const P = axis.p;

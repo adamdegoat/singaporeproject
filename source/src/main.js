@@ -381,6 +381,7 @@ function dressStreet(data, axis, target = world) {
   // an invention; this is the actual street.
   let realCrossings = 0, tactilePads = 0;
   const tactileT = [], refugeT = [];
+  let offAxisCrossings = 0;
   for (const c of (dataRef.crossings || [])) {
     const [cx, cz, tp, isl] = c;
     // find the nearest point on the axis and the local direction there
@@ -393,7 +394,16 @@ function dressStreet(data, axis, target = world) {
       const d = (cx - (x1 + vx * t)) ** 2 + (cz - (z1 + vz * t)) ** 2;
       if (d < bd) { bd = d; bi = i; bt = t; }
     }
-    if (Math.sqrt(bd) > half + 6) continue;      // crossing on a different street
+    // A crossing more than half a carriageway from THE AXIS belongs to a
+    // different street — true where a district is its main street, and a
+    // silent loss where it is not. Sentosa's 78 surveyed crossings are
+    // spread over an island whose axis is one gateway road, so ALL of them
+    // were skipped and `realCrossings` stayed 0, which A2 reads as "the
+    // layer was never read". Counted, so a skip is visible and the next
+    // person can see it is 78 and not zero. (Drawing crossings on every
+    // road is the real fix and changes geometry in every district — it is
+    // NOT a 3am change.)
+    if (Math.sqrt(bd) > half + 6) { offAxisCrossings++; continue; }
     const [x1, z1] = pts[bi], [x2, z2] = pts[bi + 1];
     const vx = x2 - x1, vz = z2 - z1, L = Math.hypot(vx, vz) || 1;
     const ux2 = vx / L, uz2 = vz / L, nx2 = -uz2, nz2 = ux2;
@@ -505,6 +515,11 @@ function dressStreet(data, axis, target = world) {
   // kallang landed and A2 failed the world scene while a probe on the same
   // URL read 37 crossings. Same one-global-many-chunks family as __onRoad,
   // and `__realErp` two lines away has always done it correctly.
+  if (offAxisCrossings) {
+    console.log(`  crossings: ${offAxisCrossings} skipped, further than half a `
+      + `carriageway from the axis`);
+  }
+  window.__droppedCrossings = (window.__droppedCrossings || 0) + offAxisCrossings;
   window.__realCrossings = (window.__realCrossings || 0) + realCrossings;
   window.__tactilePads = tactilePads;
 
