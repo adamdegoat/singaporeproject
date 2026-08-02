@@ -1432,9 +1432,24 @@ export class Traffic {
       if (!it.wx) continue;
       const dx = px - it.wx, dz = pz - it.wz;
       if (dx * dx + dz * dz > 60) continue;            // cheap reject
-      const c = Math.cos(-it.heading), sn = Math.sin(-it.heading);
-      const lx = dx * c - dz * sn;                      // into the vehicle frame
-      const lz = dx * sn + dz * c;
+      // INTO THE VEHICLE FRAME, AND THIS WAS ROTATING THE WRONG WAY.
+      //
+      // Forward in this world is (sin h, cos h) and right is (cos h, -sin h),
+      // so resolving a world offset onto the vehicle's own axes is cos(h) and
+      // sin(h) — NOT cos(-h) and sin(-h). With the sign flipped the transform
+      // is correct only when a vehicle happens to point along an axis, and at
+      // 45 degrees it SWAPS the two: a point three metres directly ahead of a
+      // car came out as three metres ACROSS it and zero along.
+      //
+      // What that felt like, and what the rider reported: "when i pass nearby
+      // a car i will stop... like the car got invisible side doors". A car is
+      // 4.32m long and 1.78m wide, so a diagonally-oriented one was testing
+      // its LENGTH as its width and shoving the rider away from 2.5m to the
+      // side instead of 1.2m. Every junction approach and every bend in the
+      // road is a diagonal heading, so this fired constantly.
+      const c = Math.cos(it.heading), sn = Math.sin(it.heading);
+      const lx = dx * c - dz * sn;                      // across the vehicle
+      const lz = dx * sn + dz * c;                      // along it
       // Both figures now come from the meshes built above: bus body 2.5 wide
       // with a 2.54 skirt by 11.8 long; car body 1.78 by 4.32.
       const halfW = (it.kind === 'bus' ? 1.27 : 0.89) + lat;
