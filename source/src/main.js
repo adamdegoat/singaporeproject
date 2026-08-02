@@ -965,6 +965,34 @@ const PHONE = TOUCH && !P.has('full');
 // system stays in the tree and stays correct behind the flag.
 const PEOPLE = P.has('people');
 const LOD_FAR = PHONE ? 340 : 500;
+// OCCLUSION CULLING WAS BUILT, MEASURED AND REMOVED ON 2026-08-02. Read this
+// before building it again.
+//
+// The idea is sound and it is what city games rely on: do not submit the half
+// of the world hidden behind the block in front of you. The first measurement
+// looked overwhelming — 1,066 meshes in frustum in orchard with 801 behind a
+// building (75%), and 90% of triangles in chinatown.
+//
+// THAT MEASUREMENT WAS TAKEN IN `?raw=1`, WHICH DISABLES CONSOLIDATION AND IS
+// NOT WHAT SHIPS. The real build has already merged small geometry into coarse
+// per-tile batches: 2,408 draw calls in raw mode against 727 in the real one.
+// Re-measured on the shipped configuration the ceiling is about 11% of draws:
+//
+//   - a tile batch is ~110m across, wider than a city block, so it is almost
+//     never ENTIRELY behind one building — and less than entirely is a hole;
+//   - the fine-grained remainder is 116 meshes in chinatown's frustum with 79
+//     occluded, which is 11% of 727;
+//   - the tall meshes need a height-aware test (a tower behind a shophouse is
+//     not hidden) and there are only 24 of them in view.
+//
+// A conservative implementation was written and A/B'd: 526 draws with it on
+// against 528 with it off. It cost CPU every frame and saved two draw calls.
+//
+// THE WIN WAS ALREADY TAKEN — consolidate()'s per-tile batching is the same
+// saving by another route. If this is ever revisited, the only version worth
+// building is height-aware culling of whole BUILDINGS, and the honest ceiling
+// is single-digit percent.
+
 // static instanced sets (trees, lamps, posts, stripes) with per-instance
 // distance culling — the sets span the whole region in one bounding sphere,
 // so without this every leaf in the world is vertex-shaded every frame, in
@@ -1795,6 +1823,11 @@ async function streamRest(rest) {
   // water) that must NOT be unloaded with it — so it is written up in
   // HANDOFF.md rather than attempted next to a live crash.
   const MAX_RESIDENT = PHONE ? 3 : 99;
+  // How many BUILDINGS may be resident at once on a phone. 2,600 keeps the
+  // biggest district (chinatown at 2,281) plus a small neighbour, and refuses
+  // the 4,000-building pairs that were still killing the rider's iPhone after
+  // the spawn district became evictable. Desktop is effectively unbounded.
+  const RESIDENT_BUDGET = PHONE ? 2600 : 1e9;
   const recs = rest.map((r) => ({ ...r, pushed: false, group: null, signals: null, dressedDelta: null }));
   window.__streamState = { pending: recs.map((r) => r.id), building: null, done: [], unloads: 0 };
   window.__streamRecs = recs;
@@ -1821,9 +1854,32 @@ async function streamRest(rest) {
       if (r.group && nearDist(r) > FAR) { unloadChunk(r); n++; }
     }
     const live = recs.filter((r) => r.group);
-    if (live.length > MAX_RESIDENT) {
-      live.sort((a, b) => axDist(b) - axDist(a));
-      for (const r of live.slice(0, live.length - MAX_RESIDENT)) { unloadChunk(r); n++; }
+    // A BUDGET, NOT A HEADCOUNT. Districts are not the same size, and the cap
+    // counted them as if they were: three tiny ones and three enormous ones
+    // both read as "3". Measured on a phone profile after the spawn district
+    // became evictable, and it maps exactly onto what the rider reported still
+    // crashing — "chinatown teleport there then crash. little india also":
+    //
+    //   chinatown    rivervalley + chinatown + keppel  = 4,171 buildings  CRASH
+    //   littleindia  orchard + littleindia + kallang   = 4,005 buildings  CRASH
+    //   marinaeast   kallang + marinaeast + tanjongrhu =   434 buildings  fine
+    //
+    // Both crashing cases are a huge district plus a huge neighbour; the happy
+    // one is three small ones. So the constraint is WEIGHT, and the cap has to
+    // measure weight. The district you are standing in is always kept however
+    // big it is — there is nowhere else to be — and neighbours are admitted
+    // nearest-first until the budget is gone.
+    if (live.length > 1) {
+      live.sort((a, b) => axDist(a) - axDist(b));       // nearest first
+      let load = 0, keep = 0;
+      for (const r of live) {
+        const w = (r.ch && r.ch.buildings ? r.ch.buildings.length : 0);
+        // always keep the nearest, then admit while the budget holds
+        if (keep === 0 || (keep < MAX_RESIDENT && load + w <= RESIDENT_BUDGET)) {
+          load += w; keep++;
+        } else break;
+      }
+      for (const r of live.slice(keep)) { unloadChunk(r); n++; }
     }
     if (n) { window.__streamState.unloads += n; syncState(); }
   };
@@ -3243,8 +3299,8 @@ function loop(now) {
     lodLast = now;
     const cx = lodX = camera.position.x, cz = lodZ = camera.position.z;
     for (const o of LODT) {
-      const s = o.geometry.boundingSphere;
-      const d = Math.hypot(s.center.x - cx, s.center.z - cz) - s.radius;
+      const s2 = o.geometry.boundingSphere;
+      const d = Math.hypot(s2.center.x - cx, s2.center.z - cz) - s2.radius;
       o.visible = d < LOD_FAR;
     }
     // compact each static instanced set down to the instances within range
