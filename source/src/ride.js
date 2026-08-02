@@ -18,7 +18,12 @@ export const RIDE = {
 };
 
 export function newState(x = 0, z = 0, heading = 0) {
-  return { x, z, heading, speed: 0, lean: 0, yaw: 0, wheel: 0, revHold: 0, reversing: false };
+  // `course` is the direction actually TRAVELLED, which is not always the
+  // direction the machine points — see the slip block in step(). `slip` is the
+  // angle between the two, exposed so a renderer or a check can read the drift
+  // without recomputing it.
+  return { x, z, heading, course: heading, slip: 0,
+           speed: 0, lean: 0, yaw: 0, wheel: 0, revHold: 0, reversing: false };
 }
 
 // A CAR IS THE SAME MODEL WITH DIFFERENT NUMBERS. Faster top end, stronger
@@ -41,42 +46,30 @@ export const CAR = {
   cam: { back: 5.85, up: 2.95, aim: 7.0, fov: 55 },
 };
 
-// A SURF SKATE IS THE SAME MODEL AGAIN, AND THE FEEL IS IN TWO EXTRA TERMS.
+// A SURF SKATE IS THE SAME MODEL AGAIN, WITH THREE THINGS THE OTHERS DO NOT
+// HAVE: a pump, loose trucks, and SLIP.
 //
-// What makes a surf skate a surf skate rather than a slow scooter is that you
-// do not hold a throttle: you push ONCE to get rolling and after that you make
-// your own speed by carving, weighting the board through each turn. Two terms
-// carry that, and RIDE and CAR are untouched by both because each defaults off:
+// It is an ELECTRIC one, on the rider's ask — "the control feeling can have
+// the surf skate drift effect but acceleration all is auto" — so the throttle
+// is a hub motor that pulls at any speed, and `pump` is a bonus on top rather
+// than the only way to move: carving still adds speed, it is simply no longer
+// compulsory. Holding one direction just puts you in a circle, so going
+// somewhere fast still means working the turns.
 //
-//   pump     carving while rolling ADDS speed instead of scrubbing it
-//   pushMax  the foot-push stops working once the board is moving faster than
-//            a person can run alongside it
+// The trucks are LOOSE. `wheelbase` is an EFFECTIVE value, not the 0.42m
+// between a real board's trucks: this is a bicycle steering model, and a real
+// deck's geometry pushed through it spins on the spot. 1.05 lands the turn
+// radii where a surf skate's actually are — 1.4m at walking pace against the
+// scooter's 4.4m, 5.9m at cruise against its 8.2m.
 //
-// Together they give the loop the whole thing is about: push off to about
-// 11 km/h, then carve left-right to build to about 21 km/h and hold it there.
-// Stop carving on the flat and you coast down. Measured equilibria are
-// asserted in test/ride.test.mjs so retuning these numbers cannot quietly
-// turn the board back into a slow scooter.
+// And it SLIPS, which is what the first version was missing. It carved harder
+// and leaned deeper than the scooter and still read as "just like bike and
+// car", because the board tracked exactly where it pointed. See the slip block
+// in step(): the deck now points into the turn while momentum carries it wide.
+// Measured at cruise on full lock: 25 degrees of slide and 46 of lean.
 //
-// The trucks are LOOSE, which is the other half of the feel. `wheelbase` here
-// is an EFFECTIVE value, not the 0.42m between a real board's trucks: this is
-// a bicycle steering model, and a real deck's geometry pushed through it spins
-// on the spot. 1.05 is the value that lands the turn radii where a surf skate's
-// actually are — about 1.4m at walking pace against the scooter's 4.4m, and
-// 5.9m at cruise against the scooter's 8.2m.
-// IT IS AN ELECTRIC ONE, on the rider's ask: "the control feeling can have the
-// surf skate drift effect but acceleration all is auto".
-//
-// So the FEEL stays and the WORK goes. Everything that makes it carve is
-// untouched — the loose trucks (steerMax, steerFalloff), the deep lean, the
-// fast lean rate — and the throttle becomes a motor: `pushMax` is gone, so it
-// pulls at any speed instead of running out at walking pace, and `accel` is an
-// electric hub motor rather than a foot on the road.
-//
-// `pump` STAYS, deliberately. Carving still adds speed on top of the motor, so
-// the board rewards a rider who works the turns without ever requiring it —
-// which is the whole point of "drift effect but acceleration is auto". Leaving
-// it in costs nothing to a rider who just holds the throttle.
+// Every one of these is off by default, so RIDE and CAR are untouched — and
+// test/ride.test.mjs asserts that they measure exactly zero slip.
 export const SKATE = {
   vMax: 9.2,           // m/s, ~33 km/h — an electric carver, not a scooter
   vReverse: 1.4,
@@ -91,6 +84,12 @@ export const SKATE = {
   leanMax: 0.80,       // the deck goes right over in a carve
   leanRate: 8.5,       // and it gets there fast
   pump: 2.6,           // carving still pays, it is just no longer compulsory
+  // THE DRIFT. Low grip means the deck slides across its own direction of
+  // travel before it hooks up; slipMax stops it ever swapping ends; slipDrag
+  // makes the slide cost speed so holding a long drift is a decision.
+  grip: 2.6,
+  slipMax: 0.62,       // ~36 degrees of slide at full commitment
+  slipDrag: 1.9,
   cam: { back: 3.45, up: 1.95, aim: 5.6, fov: 57 },
 };
 
@@ -143,11 +142,49 @@ export function step(s, dt, throttle, brakeIn, steer, P = RIDE) {
   s.yaw = yawRate;
   s.heading -= yawRate * dt;
 
+  // SLIP — THE BOARD POINTS INTO THE TURN AND MOMENTUM CARRIES IT WIDE.
+  //
+  // Every vehicle here travelled exactly along `heading`, so nothing could
+  // ever slide: the surf skate carved harder and leaned deeper than the
+  // scooter and still read as "a bike that leans more", which is what the
+  // rider said — "i want the surf skate to have some like drifting effect so
+  // it feels a bit like those skiing game style".
+  //
+  // So the direction TRAVELLED is now its own state. `heading` swings with the
+  // steering as before; `course` chases it at a rate set by P.grip, and the
+  // gap between them IS the drift. Fast steering opens the gap, grip closes
+  // it, and the machine is drawn pointing along `heading` while moving along
+  // `course` — which is exactly what a board sliding across its own direction
+  // looks like from behind. No renderer change is needed for that.
+  //
+  // A vehicle with no `grip` has course === heading and behaves EXACTLY as it
+  // did: the scooter and the car are untouched by this, asserted in the tests.
+  if (P.grip) {
+    let d = s.heading - s.course;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    // A cap, so a hard turn slides and never spins: past this the board simply
+    // washes out at a fixed angle instead of swapping ends.
+    const cap = P.slipMax || 0.5;
+    if (d > cap) { s.course += d - cap; d = cap; }
+    else if (d < -cap) { s.course += d + cap; d = -cap; }
+    s.course += d * Math.min(1, P.grip * dt);
+    s.slip = s.heading - s.course;
+    while (s.slip > Math.PI) s.slip -= Math.PI * 2;
+    while (s.slip < -Math.PI) s.slip += Math.PI * 2;
+    // Sliding sideways scrubs speed, which is what stops a drift being free
+    // and is half of why carving in a ski game feels like work.
+    if (P.slipDrag) s.speed = Math.max(0, s.speed - Math.abs(s.slip) * P.slipDrag * dt);
+  } else {
+    s.course = s.heading;
+    s.slip = 0;
+  }
+
   const target = Math.max(-P.leanMax, Math.min(P.leanMax, yawRate * s.speed * 0.11));
   s.lean += (target - s.lean) * Math.min(1, P.leanRate * dt);
 
-  s.x += Math.sin(s.heading) * s.speed * dt;
-  s.z += Math.cos(s.heading) * s.speed * dt;
+  s.x += Math.sin(s.course) * s.speed * dt;
+  s.z += Math.cos(s.course) * s.speed * dt;
   s.wheel += (s.speed / 0.21) * dt;
   return s;
 }

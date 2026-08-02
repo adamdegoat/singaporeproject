@@ -254,4 +254,46 @@ t('every vehicle carries a chase-camera framing', () => {
   assert.ok(SKATE.cam.up < RIDE.cam.up && RIDE.cam.up < CAR.cam.up);
 });
 
+t('the board SLIPS — it points into the turn and slides wide', () => {
+  const s = run(newState(), 4, 1, 0, 0, SKATE);
+  assert.ok(Math.abs(s.slip) < 1e-9, 'slipping in a straight line: ' + s.slip);
+  run(s, 1.2, 1, 0, 1, SKATE);
+  const deg = Math.abs(s.slip) * 180 / Math.PI;
+  assert.ok(deg > 12, 'no drift: ' + deg.toFixed(1) + ' deg');
+  assert.ok(deg <= SKATE.slipMax * 180 / Math.PI + 1e-6, 'slid past the cap: ' + deg.toFixed(1));
+});
+
+t('the slip is on the OUTSIDE of the turn, not the inside', () => {
+  const r = run(newState(), 4, 1, 0, 0, SKATE); run(r, 1.2, 1, 0, 1, SKATE);
+  const l = run(newState(), 4, 1, 0, 0, SKATE); run(l, 1.2, 1, 0, -1, SKATE);
+  assert.ok(Math.sign(r.slip) === -Math.sign(l.slip), 'slip does not mirror');
+  assert.ok(r.slip !== 0);
+});
+
+t('a drift never swaps ends — the cap holds under sustained lock', () => {
+  const s = run(newState(), 4, 1, 0, 0, SKATE);
+  run(s, 20, 1, 0, 1, SKATE);
+  const deg = Math.abs(s.slip) * 180 / Math.PI;
+  assert.ok(deg <= SKATE.slipMax * 180 / Math.PI + 1e-6, 'spun out: ' + deg.toFixed(1) + ' deg');
+});
+
+t('sliding scrubs speed, so a long drift costs you', () => {
+  const a = run(newState(), 6, 1, 0, 0, SKATE);
+  const b = run(newState(), 6, 1, 0, 0, SKATE);
+  run(a, 2, 1, 0, 0, SKATE);        // straight, throttle held
+  run(b, 2, 1, 0, 1, SKATE);        // drifting, throttle held
+  assert.ok(b.speed < a.speed, `drifting ${b.speed.toFixed(2)} should cost vs straight ${a.speed.toFixed(2)}`);
+});
+
+t('the scooter and the car do not slip at all', () => {
+  for (const [name, P] of [['scooter', RIDE], ['car', CAR]]) {
+    assert.equal(P.grip, undefined, name + ' gained a grip term');
+    const s = run(newState(), 6, 1, 0, 0, P);
+    run(s, 2, 1, 0, 1, P);
+    assert.equal(s.slip, 0, name + ' slipped: ' + s.slip);
+    // and it still travels exactly where it points
+    assert.ok(Math.abs(s.course - s.heading) < 1e-12, name + ' course diverged from heading');
+  }
+});
+
 console.log(`\n${pass} passed`);
