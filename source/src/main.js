@@ -31,6 +31,11 @@ renderer.shadowMap.enabled = !P.has('noshadow');
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
+// Exposed HERE, not only at the probe block ~2,500 lines down: the shopfront
+// builder raycasts the scene DURING the build (untenanted bays facing recipe
+// masonry), and the late assignment left __scene undefined for the whole
+// boot build — the ray pass silently never ran.
+window.__scene = scene;
 // Set while an arrival panel is up; see window.__arriveWait far below.
 let ARRIVING = false;
 // Density is set from the far plane, not by eye: FogExp2 leaves

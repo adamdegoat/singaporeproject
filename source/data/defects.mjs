@@ -922,7 +922,19 @@ const found = await page.evaluate(() => {
           .filter((h) => !(h.object.geometry
             && h.object.geometry.type === 'SphereGeometry'
             && (h.object.geometry.parameters || {}).radius > 100))
-          .filter((h) => h.distance > 0.02 && h.object.visible);
+          .filter((h) => h.distance > 0.02 && h.object.visible)
+          // A TREE IS NOT A WALL. Canopy cards are thick enough to beat the
+          // signage filter and stand on exactly the pavement these rays
+          // cross — Newport Tower's "wall" was a street tree (bb y 12.7-17.7,
+          // measured 2026-08-03). Walls in this world are never instanced;
+          // every instanced hit is a prop or foliage.
+          .filter((h) => !h.object.isInstancedMesh)
+          // GLASS IS NOT A WALL EITHER — "walled off" asks whether you can
+          // SEE into the shop, and a transparent pane (opacity 0.26) is the
+          // one thing you always see through. Keppel's last four "walls"
+          // were other bays' glass planes across metre-wide slots between
+          // overlapping footprints (colour 7f929c, measured 2026-08-03).
+          .filter((h) => !(h.object.material && h.object.material.transparent));
         // the bay's own frontmost geometry is its fascia, 0.46m proud of the
         // facade, so anything stopping the ray more than 0.6m short of that is
         // standing between the street and the shop
@@ -977,6 +989,8 @@ const found = await page.evaluate(() => {
             && h.object.geometry.type === 'SphereGeometry'
             && (h.object.geometry.parameters || {}).radius > 100))
           .filter((h) => h.distance > 0.02 && h.object.visible)
+          .filter((h) => !h.object.isInstancedMesh)
+          .filter((h) => !(h.object.material && h.object.material.transparent))
           .filter((h) => {
             const g = h.object.geometry;
             if (!g.boundingBox) g.computeBoundingBox();

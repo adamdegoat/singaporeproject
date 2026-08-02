@@ -31,6 +31,7 @@ import * as THREE from '../lib/three.module.js';
 import { Merger, onCarriageway, groundAt, streetY } from './city.js';
 import { SignAtlas } from './tex.js';
 import { hasShopfront } from './landmarks.js';
+import { TOUCH as SHOP_TOUCH } from './input.js';
 
 /* ---------------- what a kind of shop looks like ---------------- */
 // Colour and light only. A bakery is warm and bright, a bank is cool and even,
@@ -362,6 +363,55 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
   // only the "is something already there" question widens.
   const index = new BuildingIndex((neighbours || data).buildings);
 
+  // The walled-bay ray pass below runs BEFORE the first render, and a
+  // positioned recipe mesh has a stale identity matrixWorld until someone
+  // updates it — the raycaster read Newport Tower's setback at the origin
+  // and every build-time ray sailed through where the wall would be
+  // (measured 2026-08-03: 4 kills at draw, the 4 real ones untouched, and
+  // the same ray AFTER a render hits at 0.3m). One update, once per pass.
+  //
+  // AND THE RAYS GET A SPATIAL GRID, NOT THE SCENE. intersectObjects on the
+  // scene root traverses every mesh per ray; per district that is seconds,
+  // but behaviour.mjs builds the WHOLE WORLD inline and its 20,000 bays
+  // against 40,000 meshes hung the gate for half an hour, twice. Meshes are
+  // bucketed once by bounding-sphere centre into 24m cells; each ray then
+  // tests the few dozen nearby.
+  let rayGrid = null;
+  if (!SHOP_TOUCH && typeof window !== 'undefined' && window.__scene) {
+    window.__scene.updateMatrixWorld(true);
+    rayGrid = new Map();
+    const _c3 = new THREE.Vector3();
+    window.__scene.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh || !o.visible || !o.geometry) return;
+      if (o.material && o.material.transparent) return;
+      const g2 = o.geometry;
+      if (!g2.boundingSphere) g2.computeBoundingSphere();
+      if (!g2.boundingSphere) return;
+      _c3.copy(g2.boundingSphere.center).applyMatrix4(o.matrixWorld);
+      const rad = g2.boundingSphere.radius;
+      const span = Math.ceil(rad / 24);
+      const cx = Math.floor(_c3.x / 24), cz = Math.floor(_c3.z / 24);
+      // big merged meshes land in every cell their sphere covers, capped so a
+      // district-wide mesh does not flood the grid
+      const s2 = Math.min(span, 8);
+      for (let i = -s2; i <= s2; i++) for (let j = -s2; j <= s2; j++) {
+        const k = (cx + i) + ',' + (cz + j);
+        if (!rayGrid.has(k)) rayGrid.set(k, []);
+        rayGrid.get(k).push(o);
+      }
+    });
+  }
+  const rayCandidates = (x, z) => {
+    if (!rayGrid) return null;
+    const cx = Math.floor(x / 24), cz = Math.floor(z / 24);
+    const out = [];
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const c = rayGrid.get((cx + i) + ',' + (cz + j));
+      if (c) out.push(...c);
+    }
+    return out;
+  };
+
   window.__shopBays = [];
   // Front faces only for the two planes that cover the most screen. Glass and
   // the lit panel behind it are only ever seen from the street, and a
@@ -536,6 +586,43 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
   const claimKey = (x, z, nx, nz, dx = 0, dz = 0, da = 0) =>
     `${Math.round(x / 1.2) + dx},${Math.round(z / 1.2) + dz},`
     + `${Math.round(Math.atan2(nx, nz) / (Math.PI / 3)) + da}`;
+  const deferredBays = [];
+  // drawn bays on a 2m grid, for the duplicate-twin test in drawBay — the
+  // claim grid alone lets two bays 1.39m apart straddle its 1.2m cells two
+  // cells apart, outside the +/-1 window (both D25 pairs did exactly that).
+  const drawnBayGrid = new Map();
+  const drawnBayAdd = (x, z, nx, nz) => {
+    const k = Math.floor(x / 2) + ',' + Math.floor(z / 2);
+    if (!drawnBayGrid.has(k)) drawnBayGrid.set(k, []);
+    drawnBayGrid.get(k).push([x, z, nx, nz]);
+  };
+  const drawnBayTwin = (x, z, nx, nz) => {
+    const cx = Math.floor(x / 2), cz = Math.floor(z / 2);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      for (const [ox, oz, onx, onz] of drawnBayGrid.get((cx + i) + ',' + (cz + j)) || []) {
+        if (Math.hypot(ox - x, oz - z) < 1.6 && (onx * nx + onz * nz) > 0.5) return true;
+      }
+    }
+    return false;
+  };
+  // An OPPOSITE-facing bay standing 0.5-3.6m dead ahead makes this bay one
+  // wall of a canyon two shopfronts wide and no street deep — the facing
+  // glass was often podium-pushed off its own ring, so no ring test can see
+  // it, and the merger holds its geometry as raw arrays until flush, so no
+  // ray can either. The drawn-bay grid is the one witness that always knows.
+  const facingBayAhead = (x, z, nx, nz) => {
+    const px = x + nx * 2.0, pz = z + nz * 2.0;
+    const cx = Math.floor(px / 2), cz = Math.floor(pz / 2);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      for (const [ox, oz, onx, onz] of drawnBayGrid.get((cx + i) + ',' + (cz + j)) || []) {
+        if ((onx * nx + onz * nz) > -0.5) continue;
+        const along = (ox - x) * nx + (oz - z) * nz;      // how far AHEAD it stands
+        const across = Math.abs(-(ox - x) * nz + (oz - z) * nx);
+        if (along > 0.5 && along < 3.6 && across < 3.0) return true;
+      }
+    }
+    return false;
+  };
 
   /* --- 3. bays --- */
   for (const runs of runsOf.values()) for (const r of runs) {
@@ -569,9 +656,18 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
       claim[best] = t.sh;
     }
     for (const i of usable) {
-      drawBay(r, i, n, bw, claim[i], site[i]);
-      stats.bays++;
+      if (claim[i]) { drawBay(r, i, n, bw, claim[i], site[i]); stats.bays++; }
+      else deferredBays.push([r, i, n, bw, site[i]]);
     }
+  }
+  // UNTENANTED BAYS DRAW SECOND, in one pass after every tenant in the
+  // district is on its wall. Two of the last defects on the board needed the
+  // ordering: a duplicate-frontage twin (two overlapped footprints glazing
+  // one wall) must lose to the tenant whichever run came first, and the
+  // slot-canyon test below can only defer to bays that already exist.
+  for (const [r2, i2, n2, bw2, s2] of deferredBays) {
+    drawBay(r2, i2, n2, bw2, null, s2);
+    stats.bays++;
   }
 
   // Where this bay would stand, or null if it cannot. Every placement test
@@ -724,6 +820,81 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
     // cannot drop one bay through the floor while its neighbours stay put.
     const gy = groundAt(fx + nx * 1.0, fz + nz * 1.0) - 0.06;
     const base = Math.max(gy, r.base - 1.5);
+
+    // TWO MORE KILL-ONLY TESTS FOR UNTENANTED BAYS (tenants are exempt by
+    // construction, so S8 cannot move):
+    // 1. THE DUPLICATE TWIN. Overlapped footprints glaze one wall twice; the
+    //    claim grid's ±1 window can be straddled by two bays 1.39m apart (both
+    //    D25 pairs did). Untenanted bays draw AFTER every tenant, so a
+    //    same-facing bay within 1.6m of one already on the wall is a
+    //    duplicate and dies.
+    // 2. THE SLOT CANYON. A ring EDGE crossing the bay's forecourt within
+    //    3.4m means the glass faces another building's wall across a gap no
+    //    street runs through — keppel's Newport/Onze slots. Point sampling
+    //    missed these; a segment-edge crossing cannot.
+    if (!tenant) {
+      if (drawnBayTwin(fx, fz, nx, nz) || facingBayAhead(fx, fz, nx, nz)) {
+        stats.baysWalledSkipped = (stats.baysWalledSkipped || 0) + 1;
+        return;
+      }
+      const sx0 = fx + nx * 0.6, sz0 = fz + nz * 0.6;
+      const sx1 = fx + nx * 3.4, sz1 = fz + nz * 3.4;
+      const cross = (ax, az, bx, bz) => {
+        const d1 = (bx - ax) * (sz0 - az) - (bz - az) * (sx0 - ax);
+        const d2 = (bx - ax) * (sz1 - az) - (bz - az) * (sx1 - ax);
+        const d3 = (sx1 - sx0) * (az - sz0) - (sz1 - sz0) * (ax - sx0);
+        const d4 = (sx1 - sx0) * (bz - sz0) - (sz1 - sz0) * (bx - sx0);
+        return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+      };
+      let slot = false;
+      for (const f of index.near(fx + nx * 2.0, fz + nz * 2.0)) {
+        for (let ii = 0; ii < f.p.length && !slot; ii++) {
+          const a1 = f.p[ii], a2 = f.p[(ii + 1) % f.p.length];
+          if (cross(a1[0], a1[1], a2[0], a2[1])) slot = true;
+        }
+        if (slot) break;
+      }
+      if (slot) {
+        stats.baysWalledSkipped = (stats.baysWalledSkipped || 0) + 1;
+        return;
+      }
+    }
+
+    // AN UNTENANTED BAY FACING MASONRY IS NOT DRAWN. The last ten D26
+    // findings were bays behind RECIPE geometry — podium setbacks drawn by
+    // the facade family with no footprint ring (measured 2026-08-03: zero
+    // data rings in front of any flagged bay), so no data-level test can see
+    // them and every attempt to catch them by widening siteBay's ring test
+    // cost real tenants. So ask the WORLD, with D26's own instrument: one
+    // ray from the street at mid-glazing. Untenanted bays only — killing one
+    // cannot move S8 (its ratio counts tenants alone) and cannot displace a
+    // tenant. Desktop only: the buildings a phone draws are identical either
+    // way (these bays are invisible by definition), and the ray pass is boot
+    // time a phone does not have.
+    if (!tenant && !SHOP_TOUCH && typeof window !== 'undefined' && window.__scene) {
+      const rc = (drawBay._rc = drawBay._rc || new THREE.Raycaster());
+      rc.far = 3.4;
+      const ry = base + (prof.head + prof.riser) / 2;
+      rc.set(new THREE.Vector3(fx + nx * 3.2, ry, fz + nz * 3.2),
+             new THREE.Vector3(-nx, 0, -nz).normalize());
+      const cands = rayCandidates(fx, fz);
+      const hits = rc.intersectObjects(cands || window.__scene.children, !cands)
+        .filter((hh) => hh.distance > 0.02 && hh.object.visible)
+        .filter((hh) => !hh.object.isInstancedMesh)   // a tree or a prop is not a wall
+        .filter((hh) => !(hh.object.material && hh.object.material.transparent))  // glass is see-through
+        .filter((hh) => !(hh.object.geometry.type === 'SphereGeometry'
+          && (hh.object.geometry.parameters || {}).radius > 100))
+        .filter((hh) => {
+          const g2 = hh.object.geometry;
+          if (!g2.boundingBox) g2.computeBoundingBox();
+          const s2 = g2.boundingBox.getSize(new THREE.Vector3());
+          return !(Math.min(s2.x, s2.z) < 0.3 && s2.y < 4);   // signage is not a wall
+        });
+      if (hits.length && hits[0].distance < 3.2 - prof.depth - 0.6) {
+        stats.baysWalledSkipped = (stats.baysWalledSkipped || 0) + 1;
+        return;
+      }
+    }
 
     const yaw = Math.atan2(nx, nz);
     const wInner = bw - 0.22;
@@ -889,6 +1060,7 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
     // Every bay, tenanted or not, so a check can ask where the glass ended up
     // rather than where the map said a shop was. That distinction is the whole
     // reason this file exists.
+    drawnBayAdd(fx, fz, nx, nz);
     (window.__shopBays = window.__shopBays || []).push({
       x: fx, z: fz, nx, nz, w: +bw.toFixed(2), name: tenant ? tenant.n : '',
       kind: tenant ? tenant.k : '', y: +(base + prof.riser).toFixed(2),
