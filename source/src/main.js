@@ -1055,7 +1055,9 @@ function registerLod(root) {
 }
 let terrain = new Terrain(null);
 let mode = 'ride';                 // 'ride' | 'walk'
-const sound = new Sound();
+// OFF unless ?audio — see the note in audio.js. The rider asked for it out
+// while it is unreliable, and a silent world is better than a flaky one.
+const sound = new Sound(P.has('audio'));
 window.__sound = sound;   // so the audio path can be verified, not assumed
 // BROWSERS WILL NOT START AUDIO WITHOUT A GESTURE, and these listeners have to
 // see the gesture FIRST.
@@ -1873,15 +1875,45 @@ async function streamRest(rest) {
       live.sort((a, b) => axDist(a) - axDist(b));       // nearest first
       let load = 0, keep = 0;
       for (const r of live) {
-        const w = (r.ch && r.ch.buildings ? r.ch.buildings.length : 0);
         // always keep the nearest, then admit while the budget holds
-        if (keep === 0 || (keep < MAX_RESIDENT && load + w <= RESIDENT_BUDGET)) {
-          load += w; keep++;
+        if (keep === 0 || (keep < MAX_RESIDENT && load + wt(r) <= RESIDENT_BUDGET)) {
+          load += wt(r); keep++;
         } else break;
       }
       for (const r of live.slice(keep)) { unloadChunk(r); n++; }
     }
     if (n) { window.__streamState.unloads += n; syncState(); }
+  };
+  const wt = (r) => (r.ch && r.ch.buildings ? r.ch.buildings.length : 0);
+  // THE BUILDER MUST ASK THE EVICTOR'S QUESTION BEFORE BUILDING. The weight
+  // budget above landed in evict() alone while the build loop kept admitting
+  // candidates by headcount — so standing at Chinatown, the loop built keppel
+  // (~12s of geometry), the sweep threw it straight back out (2,281 + 890 over
+  // budget), and the builder queued it again: an infinite build-evict churn
+  // allocating and freeing a whole district every dozen seconds for the life
+  // of the page. Measured 2026-08-02 on the phone profile: keppel rebuilt 15+
+  // times in 200s with the rider standing still. That churn is what the rider
+  // reported as "chinatown / littleindia still crash" — both stand beside a
+  // neighbour that can never fit (2,281+890 and 1,663+1,041), while
+  // marinaeast's three small neighbours all fit and never thrashed.
+  //
+  // wouldKeep answers "if this candidate were built right now, would the
+  // sweep keep it?" using EXACTLY the sweep's rule, so the two can never
+  // disagree again. The nearest district is always admitted (keep === 0),
+  // which is what lets an arrival displace the over-budget district it is
+  // leaving behind.
+  const wouldKeep = (c) => {
+    if (ALL) return true;
+    const sim = recs.filter((r) => r.group).concat(c)
+      .sort((a, b) => axDist(a) - axDist(b));
+    let load = 0, keep = 0;
+    for (const r of sim) {
+      if (keep === 0 || (keep < MAX_RESIDENT && load + wt(r) <= RESIDENT_BUDGET)) {
+        load += wt(r); keep++;
+        if (r === c) return true;
+      } else if (r === c) return false;
+    }
+    return false;
   };
   // A SIGNAL FOR "THE NEIGHBOURHOOD IS UP". The loading screen used to come
   // off with none of these built, and the first thing the rider did was ride
@@ -1896,6 +1928,8 @@ async function streamRest(rest) {
     // Never exceed the ceiling by building: if the resident set is already at
     // the cap, the nearest candidate has to wait for something to leave.
     if (!ALL && recs.filter((r) => r.group).length >= MAX_RESIDENT) cand = [];
+    // ...and never build what the sweep would immediately evict (see wouldKeep).
+    cand = cand.filter(wouldKeep);
     if (cand.length) {
       window.__streamIdle = false;
       // Nearest content first; where two districts both contain you (the

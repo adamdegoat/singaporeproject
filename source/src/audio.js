@@ -6,10 +6,25 @@
 // the first touch or click.
 
 export class Sound {
-  constructor() {
+  // AUDIO IS OFF. The rider asked for it out on 2026-08-02: "the audio still
+  // got a lot of problem. sometimes have sometimes don't have. can we totally
+  // remove audio first."
+  //
+  // Switched off at the CONSTRUCTOR rather than deleted, so nothing else in
+  // the world has to change and it comes back with one flag when it is worth
+  // fixing properly. With `enabled` false no AudioContext is ever created, no
+  // wind bed is synthesised and every public method returns immediately —
+  // which also removes the 303ms of first-gesture work this file documents
+  // below, and the sample-by-sample noise generation that costs CPU (and
+  // therefore battery and heat) for as long as the rider keeps moving.
+  //
+  // `?audio` turns it back on for anyone diagnosing it.
+  constructor(enabled = false) {
+    this.enabled = !!enabled;
     this.ready = false;
-    this.muted = false;
+    this.muted = !enabled;
     this._lastStep = 0;
+    this.state = enabled ? 'idle' : 'disabled';
   }
 
   // BUILD THE SYNTH BEFORE ANYONE ASKS FOR IT.
@@ -27,6 +42,7 @@ export class Sound {
   // prewarm() behind the loading screen and the gesture is left with almost
   // nothing to do.
   prewarm() {
+    if (!this.enabled) return;
     if (this.ctx) return;
     const C = window.AudioContext || window.webkitAudioContext;
     if (!C) { this.state = 'no-webaudio'; return; }
@@ -36,6 +52,7 @@ export class Sound {
   }
 
   start() {
+    if (!this.enabled) return;
     if (this.ready) return;
     this.prewarm();
     const ctx = this.ctx;
@@ -185,6 +202,7 @@ export class Sound {
   // proves the unlock beyond argument: chime-but-no-engine means the engine
   // mapping; no chime means the session. Fires once.
   chime() {
+    if (!this.enabled) return;
     if (this._chimed || !this.ctx || this.ctx.state !== 'running') return;
     this._chimed = true;
     try {
@@ -206,12 +224,14 @@ export class Sound {
 
   // one line of truth for ?audiodebug
   debugLine() {
+    if (!this.enabled) return 'audio off';
     return `audio ctx=${this.ctx ? this.ctx.state : 'none'} ready=${!!this.ready}`
       + ` chimed=${!!this._chimed} session=${this._session ? (this._session.paused ? 'paused' : 'playing') : 'none'}`
       + (this.master ? ` master=${this.master.gain.value.toFixed(2)}` : '');
   }
 
   poke() {
+    if (!this.enabled) return;
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
     this.chime();
     // the playback-session element can be refused on the first gesture if
@@ -223,12 +243,14 @@ export class Sound {
   }
 
   setMuted(m) {
+    if (!this.enabled) return;
     this.muted = m;
     if (this.ready) this.master.gain.setTargetAtTime(m ? 0 : 0.55, this.ctx.currentTime, 0.15);
   }
 
   // speed in m/s (may be negative), mode 'ride' | 'walk'
   update(speed, mode, walkSpeed, walkPhase, nearestVehicle = 999) {
+    if (!this.enabled) return;
     if (!this.ready || this.muted) return;
     const t = this.ctx.currentTime;
     const v = Math.abs(speed);
