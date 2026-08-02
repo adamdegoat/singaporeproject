@@ -98,15 +98,24 @@ export const SKATE = {
   // slides — deeper angle, cheaper speed, extra yaw as the tail comes round —
   // until the steer is released and it HOOKS UP again, paying a one-off scrub
   // for however sideways it was. Every parameter is off for RIDE and CAR.
-  driftIn: 0.18,       // slip angle (rad, ~10 deg) where committed steering breaks the tail
-  driftSteer: 0.75,    // near full lock counts as committed; gentle carves keep grip (and the pump)
-  driftMinV: 3.0,      // below this the board just turns; no walking-pace drifts
+  // EVERY TURN SLIDES. The first cut gated the drift behind near-full-lock
+  // commitment and the rider called it straight away: "It should be every
+  // turn should be sliding alr. Like those real skiing game feeling." In a
+  // ski game the skis yaw ahead of your momentum from the FIRST degree of
+  // steer — there is no gripped turning mode at speed. So the thresholds are
+  // now nearly zero: any real steer above jogging pace is a slide, deeper
+  // input is a deeper slide, and straightening hooks up with a LIGHT scrub
+  // (you pay it every turn now, so it must be a toll, not a fine).
+  driftIn: 0.05,       // ~3 degrees of carve is already sliding
+  driftSteer: 0.2,     // any deliberate steer counts; only feather-touches keep grip
+  driftMinV: 2.0,      // slides from jogging pace up
   gripSlide: 0.85,     // the chase rate while sliding — the slide HOLDS
   slipMaxDrift: 0.95,  // ~54 degrees of slide before it washes out
-  slipDragDrift: 1.0,  // a held slide bleeds ~0.4 m/s² net against the weak drift thrust
-  driftThrust: 0.1,    // sideways wheels barely transmit the motor
+  slipDragDrift: 0.8,  // the per-second cost of being sideways
+  driftThrust: 0.35,   // the motor still pulls through a slide — the streets are flat,
+                       // so it plays the role gravity plays on a mountain
   driftYaw: 1.35,      // the tail kicks round: yaw gain while sliding
-  hookScrub: 0.55,     // hook-up cost: speed * slip * this, paid once on exit
+  hookScrub: 0.3,      // hook-up cost: speed * slip * this, paid once on exit
   cam: { back: 3.45, up: 1.95, aim: 5.6, fov: 57 },
 };
 

@@ -175,12 +175,14 @@ t('it pulls from a standstill without being pumped', () => {
 });
 
 t('carving still PAYS on top of the motor, it is just not compulsory', () => {
+  // Sub-threshold only, since every real turn slides now (driftSteer 0.2):
+  // the pump survives as a feather-carve bonus, not a propulsion system.
   const a = run(newState(), 6, 1, 0, 0, SKATE);       // throttle, straight
   const b = run(newState(), 6, 1, 0, 0, SKATE);
-  carve(b, 6, SKATE, 1.1, 0.6);                        // gripped carve, no throttle
+  carve(b, 6, SKATE, 1.1, 0.15);                       // feather carve, no throttle
   const c = run(newState(), 6, 1, 0, 0, SKATE);
   run(c, 6, 0, 0, 0, SKATE);                           // or just coast
-  assert.ok(b.speed > c.speed + 1.0,
+  assert.ok(b.speed > c.speed + 0.2,
     `carving ${b.speed.toFixed(2)} should beat coasting ${c.speed.toFixed(2)}`);
   assert.ok(a.speed > 0);
 });
@@ -318,10 +320,16 @@ t('committed steering BREAKS the tail — drift is a state, past the grip cap', 
   assert.ok(deg <= SKATE.slipMaxDrift * 180 / Math.PI + 1e-6, 'past the drift cap');
 });
 
-t('a gentle carve keeps its grip — no drift below the commitment threshold', () => {
+t('only a feather-touch keeps grip — every real turn slides (the ski contract)', () => {
+  const g = run(newState(), 6, 1, 0, 0, SKATE);
+  run(g, 3, 1, 0, 0.15, SKATE);
+  assert.ok(!g.drifting, 'a feather carve broke the tail');
+  // and a HALF steer — an ordinary turn — is already a slide, which is the
+  // rider's ask verbatim: "every turn should be sliding alr"
   const s = run(newState(), 6, 1, 0, 0, SKATE);
-  run(s, 3, 1, 0, 0.5, SKATE);
-  assert.ok(!s.drifting, 'a half-steer carve broke the tail');
+  run(s, 1, 1, 0, 0.5, SKATE);
+  assert.ok(s.drifting, 'an ordinary turn did not slide');
+  assert.ok(Math.abs(s.slip) > 0.4, 'slide too shallow to read: ' + s.slip.toFixed(2));
 });
 
 t('releasing the steer HOOKS UP: scrub paid once, then it runs straight', () => {
@@ -348,8 +356,11 @@ t('no pumping while the tail is out — a drift is never free speed', () => {
   const s = run(newState(), 6, 1, 0, 0, SKATE);
   const before = s.speed;
   run(s, 3, 1, 0, 1, SKATE);       // held full-lock slide, throttle pinned
-  assert.ok(s.speed < before - 1.5,
-    `a held drift barely cost anything: ${before.toFixed(2)} -> ${s.speed.toFixed(2)}`);
+  // the slide must COST something and can never beat the straight — but with
+  // every turn sliding now, the toll is deliberately light (the motor plays
+  // the mountain's gravity), so this asserts direction, not pain
+  assert.ok(s.speed < before - 0.3,
+    `a held drift is free speed: ${before.toFixed(2)} -> ${s.speed.toFixed(2)}`);
 });
 
 t('the scooter and the car do not slip at all', () => {

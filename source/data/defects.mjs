@@ -465,6 +465,30 @@ const found = await page.evaluate(() => {
         if (window.__onRoad(sx3, sz4, 0)) spans = true;
         else if (window.__inWater && window.__inWater(sx3, sz4)) spans = true;
       }
+      // AN APPROACH SPAN CROSSES NOTHING AND IS STILL A BRIDGE. The Sentosa
+      // Boardwalk's shore-end deck tile sits wholly over the apron before the
+      // water starts — no carriageway, no water under its whole long axis —
+      // and was the check's one 2026-08-03 finding. If a mapped bridge=1 way
+      // runs within the deck's own reach (these are 110m MERGED tiles, so the
+      // centre can sit 20m+ off the way — measured 20.9m for the Boardwalk),
+      // this deck is that bridge's approach, not an orphan slab.
+      if (!spans) {
+        for (const r of data.roads || []) {
+          if (!r.bridge) continue;
+          for (let i = 0; i < r.p.length - 1 && !spans; i++) {
+            const [x1, z1] = r.p[i], [x2, z2] = r.p[i + 1];
+            const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
+            let t = L2 < 1e-9 ? 0 : ((c3.x - x1) * vx + (c3.z - z1) * vz) / L2;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            const dx = c3.x - (x1 + vx * t), dz = c3.z - (z1 + vz * t);
+            // deck fabric is merged per ~110m tile, so the reach is the
+            // larger of the deck's own half-length and half a tile side
+            const reach = Math.max(halfLen, 55);
+            if (dx * dx + dz * dz < reach * reach) spans = true;
+          }
+          if (spans) break;
+        }
+      }
       if (!spans) bad.push(`a bridge deck at ${c3.x | 0},${c3.z | 0} spans no carriageway`);
     });
     report('D15', 'built bridge decks spanning nothing', bad);
@@ -862,6 +886,32 @@ const found = await page.evaluate(() => {
               + ` hit at y ${hits[0].point.y.toFixed(1)}, ${(3.2 - hits[0].distance).toFixed(2)}m out`;
           }
         }
+      }
+      // A LEDGE IS NOT A WALL. Mandarin Gallery's deep facade bands stopped
+      // all three 35%-height rays while the glazing under them reads
+      // perfectly from the pavement (vetted from 300,7135 on 2026-08-03,
+      // shots/street/d26mg.shot2.jpg). "Walled off" means you cannot see
+      // into the shop at ANY height — so before convicting, ask the LOWER
+      // glazing: if a ray at 12% passes clear, the blocker is an overhang.
+      // A building nose-to-nose or a roadside parapet blocks low too and
+      // stays convicted.
+      if (blocked === 3) {
+        const yLow = b.y + (b.top - b.y) * 0.12;
+        const ox = b.x + b.nx * 3.2, oz = b.z + b.nz * 3.2;
+        ray.set(new T.Vector3(ox, yLow, oz), new T.Vector3(-b.nx, 0, -b.nz).normalize());
+        const lowHits = ray.intersectObjects(sc.children, true)
+          .filter((h) => !(h.object.geometry
+            && h.object.geometry.type === 'SphereGeometry'
+            && (h.object.geometry.parameters || {}).radius > 100))
+          .filter((h) => h.distance > 0.02 && h.object.visible)
+          .filter((h) => {
+            const g = h.object.geometry;
+            if (!g.boundingBox) g.computeBoundingBox();
+            const s2 = g.boundingBox.getSize(new T.Vector3());
+            return !(Math.min(s2.x, s2.z) < 0.3 && s2.y < 4);   // thin signage
+          });
+        const lowBlocked = lowHits.length && lowHits[0].distance < 3.2 - b.depth - 0.6;
+        if (!lowBlocked) blocked = 0;               // an overhang, not a wall
       }
       if (blocked === 3) {
         bad.push(`bay at ${b.x | 0},${b.z | 0} walled off by ${what} `
