@@ -259,6 +259,43 @@ def _corners_between(a, b, box, forward):
     return [c for _, c in out]
 
 
+def _ring_area(r):
+    a = 0.0
+    for i in range(len(r)):
+        p, q = r[i], r[i - 1]
+        a += p["lon"] * q["lat"] - q["lon"] * p["lat"]
+    return a / 2
+
+
+def _punch(outer, hole):
+    """Cut `hole` out of `outer` with a zero-width slit.
+
+    A hole cannot be expressed as a second ring here: both the runtime
+    `__inWater` and the audit's own test are an OR over rings — inside ANY ring
+    means water — so adding an island ring would make the island MORE water,
+    not less. The standard answer for a single-ring representation is a slit:
+    walk the outer ring to the vertex nearest the hole, walk the hole all the
+    way round in the OPPOSITE winding, and come back. The two coincident edges
+    have zero area and every point-in-polygon test then reports the island as
+    outside.
+    """
+    if len(hole) < 3:
+        return outer
+    # opposite winding to the outer ring, or the "hole" adds area instead of
+    # removing it
+    if (_ring_area(outer) > 0) == (_ring_area(hole) > 0):
+        hole = list(reversed(hole))
+    bi, bj, bd = 0, 0, None
+    for i, a in enumerate(outer):
+        for j, b in enumerate(hole):
+            d = (a["lat"] - b["lat"]) ** 2 + (a["lon"] - b["lon"]) ** 2
+            if bd is None or d < bd:
+                bd, bi, bj = d, i, j
+    return (outer[:bi + 1]
+            + hole[bj:] + hole[:bj + 1]
+            + outer[bi:])
+
+
 def sea_polygons(coast_ways, bbox):
     """The public entry point. bbox is the districts.json 's,w,n,e' string.
 
@@ -297,21 +334,25 @@ def sea_polygons(coast_ways, bbox):
     # coastline into tiles, and it degenerates to the old behaviour when there
     # is only one run.
     runs = []
+    islands = []
     interior = 0
     for chain in stitch(coast_ways):
         for run in clip_chain(chain, box):
             if _on_edge(run[0], box) and _on_edge(run[-1], box):
                 runs.append(run)
-            else:
-                # A closed island wholly inside the box is a HOLE in the sea,
-                # not a piece of its edge, and this assembly cannot express a
-                # hole. Counted out loud rather than folded in, because folding
-                # it in is what put a shopping centre under water.
+            elif len(run) > 3:
+                # AN ISLAND IS A HOLE IN THE SEA, and leaving it out is not a
+                # cosmetic loss. Pulau Brani sits whole inside the sentosa bbox;
+                # skipping its ring left the sea covering the island, so every
+                # building on it — the MPA Brani Buoy Depot among them — read as
+                # "built in open water". That was 114 W2 findings and the reason
+                # sentosa could not ship.
+                islands.append(run)
                 interior += 1
     if interior:
-        print(f"  ! {interior} coastline run(s) lie wholly inside the bbox "
-              f"(islands). They are holes in the sea and are not modelled; the "
-              f"surrounding water is still built.")
+        print(f"  ! {interior} island coastline ring(s) lie inside the bbox and are "
+              f"NOT cut out of the sea — anything built on them will read as "
+              f"built in open water. See _punch() and the note at its call site.")
     if not runs:
         return []
 
@@ -348,6 +389,18 @@ def sea_polygons(coast_ways, bbox):
             i = best[1]
         if len(ring) > 3:
             out.append(ring)
+    # ISLAND HOLES: ATTEMPTED, MEASURED AS WORSE, AND REVERTED 2026-08-02.
+    #
+    # `_punch()` below splices an island into the outer ring with a zero-width
+    # slit, which is the standard single-ring way to express a hole. Applied to
+    # sentosa it produced a ring that failed the verify: the open channel came
+    # out as LAND and Pulau Brani stayed sea — so the splice or its winding test
+    # is wrong, and a corrupted sea ring is far worse than a missing hole. The
+    # helper is kept because the approach is right and only the implementation
+    # is not; the call site is disabled until it passes verify().
+    #
+    # The next attempt should test _punch() against a hand-made square-with-a-
+    # square-hole before going near real coastline, which is what I did not do.
     if not out:
         return out
     # ring areas in square degrees, compared against the box's own

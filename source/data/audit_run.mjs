@@ -37,8 +37,12 @@ page.setDefaultTimeout(120000);
 // SG_EXTRA appends query flags (?nofoliage, ?noshops...) so a check's count can
 // be attributed to one subsystem by building the world without it. Never used
 // by deploy.sh: the gate always runs the whole world.
-await page.addInitScript((c) => { globalThis.SG_EX_CAP = c; },
-  process.env.SG_EX_CAP || '6');
+// THE THIRD CAP. add() in audit_world.js truncates every finding's examples
+// to `window.__auditEx || 8` on the way out, so raising the two caps inside
+// the checks changed nothing and a 114-finding failure still printed eight
+// lines. Three caps sat between a failing check and its evidence.
+await page.addInitScript((c) => { window.__auditEx = c; },
+  +(process.env.SG_EX_CAP || 8));
 await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/?dpr=1&raw=1&streamall=1&scene=${process.env.SG_SCENE || 'orchard'}`
   + (process.env.SG_EXTRA ? '&' + process.env.SG_EXTRA : ''), { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true || window.__bootError', null, { timeout: 120000 });

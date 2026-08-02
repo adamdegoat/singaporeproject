@@ -2198,7 +2198,10 @@ window.__auditWorld = async function auditWorld() {
         // with no way to tell them apart from the number.
         if (window.__bridgeDeckAt && window.__bridgeDeckAt(p.x, p.z) !== null) continue;
         inW++;
-        if (exW2.length < 6) exW2.push(`${p.sig} in open water at ${p.x | 0},${p.z | 0}`);
+        // 40 here too. Raising only the MESH loop's cap left this one at 6,
+        // so a 114-finding failure still showed eight lines and the props
+        // half — which turned out to be ~106 of them — stayed invisible.
+        if (exW2.length < 40) exW2.push(`${p.sig} in open water at ${p.x | 0},${p.z | 0}`);
       }
       const vv2 = new T.Vector3();
       sc.traverse((o) => {
