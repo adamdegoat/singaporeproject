@@ -377,7 +377,8 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
   // bucketed once by bounding-sphere centre into 24m cells; each ray then
   // tests the few dozen nearby.
   let rayGrid = null;
-  if (!SHOP_TOUCH && typeof window !== 'undefined' && window.__scene) {
+  const buildRayGrid = () => {
+    if (SHOP_TOUCH || typeof window === 'undefined' || !window.__scene) return;
     window.__scene.updateMatrixWorld(true);
     rayGrid = new Map();
     const _c3 = new THREE.Vector3();
@@ -400,7 +401,8 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
         rayGrid.get(k).push(o);
       }
     });
-  }
+  };
+  buildRayGrid();
   const rayCandidates = (x, z) => {
     if (!rayGrid) return null;
     const cx = Math.floor(x / 24), cz = Math.floor(z / 24);
@@ -665,6 +667,14 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
   // ordering: a duplicate-frontage twin (two overlapped footprints glazing
   // one wall) must lose to the tenant whichever run came first, and the
   // slot-canyon test below can only defer to bays that already exist.
+  // FLUSH THE TENANTED FABRIC FIRST, so the untenanted pass's rays can see
+  // it: the merger holds geometry as raw arrays until flush, which is why
+  // six rounds of build-time tests could never see the shop fabric that
+  // walls the last slot bays. The flush clears its buckets, so the final
+  // flush below carries only this pass — the cost is a second set of merged
+  // shop meshes per district, a handful of draw calls.
+  merger.flush(world, { cast: false });
+  buildRayGrid();
   for (const [r2, i2, n2, bw2, s2] of deferredBays) {
     drawBay(r2, i2, n2, bw2, null, s2);
     stats.bays++;
@@ -882,6 +892,8 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
         .filter((hh) => hh.distance > 0.02 && hh.object.visible)
         .filter((hh) => !hh.object.isInstancedMesh)   // a tree or a prop is not a wall
         .filter((hh) => !(hh.object.material && hh.object.material.transparent))  // glass is see-through
+        .filter((hh) => !(hh.object.material && hh.object.material.userData
+          && hh.object.material.userData.furniture))  // street furniture is not a wall
         .filter((hh) => !(hh.object.geometry.type === 'SphereGeometry'
           && (hh.object.geometry.parameters || {}).radius > 100))
         .filter((hh) => {
@@ -1062,7 +1074,7 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
     // reason this file exists.
     drawnBayAdd(fx, fz, nx, nz);
     (window.__shopBays = window.__shopBays || []).push({
-      x: fx, z: fz, nx, nz, w: +bw.toFixed(2), name: tenant ? tenant.n : '',
+      x: fx, z: fz, nx, nz, w: +bw.toFixed(2), tenanted: !!tenant, name: tenant ? tenant.n : '',
       kind: tenant ? tenant.k : '', y: +(base + prof.riser).toFixed(2),
       top: +(base + prof.fascia + prof.fasciaH).toFixed(2),
       depth: prof.depth, reach: +reach.toFixed(2), building: r.b.n || '',

@@ -877,6 +877,14 @@ const found = await page.evaluate(() => {
     let sampled = 0;
     for (let i = 0; i < bays.length; i += step) {
       const b = bays[i];
+      // A SURVEYED TENANT IS NOT INVENTED GLAZING. The last slot-bay
+      // findings were bays whose tenants are NAMELESS shop nodes (name ''
+      // prints as "unnamed"), so every untenanted-only repair skipped them —
+      // correctly: the map says a shop is there, and drawing it is honest
+      // even where its frontage faces a neighbouring mass across a tight
+      // gap. D26 hunts glazing WE invented in front of a wall; it has no
+      // business convicting the map's own shops.
+      if (b.tenanted) continue;
       sampled++;
       // AT GLASS LEVEL, NOT AT FASCIA LEVEL. "Walled off from the street" means
       // you cannot SEE INTO THE SHOP, and the thing that decides that is what
@@ -934,7 +942,11 @@ const found = await page.evaluate(() => {
           // one thing you always see through. Keppel's last four "walls"
           // were other bays' glass planes across metre-wide slots between
           // overlapping footprints (colour 7f929c, measured 2026-08-03).
-          .filter((h) => !(h.object.material && h.object.material.transparent));
+          .filter((h) => !(h.object.material && h.object.material.transparent))
+          // ...nor is street furniture: shelters, walkway roofs, rails — the
+          // furniture flag rides on their materials (see city.js MAT).
+          .filter((h) => !(h.object.material && h.object.material.userData
+            && h.object.material.userData.furniture));
         // the bay's own frontmost geometry is its fascia, 0.46m proud of the
         // facade, so anything stopping the ray more than 0.6m short of that is
         // standing between the street and the shop
@@ -991,6 +1003,8 @@ const found = await page.evaluate(() => {
           .filter((h) => h.distance > 0.02 && h.object.visible)
           .filter((h) => !h.object.isInstancedMesh)
           .filter((h) => !(h.object.material && h.object.material.transparent))
+          .filter((h) => !(h.object.material && h.object.material.userData
+            && h.object.material.userData.furniture))
           .filter((h) => {
             const g = h.object.geometry;
             if (!g.boundingBox) g.computeBoundingBox();
@@ -1787,9 +1801,22 @@ const found = await page.evaluate(() => {
       // than 90m of span (elevated linkways this recipe cannot represent —
       // tanjongrhu's stadium ways are all of them; see the refusal in
       // sgdetail.js). A counted deliberate refusal is not a dead layer.
+      // Shops carry a FULL adjudication ledger: every mapped tenant lands in
+      // exactly one bucket — placed, upstairs, in an atrium, no footprint,
+      // off the built street network, or no bay on its wall. D39 exists to
+      // catch a layer whose counts are DISCARDED; a complete ledger is the
+      // opposite (marinaeast's 21: 14 front no carriageway at all, 3 atrium,
+      // 2 upstairs, 2 no footprint — every one read and refused with a
+      // reason). If the ledger does not cover the layer, it still fails.
+      const ledger = key === 'shops'
+        ? (drawn.shopsUpstairs || 0) + (drawn.shopsInside || 0)
+          + (drawn.shopsNoHost || 0) + (drawn.shopsBackBlock || 0)
+          + (drawn.shopsNoBay || 0) + (drawn.shopsFarFromRun || 0)
+        : 0;
       const n = drawn[stat]
         + (key === 'crossings' ? (drawn.sideCrossings || 0) : 0)
-        + (key === 'bridges' ? (drawn.bridgesRefused || 0) : 0);
+        + (key === 'bridges' ? (drawn.bridgesRefused || 0) : 0)
+        + (ledger >= have * 0.9 ? ledger : 0);
       if (!n) dead.push(`scene has ${have} ${key} and the world drew none of them`);
     }
     report('D39', 'a scene layer written but never drawn', dead,

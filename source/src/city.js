@@ -288,6 +288,17 @@ export const MAT = {
   }),
 };
 
+// STREET FURNITURE IS NOT A WALL — the flag rides on the MATERIAL because
+// merging strips names and types. D26 and the shopfront ray pass exempt any
+// hit carrying it: a bus shelter, a walkway roof or a queue rail standing on
+// the pavement in front of a shop is Singapore, not a walled-off bay (vetted
+// 2026-08-03, shots/street/slot.shot*.jpg — the last "walls" on the defect
+// board were a bus shelter and a five-foot-way canopy).
+for (const _k of ['trim', 'metal', 'galv', 'busGrey', 'busRoof', 'busSoffit',
+                  'busRest', 'hiVis', 'kerb', 'kerbPaint']) {
+  if (MAT[_k]) MAT[_k].userData.furniture = true;
+}
+
 // The default is the quiet register: chalky pastels, which is what most
 // conserved shophouse streets in Singapore actually are.
 const SHOPHOUSE_COLS = [0xd8cbb4, 0xbfd2c4, 0xd9c39a, 0xc9d3dd, 0xd6b6a8, 0xe0d6bd, 0xb9c9bd];
@@ -1334,7 +1345,29 @@ export async function buildBuildings(world, data, Y = null) {
     // deliberately starts in the air.
     if (!b.con && !(b.mh && b.mh > 1)) {
       const _low = footingY(pts);
+      // ...and NEVER across a carriageway. A ring the polygon surgery left
+      // spanning a road (or a porte-cochere the road passes under) would get
+      // its open ground floor walled shut by the skirt — robertson's D9
+      // caught exactly one, a skirt wall standing in River Valley Road at
+      // -776,8126 (2026-08-03). If any sampled ring point stands on a road,
+      // this building manages its own ground floor; no skirt.
+      let _onRoad = false;
       if (FOOT - _low > 2.5) {
+        // every ~3m along every edge — vertex+midpoint sampling let a long
+        // edge cross River Valley Road between samples and walled it
+        // (robertson D9 at -776,8126)
+        for (let _i = 0; _i < pts.length && !_onRoad; _i++) {
+          const _a = pts[_i], _b = pts[(_i + 1) % pts.length];
+          const _L = Math.hypot(_b[0] - _a[0], _b[1] - _a[1]);
+          const _n = Math.max(1, Math.ceil(_L / 3));
+          for (let _k = 0; _k <= _n && !_onRoad; _k++) {
+            const _t = _k / _n;
+            if (onCarriageway(_a[0] + (_b[0] - _a[0]) * _t,
+                              _a[1] + (_b[1] - _a[1]) * _t, 0.3)) _onRoad = true;
+          }
+        }
+      }
+      if (!_onRoad && FOOT - _low > 2.5) {
         // MERGED, like every other piece of building fabric — not a bare
         // ExtrudeGeometry mesh. The first version was one, and D16 flagged
         // River Valley Apartments' skirt: a deep U-shaped ring's walls
