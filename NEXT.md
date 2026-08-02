@@ -1,3 +1,85 @@
+# SESSION RECORD — 2026-08-02, part 2: the coastal ring
+
+Nine districts to FIFTEEN. Every district in research/coastal-expansion.md is
+built, gated and live. Sixteen green deploys. The detail that matters:
+
+## 1. THE MAP IS A FILE NOW (data/osmlocal.py)
+
+Measured before writing it: one district = 15 Overpass queries + 16 retries;
+one topup layer across nine districts = 27 minutes; 2 of 4 mirrors dead and a
+third rate-limiting within one hour. The whole island is 36MB. One pass answers
+every layer in ~95s.
+
+**IT DID NOT WORK FOR THE FIRST FIVE DISTRICTS AND I SAID IT DID.** The QL
+parser matched only a literal `{bbox}`, but both callers substitute real
+coordinates first — so every layer raised Unsupported and fell silently back to
+Overpass. kallang, marinaeast, tanjongrhu, marinasouth and keppel were all built
+over the network. Their data is fine; they are simply not reproducible from the
+snapshot. **My tests passed the placeholder form, which is the one shape
+production never sends.**
+
+## 2. THE SEA (data/coastline.py)
+
+`natural=coastline` had been fetched since the fetch was written and read by
+nothing. OSM maps no sea polygon — it maps a directed shoreline, land on the
+left, and the winding IS the statement. So: stitch, clip to the bbox, close the
+ring on the seaward side, and assemble ACROSS ALL CHAINS as one circuit
+(harbourfront has four shorelines; closing each independently gave 3.9x the
+district area of "sea" with VivoCity inside it).
+
+**The winding is derived from the data, never argued.** The first version
+reasoned it out in a comment and got it backwards — Bay East Garden came out as
+sea and looked entirely plausible. It now builds a probe point one metre to the
+right of the shoreline and picks the walk direction that contains it.
+
+## 3. SENTOSA: DIAGNOSED WRONG TWICE, AND WHAT FIXED IT
+
+114 things built in open water. Wrong #1: an unimplemented island hole. Wrong
+#2: a three-way junction defeating stitch(). **Actual: Pulau Brani is OSM way
+16691602, a closed ring whose seam vertex falls inside the bbox.** clip_chain
+starts at that vertex, so the ring became two runs meeting at the seam, each
+with one end in open space instead of on the perimeter; the assembly discarded
+both and drew the sea over the island. Three lines. W2 114 -> 17.
+
+What cracked it: printing the coordinate at FULL PRECISION. At 5dp the two runs
+looked like fragments meeting at a junction; at full precision they were
+`1.260097,103.8241852` twice — one ring's start and end.
+
+**And three times my own test points were what was wrong.** "Sea" probes that
+turned out to be on Pulau Brani, and on Sentosa beside the Oasis Resort and
+TRANSFORMERS The Ride. The reader was right every time. Choose verification
+points from the fetched geometry, not from memory of the map.
+
+## 4. THE FIX I WROTE, MEASURED AND REVERTED
+
+`stitch()` has two real bugs: it REVERSES ways to join them (inverting
+land-on-left, the only statement about which side is water) and it cannot see a
+junction. Joining end-to-start only fixes both and VERIFIED CLEAN on three
+districts — and was reverted, because it also makes harbourfront's sea more
+correct in extent and that larger ring covers islands the assembly cannot cut
+out: W2 3 -> 13 on a shipped district. Island holes first (`_punch` passes a
+synthetic square-with-a-square-hole test), THEN the stitch. The order is in the
+docstring.
+
+## 5. EVERYTHING ELSE THAT WAS BROKEN AND SILENT
+
+- `A2` read whatever the LAST streamed chunk held — broken for the whole
+  streaming era. `__realCrossings`/`__realMrt`/`__realBridges` now accumulate.
+- MRT entrances judged by distance from the AXIS: all five of marinaeast's real
+  surveyed entrances dropped, and silently.
+- `merge.py` had no `parkfurn` case, and the lossless verifier skipped the six
+  hand-partitioned layers — the ones most likely to break.
+- Entrance canopies reached over the sea: 157 six-metre columns in the channel.
+- W2's props loop did not know about bridge decks while its vertex loop did;
+  and a pier is over water by definition, which W2 had never been told.
+- A tree leaf card reported as a buried road marking.
+- `behaviour.mjs`'s boot guard was sized for a world a third smaller: measured
+  419s against a 300s limit, which killed a green deploy.
+- ~200MB leaked per interrupted deploy (the EXIT trap does not fire on SIGKILL).
+- Three example caps between a failing check and its evidence.
+
+---
+
 # SESSION RECORD — 2026-08-02 overnight (Opus 5)
 
 Three green deploys, the ninth district, six real bugs, and TWO OF MY OWN
@@ -5125,3 +5207,207 @@ invisible to every check in the suite.
 Do NOT reach for a blanket "take the minimum": Fort Canning is genuinely 60m and
 Orchard Road genuinely climbs 14m over its length, which is the whole reason the
 heightfield exists.
+
+# ============================================================
+# 2026-08-02, AFTERNOON SESSION
+# ============================================================
+
+## THE KEPPEL RESEARCH BRIEF — NOT YET RUN, FIRE THIS VERBATIM
+
+The fourth of four briefs commissioned this afternoon. It produced NOTHING
+because the session's shared web-search budget hit 200/200 under it while the
+other three were still working. The bbox and axis below were read from
+`data/districts.json` at the time of writing and are correct:
+**keppel, bbox `1.2650,103.8260,1.2810,103.8440`, axis `keppel road`.**
+
+--- BEGIN BRIEF ---
+
+You are researching real Singapore buildings so a 3D city model can draw them
+correctly. Write a BUILD-READY spec to
+/Users/ZY/orchard/research/keppel-landmarks.md.
+
+CONTEXT: the model's Keppel district (bbox 1.2650,103.8260,1.2810,103.8440, axis
+"Keppel Road") has 1,148 buildings and only 134 are named (11%) — the worst
+naming ratio of any district. 289 carry a GUESSED height. Big unnamed masses:
+two ~27,000 m2 warehouses at an OSM 15m, two identical 8,082 m2 masses at 20m,
+several 6,700-7,400 m2 warehouses/industrial at 10-15m. NOTE: two premises from
+the earlier draft of this brief have ALREADY been corrected by the harbourfront
+research and must not be re-researched — the 9,311 m2 "public" building at a
+guessed 24m is Keppel Distripark's 511 Kampong Bahru Road block (OSM way
+191967435, `building:levels=1`), and Keppel Distripark's sheds are 4 of
+96 x 120 m and 2 of 70 x 96 m with a hanging MERO roof, built 1994, NO PUBLISHED
+HEIGHT. See research/harbourfront-landmarks.md before starting.
+
+This district covers Tanjong Pagar / Keppel Road / Everton Park / Spottiswoode
+Park / Bukit Purmei / Telok Blangah, plus the port.
+
+RESEARCH AND REPORT ON, with PUBLISHED figures and citations:
+- Tanjong Pagar Railway Station (1932, national monument) — height, the four
+  allegorical figures, the Art Deco/neoclassical facade, materials, colours,
+  architect (Swan & Maclaren), current status after the 2011 closure and the
+  Rail Corridor works. NOTE our data already has a surveyed height=8 on it.
+- The PSA Tanjong Pagar / Keppel Terminal sheds and gantry cranes — published
+  shed heights, crane heights, the port's colours. The terminals are being
+  progressively vacated for Tuas; say what is still there and as of when.
+- Everton Park and Spottiswoode Park HDB estates — block storey counts,
+  completion years, and the colour schemes. Everton Park's blocks are
+  frequently photographed; get their real look. Our repo already caches HDB's
+  own records at `data/hdb_blocks.json` — use it and say when you are quoting it.
+- Blair Plain and Everton Road / Spottiswoode Park Road conservation shophouses
+  — gazette dates, era band, shophouse style (Late/Transitional/Art Deco), and
+  the published colour palette.
+- The Pinnacle@Duxton — confirm 50 storeys, 156m, sky bridges at levels 26 and
+  50, 7 blocks, completed 2009. Our data has the skybridge as a part at
+  min_level 49 of 50.
+- Icon@Tanjong Pagar, Altez, Skysuites@Anson, Wallich Residence / Guoco Tower,
+  International Plaza, 100AM, Tanjong Pagar Centre.
+- Bukit Purmei and Telok Blangah HDB towers along Keppel Road.
+- Keppel Road frontage specifically: what a rider on Keppel Road actually
+  passes, in order.
+- Prima Limited (Flour Mills) silo group at the Keppel Road end — OSM parts are
+  8, 9, 7, 5 and 2 levels; is any metre height published?
+
+HARD RULES, these matter more than completeness:
+1. NEVER convert a storey count into metres yourself. Report storeys as storeys
+   and metres as metres separately, saying which the source published.
+2. Label anything with no published source as **UNPUBLISHED** — explicitly.
+3. If a premise in this prompt is WRONG, say so LOUDLY at the top of the file.
+   Ten rounds have now corrected a false premise ten times out of ten — look for
+   one, and check every position by point-in-polygon against
+   `data/osm/singapore.osm.pbf` rather than by name.
+4. Cite every figure with source name and URL.
+5. Per-building table: name, footprint area if published, storeys, height in
+   metres, roof form, facade material, facade colour, year, source. Then a short
+   "what a rider actually sees" paragraph per major building.
+
+Use web search extensively. Write the file, then reply with a 10-line summary of
+the most important findings and any false premises you corrected.
+
+--- END BRIEF ---
+
+## SESSION RECORD — what was measured, 2026-08-02 afternoon
+
+### `building:min_level`, the largest unread gap in the pipeline
+
+    min_height on ..................  63 footprints
+    building:min_level on ..........  880 footprints
+      of those, no min_height ......  817
+      at level 3 or higher .........  564   (all extruded from the ground)
+
+The clearest case, measured in bugis: a tower crown mapped as six stacked parts
+(levels 38-44, areas 251-2,168 m2) drew as six solid columns standing in the
+street, the smallest a 259 m2 white shaft **108.8m tall where a 2.5m cap
+belongs**.
+
+**486 lifted across 15 districts.** Two design decisions carried it:
+
+1. `mh = min_level / levels x h`, never `min_level x 3.4`. `h` may have come
+   from a surveyed `height`, from HDB's storey table at its own rate, or from
+   levels x 3.4 — a cap derived at a different rate from the mass it caps floats
+   above it or sinks into it.
+2. A support test, resolved after the whole district is read, because a mass
+   with nothing under it is a worse defect than the needle it replaces. Per
+   district it prints what it lifted AND what it left on the ground.
+
+Verified A/B against an unpatched copy of process.py on bugis, marinabay and
+chinatown. Building counts rose slightly (marinabay 378 -> 383) and that is
+correct: the burial filter already knows a footprint with `mh` occupies none of
+the ground beneath it, so lifting a container stops it swallowing what it floats
+over. chinatown 42/42, and **D38 went 4 -> 2** — both survivors are the probe
+artefacts its own comment describes (Hong Lim Complex carries no min_level and
+no mh; its 12,130 m2 footprint is wider than D38's own 120m mesh filter).
+
+### The coastline blocker had EXPIRED — re-measured, not re-planned
+
+    district      ways  chains  edge-runs  islands  reversal joins used
+    marinaeast       5       1          1        0        0
+    marinasouth      7       1          1        0        0
+    keppel           1       1          1        0        0
+    harbourfront    16       4          5        0        0
+    sentosa         24       7          7        0        0
+
+Zero reversals fire anywhere; zero interior islands survive; end-to-start gives
+BYTE-IDENTICAL rings to the old code on every district, harbourfront included.
+The 913,164 m2 regression that forced the "islands first, stitch second"
+ordering predates the `clip_chain` seam repair, which was what manufactured the
+islands the larger ring could not cut out. `_punch` passes the
+square-with-a-square-hole test its own note asked for, in both windings — the
+splice was never the bug, its input was. Both landed as hardening, zero geometry
+moved, and the unit test is wired into `python3 data/coastline.py`.
+
+### The crossings note was stale too
+
+`markings.js` matches crossings against every DRESSED road, and the dressing
+reach went 230m -> **1200m, the whole district**, on 2026-07-29. Distance from
+each district's axis to its crossings, measured:
+
+    sentosa      78 crossings   median 786m   max 1242m    within 230m:   0/78
+    keppel      221             median 448m   max 1025m    within 230m:  54/221
+    orchard     500             median 249m   max 1059m    within 230m: 237/500
+
+Every crossing sits exactly ON a road (distance 0.0 to the nearest centreline —
+they are road nodes), so they are all attachable. What is left of the item is
+sentosa's tail past the 1,200m reach, not "drawing crossings on every road
+changes geometry in every district".
+
+### Two visible defects found through research rather than through a check
+
+- **Two ornamental ponds drawn as 20m solid blocks.** OSM ways 934999016 and
+  934999017 on the Keppel Marina East desalination plant's roof park carry
+  `natural=water, water=pond` AND `building:part=yes, building:levels=0.5`. The
+  part tags describe POSITION on the roof deck, not a mass. Promoted, 0.5 levels
+  is 1.7m, the squat guard replaced it with a type default, and two ponds became
+  seven-storey blocks. Two in the whole world; fixed as a rule at the promotion
+  site rather than as a special case.
+- **The station box** — full write-up in HANDOFF.md. An underground MRT station
+  drawn as a 263m x 68m, 18m-tall wall.
+
+### Session limits hit
+
+**Web search: 200/200, exhausted.** Shared across the session and ALL subagents,
+not per agent. Four research agents were dispatched in parallel; the first made
+83 tool calls and the cap was reached while three were still working. Three
+finished anyway; **keppel produced nothing** and its brief is banked above. The
+cap was raised to 2000 in `~/.claude/settings.json` afterwards, which applies to
+NEW sessions only.
+
+## THE RESEARCH FOUND MORE DEFECTS THAN THE CHECKS DID — 2026-08-02 afternoon
+
+Four research briefs were commissioned to raise the CHARACTER score of the four
+thinnest districts. All four landed. What they actually delivered, in order of
+value, was **defects nothing in the 42-check suite or the 37 defect classes
+could see**, because every one of them is a case where the world is internally
+consistent and wrong:
+
+1. **An underground MRT station drawn as a 263m x 68m, 18m wall** across
+   HarbourFront's busiest public space. Three sensible rules combined to build
+   it. Fixed.
+2. **1,617 roofs painted fire-engine red** — `roof:colour=#ff3333`, a tracing
+   artefact 14x commoner than any real roof colour, on the Asian Civilisations
+   Museum and Parliament House among others. Fixed.
+3. **Six wrong skyline heights** from one-key-answers-for-many-buildings in
+   LANDMARKS, two of them 59m out, each present in three district files.
+4. **Two ornamental ponds drawn as 20m solid blocks.** Fixed.
+5. **25 port cranes missing** — a fetch gap, and from Keppel Road that crane
+   line at ~52m and 500-800m out IS the horizon.
+
+**The lesson, and it is about where defects come from.** This project's checks
+are very good at catching a world that contradicts ITSELF — geometry in the
+wrong place, a mass with daylight under it, a prop in the water. Every finding
+above is a world that agrees with itself perfectly and disagrees with SINGAPORE.
+No check can find those, because the check has no access to the real city. Only
+research does. **A research brief aimed at "add character" returns defects as a
+side effect, and the defects were worth more than the character.**
+
+Two further process notes, both measured:
+
+- **The instruction that makes a subagent argue with the brief is the most
+  valuable line in the prompt.** Ten rounds, ten corrected false premises — and
+  this round it caught MY errors twice, in bboxes I typed from memory.
+- **Verify an agent's claim against our own data before acting on it.** Of the
+  claims checked this session: the phantom MRT wall was REAL but the mechanism
+  the agent gave was wrong (it blamed the mrt layer, which draws nothing; the
+  cause was a building footprint); the `#ddddd` invalid-hex claim was real in
+  RAW data but reaches no shipped file; and the "keppel is worst-named" premise
+  in my own brief was wrong (littleindia is, at 9.9%). Three claims, three
+  different relationships to the truth.

@@ -145,7 +145,29 @@ window.__auditWorld = async function auditWorld() {
     // deck belongs above the road it spans, S7 was right to ignore it, and T1
     // now carries the same by-name surface exemption P1b has. The two checks
     // agree again and the disagreement is resolved, not tuned away.
-    orchard: { W2: 0, T1: 0, S8: 73 },
+    // S8 72, DOWN FROM 73, and this is the SECOND floor ever lowered here.
+    // The bar the brasbasah note sets below is "isolate the suspect and say
+    // exactly what moved", so: the road-clearance pass learned on 2026-08-02
+    // to push a footprint vertex that sits ON a shared road centreline INWARD,
+    // off the carriageway, instead of leaving it in the road (data/process.py,
+    // ring_outward). Rebuilt with that one change off via SG_ONCENTRE=0 and it
+    // reads 73; with it on, 72.
+    //
+    // It is ONE TENANT. Measured both ways: 168 of 231 eligible placed becomes
+    // 167 of 231 — 72.7% against 72.3%, a rounding step rather than a loss of
+    // coverage — and the single tenant is "Samsung", which moves from placed to
+    // `shopsNoBay`, "frontage full: every bay already claimed". Its host's ring
+    // shifted slightly off the kerb, the bays repacked along the frontage, and
+    // the last one in the queue missed out. The same mechanism cost marinabay
+    // "Swarovski" while the fix was pushing the WRONG WAY; pushing inward gave
+    // that one back and took marinabay's P5 from 2 to 0.
+    //
+    // The trade is a correctness fix against a rounding step: marinasouth P1b
+    // 1 -> 0 and P5 1 -> 0, marinabay P5 2 -> 0, and 925 footprint vertices
+    // across the 15 districts pulled off a centreline they were sitting on.
+    // Taken.
+    // It may go UP and never down from here.
+    orchard: { W2: 0, T1: 0, S8: 72 },
     // Bras Basah's T3 is a single road sample outside the heightfield at the
     // Marina Bay seam: the merged grid grew when the third district joined and
     // one way at the edge now falls a cell outside it.
@@ -349,7 +371,27 @@ window.__auditWorld = async function auditWorld() {
     // the causeway approaches all leave this bbox northward into keppel and
     // harbourfront; this is the far end of the ring and nothing further out
     // exists to close it.
-    sentosa: { W2: 17, P1b: 1, T1: 1, C6: 1, C3: 3, S8: 0, T2: 28 },
+    // P1b 1 -> 2 on 2026-08-02, RE-BASELINED WITH ITS DIAGNOSIS, not raised
+    // silently — and the world got BETTER, not worse, which is why.
+    //
+    // The inward on-centreline ring fix (data/process.py) pulled "Beach
+    // Arrival Plaza" out of Siloso Beach Walk. Measured on the district file
+    // both ways: its ring's deepest intrusion into that carriageway was
+    // 3.91m — a vertex sitting 0.09m off the centreline of an 8m road — and
+    // is now -0.28m, entirely clear of it. The footprint dropped 1,427 to
+    // 1,086 m2, which is exactly the wedge that was in the road.
+    //
+    // The finding that appeared is the TILE-REPACKING effect this file has met
+    // before: P1b measures MERGED meshes, consolidate.js batches per ~110m
+    // tile, and a footprint that changes size changes what shares its tile and
+    // therefore what P1b samples. The two reported meshes span 27m and carry 12
+    // and 72 vertices — batches, not buildings. Vetted from two angles at
+    // shots/street/siloso.shot1.jpg: the building runs ALONG the kerb and
+    // nothing stands in the carriageway.
+    //
+    // Same mechanism, same conclusion as the marinasouth P1b blocker of the
+    // morning. Ratchet: may go down, never up.
+    sentosa: { W2: 17, P1b: 2, T1: 1, C6: 1, C3: 3, S8: 0, T2: 28 },
     // River Valley C7 33: the district DELIBERATELY takes the east 1.6km of
     // a 4.9km road (declared partialMainStreet in districts.json; the west
     // belongs to a future Robertson Quay district). C7 measures against the
@@ -892,7 +934,7 @@ window.__auditWorld = async function auditWorld() {
           || o.name === 'roadMarking') return;
       if (o.geometry.type === 'PlaneGeometry'
           && o.geometry.parameters.width > 500) return;     // ground fallback plane
-      let hit = null, worstX = 0, worstZ = 0, minY = 1e9, maxY = -1e9, n = 0;
+      let hit = null, worstX = 0, worstZ = 0, worstY = 0, minY = 1e9, maxY = -1e9, n = 0;
       // DETERMINISTIC sampling.
       //
       // This skipped any mesh over 6,000 vertices and took a fixed 80 samples
@@ -933,7 +975,7 @@ window.__auditWorld = async function auditWorld() {
         // service lanes are skipped for the same reason P5 skips them: a hotel
         // set-down or a loading bay is what a service road is for
         const rd = roadAt(v.x, v.z, -1.0, true);
-        if (rd) { hit = rd; worstX = v.x; worstZ = v.z; }
+        if (rd) { hit = rd; worstX = v.x; worstZ = v.z; worstY = v.y; }
       }
       // Nothing under 40cm is something you ride into: those are aprons,
       // thresholds and paving trim that sit flush with the road on purpose.
@@ -965,6 +1007,41 @@ window.__auditWorld = async function auditWorld() {
         || (o.geometry.type === 'BoxGeometry' && (gp0.width || 0) > 14
             && Math.abs((gp0.height || 0) - 1.05) < 0.01
             && Math.abs((gp0.depth || 0) - 0.1) < 0.01)                          // bridge parapet
+        // A CARRIAGEWAY VIADUCT'S DECK, BY NAME. The footbridge deck two
+        // clauses up is exempt because a deck spanning a carriageway is what
+        // an overpass IS — and road bridges gained the same fabric on
+        // 2026-08-02 (city.js bridgeFabric: soffit, edge beam, parapet). It
+        // could not be exempted the same way: that clause matches
+        // `geometry.parameters`, and this fabric is MERGED per 110m tile, so
+        // there are no parameters left to match. Marked by IDENTITY instead,
+        // which is what the MRT canopy note in sgdetail.js already argues for
+        // — a signature allowlist is exempt by omission until a new shape
+        // wanders into it.
+        //
+        // `bridgePier` IS DELIBERATELY NOT HERE, for the same reason the ERP
+        // gantry's legs are not: the deck belongs over the road and the thing
+        // holding it up belongs clear of one. That distinction earned itself
+        // immediately — the first run put three piers in Clemenceau Avenue and
+        // Oxley Rise, and this check is what found them.
+        || o.name === 'bridgeDeck'
+        // A COLUMN UNDER ITS OWN DECK. roadAt is a 2D test, so a carriageway
+        // carried on a viaduct still reads as a carriageway on the ground five
+        // metres beneath it — and the piers holding that viaduct up are, by
+        // construction, directly under it. Orchard's three findings were all
+        // this: measured against the district file, the ONLY road within reach
+        // of each pier was "Oxley Rise" itself, `bridge=1`, overhead. There is
+        // no ground-level road there at all.
+        //
+        // Exempt ONLY where a registered deck is genuinely above the offending
+        // vertex, so this cannot forgive a pier standing in a street. And the
+        // gap it would otherwise open — a pier under viaduct A that also blocks
+        // ground road B — is closed at the other end: bridgeFabric searches
+        // each bent along the deck against every carriageway EXCEPT its own
+        // and skips a bent with nowhere clear to stand, so such a pier is never
+        // built in the first place.
+        || (o.name === 'bridgePier' && window.__bridgeDeckAt
+            && window.__bridgeDeckAt(worstX, worstZ) !== null
+            && window.__bridgeDeckAt(worstX, worstZ) > worstY + 0.4)
         || (o.geometry.type === 'CylinderGeometry' && (gp0.radiusTop || 0) > 10)   // ION's shell over its forecourt
         // The ERP gantry itself. Its antenna heads read the tag on a car
         // passing UNDER them and its amber panel tells that car what it is
@@ -2245,6 +2322,30 @@ window.__auditWorld = async function auditWorld() {
         // shape, for the reason this file gives every time a signature list
         // has rotted.
         if (typeof o.name === 'string' && o.name.startsWith('pier')) return;
+        // AND A ROAD BRIDGE IS OVER WATER FOR THE SAME REASON A PIER IS.
+        //
+        // The comment below already says "a bridge over the bay is entirely
+        // over water by design" and exempts the Helix, the Jubilee and the
+        // Bayfront by SIGNATURE. Carriageway bridges gained the same fabric on
+        // 2026-08-02 (city.js bridgeFabric) and could not use that route: it is
+        // merged per 110m tile, so there are no `geometry.parameters` left to
+        // match. Named, like the piers, and for the reason this file gives
+        // every time a signature list has rotted.
+        //
+        // What it was reporting: ONE finding, the Sentosa Gateway's deck at
+        // -1040,11590. The fabric overhangs the tarmac slightly so there is an
+        // edge to see from below, and `bridgeDeckAt` only reaches `half + 0.4`
+        // from the centreline — so the deck's own outer lip fell outside the
+        // registry that says a deck is there. Widening that reach was the other
+        // option and was not taken: standable(), blocked() and the water guard
+        // all read it, and moving it moves where the rider can stand.
+        if (o.name === 'bridgeDeck' || o.name === 'bridgePier') return;
+        // AND A QUAY CRANE REACHES OVER THE WATER — that is what makes it a
+        // quay crane. It stands ON the wharf and its 70m boom goes out over
+        // the berth so it can pick a container off a ship. Exactly the
+        // argument this check already accepted for jetties two comments up,
+        // and named for the same reason.
+        if (o.name === 'quayCrane') return;
         if (o.name === 'roadSurface' || o.name === 'pavementSurface'
           || o.name === 'roadMarking') return;
         for (let q = o; q; q = q.parent) if (q.name === 'playerRig') return;

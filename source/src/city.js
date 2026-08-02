@@ -465,8 +465,10 @@ export function setTerrain(t) { TERRAIN = t; }
 // Is this point inside a carriageway? Structural pieces are placed by offsets
 // from a facade, and an offset sideways along the frontage can put a column in
 // the middle of the street even when the outward projection was checked.
-export function onCarriageway(x, z, margin = -0.6) {
-  return window.__onRoad ? window.__onRoad(x, z, margin) : false;
+// `except` skips one road BY NAME, which is how a bridge pier asks "is there a
+// carriageway here other than the one directly over my head".
+export function onCarriageway(x, z, margin = -0.6, except = null) {
+  return window.__onRoad ? window.__onRoad(x, z, margin, except) : false;
 }
 export function groundAt(x, z) { return TERRAIN.at(x, z); }
 
@@ -547,7 +549,7 @@ export function walkSurfaceAt(x, z) {
 }
 export function clearBridges() { BRIDGES.cells.clear(); BRIDGES.segs.length = 0; }
 export function addBridgeWay(pts, width) {
-  if (!pts || pts.length < 2) return;
+  if (!pts || pts.length < 2) return 0;
   let deck = 0;
   for (const q of pts) deck = Math.max(deck, TERRAIN.at(q[0], q[1]));
   deck += 1.2;                        // the deck sits above its abutment
@@ -568,7 +570,162 @@ export function addBridgeWay(pts, width) {
       }
     }
   }
+  return deck;
 }
+
+// THE FABRIC OF A ROAD BRIDGE, WHICH SIMPLY DID NOT EXIST.
+//
+// addBridgeWay registers a deck so the ride stands on it, and ribbon() lays
+// tarmac at that height. That was the entire construction of a carriageway
+// bridge: nothing was ever built UNDER or BESIDE one. 139 ways and 17.6km of
+// this world's roads are `bridge=1`, and every metre of it was a strip of
+// asphalt hanging in space.
+//
+// It is worst where it matters most. Teleporting to Sentosa lands the rider
+// mid-channel on the Sentosa Gateway, measured 8.0m up with the sea at 0 and
+// nothing beneath — "once i reach im like in the middle of air", which is
+// exactly right. A footbridge two hundred metres away reads perfectly, because
+// sgdetail.js gives it a deck edge, a parapet and a pier; the carriageway
+// bridges never had an equivalent.
+//
+// Three pieces, all merged into the same 110m tile buckets as every other road
+// surface, so a causeway costs a few draws rather than one per span:
+//
+//   soffit   the deck's own thickness, overhanging the tarmac slightly so
+//            there is an edge to catch the light from below and from a boat
+//   parapet  a wall down each side, set OUTSIDE the carriageway on purpose —
+//            P1b and T1 both read anything within the road width as an
+//            obstruction, and they would be right to
+//   piers    columns to the ground, ONLY where the deck is genuinely spanning
+//            something. An embankment with 2m of fill under it gets none, or
+//            every kerbside ramp in the CBD would sprout stilts.
+const DECK_T = 0.85;                  // deck + edge beam, in metres
+const PIER_GAP = 26;                  // metres between pier bents
+const PIER_MIN = 2.4;                 // below this the deck is on fill, not piers
+
+function boxGeo(w, h, l, cx, cy, cz, yaw) {
+  const g = new THREE.BoxGeometry(w, h, l).toNonIndexed();
+  g.rotateY(yaw);
+  g.translate(cx, cy, cz);
+  return g;
+}
+
+export const BRIDGE_PIERS = { built: 0, skipped: 0, nudged: 0, atGrade: 0 };
+
+export function bridgeFabric(pts, width, deck, deckGeos, pierGeos, ownName) {
+  if (!pts || pts.length < 2 || !deck) return;
+  const half = width / 2;
+  const segs = [];
+  let total = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const dx = pts[i + 1][0] - pts[i][0], dz = pts[i + 1][1] - pts[i][1];
+    const L = Math.hypot(dx, dz);
+    if (L < 0.05) continue;
+    segs.push({ x: pts[i][0], z: pts[i][1], dx, dz, L, yaw: Math.atan2(dx, dz), s0: total });
+    total += L;
+  }
+  if (!segs.length) return;
+  // A WAY TAGGED `bridge=1` IS NOT NECESSARILY IN THE AIR, and fabric that is
+  // not in the air is a wall down a street.
+  //
+  // The deck rule is `max terrain along the way + 1.2`, which is right for a
+  // span and meaningless for the culverts, ramps and kerb-height crossings OSM
+  // also tags this way. Two districts proved it: an unnamed 6m service way in
+  // Chinatown built its parapets 1.2m off the ground straight across Sago
+  // Lane, and eleven fabric tiles in harbourfront sat 1.2 to 2.4m up over
+  // Telok Blangah Road. T1 was right about every one — you cannot ride through
+  // them.
+  //
+  // THE THRESHOLD IS T1'S OWN BAND, NOT A GUESS. T1 counts geometry between
+  // 0.35m and 2.6m above the terrain, "only what a rider would hit". The
+  // soffit's lowest face sits `clear - DECK_T/2` above the ground, so a
+  // segment is out of that band once `clear` passes 2.6 + DECK_T/2, and 3.1
+  // gives it a little margin. Below that the segment keeps its tarmac and its
+  // deck registration exactly as before and simply gains nothing to hold up.
+  //
+  // AND IT IS DECIDED PER SEGMENT. The first version asked the question once
+  // for the whole way, using the maximum clearance anywhere along it — which
+  // is how harbourfront kept building parapets on the parts of a viaduct that
+  // come back down to grade at its abutments while the middle was 8m up.
+  const LOW_CLEAR = 2.6 + DECK_T / 2 + 0.05;
+  const clearAt = (sg, t) => deck - DECK_T - TERRAIN.at(sg.x + sg.dx * t, sg.z + sg.dz * t);
+  for (const sg of segs) {
+    if (Math.min(clearAt(sg, 0), clearAt(sg, 0.5), clearAt(sg, 1)) < LOW_CLEAR) {
+      BRIDGE_PIERS.atGrade++;
+      continue;
+    }
+    const mx = sg.x + sg.dx / 2, mz = sg.z + sg.dz / 2;
+    const cy = Math.cos(sg.yaw), sy = Math.sin(sg.yaw);
+    // The spans overlap by 0.35m so a bend in the way does not open a slot of
+    // daylight at every vertex — the same trick the ribbon itself uses.
+    deckGeos.push(boxGeo(width + 0.9, DECK_T, sg.L + 0.35,
+      mx, deck - DECK_T / 2 - 0.02, mz, sg.yaw));
+    for (const sgn of [-1, 1]) {
+      const ox = sgn * (half + 0.36);
+      deckGeos.push(boxGeo(0.26, 0.92, sg.L + 0.35,
+        mx + cy * ox, deck + 0.42, mz - sy * ox, sg.yaw));
+    }
+  }
+  // PIERS, walked by arc length so the spacing is even across a way whose
+  // vertices are not. Placed from the FIRST interval rather than at s=0, which
+  // would stand a column on the abutment itself.
+  //
+  // AND A PIER MUST NOT LAND IN A CARRIAGEWAY. The deck belongs over the road
+  // — that is what a viaduct is — but the thing holding it up belongs clear of
+  // one, the same split the ERP gantry already makes between its span and its
+  // legs. Built blind, the first version stood three bents in live traffic on
+  // Clemenceau Avenue and Oxley Rise, and P1b caught all three.
+  //
+  // So each bent is searched ALONG the deck for a clear spot before it is
+  // built, and a bent with nowhere to stand is SKIPPED rather than moved
+  // somewhere it does not belong — skip, never substitute. `ownName` excludes
+  // the bridge's own carriageway, which is directly overhead and which every
+  // pier is under by construction; an UNNAMED bridge way has nothing to
+  // exclude, so its own deck reads as a road and it keeps its deck and
+  // parapets but loses its piers. 22 of this world's 139 carriageway bridge
+  // ways are unnamed, and losing a column under those is the cheaper error.
+  const clearOf = (x, z) => !onCarriageway(x, z, 0.4, ownName || null);
+  for (let s = PIER_GAP; s < total - 4; s += PIER_GAP) {
+    let placed = null;
+    for (const nudge of [0, 2, -2, 4, -4, 6, -6, 9, -9, 12, -12]) {
+      const at = s + nudge;
+      if (at < 3 || at > total - 3) continue;
+      const sg = segs.find((q) => at >= q.s0 && at < q.s0 + q.L) || segs[segs.length - 1];
+      const t = Math.max(0, Math.min(1, (at - sg.s0) / sg.L));
+      const px = sg.x + sg.dx * t, pz = sg.z + sg.dz * t;
+      const g = TERRAIN.at(px, pz);
+      const clear = deck - DECK_T - g;
+      if (clear < PIER_MIN) break;             // on fill here: no bent wanted
+      const cy = Math.cos(sg.yaw), sy = Math.sin(sg.yaw);
+      const ox = half * 0.58;
+      // TEST THE WHOLE BENT, NOT JUST THE TWO COLUMNS. The first version
+      // checked only the column centres at +-ox, and the CROSSHEAD they carry
+      // is `width * 0.92` across — wider than the columns it spans between. On
+      // an unnamed service bridge in Chinatown the columns cleared Sago Lane
+      // and the crosshead's end did not, which T1 caught as a carriageway
+      // blocked by solid geometry. Sample the bent's real half-width.
+      const bw = Math.max(ox + 0.46, width * 0.46);
+      let ok = true;
+      for (const f of [-1, -0.6, 0, 0.6, 1]) {
+        if (!clearOf(px + cy * bw * f, pz - sy * bw * f)) { ok = false; break; }
+      }
+      if (!ok) continue;
+      placed = { px, pz, g, clear, cy, sy, ox, yaw: sg.yaw };
+      if (nudge) BRIDGE_PIERS.nudged++;
+      break;
+    }
+    if (!placed) { BRIDGE_PIERS.skipped++; continue; }
+    const { px, pz, g, clear, cy, sy, ox, yaw } = placed;
+    // a bent: two columns under the deck edges, plus the crosshead they carry
+    for (const sgn of [-1, 1]) {
+      pierGeos.push(boxGeo(0.92, clear, 0.92,
+        px + cy * sgn * ox, g + clear / 2, pz - sy * sgn * ox, yaw));
+    }
+    pierGeos.push(boxGeo(width * 0.92, 0.5, 1.15, px, deck - DECK_T - 0.22, pz, yaw));
+    BRIDGE_PIERS.built++;
+  }
+}
+
 // The deck height under a point, or null if there is no bridge over it. The
 // widest deck wins where two overlap, which is the ramp rather than the slip
 // road and is the one you are actually riding on.
@@ -1630,6 +1787,7 @@ function polyLen(pts) {
 
 export async function buildRoads(world, data, Y = null) {
   const roadGeos = [], paveGeos = [], unitPaveGeos = [], concGeos = [], busGeos = [];
+  const bridgeGeos = [], pierGeos = [];       // deck soffit + parapets, and the bents under them
   const yellowGeos = [];
   const centreGeos = [];
   let mainAxis = null, bestLen = Infinity;
@@ -1654,7 +1812,12 @@ export async function buildRoads(world, data, Y = null) {
     // chunk must not lift a rider standing where it will one day be. Carriage-
     // ways only: a 2m footbridge deck is not something the ride belongs on,
     // and lifting the crowd onto one would put pedestrians in mid-air.
-    if (r.bridge && !isPath && (r.w || 0) >= 5.5) addBridgeWay(r.p, r.w);
+    if (r.bridge && !isPath && (r.w || 0) >= 5.5) {
+      // The deck height comes back from the registry rather than being worked
+      // out again here: ribbon() already computes the same `max terrain + 1.2`
+      // independently, and a third copy of that rule is a third thing to drift.
+      bridgeFabric(r.p, r.w, addBridgeWay(r.p, r.w), bridgeGeos, pierGeos, r.n);
+    }
     const g = ribbon(r.p, r.w, y, !!r.bridge);
     if (!g.attributes.position || g.attributes.position.count === 0) continue;
     // WHAT IT IS MADE OF, from the map. `surface` is on 61% of ways here and
@@ -2061,6 +2224,20 @@ export async function buildRoads(world, data, Y = null) {
   // The double yellow lines. Named as a marking rather than a surface so P7
   // ("markings under the tarmac") and P9 ("markings off the tarmac") own them,
   // and so P1b does not read a painted line as structure in a carriageway.
+  // THE BRIDGE FABRIC. Named `bridgeDeck`, not `roadSurface`: P1b exempts the
+  // road surface because a road being where the road is cannot be a defect,
+  // and a parapet is NOT that — it is real structure and should be checked
+  // like any other. It sits outside the carriageway, so it passes on merit.
+  merge(bridgeGeos, MAT.roadConc, 'bridgeDeck');
+  merge(pierGeos, MAT.conc, 'bridgePier');
+  // SAY WHAT WAS DROPPED. A bent with nowhere clear to stand is skipped, and a
+  // silent skip reads as "every viaduct got its piers" when it did not.
+  if (BRIDGE_PIERS.built || BRIDGE_PIERS.skipped || BRIDGE_PIERS.atGrade) {
+    console.log(`  bridge fabric: ${BRIDGE_PIERS.built} bents built, `
+      + `${BRIDGE_PIERS.nudged} moved along the deck to clear a road, `
+      + `${BRIDGE_PIERS.skipped} skipped with nowhere clear to stand, `
+      + `${BRIDGE_PIERS.atGrade} spans left bare as too low to be in the air`);
+  }
   merge(yellowGeos, MAT.yellow, 'roadMarking');
   merge(centreGeos, MAT.centreLine, 'roadMarking');
   return mainAxis;
@@ -2441,6 +2618,142 @@ export function plantSurveyed(world, data, blocked) {
     f.add(x, z, 0.7 + ((x * 7.3 + z * 3.1) % 100) / 250);
   }
   return { surveyedTrees: f.build(world) };
+}
+
+// THE KEPPEL QUAY CRANES — the district's horizon, and it was empty sky.
+//
+// 25 `man_made=crane` nodes stand along the Keppel quay. They were never in
+// the world because the fetch never asked for the tag; see the note in
+// build_district.py. research/keppel-landmarks.md §6.3: "from a bike on Keppel
+// Road, at 500-800m and 50m tall, this crane line is the horizon. Not
+// modelling it is the biggest single visual omission in the district."
+//
+// PROVENANCE, CARRIED INTO THE CODE BECAUSE IT IS PART OF THE FACT:
+//   52m lift height and 70m outreach are the PSA FLEET figures published by
+//   the WSH Council, NOT Keppel-specific ones. The brief is explicit about
+//   that and about what is UNPUBLISHED: boom-up height, gantry rail gauge and
+//   RTG heights. None of those are invented here — the boom is drawn level,
+//   which is what a working crane's boom does, and the rail gauge is taken
+//   from the leg spread rather than claimed as a measurement.
+//
+//   THE COLOUR IS UNPUBLISHED AND IS NOT GUESSED. The brief says there is no
+//   PSA livery document in the public domain and "do not assert PSA blue", so
+//   these are structural grey with a hazard band — the one thing every quay
+//   crane on earth has — rather than a brand nobody published.
+//
+// Drawn as ONE merged geometry for the whole line: 25 cranes of ~20 pieces is
+// 500 draws if each is a mesh, and this is a distant silhouette.
+export function buildCranes(world, data) {
+  const list = data.cranes || [];
+  if (!list.length) return { cranes: 0 };
+  // Published: 52m lift height, 70m outreach (PSA FLEET). Everything else here
+  // is proportion chosen to make the silhouette read, not a claimed figure:
+  // the rail gauge, the back-reach and the A-frame height are UNPUBLISHED for
+  // Keppel and are named as shape, not as measurement.
+  const LIFT = 52, OUTREACH = 70, GAUGE = 30, BACKREACH = 24, APEX = 20, SPAN = 18;
+  const steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.62, metalness: 0.35 });
+  const hazard = new THREE.MeshStandardMaterial({ color: 0xd6a12a, roughness: 0.7 });
+  const parts = [], bands = [];
+  let n = 0;
+  for (const c of list) {
+    const [cx, cz] = c.p;
+    const yaw = c.a || 0;                            // bearing of the boom, seaward
+    const gy = TERRAIN.at(cx, cz);
+    const fx = Math.sin(yaw), fz = Math.cos(yaw);    // seaward
+    const rx = Math.cos(yaw), rz = -Math.sin(yaw);   // along the quay
+    // A point in the crane's own frame: f seaward, s along the quay, y up.
+    const P = (f, s, y) => [cx + fx * f + rx * s, gy + y, cz + fz * f + rz * s];
+    // A MEMBER BETWEEN TWO POINTS, so nothing can be disconnected from the
+    // joint it starts at. The first version placed every piece by an offset
+    // and a guessed angle, and its own vet frame showed the result: a table
+    // with a bare mast on it and four sticks floating at the wrong angles.
+    const strut = (a, b, w, h) => {
+      const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+      const L = Math.hypot(dx, dy, dz) || 1e-6;
+      const g = new THREE.BoxGeometry(w, h || w, L).toNonIndexed();
+      const q = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 0, 1), new THREE.Vector3(dx / L, dy / L, dz / L));
+      g.applyQuaternion(q);
+      g.translate(a[0] + dx / 2, a[1] + dy / 2, a[2] + dz / 2);
+      parts.push(g);
+    };
+    const WS = GAUGE / 2, LS = -GAUGE / 2;           // waterside / landside rails
+    // THE PORTAL. Four legs on two rails, tall enough for trains and trucks to
+    // pass beneath — that is what makes it a portal rather than a tower.
+    for (const s of [-SPAN / 2, SPAN / 2]) {
+      strut(P(WS, s, 0), P(WS, s, LIFT), 2.0);
+      strut(P(LS, s, 0), P(LS, s, LIFT), 2.0);
+      strut(P(WS, s, 16), P(LS, s, 16), 1.4);        // portal beam
+      strut(P(WS, s, LIFT - 2), P(LS, s, LIFT - 2), 1.6);
+      // sill beams and bogies at the foot
+      for (const f of [WS, LS]) {
+        const g = new THREE.BoxGeometry(3.4, 2.2, 2.6).toNonIndexed();
+        g.rotateY(yaw);
+        const q2 = P(f, s, 1.1); g.translate(q2[0], q2[1], q2[2]);
+        parts.push(g);
+        const b2 = new THREE.BoxGeometry(1.7, 2.8, 1.7).toNonIndexed();
+        b2.rotateY(yaw);
+        const q3 = P(f, s, 5.2); b2.translate(q3[0], q3[1], q3[2]);
+        bands.push(b2);
+      }
+    }
+    // cross-bracing between the two portal frames, so it is not two flat A's
+    strut(P(WS, -SPAN / 2, LIFT - 2), P(WS, SPAN / 2, LIFT - 2), 1.2);
+    strut(P(LS, -SPAN / 2, LIFT - 2), P(LS, SPAN / 2, LIFT - 2), 1.2);
+    // THE BOOM. One girder from the back-reach tip out to the published 70m
+    // outreach beyond the waterside rail — drawn as a single member so its two
+    // ends cannot disagree about the height they meet at.
+    const tip = P(WS + OUTREACH, 0, LIFT + 1.5);
+    const heel = P(LS - BACKREACH, 0, LIFT + 1.5);
+    for (const s of [-2.6, 2.6]) {
+      strut(P(WS + OUTREACH, s, LIFT + 1.5), P(LS - BACKREACH, s, LIFT + 1.5), 1.5, 2.4);
+    }
+    // THE A-FRAME, which is the shape you actually read at 800m: a triangle
+    // standing over the portal with stays running to each end of the boom.
+    const apex = P(0, 0, LIFT + APEX);
+    strut(P(WS, -SPAN / 2, LIFT), apex, 1.5);
+    strut(P(WS, SPAN / 2, LIFT), apex, 1.5);
+    strut(P(LS, -SPAN / 2, LIFT), apex, 1.5);
+    strut(P(LS, SPAN / 2, LIFT), apex, 1.5);
+    strut(apex, tip, 1.0);                            // forestay to the boom tip
+    strut(apex, heel, 1.0);                           // backstay to the heel
+    // machinery house on the landside, and the trolley parked out over the berth
+    const house = new THREE.BoxGeometry(11, 6.5, SPAN).toNonIndexed();
+    house.rotateY(yaw);
+    const hp = P(LS - 6, 0, LIFT + 6); house.translate(hp[0], hp[1], hp[2]);
+    parts.push(house);
+    const trolley = new THREE.BoxGeometry(4.4, 3.0, 4.0).toNonIndexed();
+    trolley.rotateY(yaw);
+    const tp = P(WS + OUTREACH * 0.45, 0, LIFT - 1.0); trolley.translate(tp[0], tp[1], tp[2]);
+    parts.push(trolley);
+    n++;
+  }
+  const emit = (geos, mat, name) => {
+    if (!geos.length) return;
+    let total = 0;
+    for (const g of geos) total += g.attributes.position.count;
+    const pos = new Float32Array(total * 3), uv = new Float32Array(total * 2);
+    let o = 0, ou = 0;
+    for (const g of geos) {
+      pos.set(g.attributes.position.array, o); o += g.attributes.position.array.length;
+      uv.set(g.attributes.uv.array, ou); ou += g.attributes.uv.array.length;
+    }
+    const m = new THREE.BufferGeometry();
+    m.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    m.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    m.computeVertexNormals();
+    const mesh = new THREE.Mesh(m, mat);
+    // Named so W2 can tell a quay crane from something that fell in the sea.
+    // A quay crane stands ON the wharf and reaches OVER the water — that is
+    // what makes it a quay crane, and it is the same argument this project
+    // already accepted for piers and for bridge decks.
+    mesh.name = name;
+    mesh.castShadow = true;
+    world.add(mesh);
+  };
+  emit(parts, steel, 'quayCrane');
+  emit(bands, hazard, 'quayCrane');
+  return { cranes: n };
 }
 
 export function buildSupertrees(world, data) {

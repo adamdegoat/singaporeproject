@@ -3,7 +3,7 @@
 // Node without a browser.
 import * as THREE from '../lib/three.module.js';
 
-export { RIDE, CAR, newState, step, turnRadius } from './ride.js';
+export { RIDE, CAR, SKATE, newState, step, turnRadius } from './ride.js';
 
 /* ================= model ================= */
 const BODY = 0x9fc4b8;      // classic pale mint
@@ -171,6 +171,172 @@ export function buildRider() {
   }
   // a collar, so the shirt reads as clothing rather than a plain capsule
   g.add(part(new THREE.CylinderGeometry(0.115, 0.135, 0.07, 10), shirt, 0, 1.38, -0.06));
+  return g;
+}
+
+
+// THE SURF SKATE. A 34" carver: a wide deck with a kicked tail, a surf
+// adapter on the front truck (the tall pivoting casting that is the whole
+// reason the thing carves) and four fat 70mm wheels.
+//
+// TWO THINGS MAKE IT READ AS A SURF SKATE RATHER THAN A SKATEBOARD, and both
+// are the front end. The front truck is TALLER than the rear and visibly
+// hinged, and the deck is WIDE with a long nose. A plank on four wheels reads
+// as a longboard; those two details are what a skater's eye picks up.
+//
+// Wheels are returned in the same shape the Vespa and the car use, so the one
+// loop in main.js that spins them needs no new case. They are returned
+// FRONT PAIR FIRST because the front truck also steers.
+// How far each wheel sits from the board's centreline. Exported because
+// main.js pivots the carve about the low wheel's contact patch and the two
+// must not be able to disagree about where that patch is.
+export const SKATE_WHEEL_X = 0.108;
+
+export function buildSkate() {
+  const g = new THREE.Group();
+  const deckM = new THREE.MeshStandardMaterial({ color: 0x8d5a3b, roughness: 0.55 });   // stained maple
+  const gripM = new THREE.MeshStandardMaterial({ color: 0x1e2024, roughness: 0.95 });   // grip tape
+  const truckM = new THREE.MeshStandardMaterial({ color: 0xb9bec4, roughness: 0.3, metalness: 0.8 });
+  const wheelM = new THREE.MeshStandardMaterial({ color: 0xe7d9a8, roughness: 0.45 });  // amber urethane
+  const boltM = new THREE.MeshStandardMaterial({ color: 0x5c6167, roughness: 0.4, metalness: 0.6 });
+  const railM = new THREE.MeshStandardMaterial({ color: 0xc4442f, roughness: 0.5 });    // a painted stripe
+
+  // DECK. Three slabs: the flat standing platform, a nose that rises, and a
+  // kicked tail. Built as separate boxes with a tilt rather than a curve,
+  // which is how every other shape in this file is made.
+  const DECK_Y = 0.115;                       // top of the deck above the road
+  g.add(part(new THREE.BoxGeometry(0.245, 0.028, 0.78), deckM, 0, DECK_Y, 0));
+  g.add(part(new THREE.BoxGeometry(0.235, 0.006, 0.76), gripM, 0, DECK_Y + 0.017, 0));
+  // nose and tail, kicked up at the ends
+  g.add(part(new THREE.BoxGeometry(0.225, 0.026, 0.20), deckM, 0, DECK_Y + 0.035, 0.465, -0.36));
+  g.add(part(new THREE.BoxGeometry(0.215, 0.006, 0.19), gripM, 0, DECK_Y + 0.051, 0.463, -0.36));
+  g.add(part(new THREE.BoxGeometry(0.215, 0.026, 0.17), deckM, 0, DECK_Y + 0.030, -0.445, 0.34));
+  g.add(part(new THREE.BoxGeometry(0.205, 0.006, 0.16), gripM, 0, DECK_Y + 0.046, -0.443, 0.34));
+  // a painted rail down each edge of the underside, which is what you actually
+  // see of a board from behind when it is up on edge in a carve
+  for (const sx of [-0.108, 0.108]) {
+    g.add(part(new THREE.BoxGeometry(0.028, 0.016, 0.74), railM, sx, DECK_Y - 0.020, 0));
+  }
+
+  const wheels = [];
+  // FRONT truck first: taller, and carrying the surf adapter.
+  for (const [wz, front] of [[0.295, true], [-0.285, false]]) {
+    const baseY = front ? DECK_Y - 0.052 : DECK_Y - 0.030;
+    // baseplate under the deck
+    g.add(part(new THREE.BoxGeometry(0.115, 0.016, 0.085), truckM, 0, DECK_Y - 0.020, wz));
+    if (front) {
+      // THE SURF ADAPTER: a tall pivoting casting between baseplate and hanger.
+      // This is the part that is not on a normal skateboard and it is the one
+      // piece worth spending meshes on.
+      g.add(part(new THREE.BoxGeometry(0.075, 0.062, 0.075), truckM, 0, DECK_Y - 0.058, wz - 0.012, 0.34));
+      g.add(part(new THREE.CylinderGeometry(0.019, 0.019, 0.075, 8), boltM,
+        0, DECK_Y - 0.062, wz + 0.028, Math.PI / 2.6, 0, 0));
+    }
+    // hanger: the cross-arm the wheels hang off
+    g.add(part(new THREE.CylinderGeometry(0.022, 0.030, 0.185, 8), truckM,
+      0, baseY - 0.026, wz, 0, 0, Math.PI / 2));
+    // kingpin
+    g.add(part(new THREE.CylinderGeometry(0.011, 0.011, 0.062, 6), boltM,
+      0, baseY - 0.006, wz + (front ? -0.028 : 0.028), front ? -0.5 : 0.5, 0, 0));
+    const pair = new THREE.Group();
+    for (const sx of [-SKATE_WHEEL_X, SKATE_WHEEL_X]) {
+      // 70mm wheel — fat and soft, which is what a surf skate rolls on
+      pair.add(part(new THREE.CylinderGeometry(0.035, 0.035, 0.048, 12), wheelM, sx, 0, 0, 0, 0, Math.PI / 2));
+      pair.add(part(new THREE.CylinderGeometry(0.014, 0.014, 0.052, 8), boltM, sx, 0, 0, 0, 0, Math.PI / 2));
+    }
+    pair.position.set(0, 0.035, wz);
+    g.add(pair);
+    wheels.push(pair);
+  }
+  return { group: g, wheels };
+}
+
+// THE SKATER, and none of buildRider() could be reused. That figure is SEATED:
+// thighs forward to a floorboard, hands closed on a handlebar at y 1.09. A
+// person on a board stands square across it with both knees bent and their
+// arms out, and posing the seated rig into that was more work than one honest
+// standing figure. Same materials, same capsule vocabulary.
+//
+// The stance is REGULAR (left foot forward) and the shoulders are open to the
+// nose of the board, which is the line a surfer takes. Feet sit ACROSS the
+// deck over the trucks, not along it — that is the thing that would read wrong
+// immediately to anyone who skates.
+// LIMBS ARE PLACED BY THEIR TWO ENDS, NOT BY EULER ANGLES.
+//
+// The first version of the skater posed every segment with hand-guessed
+// (rx, ry, rz) triples the way buildRider does, and it did not survive its own
+// vet frame: the arms came out as four disconnected flippers with the hand
+// spheres floating clear of the forearms. Euler triples are workable for a
+// SEATED figure whose limbs run along one axis at a time — which is the whole
+// reason buildRider gets away with them — and hopeless for a standing figure
+// whose arms are out at a compound angle.
+//
+// `bone` takes the two endpoints and derives the orientation, so a segment
+// cannot be disconnected from the joint it starts at: the joint positions are
+// the single source of truth and every piece is built from them.
+function bone(a, b, r, mat) {
+  const ax = b[0] - a[0], ay = b[1] - a[1], az = b[2] - a[2];
+  const L = Math.hypot(ax, ay, az) || 1e-6;
+  const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.01, L - 2 * r), 4, 8), mat);
+  m.position.set(a[0] + ax / 2, a[1] + ay / 2, a[2] + az / 2);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(ax / L, ay / L, az / L));
+  m.castShadow = true;
+  return m;
+}
+
+export function buildSkater() {
+  const g = new THREE.Group();
+  const shirt = new THREE.MeshLambertMaterial({ color: 0x2f6f7d });
+  const shorts = new THREE.MeshLambertMaterial({ color: 0x3b4250 });
+  const skin = new THREE.MeshLambertMaterial({ color: 0x8a6a52 });
+  const cap = new THREE.MeshStandardMaterial({ color: 0xe0dccf, roughness: 0.6 });
+  const shoe = new THREE.MeshLambertMaterial({ color: 0xf0ece1 });
+
+  // EVERY JOINT, ONCE. The board's nose is +z and the deck top is y 0.16.
+  // Regular stance: left foot forward, shoulders open toward the nose, both
+  // knees bent, arms out. Change a number here and the limbs follow.
+  const J = {
+    ankleF: [0.035, 0.205, 0.280], kneeF: [0.140, 0.505, 0.300], hipF: [0.085, 0.775, 0.070],
+    ankleB: [-0.035, 0.205, -0.265], kneeB: [-0.130, 0.485, -0.155], hipB: [-0.085, 0.775, 0.000],
+    pelvis: [0.000, 0.800, 0.035], chest: [0.010, 1.165, 0.080], neck: [0.010, 1.235, 0.090],
+    shldrF: [0.170, 1.140, 0.115], elbowF: [0.350, 1.045, 0.270], handF: [0.430, 0.960, 0.455],
+    shldrB: [-0.155, 1.135, 0.045], elbowB: [-0.360, 1.070, -0.075], handB: [-0.475, 1.010, -0.255],
+    head: [0.010, 1.350, 0.105],
+  };
+  // FEET, across the deck and over the trucks. A skater's feet run ACROSS the
+  // board, not along it — get this wrong and it reads instantly as a person
+  // standing on a plank.
+  g.add(part(new THREE.BoxGeometry(0.240, 0.058, 0.108), shoe,
+    J.ankleF[0], J.ankleF[1] - 0.030, J.ankleF[2], 0, 0.26, 0));
+  g.add(part(new THREE.BoxGeometry(0.220, 0.058, 0.104), shoe,
+    J.ankleB[0], J.ankleB[1] - 0.030, J.ankleB[2], 0, -0.12, 0));
+  // LEGS
+  g.add(bone(J.ankleF, J.kneeF, 0.058, shorts));
+  g.add(bone(J.kneeF, J.hipF, 0.072, shorts));
+  g.add(bone(J.ankleB, J.kneeB, 0.058, shorts));
+  g.add(bone(J.kneeB, J.hipB, 0.072, shorts));
+  for (const k of ['kneeF', 'kneeB']) g.add(part(new THREE.SphereGeometry(0.064, 8, 7), shorts, ...J[k]));
+  // HIPS and TORSO
+  g.add(bone(J.hipB, J.hipF, 0.098, shorts));
+  g.add(bone(J.pelvis, J.chest, 0.145, shirt));
+  g.add(bone(J.shldrB, J.shldrF, 0.098, shirt));
+  g.add(bone(J.chest, J.neck, 0.060, skin));
+  // ARMS OUT, which is what balancing on a board looks like and what makes the
+  // silhouette read as a skater rather than a person standing very still. The
+  // front arm reaches across the nose and the back arm trails — a surfer's line.
+  g.add(bone(J.shldrF, J.elbowF, 0.050, shirt));
+  g.add(bone(J.elbowF, J.handF, 0.043, shirt));
+  g.add(bone(J.shldrB, J.elbowB, 0.050, shirt));
+  g.add(bone(J.elbowB, J.handB, 0.043, shirt));
+  for (const k of ['elbowF', 'elbowB']) g.add(part(new THREE.SphereGeometry(0.052, 8, 7), shirt, ...J[k]));
+  for (const k of ['handF', 'handB']) g.add(part(new THREE.SphereGeometry(0.050, 8, 7), skin, ...J[k]));
+  // HEAD, looking where the board is going
+  g.add(part(new THREE.SphereGeometry(0.128, 14, 12), skin, ...J.head));
+  g.add(part(new THREE.SphereGeometry(0.132, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), cap,
+    J.head[0], J.head[1] + 0.008, J.head[2] - 0.004, -0.14));
+  g.add(part(new THREE.BoxGeometry(0.185, 0.020, 0.100), cap,
+    J.head[0], J.head[1] - 0.018, J.head[2] + 0.120, -0.18));    // peak
   return g;
 }
 

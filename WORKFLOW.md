@@ -1066,3 +1066,222 @@ command this change had broken, because an edit left a BLANK LINE inside a
 backslash continuation — syntactically fine, and it silently ends the command.
 It was caught by actually running the pipeline into a temp dir and checking
 what came out. **Syntax checks do not test behaviour.**
+
+## PRINT THE COORDINATE AT FULL PRECISION (2026-08-02)
+
+Sentosa's 114 "things built in open water" were diagnosed wrong TWICE — once as
+an unimplemented island hole, once as a three-way coastline junction — and both
+readings came from the same habit: printing lat/lon at five decimal places.
+
+At 5dp, two clipped runs ending at `1.26010,103.82419` and beginning at
+`1.26010,103.82419` look like two fragments meeting at a junction. At full
+precision they are `1.260097,103.8241852` twice: **the start and end of ONE
+CLOSED RING** — Pulau Brani, OSM way 16691602. `clip_chain` begins at the ring's
+seam vertex, so a closed island whose seam falls inside the bbox comes out as
+two runs, each with one end in open space rather than on the perimeter, and the
+assembly discards both. Three lines sew the seam back up. W2 114 -> 17.
+
+5dp is 1.1 metres. That is fine for saying WHERE something is and useless for
+saying whether two things are the SAME POINT — which is the question every
+stitch, every dedupe and every "did these join" test is really asking. **When
+comparing positions rather than reporting them, print `repr()`.**
+
+## THE EVIDENCE A CHECK COLLECTS IS WORTH MORE THAN THE BYTES (2026-08-02)
+
+Three separate caps sat between a failing check and its own examples:
+
+    exW2 in audit_world.js .................. 6
+    the reporter in audit_run.mjs ........... 4
+    add() itself ............ window.__auditEx || 8
+
+A 114-finding failure printed four lines. Raising the first two changed nothing,
+because `add()` truncates on the way out — so the count never matched the
+examples, and that mismatch drove THREE failed attempts to rebuild the check's
+filters in a probe. Every one of them got the filters subtly wrong and I spent
+the time debugging my reconstruction rather than the world.
+
+**Never reconstruct a check in a probe. Make the check tell you.** All three
+caps are tunable now: `SG_EX_CAP=40 SG_SCENE=<id> node data/audit_run.mjs`.
+
+And the general form, which cost this project a night: a gate that reports a
+number it cannot evidence forces everyone who meets it to guess.
+
+## READ-AND-DECLINED IS NOT UNREAD (2026-08-02)
+
+A2 ("real data present but unused") asked "did the layer produce output", which
+is right for a layer nobody wired up and wrong for one that was fully considered
+and correctly refused. It called three things blockers that were correct:
+
+- marinaeast's 21 shops — all inside conservatories or upstairs, each with a
+  recorded reason in `__shopSkips`
+- sentosa's 3 `mrt` records — all `kind: "station"`, Sentosa Express monorail
+  stops with no subway entrance to draw
+- sentosa's 78 crossings — all further from the axis than half a carriageway
+
+The fix is the same each time: **make the decline visible**, then let the check
+accept "the builder looked" as evidence of reading. A silent `continue` is
+indistinguishable from never having asked, and the next person cannot tell
+either.
+
+## A BLOCKER CAN EXPIRE WHILE NOBODY IS LOOKING (2026-08-02, afternoon)
+
+The top item on the open list was "fix island holes FIRST, THEN land the
+end-to-start stitch", with a measured regression behind it: end-to-start grew
+harbourfront's sea from 866,710 to 913,164 m2, which covered islands the
+assembly could not cut out, W2 3 -> 13 on a shipped district. A careful,
+correctly-ordered plan.
+
+**It was re-measured before it was worked on, and every part of it had expired.**
+Across all five coastal districts:
+
+    district      ways  chains  edge-runs  islands  reversal joins used
+    marinaeast       5       1          1        0        0
+    marinasouth      7       1          1        0        0
+    keppel           1       1          1        0        0
+    harbourfront    16       4          5        0        0
+    sentosa         24       7          7        0        0
+
+Not one reversal fires anywhere in this world, not one interior island survives,
+and end-to-start produces BYTE-IDENTICAL rings to the code it was supposed to
+replace — harbourfront included. The seam repair in `clip_chain`, which landed
+after that measurement, was what manufactured the islands the larger ring could
+not cut out. Fix the cause and the ordering argument it forced simply stops
+existing.
+
+`_punch` was the same story. The note at its call site said "the next attempt
+should test it against a hand-made square-with-a-square-hole, which is what I
+did not do". Doing that took four minutes: **it passes every point, in both hole
+windings.** The splice was never the bug; its INPUT was half-rings.
+
+So both were landed as hardening rather than as a fix — end-to-start preferred
+and a reversal announced when it happens, `_punch` re-enabled behind a
+self-check that discards a splice which does not verify. Zero geometry moved.
+
+**The rule: re-measure a blocker before you plan around it.** A measurement is
+true of the world on the day it was taken, and this repo fixes root causes
+fast enough that an unworked item can be obsolete within a day. The cost of
+re-measuring was twenty minutes; the plan it replaced was a session.
+
+The same applies to the note that crossings and MRT are "matched against the
+AXIS only". `markings.js` has matched crossings against every DRESSED road for
+some time, and the dressing reach went from 230m to **1200m — the whole
+district — on 2026-07-29**. What is left of that item is much smaller than it
+reads: sentosa's furthest crossings sit 1,242m from its axis, past the 1,200m
+reach.
+
+## READING `building:min_level` (2026-08-02, afternoon)
+
+`min_height` was read from the day SkyPark needed it. `building:min_level` —
+the same fact in storeys, and how OSM actually records it here — was read by
+nothing: **63 footprints in this world carry `min_height` and 880 carry
+`building:min_level`, 817 of them with no `min_height` at all.** The metres path
+was seeing 7% of what the map says about masses that begin in the air.
+
+564 sat at level 3 or higher and every one was extruded from the ground. The
+clearest case is in bugis: a tower crown mapped as six stacked parts (levels
+38-44, areas 251-2,168 m2) drew as six solid columns standing in the street, the
+smallest a 259 m2 white shaft 108.8m tall where a 2.5m cap belongs.
+
+**TWO THINGS MADE IT SAFE, AND BOTH ARE GENERAL.**
+
+1. **Convert as a FRACTION of the footprint's own height, never `min_level x
+   3.4`.** `h` may have come from a surveyed `height=`, from HDB's storey table
+   at its own rate, or from levels x 3.4. A cap derived at a different rate from
+   the mass it caps floats above it or sinks into it. `min_level/levels` lands
+   correctly whichever path produced `h`, and reduces to `min_level x 3.4`
+   exactly when `h` came from levels.
+
+2. **A mass that starts in the air needs something under it, and that cannot be
+   known until the whole district is read.** Lifting a footprint with nothing
+   beneath trades a needle in the street for a slab hanging over it, which is
+   worse and looks deliberate. So the candidates are stashed at tag-read time
+   and resolved by `_lift_air_parts()` once every building exists: lift it where
+   another footprint contains its centroid and reaches that height, leave it on
+   the ground where nothing does, and PRINT the count left behind. Measured
+   across four districts: 251 lifted, 5 declined, 7 with no thickness to draw.
+
+Set before `_drop_buried` deliberately — the burial rule already knows a
+footprint with `mh` occupies none of the ground beneath it, so lifting first
+stops a sky deck from swallowing the towers it floats over.
+
+## I TYPED BBOXES FROM MEMORY INTO RESEARCH BRIEFS, AND TWO OF FOUR WERE WRONG (2026-08-02)
+
+This file already says **NEVER TYPE THE DISTRICT LIST BY HAND** — read the
+registry. That rule was written about the list of district IDs. It applies just
+as hard to every bbox, axis and district fact that goes into a research brief,
+and on 2026-08-02 I broke it twice in one batch:
+
+- the **kallang** brief carried **bugis's bbox** verbatim. Four of the named
+  targets (Dakota Crescent, Old Airport Road, Shaw Towers, Guoco Midtown) are
+  not in kallang at all — two of them 400-690m outside the east and west edges.
+- the **tanjongrhu** brief said `1.2740-1.2920 N`, which is very nearly the
+  **marinaeast** bbox. It overlaps the real district by 17%, and its centre is
+  1.7 km south, in the Straits.
+
+Both were caught by the agents, because every brief this project sends demands
+"if a premise in this prompt is WRONG, say so LOUDLY at the top". That
+instruction has now corrected something ten times out of ten and it has just
+paid for itself twice in one afternoon — a brief that had not carried it would
+have come back with confident research about the wrong square kilometre.
+
+**Two rules, and the second is the general one:**
+
+1. Build a brief's facts by READING `data/districts.json` in the same breath as
+   writing the prompt. It costs one line:
+   `python3 -c "import json;[print(d['id'],d['bbox'],d.get('axis')) for d in json.load(open('data/districts.json'))['districts']]"`
+2. **The instruction that makes a subagent argue with you is the most valuable
+   line in the prompt.** It is worth more than any amount of detail, because
+   detail you got wrong is worse than detail you left out.
+
+## FOUR SEARCH-HEAVY AGENTS SHARE ONE WEB-SEARCH BUDGET (2026-08-02)
+
+Four research agents were fired in parallel. The budget is **per SESSION and
+shared across every subagent**, not per agent: 200 calls total. The first agent
+alone made 83 tool calls and the session hit 200/200 while three were still
+working. Three of the four finished anyway; the fourth (keppel) produced
+nothing and has to be redone.
+
+Before dispatching a fan-out of research agents, decide the search budget per
+agent and say so in the prompt, or dispatch them in waves. The cap is raisable
+with `CLAUDE_CODE_MAX_WEB_SEARCHES_PER_SESSION` (set to 2000 in the owner's
+`~/.claude/settings.json` on 2026-08-02) but it only applies to NEW sessions.
+
+## A HAND-RESEARCHED TABLE ROW THAT NEVER FIRES IS WORSE THAN NO ROW (2026-08-02)
+
+`height_for()` matches the LANDMARKS table against `tags["name"]`. A footprint
+with **no `name` tag at all** gets its name much later, from `addr:housename`,
+from `NAMED_BY_WIKIDATA`, or from OneMap's answer for its postcode — long after
+the height has been decided. So for every building named that way, LANDMARKS was
+consulted with an EMPTY STRING and could not match.
+
+Found by chasing one building and it was not the one I expected. Concourse
+Skyline, 298-300 Beach Road, 40 storeys: OSM gives it `height=0` and no `name`,
+only `addr:neighbourhood=Concourse Skyline`. Its LANDMARKS row had been
+researched and written on an earlier day, with a careful comment noting that the
+type default of 40m "happened to equal the storey count". **That row had never
+once fired.** The tower stood at 40m against a published 150m, `hs="guess"`,
+with the right answer sitting in the table.
+
+The old comment even saw the symptom and misread it as the cause: it treated
+the 40m as a unit confusion (storeys read as metres) when the real story is that
+LANDMARKS could not see the building's name. `hs` said `guess`, not `levels`,
+and that one field would have settled it. **Check the provenance field before
+believing any story about where a number came from.**
+
+Re-looking-up LANDMARKS after the late name is known, restricted to heights not
+already hand-set, immediately turned up more of the same in one district:
+
+    Concourse Skyline ....................  40   -> 150 m
+    The Ritz-Carlton, Millenia Singapore .  10.2 -> 130 m
+    Customs House ........................   3.5 ->  14 m
+    Marina Square ........................  55   ->  40 m
+
+A five-star hotel was being drawn three storeys tall. The count is printed every
+build now, because the failure mode here is SILENCE: a table row that does
+nothing looks exactly like a table row that works.
+
+**The general form, and it is the third instance of this shape in this repo**
+(after `api.grow()`'s misdiagnosis and the "unapplied research" grep): work that
+was done correctly can be disconnected from the thing it was meant to affect,
+and nothing will say so. Prefer a check that asserts the row CHANGED something
+over a comment asserting that it should.

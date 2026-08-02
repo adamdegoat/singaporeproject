@@ -248,7 +248,21 @@ def fetch(d, force=False):
         # `man_made=tower` and are mapped individually with real positions,
         # while the Grove itself is only a garden polygon. Without this the most
         # recognisable thing in Gardens by the Bay is an empty lawn.
-        "towers": f'way["man_made"="tower"]({bbox});node["man_made"="tower"]({bbox});',
+        # THE QUAY CRANES ARE THE HORIZON AND THEY WERE NEVER ASKED FOR.
+        #
+        # 25 `man_made=crane` nodes stand along the Keppel quay, ~52m tall and
+        # 500-800m out. `data/raw/keppel.json` contained ZERO of them, not
+        # because anything failed to parse but because this query only ever
+        # said `man_made=tower` — the same shape as the steps and parkfurn gap
+        # of 2026-08-02, where the tags were never unread, they were never
+        # REQUESTED. research/keppel-landmarks.md calls the crane line "the
+        # biggest single visual omission in the district".
+        #
+        # Folded into the `towers` layer rather than given its own: a layer
+        # costs a query on the Overpass fallback path, both are free-standing
+        # non-building structures, and the parser tells them apart by tag.
+        "towers": (f'way["man_made"="tower"]({bbox});node["man_made"="tower"]({bbox});'
+                   f'way["man_made"="crane"]({bbox});node["man_made"="crane"]({bbox});'),
     }
     merged, seen = [], set()
     empty = []

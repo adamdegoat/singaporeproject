@@ -324,7 +324,54 @@ LANDMARKS = {
     "myp centre":             {"h": 157},   # weakly published (ex-Emporis)
     "one george street":      {"h": 153},
     "chevron house":          {"h": 152},
-    "marina one":             {"h": 200},   # architect figure; CTBUH says 225.5 — conflict recorded
+    # MARINA ONE IS FOUR TOWERS AND THIS KEY WAS GIVING ALL OF THEM ONE HEIGHT.
+    #
+    # THE FIFTH AND SIXTH TIME SUBSTRING MATCHING HAS BITTEN. The note at
+    # height_for() lists four: "Grand Park City Hall" as City Hall, "Esplanade
+    # Theatre" as the Esplanade, "Singapore Flyer Car Park" given the wheel's
+    # 165m, and "The Shoppes at Marina Bay Sands" given a hotel tower's 194m.
+    # Longest-match-wins fixed the MECHANISM; it cannot invent a longer key that
+    # nobody has written. "marina one" is a real prefix of four real buildings
+    # with two different heights, so one key silently answered for all of them.
+    #
+    # CTBUH, via research/tanjongrhu-marinasouth.md §7.3 (figures recovered from
+    # an Internet Archive snapshot dated 2026-02-13, because CTBUH refuses
+    # automated fetching — so they are six months old and sourced, not live):
+    #
+    #   Marina One office ................ 225.45m, 34 floors
+    #   Marina One Residences Garden ..... 140.7m,  34 floors
+    #   Marina One Residences Park ....... 140.7m,  34 floors
+    #
+    # The residences were drawn at 200m. **59.3 metres too tall, each, on two
+    # towers in the most-looked-at skyline in the model** — and both stand in
+    # THREE district files at once (chinatown, marinabay, marinasouth), so the
+    # error was on screen three times over.
+    #
+    # The bare "marina one" key is KEPT rather than deleted: it still answers
+    # for the site outline and for any part nobody has named, and 200 is the
+    # architect's own figure for the office mass. The specific keys below beat
+    # it by being longer, which is the rule this table already runs on.
+    "marina one":             {"h": 200},   # architect figure; CTBUH says 225.45
+    "marina one residences":  {"h": 140.7},
+    # KALLANG, from research/kallang-landmarks.md, 2026-08-02.
+    #
+    # CONCOURSE SKYLINE WAS DRAWN AT 40 METRES AGAINST A PUBLISHED 150 — the
+    # largest single height error found in this world today, on a 40-storey
+    # tower standing on a 944 m2 footprint beside Nicoll Highway.
+    #
+    # THE RESEARCH DIAGNOSED THE MECHANISM WRONG AND THE CORRECTION IS WORTH
+    # KEEPING. It reported "its 40 storeys were read as metres". They were not:
+    # the building carries `hs="guess"`, so it never reached the levels path at
+    # all -- OSM gives this footprint no height and no levels, and
+    # TYPE_DEFAULT["residential"] is 40. The 40 is a COINCIDENCE, not a unit
+    # confusion, and if it had been believed the "fix" would have been aimed at
+    # the levels conversion, which is not involved. Check `hs` before believing
+    # any story about where a number came from.
+    # 33 storeys, CTBUH 135m. Ours came from OSM building:levels=30 x 3.4 =
+    # 102m, so this replaces a storey derivation with a published measurement --
+    # which is the one direction this table is always allowed to move.
+    "city gate residences":   {"h": 135, "key": True},
+    "marina one offices":     {"h": 225.45},
     "lau pa sat":             {"h": 14},    # 1-storey market + clock lantern; UNPUBLISHED, height class only
 
     # ---- CBD + civic, researched 2026-07-31 (research/heights-cbd.md,
@@ -556,8 +603,19 @@ LANDMARKS = {
     "oub centre":             {"h": 280, "key": True},   # same building, old name
     "republic plaza":         {"h": 280, "key": True},   # VERIFIED
     "uob plaza":              {"h": 280, "key": True},   # VERIFIED
+    # THE SAME BUG, THE SAME AFTERNOON. One key for three towers of three
+    # different heights. CTBUH (same archived snapshot, 2026-02-13):
+    #   Tower 1  186.1m, 33 floors, flat   <- was drawn at 245m, 58.9m TOO TALL
+    #   Tower 2  245m,   50 floors, flat   <- correct
+    #   Tower 3  239.65m, 46 floors, and its roof is 216.12m with a 23.5m CROWN
+    #            that we do not model at all
+    # The generic key stays for the site and for unnamed parts; the numbered
+    # keys are longer and win.
     "marina bay financial centre": {"h": 245, "key": True},
-    "marina bay residences":  {"h": 227, "key": True},
+    "marina bay financial centre tower 1": {"h": 186.1, "key": True},
+    "marina bay financial centre tower 3": {"h": 239.65, "key": True},
+    # CTBUH 221.9, not 227. Marina Bay SUITES really is 226.9 and keeps its 227.
+    "marina bay residences":  {"h": 221.9, "key": True},
     "marina bay suites":      {"h": 227, "key": True},
     # NOT "asia square": that name is the site OUTLINE, and giving the outline
     # the tower height made it swallow both of its own towers as buried
@@ -704,13 +762,20 @@ LANDMARKS = {
     # this safe: "the concourse office tower" beats "the concourse".
     "the concourse":          {"h": 15},
     # Concourse Skyline, 298-300 Beach Road, Hong Fok, completed 2013. THREE
-    # towers stepping 20 -> 28 and 34 -> 40 storeys; the metre height is
-    # UNPUBLISHED in every source reached, so this is 40 storeys at a 3.2m
-    # residential floor-to-floor and is marked key=False because it is DERIVED.
-    # It was falling through to a type default of 40m, which is a coincidence
-    # worth noticing: the guess happened to equal the STOREY COUNT, so a
-    # 40-storey tower was being drawn one metre per floor.
-    "concourse skyline":      {"h": 128},
+    # towers stepping 20 -> 28 and 34 -> 40 storeys.
+    #
+    # NOW PUBLISHED: **150 m**, Wikipedia "List of tallest buildings in
+    # Singapore" (research/kallang-landmarks.md, 2026-08-02). That replaces the
+    # 128 that stood here, which was 40 storeys x 3.2m and honestly labelled as
+    # DERIVED because no metre figure had been found. A published measurement
+    # beats a derivation, so this is now key=True.
+    #
+    # AND THIS ENTRY HAD NEVER ONCE FIRED. The building was still being drawn at
+    # a TYPE DEFAULT of 40m with `hs="guess"` -- see the note on late naming at
+    # the re-lookup below. The old comment here spotted the coincidence that the
+    # default happened to equal the storey count, but read it as the cause; the
+    # cause was that LANDMARKS could not see this building's name at all.
+    "concourse skyline":      {"h": 150, "key": True},
 }
 
 # HDB STOREY COUNTS, KEYED BY POSTCODE.
@@ -1158,6 +1223,52 @@ OSM_WAY = {
     # 460-486 run as ONE way; SLA numbers fourteen addresses along it.
     453942380:  {"st": 2},
     178594846:  {"st": 4},
+
+    # --- research/harbourfront-landmarks.md PARTS 1 and 3, applied 2026-08-02.
+    #
+    # THE THREE BIGGEST THINGS IN THIS DISTRICT ALL CARRY `height=0` IN OSM.
+    # The tag is correctly refused, but refusing it only drops them into a type
+    # default — so harbourfront's largest footprint, its office tower and its
+    # second office tower were all standing at a guess. That is the district's
+    # single largest visual error and the brief says so in as many words.
+    #
+    # VivoCity. 66,246 m2, no `name` tag at all, drawn at a guessed 22m.
+    # 35.80m is the ONLY height in metres published for it anywhere the
+    # research could reach: Emporis 317866, and the brief flags the fragility
+    # of that source out loud — Emporis shut down in 2022 and the figure now
+    # survives only through the search index. It is consistent with the other
+    # published facts (7 floors above ground, a car park reaching level 7), and
+    # it is reported as the published figure rather than replaced with an
+    # arithmetic guess. Mapletree's own fact sheet says "3 storeys and 2
+    # basements with an 8-storey carpark", which is the same building.
+    #
+    # NOT DONE HERE, and deliberately: the brief also shows the 66,246 m2 way
+    # is BIGGER THAN THE ENCLOSED BUILDING — GFA 142,854 m2 over 5 levels
+    # averages ~28,600 m2 a level — so it takes in the open Promenade and
+    # Plaza, and extruding all of it doubles VivoCity's bulk. Trimming a
+    # surveyed ring to a computed area is a different and much riskier change
+    # than correcting a height, and it wants its own vet pass.
+    46671408:   {"n": "VivoCity", "m": 35.8},
+    # Keppel's own site: an 18-storey office tower on a 6-storey podium.
+    47418846:   {"n": "Keppel Bay Tower", "st": 18, "yr": 2002},
+    # 18-storey tower on a 5-storey podium. Also `height=0` in OSM.
+    47418847:   {"n": "HarbourFront Tower One", "st": 18},
+    # CHIJ St. Theresa's Convent, 160 Lower Delta Road — the anonymous
+    # 9,268 m2 mass. NAME ONLY. Its height is UNPUBLISHED and this table will
+    # not invent one: the entry moves it from "a big grey block" to a named
+    # building and leaves the height exactly where it was.
+    172094340:  {"n": "CHIJ St. Theresa's Convent"},
+    # The cruise terminal MOVED on 7 July 2026 to this new two-storey building
+    # at 5 HarbourFront Avenue, and this world models 2026. Two floors is the
+    # published figure (ground: check-in and baggage; second: immigration).
+    #
+    # A CAVEAT THAT IS PART OF THE FACT: run through this file's STOREY_FLOOR_M
+    # of 3.4 that is 6.8m, and a cruise hall has taller floors than an office
+    # does, so this is probably short. It replaces a 20m GUESS — six storeys
+    # for a building published as two — and it carries "levels" provenance
+    # saying exactly what it is derived from. Inventing a terminal-sized floor
+    # height to split the difference is the thing this project does not do.
+    1529989581: {"st": 2},
 }
 
 
@@ -1871,6 +1982,29 @@ if _bad_keys:
 
 # Every height tag we refused, so the count is printed rather than swallowed.
 BAD_HEIGHT_TAGS = []
+BAD_COLOUR_TAGS = []
+
+
+def colour_ok(v):
+    """Is this a colour value worth carrying into the scene? Refuses the
+    mass-traced `#ff3333` and any hex that is not 3 or 6 digits.
+
+    A FUNCTION, BECAUSE THE TEST WAS IN ONE PLACE AND THE WRITE WAS IN TWO.
+    The guarded loop refused `#ddddd` and then a second, unguarded loop forty
+    lines later wrote `building:colour` straight back over the top of it —
+    which is how an invalid five-digit hex reached three shipped buildings in
+    harbourfront AND the published world.json, while this file's own note said
+    it "does not reach any shipped data/*.json". It did. Same shape as every
+    other bug here where one fact is enforced in two places."""
+    v = (v or "").strip()
+    if not v:
+        return False
+    if v.lower() == "#ff3333":
+        return False
+    if v.startswith("#") and not re.fullmatch(r"#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})", v):
+        return False
+    return True
+LATE_NAME_HEIGHTS = []
 
 # WHERE THE OSM `height` TAG IS NOT EVIDENCE, AND MUST BE READ AS ABSENT.
 #
@@ -2287,6 +2421,7 @@ def main():
     els = raw["elements"]
     buildings, roads, trees = [], [], []
     skipped_underground = 0
+    skipped_station_box = 0
     # Real map positions, so street furniture stops being placed at intervals we
     # invented. This is what makes it the actual street rather than a plausible one.
     crossings, signals, busstops, mrt, taxis = [], [], [], [], []
@@ -2449,6 +2584,45 @@ def main():
                                    or _neg_layer(tags)):
             skipped_underground += 1
             continue
+        # ...AND A STATION BOX WITH NO HEIGHT AND NO STOREYS IS THE SAME THING
+        # WITHOUT THE TAG THAT SAYS SO.
+        #
+        # The rule above catches Dhoby Ghaut and Bencoolen because someone
+        # tagged them `layer=-1`. HarbourFront's mapper tagged the same kind of
+        # object `layer=1`, so it sailed through and became the second-largest
+        # object in its district: a 14,189 m2 polygon extruded to a TYPE-DEFAULT
+        # 18m, drawn 263m x 68m between VivoCity and HarbourFront Centre. An
+        # opaque six-storey wall across the middle of the district's busiest
+        # public space.
+        #
+        # HarbourFront MRT is underground -- concourse at B1, platforms at B2,
+        # four surface exits plus an underground exit into VivoCity's B2, so its
+        # above-ground height is NONE (Wikipedia; Land Transport Guru, via
+        # research/harbourfront-landmarks.md). There is no 18m building there.
+        #
+        # THE RULE IS "DO NOT INVENT", NOT "STATIONS ARE UNDERGROUND". A station
+        # that publishes a height keeps it (Tanjong Pagar Railway Station at 8m,
+        # Sentosa's monorail stops at 10m); one that publishes storeys keeps
+        # those too, and the squat guard now leaves them alone. What is refused
+        # is the case where OSM says NOTHING about the above-ground form and we
+        # answer with a type default -- because an MRT station polygon in this
+        # city is routinely the underground extent, and a guess there is not a
+        # small error, it is a wall.
+        #
+        # SCOPED BY SIZE, and the size is measured rather than picked: the boxes
+        # this is aimed at are 14,189 and 23,714 m2, while a surface entrance
+        # structure is 100-800 m2. At 2,000 m2 the only footprint in this world
+        # it removes that the layer=-1 rule did not already remove is
+        # HarbourFront's. Small station structures keep being drawn -- they are
+        # real things a walker passes -- and they are simply no longer sized by
+        # a default meant for offices.
+        if tags.get("building") in ("train_station", "transportation") \
+                and not tags.get("height") and not tags.get("building:levels") \
+                and not tags.get("min_height"):
+            _pts_st = ring(e["geometry"]) if len(e.get("geometry") or []) > 2 else []
+            if len(_pts_st) > 2 and area(_pts_st) > 2000:
+                skipped_station_box += 1
+                continue
         # 3D MASSING OSM ALREADY HAS AND THIS PIPELINE IGNORED.
         #
         # `building:part` is how OSM records a building that is not one box:
@@ -2463,7 +2637,25 @@ def main():
         # where someone modelled it deliberately. Parts that coincide with their
         # parent are caught by the same dedupe as everything else.
         if "building:part" in tags and "building" not in tags:
-            if tags.get("height") or tags.get("building:levels") or tags.get("name"):
+            # WATER IS NOT A MASS, WHATEVER ELSE IT IS TAGGED.
+            #
+            # Two ornamental ponds on the Keppel Marina East Desalination
+            # Plant's public roof park (OSM ways 934999016 and 934999017) carry
+            # `natural=water, water=pond` AND `building:part=yes,
+            # building:levels=0.5` -- the part tags say "this sits on the roof
+            # deck at half a level", which is true and is about POSITION, not
+            # about being a building. Promoted here they became two 20m solid
+            # blocks standing on the park, 1,079 and 1,035 m2, because 0.5
+            # levels is 1.7m and the squat guard replaced it with a type
+            # default. A pond drawn as a seven-storey block is the most visible
+            # kind of wrong.
+            #
+            # Two in the whole world today, which is exactly why it is worth
+            # the three lines: it is a rule, not a special case, and the next
+            # roof pond will be handled without anyone finding it.
+            if tags.get("natural") == "water" or tags.get("water"):
+                pass
+            elif tags.get("height") or tags.get("building:levels") or tags.get("name"):
                 tags = dict(tags)
                 tags["building"] = tags.get("building:part") or "yes"
 
@@ -2515,6 +2707,24 @@ def main():
             # Place now is.
             _nm = norm(tags.get("name") or "")
             _sourced_low = _nm and any(k in _nm for k in SOURCED_LOW)
+            # A STATION CONCOURSE IS GENUINELY ONE STOREY, AND THE GUARD WAS
+            # TURNING THAT FACT INTO A 24-METRE BLOCK.
+            #
+            # `building=train_station` / `transportation` polygons carrying an
+            # honest `building:levels=1` were being overridden here, because one
+            # storey is under 8m and a concourse is always over 600 m2:
+            # Kallang's Stadium station box (4,843 m2), Outram Park (3,406 m2)
+            # and a 5,688 m2 transport hall in keppel were all drawn at 24m --
+            # about seven storeys -- on top of an underground railway.
+            #
+            # This is the SOURCED_LOW argument applied to a whole class instead
+            # of one name at a time: the tag is not a bad tag here, it is the
+            # correct description of a single-storey hall. It stays scoped to
+            # stations so the -1s and the two-level megamalls the guard exists
+            # for are untouched.
+            if tags.get("building") in ("train_station", "transportation") \
+                    and tags.get("building:levels"):
+                _sourced_low = True
             if h < 8 and a > 600 and not _sourced_low:
                 h = TYPE_DEFAULT.get(tags.get("building", "yes"), 24)
                 hsrc = "guess"
@@ -2548,7 +2758,19 @@ def main():
                 _OSM_WAY_SEEN.add(_wid)
                 if _ow.get("n") and not tags.get("name"):
                     b["n"] = _ow["n"]
-                if _ow.get("st"):
+                if _ow.get("m"):
+                    # A HEIGHT A SOURCE PUBLISHED IN METRES, which the storey
+                    # path below cannot carry without laundering it through a
+                    # 3.4m assumption it was never measured with. Same "named"
+                    # provenance LANDMARKS gets, because it is the same kind of
+                    # fact reached by a different key: LANDMARKS matches a name
+                    # and this matches a way id, which is the only handle on a
+                    # building OSM leaves unnamed. VivoCity is exactly that —
+                    # the largest footprint in harbourfront, no `name` tag at
+                    # all, and `height=0`.
+                    b["h"] = round(float(_ow["m"]), 1)
+                    hsrc = "named"
+                elif _ow.get("st"):
                     # A PUBLISHED STOREY COUNT, NOT A MEASUREMENT. Same 3.4m
                     # and the same "levels" provenance as building:levels, so
                     # the accuracy ledger keeps reporting it as what it is.
@@ -2600,6 +2822,68 @@ def main():
                 _nm = None
             if _nm:
                 b["n"] = _nm
+            # A BUILDING NAMED LATE COULD NEVER INHERIT A RESEARCHED HEIGHT,
+            # AND THAT MADE HAND-RESEARCHED LANDMARK ROWS INTO DEAD CODE.
+            #
+            # `height_for()` matches LANDMARKS against `tags["name"]`, and it
+            # runs long before the block above, which is where a footprint with
+            # NO name tag finally gets one -- from `addr:housename`, from
+            # NAMED_BY_WIKIDATA, or from OneMap's answer for its postcode. So
+            # for every building named that way, LANDMARKS was consulted with an
+            # empty string and could not match.
+            #
+            # MEASURED CASE, and it is why this was found at all. Concourse
+            # Skyline (298-300 Beach Road, 40 storeys) carries NO `name` tag in
+            # OSM -- only `addr:neighbourhood=Concourse Skyline` and
+            # `height=0` -- so it is named from its postcode. Its LANDMARKS row
+            # had been researched and written on an earlier day, complete with a
+            # careful note, and **it had never once fired**: the tower was drawn
+            # at TYPE_DEFAULT["residential"] = 40m against a published 150m,
+            # with `hs="guess"`, while a correct answer sat in the table.
+            #
+            # So: look LANDMARKS up again once the real name is known. Only for
+            # a height that is not already hand-set -- "named" and "override"
+            # come from tables that have already had their say -- and using the
+            # same longest-match-wins rule, so nothing here can disagree with
+            # height_for() about which key applies.
+            # EXACT MATCH ONLY, and that restriction was bought with a
+            # regression I caused and caught in the build log.
+            #
+            # The first version of this re-lookup used the same SUBSTRING rule
+            # as height_for(). Rebuilding orchard with it printed:
+            #
+            #     Somerset Compass Singapore  68.0 -> 40 m
+            #     The Ritz-Carlton Residences   20 -> 130 m
+            #
+            # Both wrong, and wrong in the exact way this whole table has been
+            # bitten six times before. `"somerset"` is an EIGHT-character key
+            # and it swallowed "Somerset Compass Singapore"; `"the ritzcarlton"`
+            # (130m, the Millenia hotel in Marina Bay) swallowed "The
+            # Ritz-Carlton Residences", a different building in Cairnhill that
+            # already has its own 34-storey record. A fix for substring matching
+            # that reintroduces substring matching is not a fix.
+            #
+            # height_for() can afford the loose rule because it is matching a
+            # SURVEYED `name` tag against keys chosen for surveyed names. This
+            # path is matching a name that was INFERRED -- from a postcode, from
+            # wikidata, from an address -- so it is one inference deep already,
+            # and a fuzzy match on top of an inference is two.
+            #
+            # The cost is real and is accepted: "The Ritz-Carlton, Millenia
+            # Singapore" (drawn at 10.2m, published 130m) no longer picks up its
+            # height here, because its name is not equal to any key. That is a
+            # KNOWN wrong height left in place rather than a guess propagated to
+            # a building that never asked for it, and the remedy is the one this
+            # table already uses everywhere else: write the longer key by hand.
+            if _nm and hsrc not in ("named", "override"):
+                _lspec = LANDMARKS.get(norm(_nm))
+                if _lspec is not None:
+                    LATE_NAME_HEIGHTS.append((_nm, b.get("h"), _lspec["h"]))
+                    b["h"] = _lspec["h"]
+                    hsrc = "named"
+                    b["hs"] = "named"
+                    if _lspec.get("key"):
+                        key = True
             if key:
                 b["k"] = 1
             # WHAT KIND OF BUILDING IT IS, which the facade family never asked.
@@ -2681,10 +2965,82 @@ def main():
                     b["mh"] = round(_mh, 1)
             except ValueError:
                 pass
+            # THE SAME FACT IN STOREYS, WHICH IS HOW MOST OF IT IS ACTUALLY
+            # RECORDED. `min_height` is on 63 footprints in this world;
+            # `building:min_level` is on 880, and 817 of those carry no
+            # `min_height` at all -- so the metres path above was reading 7% of
+            # what OSM says about masses that start in the air.
+            #
+            # 564 of them sit at level 3 or higher and every one is currently
+            # extruded from the ground. Measured in bugis: a tower crown mapped
+            # as six stacked parts (levels 38-44, areas 251-2,168 m2) draws as
+            # six solid columns standing on the street, the smallest a 259 m2
+            # white shaft 108.8m tall where a 2.5m cap belongs.
+            #
+            # CONVERTED AS A FRACTION OF THIS FOOTPRINT'S OWN HEIGHT, never as
+            # `min_level x 3.4`. `h` may have come from a surveyed `height`, from
+            # HDB's storey table at its own rate, or from levels x 3.4 -- and a
+            # cap derived at a DIFFERENT rate from the mass it caps floats above
+            # it or sinks into it. min_level/levels is the one ratio that lands
+            # correctly whichever path produced `h`, and it reduces to
+            # min_level x 3.4 exactly when `h` came from levels.
+            #
+            # Deliberately NOT applied here: a footprint that starts in the air
+            # needs something under it, and that cannot be known until every
+            # building in the district has been read. Stashed, then resolved by
+            # _lift_air_parts() below.
+            if "mh" not in b:
+                try:
+                    _ml = float(str(tags.get("building:min_level", "")).strip())
+                    _lvv = float(str(tags.get("building:levels", "")).strip())
+                    if _ml >= 1 and _lvv > _ml:
+                        b["_airlvl"] = (_ml, _lvv)
+                except ValueError:
+                    pass
+            # A SURVEYED COLOUR BEATS A HASHED ONE -- BUT #ff3333 IS NOT A
+            # SURVEY, IT IS A TRACING ARTEFACT, AND IT HAD PAINTED 1,617 ROOFS
+            # IN THIS WORLD FIRE-ENGINE RED.
+            #
+            # Measured across every raw file on 2026-08-02, `roof:colour`
+            # values by frequency:
+            #
+            #     #ff3333  2002      <- pure saturated red
+            #     grey      146
+            #     #ea5e2f   136
+            #     #76c82e   124
+            #     #e7e6e3   101
+            #
+            # The artefact is FOURTEEN TIMES more common than the commonest real
+            # colour, and it is concentrated in the shophouse conservation belt
+            # exactly where a bulk trace would land: chinatown 1,332, keppel
+            # 651, marinabay 10, brasbasah 9. `#ff3333` is not a roof colour
+            # anywhere on earth; the keppel research calls it a Bing-trace
+            # artefact and records that the real Blair Plain tiles are unglazed
+            # terracotta. It was reaching `rcol` on the **Asian Civilisations
+            # Museum**, on Parliament House's **Chamber** and **Front Hall**,
+            # and on **Maxwell Reserve**.
+            #
+            # REFUSED, NOT REMAPPED, and that is the whole design decision. The
+            # same shape as the under-2.5m height guard above: record the bad
+            # tag, fall through, and let the honest path answer. Remapping all
+            # 2,002 to one terracotta would repaint Parliament House and the ACM
+            # as clay-tiled too -- and this pipeline ALREADY gives conserved
+            # terraces proper tiled roofs, so falling through is strictly better
+            # than any single colour I could choose here.
+            #
+            # The valid-hex test rides along because it costs one regex and
+            # catches a live trap: `#ddddd` (17 occurrences) and `#921384A` (2)
+            # are in the raw data. Neither reaches a shipped file today -- those
+            # elements are dropped or deduped first -- but a five-digit hex that
+            # did reach one would not parse, and nothing would say why.
             for _src, _dst in (("building:colour", "col"), ("roof:colour", "rcol")):
                 _v = (tags.get(_src) or "").strip()
-                if _v:
-                    b[_dst] = _v
+                if not _v:
+                    continue
+                if not colour_ok(_v):
+                    BAD_COLOUR_TAGS.append((tags.get("name") or "(unnamed)", _src, _v))
+                    continue
+                b[_dst] = _v
             # WHAT A BUILDING LOOKS LIKE, from the map rather than from a hash.
             #
             # The facade family was chosen by hashing the footprint, which is a
@@ -2731,8 +3087,16 @@ def main():
                                 ("building:colour", "col"),
                                 ("roof:shape", "rs")):
                 v = tags.get(tk)
-                if v:
-                    b[key_out] = str(v)[:16]
+                if not v:
+                    continue
+                # THE COLOUR GOES THROUGH THE SAME GATE AS EVERY OTHER COLOUR.
+                # This loop used to write it unconditionally and it runs AFTER
+                # the refusal above, so it quietly undid it. Material and
+                # roof:shape are not colours and are unaffected.
+                if tk == "building:colour" and not colour_ok(v):
+                    BAD_COLOUR_TAGS.append((tags.get("name") or "(unnamed)", tk, str(v)[:16]))
+                    continue
+                b[key_out] = str(v)[:16]
             # researched frontage facts, only where OSM offers nothing
             _fn = (b.get("n") or "").lower()
             if _fn:
@@ -3133,7 +3497,78 @@ def main():
     def corridors_near(px, pz):
         return cgrid.get((int(px // CGRID_CELL), int(pz // CGRID_CELL)), ())
 
-    def clear_vertex(px, pz, tol=0.0):
+    # WHICH WAY IS OUT, WHEN THE VERTEX IS ON THE CENTRELINE ITSELF.
+    #
+    # clear_vertex pushed every vertex along `vertex - closest point on the
+    # centreline`, which carries no usable sign once that distance goes to
+    # zero — and it goes to zero routinely, because OSM shares nodes: a
+    # building ring edge is often literally the road way. The Marina Bay
+    # Cruise Centre Car Park (way 187888615) is exactly that. Two of its eight
+    # nodes ARE the two nodes of a Marina Coastal Drive stub, so subdivide()
+    # laid a run of vertices ON the centreline at d ~= 0.05m, and each one was
+    # flung to whichever side 0.1m of rounding happened to pick. Measured on
+    # the shipped ring: consecutive vertices landing at -5.19m and +5.22m
+    # about the same corridor, an 8-point footprint arriving as a
+    # 69-point self-intersecting bowtie whose shoelace area (7,683 m2) no
+    # longer matched its own recorded area (8,549 m2). That is what P1b was
+    # reporting at 2984,10988 and what took P5 from 0 to 1.
+    #
+    # So when the offset is too short to carry a direction, take the direction
+    # from the RING instead: the normal at that vertex, derived from the ring's
+    # own winding. It is stable along a whole edge, so a run of on-centreline
+    # vertices leaves together instead of turning the ring inside out.
+    #
+    # AND IT GOES INWARD, WHICH IS THE OPPOSITE OF THE FIRST VERSION.
+    #
+    # When a ring EDGE is the centreline, the corridor straddles it: half the
+    # carriageway is already inside the footprint. Pushing such a vertex
+    # outward moves the wall FURTHER ACROSS the road, which is the opposite of
+    # what this pass is for. Pushing it inward shrinks the footprint off the
+    # carriageway. Measured both ways across the two districts that have this
+    # geometry, rather than argued:
+    #
+    #                     outward   inward
+    #   marinasouth P1b       1        0
+    #   marinasouth P5        1        0
+    #   marinabay   P5        2        0
+    #   marinabay   S8       52       57      (a FLOOR — outward FAILED it)
+    #
+    # Outward also cost marinabay a shopfront: it inserted four vertices that
+    # bulged the Marina Bay Sands podium 1.0-1.9m into Bayfront Avenue, which
+    # broke one frontage run in two and left "Swarovski" with no bay. Nothing
+    # about that was visible in P1b, which is why the S8 floor is worth having.
+    def ring_outward(ring):
+        """Outward unit normal per vertex, from the ring's own winding."""
+        n = len(ring)
+        a2 = 0.0
+        for i in range(n):
+            x1, z1 = ring[i]
+            x2, z2 = ring[(i + 1) % n]
+            a2 += x1 * z2 - x2 * z1
+        s = 1.0 if a2 > 0 else -1.0
+        out = []
+        for i in range(n):
+            ax2, az2 = ring[(i - 1) % n]
+            bx2, bz2 = ring[(i + 1) % n]
+            tx, tz = bx2 - ax2, bz2 - az2
+            L = math.hypot(tx, tz)
+            out.append(None if L < 1e-9 else (s * tz / L, -s * tx / L))
+        return out
+
+    # Below this, `vertex - closest point` is rounding noise, not a direction.
+    # The ring grid is 0.1m and subdivide() rounds to it, so 0.4m is several
+    # times the largest offset that can be manufactured by rounding alone
+    # while staying far under the ~5m clearances being applied.
+    # SG_ONCENTRE=0 restores the old behaviour (leave on-centreline vertices
+    # where they are), which is how this change was A/B'd district by district.
+    ONCENTRE = float(os.environ.get("SG_ONCENTRE") or 0.4)
+    # -1 (the default, and the measured one) pushes such a vertex INWARD, so
+    # the footprint shrinks off the road. +1 restores the first version's
+    # outward push, which is how the table above was measured.
+    ONCENTRE_SIDE = float(os.environ.get("SG_ONCENTRE_SIDE") or -1.0)
+    _oncentre = [0]                    # how often the ring normal was needed
+
+    def clear_vertex(px, pz, tol=0.0, out=None):
         """Slide a vertex out of every corridor it is inside. Returns the point
         and whether it moved.
 
@@ -3142,14 +3577,41 @@ def main():
         alongside a kerb has midpoints a few centimetres inside it constantly,
         from rounding and from an edge being the chord of a curved corridor, and
         treating those as crossings inserted 6,209 vertices where 106 edges
-        actually cross and grew the scene file by 10%."""
+        actually cross and grew the scene file by 10%.
+
+        `out` is the ring's own outward normal at this vertex, used when the
+        vertex sits ON a centreline. Without it such a vertex is left alone,
+        which is what the `d > 1e-6` guard used to do for the exactly-zero case
+        and what it could not do for the 0.05m case — see ring_outward above."""
         moved = False
         for (a, c, clear) in corridors_near(px, pz):
             d, cx, cz = seg_dist(px, pz, a[0], a[1], c[0], c[1])
-            if d < clear - tol and d > 1e-6:
+            if d >= clear - tol:
+                continue
+            if d > max(ONCENTRE, 1e-6):
                 nx, nz = (px - cx) / d, (pz - cz) / d
-                px, pz = cx + nx * clear, cz + nz * clear
-                moved = True
+            elif out is not None and ONCENTRE > 0:
+                # The ring normal gives the SIDE; the corridor's own
+                # perpendicular gives the DIRECTION. Leaving along the ring
+                # normal alone lands the vertex `clear` from the closest point
+                # but nearer than that to the rest of the segment, which is
+                # how the first version of this took P5 from 1 to 2 while
+                # fixing P1b. Only where the closest point is a segment END is
+                # there no perpendicular to use, and there the radial push is
+                # the right one anyway.
+                ux, uz = c[0] - a[0], c[1] - a[1]
+                uL = math.hypot(ux, uz)
+                nx, nz = -uz / uL, ux / uL
+                s2 = (nx * out[0] + nz * out[1]) * ONCENTRE_SIDE
+                if uL < 1e-9 or abs(s2) < 1e-6:
+                    nx, nz = out[0] * ONCENTRE_SIDE, out[1] * ONCENTRE_SIDE
+                elif s2 < 0:
+                    nx, nz = -nx, -nz
+                _oncentre[0] += 1
+            else:
+                continue
+            px, pz = cx + nx * clear, cz + nz * clear
+            moved = True
         return px, pz, moved
 
     def subdivide(ring, maxlen=4.0):
@@ -3172,18 +3634,22 @@ def main():
         if len(b["p"]) < 40:                      # keep already-dense rings as they are
             b["p"] = subdivide(b["p"])
 
-    moved_pts, moved_b = 0, 0
+    moved_pts, moved_b, oncentre = 0, 0, 0
     for b in buildings:
         touched = False
+        # The hints come off the ring BEFORE any of it moves; computing them
+        # inside the loop would read neighbours this pass had already nudged.
+        outs = ring_outward(b["p"])
         for j, (px, pz) in enumerate(b["p"]):
-            px, pz, moved = clear_vertex(px, pz)
+            px, pz, moved = clear_vertex(px, pz, out=outs[j])
             if moved:
                 touched = True
                 moved_pts += 1
             b["p"][j] = [round(px, 1), round(pz, 1)]
         if touched:
             moved_b += 1
-    print(f"  road clearance: nudged {moved_pts} vertices across {moved_b} buildings")
+    print(f"  road clearance: nudged {moved_pts} vertices across {moved_b} buildings"
+          f", {_oncentre[0]} of them off a shared centreline along the ring normal")
 
     def simplify(ring, eps=0.35):
         """Drop vertices that sit on the straight line between their neighbours."""
@@ -3223,8 +3689,9 @@ def main():
     again_pts, again_b = 0, 0
     for b in buildings:
         touched = False
+        outs = ring_outward(b["p"])
         for j, (px, pz) in enumerate(b["p"]):
-            px, pz, moved = clear_vertex(px, pz)
+            px, pz, moved = clear_vertex(px, pz, out=outs[j])
             if moved:
                 touched = True
                 again_pts += 1
@@ -3806,6 +4273,72 @@ def main():
         _bset = {id(b) for b in _buried}
         return [b for b in blds if id(b) not in _bset]
 
+    def _lift_air_parts(blds):
+        """Raise the footprints `building:min_level` says begin above the
+        ground -- but only where something is under them.
+
+        WHY THE SUPPORT TEST IS NOT OPTIONAL. Lifting a mass off the ground
+        trades one defect for a worse one if nothing holds it up: a needle
+        standing in the street is wrong and a slab hanging in mid-air over the
+        street is wrong AND looks deliberate. 125 of the 572 candidates in this
+        world have nothing beneath them at the height their tags imply, and
+        they are not one kind of thing -- some are genuine sky bridges whose
+        piers OSM does not map, some are parts of a tower whose lower parts
+        carry no levels at all, and some are simply mistagged.
+
+        So the rule is the honest one: lift it when the data can show a mass
+        under it that reaches that height, leave it on the ground when it
+        cannot, and COUNT the ones left behind. A silent `continue` here would
+        be indistinguishable from never having read the tag -- which is exactly
+        what this function exists to stop being true.
+
+        `mh` is set BEFORE _drop_buried runs, because the burial rule already
+        knows that a footprint with `mh` occupies none of the ground beneath it
+        and must not swallow what it floats over (the SkyPark case).
+        """
+        _cand = [b for b in blds if b.get("_airlvl")]
+        if not _cand:
+            return
+        _CELL = 60.0
+        _grid = {}
+        for _b in blds:
+            _xs = [q[0] for q in _b["p"]]; _zs = [q[1] for q in _b["p"]]
+            for _cx in range(int(min(_xs) // _CELL), int(max(_xs) // _CELL) + 1):
+                for _cz in range(int(min(_zs) // _CELL), int(max(_zs) // _CELL) + 1):
+                    _grid.setdefault((_cx, _cz), []).append(_b)
+        _lifted, _thin, _floating = 0, 0, []
+        for _b in _cand:
+            _ml, _lvv = _b.pop("_airlvl")
+            _h = _b.get("h") or 0
+            _mh = round(_ml * _h / _lvv, 1)
+            # city.js draws the lift only for 1 < mh < h - 0.5; anything outside
+            # that is a part whose own tags leave it no thickness to draw.
+            if not (1.0 < _mh < _h - 0.5):
+                _thin += 1
+                continue
+            _cx = sum(q[0] for q in _b["p"]) / len(_b["p"])
+            _cz = sum(q[1] for q in _b["p"]) / len(_b["p"])
+            _ok = False
+            for _o in _grid.get((int(_cx // _CELL), int(_cz // _CELL)), []):
+                if _o is _b:
+                    continue
+                # starts at or below this one, and reaches up to it
+                if (_o.get("mh") or 0) <= _mh + 0.5 and (_o.get("h") or 0) >= _mh - 1.0 \
+                        and _inpoly(_o["p"], _cx, _cz):
+                    _ok = True
+                    break
+            if _ok:
+                _b["mh"] = _mh
+                _lifted += 1
+            else:
+                _floating.append(f"{_b.get('n') or '(unnamed)'} lv{int(_ml)}/{int(_lvv)} @{_mh}m")
+        print(f"  building:min_level: {_lifted} footprint(s) lifted off the ground"
+              + (f", {_thin} with no thickness to draw" if _thin else "")
+              + (f", {len(_floating)} LEFT ON THE GROUND with nothing beneath them"
+                 f" ({', '.join(_floating[:3])}" + ("..." if len(_floating) > 3 else "") + ")"
+                 if _floating else ""))
+
+    _lift_air_parts(buildings)
     buildings = _drop_buried(buildings)
 
     # ---- POLYGON SURGERY (data/split.py, sweep-2 items 18 and 14) ----------
@@ -4030,6 +4563,93 @@ def main():
         except Exception as _e:
             print(f"  ! coastline reader failed ({type(_e).__name__}: {_e}); "
                   f"THE SEA WILL RENDER AS LAND. Do not ship this district.")
+
+    # ---- QUAY CRANES -------------------------------------------------------
+    # 25 `man_made=crane` nodes stand along the Keppel quay and NONE of them
+    # were in the world, because `build_district.py` had never asked for the
+    # tag. research/keppel-landmarks.md §6.3: "from a bike on Keppel Road, at
+    # 500-800m and 50m tall, this crane line is the horizon. Not modelling it
+    # is the biggest single visual omission in the district."
+    #
+    # THE ONE PUBLISHED DIMENSION, AND ITS PROVENANCE MATTERS. 52m lift height
+    # and 70m outreach are the PSA FLEET figures (WSH Council / tal.sg), NOT
+    # Keppel-specific ones, and the brief says so explicitly. Boom-up height,
+    # rail gauge and RTG heights are UNPUBLISHED and are not invented here.
+    # Colours are UNPUBLISHED too — the brief is emphatic that there is no PSA
+    # livery document in the public domain and says "do not assert PSA blue" —
+    # so the renderer picks a neutral structural grey rather than a brand.
+    #
+    # WHICH WAY THE BOOM POINTS IS DERIVED, NEVER ARGUED. A quay crane reaches
+    # out over the water; get that backwards and 25 booms swing inland over the
+    # container yard. The direction comes from the WATER ITSELF: sample a ring
+    # of points around each crane and take the mean bearing of those that fall
+    # in a water polygon. This is the same rule the coastline reader had to
+    # learn the hard way — its first version reasoned the winding out in a
+    # comment and put Bay East Garden under the sea.
+    cranes = []
+    _crane_nodes = []
+    for e in els:
+        t = e.get("tags") or {}
+        if t.get("man_made") != "crane":
+            continue
+        g = e.get("geometry")
+        if g:
+            xs = [proj(q["lat"], q["lon"]) for q in g if "lat" in q]
+            if not xs:
+                continue
+            cx = sum(p[0] for p in xs) / len(xs)
+            cz = sum(p[1] for p in xs) / len(xs)
+        elif "lat" in e:
+            cx, cz = proj(e["lat"], e["lon"])
+        else:
+            continue
+        _crane_nodes.append((cx, cz, t))
+    if _crane_nodes:
+        def _in_water(px, pz):
+            for w in water:
+                ring_pts = w.get("p") or []
+                if len(ring_pts) < 3:
+                    continue
+                c = False
+                j = len(ring_pts) - 1
+                for i in range(len(ring_pts)):
+                    xi, zi = ring_pts[i]
+                    xj, zj = ring_pts[j]
+                    if (zi > pz) != (zj > pz) and \
+                            px < (xj - xi) * (pz - zi) / ((zj - zi) or 1e-9) + xi:
+                        c = not c
+                    j = i
+                if c:
+                    return True
+            return False
+
+        _nowater = 0
+        for cx, cz, t in _crane_nodes:
+            # A quay crane's outreach is 70m, so water 40-120m out is what it
+            # actually reaches over. Sampled every 15 degrees at three radii.
+            sx = sz = 0.0
+            n_wet = 0
+            for k in range(24):
+                ang = k * math.pi / 12.0
+                for rad in (45.0, 80.0, 120.0):
+                    if _in_water(cx + math.sin(ang) * rad, cz + math.cos(ang) * rad):
+                        sx += math.sin(ang)
+                        sz += math.cos(ang)
+                        n_wet += 1
+            mag = math.hypot(sx, sz)
+            if not n_wet or mag < 1e-6:
+                _nowater += 1
+                continue                   # no sea anywhere near: not a quay crane
+            cranes.append({"p": [round(cx, 1), round(cz, 1)],
+                           "a": round(math.atan2(sx / mag, sz / mag), 3)})
+        if cranes:
+            print(f"  quay cranes: {len(cranes)} on the water's edge"
+                  + (f", {_nowater} skipped with no water in reach" if _nowater else "")
+                  + " (52m lift / 70m outreach, PSA FLEET figures not Keppel-specific)")
+        elif _nowater:
+            print(f"  quay cranes: {_nowater} crane node(s) found but none has water "
+                  f"within 120m — not drawn, because a quay crane reaching over dry "
+                  f"land is worse than no crane")
 
     # ---- GREEN SPACE -------------------------------------------------------
     # Singapore is a garden city and this pipeline drew none of it. Every park,
@@ -4674,6 +5294,7 @@ def main():
         "barriers": barriers,
         "parkfurn": parkfurn,
         "towers": towers,
+        "cranes": cranes,
         "roads": roads,
         "trees": trees,
         "crossings": crossings,
@@ -4737,6 +5358,11 @@ def main():
     dual = sum(1 for r in roads if r.get("oneway") and r.get("k") in
                ("primary", "secondary", "trunk", "tertiary"))
     print(f"  skipped {skipped_underground} underground footprints")
+    if skipped_station_box:
+        print(f"  skipped {skipped_station_box} station box(es) over 2,000 m2 that "
+              f"carry no height and no storeys — an MRT station polygon here is "
+              f"routinely the UNDERGROUND extent, and a type default there draws a "
+              f"wall (see the note at the skip site)")
     print(f"  buildings {len(buildings)}  (named {len(named)}, landmarks {sum(1 for b in buildings if b.get('k'))})")
     print(f"  real heights: {hs_osm} from OSM tags + {hs_named} hand-entered "
           f"= {hs_osm + hs_named}/{len(buildings)}")
@@ -4770,6 +5396,22 @@ def main():
         names = ", ".join(n for n, _ in BAD_HEIGHT_TAGS[:4])
         print(f"  refused {len(BAD_HEIGHT_TAGS)} implausible height tags "
               f"(under 2.5m): {names}{'...' if len(BAD_HEIGHT_TAGS) > 4 else ''}")
+    if LATE_NAME_HEIGHTS:
+        _ex = ", ".join(f"{n} {a}->{b2}m" for n, a, b2 in LATE_NAME_HEIGHTS[:3])
+        print(f"  {len(LATE_NAME_HEIGHTS)} building(s) took a researched height only "
+              f"AFTER being named late (no `name` tag; named from addr:housename, "
+              f"wikidata or OneMap postcode) — LANDMARKS could not see them when "
+              f"height_for() ran: {_ex}{'...' if len(LATE_NAME_HEIGHTS) > 3 else ''}")
+    if BAD_COLOUR_TAGS:
+        _red = sum(1 for _, _, v in BAD_COLOUR_TAGS if v.lower() == "#ff3333")
+        _mal = len(BAD_COLOUR_TAGS) - _red
+        _cn = ", ".join(n for n, _, _ in BAD_COLOUR_TAGS[:3])
+        print(f"  refused {len(BAD_COLOUR_TAGS)} colour tag(s): {_red} x #ff3333 "
+              f"(a tracing artefact, not a survey — 14x commoner than any real "
+              f"roof colour and it was painting the Asian Civilisations Museum "
+              f"and Parliament House fire-engine red)"
+              + (f", {_mal} malformed hex" if _mal else "")
+              + f" — {_cn}{'...' if len(BAD_COLOUR_TAGS) > 3 else ''}")
     # A WAY ID THAT NO LONGER MATCHES MUST NOT PASS QUIETLY. OSM ids change
     # when a mapper redraws a footprint, and a researched name that silently
     # stops applying is worse than never having had it: the district's score

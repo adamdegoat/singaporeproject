@@ -483,10 +483,15 @@ def main():
               f"({before - len(out[layer])} duplicates across the seam)")
 
     point_layers = ["trees", "crossings", "signals", "busstops", "mrt", "taxis", "shops", "gantries", "lamps"]
-    # towers carry a height and a radius, so they are dicts rather than points
-    out["towers"] = [t for sc in scenes for t in sc.get("towers", [])]
-    for si, sc in enumerate(scenes):
-        chunks[si]["towers"] = list(sc.get("towers", []))
+    # towers carry a height and a radius, and cranes a boom bearing, so both
+    # are dicts rather than points. Cranes join here the day they are parsed —
+    # this file's own note below records that `parkfurn` shipped correct in
+    # every district file and absent from every chunk a rider loads, and a new
+    # layer is exactly when that happens again.
+    for _dl in ("towers", "cranes"):
+        out[_dl] = [t for sc in scenes for t in sc.get(_dl, [])]
+        for si, sc in enumerate(scenes):
+            chunks[si][_dl] = list(sc.get(_dl, []))
     for layer in point_layers:
         groups = [s.get(layer, []) for s in scenes]
         before = sum(len(g) for g in groups)
@@ -587,7 +592,8 @@ def main():
         for layer in (["water", "towers", "buildings", "roads", "bridges", "covered"]
                       + ["trees", "crossings", "signals", "busstops", "mrt",
                          "taxis", "shops", "gantries", "lamps"]
-                      + ["steps", "barriers", "green", "land", "piers", "parkfurn"]):
+                      + ["steps", "barriers", "green", "land", "piers", "parkfurn"]
+                      + ["cranes"]):
             flat_n = len(out.get(layer, []))
             chunk_n = sum(len(c.get(layer, [])) for c in chunks)
             if flat_n != chunk_n:

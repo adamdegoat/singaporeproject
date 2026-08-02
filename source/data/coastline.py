@@ -71,28 +71,62 @@ def stitch(ways, tol=1e-7):
     ring then covers islands the assembly still cannot cut out, taking W2 from
     3 to 13 on a district that was green and shipped.
 
-    So the ORDER matters: fix the island holes FIRST (see `_punch`, which passes
-    a synthetic square-with-a-square-hole unit test and only needs valid closed
-    input), THEN land the end-to-start stitch. Doing it the other way round
-    trades a latent bug for a visible regression.
+    THAT REGRESSION NO LONGER EXISTS, AND THE REASON IS WORTH KEEPING.
+    Re-measured across all five coastal districts on 2026-08-02, after the seam
+    repair in `clip_chain` landed:
+
+        district      ways  chains  edge-runs  islands  reversal joins used
+        marinaeast       5       1          1        0        0
+        marinasouth      7       1          1        0        0
+        keppel           1       1          1        0        0
+        harbourfront    16       4          5        0        0
+        sentosa         24       7          7        0        0
+
+    **Not one reversal fires anywhere in this world, and not one interior island
+    survives.** End-to-start produces byte-identical rings to the code above on
+    every district, harbourfront included — the 913,164 m2 measurement predates
+    the seam repair, which is what was manufacturing the islands the bigger ring
+    could not cut out. So bug 1 is latent rather than active, and the ordering
+    argument is spent.
+
+    What this function does now: try the joins the DATA STATES first — end to
+    start, never turning a way round — across every remaining fragment, and only
+    fall back to a reversal when no such join exists anywhere. That is identical
+    output today and it stops silently inverting land-on-left the day a fragment
+    arrives that needs it. A reversal is announced when it happens, because it
+    means the winding of the finished ring is no longer entirely derived from the
+    survey and the `verify()` result is the only thing standing behind it.
     """
     segs = [list(w["geometry"]) for w in ways if len(w.get("geometry") or []) > 1]
     chains = []
+    flipped = 0
     while segs:
         cur = segs.pop(0)
         moved = True
         while moved:
             moved = False
+            # THE JOINS THE DATA STATES. A coastline way is directed and the
+            # direction is the only record of which side is water.
             for i, s in enumerate(segs):
                 if _same(cur[-1], s[0], tol):
                     cur += s[1:]; segs.pop(i); moved = True; break
-                if _same(cur[-1], s[-1], tol):
-                    cur += list(reversed(s))[1:]; segs.pop(i); moved = True; break
                 if _same(cur[0], s[-1], tol):
                     cur = s[:-1] + cur; segs.pop(i); moved = True; break
+            if moved:
+                continue
+            # ONLY THEN, a reversal — which inverts land-on-left for that
+            # fragment's whole length, so it is the last resort and it is loud.
+            for i, s in enumerate(segs):
+                if _same(cur[-1], s[-1], tol):
+                    cur += list(reversed(s))[1:]; segs.pop(i); flipped += 1; moved = True; break
                 if _same(cur[0], s[0], tol):
-                    cur = list(reversed(s))[1:] + cur; segs.pop(i); moved = True; break
+                    cur = list(reversed(s))[1:] + cur; segs.pop(i); flipped += 1; moved = True; break
         chains.append(cur)
+    if flipped:
+        print(f"  ! coastline: {flipped} fragment(s) joined by REVERSING them. A "
+              f"coastline way carries land-on-its-left and reversing inverts that "
+              f"for its whole length, so the sea's winding is no longer wholly "
+              f"derived from the survey here — trust verify(), not the geometry.")
     return chains
 
 
@@ -400,10 +434,6 @@ def sea_polygons(coast_ways, bbox):
                 # sentosa could not ship.
                 islands.append(run)
                 interior += 1
-    if interior:
-        print(f"  ! {interior} island coastline ring(s) lie inside the bbox and are "
-              f"NOT cut out of the sea — anything built on them will read as "
-              f"built in open water. See _punch() and the note at its call site.")
     if not runs:
         return []
 
@@ -440,18 +470,48 @@ def sea_polygons(coast_ways, bbox):
             i = best[1]
         if len(ring) > 3:
             out.append(ring)
-    # ISLAND HOLES: ATTEMPTED, MEASURED AS WORSE, AND REVERTED 2026-08-02.
+    # ISLAND HOLES. Attempted and reverted on 2026-08-02, re-enabled the same
+    # day once it could prove its own result.
     #
-    # `_punch()` below splices an island into the outer ring with a zero-width
-    # slit, which is the standard single-ring way to express a hole. Applied to
-    # sentosa it produced a ring that failed the verify: the open channel came
-    # out as LAND and Pulau Brani stayed sea — so the splice or its winding test
-    # is wrong, and a corrupted sea ring is far worse than a missing hole. The
-    # helper is kept because the approach is right and only the implementation
-    # is not; the call site is disabled until it passes verify().
+    # `_punch()` splices an island into the outer ring with a zero-width slit,
+    # the standard single-ring way to express a hole (a second ring cannot work:
+    # `__inWater`, the audit and `point_in` are all an OR over rings, so an
+    # island ring would make the island MORE water). The first attempt was
+    # reverted because on sentosa the channel came out as LAND and Pulau Brani
+    # stayed sea, and a corrupted sea ring is far worse than a missing hole.
     #
-    # The next attempt should test _punch() against a hand-made square-with-a-
-    # square-hole before going near real coastline, which is what I did not do.
+    # THE SPLICE WAS NEVER THE BUG. Tested afterwards against a hand-made
+    # square-with-a-square-hole — the test the note here asked for and the first
+    # attempt skipped — `_punch` passes every point, in both hole windings. What
+    # was wrong was its INPUT: `clip_chain` split closed island rings at their
+    # seam vertex, so the "islands" being punched were half-rings. That is fixed
+    # at the seam repair in clip_chain, and no district in this world now
+    # produces an interior island at all — this path is latent, kept because
+    # the moment a bbox does contain a whole island it is the difference between
+    # a rideable island and 114 buildings standing in open water.
+    #
+    # It refuses to ship a result it cannot verify: after the splice the
+    # island's own centroid must read as OUTSIDE the sea. If it does not, the
+    # punch is discarded and the ring goes back exactly as it was, because that
+    # is the failure mode that shipped a flooded district last time.
+    for _isl in islands:
+        _cx = sum(q["lat"] for q in _isl) / len(_isl)
+        _cy = sum(q["lon"] for q in _isl) / len(_isl)
+        _hit = next((k for k, r in enumerate(out) if point_in(r, _cx, _cy)), None)
+        if _hit is None:
+            print(f"  ! an island ring of {len(_isl)} points lies inside the bbox but "
+                  f"inside NO sea ring — nothing to cut it out of, so it is left alone.")
+            continue
+        _was = out[_hit]
+        _now = _punch(_was, _isl)
+        if point_in(_now, _cx, _cy):
+            print(f"  ! island punch DISCARDED: the {len(_isl)}-point ring at "
+                  f"{_cx!r},{_cy!r} still reads as sea after the splice. Keeping the "
+                  f"un-punched ring — anything built on that island will read as "
+                  f"built in open water, which is the lesser wrong.")
+            continue
+        out[_hit] = _now
+        print(f"  island cut out of the sea: {len(_isl)} points at {_cx!r},{_cy!r}")
     if not out:
         return out
     # ring areas in square degrees, compared against the box's own
@@ -489,9 +549,31 @@ def verify(rings, sea_pts, land_pts):
     return ok
 
 
+def _punch_selftest():
+    """The test the first island-hole attempt skipped, kept so nobody has to
+    take `_punch` on trust again. A square with a square hole: every point
+    inside the hole must read as OUTSIDE, everything else in the square as
+    inside, and it must hold whichever way round the hole is wound."""
+    P = lambda la, lo: {"lat": la, "lon": lo}
+    outer = [P(0, 0), P(0, 10), P(10, 10), P(10, 0)]
+    hole = [P(4, 4), P(4, 6), P(6, 6), P(6, 4)]
+    ok = True
+    for h in (hole, list(reversed(hole))):
+        r = _punch(outer, h)
+        for (la, lo), want in (((5, 5), False), ((1, 1), True), ((5, 1), True),
+                               ((9, 9), True), ((11, 11), False)):
+            got = point_in(r, la, lo)
+            if got != want:
+                print(f"    PUNCH {la},{lo} inside={got} want={want}  WRONG")
+                ok = False
+    print("  _punch square-with-a-hole:", "PASS" if ok else "FAIL")
+    return ok
+
+
 if __name__ == "__main__":
     import json, os
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    _punch_selftest()
     import osmlocal
     BBOX = "1.2740,103.8620,1.2920,103.8780"
     ways = osmlocal.fetch(BBOX, 'way["natural"="coastline"]({bbox});') or []

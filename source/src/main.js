@@ -1,11 +1,11 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance } from './tex.js';
-import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, buildSurround, buildWater, buildSupertrees, buildPiers, plantSurveyed } from './city.js';
+import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, buildSurround, buildWater, buildSupertrees, buildCranes, buildPiers, plantSurveyed } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
 import { Solid } from './solid.js';
-import { buildVespa, buildRider, buildCar, newState, step, RIDE, CAR } from './vespa.js';
+import { buildVespa, buildRider, buildCar, buildSkate, buildSkater, SKATE_WHEEL_X as SK_WHEEL_X, newState, step, RIDE, CAR, SKATE } from './vespa.js';
 import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
 import { axisSpec, buildMarkings, dressSideStreets, selectSideStreets, dedupeProps } from './markings.js';
@@ -700,6 +700,29 @@ vespa.group.add(rider);
 // visible and which parameter set the physics runs.
 const carRig = buildCar();
 carRig.group.visible = false;
+// THE SURF SKATE, on the same state and the same step(). Its rider is a
+// separate figure because buildRider() is posed SEATED — see buildSkater's
+// note. The skater is parented to the board so a carve leans them together,
+// which is exactly what happens on a real one.
+const skateRig = buildSkate();
+const skater = buildSkater();
+skateRig.group.add(skater);
+skateRig.group.visible = false;
+// THE VEHICLES, IN ONE PLACE. Adding a fourth means adding a row, not hunting
+// through main.js for every `=== 'car'` — which is how the camera framing came
+// to be two ternaries that would have filmed the board as a scooter.
+// `rr` and `rlat` are the traffic-collision half-lengths: fore-and-aft keeps a
+// generous radius so nosing into the back of a bus stops you early, ACROSS is
+// the machine's real half-width so riding alongside traffic does not phantom-
+// brake. The board is 0.85m long and 0.245m wide, so it is the smallest of the
+// three and takes the scooter's lateral figure rather than anything tighter —
+// a rider is wider than their deck.
+const VEHICLES = [
+  { kind: 'bike',  label: 'Bike',  verb: 'Ride',  params: RIDE,  rr: 0.55, rlat: 0.34 },
+  { kind: 'car',   label: 'Car',   verb: 'Drive', params: CAR,   rr: 0.95, rlat: 0.89 },
+  { kind: 'skate', label: 'Skate', verb: 'Skate', params: SKATE, rr: 0.48, rlat: 0.34 },
+];
+const vehicleAt = (kind) => VEHICLES.find((v) => v.kind === kind) || VEHICLES[0];
 let vehicleKind = 'bike';
 let rideParams = RIDE;
 // The mode pill's text, in one place. A `function` declaration so it can be
@@ -710,27 +733,43 @@ let rideParams = RIDE;
 function modeLabel() {
   const btn = document.getElementById('modebtn');
   if (!btn) return;
-  btn.textContent = mode === 'ride'
-    ? 'Get off' : (vehicleKind === 'car' ? 'Drive' : 'Ride');
+  btn.textContent = mode === 'ride' ? 'Get off' : vehicleAt(vehicleKind).verb;
 }
 function setVehicle(kind) {
-  vehicleKind = kind === 'car' ? 'car' : 'bike';
-  rideParams = vehicleKind === 'car' ? CAR : RIDE;
+  const v = vehicleAt(kind);
+  vehicleKind = v.kind;
+  rideParams = v.params;
   // a switch mid-corner froze the old body's bank into the new body: the
   // lean state carries over but only the ACTIVE branch writes rotations,
   // so the hidden rig kept its last roll forever. Reset all of it.
   S.lean = 0;
   vespa.group.rotation.z = 0;
   carRig.group.rotation.z = 0;
+  skateRig.group.rotation.z = 0;
   carRig.group.visible = vehicleKind === 'car';
   vespa.group.visible = vehicleKind === 'bike';
-  // in a car the rider sits behind tinted glass; on the bike he is the pilot
-  if (mode === 'ride') rider.visible = vehicleKind === 'bike';
+  skateRig.group.visible = vehicleKind === 'skate';
+  // in a car the rider sits behind tinted glass; on the bike he is the pilot,
+  // and on the board the skater is part of the board's own rig
+  if (mode === 'ride') {
+    rider.visible = vehicleKind === 'bike';
+    skater.visible = vehicleKind === 'skate';
+  }
   try { localStorage.setItem('sg_vehicle', vehicleKind); } catch (e) { /* private mode */ }
+  // The button offers the NEXT vehicle, so three of them cycle on one control
+  // rather than needing a picker. With two it read as a toggle and still does.
   const b = document.getElementById('vehiclebtn');
-  if (b) b.textContent = vehicleKind === 'bike' ? 'Car' : 'Bike';
-  // swapping vehicle while on foot changes Ride <-> Drive
+  if (b) b.textContent = nextVehicle().label;
+  // swapping vehicle while on foot changes Ride <-> Drive <-> Skate.
+  // modeLabel ONLY — setVehicle runs during boot and updateHelp closes over
+  // `const stickEl` declared further down, so calling it from here is the
+  // temporal-dead-zone crash this file has already taken twice. The callers
+  // that run after boot (the vehicle button) call updateHelp themselves.
   modeLabel();
+}
+function nextVehicle() {
+  const i = VEHICLES.findIndex((v) => v.kind === vehicleKind);
+  return VEHICLES[(i + 1) % VEHICLES.length];
 }
 window.__setVehicle = setVehicle;
 const bike = new THREE.Group();
@@ -745,6 +784,7 @@ const bike = new THREE.Group();
 bike.name = 'playerRig';
 bike.add(vespa.group);
 bike.add(carRig.group);
+bike.add(skateRig.group);
 scene.add(bike);
 
 let S = newState(0, 0, 0);
@@ -1200,7 +1240,7 @@ async function addChunk(ch, id, Y, rec = {}) {
   mk('water');
   if (!P.has('nowater')) buildWater(g, ch);
   if (!P.has('nowater')) buildPiers(g, ch);
-  if (!P.has('notowers')) buildSupertrees(g, ch);
+  if (!P.has('notowers')) { buildSupertrees(g, ch); buildCranes(g, ch); }
   if (!P.has('nofoliage')) plantSurveyed(g, ch, place);
   await Y();
   mk('buildings');
@@ -1901,6 +1941,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // of the bay rather than built across it.
   await bstep(0.34, 'raising the skyline');
   const trees2 = P.has('notowers') ? { supertrees: 0 } : buildSupertrees(world, data);
+  if (!P.has('notowers')) buildCranes(world, data);
   const surveyed = P.has('nofoliage') ? { surveyedTrees: 0 } : plantSurveyed(world, data, place);
   const surround = P.has('nosurround') ? 0 : buildSurround(world, opts.regionData || data);
   bmark('surround');
@@ -2408,7 +2449,8 @@ attachMouse(canvas);
     const tap = (e) => {
       e.preventDefault(); e.stopPropagation();
       if (mode !== 'ride') return;               // choose from the saddle only
-      setVehicle(vehicleKind === 'bike' ? 'car' : 'bike');
+      setVehicle(nextVehicle().kind);
+      updateHelp();                              // safe here: boot is long done
     };
     vbtn.addEventListener('click', tap);
     vbtn.addEventListener('touchstart', tap, { passive: false });
@@ -2471,6 +2513,7 @@ function toggleMode() {
     camYaw = S.heading; camPitch = 0.16;
     walkerRig.group.visible = true;
     rider.visible = false;      // he is the one standing next to it now
+    skater.visible = false;     // and the board is left parked on the kerb
     mode = 'walk';
   } else {
     // THE VEHICLE COMES TO YOU. "Walk back within 6m" made walking a trap:
@@ -2496,6 +2539,7 @@ function toggleMode() {
     }
     walkerRig.group.visible = false;
     rider.visible = vehicleKind === 'bike';
+    skater.visible = vehicleKind === 'skate';
     camInit = false;
     mode = 'ride';
   }
@@ -2524,12 +2568,20 @@ function updateHelp() {
   modeLabel();
   const el = document.getElementById('help');
   if (!el) return;
-  el.innerHTML = mode === 'ride'
-    ? '<b>hold left side</b> throttle<br><b>hold lower left</b> brake<br>'
-      + '<b>hold brake stopped</b> reverse<br><b>drag right side</b> steer<br>'
-      + '<span style="opacity:.65">keys: A/D · W · S · E to get off</span>'
-    : '<b>drag left side</b> walk<br><b>drag right side</b> look around<br>'
-      + '<span style="opacity:.65">keys: WASD · shift to run · E to ride</span>';
+  // THE BOARD NEEDS ITS OWN LINE OR IT READS AS BROKEN. The push stops working
+  // above walking pace on purpose (see SKATE.pushMax), so a rider who holds
+  // the throttle and nothing else tops out at 11 km/h and concludes the skate
+  // is slow. Say out loud that carving is the accelerator.
+  el.innerHTML = mode !== 'ride'
+    ? '<b>drag left side</b> walk<br><b>drag right side</b> look around<br>'
+      + '<span style="opacity:.65">keys: WASD · shift to run · E to ride</span>'
+    : vehicleKind === 'skate'
+      ? '<b>hold left side</b> push off<br><b>carve left-right</b> to build speed<br>'
+        + '<b>hold lower left</b> foot brake<br><b>drag right side</b> steer<br>'
+        + '<span style="opacity:.65">keys: A/D · W · S · E to step off</span>'
+      : '<b>hold left side</b> throttle<br><b>hold lower left</b> brake<br>'
+        + '<b>hold brake stopped</b> reverse<br><b>drag right side</b> steer<br>'
+        + '<span style="opacity:.65">keys: A/D · W · S · E to get off</span>';
 }
 // reflect the STARTING mode once everything the helper reads exists — called
 // above the const block it crashed the whole module in the temporal dead zone
@@ -2607,11 +2659,23 @@ function driveCamera(dt) {
   }
   const fwd = new THREE.Vector3(Math.sin(S.heading), 0, Math.cos(S.heading));
   const gy = terrain.at(S.x, S.z);
+  // HOW CLOSE THE CHASE CAMERA SITS, PER VEHICLE, AND IT LIVES WITH THE
+  // VEHICLE. It used to be two `vehicleKind === 'car' ? a : b` ternaries here,
+  // which is fine for two vehicles and wrong for three — the board would have
+  // been framed as a scooter. Each parameter set carries its own `cam` block
+  // now, so adding a vehicle cannot forget to say how it is filmed.
+  //
+  // AND EVERY ONE OF THEM CAME IN, on the rider's ask: "can it be a bit more
+  // zoomed in so it feels more immersive". Scooter 5.8m back / 3.05m up ->
+  // 4.35 / 2.45, car 7.4 / 3.5 -> 5.85 / 2.95, and the base lens from 58 to
+  // 55 degrees. The board is closest of the three at 3.45 / 1.95, which is
+  // about where your own eyes are over a deck.
+  const C = (rideParams && rideParams.cam) || RIDE.cam;
   const want = new THREE.Vector3(S.x, gy, S.z)
-    .addScaledVector(fwd, vehicleKind === 'car' ? -7.4 : -5.8)
-    .add(new THREE.Vector3(0, vehicleKind === 'car' ? 3.5 : 3.05, 0));
+    .addScaledVector(fwd, -C.back)
+    .add(new THREE.Vector3(0, C.up, 0));
   want.y = Math.max(want.y, terrain.at(want.x, want.z) + 1.6);
-  const aim = new THREE.Vector3(S.x, gy + 1.35, S.z).addScaledVector(fwd, 7.5);
+  const aim = new THREE.Vector3(S.x, gy + 1.35, S.z).addScaledVector(fwd, C.aim);
   aim.y = terrain.at(aim.x, aim.z) + 1.35;
   if (!camInit) { camPos.copy(want); camAim.copy(aim); camInit = true; }
   camPos.lerp(want, Math.min(1, dt * 4.2));
@@ -2631,7 +2695,7 @@ function driveCamera(dt) {
   // vehicle's parameters, and the ratio is clamped so no future vehicle can
   // walk past the end of the range either.
   const spd = Math.min(1, Math.abs(S.speed) / ((rideParams && rideParams.vMax) || RIDE.vMax));
-  camera.fov = 58 + spd * 5;
+  camera.fov = C.fov + spd * 5;
   camera.updateProjectionMatrix();
 }
 
@@ -3109,8 +3173,8 @@ function loop(now) {
       // bus should stop you early. ACROSS is the scooter's real half-width at
       // the handlebars, 0.33m, which is what stops the phantom braking when
       // riding alongside. A car in car-mode is 1.78 wide, half 0.89.
-      const rr = vehicleKind === 'car' ? 0.95 : 0.55;
-      const rlat = vehicleKind === 'car' ? 0.89 : 0.34;
+      const rv = vehicleAt(vehicleKind);
+      const rr = rv.rr, rlat = rv.rlat;
       if (trafficHits(S.x, S.z, rr, rlat)) {
         if (!trafficHits(S.x, pz, rr, rlat)) { S.z = pz; S.speed *= 0.9; }
         else if (!trafficHits(px, S.z, rr, rlat)) { S.x = px; S.speed *= 0.9; }
@@ -3140,6 +3204,27 @@ function loop(now) {
       vespa.group.rotation.z = S.lean;
       vespa.wheels[0].rotation.x = -S.wheel;
       vespa.wheels[1].rotation.x = -S.wheel;
+    } else if (vehicleKind === 'skate') {
+      // THE CARVE. The board banks with the lean like the scooter does, but
+      // SKATE.leanMax is 0.80 against the scooter's 0.62, so it goes right
+      // over — and the skater is a child of the board, so they go with it.
+      skateRig.group.rotation.z = S.lean;
+      // AND IT PIVOTS ON THE LOW RAIL, NOT THE CENTRELINE. The scooter gets
+      // away with a plain rotation because both its wheels sit ON the
+      // centreline, so leaning cannot move them down. A board's wheels are
+      // 0.108m out to each side, and rotating about the middle drove the
+      // low pair 5.3cm THROUGH the tarmac at full lean. Pivoting about the
+      // low wheel's contact patch is both the fix and what really happens:
+      // the wheels stay planted and the deck rises on the high side.
+      const a = Math.abs(S.lean), px = -Math.sign(S.lean) * SK_WHEEL_X;
+      skateRig.group.position.set(px * (1 - Math.cos(a)), Math.abs(px) * Math.sin(a), 0);
+      // AND THE FRONT TRUCK STEERS, which is the other half of what a surf
+      // skate looks like from behind: the deck points one way and the front
+      // wheels are already round the corner. Taken from the lean rather than
+      // the raw input so it agrees with what the board is actually doing.
+      const swivel = Math.max(-0.6, Math.min(0.6, -S.lean * 0.75));
+      skateRig.wheels[0].rotation.set(-S.wheel, swivel, 0);
+      skateRig.wheels[1].rotation.set(-S.wheel, 0, 0);
     } else {
       carRig.group.rotation.z = S.lean;          // CAR.leanMax keeps this a small roll
       // full euler recompose: writing .x alone on a wheel pre-rolled about z

@@ -18,7 +18,16 @@ MIRRORS = ["https://overpass-api.de/api/interpreter",
            "https://overpass.kumi.systems/api/interpreter"]
 
 LAYERS = {
-    "towers": 'way["man_made"="tower"]({bbox});node["man_made"="tower"]({bbox});',
+    # THE SAME QUERY build_district.py USES, not a second copy of it.
+    #
+    # These two files each held their own `towers` string, so adding
+    # `man_made=crane` to the fetch in build_district.py left this one asking
+    # for towers alone — and topup is the ONLY way to get a new layer into a
+    # district whose cached raw the loss guard will not let you replace. The
+    # crane fix would have looked applied and quietly done nothing for keppel,
+    # which is the one district it exists for. One fact, one place.
+    "towers": ('way["man_made"="tower"]({bbox});node["man_made"="tower"]({bbox});'
+               'way["man_made"="crane"]({bbox});node["man_made"="crane"]({bbox});'),
     "water": ('way["natural"="water"]({bbox});rel["natural"="water"]({bbox});'
               'way["landuse"="reservoir"]({bbox});rel["landuse"="reservoir"]({bbox});'
               'way["waterway"~"^(riverbank|dock|canal|river|stream)$"]({bbox});'

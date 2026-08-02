@@ -1,5 +1,5 @@
 // Ride-feel assertions. Run: node test/ride.test.mjs
-import { RIDE, newState, step, turnRadius } from '../src/ride.js';
+import { RIDE, CAR, SKATE, newState, step, turnRadius } from '../src/ride.js';
 import assert from 'node:assert/strict';
 
 const DT = 1 / 60;
@@ -8,8 +8,17 @@ function t(name, fn) {
   try { fn(); pass++; console.log('  ok   ' + name); }
   catch (e) { console.log('  FAIL ' + name + '\n       ' + e.message); process.exitCode = 1; }
 }
-function run(s, secs, thr, brk, str) {
-  for (let i = 0; i < secs / DT; i++) step(s, DT, thr, brk, str);
+function run(s, secs, thr, brk, str, P) {
+  for (let i = 0; i < secs / DT; i++) step(s, DT, thr, brk, str, P);
+  return s;
+}
+// Carving left-right at `period` seconds a lap, which is what pumping IS.
+// Holding one direction only puts the board in a circle, so a pump test that
+// held full lock would measure a merry-go-round, not a rider going somewhere.
+function carve(s, secs, P, period = 1.1) {
+  for (let i = 0; i < secs / DT; i++) {
+    step(s, DT, 0, 0, Math.sign(Math.sin((i * DT * 2 * Math.PI) / period)), P);
+  }
   return s;
 }
 
@@ -140,6 +149,95 @@ t('top speed is a scooter pace, not a motorway one', () => {
   const s = run(newState(), 40, 1, 0, 0);
   const kmh = s.speed * 3.6;
   assert.ok(kmh > 30 && kmh < 48, 'top speed ' + kmh.toFixed(1) + ' km/h');
+});
+
+console.log('\nsurf skate');
+
+t('the push alone is a walking-pace shove, not a motor', () => {
+  const s = run(newState(), 40, 1, 0, 0, SKATE);
+  const kmh = s.speed * 3.6;
+  assert.ok(kmh > 8 && kmh < 15, 'push-only top speed ' + kmh.toFixed(1) + ' km/h');
+});
+
+t('carving BUILDS speed from a standstill push — the whole point', () => {
+  const s = run(newState(), 3, 1, 0, 0, SKATE);      // push off
+  const pushed = s.speed;
+  carve(s, 14, SKATE);                                // then pump, no throttle
+  assert.ok(s.speed > pushed + 1.2,
+    `pumped ${s.speed.toFixed(2)} vs pushed ${pushed.toFixed(2)}`);
+  const kmh = s.speed * 3.6;
+  assert.ok(kmh > 17 && kmh < 27, 'pumped cruise ' + kmh.toFixed(1) + ' km/h');
+});
+
+t('a board left to roll straight coasts DOWN, so you have to keep working', () => {
+  const s = run(newState(), 3, 1, 0, 0, SKATE);
+  carve(s, 14, SKATE);
+  const cruise = s.speed;
+  run(s, 3, 0, 0, 0, SKATE);
+  assert.ok(s.speed < cruise - 1.2, `held ${s.speed.toFixed(2)} from ${cruise.toFixed(2)}`);
+});
+
+t('the pump cannot run away — it fades out below the board top speed', () => {
+  const s = run(newState(), 3, 1, 0, 0, SKATE);
+  carve(s, 120, SKATE);
+  assert.ok(s.speed <= SKATE.vMax + 1e-6, 'exceeded vMax: ' + s.speed);
+  assert.ok(s.speed < SKATE.vMax * 0.92, 'pump saturates the board: ' + s.speed.toFixed(2));
+});
+
+t('you cannot pump from a standstill — the board has to be rolling', () => {
+  const s = newState();
+  carve(s, 6, SKATE);
+  assert.ok(Math.abs(s.speed) < 0.05, 'carving alone started it: ' + s.speed.toFixed(3));
+});
+
+t('the trucks are looser than the scooter at every speed', () => {
+  for (const v of [2.5, 5, 8]) {
+    const board = turnRadius(v, SKATE), scoot = turnRadius(v, RIDE);
+    assert.ok(board < scoot * 0.85,
+      `at ${v} m/s board ${board.toFixed(1)}m vs scooter ${scoot.toFixed(1)}m`);
+  }
+});
+
+t('a surf skate u-turn fits in one carriageway', () => {
+  assert.ok(turnRadius(2.5, SKATE) < 2.5, 'radius ' + turnRadius(2.5, SKATE).toFixed(2) + 'm');
+});
+
+t('it carves deeper than the scooter banks', () => {
+  const b = run(newState(), 3, 1, 0, 0, SKATE); carve(b, 8, SKATE);
+  const r = run(newState(), 6, 1, 0, 0); run(r, 1.5, 1, 0, 1);
+  assert.ok(Math.abs(b.lean) > Math.abs(r.lean),
+    `board ${b.lean.toFixed(2)} vs scooter ${r.lean.toFixed(2)}`);
+  assert.ok(Math.abs(b.lean) <= SKATE.leanMax + 1e-6, 'over-leaned');
+});
+
+t('neither the scooter nor the car gained a pump', () => {
+  for (const [name, P] of [['scooter', RIDE], ['car', CAR]]) {
+    assert.equal(P.pump, undefined, name + ' has a pump');
+    assert.equal(P.pushMax, undefined, name + ' lost throttle authority');
+    const straight = run(newState(), 8, 1, 0, 0, P);
+    const carved = run(newState(), 8, 1, 0, 1, P);
+    assert.ok(carved.speed <= straight.speed + 1e-9,
+      name + ' gains speed by turning: ' + carved.speed + ' vs ' + straight.speed);
+  }
+});
+
+t('it is deterministic like everything else here', () => {
+  const a = newState(), b = newState();
+  for (let i = 0; i < 900; i++) {
+    const str = Math.sin(i / 23);
+    step(a, DT, 0.4, 0, str, SKATE); step(b, DT, 0.4, 0, str, SKATE);
+  }
+  assert.equal(a.x, b.x); assert.equal(a.z, b.z); assert.equal(a.speed, b.speed);
+});
+
+t('every vehicle carries a chase-camera framing', () => {
+  for (const [name, P] of [['scooter', RIDE], ['car', CAR], ['skate', SKATE]]) {
+    assert.ok(P.cam && P.cam.back > 0 && P.cam.up > 0 && P.cam.aim > 0 && P.cam.fov > 0,
+      name + ' has no cam block');
+  }
+  // the board is the most immersive of the three, the car the least
+  assert.ok(SKATE.cam.back < RIDE.cam.back && RIDE.cam.back < CAR.cam.back);
+  assert.ok(SKATE.cam.up < RIDE.cam.up && RIDE.cam.up < CAR.cam.up);
 });
 
 console.log(`\n${pass} passed`);
