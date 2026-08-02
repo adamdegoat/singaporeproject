@@ -1954,6 +1954,8 @@ async function buildRegion(data, opts = {}) {
   // the same question they do rather than a lookalike
   // D9 asks whether the RIDE can get down the street, so it gets the ride question
 window.__blocked = (x, z) => rideBlocked(x, z);
+// building footprints only, for the occlusion-ceiling measurement
+window.__blockedAt = (x, z) => blocked(x, z);
 window.__placeBlocked = (x, z) => blocked(x, z);
   window.__data = data;
   // the limit must be passed through: dropping it capped every search at the

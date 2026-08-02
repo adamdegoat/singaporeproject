@@ -1157,7 +1157,34 @@ export class Traffic {
         : i % lanes.length;
       return { dir: 1, lane: lanes[idx] };
     }
+    // A TWO-WAY STREET IS NOT ALWAYS 18 METRES WIDE.
+    //
+    // These offsets used to be hardcoded — cars at +-1.9 and +-5.3, buses at
+    // +-5.4 — which is right for Orchard Road at 18.2m and wrong for every
+    // narrow street in the world. Marina East Drive is 8m, half-width 4.0, so
+    // the +-5.3 and +-5.4 lanes sat a metre and a half OUTSIDE the tarmac:
+    // measured, 150 of marinaeast's 272 vehicles were driving off the road,
+    // and D35 had been reporting it the whole time.
+    //
+    // `spec.centres` already holds the real lane centres, derived from the
+    // street's own width and its OSM lane count — the one-way branch above has
+    // used them since it was written. Use them here too, split by direction,
+    // and keep the old figures only as a fallback for a street with no spec.
     const dir = i % 2 === 0 ? 1 : -1;
+    const all = (sp && sp.centres) || [];
+    const side = all.filter((c) => (dir > 0 ? c > 0 : c < 0));
+    if (side.length) {
+      // Buses take the NEARSIDE lane, which is the one furthest from the
+      // centreline — that is where a bus stop is and where they actually run.
+      let idx = Math.floor(i / 2) % side.length;
+      if (kind === 'bus') {
+        idx = 0;
+        for (let k = 1; k < side.length; k++) {
+          if (Math.abs(side[k]) > Math.abs(side[idx])) idx = k;
+        }
+      }
+      return { dir, lane: side[idx] };
+    }
     return kind === 'bus'
       ? { dir, lane: dir * 5.4 }
       : { dir, lane: dir * (1.9 + (i % 4 < 2 ? 0 : 3.4)) };
