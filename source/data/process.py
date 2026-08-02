@@ -4181,15 +4181,16 @@ def main():
     if _cut:
         print(f"  {_cut} self-crossing footprints repaired by cutting at the crossing")
 
-    _fixed = _left = 0
-    for _b in ([] if os.environ.get("SG_NO_RING_REPAIR") else buildings):
-        if not _self_crossing(_b["p"]):
-            continue
-        # Greedy: repeatedly drop the vertex whose removal removes the most
-        # crossings. One pass fixed eight of nine, and Capitol Singapore needed
-        # more than one vertex gone — a single-shot repair left it broken and
-        # the hunt kept reporting it.
-        _ring = list(_b["p"])
+    # Greedy: repeatedly drop the vertex whose removal removes the most
+    # crossings. One pass fixed eight of nine, and Capitol Singapore needed
+    # more than one vertex gone — a single-shot repair left it broken and
+    # the hunt kept reporting it. A FUNCTION, not an inline pass, because the
+    # FINAL ring pass needs it too: rings that self-cross only after the
+    # carriageway edge-clear inserts vertices (four Distripark roof canopies,
+    # found by D13 on 2026-08-02) never reach this mid-build loop, and the
+    # final pass's _uncross alone could not mend them.
+    def _greedy_uncross(ring):
+        _ring = list(ring)
         _plateau = 0
         # TEN PASSES WAS NOT ENOUGH FOR A LONG RING. Each pass drops at most
         # one vertex, so a 29-point footprint folded in several places -- OUE
@@ -4228,6 +4229,13 @@ def main():
                 if _best is None:
                     break
             _ring = _best
+        return _ring
+
+    _fixed = _left = 0
+    for _b in ([] if os.environ.get("SG_NO_RING_REPAIR") else buildings):
+        if not _self_crossing(_b["p"]):
+            continue
+        _ring = _greedy_uncross(_b["p"])
         if not _self_crossing(_ring):
             _b["p"] = _ring
             _fixed += 1
@@ -5535,6 +5543,7 @@ def main():
     # downstream gates can be measured rather than argued about -- the same
     # switch SG_NO_RING_REPAIR gives the greedy repair above.
     _fd = _fc = 0
+    _funfixed = []
     for _b in ([] if os.environ.get("SG_NO_FINAL_RINGS") else out["buildings"]):
         _p0 = _b.get("p") or []
         if len(_p0) < 3:
@@ -5543,13 +5552,54 @@ def main():
         _fd += len(_p0) - len(_p1)
         if _self_crossing(_p1):
             _p2 = _uncross(_p1)
+            if not (len(_p2) >= 3 and not _self_crossing(_p2) and _area2(_p2) > 8):
+                # _uncross keeps the larger lobe of a bowtie. A ring whose
+                # VERTEX ORDER is scrambled (the edge-clear can insert points
+                # out of sequence) has no lobe to keep — the lossless repair
+                # is 2-opt: reverse the run between the crossing segments.
+                # Measured on the Distripark canopy at 464,10371 that neither
+                # _uncross nor vertex-dropping could mend: clean in one pass,
+                # every vertex kept, area 495 -> 665 (the true untangled
+                # outline).
+                _r2 = list(_p1)
+                for _t in range(40):
+                    _hit = None
+                    _n2 = len(_r2)
+                    for _i2 in range(_n2):
+                        for _j2 in range(_i2 + 2, _n2):
+                            if _i2 == 0 and _j2 == _n2 - 1:
+                                continue
+                            if _segs_cross(_r2[_i2], _r2[(_i2 + 1) % _n2],
+                                           _r2[_j2], _r2[(_j2 + 1) % _n2]):
+                                _hit = (_i2, _j2)
+                                break
+                        if _hit:
+                            break
+                    if not _hit:
+                        break
+                    _r2 = (_r2[:_hit[0] + 1] + list(reversed(_r2[_hit[0] + 1:_hit[1] + 1]))
+                           + _r2[_hit[1] + 1:])
+                _p2 = _r2
+            if not (len(_p2) >= 3 and not _self_crossing(_p2) and _area2(_p2) > 8):
+                # last resort: the vertex-dropping repair the mid-build uses
+                _p2 = _greedy_uncross(_p1)
             if len(_p2) >= 3 and not _self_crossing(_p2) and _area2(_p2) > 8:
                 _p1 = _p2
                 _fc += 1
+            else:
+                # NEVER SILENT. This branch used to fall through without a
+                # word, which is how four crossing rings shipped and were
+                # found by the defect hunt instead of by this build.
+                _cx = sum(q[0] for q in _p1) / len(_p1)
+                _cz = sum(q[1] for q in _p1) / len(_p1)
+                _funfixed.append((_b.get("n") or "(unnamed)", round(_cx), round(_cz)))
         _b["p"] = _p1
     if _fd or _fc:
         print(f"  final ring pass: {_fd} degenerate vertices dropped"
               + (f", {_fc} crossings cut" if _fc else ""))
+    if _funfixed:
+        print(f"  ! {len(_funfixed)} self-crossing ring(s) SHIPPED UNREPAIRED: "
+              + ", ".join(f"{n} at {x},{z}" for n, x, z in _funfixed))
 
     path = OUT_PATH
     kept = carry_terrain(path, out)

@@ -479,6 +479,14 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     // it, and this file has just been burned by exactly that: adding one
     // texture that consumed 3,600 numbers moved street furniture 1.5km away.
     // A local hash is deterministic and perturbs nothing.
+    // NO NPC VEHICLES (owner, 2026-08-03): the waiting cab is a vehicle, so
+    // it comes back only with ?traffic, same flag as the fleets. The rank
+    // sign and queue rail are street furniture and stay.
+    if (!new URLSearchParams(location.search).has('traffic')) {
+      g.position.set(tx2, surfaceAt(tx2, tz2), tz2); g.rotation.y = ang;
+      world.add(g);
+      continue;
+    }
     const cabCol = ((Math.abs((tx2 * 31 + tz2 * 17) | 0) % 2) === 0) ? 0x2f5f9e : 0x1f2225;
     const cab = new THREE.Group();
     const paint = new THREE.MeshStandardMaterial({ color: cabCol, roughness: 0.4, metalness: 0.3 });

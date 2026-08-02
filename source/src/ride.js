@@ -22,7 +22,7 @@ export function newState(x = 0, z = 0, heading = 0) {
   // direction the machine points — see the slip block in step(). `slip` is the
   // angle between the two, exposed so a renderer or a check can read the drift
   // without recomputing it.
-  return { x, z, heading, course: heading, slip: 0,
+  return { x, z, heading, course: heading, slip: 0, drifting: false,
            speed: 0, lean: 0, yaw: 0, wheel: 0, revHold: 0, reversing: false };
 }
 
@@ -90,6 +90,23 @@ export const SKATE = {
   grip: 2.6,
   slipMax: 0.62,       // ~36 degrees of slide at full commitment
   slipDrag: 1.9,
+  // THE DRIFT IS A STATE, NOT A SPRING. With grip as one constant the board
+  // always chased its heading at the same rate, which read as elastic lag —
+  // the rider: "too basic. Not ski enough... like those longboard drifting
+  // style". What a ski game does is switch traction: full grip until the
+  // carve passes a commitment threshold, then the tail BREAKS and the board
+  // slides — deeper angle, cheaper speed, extra yaw as the tail comes round —
+  // until the steer is released and it HOOKS UP again, paying a one-off scrub
+  // for however sideways it was. Every parameter is off for RIDE and CAR.
+  driftIn: 0.18,       // slip angle (rad, ~10 deg) where committed steering breaks the tail
+  driftSteer: 0.75,    // near full lock counts as committed; gentle carves keep grip (and the pump)
+  driftMinV: 3.0,      // below this the board just turns; no walking-pace drifts
+  gripSlide: 0.85,     // the chase rate while sliding — the slide HOLDS
+  slipMaxDrift: 0.95,  // ~54 degrees of slide before it washes out
+  slipDragDrift: 1.0,  // a held slide bleeds ~0.4 m/s² net against the weak drift thrust
+  driftThrust: 0.1,    // sideways wheels barely transmit the motor
+  driftYaw: 1.35,      // the tail kicks round: yaw gain while sliding
+  hookScrub: 0.55,     // hook-up cost: speed * slip * this, paid once on exit
   cam: { back: 3.45, up: 1.95, aim: 5.6, fov: 57 },
 };
 
@@ -111,7 +128,11 @@ export function step(s, dt, throttle, brakeIn, steer, P = RIDE) {
     // gain speed is to carve. Vehicles with no `pushMax` (the scooter, the
     // car) keep full authority at every speed, which is what an engine does.
     const push = P.pushMax ? Math.max(0, 1 - s.speed / P.pushMax) : 1;
-    a = throttle * P.accel * push - brakeIn * P.brake * (s.speed > 0 ? 1 : 0);
+    // Wheels sliding across the tarmac cannot transmit the motor either —
+    // without this the hub refilled the drift bleed every frame and a held
+    // slide cost nothing (measured: full-lock slide sat at 9.19 of 9.20 m/s).
+    const thrust = (s.drifting && P.driftThrust != null) ? P.driftThrust : 1;
+    a = throttle * P.accel * push * thrust - brakeIn * P.brake * (s.speed > 0 ? 1 : 0);
   }
   // rolling resistance and drag always oppose motion
   if (Math.abs(s.speed) > 0.05) {
@@ -126,7 +147,10 @@ export function step(s, dt, throttle, brakeIn, steer, P = RIDE) {
   // to how hard you are actually carving. Holding one direction just puts you
   // in a circle — going somewhere FAST means alternating, which is exactly
   // what pumping a surf skate is.
-  if (P.pump && !s.reversing && s.speed > 0.4) {
+  // No pumping while the tail is out: wheels sliding across the tarmac cannot
+  // drive the board forward, and without this a held drift would be free
+  // speed (pump 2.6 x carve beats the drift bleed of ~0.66 m/s²).
+  if (P.pump && !s.reversing && !s.drifting && s.speed > 0.4) {
     const carve = Math.min(1, Math.abs(steer));
     const room = Math.max(0, 1 - s.speed / P.vMax);
     a += P.pump * carve * room * Math.min(1, (s.speed - 0.4) / 1.8);
@@ -138,7 +162,11 @@ export function step(s, dt, throttle, brakeIn, steer, P = RIDE) {
 
   const authority = 1 / (1 + P.steerFalloff * s.speed * s.speed);   // signed speed below
   const steerAngle = steer * P.steerMax * authority;
-  const yawRate = (s.speed / P.wheelbase) * Math.tan(steerAngle);
+  // While the tail is out the board rotates MORE than the trucks command —
+  // that is what "the tail comes round" is. Uses last frame's drift state,
+  // which is one frame of latency nobody can feel at 30-60Hz.
+  const yawGain = (P.driftYaw && s.drifting) ? P.driftYaw : 1;
+  const yawRate = (s.speed / P.wheelbase) * Math.tan(steerAngle) * yawGain;
   s.yaw = yawRate;
   s.heading -= yawRate * dt;
 
@@ -163,18 +191,43 @@ export function step(s, dt, throttle, brakeIn, steer, P = RIDE) {
     let d = s.heading - s.course;
     while (d > Math.PI) d -= Math.PI * 2;
     while (d < -Math.PI) d += Math.PI * 2;
+    // THE TRACTION STATE MACHINE — see the note at the SKATE params.
+    // Enter: committed steer, real speed, and the carve already past driftIn.
+    // Exit: the steer released (or the board nearly stopped); pay the
+    // hook-up scrub for however sideways it still was, once.
+    if (P.driftIn) {
+      if (!s.drifting) {
+        if (Math.abs(steer) >= (P.driftSteer || 0.5) && s.speed >= (P.driftMinV || 3)
+            && Math.abs(d) >= P.driftIn) { s.drifting = true; s.driftDir = Math.sign(steer); }
+      } else if (Math.abs(steer) < 0.18 || Math.sign(steer) !== s.driftDir
+                 || s.speed < 1.2) {
+        // Releasing OR flicking to the other side hooks up — a slalom is
+        // break, hook, break the other way, not one endless slide. Without
+        // the sign test an alternating full-lock run stayed "drifting" for
+        // 98% of eight seconds and ground from 9.2 to 2.2 m/s.
+        s.drifting = false;
+        if (P.hookScrub) {
+          s.speed = Math.max(0, s.speed - Math.abs(d) * P.hookScrub * s.speed * 0.5);
+        }
+      }
+    }
     // A cap, so a hard turn slides and never spins: past this the board simply
-    // washes out at a fixed angle instead of swapping ends.
-    const cap = P.slipMax || 0.5;
+    // washes out at a fixed angle instead of swapping ends. Sliding earns the
+    // deeper cap.
+    const cap = (s.drifting && P.slipMaxDrift) ? P.slipMaxDrift : (P.slipMax || 0.5);
     if (d > cap) { s.course += d - cap; d = cap; }
     else if (d < -cap) { s.course += d + cap; d = -cap; }
-    s.course += d * Math.min(1, P.grip * dt);
+    const grip = (s.drifting && P.gripSlide) ? P.gripSlide : P.grip;
+    s.course += d * Math.min(1, grip * dt);
     s.slip = s.heading - s.course;
     while (s.slip > Math.PI) s.slip -= Math.PI * 2;
     while (s.slip < -Math.PI) s.slip += Math.PI * 2;
     // Sliding sideways scrubs speed, which is what stops a drift being free
-    // and is half of why carving in a ski game feels like work.
-    if (P.slipDrag) s.speed = Math.max(0, s.speed - Math.abs(s.slip) * P.slipDrag * dt);
+    // and is half of why carving in a ski game feels like work. In the drift
+    // state the bleed is smaller — a held slide is the point — and the cost
+    // moves to the hook-up above.
+    const sd = (s.drifting && P.slipDragDrift != null) ? P.slipDragDrift : P.slipDrag;
+    if (sd) s.speed = Math.max(0, s.speed - Math.abs(s.slip) * sd * dt);
   } else {
     s.course = s.heading;
     s.slip = 0;

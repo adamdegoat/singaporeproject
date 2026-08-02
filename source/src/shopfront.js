@@ -152,7 +152,8 @@ function distToRing(x, z, poly) {
 // service lane behind a block whose back nobody will ever see — and glazing all
 // of it would be 15,000 bays instead of 4,000.
 class StreetGrid {
-  constructor(data, axes) {
+  constructor(data, axes, reach = DRESS_REACH) {
+    this.reach = reach;
     this.CELL = 40;
     this.g = new Map();
     this.streets = 0;
@@ -175,7 +176,10 @@ class StreetGrid {
           let t = L2 < 1e-9 ? 0 : ((x - x1) * vx + (z - z1) * vz) / L2;
           t = t < 0 ? 0 : t > 1 ? 1 : t;
           const dx = x - (x1 + vx * t), dz = z - (z1 + vz * t);
-          if (dx * dx + dz * dz < 230 * 230) return true;
+          // DRESS_REACH, not a private copy of it — this held a literal 230
+          // while the dressing moved to 1200, and the comment above the class
+          // kept claiming they were the same rule. See the note at the export.
+          if (dx * dx + dz * dz < this.reach * this.reach) return true;
         }
       }
       return false;
@@ -318,7 +322,29 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
 
   const atlas = new SignAtlas(THREE);
   const merger = new Merger();
-  const streets = new StreetGrid(data, axes || []);
+  // `?shopreach=` A/Bs the shop grid alone; `?reach=` moves dressing AND shops
+  // together, which is the shipped relationship.
+  //
+  // STILL 230, DELIBERATELY, WITH THE FULL-REACH WORK BANKED — measured
+  // 2026-08-03 and PARKED, not forgotten:
+  //  - at DRESS_REACH the world gains real tenants everywhere (+284 drawn in
+  //    chinatown, 376 -> 660; +8 in robertson; the whole Siloso strip),
+  //  - but the ELIGIBLE pool grows faster than the placed count, because a
+  //    tenant whose street is finally admitted still fails at bay generation
+  //    on small terrace hosts (robertson's 11 restaurants on 149m2 units all
+  //    land in shopsNoBay), so S8's ratio FALLS while the absolute number
+  //    rises: robertson 67 -> 64, littleindia 71 -> 70, harbourfront 39.
+  //    Five ratchet floors would need lowering to ship it, which is the
+  //    wrong side of "teach the check, do not loosen".
+  //  - phones must ALSO keep 230 regardless: full reach costs chinatown
+  //    +21.6MB of bay geometry (92.9 -> 114.5MB) against the ~206MB ceiling
+  //    the rider's iPhone measurably survives.
+  // THE NEXT STEP IS THE noBay FIX, not the floors: make bays buildable on
+  // short terrace-unit frontages, re-measure, and the ratios clear their
+  // floors with room to spare. `?shopreach=1200` A/Bs it live any time.
+  const _q = new URLSearchParams(location.search);
+  const streets = new StreetGrid(data, axes || [],
+    +_q.get('shopreach') || +_q.get('reach') || 230);
   // THE INDEX MUST SEE THE NEIGHBOURS, EVEN THE ONES IN ANOTHER CHUNK.
   //
   // A bay is only built where the pavement in front of it is not another

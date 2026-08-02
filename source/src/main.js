@@ -934,6 +934,42 @@ const LODT = [];
 // goes, this number should go back up rather than down.
 const PHONE = TOUCH && !P.has('full');
 
+// FLEET SIZE COMES FROM THE STREET'S LENGTH, one rule for BOTH build paths.
+// The streamed path scaled its fleet (alen / 12.5, one vehicle every ~25m of
+// carriageway both directions) while the boot path kept a flat 240+32 from
+// the days when boot always meant Orchard Road's 2.4km — so a district SCENE
+// of marinaeast put 272 vehicles on an 851m street, one every 3.1m, and the
+// nose-to-tail spacing pass then packed the loop solid straight through the
+// spawn clear zone: five cars within 12m of the rider at load, one at 1.4m
+// (defect D42, measured 2026-08-02). Same one-rule-two-copies rot as the
+// lamps flag and the shopfront reach; import the function, never copy it.
+const fleetFor = (alen) => ({
+  cars: Math.round(Math.max(48, Math.min(240, alen / 12.5)) * (PHONE ? 0.62 : 1)),
+  buses: Math.round(Math.max(8, Math.min(32, alen / 85)) * (PHONE ? 0.62 : 1)),
+});
+
+// EVERY STREAMED BUILDER'S COUNTERS, IN ONE PLACE THAT ALWAYS EXISTS.
+// addChunk used to read only buildFurniture's `signals` and drop every other
+// number every builder returned — and the first streaming wave runs BEFORE
+// `window.__stats` is even assigned, so a guard of `if (window.__stats)`
+// loses that wave's counts too. The world scene's D39 was therefore comparing
+// the data against zeros: "3,569 trees and the world drew none of them", with
+// the trees on screen. Numbers land in __statsAcc unconditionally; the boot
+// assembly merges the accumulator once and later chunks keep both in step.
+// SEMANTICS: lifetime-BUILT totals, not currently-resident — a phone district
+// that unloads and rebuilds counts again. Audits stream each district once
+// (no evictions), so every gate reads a clean single pass.
+const statAdd = (o) => {
+  if (!o) return;
+  const t = (window.__statsAcc = window.__statsAcc || {});
+  for (const k in o) {
+    if (typeof o[k] === 'number') {
+      t[k] = (t[k] || 0) + o[k];
+      if (window.__stats) window.__stats[k] = (window.__stats[k] || 0) + o[k];
+    }
+  }
+};
+
 // NO PEDESTRIANS. The rider asked for an empty-of-people city on 2026-07-31,
 // after a measurement showed what they cost. Same spot, alternating passes,
 // rendered frames counted from renderer.info.render.frame:
@@ -1317,8 +1353,8 @@ async function addChunk(ch, id, Y, rec = {}) {
   mk('water');
   if (!P.has('nowater')) buildWater(g, ch);
   if (!P.has('nowater')) buildPiers(g, ch);
-  if (!P.has('notowers')) { buildSupertrees(g, ch); buildCranes(g, ch); }
-  if (!P.has('nofoliage')) plantSurveyed(g, ch, place);
+  if (!P.has('notowers')) { statAdd(buildSupertrees(g, ch)); statAdd(buildCranes(g, ch)); }
+  if (!P.has('nofoliage')) statAdd(plantSurveyed(g, ch, place));
   await Y();
   mk('buildings');
   if (!P.has('nobuild')) await buildBuildings(g, ch, Y);
@@ -1346,17 +1382,14 @@ async function addChunk(ch, id, Y, rec = {}) {
     // realTaxis/realBusStops/realSignals/realCovered = 0 whatever was drawn,
     // and D39 measured nothing. Same S8 shape the shopfront accumulation
     // below already patched; numbers accumulate, everything else stays local.
-    if (window.__stats) {
-      for (const [k, v] of Object.entries(f)) {
-        if (typeof v === 'number') window.__stats[k] = (window.__stats[k] || 0) + v;
-      }
-    }
+    statAdd(f);
     await Y();
     mk('signage');
-    if (!P.has('nosigns')) buildSignage(g, ax, ch, place);
+    if (!P.has('nosigns')) statAdd(buildSignage(g, ax, ch, place));
     await Y();
     mk('markings');
     if (!P.has('nomarks')) buildMarkings(g, ax, ch);
+    if (window.__stats) window.__stats.realCrossings = window.__realCrossings;
     await Y();
     mk('side');
     if (!P.has('noside')) {
@@ -1366,7 +1399,7 @@ async function addChunk(ch, id, Y, rec = {}) {
     }
     await Y();
     mk('sg');
-    if (!P.has('nosg')) buildSgDetail(g, ax, ch, place);
+    if (!P.has('nosg')) statAdd(buildSgDetail(g, ax, ch, place));
     await Y();
     if (f.signals && f.signals.length) {
       const es = new Signals(f.signals, f.lensMesh || null);
@@ -1402,7 +1435,8 @@ async function addChunk(ch, id, Y, rec = {}) {
       rec.crowd = cr;
       await Y();
     }
-    if (!P.has('notraffic') && ax && ax.p && ax.p.length > 1) {
+    // Opt-IN like the boot fleet below — see the NO NPC VEHICLES note there.
+    if (P.has('traffic') && ax && ax.p && ax.p.length > 1) {
       mk('traffic');
       // Fleet scaled to the street it runs on, from the same figures the
       // primary axis uses: Orchard Road is 2,586m with 78 cars and 12 buses,
@@ -1430,8 +1464,7 @@ async function addChunk(ch, id, Y, rec = {}) {
       // rider is ever drawn. Vehicles are placed at path.len/n with +-6m of
       // jitter, so at 25m nominal the closest pair sits ~13m apart against a
       // ~4.5m car -- no overlap, which D34 gates anyway.
-      const cars = Math.round(Math.max(48, Math.min(240, alen / 12.5)) * (PHONE ? 0.62 : 1));
-      const buses = Math.round(Math.max(8, Math.min(32, alen / 85)) * (PHONE ? 0.62 : 1));
+      const { cars, buses } = fleetFor(alen);
       const tr = new Traffic(ax, cars, buses, axisSpec(ax, ch));
       // LEAVE A CLEAR ZONE ROUND THE RIDER, which this never had to do while
       // the district the rider stood in was built at boot. Traffic.build()
@@ -1470,12 +1503,7 @@ async function addChunk(ch, id, Y, rec = {}) {
   // Orchard's coverage and called it the world's. Same shape as the global
   // lamp one-shot in markings.js: a per-district fact held in one place.
   if (!P.has('noshops')) {
-    const _sf = await buildShopfronts(g, ch, ax ? [ax] : [], solidBefore, REGIONB, Y);
-    if (_sf && window.__stats) {
-      for (const [k, v] of Object.entries(_sf)) {
-        if (typeof v === 'number') window.__stats[k] = (window.__stats[k] || 0) + v;
-      }
-    }
+    statAdd(await buildShopfronts(g, ch, ax ? [ax] : [], solidBefore, REGIONB, Y));
   }
   await Y();
   mk('solid');
@@ -2262,14 +2290,29 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // no roads to read), "vehicles hitting me alr" the moment Orchard loaded,
   // and "when i pass nearby a car i will stop" — a second, invisible fleet on
   // the same street that `trafficHits` was still testing against.
-  if (!P.has('notraffic') && axis && (data.roads || []).length) {
+  // NO NPC VEHICLES. The owner, 2026-08-03: "remove all vehicles from my
+  // world" — after no-pedestrians, the streets are now empty of everything
+  // but the rider. Opt-IN via ?traffic, exactly the shape ?people has: the
+  // whole system stays in the tree, stays correct behind the flag, and a
+  // probe reporting "0 vehicles" is the INTENDED state, not a regression.
+  // Do not change it back without the owner asking.
+  if (P.has('traffic') && axis && (data.roads || []).length) {
     // Five lanes one way carrying 21 vehicles over 2,586m is a road at 4am.
     // ?cars= and ?buses= exist so the rider can test on his OWN phone whether
     // the traffic increase is what cost him the smooth start. Guessing from a
     // desktop pretending to be a phone has been wrong every time.
     const CARS = parseInt(P.get('cars') || '', 10), BUSES = parseInt(P.get('buses') || '', 10);
-    trafficSys = new Traffic(axis, Number.isFinite(CARS) ? CARS : (PHONE ? 150 : 240),
-                             Number.isFinite(BUSES) ? BUSES : (PHONE ? 20 : 32),
+    // Sized from the boot axis's own length via fleetFor() — see its note.
+    // The flat 240 here predated every district getting its own traffic, and
+    // in a district SCENE the boot axis can be 851m (marinaeast), not
+    // Orchard's 2.4km.
+    let bootLen = 0;
+    for (let i = 1; i < axis.p.length; i++) {
+      bootLen += Math.hypot(axis.p[i][0] - axis.p[i - 1][0], axis.p[i][1] - axis.p[i - 1][1]);
+    }
+    const bf = fleetFor(bootLen);
+    trafficSys = new Traffic(axis, Number.isFinite(CARS) ? CARS : bf.cars,
+                             Number.isFinite(BUSES) ? BUSES : bf.buses,
                              axis && axisSpec(axis, data));
     trafficSys.build(world, trafficSys.path.nearestS(S.x, S.z));
     // The system itself, so a probe can DRIVE the tick instead of waiting on
@@ -2314,7 +2357,8 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // scene — putting it inside the axis loop would build a full set of parked
   // cars for every main street in the region, stacked in the same bays. Exactly
   // the mistake the sweep made with trafficSys.build().
-  if (!P.has('noparked')) {
+  // Parked cars are vehicles too — see the NO NPC VEHICLES note at the fleet.
+  if (P.has('traffic') && !P.has('noparked')) {
     const pc = buildParkedCars(world, data, blocked);
     furniture.parked = pc.parked;
   }
@@ -2689,6 +2733,14 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   ready = true;
   if (P.has('boot')) console.log('BOOT ' + JSON.stringify(BOOTT));
   window.__ready = true;
+  // Chunks that streamed in during boot accumulated their counters in
+  // __statsAcc — __stats did not exist yet to receive them. Merge ONCE here;
+  // statAdd keeps both in step from now on. Without this, the first wave's
+  // districts are invisible to every counter-reading check (the world D39
+  // blindness).
+  for (const [k, v] of Object.entries(window.__statsAcc || {})) {
+    stats[k] = (stats[k] || 0) + v;
+  }
   window.__stats = stats;
 }
 function bootFailed(e) {

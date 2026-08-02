@@ -129,6 +129,16 @@ function emitFlat(world, list, w, l, mat) {
 //
 // Both the lane markings and the traffic take their geometry from here, so they
 // cannot disagree about where a lane is.
+// HOW FAR FROM THE AXIS THE WORLD IS DRESSED, in metres — one exported fact,
+// because it was two literals and they drifted: dressing moved 230 -> 1200 on
+// 2026-07-29 while shopfront.js's StreetGrid kept its own private 230, under a
+// comment claiming they were the same rule. Sentosa's grid at 230 contained
+// ZERO streets, so the whole Siloso Road tenant strip (Starbucks, Coffee
+// Bean, 7-Eleven...) read as "back block" and 14 real shopfronts never drew.
+// Measured 2026-08-02 across marinasouth/tanjongrhu/sentosa: 21 tenants flip
+// from skipped to drawn when the two rules agree. Import THIS, never copy it.
+export const DRESS_REACH = 1200;
+
 export function axisSpec(axis, data = {}) {
   const name = (axis.n || '').toLowerCase();
   const ways = (data.roads || []).filter((r) => (r.n || '').toLowerCase() === name);
@@ -579,7 +589,7 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
   // `reachOverride` lets the caller dress the near streets first and the rest
   // after the first frame -- see the deferred pass in main.js.
   const REACH = reachOverride
-    || +(new URLSearchParams(location.search).get('reach')) || 1200;
+    || +(new URLSearchParams(location.search).get('reach')) || DRESS_REACH;
   const A = axis.p;
   const nearAxis = (x, z, reach = REACH) => {
     for (let i = 0; i < A.length - 1; i++) {

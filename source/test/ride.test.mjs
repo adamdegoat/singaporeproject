@@ -4,9 +4,10 @@ import assert from 'node:assert/strict';
 
 const DT = 1 / 60;
 let pass = 0;
+let fail = 0;
 function t(name, fn) {
   try { fn(); pass++; console.log('  ok   ' + name); }
-  catch (e) { console.log('  FAIL ' + name + '\n       ' + e.message); process.exitCode = 1; }
+  catch (e) { fail++; console.log('  FAIL ' + name + '\n       ' + e.message); process.exitCode = 1; }
 }
 function run(s, secs, thr, brk, str, P) {
   for (let i = 0; i < secs / DT; i++) step(s, DT, thr, brk, str, P);
@@ -15,9 +16,13 @@ function run(s, secs, thr, brk, str, P) {
 // Carving left-right at `period` seconds a lap, which is what pumping IS.
 // Holding one direction only puts the board in a circle, so a pump test that
 // held full lock would measure a merry-go-round, not a rider going somewhere.
-function carve(s, secs, P, period = 1.1) {
+// `amp` below the drift commitment (SKATE.driftSteer 0.75) is a GRIPPED carve
+// — the regime where the pump pays and the trucks track. Full amplitude is a
+// committed slalom and, since the drift state landed, deliberately breaks the
+// tail instead; the drift tests at the bottom cover that regime.
+function carve(s, secs, P, period = 1.1, amp = 1) {
   for (let i = 0; i < secs / DT; i++) {
-    step(s, DT, 0, 0, Math.sign(Math.sin((i * DT * 2 * Math.PI) / period)), P);
+    step(s, DT, 0, 0, amp * Math.sign(Math.sin((i * DT * 2 * Math.PI) / period)), P);
   }
   return s;
 }
@@ -172,7 +177,7 @@ t('it pulls from a standstill without being pumped', () => {
 t('carving still PAYS on top of the motor, it is just not compulsory', () => {
   const a = run(newState(), 6, 1, 0, 0, SKATE);       // throttle, straight
   const b = run(newState(), 6, 1, 0, 0, SKATE);
-  carve(b, 6, SKATE);                                  // then carve, no throttle
+  carve(b, 6, SKATE, 1.1, 0.6);                        // gripped carve, no throttle
   const c = run(newState(), 6, 1, 0, 0, SKATE);
   run(c, 6, 0, 0, 0, SKATE);                           // or just coast
   assert.ok(b.speed > c.speed + 1.0,
@@ -218,11 +223,19 @@ t('a surf skate u-turn fits in one carriageway', () => {
 });
 
 t('it carves deeper than the scooter banks', () => {
-  const b = run(newState(), 3, 1, 0, 0, SKATE); carve(b, 8, SKATE);
+  // PEAK lean, sampled through the run: at full commitment the board now
+  // drifts and bleeds speed, so its settled lean shrinks with it — the deep
+  // moment is the entry, which is also what a rider sees.
+  const b = run(newState(), 6, 1, 0, 0, SKATE);
+  let deepest = 0;
+  for (let i = 0; i < 2 / DT; i++) {
+    step(b, DT, 1, 0, 1, SKATE);
+    deepest = Math.max(deepest, Math.abs(b.lean));
+  }
   const r = run(newState(), 6, 1, 0, 0); run(r, 1.5, 1, 0, 1);
-  assert.ok(Math.abs(b.lean) > Math.abs(r.lean),
-    `board ${b.lean.toFixed(2)} vs scooter ${r.lean.toFixed(2)}`);
-  assert.ok(Math.abs(b.lean) <= SKATE.leanMax + 1e-6, 'over-leaned');
+  assert.ok(deepest > Math.abs(r.lean),
+    `board ${deepest.toFixed(2)} vs scooter ${r.lean.toFixed(2)}`);
+  assert.ok(deepest <= SKATE.leanMax + 1e-6, 'over-leaned');
 });
 
 t('neither the scooter nor the car gained a pump', () => {
@@ -260,7 +273,11 @@ t('the board SLIPS — it points into the turn and slides wide', () => {
   run(s, 1.2, 1, 0, 1, SKATE);
   const deg = Math.abs(s.slip) * 180 / Math.PI;
   assert.ok(deg > 12, 'no drift: ' + deg.toFixed(1) + ' deg');
-  assert.ok(deg <= SKATE.slipMax * 180 / Math.PI + 1e-6, 'slid past the cap: ' + deg.toFixed(1));
+  // full lock at cruise is COMMITTED since the drift state landed, so the
+  // active cap is the drift one; the gripped cap is asserted by the
+  // gentle-carve test below.
+  const cap = (s.drifting ? SKATE.slipMaxDrift : SKATE.slipMax) * 180 / Math.PI;
+  assert.ok(deg <= cap + 1e-6, 'slid past the cap: ' + deg.toFixed(1));
 });
 
 t('the slip is on the OUTSIDE of the turn, not the inside', () => {
@@ -272,9 +289,15 @@ t('the slip is on the OUTSIDE of the turn, not the inside', () => {
 
 t('a drift never swaps ends — the cap holds under sustained lock', () => {
   const s = run(newState(), 4, 1, 0, 0, SKATE);
-  run(s, 20, 1, 0, 1, SKATE);
-  const deg = Math.abs(s.slip) * 180 / Math.PI;
-  assert.ok(deg <= SKATE.slipMax * 180 / Math.PI + 1e-6, 'spun out: ' + deg.toFixed(1) + ' deg');
+  let worst = 0;
+  for (let i = 0; i < 20 / DT; i++) {
+    step(s, DT, 1, 0, 1, SKATE);
+    worst = Math.max(worst, Math.abs(s.slip));
+  }
+  // the deepest the board may EVER get is the drift cap — sampled every
+  // frame, because the end state alone can hide a mid-run spin
+  assert.ok(worst <= SKATE.slipMaxDrift + 1e-6,
+    'spun out: ' + (worst * 180 / Math.PI).toFixed(1) + ' deg');
 });
 
 t('sliding scrubs speed, so a long drift costs you', () => {
@@ -283,6 +306,50 @@ t('sliding scrubs speed, so a long drift costs you', () => {
   run(a, 2, 1, 0, 0, SKATE);        // straight, throttle held
   run(b, 2, 1, 0, 1, SKATE);        // drifting, throttle held
   assert.ok(b.speed < a.speed, `drifting ${b.speed.toFixed(2)} should cost vs straight ${a.speed.toFixed(2)}`);
+});
+
+t('committed steering BREAKS the tail — drift is a state, past the grip cap', () => {
+  const s = run(newState(), 6, 1, 0, 0, SKATE);
+  run(s, 2, 1, 0, 1, SKATE);
+  assert.ok(s.drifting, 'full lock at cruise never broke the tail');
+  const deg = Math.abs(s.slip) * 180 / Math.PI;
+  assert.ok(deg > SKATE.slipMax * 180 / Math.PI + 5,
+    'drift no deeper than a gripped carve: ' + deg.toFixed(1) + ' deg');
+  assert.ok(deg <= SKATE.slipMaxDrift * 180 / Math.PI + 1e-6, 'past the drift cap');
+});
+
+t('a gentle carve keeps its grip — no drift below the commitment threshold', () => {
+  const s = run(newState(), 6, 1, 0, 0, SKATE);
+  run(s, 3, 1, 0, 0.5, SKATE);
+  assert.ok(!s.drifting, 'a half-steer carve broke the tail');
+});
+
+t('releasing the steer HOOKS UP: scrub paid once, then it runs straight', () => {
+  const s = run(newState(), 6, 1, 0, 0, SKATE);
+  run(s, 2, 1, 0, 1, SKATE);
+  const inDrift = s.speed;
+  run(s, 0.1, 1, 0, 0, SKATE);
+  assert.ok(!s.drifting, 'still drifting after release');
+  assert.ok(s.speed < inDrift - 0.8, `no hook-up scrub: ${inDrift.toFixed(2)} -> ${s.speed.toFixed(2)}`);
+  run(s, 1.2, 1, 0, 0, SKATE);
+  assert.ok(Math.abs(s.slip) < 0.06, 'never straightened: ' + s.slip);
+});
+
+t('flicking to the other side hooks up and can re-break — a slalom is not one slide', () => {
+  const s = run(newState(), 6, 1, 0, 0, SKATE);
+  run(s, 1.5, 1, 0, 1, SKATE);
+  assert.ok(s.drifting && s.driftDir === 1);
+  run(s, 0.05, 1, 0, -1, SKATE);   // the flick
+  // it either hooked up, or re-broke the OTHER way — never keeps the old slide
+  assert.ok(!s.drifting || s.driftDir === -1, 'the flick kept the old drift');
+});
+
+t('no pumping while the tail is out — a drift is never free speed', () => {
+  const s = run(newState(), 6, 1, 0, 0, SKATE);
+  const before = s.speed;
+  run(s, 3, 1, 0, 1, SKATE);       // held full-lock slide, throttle pinned
+  assert.ok(s.speed < before - 1.5,
+    `a held drift barely cost anything: ${before.toFixed(2)} -> ${s.speed.toFixed(2)}`);
 });
 
 t('the scooter and the car do not slip at all', () => {
@@ -296,4 +363,7 @@ t('the scooter and the car do not slip at all', () => {
   }
 });
 
-console.log(`\n${pass} passed`);
+// NEVER print a clean-looking count while failing. "37 passed" with exit 1
+// cost two deploys on 2026-08-03: the deploy log tails ONE line, so the four
+// FAIL lines scrolled away and the summary lied by omission.
+console.log(fail ? `\n${fail} FAILED, ${pass} passed` : `\n${pass} passed`);
