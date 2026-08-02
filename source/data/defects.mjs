@@ -130,7 +130,18 @@ const found = await page.evaluate(() => {
         const dSurf = v3.y - (window.__surfaceAt(v3.x, v3.z) + want);
         const gAt = window.__terrain ? window.__terrain.at(v3.x, v3.z) : null;
         const dGround = gAt === null ? dSurf : v3.y - (gAt + 0.024 + want);
-        const d = Math.abs(dSurf) <= Math.abs(dGround) ? dSurf : dGround;
+        let d = Math.abs(dSurf) <= Math.abs(dGround) ? dSurf : dGround;
+        // AND EVERY DECK, NOT JUST THE WIDEST ONE. surfaceAt takes the widest
+        // deck where two overlap, so a kerb sitting correctly on a RAMP over
+        // the carriageway it joins matched neither datum: 87 findings in
+        // marinabay and 228 in kallang, every one of them on a `bridge=1`
+        // road, and vetted from the saddle as sitting correctly on the deck.
+        if (Math.abs(d) > 0.25 && window.__bridgeDecksAt) {
+          for (const deck of window.__bridgeDecksAt(v3.x, v3.z)) {
+            const dd = v3.y - (deck + 0.024 + want);
+            if (Math.abs(dd) < Math.abs(d)) d = dd;
+          }
+        }
         if (Math.abs(d) > 0.25) bad.push(`${sig} ${d > 0 ? 'floating' : 'sunk'} ${Math.abs(d).toFixed(2)}m at ${v3.x | 0},${v3.z | 0}`);
       }
     });

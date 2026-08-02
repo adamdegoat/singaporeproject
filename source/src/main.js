@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance } from './tex.js';
-import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, anyDeckAt, buildSurround, buildWater, buildSupertrees, buildCranes, buildPiers, plantSurveyed } from './city.js';
+import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildCranes, buildPiers, plantSurveyed } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
@@ -1176,39 +1176,43 @@ async function buildStreamed(mani) {
     if (!regionData[k]) regionData[k] = [];
     regionData[k].push(...ch[k]);
   }
-  // THE SPAWN DISTRICT IS BUILT INLINE AND CANNOT BE UNLOADED. THIS IS THE
-  // iPHONE CRASH, AND THE FIX IS NOT YET IN.
+  // EVERY DISTRICT STREAMS, INCLUDING THE FIRST. THIS WAS THE iPHONE CRASH.
   //
-  // buildRegion() builds this district straight into `world` rather than into
-  // a removable group, so it is not in `recs`, is not counted by
-  // MAX_RESIDENT, and can never be evicted. That district is orchard: 1,663
-  // buildings and 3,019 roads, held for the life of the page wherever the
-  // rider goes. Measured on a phone profile arriving at Chinatown, the cap
-  // believed it held three districts and was really holding four, ~5,232
-  // buildings — and the rider's iPhone dies on exactly that teleport.
+  // buildRegion() used to build the boot district straight into `world`
+  // rather than into a removable group, so it was not in `recs`, was not
+  // counted by MAX_RESIDENT, and could never be evicted. That district is
+  // orchard — 1,663 buildings and 3,019 roads — held for the life of the page
+  // wherever the rider went. Measured on a phone profile arriving at
+  // Chinatown, the cap believed it held three districts and was really
+  // holding four, ~5,232 buildings, and the rider's iPhone died on exactly
+  // that teleport. iOS Safari reaps a tab far below what desktop Chrome
+  // tolerates, which is why no desktop run ever reproduced it.
   //
-  // THE FIX WAS ATTEMPTED AND REVERTED ON 2026-08-02, and what it cost is
-  // worth writing down so the next attempt starts further along. Emptying the
-  // spawn chunk and letting all 15 districts stream through addChunk DOES
-  // work — measured, geometries at Chinatown halved 1138 -> 574 and orchard
-  // evicted correctly on every teleport. It also surfaced three systems that
-  // quietly assume the spawn district is special:
+  // Raising the cap's arithmetic could not fix a district the cap cannot see.
+  // Dropping it to 2 was tried and MEASURED: it evicted marinasouth, the
+  // smallest district in the world, for a 2.4% saving and worse pop-in
+  // everywhere. Reverted.
   //
-  //   1. addChunk THROWS AWAY buildShopfronts' return, so the world scene's
-  //      S8 has only ever measured the spawn district and called it the
-  //      world. With the spawn empty it read 0; accumulating the per-district
-  //      counts gives the honest world figure of 67 against a budget of 70
-  //      that was really Orchard's.
+  // So the boot build now does the REGION-WIDE work only — the heightfield
+  // mesh, the surround, the shared indexes, all built from `regionData` and
+  // none of it unloadable — and every district including orchard arrives
+  // through addChunk() in its own evictable `district:<id>` group. Measured
+  // after: geometries at Chinatown 1138 -> 574, live-check heap 670MB ->
+  // 326MB, and orchard evicts correctly on every teleport.
+  //
+  // IT SURFACED THREE THINGS THAT QUIETLY ASSUMED THE SPAWN WAS SPECIAL, and
+  // all three were real pre-existing bugs, not costs of this change:
+  //
+  //   1. addChunk THREW AWAY buildShopfronts' return, so the world scene's S8
+  //      only ever measured the boot district and called it the world. Now
+  //      accumulated; the honest world figure is 67 where the budget said 70.
   //   2. `spawn.axes` seeded an UNTAGGED copy of the first axis, and trimAxes
   //      keeps the first entry whole and trims later ones against it — so a
-  //      streamed orchard had its own tagged axis trimmed to nothing.
-  //   3. C3 then reported 38 unlit streets, every one in Orchard, and the
-  //      lamp/dressing coverage question was still open when this was
-  //      reverted.
-  //
-  // None of that is a reason not to do it; it is the work the fix actually
-  // requires, and it wants a session of its own rather than being rushed next
-  // to a live crash. See HANDOFF.md.
+  //      streamed orchard had its own tagged axis trimmed to nothing. The
+  //      seed is gone; every axis now enters tagged through addChunk.
+  //   3. markings.js placed street lamps behind a GLOBAL one-shot, so the
+  //      first district to build consumed it and the other fourteen never
+  //      read their own lamps. 8,282 surveyed positions unbuilt. Fixed there.
   const spawn = { ...chunks[0] };
   spawn.terrain = mani.terrain;
   spawn.axisFullLength = mani.axisFullLength;
@@ -1389,7 +1393,29 @@ async function addChunk(ch, id, Y, rec = {}) {
       const cars = Math.round(Math.max(48, Math.min(240, alen / 12.5)) * (PHONE ? 0.62 : 1));
       const buses = Math.round(Math.max(8, Math.min(32, alen / 85)) * (PHONE ? 0.62 : 1));
       const tr = new Traffic(ax, cars, buses, axisSpec(ax, ch));
-      tr.build(g, 0);
+      // LEAVE A CLEAR ZONE ROUND THE RIDER, which this never had to do while
+      // the district the rider stood in was built at boot. Traffic.build()
+      // places its fleet from avoidS+55 over path.len-110 precisely so nothing
+      // materialises on top of the player; passing 0 was right for a district
+      // the rider was nowhere near and wrong the moment the SPAWN district
+      // started streaming. Only avoid where the rider actually is: on a
+      // district across the island, S=0 is as good a place to start as any.
+      // Distance measured against the axis POLYLINE directly rather than
+      // through the path API, whose at() writes into an out-parameter and
+      // returns nothing — guessing at that is how a fix becomes a second bug.
+      let near2 = Infinity;
+      const AP = (ax && ax.p) || [];
+      for (let i = 0; i < AP.length - 1; i++) {
+        const ax0 = AP[i], ax1 = AP[i + 1];
+        const vx = ax1[0] - ax0[0], vz = ax1[1] - ax0[1];
+        const l2 = vx * vx + vz * vz || 1;
+        let t = ((S.x - ax0[0]) * vx + (S.z - ax0[1]) * vz) / l2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const qx = S.x - (ax0[0] + vx * t), qz = S.z - (ax0[1] + vz * t);
+        const dd = qx * qx + qz * qz;
+        if (dd < near2) near2 = dd;
+      }
+      tr.build(g, near2 < 150 * 150 ? tr.path.nearestS(S.x, S.z) : 0);
       tr.__ax = ax && ax.p;
       extraTraffic.push(tr);
       rec.traffic = tr;
@@ -1876,6 +1902,8 @@ async function buildRegion(data, opts = {}) {
   window.__bridgeDeckAt = bridgeDeckAt;
   // Carriageway OR footway deck. W2 only — never used to seat a rider.
   window.__anyDeckAt = anyDeckAt;
+  // every deck over a point, for D2 — see bridgeDecksAt in city.js
+  window.__bridgeDecksAt = bridgeDecksAt;
   indexBuildings(opts.regionData || data);
 
   // The road index is built FIRST. Buildings carry structural pieces — entrance
@@ -2092,7 +2120,18 @@ window.__placeBlocked = (x, z) => blocked(x, z);
       seen.add(r); sideStreets.push(r);
     }
   }
-  if (!P.has('notraffic') && axis) {
+  // NO BOOT FLEET WHEN THE BOOT CHUNK CARRIES NO ROADS.
+  //
+  // Every district now streams and brings its OWN traffic through addChunk, so
+  // this must not also build one for the boot chunk — and once that chunk was
+  // emptied it was building a 240-car fleet on Orchard Road from
+  // `axisSpec(axis, data)` with `data.roads` EMPTY. Three symptoms, one cause,
+  // all reported by the rider within minutes of it going live: "traffic
+  // flowing backwards" (the spec that says which way each carriageway runs had
+  // no roads to read), "vehicles hitting me alr" the moment Orchard loaded,
+  // and "when i pass nearby a car i will stop" — a second, invisible fleet on
+  // the same street that `trafficHits` was still testing against.
+  if (!P.has('notraffic') && axis && (data.roads || []).length) {
     // Five lanes one way carrying 21 vehicles over 2,586m is a road at 4am.
     // ?cars= and ?buses= exist so the rider can test on his OWN phone whether
     // the traffic increase is what cost him the smooth start. Guessing from a

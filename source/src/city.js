@@ -764,6 +764,32 @@ export function anyDeckAt(x, z) {
 // road and is the one you are actually riding on.
 export function bridgeDeckAt(x, z) { return _deckIn(BRIDGES, x, z); }
 
+// EVERY deck over a point, not just the widest. Where a ramp crosses the
+// carriageway it carries, two decks are live at the same x,z and differ by
+// several metres — and a kerb sitting correctly on one of them matches
+// neither `surfaceAt` (which takes the widest) nor the terrain. That is what
+// D2 was reporting as 87 floating kerbs in marinabay and 228 in kallang, all
+// on bridge=1 carriageways, none of it visible in a frame. Same family as the
+// fix that took it from 118 to 87: let the check measure what the world
+// actually offers rather than one of two right answers.
+export function bridgeDecksAt(x, z) {
+  const out = [];
+  for (const REG of [BRIDGES, FOOTBRIDGES]) {
+    const l = REG.cells.get(Math.floor(x / BR_CELL) + ',' + Math.floor(z / BR_CELL));
+    if (!l) continue;
+    for (const i of l) {
+      const s = REG.segs[i];
+      const vx = s[2] - s[0], vz = s[3] - s[1];
+      const l2 = vx * vx + vz * vz || 1;
+      let t = ((x - s[0]) * vx + (z - s[1]) * vz) / l2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const dx = x - (s[0] + vx * t), dz = z - (s[1] + vz * t);
+      if (dx * dx + dz * dz <= (s[4] + 0.4) * (s[4] + 0.4) && out.indexOf(s[5]) < 0) out.push(s[5]);
+    }
+  }
+  return out;
+}
+
 function _deckIn(REG, x, z) {
   const l = REG.cells.get(Math.floor(x / BR_CELL) + ',' + Math.floor(z / BR_CELL));
   if (!l) return null;
