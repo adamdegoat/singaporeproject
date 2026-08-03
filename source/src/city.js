@@ -3679,16 +3679,45 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
       trailSegs.push([tp[i][0], tp[i][1], tp[i + 1][0], tp[i + 1][1]]);
     }
   }
+  // INDEXED, because this is called once per candidate PLANT.
+  //
+  // The first version scanned every trail segment on the island for every tree
+  // the wood fill considered — Sentosa has thousands of footway segments and
+  // the fill considers thousands of positions, so it was tens of millions of
+  // distance solves inside the boot. A 24m grid bucket turns each query into a
+  // look at nine cells.
+  const TCELL = 24;
+  const trailGrid = new Map();
+  for (const seg of trailSegs) {
+    const [ax, az, bx, bz] = seg;
+    const x0 = Math.min(ax, bx), x1 = Math.max(ax, bx);
+    const z0 = Math.min(az, bz), z1 = Math.max(az, bz);
+    for (let gx = Math.floor(x0 / TCELL); gx <= Math.floor(x1 / TCELL); gx++) {
+      for (let gz = Math.floor(z0 / TCELL); gz <= Math.floor(z1 / TCELL); gz++) {
+        const k = gx + ',' + gz;
+        let l = trailGrid.get(k);
+        if (!l) { l = []; trailGrid.set(k, l); }
+        l.push(seg);
+      }
+    }
+  }
   const trailDist2 = (x, z) => {
     let best = Infinity;
-    for (const [ax, az, bx, bz] of trailSegs) {
-      const vx = bx - ax, vz = bz - az;
-      const l2 = vx * vx + vz * vz || 1;
-      let t = ((x - ax) * vx + (z - az) * vz) / l2;
-      t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const dx = x - (ax + vx * t), dz = z - (az + vz * t);
-      const d2 = dx * dx + dz * dz;
-      if (d2 < best) best = d2;
+    const cx = Math.floor(x / TCELL), cz = Math.floor(z / TCELL);
+    for (let gx = cx - 1; gx <= cx + 1; gx++) {
+      for (let gz = cz - 1; gz <= cz + 1; gz++) {
+        const l = trailGrid.get(gx + ',' + gz);
+        if (!l) continue;
+        for (const [ax, az, bx, bz] of l) {
+          const vx = bx - ax, vz = bz - az;
+          const l2 = vx * vx + vz * vz || 1;
+          let t = ((x - ax) * vx + (z - az) * vz) / l2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+          const d2 = dx * dx + dz * dz;
+          if (d2 < best) best = d2;
+        }
+      }
     }
     return best;
   };
