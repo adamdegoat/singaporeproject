@@ -841,7 +841,13 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
   const roofSign = [], vertSign = [];
   for (const b of data.buildings) {
     await YY();
-    if (b.a < 700) continue;
+    // A NAMED BUILDING EARNS A SIGN AT ANY SIZE. The floor was 700 m2, which
+    // is a mall — so on Sentosa the named things a player actually passes (a
+    // beach bar, a station, a dive shop) had no name on them at all, and the
+    // owner asked for "obvious shop signs and building signs so can see". An
+    // unnamed shed still needs to be big enough to bother dressing.
+    if (b.a < 700 && !b.n) continue;
+    if (b.a < 120) continue;
     let cx = 0, cz = 0;
     for (const q2 of b.p) { cx += q2[0]; cz += q2[1]; }
     cx /= b.p.length; cz /= b.p.length;
@@ -860,10 +866,15 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
 
     // named buildings get their name on the fascia, which is what actually
     // lets you tell where you are
-    if (b.n && bl > 14) {
+    if (b.n && bl > 7) {
       const bgc = pick(SIGN_COLS);
-      const boardW = Math.min(26, bl * 0.55), boardH = boardW * 0.25;
-      const sy = Math.min(b.h - 2.2, 7.4);
+      // BIGGER, AND WITH A FLOOR. The board was 55% of the longest edge capped
+      // at 26m, which on a 9m beach-bar frontage is a 5m board 1.2m tall —
+      // unreadable from the road. A sign exists to be read, so it takes the
+      // greater of "a share of the frontage" and "big enough to read", and the
+      // cap stays so a 60m mall does not get a billboard.
+      const boardW = Math.max(6.5, Math.min(26, bl * 0.62)), boardH = boardW * 0.26;
+      const sy = Math.min(Math.max(3.2, b.h - 2.2), 7.4);
       const rot = ang + Math.PI / 2;
       const uv = atlas.add(b.n, '#' + bgc.toString(16).padStart(6, '0'), '#f4f1ea');
       const face = atlas.plane(boardW, boardH, uv);

@@ -12,6 +12,7 @@ import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
 import { axisSpec, buildMarkings, dressSideStreets, selectSideStreets, dedupeProps } from './markings.js';
 import { buildSgDetail, buildTransit, buildBeachLife } from './sgdetail.js';
 import { buildRides, BOARD_REACH, EYE } from './rides.js';
+import { buildPlaceLabels } from './places.js';
 import { buildShopfronts } from './shopfront.js';
 import { Signals } from './signals.js';
 import { Sound } from './audio.js';
@@ -1257,6 +1258,7 @@ let mode = 'ride';                 // 'ride' | 'walk' | 'onride'
 // The cable car / SkyRide / luge network, and the seat the player is in.
 // `onRide` is null unless the player is being carried.
 let RIDES = null;
+let PLACES = null;   // 3D names floating over the landmarks
 let onRide = null;                 // { ride, s, from }
 let lastRideLabel = 0;
 // The room server (see relay/); ?relay= overrides for local testing against
@@ -3083,6 +3085,12 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // THE RIDES, built after the world because they read the wire sgdetail drew.
   // Never fatal: an island you cannot ride the cable car on is still an island,
   // and a throw here would cost the whole boot.
+  // The island names itself. Never fatal: labels are decoration, and a throw
+  // here would cost the whole boot for a caption.
+  try {
+    PLACES = buildPlaceLabels(THREE, data, world, surfaceAt);
+    if (P.has('boot') && PLACES) console.log('place labels: ' + PLACES.count);
+  } catch (e) { console.warn('place labels failed: ' + e.message); }
   try {
     RIDES = buildRides(THREE, data, world, surfaceAt);
     if (P.has('boot')) console.log('rides: ' + RIDES.rides.map((r) => r.kind).join(','));
@@ -4022,6 +4030,7 @@ function loop(now) {
       for (const c of extraCrowds) if (simNear(c)) c.update(clock, dt, walker.x, walker.z, signals);
       if (wayfinder) wayfinder.update(walker, dt);
       sound.update(0, 'walk', 0, 0, trafficNearest(walker.x, walker.z));
+      if (PLACES) PLACES.update(camera);
       cullDistricts();
       renderer.render(scene, camera);
       frames++;
@@ -4071,6 +4080,7 @@ function loop(now) {
       if (RIDES && now - lastRideLabel > 500) { lastRideLabel = now; modeLabel(); }
       sound.update(0, 'walk', walker.speed, walker.phase, trafficNearest(walker.x, walker.z));
       if (SPEC) driveCamera(dt); else walkCamera(dt);
+      if (PLACES) PLACES.update(camera);
       cullDistricts();
       renderer.render(scene, camera);
       frames++;
@@ -4221,6 +4231,9 @@ function loop(now) {
   // every texture and geometry, synchronously. It was invisible to the boot
   // marks — build "done" at 12s, page usable at 21s — so it is timed like a
   // build phase, because it is one.
+  // The ride branch renders through activeCam (which may be the top-down map
+  // camera), so the labels are updated against the camera actually drawing.
+  if (PLACES) PLACES.update(activeCam);
   if (ready && window.__ff === undefined) {
     const tF = performance.now();
     renderer.render(scene, activeCam);

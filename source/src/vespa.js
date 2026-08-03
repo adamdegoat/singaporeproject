@@ -300,8 +300,20 @@ export function buildSkater() {
     ankleF: [0.035, 0.205, 0.280], kneeF: [0.140, 0.505, 0.300], hipF: [0.085, 0.775, 0.070],
     ankleB: [-0.035, 0.205, -0.265], kneeB: [-0.130, 0.485, -0.155], hipB: [-0.085, 0.775, 0.000],
     pelvis: [0.000, 0.800, 0.035], chest: [0.010, 1.165, 0.080], neck: [0.010, 1.235, 0.090],
-    shldrF: [0.170, 1.140, 0.115], elbowF: [0.350, 1.045, 0.270], handF: [0.430, 0.960, 0.455],
-    shldrB: [-0.155, 1.135, 0.045], elbowB: [-0.360, 1.070, -0.075], handB: [-0.475, 1.010, -0.255],
+    // ARMS DOWN INTO A CRUISE, NOT OUT INTO A T.
+    //
+    // These were 0.095m of elbow drop and 0.18m of hand drop across a 0.26m
+    // reach — about thirty degrees below the shoulder. That is a defensible
+    // balancing pose in a side view and it is NOT what the player sees: the
+    // chase camera sits behind and slightly above, and from there arms at
+    // near-shoulder height read as a T-pose, which is the single most visible
+    // thing in the game because it is on screen in every frame.
+    //
+    // Dropped ~14cm and pulled in, so the front arm hangs forward across the
+    // nose and the back arm trails low. Same skater silhouette from the side,
+    // a person instead of a scarecrow from behind.
+    shldrF: [0.170, 1.140, 0.115], elbowF: [0.318, 0.975, 0.255], handF: [0.372, 0.815, 0.405],
+    shldrB: [-0.155, 1.135, 0.045], elbowB: [-0.322, 0.990, -0.070], handB: [-0.398, 0.848, -0.232],
     head: [0.010, 1.350, 0.105],
   };
   // FEET, across the deck and over the trucks. A skater's feet run ACROSS the

@@ -3349,6 +3349,21 @@ export function buildWater(world, data) {
   for (const w of polys) {
     const pts = w.p;
     if (pts.length < 4) continue;
+    // DO NOT DRAW THE SEA TWICE.
+    //
+    // buildSea() lays one sheet for the open water, with the marine colour and
+    // the wave shader. The mapped layer ALSO carries the sea — on Sentosa two
+    // `natural=water, water=sea` polygons of 11.2 and 10.5 km2 — and the rule
+    // below deliberately floats a mapped ring 2cm ABOVE the sheet so the finer
+    // geometry wins. That is right for a river or a lagoon and wrong for the
+    // ocean: the same water then gets drawn twice, in two different colours
+    // (#5a8296 sheet, #8fa9a8 ring), 2cm apart. Ridden over the Sentosa
+    // Gateway it is the whole harbour in pale grey-green bands with polygon
+    // edges across it, which is the first thing a player sees arriving.
+    //
+    // The sheet IS the sea. A mapped ring that says it is the sea is saying
+    // the same thing, so it has nothing to add.
+    if (sea && w.k === 'sea') continue;
     // the rim: the lowest ground around the edge is the waterline
     let lo = Infinity;
     for (const [x, z] of pts) {

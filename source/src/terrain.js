@@ -585,7 +585,15 @@ export class Terrain {
               // grid BFS from below-sea cells) so a low inland plaza stays
               // concrete, and only where the district HAS open sea at all.
               const sd = this.seaDistAt ? this.seaDistAt(x, z) : Infinity;
-              if (sd < 80 && vy > -0.5 && vy < 2.4) {
+              // ONLY LAND GETS A BEACH. The blend's own test was `vy > -0.5`,
+              // written when seaDistAt was broken and the branch never ran; the
+              // moment it started working, every SEA cell qualified — they are
+              // low by definition and zero metres from the sea by definition —
+              // and the harbour by the Gateway bridge, which is the first thing
+              // a player sees driving onto the island, came out as pale sand
+              // bands laid over the water. A shoreline is the LAND at the
+              // water's edge, so the floor is the sea clamp, not below it.
+              if (sd < 80 && vy > 0.06 && vy < 2.4) {
                 const f = Math.max(0, 1 - Math.max(0, vy) / 2.4) * Math.max(0, 1 - sd / 80);
                 col.push(0.84 + (0.90 - 0.84) * f, 0.87 + (0.84 - 0.87) * f, 0.80 + (0.64 - 0.80) * f);
               } else if (this.greenFrac > 0.35) {
@@ -655,8 +663,31 @@ export class Terrain {
     if (!g) return null;
     const m = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), material);
     m.rotation.x = -Math.PI / 2;
-    const mid = g.h[Math.floor(g.h.length / 2)];
-    m.position.set(g.x0 + (g.nx * g.cell) / 2, mid - 0.4, g.z0 + (g.nz * g.cell) / 2);
+    // THE APRON CONTINUES THE EDGE OF THE MAP, NOT THE MIDDLE OF THE ARRAY.
+    //
+    // This took its height from `g.h[floor(h.length/2)]` — one arbitrary cell,
+    // the middle of a flat array, which on an island is somewhere inland. On
+    // Sentosa that cell is 3.9m, so a FOUR KILOMETRE plane sat at 3.5m across
+    // the entire world INCLUDING the harbour, floating three and a half metres
+    // above the sea and hiding it. Ridden, it is the first thing you see coming
+    // over the Sentosa Gateway: the water replaced by a grey shelf to the
+    // horizon. The project notes had this parked as "grey shelf from sky view,
+    // riders never see it" — riders do see it, from the island's front door.
+    //
+    // What is beyond the edge of the map is whatever the edge is, so take the
+    // MEDIAN OF THE BORDER CELLS. Sentosa's border is open water, so the apron
+    // drops to sea level and the sea sheet covers it; an inland district's
+    // border is ground, so it still continues the ground.
+    const border = [];
+    for (let i = 0; i < g.nx; i++) {
+      border.push(g.h[i], g.h[(g.nz - 1) * g.nx + i]);
+    }
+    for (let j = 0; j < g.nz; j++) {
+      border.push(g.h[j * g.nx], g.h[j * g.nx + g.nx - 1]);
+    }
+    border.sort((a, b) => a - b);
+    const edge = border[Math.floor(border.length / 2)];
+    m.position.set(g.x0 + (g.nx * g.cell) / 2, edge - 0.4, g.z0 + (g.nz * g.cell) / 2);
     m.receiveShadow = true;
     return m;
   }

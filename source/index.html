@@ -181,7 +181,10 @@
 </style>
 <canvas id="c"></canvas>
 <div id="rotate"><div><span>&#8635;</span>Turn your phone sideways<br><small style="opacity:.6">this rides in landscape</small></div></div>
-<div id="place">Singapore<small id="where"></small></div>
+<!-- THE PLACE PILL IS GONE (owner, 2026-08-04): the island labels itself
+     now with 3D names floating over the landmarks — see src/places.js.
+     The wayfinder still runs; it just has no readout to write to, and
+     it guards on the element being absent. -->
 <canvas id="map" width="248" height="248"></canvas>
 <div id="maphint">tap map</div>
 <div id="big">
