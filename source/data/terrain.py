@@ -966,6 +966,55 @@ def main():
         if eased:
             print(f"   eased {eased} shore cells into a beach profile")
 
+        # THE BEACH IS CUT FROM THE SURVEYED COASTLINE, NOT FROM THE DEM.
+        #
+        # Everything above works outward from cells the DEM happens to have put
+        # under water, and it cannot draw a coast: the grid is 35m and a
+        # coastline is a fine curve, so the waterline lands on cell boundaries
+        # and the shore breaks into the flat sandy tongues with sea showing
+        # between them that the owner reported ("now the beaches i find dont
+        # really look like the real sentosa") and that are plainly visible from
+        # the harbour (shots/street/cst2.shot1).
+        #
+        # But we HOLD the real thing. `coast_rings` is OSM's natural=coastline
+        # for this district — 71 ways and 31.8km of it on sentosa — and it says
+        # exactly where land meets sea. So the profile is keyed to DISTANCE
+        # FROM THAT LINE rather than to the heightfield's own guess: at the
+        # coast the ground sits just under the waterline, and it climbs inland
+        # on a gentle beach grade until it meets whatever the terrain already
+        # had. min() only, so this can lower a shore into a beach and can never
+        # raise ground anywhere; the building floor is the same one the
+        # smoothing pass uses, so a waterfront block cannot be cut adrift.
+        #
+        # This is the fix that answers "are your data sources ideal for
+        # sentosa" honestly: the elevation source is a 30m global surface model
+        # and is not, but the COASTLINE is surveyed, and where the two disagree
+        # about where the sea starts, the survey wins.
+        BEACH_REACH = 110.0        # how far inland the cut can reach
+        BEACH_GRADE = 0.085        # ~8.5%, a walkable Singapore beach
+        BEACH_TOE = SEA_SINK + 0.25
+        cut = 0
+        for j in range(grid["nz"]):
+            gz = grid["z0"] + j * CELL
+            for i in range(grid["nx"]):
+                k = j * grid["nx"] + i
+                if grid["h"][k] <= SEA_SINK:
+                    continue                     # already sea
+                gx = grid["x0"] + i * CELL
+                if not any(_inside(gx, gz, r) for r in coast_rings):
+                    continue                     # seaward of the coast
+                d = min(_edge_dist(gx, gz, r) for r in coast_rings)
+                if d > BEACH_REACH:
+                    continue
+                target = BEACH_TOE + d * BEACH_GRADE
+                if on_building(gx, gz):
+                    target = max(target, SEA_SINK + 1.2)
+                if grid["h"][k] > target:
+                    grid["h"][k] = target
+                    cut += 1
+        if cut:
+            print(f"   cut {cut} cells to a beach profile off the surveyed coastline")
+
         # THE COAST WAS SCALLOPED INTO CLIFFS, and the easing above is why.
         # It pulls open shore down to a ramp but SKIPS cells under buildings —
         # correctly, or a beachfront block ends up ten metres under water. On
@@ -1003,7 +1052,7 @@ def main():
                             break
                 near_sea[k] = found
         smoothed = 0
-        for _pass in range(3):
+        for _pass in range(5):
             src = list(grid["h"])
             for j in range(grid["nz"]):
                 gz = grid["z0"] + j * CELL
@@ -1012,8 +1061,25 @@ def main():
                     if not near_sea[k] or src[k] <= -1.5:
                         continue
                     gx = grid["x0"] + i * CELL
-                    if on_building(gx, gz):
-                        continue          # read, never written
+                    # BUILDING CELLS SMOOTH TOO, WITHIN LIMITS — and the first
+                    # version of this pass skipping them outright is why the
+                    # Resorts World waterfront still tore into shards after
+                    # Siloso's cliffs were fixed (vetted from the harbour,
+                    # shots/street/rws.shot1). Siloso has open sand between its
+                    # beach clubs, so smoothing the gaps closed the coast; at
+                    # RWS the buildings ARE the waterfront, every cell for
+                    # hundreds of metres is within the 12m pad, and the pass
+                    # had nothing left it was allowed to touch. Probed at
+                    # -1500,11880: terrain at y=1.1, 1.6 and 4.0 within one
+                    # cell — a near-vertical face, which is exactly the shard.
+                    #
+                    # Two guards make this safe, and they are the two failure
+                    # modes this file has already paid for: a building may
+                    # never be taken under the sea (the whole reason building
+                    # cells were protected), and no cell may move far in one
+                    # rebuild, so a spike relaxes into its neighbours instead
+                    # of a block dropping off a hill.
+                    on_b = on_building(gx, gz)
                     tot = 0.0
                     wsum = 0.0
                     for dj in (-1, 0, 1):
@@ -1028,8 +1094,21 @@ def main():
                             tot += v * w
                             wsum += w
                     nv = tot / wsum
+                    # THE FLOOR IS THE GUARD; A MOVEMENT CLAMP IS NOT.
+                    # A ±3m clamp was tried here first and it did almost
+                    # nothing (10,359 writes, the RWS shards unchanged in the
+                    # frame), because the shards are exactly the cells that
+                    # need to move FURTHEST: the coastline inset keeps a "beach
+                    # lip" cell at the DEM's smeared 15-20m and the cell beside
+                    # it is sunk to -2, so the face between them is the full
+                    # drop and a 3m allowance cannot begin to close it. What
+                    # actually has to hold is that nothing ends up under water,
+                    # and that is the floor's job — so the floor stays and the
+                    # clamp goes.
+                    floor = (SEA_SINK + 1.2) if on_b else SEA_SINK
+                    nv = max(nv, floor)
                     if abs(nv - grid["h"][k]) > 0.01:
-                        grid["h"][k] = max(nv, SEA_SINK)
+                        grid["h"][k] = nv
                         smoothed += 1
         if smoothed:
             print(f"   smoothed {smoothed} shore-band cell writes into a coast")

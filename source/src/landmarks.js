@@ -5482,7 +5482,204 @@ function nomadSingapore(api, b) {
   at(new THREE.Mesh(new THREE.BoxGeometry(bl * 0.5, 0.35, 2.6), pale), 0, g0 + H - 1.2, 1.0);
 }
 
+// ---------------------------------------------------------------------------
+// RESORTS WORLD SENTOSA, AND THE TWO RIDES THAT CARRY THE SKYLINE
+//
+// Researched 2026-08-03 for the owner's "i think the island got alot of
+// attractions and all you got make it look like them". Sources and their
+// limits, kept here because they are part of the fact:
+//
+// - Michael Graves was RWS's master planner and his practice publishes the
+//   shared DNA in words: an "undulating profile and verdigris copper color"
+//   for the roofs, "regular, evenly spaced elements" for the facades, and a
+//   palette of "terracotta, marine blues, and earthy reds and oranges".
+//   THE ROOFS ARE VERDIGRIS TEAL-GREEN, NOT GREY, and that one fact changes
+//   the whole harbour silhouette. There is no gold glass anywhere on the site;
+//   the gold people remember is night floodlighting.
+// - NO METRE HEIGHT IS PUBLISHED FOR ANY RWS HOTEL. Checked against Michael
+//   Graves Architecture, CTBUH, SkyscraperPage and Wikipedia and it is simply
+//   absent, so every height here is the MAPPED tag and nothing is invented.
+//   Floor counts are published and are used only to divide the mapped height.
+// - Battlestar Galactica IS published: 42.5m, the world's tallest duelling
+//   coasters. HUMAN is a red sit-down train, CYLON a dark grey inverted one —
+//   REPAINTED FROM BLUE IN 2017, so any blue here would be a decade stale —
+//   on white supports.
+// - SkyHelix Sentosa is published at 35m above ground, open-air, 16 people.
+//   The map tags it 35 too, which is a rare case of the two agreeing.
+//
+// Every recipe below takes its plan from the surveyed footprint and only its
+// FORM from the research, which is the division this file has always used.
+const VERDIGRIS = new THREE.MeshStandardMaterial({ color: 0x4e8f81, roughness: 0.52, metalness: 0.22 });
+const RWS_WALL = new THREE.MeshStandardMaterial({ color: 0xd9cdb4, roughness: 0.82 });
+const RWS_FRAME = new THREE.MeshStandardMaterial({ color: 0x2f6b63, roughness: 0.6 });
+const COASTER_RED = new THREE.MeshStandardMaterial({ color: 0xb3241f, roughness: 0.5, metalness: 0.3 });
+const COASTER_GREY = new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.55, metalness: 0.35 });
+const COASTER_WHITE = new THREE.MeshStandardMaterial({ color: 0xe6e4dd, roughness: 0.7 });
+
+// A barrel vault along the footprint's long axis, drawn as a half-cylinder.
+// Shared by Hotel Michael's row of vaults and the Oceanarium's caterpillar
+// range, because they are the same move at two scales.
+function barrelVault(api, ob, cx, cz, len, rad, y, mat, segs = 14) {
+  const g = new THREE.CylinderGeometry(rad, rad, len, segs, 1, false, 0, Math.PI);
+  // lay the cylinder down along the long axis, flat side up
+  g.rotateZ(Math.PI / 2);
+  g.rotateY(-ob.ang);
+  g.translate(cx, y, cz);
+  api.merge(g, mat, ob.cx, ob.cz);
+}
+
+// HOTEL MICHAEL — 11 storeys, 470 rooms. Its roof is a ROW OF GIANT BARREL
+// VAULTS of varying heights in verdigris, and its walls carry square and round
+// portholes stacked in columns. The mapped height (55m) is kept; the vault
+// count comes from the footprint's own length so a small annexe piece gets one
+// vault and the main mass gets five or six.
+function hotelMichael(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = Math.max(8, b.h || 55);
+  api.world.add(api.extrude(b.p, H, RWS_WALL));
+  // a shallow cornice band, the "regular, evenly spaced elements" reading
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.02), 0.5, H - 0.5), RWS_FRAME, ob.cx, ob.cz);
+  const span = ob.halfLong * 2, rad = Math.min(ob.halfShort * 0.92, 9);
+  const n = Math.max(1, Math.min(6, Math.round(span / Math.max(12, rad * 2.2))));
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n - 0.5;
+    const u = t * span;
+    // varying heights: the published description is a row of DIFFERENT vaults
+    const r = rad * (i % 2 ? 0.82 : 1.0);
+    barrelVault(api, ob, ob.bx + u * ob.ux, ob.bz + u * ob.uz,
+      span / n * 0.94, r, g0 + H, VERDIGRIS);
+  }
+}
+
+// CROCKFORDS TOWER — 11 storeys, a faceted curved drum crowned by a ribbed
+// dome of pointed-arch openwork with six small turrets, all verdigris. The
+// casino sits three levels beneath it and is not drawn.
+function crockfordsTower(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = Math.max(10, b.h || 55);
+  const rad = Math.max(6, Math.min(ob.halfLong, ob.halfShort) * 0.98);
+  // the faceted drum: a low-segment cylinder reads as facets, which is what
+  // the building is — not a smooth curtain-wall tube
+  const drum = new THREE.CylinderGeometry(rad, rad * 1.04, H, 14);
+  drum.translate(ob.bx, g0 + H / 2, ob.bz);
+  api.merge(drum, RWS_WALL, ob.cx, ob.cz);
+  // the ribbed dome crown
+  const dome = new THREE.SphereGeometry(rad * 1.02, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  dome.translate(ob.bx, g0 + H, ob.bz);
+  api.merge(dome, VERDIGRIS, ob.cx, ob.cz);
+  // six turrets round the crown, the detail that makes it read as Crockfords
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const tx = ob.bx + Math.cos(a) * rad * 0.96, tz = ob.bz + Math.sin(a) * rad * 0.96;
+    const t1 = new THREE.CylinderGeometry(rad * 0.11, rad * 0.11, 4.2, 8);
+    t1.translate(tx, g0 + H + 2.1, tz);
+    api.merge(t1, RWS_WALL, ob.cx, ob.cz);
+    const t2 = new THREE.ConeGeometry(rad * 0.14, 2.6, 8);
+    t2.translate(tx, g0 + H + 5.5, tz);
+    api.merge(t2, VERDIGRIS, ob.cx, ob.cz);
+  }
+}
+
+// SINGAPORE OCEANARIUM — opened 23 July 2025 in the S.E.A. Aquarium's shell.
+// A long repeated barrel-vault range, VERDIGRIS GREEN rather than the
+// terracotta the rest of the resort uses, right on the harbour edge.
+function oceanarium(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = Math.max(6, b.h || 20);
+  api.world.add(api.extrude(b.p, H, RWS_WALL));
+  const span = ob.halfLong * 2, rad = Math.min(ob.halfShort * 0.55, 7.5);
+  const n = Math.max(3, Math.min(10, Math.round(span / Math.max(10, rad * 2.1))));
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n - 0.5;
+    const u = t * span;
+    barrelVault(api, ob, ob.bx + u * ob.ux, ob.bz + u * ob.uz,
+      span / n * 0.92, rad, g0 + H, VERDIGRIS);
+  }
+}
+
+// BATTLESTAR GALACTICA — 42.5m, Vekoma, the world's tallest duelling
+// coasters. The mapped footprint is the ride's PLAN, tagged 20m, which is the
+// station building and not the ride: the 42.5m is published and is used for
+// the lift hill. Two tracks, HUMAN red and CYLON dark grey, on white supports.
+function battlestar(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const LIFT = 42.5;                    // published
+  const span = ob.halfLong * 2;
+  // the station shed keeps the mapped height
+  api.world.add(api.extrude(b.p, Math.max(6, Math.min(b.h || 20, 12)), COASTER_WHITE));
+  // the two tracks, side by side across the short axis, rising to the lift
+  // hill and falling away — a profile, not a simulation of the real layout
+  for (const [off, mat] of [[-ob.halfShort * 0.42, COASTER_RED], [ob.halfShort * 0.42, COASTER_GREY]]) {
+    const px = -ob.uz * off, pz = ob.ux * off;
+    const N = 26;
+    for (let i = 0; i < N; i++) {
+      const t0 = i / N, t1 = (i + 1) / N;
+      const prof = (t) => g0 + 6 + (LIFT - 6) * Math.sin(Math.PI * Math.min(1, t * 1.25)) ** 1.4;
+      const u0 = (t0 - 0.5) * span, u1 = (t1 - 0.5) * span;
+      const x0 = ob.bx + u0 * ob.ux + px, z0 = ob.bz + u0 * ob.uz + pz;
+      const x1 = ob.bx + u1 * ob.ux + px, z1 = ob.bz + u1 * ob.uz + pz;
+      const y0 = prof(t0), y1 = prof(t1);
+      const len = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+      const seg = new THREE.CylinderGeometry(0.45, 0.45, len, 6);
+      // point the segment along the run
+      const dir = new THREE.Vector3(x1 - x0, y1 - y0, z1 - z0).normalize();
+      const qq = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      seg.applyQuaternion(qq);
+      seg.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+      api.merge(seg, mat, ob.cx, ob.cz);
+      // white support columns down to the ground, every other bay
+      if (i % 2 === 0 && y0 > g0 + 7) {
+        const col = new THREE.CylinderGeometry(0.34, 0.34, y0 - g0, 6);
+        col.translate(x0, g0 + (y0 - g0) / 2, z0);
+        api.merge(col, COASTER_WHITE, ob.cx, ob.cz);
+      }
+    }
+  }
+}
+
+// SKYHELIX SENTOSA — 35m above ground, open-air, 16 people with their feet
+// dangling, opened 15 Dec 2021 on the site of the demolished Tiger Sky Tower.
+// Published height, and the map agrees with it. A slim mast and an open ring
+// gondola; nothing enclosed, because the whole point of it is that it is open.
+function skyHelix(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = 35;                          // published
+  const mast = new THREE.CylinderGeometry(0.9, 1.5, H, 12);
+  mast.translate(ob.bx, g0 + H / 2, ob.bz);
+  api.merge(mast, COASTER_WHITE, ob.cx, ob.cz);
+  // the ring gondola, parked near the top
+  const ring = new THREE.TorusGeometry(4.6, 0.42, 6, 20);
+  ring.rotateX(Math.PI / 2);
+  ring.translate(ob.bx, g0 + H * 0.78, ob.bz);
+  api.merge(ring, COASTER_RED, ob.cx, ob.cz);
+  // the canopy over it
+  const cap = new THREE.ConeGeometry(5.4, 2.2, 14);
+  cap.translate(ob.bx, g0 + H + 1.1, ob.bz);
+  api.merge(cap, COASTER_WHITE, ob.cx, ob.cz);
+  // hanger arms from mast to ring
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const arm = new THREE.BoxGeometry(4.4, 0.14, 0.14);
+    arm.rotateY(-a);
+    arm.translate(ob.bx + Math.cos(a) * 2.3, g0 + H * 0.86, ob.bz + Math.sin(a) * 2.3);
+    api.merge(arm, COASTER_WHITE, ob.cx, ob.cz);
+  }
+}
+
 export const RECIPES = [
+  // SENTOSA — see the research block above this table. Hotel Michael's name is
+  // carried by the main mass AND several small annexe footprints, which is
+  // correct: they are one hotel and must share a family.
+  [/^hotel michael/i, hotelMichael],
+  [/^crockfords tower/i, crockfordsTower],
+  [/^singapore oceanarium/i, oceanarium],
+  [/^battlestar galactica/i, battlestar],
+  [/^skyhelix/i, skyHelix],
   // River Valley Road's western frontage. RV Residences is six blocks under one
   // name and they MUST share a family — the research is explicit that they are
   // one development stepping down the slope.

@@ -1855,6 +1855,103 @@ export async function buildBeachLife(world, data, Y = null) {
     }
   }
 
+  // THE SAND IN FRONT OF A BEACH BAR HAS THINGS ON IT.
+  //
+  // The owner: "the beaches i find dont really look like the real sentosa".
+  // With the palms cut back to the 59 the survey records, the beaches read as
+  // empty sand — which is accurate about trees and wrong about Sentosa, where
+  // the whole length of Siloso and Palawan is loungers and umbrellas in front
+  // of the bars.
+  //
+  // GROUNDED IN THE SURVEY, not scattered: a cluster is placed only in front
+  // of a mapped beachfront VENUE — 78 of them within 70m of the sand on
+  // sentosa, among them Bora Bora Beach Bar, Trapizza, Koufu and Samundar —
+  // and it faces the way that venue faces the water. No venue, no furniture,
+  // which is the same rule the palms now follow. Beach volleyball is
+  // deliberately NOT built: none of the eleven mapped pitches lies on sand, so
+  // there is nothing to build it from and inventing courts is exactly what was
+  // just taken out of the palms.
+  {
+    const loungerM = new THREE.MeshLambertMaterial({ color: 0xe4dccb });
+    const parasolM = new THREE.MeshLambertMaterial({ color: 0xc9743f, side: THREE.DoubleSide });
+    const poleM2 = new THREE.MeshLambertMaterial({ color: 0xb8b2a6 });
+    const edgeDist = (x, z, p) => {
+      let best = 1e9;
+      for (let i = 0; i < p.length; i++) {
+        const a = p[i], c = p[(i + 1) % p.length];
+        const vx = c[0] - a[0], vz = c[1] - a[1];
+        const L2 = vx * vx + vz * vz || 1;
+        let t = ((x - a[0]) * vx + (z - a[1]) * vz) / L2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        best = Math.min(best, Math.hypot(x - (a[0] + vx * t), z - (a[1] + vz * t)));
+      }
+      return best;
+    };
+    for (const b of (data.buildings || [])) {
+      if (!b.p || b.p.length < 3 || (b.a || 0) > 3000) continue;
+      let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+      for (const [x, z] of b.p) {
+        if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+        if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+      }
+      const bx = (mnx + mxx) / 2, bz = (mnz + mxz) / 2;
+      let host = null, hd = 70;
+      for (const s of sands) {
+        const d = edgeDist(bx, bz, s.p);
+        if (d < hd) { hd = d; host = s; }
+      }
+      if (!host) continue;
+      await YY();
+      // walk out onto the sand: step away from the venue until inside the ring,
+      // then lay the row across that direction
+      let sx = 0, sz = 0;
+      for (const [x, z] of host.p) { sx += x; sz += z; }
+      sx /= host.p.length; sz /= host.p.length;
+      let dx = sx - bx, dz = sz - bz;
+      const dl = Math.hypot(dx, dz) || 1;
+      dx /= dl; dz /= dl;
+      let fx = null, fz = null;
+      for (let step = 6; step <= 70; step += 4) {
+        const px = bx + dx * step, pz = bz + dz * step;
+        if (!inRing(px, pz, host.p)) continue;
+        if (window.__onRoad && window.__onRoad(px, pz, 2)) continue;
+        if (window.__blocked && window.__blocked(px, pz)) continue;
+        if (groundAt(px, pz) < 0.9) break;      // past the waterline; stop
+        fx = px; fz = pz; break;
+      }
+      if (fx === null) continue;
+      // a short row along the shore, deterministic from position
+      const along = ((bx * 3.1 + bz * 1.7) % 1) * Math.PI;
+      const ax2 = Math.cos(along), az2 = Math.sin(along);
+      const n = 3 + (((bx * 7.3 + bz * 2.9) | 0) % 3);
+      for (let i = 0; i < n; i++) {
+        const o = (i - (n - 1) / 2) * 4.6;
+        const px = fx + ax2 * o, pz = fz + az2 * o;
+        if (!inRing(px, pz, host.p)) continue;
+        if (window.__onRoad && window.__onRoad(px, pz, 2)) continue;
+        const gy = groundAt(px, pz);
+        if (gy < 0.9) continue;
+        // parasol: a pole and a shallow cone
+        bake(new THREE.CylinderGeometry(0.045, 0.055, 2.3, 6), poleM2, px, gy + 1.15, pz);
+        bake(new THREE.ConeGeometry(1.35, 0.42, 10), parasolM, px, gy + 2.4, pz);
+        // two loungers under it, laid along the shore
+        for (const s2 of [-0.95, 0.95]) {
+          const lx = px + az2 * s2, lz = pz - ax2 * s2;
+          const pad = new THREE.BoxGeometry(1.85, 0.1, 0.62);
+          pad.applyMatrix4(new THREE.Matrix4().makeRotationY(-along));
+          pad.translate(lx, gy + 0.36, lz);
+          merger.add(pad, loungerM, lx, lz);
+          for (const e2 of [-0.72, 0.72]) {
+            bake(new THREE.CylinderGeometry(0.035, 0.035, 0.34, 5), poleM2,
+              lx + ax2 * e2, gy + 0.17, lz + az2 * e2);
+          }
+        }
+        out.loungers = (out.loungers || 0) + 2;
+        out.parasols = (out.parasols || 0) + 1;
+      }
+    }
+  }
+
   // Siloso's three patrol towers (count published; form kept plain): thirds
   // along the named Siloso Beach polygon, on the dry sand
   const siloso = sands.find((s) => (s.n || '') === 'Siloso Beach');
