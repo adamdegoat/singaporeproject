@@ -1567,3 +1567,182 @@ export async function buildTransit(world, data, Y = null) {
   await cables.flushY(world, { cast: false }, Y);
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// BEACH LIFE (beautiful pass 1, 2026-08-03): the things that make Sentosa's
+// beaches read as SENTOSA at first glance. Grounded in the banked research:
+// palms on the sand (the one tree a Singapore beach actually has), the
+// red-and-yellow flag PAIRS that mark swim zones (the only officially
+// published colour on the sand), and Siloso's three Beach Patrol observation
+// towers — count published, form/colour UNPUBLISHED so the hut is a plain
+// elevated watch platform, not a claimed design. All deterministic from
+// position hashes; nothing touches the placement RNG streams.
+export async function buildBeachLife(world, data, Y = null) {
+  const YY = Y || (async () => {});
+  const out = { beachPalms: 0, swimFlags: 0, patrolTowers: 0 };
+  const merger = new Merger();
+  const trunkM = new THREE.MeshLambertMaterial({ color: 0x7a5c3d });
+  const leafM = MAT.leaf;
+  const poleM = new THREE.MeshLambertMaterial({ color: 0xd8d2c6 });
+  const redM = new THREE.MeshLambertMaterial({ color: 0xc8352c, side: THREE.DoubleSide });
+  const yellowM = new THREE.MeshLambertMaterial({ color: 0xe0b73a, side: THREE.DoubleSide });
+  const hutM = new THREE.MeshLambertMaterial({ color: 0xe6e0d2 });
+
+  const bake = (geo, mat, x, y, z, ry = 0, rx = 0) => {
+    if (ry || rx) geo.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, ry, 0, 'YXZ')));
+    geo.translate(x, y, z);
+    merger.add(geo, mat, x, z);
+  };
+  const inRing = (x, z, pts) => {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, zi] = pts[i], [xj, zj] = pts[j];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  const palmAt = (x, z, s) => {
+    const gy = groundAt(x, z);
+    const h = 6.4 * s;
+    bake(new THREE.CylinderGeometry(0.14 * s, 0.2 * s, h, 7), trunkM, x, gy + h / 2, z);
+    for (let k = 0; k < 7; k++) {
+      const a = (k / 7) * Math.PI * 2 + ((x * 3.1 + z * 1.7) % 1);
+      const fr = new THREE.PlaneGeometry(3.2 * s, 0.8 * s);
+      fr.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(-0.95, a + Math.PI / 2, 0, 'YXZ')));
+      fr.translate(x + Math.sin(a) * 1.4 * s, gy + h - 0.35, z + Math.cos(a) * 1.4 * s);
+      merger.add(fr, leafM, x, z);
+    }
+    out.beachPalms++;
+  };
+
+  const sands = (data.green || []).filter((g) => g.k === 'sand' && g.p && g.p.length >= 4);
+  for (const sand of sands) {
+    await YY();
+    let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+    for (const [x, z] of sand.p) {
+      if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+      if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+    }
+    // palms: jittered 13m grid on the DRY side of the sand (higher ground),
+    // clear of roads and paths so nothing stands in the beach walk
+    for (let gx = Math.ceil(mnx / 13) * 13; gx < mxx; gx += 13) {
+      for (let gz = Math.ceil(mnz / 13) * 13; gz < mxz; gz += 13) {
+        const jx = gx + (((gx * 7.7 + gz * 3.3) % 10) - 5);
+        const jz = gz + (((gx * 2.9 + gz * 9.1) % 10) - 5);
+        if (!inRing(jx, jz, sand.p)) continue;
+        if (groundAt(jx, jz) < 1.1) continue;          // palms keep off the waterline
+        if (window.__onRoad && window.__onRoad(jx, jz, 2.5)) continue;
+        if (window.__blocked && window.__blocked(jx, jz)) continue;
+        palmAt(jx, jz, 0.85 + ((jx * 6.1 + jz * 2.9) % 100) / 320);
+      }
+    }
+    // SWIM FLAGS STAND ON THE SEAWARD EDGE. Absolute elevation cannot find
+    // the waterline here — the 35m DEM blends the jungle hill behind these
+    // narrow strips, so the named beaches measure 5-16m "above sea" (probed).
+    // The sand POLYGON knows its own sea side: an edge whose outward normal
+    // lands on below-sea terrain faces the water. Flags every ~55m along
+    // that edge, a metre inland; the pair is the official swim-zone mark.
+    {
+      let cx0 = 0, cz0 = 0;
+      for (const [x, z] of sand.p) { cx0 += x; cz0 += z; }
+      cx0 /= sand.p.length; cz0 /= sand.p.length;
+      let acc = 0;
+      for (let i = 0; i < sand.p.length - 1; i++) {
+        const [ax, az] = sand.p[i], [bx, bz] = sand.p[i + 1];
+        const L = Math.hypot(bx - ax, bz - az);
+        if (L < 1) continue;
+        const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+        let nx = -(bz - az) / L, nz = (bx - ax) / L;
+        if ((mx - cx0) * nx + (mz - cz0) * nz < 0) { nx = -nx; nz = -nz; }  // outward
+        // WALK DOWNHILL TO THE REAL SHORELINE. Neither absolute elevation nor
+        // the ring's own edges can find the sea here (probed: no direction
+        // from the Siloso ring reaches water inside 140m — the mapped polygon
+        // climbs the resort slope and the 35m DEM smears the hill into the
+        // sand). The drawn world's one truth is the terrain falling into the
+        // sea sheet: from each 55m station, follow the steepest descent until
+        // the ground dips under the waterline, and plant the pair there.
+        acc += L;
+        while (acc >= 55) {
+          acc -= 55;
+          const t = 1 - acc / L;
+          let fx = ax + (bx - ax) * t, fz = az + (bz - az) * t;
+          let found = false, why = 'steps';
+          for (let stepn = 0; stepn < 34; stepn++) {   // some shores start 200m+ upslope
+            const h0 = groundAt(fx, fz);
+            if (h0 < 1.0) { found = true; break; }   // the eased 0.8m band IS the waterline (terrain.py shore profile)
+            const gx2 = groundAt(fx + 6, fz) - groundAt(fx - 6, fz);
+            const gz2 = groundAt(fx, fz + 6) - groundAt(fx, fz - 6);
+            const gl = Math.hypot(gx2, gz2);
+            if (gl < 0.05) { why = 'flat@' + h0.toFixed(1); break; }
+            fx -= (gx2 / gl) * 9;
+            fz -= (gz2 / gl) * 9;
+          }
+          if (!found) {
+            // the shore profile makes stepped plateaus (0.8/3.0/5.5) that a
+            // gradient walk stalls on; a straight-line probe crosses them
+            for (let a2 = 0; a2 < 8 && !found; a2++) {
+              const dx2 = Math.cos(a2 / 8 * Math.PI * 2), dz2 = Math.sin(a2 / 8 * Math.PI * 2);
+              for (let d2 = 8; d2 <= 88; d2 += 8) {
+                if (groundAt(fx + dx2 * d2, fz + dz2 * d2) < 1.0) {
+                  fx += dx2 * (d2 - 4); fz += dz2 * (d2 - 4);
+                  found = true;
+                  break;
+                }
+              }
+            }
+          }
+          if (window.__flagDbg) window.__flagDbg.push({ found, why, endH: +groundAt(fx, fz).toFixed(1), fx: fx | 0, fz: fz | 0 });
+          if (!found) continue;
+          // no blocked() veto here: the waterline IS the water-wall's edge,
+          // and a swim flag's whole job is standing on it
+          const fy = groundAt(fx, fz);
+          for (const off of [-1.4, 1.4]) {
+            const px2 = fx + nz * off, pz2 = fz - nx * off;   // pair spread ALONG the edge
+            bake(new THREE.CylinderGeometry(0.035, 0.045, 2.6, 6), poleM, px2, fy + 1.3, pz2);
+            bake(new THREE.PlaneGeometry(0.62, 0.22), redM, px2 + 0.28, fy + 2.42, pz2, 0.3);
+            bake(new THREE.PlaneGeometry(0.62, 0.22), yellowM, px2 + 0.28, fy + 2.2, pz2, 0.3);
+          }
+          out.swimFlags += 2;
+        }
+      }
+    }
+  }
+
+  // Siloso's three patrol towers (count published; form kept plain): thirds
+  // along the named Siloso Beach polygon, on the dry sand
+  const siloso = sands.find((s) => (s.n || '') === 'Siloso Beach');
+  if (siloso) {
+    let mnx = Infinity, mxx = -Infinity, mnz2 = Infinity, mxz2 = -Infinity;
+    for (const [x, z] of siloso.p) {
+      if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+      if (z < mnz2) mnz2 = z; if (z > mxz2) mxz2 = z;
+    }
+    for (const f of [0.25, 0.5, 0.75]) {
+      await YY();
+      const tx = mnx + (mxx - mnx) * f;
+      // walk the column across the ring's own z extent for standable sand
+      let best = null;
+      for (let tz = mnz2; tz < mxz2; tz += 3) {
+        if (!inRing(tx, tz, siloso.p)) continue;
+        if (window.__blocked && window.__blocked(tx, tz)) continue;
+        if (window.__onRoad && window.__onRoad(tx, tz, 2)) continue;
+        best = [tz, groundAt(tx, tz)];
+        break;
+      }
+      if (!best) continue;
+      const [tz, gy] = best;
+      for (const [lx, lz] of [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]) {
+        bake(new THREE.CylinderGeometry(0.09, 0.09, 3.2, 6), poleM, tx + lx, gy + 1.6, tz + lz);
+      }
+      bake(new THREE.BoxGeometry(2.6, 0.14, 2.6), hutM, tx, gy + 3.25, tz);
+      bake(new THREE.BoxGeometry(2.6, 0.9, 0.1), hutM, tx, gy + 3.75, tz - 1.25);
+      bake(new THREE.BoxGeometry(2.6, 0.9, 0.1), hutM, tx, gy + 3.75, tz + 1.25);
+      bake(new THREE.BoxGeometry(0.1, 0.9, 2.6), hutM, tx - 1.25, gy + 3.75, tz);
+      bake(new THREE.BoxGeometry(2.9, 0.12, 2.9), redM, tx, gy + 4.45, tz);
+      out.patrolTowers++;
+    }
+  }
+
+  await merger.flushY(world, {}, Y);
+  return out;
+}

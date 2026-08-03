@@ -5684,6 +5684,9 @@ def main():
     # every other layer: whatever query fetched an element, its tags decide.
     cableway = {"lines": [], "stations": [], "pylons": []}
     monorail = []
+    # the island's surveyed shoreline — terrain.py sinks the open sea outside
+    # it (the DEM cannot see the coast; the survey can)
+    coast = []
     for e in els:
         t = e.get("tags") or {}
         aw = t.get("aerialway")
@@ -5703,6 +5706,10 @@ def main():
                 # carries the old name (2026-08-03 research)
                 rec["n"] = "Sensoryscape" if t["name"] == "Merlion" else t["name"]
             cableway["stations" if aw == "station" else "pylons"].append(rec)
+        elif e["type"] == "way" and t.get("natural") == "coastline" and e.get("geometry"):
+            pts = [proj(q["lat"], q["lon"]) for q in e["geometry"] if "lat" in q]
+            if len(pts) >= 2:
+                coast.append({"p": [[round(x, 1), round(z, 1)] for x, z in pts]})
         elif e["type"] == "way" and t.get("railway") == "monorail" and e.get("geometry"):
             pts = [proj(q["lat"], q["lon"]) for q in e["geometry"] if "lat" in q]
             if len(pts) >= 2:
@@ -5741,6 +5748,7 @@ def main():
         "shops": shops,
         "cableway": cableway,
         "monorail": monorail,
+        "coast": coast,
         "axisFullLength": round(axis_full, 1),
         "axis": {"p": [[round(x, 1), round(z, 1)] for x, z in axis],
                  "w": axis_width, "n": axis_name},

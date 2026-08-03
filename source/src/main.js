@@ -10,7 +10,7 @@ import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from '.
 import { Net } from './net.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
 import { axisSpec, buildMarkings, dressSideStreets, selectSideStreets, dedupeProps } from './markings.js';
-import { buildSgDetail, buildTransit } from './sgdetail.js';
+import { buildSgDetail, buildTransit, buildBeachLife } from './sgdetail.js';
 import { buildShopfronts } from './shopfront.js';
 import { Signals } from './signals.js';
 import { Sound } from './audio.js';
@@ -2599,6 +2599,12 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   if (!P.has('nosg') && (data.monorail || data.cableway)) {
     const q = await buildTransit(world, data);
     bmark('transit');
+    for (const k of Object.keys(q)) sg[k] = (sg[k] || 0) + q[k];
+  }
+  // Beach life: palms, swim flags, patrol towers — Sentosa's postcard layer
+  if (!P.has('nosg')) {
+    const q = await buildBeachLife(world, data);
+    bmark('beach');
     for (const k of Object.keys(q)) sg[k] = (sg[k] || 0) + q[k];
   }
   // The crowd is built AFTER the collision grid, not before it.

@@ -433,7 +433,9 @@ window.__auditWorld = async function auditWorld() {
     // Visible fabric beats invisible walls; the CLEAN end is a vertex-level
     // prune that clips the offending pieces without deleting the mass —
     // open task. These ratchet DOWN when it lands.
-    sentosa: { W2: 168, P1b: 9, T1: 2, C6: 1, C3: 4, S8: 0, T2: 30, C1: 2, C2: 3, P9: 4 },
+    // W2 168 -> 172: the coastline sink put real sea under four more pieces of
+    // shoreline fabric (beach-club decks stand over water in life too).
+    sentosa: { W2: 172, P1b: 9, T1: 2, C6: 1, C3: 4, S8: 0, T2: 30, C1: 2, C2: 3, P9: 4 },
     // River Valley C7 33: the district DELIBERATELY takes the east 1.6km of
     // a 4.9km road (declared partialMainStreet in districts.json; the west
     // belongs to a future Robertson Quay district). C7 measures against the

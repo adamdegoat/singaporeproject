@@ -762,6 +762,147 @@ def main():
         if sunk:
             print(f"   sank {sunk} grid cells under {len(rings)} water polygons")
 
+    # ---- THE SEA IS EVERYTHING OUTSIDE THE COASTLINE (2026-08-03) ---------
+    # Copernicus smears the shore: a 35m cell blending jungle hill into beach
+    # reads 5-16m over the SAND and stays positive over near-shore water, so
+    # the drawn sea never reached the south beaches — from a boat, Siloso was
+    # a bare 15m cliff (vetted, shots beach_life3). OSM's natural=coastline is
+    # the survey of exactly this boundary; process.py now carries it as the
+    # `coast` layer in metre space. The ways chain into the island's closed
+    # ring; every grid cell OUTSIDE every ring sinks to sea floor, with a
+    # one-cell lip at land height so the coast slopes rather than steps.
+    cw = [c["p"] for c in data.get("coast", []) if len(c.get("p", [])) >= 2]
+    coast_rings = []
+    if cw:
+        def _keyp(p):
+            return (round(p[0] / 1.5), round(p[1] / 1.5))
+        ways2 = [list(w) for w in cw]
+        changed = True
+        while changed and len(ways2) > 1:
+            changed = False
+            for a in range(len(ways2)):
+                for b in range(a + 1, len(ways2)):
+                    A, B = ways2[a], ways2[b]
+                    if _keyp(A[-1]) == _keyp(B[0]):
+                        ways2[a] = A + B[1:]
+                    elif _keyp(A[-1]) == _keyp(B[-1]):
+                        ways2[a] = A + list(reversed(B))[1:]
+                    elif _keyp(A[0]) == _keyp(B[-1]):
+                        ways2[a] = B + A[1:]
+                    elif _keyp(A[0]) == _keyp(B[0]):
+                        ways2[a] = list(reversed(B)) + A[1:]
+                    else:
+                        continue
+                    del ways2[b]
+                    changed = True
+                    break
+                if changed:
+                    break
+        for w in ways2:
+            if len(w) >= 8 and math.hypot(w[0][0] - w[-1][0], w[0][1] - w[-1][1]) < 30:
+                coast_rings.append(w)
+        # refuse rather than guess: unclosed fragments sink nothing
+    if coast_rings:
+        def _inside(px, pz, ring):
+            c = False
+            j = len(ring) - 1
+            for i in range(len(ring)):
+                xi, zi = ring[i]
+                xj, zj = ring[j]
+                if (zi > pz) != (zj > pz) and px < (xj - xi) * (pz - zi) / (zj - zi) + xi:
+                    c = not c
+                j = i
+            return c
+
+        def _edge_dist(px, pz, ring):
+            best = 1e18
+            j = len(ring) - 1
+            for i in range(len(ring)):
+                ax, az = ring[j]
+                bx, bz = ring[i]
+                vx, vz = bx - ax, bz - az
+                L2 = vx * vx + vz * vz or 1.0
+                t = max(0.0, min(1.0, ((px - ax) * vx + (pz - az) * vz) / L2))
+                dx, dz = px - (ax + vx * t), pz - (az + vz * t)
+                d = math.hypot(dx, dz)
+                if d < best:
+                    best = d
+                j = i
+            return best
+
+        # A MAPPED BUILDING IS LAND, whatever the ring granularity says: the
+        # first pass sank the ground under a Siloso beachfront block and it
+        # stood ten metres deep in the sea (vetted, beach_sea2). Cells within
+        # a pad of any footprint keep their ground.
+        bpolys = [b["p"] for b in data.get("buildings", [])
+                  if len(b.get("p", [])) > 2]
+        bboxes = []
+        for bp in bpolys:
+            xs = [q[0] for q in bp]; zs = [q[1] for q in bp]
+            bboxes.append((min(xs) - 12, min(zs) - 12, max(xs) + 12, max(zs) + 12))
+
+        def on_building(px, pz):
+            for (x0b, z0b, x1b, z1b), bp in zip(bboxes, bpolys):
+                if x0b <= px <= x1b and z0b <= pz <= z1b:
+                    if _inside(px, pz, bp) or _edge_dist(px, pz, bp) < 12:
+                        return True
+            return False
+
+        INSET_C = CELL * 0.9
+        sunk_sea = 0
+        for j in range(grid["nz"]):
+            gz = grid["z0"] + j * CELL
+            for i in range(grid["nx"]):
+                gx = grid["x0"] + i * CELL
+                k = j * grid["nx"] + i
+                if grid["h"][k] <= -1.5:
+                    continue
+                if any(_inside(gx, gz, r) for r in coast_rings):
+                    continue
+                if min(_edge_dist(gx, gz, r) for r in coast_rings) < INSET_C:
+                    continue                       # the beach lip keeps its height
+                if on_building(gx, gz):
+                    continue
+                grid["h"][k] = -2.0
+                sunk_sea += 1
+        if sunk_sea:
+            print(f"   sank {sunk_sea} cells outside {len(coast_rings)} coastline ring(s) — the open sea")
+
+        # THE SHORE SLOPES. Sinking only the outside leaves the DEM's smeared
+        # 10-35m coast standing as a one-cell CLIFF into the water. A shore is
+        # a ramp: land cells near the sea are pulled DOWN (never up) toward a
+        # gentle profile — ~0.8m one cell out, ~3m at two, ~5.5m at three —
+        # which is what lets a beach meet its own water and a swim flag stand
+        # at a real waterline. Cells under buildings keep their ground (the
+        # block above), so nothing re-drowns.
+        eased = 0
+        H0 = list(grid["h"])
+        for j in range(grid["nz"]):
+            gz = grid["z0"] + j * CELL
+            for i in range(grid["nx"]):
+                k = j * grid["nx"] + i
+                if H0[k] <= -1.5 or H0[k] > 40.0:
+                    continue
+                gx = grid["x0"] + i * CELL
+                if on_building(gx, gz):
+                    continue
+                best = 99
+                for dj in range(-3, 4):
+                    for di in range(-3, 4):
+                        ni, nj = i + di, j + dj
+                        if ni < 0 or nj < 0 or ni >= grid["nx"] or nj >= grid["nz"]:
+                            continue
+                        if H0[nj * grid["nx"] + ni] <= -1.5:
+                            best = min(best, max(abs(di), abs(dj)))
+                if best > 3:
+                    continue
+                target = [0.0, 0.8, 3.0, 5.5][best]
+                if grid["h"][k] > target:
+                    grid["h"][k] = target
+                    eased += 1
+        if eased:
+            print(f"   eased {eased} shore cells into a beach profile")
+
     # store relative to the lowest point, so the world sits near y=0
     base = min(grid["h"])
     grid["h"] = [round(v - base, 2) for v in grid["h"]]
