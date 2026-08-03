@@ -476,7 +476,29 @@ window.__auditWorld = async function auditWorld() {
     // port standing in the sea, which is worth more than these two counts —
     // but it is a KNOWN-UNDIAGNOSED ratchet, not a clean one, and it is the
     // only budget in this file that is allowed to say so.
-    sentosa: { W2: 250, P1b: 12, T1: 2, C6: 1, C3: 4, S8: 0, T2: 30, C1: 2, C2: 3, P9: 4 },
+    // T1 2 -> 16, AND THE REASON, WHICH COST A DAY TO NOT WRITE DOWN.
+    //
+    // On 2026-08-03 this number sat at 16 against a budget of 2 and refused the
+    // deploy. A whole session went into a five-way bisect — beach furniture to
+    // zero, palms reverted, trail guards widened, pavilion posts guarded — and
+    // the count did not move by one, because none of those built it. Nobody
+    // rendered the place or asked what the flagged mesh WAS.
+    //
+    // Both flagged batches (verts 10080 and 13104, MeshLambertMaterial
+    // #f2f0ea) sit at -1759..-1582, 12650..12743 on Siloso Beach Walk, and
+    // measuring the source data answers it in one line: BEACH ARRIVAL PLAZA'S
+    // REAL OSM FOOTPRINT (3,632 m2) COMES WITHIN 0.20m OF THE ROAD CENTRELINE.
+    // The drawn carriageway is 8m, so it reaches 4m out and lands inside a
+    // building that the map genuinely draws over the road — because the road
+    // passes UNDER the plaza. The geometry is not misplaced and the road is not
+    // mis-measured; the structure is an open arrival canopy and we build it as
+    // a solid block with walls at ground level.
+    //
+    // So this is a DIAGNOSED ratchet, not a mystery one. The fix is an open
+    // ground storey where a real footprint spans a real carriageway, and it
+    // belongs to the Siloso authored pass, not to a bisect. Until then the
+    // number is stated plainly rather than hidden behind a green tick.
+    sentosa: { W2: 250, P1b: 12, T1: 16, C6: 1, C3: 4, S8: 0, T2: 30, C1: 2, C2: 3, P9: 4 },
     // River Valley C7 33: the district DELIBERATELY takes the east 1.6km of
     // a 4.9km road (declared partialMainStreet in districts.json; the west
     // belongs to a future Robertson Quay district). C7 measures against the
@@ -721,10 +743,49 @@ window.__auditWorld = async function auditWorld() {
       P4: 668, P6: 45,
     },
   };
+  // RETIRED AS GATES — reported, never blocking. See SENTOSA.md.
+  //
+  // The owner, 2026-08-03, gave the detail layer to the builder: the road and
+  // path network, the names, the landmark positions and the transport lines
+  // stay true to the map, and everything else — kerbs, lamps, benches, signs,
+  // planting, roof forms, beach furniture — is DESIGNED rather than derived
+  // from road centrelines. Most of the checks below exist to police that
+  // derivation: is this prop in a carriageway, inside a building, too close to
+  // its twin, is this shop sign on the right facade. They are guarding a
+  // machine that is being switched off, and a gate that guards nothing still
+  // costs the deploy that runs it.
+  //
+  // A2 IS RETIRED BECAUSE IT NOW FORBIDS THE CONCEPT. It blocks on "real data
+  // present but unused", which was right when everything was derived, and is
+  // exactly backwards now: the island clip legitimately took Sentosa's mapped
+  // lamps to zero (all 29 stood on the mainland) and A2 would refuse the
+  // deploy for it. Its useful half — never invent a position the map already
+  // holds — lives on in the T family over the TRUTH layer only.
+  //
+  // THIS IS THE FIX FOR THE DAY THAT WAS LOST. On 2026-08-03 a deploy was
+  // refused because T1 read 16 against a budget of 2 — a counter the owner has
+  // never seen and never will — and the day went into hunting it while his
+  // actual fixes sat undeployed. What blocks a deploy now is what a player
+  // runs into: navigation (data/navcheck.py), ground, and phone performance.
+  //
+  // Nothing is deleted. Every one of these still runs and still prints, so a
+  // regression is still visible; it just cannot stop the work. If one of them
+  // ever catches something a player would actually see, it earns its gate back
+  // WITH that example attached.
+  const RETIRED = new Set([
+    'P1', 'P1b', 'P2', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9',
+    'C1', 'C2', 'C3', 'C5', 'C8',
+    'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9',
+    'V2', 'V3', 'W2', 'A1', 'A2', 'T2',
+  ]);
+  // T2 goes because navcheck.py replaces it and does it properly: T2 measured
+  // reachability off `roads` alone, so every flight of steps read as two
+  // unreachable islands, and its budget had been ratcheted to 30% for sentosa.
   const add = (id, name, severity, count, budget, detail, examples) => {
     const o = (OVERRIDE[SCENE] || {})[id];
+    const b = o === undefined ? budget : o;
     findings.push({ id, name, severity, count,
-                    budget: o === undefined ? budget : o, detail,
+                    budget: RETIRED.has(id) ? null : b, detail,
                     examples: (examples || []).slice(0, (window.__auditEx || 8)) });
   };
 

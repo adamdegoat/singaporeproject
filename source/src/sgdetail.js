@@ -942,6 +942,7 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
   // standable lookup (it takes the highest match)
   Object.assign(stats, await buildTrails(world, data, Y));
   Object.assign(stats, await buildAttractions(world, data, Y));
+  Object.assign(stats, await buildBeachWalk(world, data, Y));
   return stats;
 }
 
@@ -966,6 +967,225 @@ const WALK_MAT = {
   cheek: new THREE.MeshStandardMaterial({ color: 0xa8a399, roughness: 0.92 }),
   hedge: new THREE.MeshStandardMaterial({ color: 0x4a6b3c, roughness: 1 }),
 };
+
+// THE BEACH WALK — the density the photographs have and this world did not.
+//
+// Built against reference images of Siloso Beach Walk. Counting what is in one
+// frame of the real thing: kerbed planting beds of spiky pandanus running the
+// whole length, dark timber shelters with steep pitched roofs, green Singapore
+// street-name signs, blue banner poles, black lamp posts with white globe
+// heads, benches, and bicycles and people everywhere. Counting what was in the
+// same view of ours: a bare timber ribbon and nothing else. That gap — not the
+// landmarks — is most of why the island reads as empty.
+//
+// Everything here hangs off the SURVEYED beach-walk ways, at spacings taken
+// from the photographs, and stands on the inland side so nothing crowds the
+// sand. Deterministic from position, so it is stable across rebuilds.
+export async function buildBeachWalk(world, data, Y = null) {
+  const YY = Y || (async () => {});
+  const out = { walkBeds: 0, walkShelters: 0, walkLamps: 0, walkSigns: 0, walkBenches: 0 };
+  // ONLY GENUINE WALKING WAYS. "Siloso Beach Walk" is tagged `unclassified`
+  // in OSM — it is a ROAD, not a footway — so decorating every way whose name
+  // matches put planting beds and 7m shelters in a live carriageway and T1
+  // refused the deploy with sixteen obstructions. Name is not kind. Furniture
+  // goes on footways and pedestrian streets; the road of the same name gets
+  // its furniture from the ordinary street dressing, which already knows how
+  // to stand clear of a kerb.
+  // REVERTED: filtering to footway/pedestrian kinds deleted every piece of
+  // this furniture, because all four "* Beach Walk" ways on Sentosa are tagged
+  // `unclassified`. T1 stayed at 16 with the furniture gone, which proves the
+  // obstructions were never this layer. Draw on the named ways again and rely
+  // on the per-item FOOTPRINT road guard below.
+  const walks = (data.roads || []).filter((r) => /beach walk/i.test(r.n || '') && r.p && r.p.length >= 2);
+  if (!walks.length) return out;
+  const merger = new Merger();
+
+  // THE CHUNK'S OWN ROADS, BECAUSE __onRoad CANNOT SEE THEM.
+  //
+  // Exactly the trap buildWalkable documents fifty lines below, and I walked
+  // into it: `window.__onRoad` is ONE GLOBAL built from the BOOT scene's road
+  // list, so every guard in this function was asking a question about a
+  // different district and getting "no road here" for Siloso Beach Walk
+  // itself. T1 caught 16 obstructions and stayed at 16 through two wrong
+  // theories because of it.
+  //
+  // It matters doubly here: the beach walk is mapped as THIRTY-THREE separate
+  // parallel ways of the same name, 8m and 3.8m wide, so furniture offset from
+  // one centreline lands in its neighbour's carriageway. Fail-safe — if there
+  // is no road index at all, place nothing rather than place blind.
+  const _rseg = [];
+  for (const _r of (data.roads || [])) {
+    if (!_r.p || _r.p.length < 2) continue;
+    const _half = (_r.w || 6) / 2;
+    for (let _i = 0; _i < _r.p.length - 1; _i++) {
+      _rseg.push([_r.p[_i][0], _r.p[_i][1], _r.p[_i + 1][0], _r.p[_i + 1][1], _half]);
+    }
+  }
+  const onAnyRoad = (x, z, margin) => {
+    if (window.__onRoad && window.__onRoad(x, z, margin)) return true;
+    for (const [ax, az, bx, bz, half] of _rseg) {
+      const vx = bx - ax, vz = bz - az;
+      const L2 = vx * vx + vz * vz || 1;
+      let t = ((x - ax) * vx + (z - az) * vz) / L2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+      const reach = half + margin;
+      if (dx * dx + dz * dz < reach * reach) return true;
+    }
+    return false;
+  };
+
+  const bedKerb = new THREE.MeshLambertMaterial({ color: 0xb3aea1 });
+  const leafBed = new THREE.MeshLambertMaterial({ color: 0x9fbc4a, side: THREE.DoubleSide });
+  const timber = new THREE.MeshLambertMaterial({ color: 0x5c4632 });
+  const roofT = new THREE.MeshLambertMaterial({ color: 0x3f3226 });
+  const signG = new THREE.MeshLambertMaterial({ color: 0x1f7a44 });
+  const poleM = new THREE.MeshLambertMaterial({ color: 0x2b2f33 });
+  const globeM = new THREE.MeshLambertMaterial({ color: 0xf2efe4 });
+  const benchM = new THREE.MeshLambertMaterial({ color: 0x7a6247 });
+
+  // which side is inland? the side further from the nearest sand ring
+  const sands = (data.green || []).filter((g) => g.k === 'sand' && g.p && g.p.length >= 4);
+  const sandDist = (x, z) => {
+    let best = 1e9;
+    for (const s of sands) {
+      for (let i = 0; i < s.p.length; i++) {
+        const a = s.p[i], c = s.p[(i + 1) % s.p.length];
+        const vx = c[0] - a[0], vz = c[1] - a[1];
+        const L2 = vx * vx + vz * vz || 1;
+        let t = ((x - a[0]) * vx + (z - a[1]) * vz) / L2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        best = Math.min(best, Math.hypot(x - (a[0] + vx * t), z - (a[1] + vz * t)));
+      }
+    }
+    return best;
+  };
+
+  // a clump of spiky strap leaves — pandanus/dracaena, the plant in every frame
+  const bedAt = (x, z, nx, nz) => {
+    const gy = groundAt(x, z);
+    const kerb = new THREE.BoxGeometry(3.4, 0.34, 2.0);
+    kerb.applyMatrix4(new THREE.Matrix4().makeRotationY(Math.atan2(nx, nz)));
+    kerb.translate(x, gy + 0.17, z);
+    merger.add(kerb, bedKerb, x, z);
+    const h0 = ((x * 5.1 + z * 2.3) % 1);
+    for (let k = 0; k < 11; k++) {
+      const a = (k / 11) * Math.PI * 2 + h0 * 4.0;
+      const len = 1.1 + ((k * 7 + h0 * 13) % 5) * 0.16;
+      const bl = new THREE.PlaneGeometry(0.18, len);
+      bl.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(
+        new THREE.Euler(-0.5 - (k % 3) * 0.2, a, 0, 'YXZ')));
+      bl.translate(x + Math.sin(a) * 0.55, gy + 0.34 + len * 0.42, z + Math.cos(a) * 0.55);
+      merger.add(bl, leafBed, x, z);
+    }
+    out.walkBeds++;
+  };
+
+  const shelterAt = (x, z, yaw) => {
+    const gy = groundAt(x, z);
+    for (const [sx, sz] of [[-1.9, -1.9], [1.9, -1.9], [-1.9, 1.9], [1.9, 1.9]]) {
+      const px = x + Math.cos(yaw) * sx - Math.sin(yaw) * sz;
+      const pz = z + Math.sin(yaw) * sx + Math.cos(yaw) * sz;
+      const post = new THREE.CylinderGeometry(0.13, 0.15, 2.7, 6);
+      post.translate(px, gy + 1.35, pz);
+      merger.add(post, timber, px, pz);
+    }
+    // the steep pyramid roof, which is the shape that reads from the walk
+    const roof = new THREE.ConeGeometry(3.6, 2.4, 4);
+    roof.rotateY(yaw + Math.PI / 4);
+    roof.translate(x, gy + 3.9, z);
+    merger.add(roof, roofT, x, z);
+    out.walkShelters++;
+  };
+
+  const lampAt = (x, z) => {
+    const gy = groundAt(x, z);
+    const p = new THREE.CylinderGeometry(0.07, 0.1, 4.2, 7);
+    p.translate(x, gy + 2.1, z);
+    merger.add(p, poleM, x, z);
+    const g = new THREE.SphereGeometry(0.3, 8, 6);
+    g.translate(x, gy + 4.35, z);
+    merger.add(g, globeM, x, z);
+    out.walkLamps++;
+  };
+
+  const signAt = (x, z, yaw) => {
+    const gy = groundAt(x, z);
+    const p = new THREE.CylinderGeometry(0.05, 0.06, 2.5, 6);
+    p.translate(x, gy + 1.25, z);
+    merger.add(p, poleM, x, z);
+    const b = new THREE.BoxGeometry(2.1, 0.42, 0.06);
+    b.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw));
+    b.translate(x, gy + 2.35, z);
+    merger.add(b, signG, x, z);
+    out.walkSigns++;
+  };
+
+  const benchAt = (x, z, yaw) => {
+    const gy = groundAt(x, z);
+    const seat = new THREE.BoxGeometry(1.8, 0.1, 0.5);
+    seat.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw));
+    seat.translate(x, gy + 0.45, z);
+    merger.add(seat, benchM, x, z);
+    const back = new THREE.BoxGeometry(1.8, 0.42, 0.07);
+    back.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw));
+    back.translate(x - Math.sin(yaw + Math.PI / 2) * 0.22, gy + 0.76,
+      z - Math.cos(yaw + Math.PI / 2) * 0.22);
+    merger.add(back, benchM, x, z);
+    out.walkBenches++;
+  };
+
+  for (const r of walks) {
+    let run = 0;
+    for (let i = 0; i < r.p.length - 1; i++) {
+      await YY();
+      const [ax, az] = r.p[i], [bx, bz] = r.p[i + 1];
+      const L = Math.hypot(bx - ax, bz - az);
+      if (L < 0.5) continue;
+      const ux = (bx - ax) / L, uz = (bz - az) / L;
+      let nx = -uz, nz = ux;
+      const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+      // point the normal INLAND, away from the sand
+      if (sandDist(mx + nx * 6, mz + nz * 6) < sandDist(mx - nx * 6, mz - nz * 6)) { nx = -nx; nz = -nz; }
+      const yaw = Math.atan2(ux, uz);
+      for (let d = 0; d < L; d += 1) {
+        const t = (run + d);
+        const px = ax + ux * d, pz = az + uz * d;
+        const ox = px + nx * 4.2, oz = pz + nz * 4.2;
+        // TEST THE ITEM'S FOOTPRINT, NOT ITS CENTRE. A shelter is 7m across
+        // and a planting bed 3.4m, so a centre-only road test let 16 of them
+        // stand in Siloso Road — T1 refused the deploy on exactly that. Same
+        // shape as the kerb emitters: centre plus both extremes.
+        const place = (fn, spacing, off, rad = 0.5) => {
+          if (Math.floor(t) % spacing !== 0) return;
+          const qx = px + nx * off, qz = pz + nz * off;
+          for (const _e of [-rad, 0, rad]) {
+            const ex = qx + nz * _e, ez = qz - nx * _e;
+            if (onAnyRoad(ex, ez, 0.6)) return;
+            const fx2 = qx + nx * _e, fz2 = qz + nz * _e;
+            if (onAnyRoad(fx2, fz2, 0.6)) return;
+          }
+          // 0.3, not 1.2: at a 1.2m margin every lamp, bench and sign on the
+          // walk was refused, because a beach walk runs right alongside Siloso
+          // Road and its verge is inside a metre of the kerb. Beds and
+          // shelters sit further out and survived, which is why the first run
+          // produced planting and shelters and nothing else.
+          if (window.__onRoad && window.__onRoad(qx, qz, 0.3)) return;
+          if (window.__blocked && window.__blocked(qx, qz)) return;
+          fn(qx, qz);
+        };
+        place(() => bedAt(ox, oz, nx, nz), 16, 4.2, 2.0);
+        place(() => lampAt(px + nx * 5.0, pz + nz * 5.0), 38, 5.0, 0.4);
+        place(() => benchAt(px + nx * 5.6, pz + nz * 5.6, yaw), 57, 5.6, 1.1);
+        place(() => shelterAt(px + nx * 9.5, pz + nz * 9.5, yaw), 95, 9.5, 3.8);
+        place(() => signAt(px + nx * 5.2, pz + nz * 5.2, yaw), 130, 5.2, 1.2);
+      }
+      run += L;
+    }
+  }
+  await merger.flushY(world, {}, Y);
+  return out;
+}
 
 // THE ATTRACTIONS — the layer this pipeline never fetched.
 //
@@ -1154,6 +1374,26 @@ export async function buildAttractions(world, data, Y = null) {
         b.translate(px + (hh - 0.5) * 2.2, gy + r * 0.45, pz + (hh - 0.5) * 2.2);
         merger.add(b, hh > 0.5 ? rockM : rockDark, px, pz);
         out.rocks = (out.rocks || 0) + 1;
+        // A GROYNE HEAD IS WOODED. In the reference photographs the rocky
+        // headlands are not bare stone — each one carries a dense clump of
+        // trees on top, and that green mass on the water is a large part of
+        // Siloso's outline. Only on the wider, drier stretches (every fourth
+        // boulder, above the waterline), so the tips stay as bare rock.
+        if (s % 4 === 0 && gy > 1.4) {
+          const th = 5.5 + hh * 4.0;
+          const tr = new THREE.CylinderGeometry(0.16, 0.24, th, 6);
+          tr.translate(px, gy + th / 2, pz);
+          merger.add(tr, new THREE.MeshLambertMaterial({ color: 0x53483d }), px, pz);
+          for (let c2 = 0; c2 < 5; c2++) {
+            const a2 = (c2 / 5) * Math.PI * 2 + hh * 5;
+            const cd = new THREE.PlaneGeometry(3.4, 2.2);
+            cd.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(
+              new THREE.Euler(-0.35, a2, 0, 'YXZ')));
+            cd.translate(px + Math.sin(a2) * 0.9, gy + th - 0.4, pz + Math.cos(a2) * 0.9);
+            merger.add(cd, MAT.leaf, px, pz);
+          }
+          out.groyneTrees = (out.groyneTrees || 0) + 1;
+        }
       }
     }
   }
@@ -1216,6 +1456,30 @@ export async function buildTrails(world, data, Y = null) {
     return inside;
   };
   const woods = (data.green || []).filter((g) => g.k === 'wood' && g.p && g.p.length >= 4);
+  // THE CHUNK'S OWN ROADS — same global-__onRoad trap as buildBeachWalk.
+  const _rsegT = [];
+  for (const _r of (data.roads || [])) {
+    if (!_r.p || _r.p.length < 2) continue;
+    if (_r.k === 'footway' || _r.k === 'pedestrian' || _r.k === 'steps') continue;
+    const _half = (_r.w || 6) / 2;
+    for (let _i = 0; _i < _r.p.length - 1; _i++) {
+      _rsegT.push([_r.p[_i][0], _r.p[_i][1], _r.p[_i + 1][0], _r.p[_i + 1][1], _half]);
+    }
+  }
+  const onAnyRoadT = (x, z, margin) => {
+    if (window.__onRoad && window.__onRoad(x, z, margin)) return true;
+    for (const [ax, az, bx, bz, half] of _rsegT) {
+      const vx = bx - ax, vz = bz - az;
+      const L2 = vx * vx + vz * vz || 1;
+      let t = ((x - ax) * vx + (z - az) * vz) / L2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+      const reach = half + margin;
+      if (dx * dx + dz * dz < reach * reach) return true;
+    }
+    return false;
+  };
+
   const sands = (data.green || []).filter((g) => g.k === 'sand' && g.p && g.p.length >= 4);
   // which surface does this path cross? asked at the segment midpoint, because
   // a path that leaves a wood should change underfoot where it leaves it
@@ -1288,11 +1552,11 @@ export async function buildTrails(world, data, Y = null) {
         // kerb emitters use — and at the same -0.3 margin, so a pavement
         // legitimately running along a kerb line is not thrown away.
         let onRoad = false;
-        if (window.__onRoad) {
+        {
           for (const tt of [0, 0.5, 1]) {
             const sx = p0x + (p1x - p0x) * tt, sz = p0z + (p1z - p0z) * tt;
             for (const off of [0, half, -half]) {
-              if (window.__onRoad(sx + nx * off, sz + nz * off, -0.3)) { onRoad = true; break; }
+              if (onAnyRoadT(sx + nx * off, sz + nz * off, 0.8)) { onRoad = true; break; }
             }
             if (onRoad) break;
           }
@@ -1973,6 +2237,12 @@ export async function buildBeachLife(world, data, Y = null) {
   const poleM = new THREE.MeshLambertMaterial({ color: 0xd8d2c6 });
   const redM = new THREE.MeshLambertMaterial({ color: 0xc8352c, side: THREE.DoubleSide });
   const yellowM = new THREE.MeshLambertMaterial({ color: 0xe0b73a, side: THREE.DoubleSide });
+  // A SWIM-ZONE BUOY FLOATS ON THE WATER — that is the whole point of it, and
+  // it is the same mechanism-declared exemption the groynes, the boardwalk and
+  // the bridge decks already carry. Without this W2 counts 405 deliberate
+  // floats as defects.
+  redM.userData.groyneInWater = true;
+  yellowM.userData.groyneInWater = true;
   const hutM = new THREE.MeshLambertMaterial({ color: 0xe6e0d2 });
 
   const bake = (geo, mat, x, y, z, ry = 0, rx = 0) => {
@@ -1988,15 +2258,53 @@ export async function buildBeachLife(world, data, Y = null) {
     }
     return inside;
   };
+  // A COCONUT PALM IS TALL, THIN AND LEANS.
+  //
+  // Rebuilt against reference photographs of Siloso Beach Walk, where the
+  // palms are the first thing you see: 15-20m of bare slender trunk with a
+  // small crown right at the top, most of them leaning several degrees toward
+  // the light, and a clear view straight through underneath them. What was
+  // here was a 6.4m stub with a wide crown at head height — closer to a potted
+  // plant than to the trees in the photographs, and it is why the beach read
+  // as a car park with shrubs however many of them were placed.
+  //
+  // No height is published for these particular trees, so the range is taken
+  // from the photographs (crown height against the adults and the two-storey
+  // shelters standing under them) and is an observation, not a survey figure.
+  const edgeOf = (x, z, pts) => {
+    let best = 1e9;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], c = pts[(i + 1) % pts.length];
+      const vx = c[0] - a[0], vz = c[1] - a[1];
+      const L2 = vx * vx + vz * vz || 1;
+      let t = ((x - a[0]) * vx + (z - a[1]) * vz) / L2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      best = Math.min(best, Math.hypot(x - (a[0] + vx * t), z - (a[1] + vz * t)));
+    }
+    return best;
+  };
   const palmAt = (x, z, s) => {
     const gy = groundAt(x, z);
-    const h = 6.4 * s;
-    bake(new THREE.CylinderGeometry(0.14 * s, 0.2 * s, h, 7), trunkM, x, gy + h / 2, z);
-    for (let k = 0; k < 7; k++) {
-      const a = (k / 7) * Math.PI * 2 + ((x * 3.1 + z * 1.7) % 1);
-      const fr = new THREE.PlaneGeometry(3.2 * s, 0.8 * s);
-      fr.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(-0.95, a + Math.PI / 2, 0, 'YXZ')));
-      fr.translate(x + Math.sin(a) * 1.4 * s, gy + h - 0.35, z + Math.cos(a) * 1.4 * s);
+    const hsh = ((x * 3.1 + z * 1.7) % 1);
+    const h = (13.5 + hsh * 5.5) * s;              // 13.5-19m before scale
+    // the lean: a few degrees off vertical, direction from the position hash
+    const lean = 0.05 + hsh * 0.12;
+    const la = hsh * Math.PI * 2;
+    const tipX = x + Math.sin(la) * h * Math.sin(lean);
+    const tipZ = z + Math.cos(la) * h * Math.sin(lean);
+    const trunk = new THREE.CylinderGeometry(0.16 * s, 0.30 * s, h, 7);
+    const dir = new THREE.Vector3(tipX - x, h, tipZ - z).normalize();
+    trunk.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+    trunk.translate((x + tipX) / 2, gy + h / 2, (z + tipZ) / 2);
+    merger.add(trunk, trunkM, x, z);
+    // the crown sits AT THE TOP and is small relative to the trunk — nine
+    // fronds arching down, which is the silhouette that reads at any distance
+    for (let k = 0; k < 9; k++) {
+      const a = (k / 9) * Math.PI * 2 + hsh * 3.0;
+      const fr = new THREE.PlaneGeometry(4.6 * s, 0.95 * s);
+      fr.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(
+        new THREE.Euler(-0.62 - (k % 3) * 0.22, a + Math.PI / 2, 0, 'YXZ')));
+      fr.translate(tipX + Math.sin(a) * 2.0 * s, gy + h - 0.5, tipZ + Math.cos(a) * 2.0 * s);
       merger.add(fr, leafM, x, z);
     }
     out.beachPalms++;
@@ -2026,10 +2334,25 @@ export async function buildBeachLife(world, data, Y = null) {
     // The palm FORM is the honest part to keep: a tree standing on a Singapore
     // beach is a coconut or a sea almond, not the generic crown, so a surveyed
     // beach tree is drawn as a palm here and skipped by plantSurveyed.
+    // ...AND ALONG THE BEACH WALK, NOT ONLY ON THE SAND. The reference
+    // photographs show the palms lining the walk behind the beach as densely
+    // as they stand on it, and those trees ARE in the survey — 4,848 of them
+    // on Sentosa — they were simply being drawn with a generic inland crown
+    // because only trees strictly inside a sand ring were treated as beach
+    // trees. This is a FORM change on trees the survey already records, not
+    // new planting: 45m of the sand edge, which is the width of the walk and
+    // its planting beds.
     for (const t of (data.trees || [])) {
       const jx = t[0], jz = t[1];
-      if (!inRing(jx, jz, sand.p)) continue;
-      if (window.__onRoad && window.__onRoad(jx, jz, 2.5)) continue;
+      if (!inRing(jx, jz, sand.p) && edgeOf(jx, jz, sand.p) > 45) continue;
+      // 4.5m and BOTH ENDS: a palm is 13-19m tall and leans several degrees,
+      // so a trunk whose base is clear can still put its crown over a
+      // carriageway. Tested at the base and at the lean tip.
+      if (window.__onRoad && window.__onRoad(jx, jz, 4.5)) continue;
+      const _lh = ((jx * 3.1 + jz * 1.7) % 1);
+      const _lr = 16 * Math.sin(0.05 + _lh * 0.12);
+      if (window.__onRoad && window.__onRoad(jx + Math.sin(_lh * 6.283) * _lr,
+        jz + Math.cos(_lh * 6.283) * _lr, 3.0)) continue;
       if (window.__blocked && window.__blocked(jx, jz)) continue;
       palmAt(jx, jz, 0.85 + ((jx * 6.1 + jz * 2.9) % 100) / 320);
     }
@@ -2100,6 +2423,30 @@ export async function buildBeachLife(world, data, Y = null) {
             bake(new THREE.PlaneGeometry(0.62, 0.22), yellowM, px2 + 0.28, fy + 2.2, pz2, 0.3);
           }
           out.swimFlags += 2;
+          // THE BUOY LINE. In every reference photograph of Siloso the swim
+          // zone is marked by a floating rope of buoys strung parallel to the
+          // shore — it is more visible from the sand than the flags are, and
+          // it is what makes the water read as a managed lagoon rather than
+          // open sea. Strung between the flag stations the placer has already
+          // measured, 22m out, so it follows the real waterline for free.
+          // EVERY THIRD STATION, NOT EVERY ONE. Chains at 55m stations each
+          // 50m long overlapped into a field of 1,485 buoys scattered across
+          // the whole bay — it read as litter, not as a marked swim lane,
+          // because each station's outward normal differs slightly so the
+          // chains never lined up. A shorter chain every third station leaves
+          // a broken line parallel to the shore, which is what the
+          // photographs show.
+          if ((out.swimFlags % 6) === 0) {
+            const bx2 = fx + nx * 24, bz2 = fz + nz * 24;
+            const by = groundAt(bx2, bz2);
+            for (let bi = -4; bi <= 4; bi++) {
+              const qx = bx2 + nz * bi * 6.5, qz = bz2 - nx * bi * 6.5;
+              const bo = new THREE.SphereGeometry(0.22, 6, 5);
+              bo.translate(qx, Math.max(by, 0.1) + 0.12, qz);
+              merger.add(bo, (bi & 1) ? redM : yellowM, qx, qz);
+              out.buoys = (out.buoys || 0) + 1;
+            }
+          }
         }
       }
     }

@@ -307,6 +307,23 @@ export class Terrain {
         }
       }
     }
+    // HOW GREEN IS THIS DISTRICT? Measured once, on the grid the ground is
+    // actually drawn from, and used to decide what UNCLASSIFIED ground should
+    // look like (see the vertex colour in build()). Sentosa reads about 57%;
+    // the CBD districts read a few per cent.
+    this.greenFrac = 0;
+    if (this.g) {
+      const g = this.g;
+      let hit = 0, n = 0;
+      for (let j = 0; j < g.nz; j += 2) {
+        for (let i = 0; i < g.nx; i += 2) {
+          n++;
+          const k = this.greenAt(g.x0 + i * g.cell, g.z0 + j * g.cell);
+          if (k && k !== 'pool') hit++;
+        }
+      }
+      this.greenFrac = n ? hit / n : 0;
+    }
   }
 
   // which green kind covers this point, or null. Smallest-ring-wins so a pitch
@@ -424,6 +441,22 @@ export class Terrain {
               if (sd < 80 && vy > -0.5 && vy < 2.4) {
                 const f = Math.max(0, 1 - Math.max(0, vy) / 2.4) * Math.max(0, 1 - sd / 80);
                 col.push(0.84 + (0.90 - 0.84) * f, 0.87 + (0.84 - 0.87) * f, 0.80 + (0.64 - 0.80) * f);
+              } else if (this.greenFrac > 0.35) {
+                // ON A GREEN ISLAND, UNKNOWN GROUND IS VEGETATION.
+                //
+                // The pale grey-green below is the right answer in the CBD,
+                // where unmapped ground genuinely is apron and kerb. It is the
+                // wrong answer on Sentosa, and satellite imagery of the island
+                // makes that plain: between the built pockets it is continuous
+                // dark canopy, with almost no bare pale ground anywhere. Ours
+                // was painting every unclassified cell pale khaki, which is
+                // most of why the island read as an empty car park with trees
+                // on it — the owner, repeatedly, and he was right.
+                //
+                // Keyed on the district's OWN measured green fraction rather
+                // than on its name, so it follows the data: a district that is
+                // more than a third mapped-green treats the gaps as green too.
+                col.push(0.58, 0.68, 0.50);
               } else col.push(0.84, 0.87, 0.80);
             }
             verts.set(k, id);

@@ -423,6 +423,17 @@ def main():
     # arclengths until 2026-07-28; see data/gantries.py.
     subprocess.run([sys.executable, os.path.join(HERE, "gantries.py"), d["id"]], check=False)
     subprocess.run([sys.executable, os.path.join(HERE, "lamps.py"), d["id"]], check=False)
+    # THE MAP IS THE ISLAND. The bbox is a rectangle and swept in Pulau Brani,
+    # the Keppel terminal and HarbourFront — 24 of the 30 km that measured as
+    # "unreachable network" was simply land that is not Sentosa. Clipping is
+    # part of the build, not a thing done by hand afterwards, or the next
+    # rebuild silently puts the mainland back. See data/island.py.
+    subprocess.run([sys.executable, os.path.join(HERE, "island.py"), d["id"]], check=True)
+    # Then join the paths the surveyor left unjoined: 58 of Sentosa's 66
+    # stranded pieces sat within 15m of the network, including the 1,751m
+    # Imbiah trail at 5.4m. See data/stitch.py.
+    subprocess.run([sys.executable, os.path.join(HERE, "stitch.py"), d["id"]], check=True)
+    subprocess.run([sys.executable, os.path.join(HERE, "navcheck.py"), d["id"]], check=False)
 
     print(f"\nNext: python3 check.py {d['id']}")
 

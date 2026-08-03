@@ -66,13 +66,22 @@ function familyFor(b, beach = false) {
   // standing on the sand — the ugliest thing in the frame, vetted at
   // shots/street/bch2.shot1 and reported by the owner.
   //
-  // What a Singapore beachfront building actually is: pale, open, and turned
-  // to the water. Every one of them faces the sea with balconies or a verandah,
-  // because that is the entire reason it is there. So the beachfront gets the
-  // BALCONY pool — horizontal banding, openings on every floor — with a light
-  // finish, rather than a sealed box. Read FIRST, ahead of the size rule that
-  // was sending anything over 1,400 m2 to curtain wall.
-  if (beach) return { pool: BALCONY, rough: 0.72, metal: 0, src: 'beach' };
+  // ...AND THE FIRST ATTEMPT AT FIXING IT WAS WORSE. This returned the BALCONY
+  // pool for everything on the beachfront — horizontal banding, openings on
+  // every floor — which is right for a resort wing and catastrophically wrong
+  // for the 200 m2 bars and huts that make up most of the strip. The owner saw
+  // it within the hour: "palawan got residential blocks on the fucking beach".
+  // He was exactly right; a beach bar came out as an apartment block.
+  //
+  // The lesson is that WHERE a building stands cannot decide what it looks
+  // like. What it IS decides that, and size is the honest proxy we have: the
+  // small low ones are pavilions and get a pavilion's timber roof and posts
+  // (see the beach branch in buildBuildings), and only a genuinely large
+  // beachfront mass is a resort wing that turns balconies to the sea.
+  if (beach) {
+    if (b.a > 1200 && b.h > 14) return { pool: BALCONY, rough: 0.72, metal: 0, src: 'beach' };
+    return { pool: STONE, rough: 0.85, metal: 0, src: 'beach' };
+  }
 
   // a surveyed material beats everything, including the size rule below
   const mat = (b.mat || '').toLowerCase();
@@ -280,8 +289,12 @@ export const MAT = {
   // the beach pavilion: boarded roof and timber posts, the finish every bar on
   // Siloso and Palawan actually has. Not clay tile, which is the shophouse and
   // cable-car-station lid and reads as a town building on the sand.
-  beachRoof: new THREE.MeshLambertMaterial({ color: 0x8a7458 }),
+  beachRoof: new THREE.MeshLambertMaterial({ color: 0x6b5a48 }),   // shingle
   beachPost: new THREE.MeshLambertMaterial({ color: 0x6f5c46 }),
+  // the roof terrace: white railing, turquoise loungers — Café del Mar's deck
+  deckRail: new THREE.MeshLambertMaterial({ color: 0xf2f0ea }),
+  beachThatch: new THREE.MeshLambertMaterial({ color: 0xa98d5c }),
+  deckLounger: new THREE.MeshLambertMaterial({ color: 0x3fa8b4 }),
   // A ROOF IS NOT A WALL. The top face of an extruded building took the wall
   // material and nothing else, so from anywhere with height — the cable car,
   // the bungy tower, the Cove, any hill — a large building read as a blank
@@ -1335,6 +1348,16 @@ function grow(pts, f) {
   });
 }
 
+// Plain painted render, cached per colour. Beach bars are flat white walls
+// with no masonry pattern on them at all, and every textured pool in this file
+// puts one there.
+const _RENDER = new Map();
+function renderMat(hex) {
+  let m = _RENDER.get(hex);
+  if (!m) _RENDER.set(hex, m = new THREE.MeshStandardMaterial({ color: hex, roughness: 0.9 }));
+  return m;
+}
+
 export async function buildBuildings(world, data, Y = null) {
   const stats = { count: 0, tall: 0, bespoke: 0 };
   // A PODIUM SKIRT MUST NOT WALL INTO THE WATER — the same rule the skirt
@@ -1418,6 +1441,15 @@ export async function buildBuildings(world, data, Y = null) {
   const _sandRings = (data.green || [])
     .filter((g) => g.k === 'sand' && g.p && g.p.length >= 4).map((g) => g.p);
   const _beach = new Set();
+  let _beachLowered = 0;
+  // the surveyed beach-walk centrelines, used by the beachfront test below
+  const _walkSegs = [];
+  for (const _r of (data.roads || [])) {
+    if (!/beach walk/i.test(_r.n || '') || !_r.p) continue;
+    for (let _i = 0; _i < _r.p.length - 1; _i++) {
+      _walkSegs.push([_r.p[_i][0], _r.p[_i][1], _r.p[_i + 1][0], _r.p[_i + 1][1]]);
+    }
+  }
   if (_sandRings.length) {
     const edgeD = (x, z, p) => {
       let best = 1e9;
@@ -1441,6 +1473,43 @@ export async function buildBuildings(world, data, Y = null) {
       const bx = (mnx + mxx) / 2, bz = (mnz + mxz) / 2;
       for (const p of _sandRings) {
         if (edgeD(bx, bz, p) < 45) { _beach.add(b); break; }
+      }
+      // ...OR IT FRONTS THE BEACH WALK. Measured on Siloso: the bars that
+      // define the strip stand 44-88m back from the sand edge, behind the
+      // walk, so a 45m band from the sand caught almost none of them and the
+      // frame stayed full of tall grey blocks. Raising the radius instead
+      // would start swallowing the road-fronting buildings behind. The walk
+      // itself is surveyed, so "fronts the beach walk" is both the precise
+      // test and the true one — that is what a beach bar does.
+      if (!_beach.has(b)) {
+        for (const seg of _walkSegs) {
+          const vx = seg[2] - seg[0], vz = seg[3] - seg[1];
+          const L2 = vx * vx + vz * vz || 1;
+          let t = ((bx - seg[0]) * vx + (bz - seg[1]) * vz) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          if (Math.hypot(bx - (seg[0] + vx * t), bz - (seg[1] + vz * t)) < 38) {
+            _beach.add(b);
+            break;
+          }
+        }
+      }
+      // A BEACH BAR IS NOT SIX STOREYS. 20.0 is process.py's TYPE DEFAULT —
+      // the height it falls back to when OSM gives neither a height nor a
+      // level count — and 116 buildings on sentosa are standing on it,
+      // including most of the Siloso strip. Every reference photograph of
+      // those bars shows one or two storeys with a roof terrace, so a 20m
+      // guess is drawing them five storeys too tall and is the reason the
+      // beach reads as an office park.
+      //
+      // This replaces a GUESS with a better-informed guess and does not touch
+      // a single surveyed figure: only buildings that are on the beachfront
+      // AND sitting on exactly the default are lowered. Real heights here run
+      // in storey multiples (6.8, 10.8, 14.4) and are left alone. Mutated on
+      // the record so the checks measure the same number the geometry uses.
+      if (_beach.has(b) && b.h === 20) {
+        const _hh2 = ((bx * 4.7 + bz * 2.9) % 1);
+        b.h = +(5.5 + _hh2 * 3.4).toFixed(1);        // 5.5-8.9m: one or two storeys
+        _beachLowered++;
       }
     }
   }
@@ -1749,16 +1818,77 @@ export async function buildBuildings(world, data, Y = null) {
     if (_isBeach && (b.h || 0) <= 12 && !b.roof) {
       const _hh = Math.max(3, b.h || 6);
       const _cc = centroid(b.p);
-      // TIMBER, NOT CLAY TILE. A beach bar's roof is boards and shade cloth;
-      // the pantile lid belongs on the cable car station and the shophouses.
-      merger.add(extrudeGeo(grow(b.p, 1.16), 0.34, _hh), MAT.beachRoof, _cc[0], _cc[1]);
-      merger.add(extrudeGeo(grow(b.p, 1.05), 0.9, _hh + 0.34), MAT.beachRoof, _cc[0], _cc[1]);
+      // A SILOSO BEACH BAR, FROM THE PHOTOGRAPHS. Café del Mar's frontage is
+      // the reference: WHITE rendered walls, a low shingled pitched roof over
+      // the entrance, wide folding doors standing open, and — the thing that
+      // actually identifies it from the sand — a ROOFTOP DECK with a white
+      // railing and coloured loungers along it. Not a beige box with window
+      // bands, which is what the generic family was drawing.
+      // NO TWO BARS ON SILOSO ARE THE SAME BUILDING, and a single pavilion
+      // recipe stamped 78 times would be its own kind of wrong — the owner
+      // asked for this directly: "i hope you dont go do everything look
+      // generic and the same". So each takes one of four forms from its own
+      // position hash: a shingled pitch, a flat deck with a parapet, a steep
+      // thatch pavilion, and a shallow monopitch. Stable across rebuilds
+      // because the hash is positional, and varied along the strip because
+      // neighbours hash differently.
+      let _vh = 0;
+      for (const [_vx, _vz] of b.p) _vh = (_vh * 31 + ((_vx * 11) | 0) + ((_vz * 7) | 0)) | 0;
+      const _variant = Math.abs(_vh) % 4;
+      const _roofMat = _variant === 2 ? MAT.beachThatch : MAT.beachRoof;
+      if (_variant === 1) {
+        // flat deck with a raised parapet — the modern white beach club
+        merger.add(extrudeGeo(grow(b.p, 1.10), 0.28, _hh), MAT.deckRail, _cc[0], _cc[1]);
+        merger.add(extrudeGeo(grow(b.p, 1.02), 0.55, _hh + 0.28), MAT.deckRail, _cc[0], _cc[1]);
+      } else if (_variant === 3) {
+        // shallow monopitch, oversailing hard on the seaward side only
+        merger.add(extrudeGeo(grow(b.p, 1.22), 0.3, _hh), _roofMat, _cc[0], _cc[1]);
+        merger.add(extrudeGeo(grow(b.p, 0.92), 0.7, _hh + 0.3), _roofMat, _cc[0], _cc[1]);
+      } else {
+        merger.add(extrudeGeo(grow(b.p, 1.16), 0.34, _hh), _roofMat, _cc[0], _cc[1]);
+        merger.add(extrudeGeo(grow(b.p, _variant === 2 ? 0.7 : 1.05),
+          _variant === 2 ? 2.4 : 0.9, _hh + 0.34), _roofMat, _cc[0], _cc[1]);
+      }
       // and it stands on posts at the corners, which is what holds an
       // oversailing roof up and what you actually see from the sand
+      // ...AND A POST NEVER STANDS IN A CARRIAGEWAY. These sit 13% outside the
+      // footprint and span ground to roof, so on a building that fronts Siloso
+      // Beach Walk they land in the road — a solid cylinder a rider hits.
       for (const [_px, _pz] of grow(b.p, 1.13)) {
+        if (onCarriageway(_px, _pz, 0.4)) continue;
         const _post = new THREE.CylinderGeometry(0.11, 0.13, _hh, 6);
         _post.translate(_px, groundAt(_px, _pz) + _hh / 2, _pz);
         merger.add(_post, MAT.beachPost, _px, _pz);
+      }
+      // the roof terrace: a railing round the parapet and loungers on the deck
+      if (_hh >= 5.5 && (b.a || 0) > 150) {
+        const _ring = grow(b.p, 1.0);
+        const _per = [];
+        for (let _i = 0; _i < _ring.length; _i++) {
+          const _a = _ring[_i], _b2 = _ring[(_i + 1) % _ring.length];
+          const _L = Math.hypot(_b2[0] - _a[0], _b2[1] - _a[1]);
+          const _n = Math.max(1, Math.round(_L / 1.5));
+          for (let _k = 0; _k < _n; _k++) {
+            const _t = _k / _n;
+            _per.push([_a[0] + (_b2[0] - _a[0]) * _t, _a[1] + (_b2[1] - _a[1]) * _t]);
+          }
+        }
+        for (const [_px, _pz] of _per) {
+          const _st = new THREE.CylinderGeometry(0.035, 0.035, 1.0, 5);
+          _st.translate(_px, _hh + 1.74, _pz);
+          merger.add(_st, MAT.deckRail, _px, _pz);
+        }
+        merger.add(extrudeGeo(grow(b.p, 1.005), 0.07, _hh + 2.2), MAT.deckRail, _cc[0], _cc[1]);
+        // a few loungers on the terrace, the turquoise the photographs show
+        for (let _q = 0; _q < 4; _q++) {
+          const _t = (_q + 0.5) / 4;
+          const _p2 = _per[Math.floor(_t * _per.length)];
+          if (!_p2) continue;
+          const _lg = new THREE.BoxGeometry(1.7, 0.16, 0.6);
+          _lg.translate(_cc[0] + (_p2[0] - _cc[0]) * 0.7,
+            _hh + 1.32, _cc[1] + (_p2[1] - _cc[1]) * 0.7);
+          merger.add(_lg, MAT.deckLounger, _cc[0], _cc[1]);
+        }
       }
     }
     // GIVE IT A ROOF. See MAT.roofDeck: the extrusion's top face wore the wall
@@ -1789,11 +1919,27 @@ export async function buildBuildings(world, data, Y = null) {
     // beach strip is render and timber, not the CBD's grey concrete. Still a
     // TINT of the surveyed texture, exactly like `building:colour` above, so
     // the family's window pattern survives; and a surveyed colour still wins.
-    const _beachTint = 0xe8e2d4;
+    // WHITE, not beige. Every reference photograph of the Siloso bars is
+    // white render; 0xe8e2d4 was still reading as a sandy office block.
+    // ...and not all the same white. The strip in the photographs runs from
+    // bright white render through cream to a couple of painted accents, so
+    // the tint varies per building on the same positional hash the form
+    // uses. One colour across 78 buildings is as wrong as one shape.
+    const _BEACH_TINTS = [0xf6f4f0, 0xefe9dc, 0xe8ded0, 0xf2ece0, 0xe6ded6];
+    let _bt = 0;
+    for (const [_tx, _tz] of b.p) _bt = (_bt * 31 + ((_tx * 5) | 0) + ((_tz * 3) | 0)) | 0;
+    const _beachTint = _BEACH_TINTS[Math.abs(_bt) % _BEACH_TINTS.length];
     // Bloomberg's own description of the Cove is "white", and the photographs
     // agree: white render, dark glazing. Brighter than the beach tint.
     const _coveTint = 0xf2efe8;
+    // A TINT OVER A STONE TEXTURE IS NOT WHITE RENDER. Tinting multiplies, so
+    // a white tint on the STONE pool's dark map came out grey-taupe and the
+    // bars still read as sheds (vetted, shots/street/bar3.shot1). A small
+    // beach building is smooth painted render with almost nothing on it, so it
+    // gets a plain material in the tint colour rather than a tinted map.
+    const _isSmallBeach = _isBeach && (b.a || 0) <= 1200 && b.h <= 14;
     const mat = b.col ? tintedMat(wallTex, fam.rough, fam.metal, b.col)
+      : _isSmallBeach ? renderMat(_beachTint)
       : _isCove ? tintedMat(wallTex, fam.rough, fam.metal, _coveTint)
       : _isBeach ? tintedMat(wallTex, fam.rough, fam.metal, _beachTint)
                       : sharedMat(wallTex, fam.rough, fam.metal);
@@ -3354,12 +3500,26 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
     }
     return inside;
   };
+  const edgeOfP = (x, z, pts) => {
+    let best = 1e9;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], c = pts[(i + 1) % pts.length];
+      const vx = c[0] - a[0], vz = c[1] - a[1];
+      const L2 = vx * vx + vz * vz || 1;
+      let t = ((x - a[0]) * vx + (z - a[1]) * vz) / L2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      best = Math.min(best, Math.hypot(x - (a[0] + vx * t), z - (a[1] + vz * t)));
+    }
+    return best;
+  };
   for (const t of list) {
     const x = t[0], z = t[1];
     // The street walk already planted its own trees off the kerb line, and a
     // surveyed node within a crown radius of one is the same tree twice.
     if (blocked && blocked(x, z)) continue;
-    if (sandRings.some((p) => inRingP(x, z, p))) continue;   // drawn as a palm
+    // 45m of a sand edge, matching buildBeachLife: those trees are drawn there
+    // with the coconut form and would otherwise get a second inland crown
+    if (sandRings.some((p) => inRingP(x, z, p) || edgeOfP(x, z, p) <= 45)) continue;
     // Park trees are older and bigger than the pruned street stock; the scale
     // spread is wider so a wood does not read as a plantation.
     f.add(x, z, 0.7 + ((x * 7.3 + z * 3.1) % 100) / 250);

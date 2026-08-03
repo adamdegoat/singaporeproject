@@ -91,7 +91,12 @@ def fetch(bbox, query=None):
         except Exception as e:                       # noqa: BLE001 - any failure fails over
             print(f"    failed: {type(e).__name__} {e}")
             time.sleep(3)
-    sys.exit("every Overpass mirror refused; try again later")
+    # NOT sys.exit. The site-naming pass below reads the LOCAL cache and is the
+    # most valuable thing this script does; killing the run because a public
+    # server is busy would throw that away for no reason. Return nothing and
+    # let the caller keep whatever the scene already had.
+    print("  every Overpass mirror refused — keeping the existing layer")
+    return None
 
 
 # THE ROCK GROYNES. Reference photographs of Siloso Beach show the thing that
@@ -116,7 +121,7 @@ def main():
 
     print(f"== attractions: {did}")
     raw = fetch(d["bbox"])
-    els = raw.get("elements", [])
+    els = (raw or {}).get("elements", [])
     print(f"  {len(els)} elements from Overpass")
 
     out, skipped, unnamed = [], 0, 0
@@ -158,7 +163,10 @@ def main():
         out.append(rec)
 
     out.sort(key=lambda r: (r.get("n") or "~", r["p"][0]))
-    scene["attractions"] = out
+    if out or "attractions" not in scene:
+        scene["attractions"] = out
+    else:
+        out = scene["attractions"]        # fetch failed; keep what we had
     json.dump(scene, open(path, "w"), separators=(",", ":"))
 
     named = sum(1 for r in out if r.get("n"))
@@ -169,9 +177,74 @@ def main():
           f"({named} named, {unnamed} unnamed, {skipped} skipped as hotels/info)")
     print("  by kind: " + ", ".join(f"{k} {v}" for k, v in sorted(kinds.items(), key=lambda kv: -kv[1])))
 
+    # NAME THE BUILDING FROM THE SITE IT STANDS IN.
+    #
+    # The owner: "cannot tell any landmark rlly at all" — and here is a large
+    # part of why. Shangri-La's Rasa Sentosa Resort & Spa IS in our raw cache,
+    # OSM way 595202369, with its name, phone number and star rating. It is
+    # tagged `tourism=hotel` and `landuse=commercial` and carries NO `building`
+    # tag at all, because it is the SITE boundary, not the footprint. The
+    # building pass correctly ignores it — and nothing anywhere then hands that
+    # name to the 5,898 m2 building standing ten metres away inside it.
+    #
+    # So the island was full of landmarks whose names we held and never used.
+    # This transfers a surveyed name onto the surveyed footprint it encloses:
+    # for each named site polygon that is not itself a building, the LARGEST
+    # unnamed building whose centre falls inside it takes the name. Largest,
+    # because a resort site contains its plant rooms and pool bars too and the
+    # name belongs to the main mass. Nothing named is ever overwritten.
+    # READ FROM THE LOCAL RAW CACHE, NOT THE NETWORK. Every one of these names
+    # was already downloaded and sitting on disk — 715 named non-building
+    # polygons in data/raw/sentosa.json — and re-asking Overpass for them was
+    # both pointless and, on the day this was written, impossible: three
+    # mirrors returned 504s and a bad certificate in a row. A pass that works
+    # off data we already hold cannot be blocked by a busy server.
+    sites = []
+    raw_path = os.path.join(HERE, "raw", f"{did}.json")
+    if os.path.exists(raw_path):
+        for e in json.load(open(raw_path)).get("elements", []):
+            t = e.get("tags") or {}
+            if t.get("building") or not t.get("name"):
+                continue
+            geom = e.get("geometry") or []
+            if len(geom) < 4:
+                continue
+            sites.append((t["name"], [proj(g["lat"], g["lon"]) for g in geom]))
+        print(f"  {len(sites)} named site polygons in the local raw cache")
+
+    def inside(px, pz, ring):
+        c = False
+        j = len(ring) - 1
+        for i in range(len(ring)):
+            xi, zi = ring[i]
+            xj, zj = ring[j]
+            if (zi > pz) != (zj > pz) and px < (xj - xi) * (pz - zi) / (zj - zi) + xi:
+                c = not c
+            j = i
+        return c
+
+    named_now = 0
+    for site_name, ring in sites:
+        best, best_a = None, 0
+        for b in scene.get("buildings", []):
+            if b.get("n") or not b.get("p"):
+                continue
+            xs = [q[0] for q in b["p"]]
+            zs = [q[1] for q in b["p"]]
+            cx, cz = (min(xs) + max(xs)) / 2, (min(zs) + max(zs)) / 2
+            if not inside(cx, cz, ring):
+                continue
+            if (b.get("a") or 0) > best_a:
+                best, best_a = b, b.get("a") or 0
+        if best is not None and best_a > 120:
+            best["n"] = site_name
+            named_now += 1
+    if named_now:
+        print(f"  {named_now} buildings took the name of the site they stand in")
+
     # ...and the rock groynes, in the same pass so one run does both
     rocks = []
-    for e in fetch(d["bbox"], ROCK_QUERY).get("elements", []):
+    for e in ((fetch(d["bbox"], ROCK_QUERY) or {}).get("elements", [])):
         t = e.get("tags") or {}
         geom = e.get("geometry") or []
         if len(geom) < 3:
@@ -180,7 +253,10 @@ def main():
                for v in (proj(g["lat"], g["lon"]) for g in geom)]
         rocks.append({"k": t.get("man_made") or t.get("natural") or "rock", "g": pts,
                       **({"n": t["name"]} if t.get("name") else {})})
-    scene["rocks"] = rocks
+    if rocks or "rocks" not in scene:
+        scene["rocks"] = rocks
+    else:
+        rocks = scene["rocks"]            # fetch failed; keep what we had
     json.dump(scene, open(path, "w"), separators=(",", ":"))
     print(f"  {len(rocks)} rock groynes / outcrops written")
 
