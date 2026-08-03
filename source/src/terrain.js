@@ -28,6 +28,40 @@ const TILE = 3;                        // 3 x 35m cells ~ 105m, the merger's til
 export class Terrain {
   constructor(grid) {
     this.g = grid || null;
+    // raw grid accessor for coastal logic (buildSea, shoreline sand): reads
+    // only — nothing may write the heightfield through this
+    this.grid = () => this.g;
+    // metres to the nearest open-sea cell (h < -0.4), lazy multi-source BFS
+    // over the grid on first call. Feeds the shoreline sand blend; an inland
+    // district computes it once, finds no sea, and answers Infinity forever.
+    this._seaD = null;
+    this.seaDistAt = (x, z) => {
+      const g2 = this.g;
+      if (!g2) return Infinity;
+      if (!this._seaD) {
+        const n = g2.nx * g2.nz;
+        const d = new Float32Array(n).fill(1e9);
+        const q = [];
+        for (let i = 0; i < n; i++) if (g2.h[i] < -0.4) { d[i] = 0; q.push(i); }
+        if (!q.length) { this._seaD = d; return Infinity; }
+        for (let head = 0; head < q.length; head++) {
+          const c = q[head];
+          const ci = c % g2.nx, cj = (c / g2.nx) | 0;
+          const nd = d[c] + g2.cell;
+          if (nd > 160) continue;                 // the blend only needs ~80m
+          for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const ni = ci + di, nj = cj + dj;
+            if (ni < 0 || nj < 0 || ni >= g2.nx || nj >= g2.nz) continue;
+            const nc = nj * g2.nx + ni;
+            if (d[nc] > nd) { d[nc] = nd; q.push(nc); }
+          }
+        }
+        this._seaD = d;
+      }
+      const i = Math.max(0, Math.min(g2.nx - 1, Math.round((x - g2.x0) / g2.cell)));
+      const j = Math.max(0, Math.min(g2.nz - 1, Math.round((z - g2.z0) / g2.cell)));
+      return this._seaD[j * g2.nx + i];
+    };
     this.flat = !grid;
     this.rg = null;        // road-corridor hash, set by carve()
   }
@@ -366,7 +400,8 @@ export class Terrain {
           if (id === undefined) {
             id = pos.length / 3;
             const x = g.x0 + (qx / 24) * g.cell, z = g.z0 + (qz / 24) * g.cell;
-            pos.push(x, this.vertexY(x, z), z);
+            const vy = this.vertexY(x, z);
+            pos.push(x, vy, z);
             const t = this.gGrid ? TINT[this.greenAt(x, z)] : null;
             // Untinted ground used to push (1,1,1) — the material colour
             // straight through, which made UNCLASSIFIED ground the brightest
@@ -374,7 +409,20 @@ export class Terrain {
             // it should be the quietest. A faint grey-green knocks it back
             // behind the paved tints and reads as the scrubby concrete-and-
             // grass mix that unmapped ground in this city actually is.
-            if (t) col.push(t[0], t[1], t[2]); else col.push(0.84, 0.87, 0.80);
+            if (t) col.push(t[0], t[1], t[2]);
+            else {
+              // THE SHORELINE PAINTS ITSELF (2026-08-03). Untinted low ground
+              // near open sea IS beach — that is what a shoreline is — so it
+              // blends toward sand by ELEVATION: full sand at the waterline,
+              // fading out by +2.4m. Gated on coastal distance (seaDist, a
+              // grid BFS from below-sea cells) so a low inland plaza stays
+              // concrete, and only where the district HAS open sea at all.
+              const sd = this.seaDistAt ? this.seaDistAt(x, z) : Infinity;
+              if (sd < 80 && vy > -0.5 && vy < 2.4) {
+                const f = Math.max(0, 1 - Math.max(0, vy) / 2.4) * Math.max(0, 1 - sd / 80);
+                col.push(0.84 + (0.90 - 0.84) * f, 0.87 + (0.84 - 0.87) * f, 0.80 + (0.64 - 0.80) * f);
+              } else col.push(0.84, 0.87, 0.80);
+            }
             verts.set(k, id);
           }
           return id;

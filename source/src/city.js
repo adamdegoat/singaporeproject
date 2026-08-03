@@ -2737,9 +2737,44 @@ export function aoPatch(world, x, z, size) {
 // so hard-coding a sea level either floods the promenade or leaves the bay as a
 // pit. Taking the lowest ground around the rim and dropping a little below it
 // puts the surface just under the quay, which is where a reservoir sits.
+// THE OPEN SEA, FROM THE HEIGHTFIELD (2026-08-03, "make sentosa like
+// sentosa"). The mapped water polygons cover only what OSM traced — on
+// Sentosa that is a rectangle of the channel, and the island's own south
+// coast ended in grey ground. The terrain knows the sea everywhere (Copernicus
+// reads ~-2m over open water), so a coastal district gets ONE large sheet at
+// sea level: the island rises out of it and the coastline draws itself.
+// Built only when the heightfield actually contains open water (an inland
+// district keeps zero extra fill); two triangles, so the cost is fill-rate
+// where sea is genuinely visible and nothing anywhere else.
+function buildSea(world) {
+  const g = TERRAIN.grid && TERRAIN.grid();
+  if (!g) return 0;
+  let wet = 0;
+  for (let i = 0; i < g.h.length; i++) if (g.h[i] < -0.4) wet++;
+  if (wet / g.h.length < 0.04) return 0;         // no meaningful open water
+  const SEA_Y = -0.22;                            // under every mapped ring level
+  const M = 2200;                                 // reach past the surround
+  const x0 = g.x0 - M, z0 = g.z0 - M;
+  const x1 = g.x0 + g.cell * g.nx + M, z1 = g.z0 + g.cell * g.nz + M;
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array([x0, SEA_Y, z0, x1, SEA_Y, z0, x1, SEA_Y, z1,
+                                x0, SEA_Y, z0, x1, SEA_Y, z1, x0, SEA_Y, z1]);
+  const uv = new Float32Array([x0 / 24, z0 / 24, x1 / 24, z0 / 24, x1 / 24, z1 / 24,
+                               x0 / 24, z0 / 24, x1 / 24, z1 / 24, x0 / 24, z1 / 24]);
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, MAT.water);
+  mesh.name = 'seaSurface';
+  mesh.receiveShadow = false;
+  world.add(mesh);
+  return 1;
+}
+
 export function buildWater(world, data) {
   const polys = data.water || [];
-  if (!polys.length) return { water: 0, waterArea: 0 };
+  const sea = buildSea(world);
+  if (!polys.length) return { water: 0, waterArea: 0, sea };
   const geos = [];
   let area = 0;
   for (const w of polys) {

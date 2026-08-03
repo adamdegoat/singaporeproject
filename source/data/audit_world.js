@@ -2354,7 +2354,8 @@ window.__auditWorld = async function auditWorld() {
       const vv2 = new T.Vector3();
       sc.traverse((o) => {
         if (!o.isMesh || o.isInstancedMesh) return;
-        if (o.name === 'waterSurface' || o.name === 'terrainSurface') return;
+        if (o.name === 'waterSurface' || o.name === 'terrainSurface'
+            || o.name === 'seaSurface') return;   // the open-sea sheet IS water
         // A PIER IS OVER WATER BY DEFINITION — that is what makes it a pier.
         // `buildPiers()` deliberately seats them at the water rim + 1.15m
         // rather than on the terrain, on the correct reasoning that the ground
