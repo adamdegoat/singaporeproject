@@ -5750,8 +5750,137 @@ function cableCarStation(api, b) {
   api.merge(ped, pale, ob.cx, ob.cz);
 }
 
+// EQUARIUS HOTEL — 7 storeys, 172 keys, set against the rainforest slope in
+// the west zone. Its published reading is WARM TIMBER-TONED HORIZONTAL BANDS,
+// which is the opposite of the rest of the resort's masonry: a stack of
+// balcony decks with timber soffits, not a punched wall.
+function equariusHotel(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = Math.max(6, b.h || 24);
+  const FLOORS = Math.max(2, Math.round(H / 3.4));
+  api.world.add(api.extrude(b.p, H, RWS_WALL));
+  const timber = new THREE.MeshStandardMaterial({ color: 0x8a6a49, roughness: 0.78 });
+  for (let k = 1; k <= FLOORS; k++) {
+    const y = (k / FLOORS) * H - 0.35;
+    if (y <= 0.5) continue;
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.07), 0.26, y), timber, ob.cx, ob.cz);
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.065), 0.1, y + 0.95), timber, ob.cx, ob.cz);
+  }
+}
+
+// WEAVE — 3 levels, over 20,000 m2, on the site of the old Forum. Published
+// description of the cladding: brown and yellow, "rough grainy textures"
+// referencing "sedimentary rocks along Siloso Headlands' coast", under an ETFE
+// pillow canopy. The strata are the wall; the pillow canopy is the roof.
+const WEAVE_ROCK = new THREE.MeshStandardMaterial({ color: 0x8f7047, roughness: 0.92 });
+const WEAVE_OCHRE = new THREE.MeshStandardMaterial({ color: 0xc4a05a, roughness: 0.9 });
+const ETFE = new THREE.MeshStandardMaterial({
+  color: 0xeef0ea, roughness: 0.42, metalness: 0.05,
+  transparent: true, opacity: 0.72, side: THREE.DoubleSide,
+});
+function weave(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = Math.max(4, b.h || 5);
+  api.world.add(api.extrude(b.p, H, WEAVE_ROCK));
+  // sedimentary banding: alternating strata round the whole mass
+  const bands = Math.max(3, Math.round(H / 1.6));
+  for (let k = 0; k < bands; k++) {
+    const y = (k / bands) * H;
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.02), H / bands * 0.45, y),
+      k % 2 ? WEAVE_OCHRE : WEAVE_ROCK, ob.cx, ob.cz);
+  }
+  // the ETFE pillow canopy above it, a shallow inflated dome per bay
+  const span = ob.halfLong * 2;
+  const n = Math.max(2, Math.min(7, Math.round(span / 22)));
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n - 0.5;
+    const u = t * span * 0.92;
+    const px = ob.bx + u * ob.ux, pz = ob.bz + u * ob.uz;
+    const r = Math.min(ob.halfShort * 0.95, span / n * 0.52);
+    const pillow = new THREE.SphereGeometry(r, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+    pillow.scale(1, 0.34, 1);
+    pillow.translate(px, g0 + H + 0.4, pz);
+    api.merge(pillow, ETFE, ob.cx, ob.cz);
+  }
+}
+
+// THE LAURUS — and the map still calls it Hard Rock Hotel.
+//
+// Hard Rock Hotel Singapore CLOSED 2 March 2024; The Laurus opened 1 Oct 2025
+// in the same shell, 183 all-suites over FIVE STOREYS, 7,650 m2, P49 Deesign.
+// There is NO guitar sculpture any more, so nothing here draws one.
+//
+// The mapped height is 55m, which cannot be right for a five-storey building
+// and is the old tag for the whole RWS block. Five storeys IS published, so
+// the height is taken from it at 3.4m floor to floor — the SAME stated
+// assumption Bras Basah Complex uses, and flagged here the same way so nobody
+// later mistakes 17m for a surveyed figure. Published form: grey pitched roofs
+// with red-orange monitors and vermilion pilasters.
+function theLaurus(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const FLOORS = 5;                       // published
+  const H = FLOORS * 3.4;                 // ASSUMPTION: 3.4m floor to floor
+  const grey = new THREE.MeshStandardMaterial({ color: 0x8d9095, roughness: 0.7 });
+  const vermilion = new THREE.MeshStandardMaterial({ color: 0xb4502c, roughness: 0.72 });
+  api.world.add(api.extrude(b.p, H, RWS_WALL));
+  // the pilasters: vermilion piers up the elevation, the thing you actually
+  // recognise it by from the pool deck
+  const per = perimeterOf(b.p);
+  const n = Math.max(8, Math.round(per / 7));
+  for (let i = 0; i < n; i++) {
+    const p2 = alongRing(b.p, (i + 0.5) / n, 1.03, ob);
+    if (!p2) continue;
+    const pier = new THREE.BoxGeometry(0.7, H * 0.92, 0.5);
+    pier.rotateY(-ob.ang);
+    pier.translate(p2[0], g0 + H * 0.46, p2[1]);
+    api.merge(pier, vermilion, ob.cx, ob.cz);
+  }
+  // grey pitched roof with red-orange monitors along the ridge
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.06), 0.4, H), grey, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.8), 1.6, H + 0.4), grey, ob.cx, ob.cz);
+  const span = ob.halfLong * 2;
+  const m = Math.max(2, Math.min(6, Math.round(span / 16)));
+  for (let i = 0; i < m; i++) {
+    const u = ((i + 0.5) / m - 0.5) * span * 0.8;
+    const mon = new THREE.BoxGeometry(span / m * 0.42, 1.5, ob.halfShort * 0.5);
+    mon.rotateY(-ob.ang);
+    mon.translate(ob.bx + u * ob.ux, g0 + H + 2.3, ob.bz + u * ob.uz);
+    api.merge(mon, vermilion, ob.cx, ob.cz);
+  }
+}
+
+// HOTEL ORA (ex-Festive Hotel) — about 7 storeys on the inland spine, with the
+// Festive Grand's 1,600-seat theatre beneath it. Published reading: grey
+// hipped roofs, DEEP EAVES, terracotta roof monitors.
+function hotelOra(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = Math.max(8, b.h || 23.8);
+  const grey = new THREE.MeshStandardMaterial({ color: 0x8d9095, roughness: 0.7 });
+  api.world.add(api.extrude(b.p, H, RWS_WALL));
+  // deep eaves: the overhang is the whole character, so it oversails hard
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.14), 0.38, H), grey, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.84), 1.9, H + 0.38), grey, ob.cx, ob.cz);
+  const span = ob.halfLong * 2;
+  const m = Math.max(2, Math.min(5, Math.round(span / 18)));
+  for (let i = 0; i < m; i++) {
+    const u = ((i + 0.5) / m - 0.5) * span * 0.76;
+    const mon = new THREE.BoxGeometry(span / m * 0.4, 1.3, ob.halfShort * 0.45);
+    mon.rotateY(-ob.ang);
+    mon.translate(ob.bx + u * ob.ux, g0 + H + 2.4, ob.bz + u * ob.uz);
+    api.merge(mon, api.mat.clayTile, ob.cx, ob.cz);
+  }
+}
+
 export const RECIPES = [
   [/^aj hackett/i, bungyTower],
+  [/^hard rock hotel|^the laurus/i, theLaurus],
+  [/^hotel ora|^festive hotel/i, hotelOra],
+  [/^equarius hotel/i, equariusHotel],
+  [/^weave$/i, weave],
   [/^singapore cable car station/i, cableCarStation],
   // SENTOSA — see the research block above this table. Hotel Michael's name is
   // carried by the main mass AND several small annexe footprints, which is

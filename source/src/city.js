@@ -1437,6 +1437,45 @@ export async function buildBuildings(world, data, Y = null) {
       }
     }
   }
+  // SENTOSA COVE IS WHITE AND LOW, and it is a typology rather than a set of
+  // landmarks — about 350 bungalows on five teardrop islands, each island one
+  // loop road. Published form: two-storey flat white boxes with dark
+  // full-height glazing and DEEP, THIN-EDGED ROOF SLABS; a minority keep the
+  // orange terracotta pitch left from Bernard Spoerry's 1992 Port Grimaud
+  // master plan. URA's landed rules cap the two-storey zones at 12m, and no
+  // Cove-specific height control is published, so heights stay as mapped.
+  //
+  // Located from the SURVEYED ROAD NAMES rather than a bounding box: Ocean
+  // Drive, Cove Way/Avenue/Grove/Drive and the five islands (Coral, Paradise,
+  // Treasure, Sandy, Pearl) are all in the road layer, so the district defines
+  // itself and cannot drift if the data is refetched.
+  const _coveRe = /ocean drive|cove way|cove avenue|cove grove|cove drive|coral island|paradise island|treasure island|sandy island|pearl island/i;
+  const _coveSegs = [];
+  for (const r of (data.roads || [])) {
+    if (!r.n || !_coveRe.test(r.n)) continue;
+    const p = r.p || [];
+    for (let i = 0; i < p.length - 1; i++) _coveSegs.push([p[i][0], p[i][1], p[i + 1][0], p[i + 1][1]]);
+  }
+  const _cove = new Set();
+  if (_coveSegs.length) {
+    for (const b of (data.buildings || [])) {
+      if (!b.p || b.p.length < 3) continue;
+      if ((b.a || 0) > 1200 || (b.h || 0) > 16) continue;   // not the towers or Quayside
+      let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+      for (const [x, z] of b.p) {
+        if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+        if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+      }
+      const bx = (mnx + mxx) / 2, bz = (mnz + mxz) / 2;
+      for (const [ax, az, cx2, cz2] of _coveSegs) {
+        const vx = cx2 - ax, vz = cz2 - az;
+        const L2 = vx * vx + vz * vz || 1;
+        let t = ((bx - ax) * vx + (bz - az) * vz) / L2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        if (Math.hypot(bx - (ax + vx * t), bz - (az + vz * t)) < 90) { _cove.add(b); break; }
+      }
+    }
+  }
   const _wrings = (data.water || []).map((w) => w.p).filter((p) => p && p.length > 3);
   const _inWaterRing = (x, z) => {
     for (const ring of _wrings) {
@@ -1676,7 +1715,26 @@ export async function buildBuildings(world, data, Y = null) {
       continue;
     }
     const _isBeach = _beach.has(b);
+    const _isCove = _cove.has(b);
     const fam = familyFor(b, _isBeach);
+    // THE COVE VILLA — see the Sentosa Cove note above. A deep, thin-edged
+    // roof slab oversailing a low white box is the whole look; the slab is
+    // what makes it read as a Cove house rather than a bungalow anywhere.
+    // A fifth keep the Port Grimaud terracotta pitch, chosen by the same
+    // position hash the facades use so a street is mixed but stable.
+    if (_isCove && !b.roof) {
+      const _hh = Math.max(3, b.h || 8);
+      const _cc = centroid(b.p);
+      let _ph = 0;
+      for (const [x, z] of b.p) _ph = (_ph * 31 + ((x * 7) | 0) + ((z * 13) | 0)) | 0;
+      if (Math.abs(_ph) % 5 === 0) {
+        merger.add(extrudeGeo(grow(b.p, 1.08), 0.3, _hh), MAT.clayTile, _cc[0], _cc[1]);
+        merger.add(extrudeGeo(grow(b.p, 0.82), 1.5, _hh + 0.3), MAT.clayTile, _cc[0], _cc[1]);
+      } else {
+        // thin edge, deep overhang: 22cm of slab reaching 1.3m past the wall
+        merger.add(extrudeGeo(grow(b.p, 1.19), 0.22, _hh), MAT.paleStone, _cc[0], _cc[1]);
+      }
+    }
     // AND A DEEP ROOF OVER IT. A low building on the sand is a pavilion — a
     // bar, a restaurant, a changing block — and what it has that a city
     // building does not is a roof that oversails its own walls to shade them.
@@ -1713,7 +1771,11 @@ export async function buildBuildings(world, data, Y = null) {
     // TINT of the surveyed texture, exactly like `building:colour` above, so
     // the family's window pattern survives; and a surveyed colour still wins.
     const _beachTint = 0xe8e2d4;
+    // Bloomberg's own description of the Cove is "white", and the photographs
+    // agree: white render, dark glazing. Brighter than the beach tint.
+    const _coveTint = 0xf2efe8;
     const mat = b.col ? tintedMat(wallTex, fam.rough, fam.metal, b.col)
+      : _isCove ? tintedMat(wallTex, fam.rough, fam.metal, _coveTint)
       : _isBeach ? tintedMat(wallTex, fam.rough, fam.metal, _beachTint)
                       : sharedMat(wallTex, fam.rough, fam.metal);
     const per = perimeter(pts);
