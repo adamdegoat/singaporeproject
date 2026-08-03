@@ -937,6 +937,10 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
   stats.signMeshes = await signs.flushY(world, {}, Y);
 
   Object.assign(stats, await buildWalkable(world, data, Y));
+  // after buildWalkable: the stair treads register their own walk surfaces
+  // first, so where a flight meets a path the higher tread still wins the
+  // standable lookup (it takes the highest match)
+  Object.assign(stats, await buildTrails(world, data, Y));
   return stats;
 }
 
@@ -961,6 +965,139 @@ const WALK_MAT = {
   cheek: new THREE.MeshStandardMaterial({ color: 0xa8a399, roughness: 0.92 }),
   hedge: new THREE.MeshStandardMaterial({ color: 0x4a6b3c, roughness: 1 }),
 };
+
+// THE TRAILS. Sentosa carries 833 surveyed footways, 10 pedestrian streets and
+// 43 stair flights — the Imbiah routes, the beach walks, the boardwalks, the
+// paths through every wood on the island — and NOT ONE OF THEM WAS EVER DRAWN.
+// roads.js skips them deliberately ("places you walk, not carriageways"), which
+// is right for the carriageway grid, and nothing else ever picked them up. So
+// the island's whole walking network existed as data and as nothing else: a
+// player could not see a trail, follow one, or tell a forest path from lawn.
+//
+// Same shape as every other surveyed layer here: draw what the survey records,
+// take the SURFACE from the ground it crosses rather than inventing one, and
+// register the result as standable so a walker is actually carried by it.
+//
+// Width comes from the way's own `w` where the survey gives one. The defaults
+// are the narrowest thing that still reads as a path from the saddle.
+export async function buildTrails(world, data, Y = null) {
+  const YY = Y || (async () => {});
+  const out = { trails: 0, trailSegs: 0, boardwalk: 0, forestTrail: 0, pavedPath: 0 };
+  const merger = new Merger();
+  // packed granite dust — what a Singapore park path actually is underfoot
+  const earthM = new THREE.MeshLambertMaterial({ color: 0x9c8768 });
+  // timber decking: the beach boardwalks and anything crossing sand
+  const deckM = new THREE.MeshLambertMaterial({ color: 0x8d7a63 });
+  const paveM = new THREE.MeshLambertMaterial({ color: 0xb0a898 });
+  // A BOARDWALK OVER WATER IS OVER WATER BY DESIGN — the Sentosa Boardwalk,
+  // the jetty approaches, every deck round the Cove's basins. W2 counts things
+  // standing in mapped water and is right to; this is the same exemption a
+  // bridge deck and the cable car already carry, declared on the MATERIAL so
+  // the check reads a mechanism rather than guessing from a shape. Its own
+  // material, not deckM, so a boardwalk over SAND stays fully checked.
+  const waterDeckM = new THREE.MeshLambertMaterial({ color: 0x8d7a63 });
+  waterDeckM.userData.boardwalkOverWater = true;
+  const wpolys = (data.water || []).map((w) => w.p).filter((p) => p && p.length > 3);
+
+  const inRing = (x, z, pts) => {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, zi] = pts[i], [xj, zj] = pts[j];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  const woods = (data.green || []).filter((g) => g.k === 'wood' && g.p && g.p.length >= 4);
+  const sands = (data.green || []).filter((g) => g.k === 'sand' && g.p && g.p.length >= 4);
+  // which surface does this path cross? asked at the segment midpoint, because
+  // a path that leaves a wood should change underfoot where it leaves it
+  const surfaceFor = (x, z) => {
+    for (const p of wpolys) if (inRing(x, z, p)) return 'waterdeck';
+    for (const s of sands) if (inRing(x, z, s.p)) return 'deck';
+    for (const w of woods) if (inRing(x, z, w.p)) return 'earth';
+    return 'pave';
+  };
+
+  for (const r of (data.roads || [])) {
+    const k = r.k || '';
+    if (k !== 'footway' && k !== 'pedestrian') continue;
+    const pts = r.p || [];
+    if (pts.length < 2) continue;
+    const half = Math.max(0.7, (r.w || (k === 'pedestrian' ? 4.0 : 2.0)) / 2);
+    let drew = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      await YY();
+      const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+      const L = Math.hypot(bx - ax, bz - az);
+      if (L < 0.5) continue;
+      const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+      const kind = surfaceFor(mx, mz);
+      const mat = kind === 'waterdeck' ? waterDeckM
+        : kind === 'deck' ? deckM : kind === 'earth' ? earthM : paveM;
+      if (kind === 'deck' || kind === 'waterdeck') out.boardwalk++;
+      else if (kind === 'earth') out.forestTrail++;
+      else out.pavedPath++;
+      // FOLLOW THE GROUND, do not span it. A single quad from end to end sinks
+      // into every rise between — these paths climb Imbiah. Step the ribbon
+      // along the segment so each piece sits on its own terrain, at the
+      // spacing the heightfield can actually resolve.
+      const steps = Math.max(1, Math.ceil(L / 6));
+      const ux = (bx - ax) / L, uz = (bz - az) / L;
+      const nx = -uz, nz = ux;
+      for (let s = 0; s < steps; s++) {
+        const t0 = s / steps, t1 = (s + 1) / steps;
+        const p0x = ax + (bx - ax) * t0, p0z = az + (bz - az) * t0;
+        const p1x = ax + (bx - ax) * t1, p1z = az + (bz - az) * t1;
+        // A PATH DOES NOT GET PAINTED OVER A CARRIAGEWAY. Where a footway
+        // crosses a road the crossing layer already draws the markings, and a
+        // ribbon of earth over asphalt is a defect the gates catch: testing
+        // only the parent segment's MIDPOINT let 47 pieces through into P1b,
+        // because a 90m footway crossing a road is on the road for six metres
+        // of it and clear at its middle. Tested per DRAWN PIECE, at both ends
+        // and at both edges of its own width — the same nine-sample shape the
+        // kerb emitters use — and at the same -0.3 margin, so a pavement
+        // legitimately running along a kerb line is not thrown away.
+        let onRoad = false;
+        if (window.__onRoad) {
+          for (const tt of [0, 0.5, 1]) {
+            const sx = p0x + (p1x - p0x) * tt, sz = p0z + (p1z - p0z) * tt;
+            for (const off of [0, half, -half]) {
+              if (window.__onRoad(sx + nx * off, sz + nz * off, -0.3)) { onRoad = true; break; }
+            }
+            if (onRoad) break;
+          }
+        }
+        if (onRoad) continue;
+        // +4cm: clear of the terrain surface, under the kerbs and treads that
+        // are seated on it, same offset the pavement layer uses
+        const y0 = groundAt(p0x, p0z) + 0.04, y1 = groundAt(p1x, p1z) + 0.04;
+        const g = new THREE.BufferGeometry();
+        const pos = new Float32Array([
+          p0x - nx * half, y0, p0z - nz * half,
+          p1x - nx * half, y1, p1z - nz * half,
+          p1x + nx * half, y1, p1z + nz * half,
+          p0x - nx * half, y0, p0z - nz * half,
+          p1x + nx * half, y1, p1z + nz * half,
+          p0x + nx * half, y0, p0z + nz * half,
+        ]);
+        const seg = Math.hypot(p1x - p0x, p1z - p0z);
+        const uv = new Float32Array([0, 0, seg / 2, 0, seg / 2, 1, 0, 0, seg / 2, 1, 0, 1]);
+        g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+        g.computeVertexNormals();
+        merger.add(g, mat, p0x, p0z);
+        // carried underfoot, so the walker stands ON the trail and not in the
+        // slope beside it
+        addWalkSurface(p0x, p0z, p1x, p1z, half, (y0 + y1) / 2);
+        out.trailSegs++;
+        drew++;
+      }
+    }
+    if (drew) out.trails++;
+  }
+  await merger.flushY(world, {}, Y);
+  return out;
+}
 
 export async function buildWalkable(world, data, Y = null) {
   let _wt = performance.now();
@@ -1623,18 +1760,28 @@ export async function buildBeachLife(world, data, Y = null) {
       if (x < mnx) mnx = x; if (x > mxx) mxx = x;
       if (z < mnz) mnz = z; if (z > mxz) mxz = z;
     }
-    // palms: jittered 13m grid on the DRY side of the sand (higher ground),
-    // clear of roads and paths so nothing stands in the beach walk
-    for (let gx = Math.ceil(mnx / 13) * 13; gx < mxx; gx += 13) {
-      for (let gz = Math.ceil(mnz / 13) * 13; gz < mxz; gz += 13) {
-        const jx = gx + (((gx * 7.7 + gz * 3.3) % 10) - 5);
-        const jz = gz + (((gx * 2.9 + gz * 9.1) % 10) - 5);
-        if (!inRing(jx, jz, sand.p)) continue;
-        if (groundAt(jx, jz) < 1.1) continue;          // palms keep off the waterline
-        if (window.__onRoad && window.__onRoad(jx, jz, 2.5)) continue;
-        if (window.__blocked && window.__blocked(jx, jz)) continue;
-        palmAt(jx, jz, 0.85 + ((jx * 6.1 + jz * 2.9) % 100) / 320);
-      }
+    // PALMS STAND WHERE A TREE WAS SURVEYED, AND NOWHERE ELSE.
+    //
+    // This was a jittered 13m grid over the whole sand polygon, and the owner
+    // called it correctly: "if the beach got no tree must be accurate, dont
+    // anyhow plant tree". Counted against the survey, the grid put 789 palms
+    // on sentosa's sand where OSM records 64 trees — twelve invented for every
+    // real one. Worse, Tanjong Beach and Palawan Beach carry ZERO surveyed
+    // trees on their sand and were being covered in palms anyway.
+    //
+    // A mapped WOOD is different and still gets filled (see plantSurveyed's
+    // jungle pass): a wood is an area the survey says is full of trees. Sand
+    // is an area the survey says is sand. Filling it is inventing.
+    //
+    // The palm FORM is the honest part to keep: a tree standing on a Singapore
+    // beach is a coconut or a sea almond, not the generic crown, so a surveyed
+    // beach tree is drawn as a palm here and skipped by plantSurveyed.
+    for (const t of (data.trees || [])) {
+      const jx = t[0], jz = t[1];
+      if (!inRing(jx, jz, sand.p)) continue;
+      if (window.__onRoad && window.__onRoad(jx, jz, 2.5)) continue;
+      if (window.__blocked && window.__blocked(jx, jz)) continue;
+      palmAt(jx, jz, 0.85 + ((jx * 6.1 + jz * 2.9) % 100) / 320);
     }
     // SWIM FLAGS STAND ON THE SEAWARD EDGE. Absolute elevation cannot find
     // the waterline here — the 35m DEM blends the jungle hill behind these

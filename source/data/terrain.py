@@ -33,6 +33,10 @@ CELL = 35.0          # grid resolution in metres
 # density is what makes a road sit on its own terrain rather than on its
 # neighbour's.
 SAMPLE_EVERY = 20.0  # along-road sampling interval
+# Where open water is pushed to, in ABSOLUTE metres, before the grid is rebased
+# at the end of build_terrain(). Exported into the grid as `sea` (post-rebase)
+# because the runtime cannot recover it otherwise — see the note at the rebase.
+SEA_SINK = -2.0
 
 
 def district(did):
@@ -673,6 +677,53 @@ def main():
     # once, above, because the open-ground lattice is laid over the same span)
     grid = build_grid(pts, elev, extent=extent_pts)
 
+    # WHAT THIS DISTRICT HAS BUILT ON IT, IN GRID CELLS. Shared by BOTH sinking
+    # passes below (mapped water polygons, then everything outside the
+    # coastline), because a cell that carries a road or a building is land no
+    # matter which pass is looking at it.
+    #
+    # This exists because the open sea was finally drawn on 2026-08-03 and 41
+    # buildings and 966 road points on sentosa turned out to be under it — the
+    # Police Coast Guard Brani base, the SCDF Marine Command and most of the
+    # Brani container terminal. Two separate holes caused it: the mapped-water
+    # pass protected only by a geometric inset, and the coastline pass protected
+    # only cells whose CENTRE was within 12m of a footprint.
+    #
+    # A cell is marked if any surveyed built thing overlaps the cell or lies
+    # within one cell of it — one cell, because bilinear sampling reads the four
+    # cell centres bracketing a point, each up to CELL away in x and in z, so
+    # anything closer than that leaks a sunk height into a built thing's ground.
+    # Whole footprints and whole road spans, not vertices: a 87m-wide terminal
+    # shed has no corner within 35m of its own middle.
+    _built = {}
+    def _mark_cell(px, pz):
+        _built[(int(math.floor(px / CELL)), int(math.floor(pz / CELL)))] = True
+    def _mark_span(ax, az, bx, bz):
+        n = int(math.hypot(bx - ax, bz - az) / (CELL * 0.5)) + 1
+        for s in range(n + 1):
+            t = s / n
+            _mark_cell(ax + (bx - ax) * t, az + (bz - az) * t)
+    for _b in data.get("buildings", []):
+        _p = _b.get("p", [])
+        if len(_p) < 3:
+            continue
+        _xs = [q[0] for q in _p]; _zs = [q[1] for q in _p]
+        for _ci in range(int(math.floor(min(_xs) / CELL)), int(math.floor(max(_xs) / CELL)) + 1):
+            for _cj in range(int(math.floor(min(_zs) / CELL)), int(math.floor(max(_zs) / CELL)) + 1):
+                _built[(_ci, _cj)] = True
+    for _r in data.get("roads", []):
+        _p = _r.get("p", [])
+        for _s in range(len(_p) - 1):
+            _mark_span(_p[_s][0], _p[_s][1], _p[_s + 1][0], _p[_s + 1][1])
+
+    def carries_built(px, pz):
+        ci, cj = int(math.floor(px / CELL)), int(math.floor(pz / CELL))
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                if (ci + di, cj + dj) in _built:
+                    return True
+        return False
+
     # ---- SINK THE GROUND UNDER WATER ---------------------------------------
     # The heightfield is interpolated from samples taken along ROADS, and there
     # are no roads in a reservoir, so the ground under Marina Bay is whatever
@@ -726,6 +777,7 @@ def main():
         # ring actually is, measured from the cells inside it.
         INSET = CELL * 1.2
         sunk = 0
+        kept_w = 0
         for ring in rings:
             rim = min((grid_at(grid, x, z) for x, z in ring), default=None)
             if rim is None:
@@ -757,10 +809,15 @@ def main():
                     k = j * grid["nx"] + i
                     if (grid["h"][k] > floor and inside(gx, gz, ring)
                             and edge_dist(gx, gz, ring) >= inset):
+                        if carries_built(gx, gz):
+                            kept_w += 1
+                            continue
                         grid["h"][k] = floor
                         sunk += 1
         if sunk:
             print(f"   sank {sunk} grid cells under {len(rings)} water polygons")
+        if kept_w:
+            print(f"   kept {kept_w} of those dry — they carry a road or a building")
 
     # ---- THE SEA IS EVERYTHING OUTSIDE THE COASTLINE (2026-08-03) ---------
     # Copernicus smears the shore: a 35m cell blending jungle hill into beach
@@ -850,6 +907,7 @@ def main():
 
         INSET_C = CELL * 0.9
         sunk_sea = 0
+        kept_built = 0
         for j in range(grid["nz"]):
             gz = grid["z0"] + j * CELL
             for i in range(grid["nx"]):
@@ -863,8 +921,13 @@ def main():
                     continue                       # the beach lip keeps its height
                 if on_building(gx, gz):
                     continue
-                grid["h"][k] = -2.0
+                if carries_built(gx, gz):
+                    kept_built += 1
+                    continue
+                grid["h"][k] = SEA_SINK
                 sunk_sea += 1
+        if kept_built:
+            print(f"   kept {kept_built} cells dry — they carry a road or a building")
         if sunk_sea:
             print(f"   sank {sunk_sea} cells outside {len(coast_rings)} coastline ring(s) — the open sea")
 
@@ -903,10 +966,88 @@ def main():
         if eased:
             print(f"   eased {eased} shore cells into a beach profile")
 
+        # THE COAST WAS SCALLOPED INTO CLIFFS, and the easing above is why.
+        # It pulls open shore down to a ramp but SKIPS cells under buildings —
+        # correctly, or a beachfront block ends up ten metres under water. On
+        # Siloso, where the beach clubs sit right on the sand, that leaves
+        # protected cells at 10-20m standing beside eased neighbours at 3-4m,
+        # and the drawn terrain reads as a torn cardboard edge dropping into
+        # the sea (vetted from the water, shots/street/trail.shot3).
+        #
+        # Measured across the Siloso shore: a clean transect ran 16.0 12.2 9.8
+        # 8.5 6.0 3.4 3.0 2.4 1.3 0.7 0.4 0.0 — a real beach. A spoiled one ran
+        # 22.8 14.6 14.5 20.7 14.1 5.3 10.7 12.7 6.9 3.8, which is the same
+        # coast with building cells punched through it.
+        #
+        # So: SMOOTH the shore band rather than move any building. A few box
+        # passes over cells near the sea, reading building cells but never
+        # writing them, so a protected spike is averaged INTO its neighbours
+        # and the ramp closes over it while the building keeps its own ground.
+        # Never below the local sea, so this can create no new underwater land.
+        SHORE_BAND = 6
+        near_sea = [False] * len(grid["h"])
+        for j in range(grid["nz"]):
+            for i in range(grid["nx"]):
+                k = j * grid["nx"] + i
+                if grid["h"][k] <= -1.5:
+                    continue
+                found = False
+                for dj in range(-SHORE_BAND, SHORE_BAND + 1):
+                    if found:
+                        break
+                    for di in range(-SHORE_BAND, SHORE_BAND + 1):
+                        ni, nj = i + di, j + dj
+                        if 0 <= ni < grid["nx"] and 0 <= nj < grid["nz"] \
+                                and grid["h"][nj * grid["nx"] + ni] <= -1.5:
+                            found = True
+                            break
+                near_sea[k] = found
+        smoothed = 0
+        for _pass in range(3):
+            src = list(grid["h"])
+            for j in range(grid["nz"]):
+                gz = grid["z0"] + j * CELL
+                for i in range(grid["nx"]):
+                    k = j * grid["nx"] + i
+                    if not near_sea[k] or src[k] <= -1.5:
+                        continue
+                    gx = grid["x0"] + i * CELL
+                    if on_building(gx, gz):
+                        continue          # read, never written
+                    tot = 0.0
+                    wsum = 0.0
+                    for dj in (-1, 0, 1):
+                        for di in (-1, 0, 1):
+                            ni, nj = i + di, j + dj
+                            if not (0 <= ni < grid["nx"] and 0 <= nj < grid["nz"]):
+                                continue
+                            v = src[nj * grid["nx"] + ni]
+                            if v <= -1.5:
+                                v = SEA_SINK      # the sea pulls the ramp down into itself
+                            w = 2.0 if (di == 0 and dj == 0) else 1.0
+                            tot += v * w
+                            wsum += w
+                    nv = tot / wsum
+                    if abs(nv - grid["h"][k]) > 0.01:
+                        grid["h"][k] = max(nv, SEA_SINK)
+                        smoothed += 1
+        if smoothed:
+            print(f"   smoothed {smoothed} shore-band cell writes into a coast")
+
     # store relative to the lowest point, so the world sits near y=0
+    #
+    # THIS REBASE SILENTLY DISABLED THE OPEN SEA FOR THE WHOLE PROJECT'S LIFE.
+    # Everything above sinks open water to SEA_SINK and eases the shore into a
+    # beach profile in ABSOLUTE metres, and then this line moves the entire
+    # world up by -min(h) — so the runtime, which tested for "cells below
+    # -0.4", found none and drew no sea on any district, ever. The sunk cells
+    # were still there; they were just dry land at +2.0 with beaches rising off
+    # them. Ship the sea level in the grid's OWN post-rebase terms so nothing
+    # downstream has to rediscover this.
     base = min(grid["h"])
     grid["h"] = [round(v - base, 2) for v in grid["h"]]
     grid["base"] = round(base, 2)
+    grid["sea"] = round(SEA_SINK - base, 2)
     grid["src"] = USED_SOURCE[0]      # which dataset this district's ground came from
     data["terrain"] = grid
     json.dump(data, open(path, "w"), separators=(",", ":"))

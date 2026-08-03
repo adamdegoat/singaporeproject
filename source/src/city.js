@@ -248,6 +248,17 @@ export const MAT = {
   water: new THREE.MeshStandardMaterial({
     map: texWater(), color: 0x8fa9a8, roughness: 0.16, metalness: 0.34,
   }),
+  // THE OPEN SEA IS NOT THE RESERVOIR. buildSea() used MAT.water, so every
+  // coast in this world wore Marina Reservoir's still green-grey — which is
+  // why Sentosa's sea reads as wet pavement. The Singapore Strait off the
+  // south coast is a working anchorage, not a postcard lagoon: silt and
+  // shipping keep it a muted blue-green rather than tropical cyan, and it is
+  // never still. NO PUBLISHED COLOUR EXISTS for it, so this is an observed
+  // value and is labelled as one — deeper and bluer than the reservoir,
+  // rougher so the sky scatters across it instead of mirroring.
+  openSea: new THREE.MeshStandardMaterial({
+    map: texWater(), color: 0x5a8296, roughness: 0.30, metalness: 0.42,
+  }),
   // the two surfaces OSM names that are neither asphalt nor our pavement slab
   unitPave: new THREE.MeshStandardMaterial({ map: texPaverBlock(), color: 0x9a9184, roughness: 0.92 }),
   roadConc: new THREE.MeshStandardMaterial({ map: texConcrete(0x9d9a94, 0.6), roughness: 0.93 }),
@@ -1296,6 +1307,32 @@ function grow(pts, f) {
 
 export async function buildBuildings(world, data, Y = null) {
   const stats = { count: 0, tall: 0, bespoke: 0 };
+  // A PODIUM SKIRT MUST NOT WALL INTO THE WATER — the same rule the skirt
+  // already follows for carriageways, for the same reason.
+  //
+  // Measured 2026-08-03: rebuilding sentosa's terrain with the shore smoothed
+  // took W2 from 168 to 248 and P1b from 9 to 11, and the extra findings were
+  // all building fabric — white walls, d8d2c3 trim — standing in mapped water.
+  // The mechanism is this skirt. It fires on a fall of more than 2.5m, and
+  // smoothing the coast is precisely a change to how the ground falls at the
+  // water's edge, so waterfront buildings that previously sat on a lumpy DEM
+  // now measure a real drop and grow a skirt down into the harbour.
+  //
+  // Proven by restoring the pre-rebuild terrain against the SAME code: W2 168
+  // / P1b 9, both passing. So this is the rebuild's consequence, not the sea's
+  // and not the trails'.
+  const _wrings = (data.water || []).map((w) => w.p).filter((p) => p && p.length > 3);
+  const _inWaterRing = (x, z) => {
+    for (const ring of _wrings) {
+      let c = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, zi] = ring[i], [xj, zj] = ring[j];
+        if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+      }
+      if (c) return true;
+    }
+    return false;
+  };
   // the era prior for THIS district, from its own dated buildings
   setEraMix(data.buildings);
   const merger = new Merger();
@@ -1462,8 +1499,10 @@ export async function buildBuildings(world, data, Y = null) {
           const _n = Math.max(1, Math.ceil(_L / 3));
           for (let _k = 0; _k <= _n && !_onRoad; _k++) {
             const _t = _k / _n;
-            if (onCarriageway(_a[0] + (_b[0] - _a[0]) * _t,
-                              _a[1] + (_b[1] - _a[1]) * _t, 0.3)) _onRoad = true;
+            const _sx = _a[0] + (_b[0] - _a[0]) * _t, _sz = _a[1] + (_b[1] - _a[1]) * _t;
+            // same sample walk answers both questions, so the two guards
+            // cannot disagree about where this building's edge runs
+            if (onCarriageway(_sx, _sz, 0.3) || _inWaterRing(_sx, _sz)) _onRoad = true;
           }
         }
       }
@@ -2808,28 +2847,74 @@ export function aoPatch(world, x, z, size) {
 // Built only when the heightfield actually contains open water (an inland
 // district keeps zero extra fill); two triangles, so the cost is fill-rate
 // where sea is genuinely visible and nothing anywhere else.
+// THE OPEN SEA WAS NEVER ONCE DRAWN (found 2026-08-03, from the owner's "i
+// really dont see it looking like sentosa"). This function tested the
+// heightfield for cells below -0.4 — but terrain.py REBASES the whole grid by
+// its own minimum on the last line of the build (`base = min(h)`), so every
+// height it ships is >= 0 and the test can never be true. Measured on
+// sentosa: min 0, base -4, cells below -0.4 = ZERO, so buildSea returned 0 on
+// every district in the world, every time.
+//
+// What that looked like: terrain.py sinks open water to -2.0, which the -4
+// rebase carries to +2.0 — so 9,569 of sentosa's 14,210 cells (67% of the
+// map) are a FLAT PLAIN AT 2.0 with no water on it, and the beaches, eased to
+// a 4.8/7.0/9.5 profile, rise off that plain like a quarry. The island had no
+// sea; the only water anywhere was the one rectangle OSM traced in the
+// channel. It also explains four failed attempts at swim-flag placement:
+// nothing could find a waterline because there was no waterline.
+//
+// The fix is to read the level terrain.py actually used instead of assuming
+// one. New grids carry `sea` outright; older cached chunks are reconstructed
+// from the sink constant and their own recorded `base`, so this works without
+// re-running the terrain build for all fifteen districts.
+const SEA_SINK = -2.0;                            // terrain.py's open-water level, pre-rebase
+// set by buildSea when a district has open water; read by buildWater so a
+// mapped ring cannot sit BELOW the sea it is part of (measured on sentosa: the
+// channel polygon levelled at 1.6 against a sea sheet at 2.18, which puts a
+// 0.6m step across water that is one body in life)
+const SEA_LEVEL = [null];
 function buildSea(world) {
   const g = TERRAIN.grid && TERRAIN.grid();
   if (!g) return 0;
+  // ONLY a grid that carries `sea` outright. The level is derivable from
+  // `base` alone, but drawing a sea over a district whose terrain has NOT been
+  // rebuilt with the road/building protection floods it — measured on sentosa
+  // before the rebuild: 966 road points and 41 buildings under water. So the
+  // sea arrives district by district, as each one's terrain is rebuilt and
+  // gated, and an un-rebuilt district looks exactly as it did yesterday.
+  const seaLevel = typeof g.sea === 'number' ? g.sea : null;
+  if (seaLevel === null) return 0;
   let wet = 0;
-  for (let i = 0; i < g.h.length; i++) if (g.h[i] < -0.4) wet++;
+  const wetAt = seaLevel + 0.4;
+  for (let i = 0; i < g.h.length; i++) if (g.h[i] <= wetAt) wet++;
   if (wet / g.h.length < 0.04) return 0;         // no meaningful open water
-  const SEA_Y = -0.22;                            // under every mapped ring level
+  // just clear of the sunk bed, so the sheet covers it rather than z-fighting
+  const SEA_Y = seaLevel + 0.18;
   const M = 2200;                                 // reach past the surround
   const x0 = g.x0 - M, z0 = g.z0 - M;
   const x1 = g.x0 + g.cell * g.nx + M, z1 = g.z0 + g.cell * g.nz + M;
+  // AND IT FACED THE SEABED, exactly like buildWater's ShapeGeometry did (the
+  // long note below). Walking the corners (x0,z0) -> (x1,z0) -> (x1,z1) with Y
+  // up winds CLOCKWISE seen from above, so computeVertexNormals pointed every
+  // normal at -Y and a FrontSide material showed nothing to a camera above the
+  // water. Two independent bugs were hiding this sheet: it was never built,
+  // and it would have been invisible if it had been. Corners are wound the
+  // other way round here rather than flipped afterwards.
   const geo = new THREE.BufferGeometry();
-  const pos = new Float32Array([x0, SEA_Y, z0, x1, SEA_Y, z0, x1, SEA_Y, z1,
-                                x0, SEA_Y, z0, x1, SEA_Y, z1, x0, SEA_Y, z1]);
-  const uv = new Float32Array([x0 / 24, z0 / 24, x1 / 24, z0 / 24, x1 / 24, z1 / 24,
-                               x0 / 24, z0 / 24, x1 / 24, z1 / 24, x0 / 24, z1 / 24]);
+  const pos = new Float32Array([x1, SEA_Y, z1, x1, SEA_Y, z0, x0, SEA_Y, z0,
+                                x0, SEA_Y, z1, x1, SEA_Y, z1, x0, SEA_Y, z0]);
+  const uv = new Float32Array([x1 / 24, z1 / 24, x1 / 24, z0 / 24, x0 / 24, z0 / 24,
+                               x0 / 24, z1 / 24, x1 / 24, z1 / 24, x0 / 24, z0 / 24]);
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geo.computeVertexNormals();
-  const mesh = new THREE.Mesh(geo, MAT.water);
+  const mesh = new THREE.Mesh(geo, MAT.openSea);
   mesh.name = 'seaSurface';
   mesh.receiveShadow = false;
+  // behind the mapped rings, which are the same body of water drawn finer
+  mesh.renderOrder = -2;
   world.add(mesh);
+  SEA_LEVEL[0] = SEA_Y;
   return 1;
 }
 
@@ -2849,7 +2934,12 @@ export function buildWater(world, data) {
       if (g < lo) lo = g;
     }
     if (!isFinite(lo)) continue;
-    const level = lo - 0.35;
+    // the rim rule is right for a reservoir held behind a barrage; on a coast
+    // it can put a mapped ring BELOW the open sea it opens into, which draws a
+    // step across one body of water. The sea wins where there is a sea.
+    // +2cm, not equal: coplanar with the sea sheet the two z-fight across the
+    // whole channel, and the finer mapped ring is the one that should win
+    const level = SEA_LEVEL[0] === null ? lo - 0.35 : Math.max(lo - 0.35, SEA_LEVEL[0] + 0.02);
     const geo = new THREE.ShapeGeometry(shapeFrom(pts));
     // THE WATER WAS FACING DOWNWARDS AND NOBODY COULD SEE IT.
     //
@@ -3011,11 +3101,27 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
   const list = data.trees || [];
   const f = new TreeField();
   let surveyed = 0;
+  // A SURVEYED TREE ON THE SAND IS A PALM, AND IT IS DRAWN ONCE.
+  // buildBeachLife draws the beach trees with a palm form, so planting them
+  // here as well would put a generic crown inside every palm. The rings are
+  // read from the same layer buildBeachLife reads, so the two cannot disagree
+  // about which trees belong to the beach.
+  const sandRings = (data.green || [])
+    .filter((g) => g.k === 'sand' && g.p && g.p.length >= 4).map((g) => g.p);
+  const inRingP = (x, z, pts) => {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, zi] = pts[i], [xj, zj] = pts[j];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+    }
+    return inside;
+  };
   for (const t of list) {
     const x = t[0], z = t[1];
     // The street walk already planted its own trees off the kerb line, and a
     // surveyed node within a crown radius of one is the same tree twice.
     if (blocked && blocked(x, z)) continue;
+    if (sandRings.some((p) => inRingP(x, z, p))) continue;   // drawn as a palm
     // Park trees are older and bigger than the pruned street stock; the scale
     // spread is wider so a wood does not read as a plantation.
     f.add(x, z, 0.7 + ((x * 7.3 + z * 3.1) % 100) / 250);
@@ -3253,8 +3359,36 @@ export function buildCranes(world, data) {
   return { cranes: n };
 }
 
+// A SUPERTREE GROWS IN A GROVE, AND ONLY IN ONE PLACE.
+//
+// This function drew EVERY mapped `man_made=tower` node as a Gardens by the
+// Bay supertree, anywhere in the world. On sentosa that put six of them on the
+// island — one standing on Siloso Beach, 50m of Marina Bay landmark on the
+// sand (vetted, shots/street/shore.shot2). The island's towers are the
+// SkyHelix, the bungy tower and communications masts; not one is a supertree.
+//
+// The data cannot tell them apart: `towers` carries position, height and
+// radius and no name at all. What DOES separate them is that the supertrees
+// are a GROVE — eighteen of them inside a couple of hundred metres — while
+// every other district's towers are scattered across it. Measured: marinabay's
+// cluster spans ~220m; sentosa's twelve are spread over more than a kilometre,
+// the closest pair a kilometre from the next. So the test is the grove itself,
+// which is a property of the real thing rather than a guess about it.
+//
+// The right long-term fix is for process.py to carry the tower's name so the
+// grove is identified rather than inferred; this is the honest test until then.
+const GROVE_REACH = 250;      // metres — Gardens by the Bay's cluster is ~220m across
+const GROVE_MIN = 6;          // neighbours within reach before a tower is a supertree
 export function buildSupertrees(world, data) {
-  const list = data.towers || [];
+  const all = data.towers || [];
+  const list = all.filter((t) => {
+    let near = 0;
+    for (const o of all) {
+      if (o === t) continue;
+      if (Math.hypot(o.p[0] - t.p[0], o.p[1] - t.p[1]) <= GROVE_REACH) near++;
+    }
+    return near >= GROVE_MIN;
+  });
   if (!list.length) return { supertrees: 0 };
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b6f63, roughness: 0.9 });
   const skinMat = new THREE.MeshLambertMaterial({

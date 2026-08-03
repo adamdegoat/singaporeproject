@@ -845,6 +845,30 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     world.add(im);
   };
   const yaw = (r) => { p.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
+  // THE SIDE-STREET KERB FOLLOWS ITS ROAD'S GRADE — see the long note at
+  // seatKerb in main.js, which fixes the same defect on the axis kerbs. These
+  // are the bigger half of it: a side-street kerb is a FOUR metre box, so on a
+  // grade each piece steps twice as far as an axis kerb does, and Sentosa's
+  // side streets are most of the island's kerb line.
+  //
+  // Deliberately NOT folded into `yaw`: the lamp-post emitter below shares
+  // that function, and a lamp post leans for nobody.
+  const KERB_HALF = 2.0;                       // the 4m segment's half length
+  const KERB_MAX_PITCH = 0.30;                 // steeper than ~30% is a data seam
+  const kerbSeat = (r) => {
+    const sn = Math.sin(r[3]), cs = Math.cos(r[3]);
+    const ya = surfaceAt(r[0] + sn * KERB_HALF, r[2] + cs * KERB_HALF);
+    const yb = surfaceAt(r[0] - sn * KERB_HALF, r[2] - cs * KERB_HALF);
+    let pitch = -Math.atan2(ya - yb, KERB_HALF * 2);
+    if (!(pitch > -KERB_MAX_PITCH && pitch < KERB_MAX_PITCH)) {
+      pitch = 0;
+      p.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]);
+    } else {
+      p.set(r[0], (ya + yb) / 2 + r[1], r[2]);
+    }
+    e.set(pitch, r[3], 0, 'YXZ');
+    q.setFromEuler(e);
+  };
   // DEDUPE KERBS BEFORE EMITTING. With the dressing reach raised to cover the
   // whole district, three times as many streets are kerbed and every junction
   // where two of them meet can lay two kerbs on one spot. `claim` cannot stop
@@ -865,7 +889,7 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     }
     return true;
   });
-  emit(new THREE.BoxGeometry(0.38, 0.3, 4.0), MAT.kerb, dedupeProps(kerbClear, 0.6), yaw);
+  emit(new THREE.BoxGeometry(0.38, 0.3, 4.0), MAT.kerb, dedupeProps(kerbClear, 0.6), kerbSeat);
 
   // The signalised crossings' boundary squares: 200mm, flat, one instanced
   // mesh for the whole district. There are far more of these than zebras --

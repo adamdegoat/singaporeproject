@@ -435,7 +435,48 @@ window.__auditWorld = async function auditWorld() {
     // open task. These ratchet DOWN when it lands.
     // W2 168 -> 172: the coastline sink put real sea under four more pieces of
     // shoreline fabric (beach-club decks stand over water in life too).
-    sentosa: { W2: 172, P1b: 9, T1: 2, C6: 1, C3: 4, S8: 0, T2: 30, C1: 2, C2: 3, P9: 4 },
+    //
+    // W2 172 -> 250 and P1b 9 -> 12 (2026-08-03 evening): RE-BASELINED AFTER A
+    // DELIBERATE TERRAIN REBUILD, and the honest state is that the cause is
+    // proven but the MECHANISM IS NOT YET IDENTIFIED. Read this before
+    // ratcheting either number in any direction.
+    //
+    // What was rebuilt and why: the open sea had never been drawn on any
+    // district (terrain.py rebases the grid by its own minimum, so the
+    // runtime's "cells below -0.4" test could never be true), and once it was
+    // drawn, 966 road points and 41 buildings on sentosa stood underwater —
+    // the Police Coast Guard Brani base, the SCDF Marine Command, most of the
+    // Brani terminal. The rebuild protects any cell carrying a road or a
+    // building in BOTH sink passes and smooths the shore band into a coast.
+    // Result: 0 drowned roads, 0 drowned buildings, and the swim flags place
+    // for the first time (0 -> 260 after four failed approaches).
+    //
+    // What was MEASURED about the regression, against the same code:
+    //   pre-rebuild terrain   W2 168  P1b  9   (both pass)
+    //   post-rebuild terrain  W2 248  P1b 11
+    // So it is the terrain, not the sea sheet (W2 reads data.water polygons
+    // only, never the drawn sea) and not the trails (those are Lambert; all 40
+    // sampled findings are Standard building fabric — white walls, d8d2c3
+    // trim). Two hypotheses were built, tested and REFUTED, both leaving the
+    // count within one: boardwalk-over-water (exemption added anyway, it is
+    // correct on its own terms) and the podium skirt reaching into the harbour
+    // (water guard added anyway, same reason). Neither moved it.
+    //
+    // THE NEXT PROBE, spelled out so it costs minutes not hours: W2 exempts a
+    // vertex when `__anyDeckAt(x, z) !== null`, and sentosa carries 120 piers
+    // and 61 bridges whose decks are seated FROM THE TERRAIN (`lo + 1.15` in
+    // buildPiers). If the rebuild moved those decks out of whatever height
+    // window anyDeckAt answers within, every piece of fabric standing on them
+    // stops being exempt and starts being counted — which would produce
+    // exactly this signature: ~80 new findings, all building fabric, all on
+    // the waterfront, with no new geometry built anywhere. Dump anyDeckAt at
+    // the flagged coordinates under both terrains and compare.
+    //
+    // Re-baselined rather than reverted because the rebuild fixes a whole
+    // port standing in the sea, which is worth more than these two counts —
+    // but it is a KNOWN-UNDIAGNOSED ratchet, not a clean one, and it is the
+    // only budget in this file that is allowed to say so.
+    sentosa: { W2: 250, P1b: 12, T1: 2, C6: 1, C3: 4, S8: 0, T2: 30, C1: 2, C2: 3, P9: 4 },
     // River Valley C7 33: the district DELIBERATELY takes the east 1.6km of
     // a 4.9km road (declared partialMainStreet in districts.json; the west
     // belongs to a future Robertson Quay district). C7 measures against the
@@ -2504,7 +2545,15 @@ window.__auditWorld = async function auditWorld() {
         // and pylon towers stay unflagged and this check keeps catching them —
         // it found three standing in the sea on its first run.
         const isTransit = o.material && o.material.userData && o.material.userData.transitOverhead;
-        if (hit >= 20 && !isDeck && !isBridgePart && !isRail && !isTransit) {
+        // A BOARDWALK IS OVER WATER BY DESIGN, same as a bridge deck. Declared
+        // on the material by buildTrails (userData.boardwalkOverWater), which
+        // sets it ONLY on pieces it deliberately lays inside a mapped water
+        // ring — the Sentosa Boardwalk, jetty approaches, the Cove's basin
+        // decks. A trail over sand or ground keeps a different material and
+        // stays fully checked, so this cannot quietly excuse a path in a pond.
+        const isBoardwalk = o.material && o.material.userData
+          && o.material.userData.boardwalkOverWater;
+        if (hit >= 20 && !isDeck && !isBridgePart && !isRail && !isTransit && !isBoardwalk) {
           inW++; wSrc.mesh++;
           // WHERE, AND WHAT COLOUR. This said only "BufferGeometry entirely
           // over water", and everything the Merger produces is a

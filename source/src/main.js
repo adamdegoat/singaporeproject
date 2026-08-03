@@ -59,9 +59,34 @@ let ARRIVING = false;
 // Density is set from the far plane, not by eye: FogExp2 leaves
 // exp(-(density*d)^2) of an object showing at distance d, and at 520m a density
 // of 0.0021 still showed 30% of it, so buildings popped out of nothing at a hard
-// line. 0.0038 leaves about 2%.
-scene.fog = new THREE.FogExp2(0xc9c3b2, 0.0038);
-const camera = new THREE.PerspectiveCamera(58, 1, 0.3, 520);
+// line. 0.0038 leaves about 2%. THE RULE IS density * far ~= 1.92 — change one
+// and the other MUST follow, or the cull range grows a visible wall.
+//
+// TWO ATMOSPHERES (2026-08-03, the owner: "i really dont see it looking like
+// sentosa"). Every colour above was tuned for the CBD: a sandy urban haze
+// (0xc9c3b2) against a sandy sky horizon (PAL.skyHaze). On the island that is
+// most of what is wrong with the picture — probed from the air over the Cove,
+// the sea, the jungle and the sky all converge on the SAME beige by 200m, so
+// there is no distance, no colour and no horizon. An island in the Singapore
+// Strait hazes BLUE-WHITE off the water, and it is seen across open sea, so it
+// also needs to see further than a street canyon does.
+//
+// The fog colour and the sky's horizon colour must MATCH — that match is what
+// makes the far plane invisible instead of a wall.
+// sentosa only for now, and deliberately: the longer far plane is measured on
+// sentosa (333 draws against 246, +2.5% triangles, no fps change) and the
+// marine haze only reads right where there is a drawn sea to haze into. Each
+// coastal district joins this list when its terrain is rebuilt and gated.
+const ISLAND_SCENES = /^(sentosa)$/;
+const ATMO = P.get('atmo')
+  || (ISLAND_SCENES.test((P.get('scene') || 'sentosa').replace(/[^a-z0-9_-]/gi, '')) ? 'island' : 'city');
+const SEASIDE = ATMO === 'island';
+// far plane: the island earns a longer view because the expensive direction
+// (inland) is still district-culled and LOD-capped, while the direction that
+// opens up is open water — two triangles. Overridable for A/B measurement.
+const FAR = +P.get('far') || (SEASIDE ? 900 : 520);
+scene.fog = new THREE.FogExp2(SEASIDE ? 0xb7cdd9 : 0xc9c3b2, 1.92 / FAR);
+const camera = new THREE.PerspectiveCamera(58, 1, 0.3, FAR);
 
 /* ---------------- sky + light ---------------- */
 const SUNDIR = new THREE.Vector3(-0.52, 0.80, -0.30).normalize();
@@ -75,8 +100,11 @@ const sky = new THREE.Mesh(
   new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
     uniforms: {
-      top: { value: new THREE.Color(PAL.skyTop) }, mid: { value: new THREE.Color(PAL.skyMid) },
-      haze: { value: new THREE.Color(PAL.skyHaze) }, cloud: { value: new THREE.Color(PAL.cloud) },
+      top: { value: new THREE.Color(SEASIDE ? 0x2f6ba8 : PAL.skyTop) },
+      mid: { value: new THREE.Color(SEASIDE ? 0x8ab6d6 : PAL.skyMid) },
+      // the horizon band IS the fog colour — see the atmosphere note above
+      haze: { value: new THREE.Color(SEASIDE ? 0xb7cdd9 : PAL.skyHaze) },
+      cloud: { value: new THREE.Color(PAL.cloud) },
       sun: { value: SUNDIR.clone() },
     },
     vertexShader: `varying vec3 vW;
@@ -582,6 +610,37 @@ async function dressStreet(data, axis, target = world, Y = null) {
 
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
   const p3 = new THREE.Vector3(), s3 = new THREE.Vector3(1, 1, 1);
+  // A KERB FOLLOWS THE ROAD'S SLOPE — it does not stair-step down it.
+  //
+  // The owner, riding: "those road side curb anyway to not make it so jagged
+  // every step?" He is describing exactly what the code did. Each kerb is a 2m
+  // box placed with YAW ONLY (`e.set(0, r[3], 0)`) and seated at the surface
+  // height of its own CENTRE, so on any grade a run of them is a staircase:
+  // every segment horizontal, each one a step below the last. On Sentosa,
+  // where the roads climb Imbiah and drop to every beach, that is most of the
+  // island's kerb line.
+  //
+  // Seat on the MEAN of the segment's two ends and pitch it by the slope
+  // between them, so consecutive segments meet end to end instead of
+  // overlapping in a tread. The pitch is clamped: surfaceAt is discontinuous
+  // where a segment straddles a bridge edge or a stair tread, and an unclamped
+  // atan2 across that discontinuity would stand a kerb on end.
+  const KERB_HALF = 1.0;                       // the 2m segment's half length
+  const KERB_MAX_PITCH = 0.30;                 // ~30% grade; steeper is a data seam
+  const seatKerb = (r) => {
+    const s = Math.sin(r[3]), c = Math.cos(r[3]);
+    const ya = surfaceAt(r[0] + s * KERB_HALF, r[2] + c * KERB_HALF);
+    const yb = surfaceAt(r[0] - s * KERB_HALF, r[2] - c * KERB_HALF);
+    let pitch = -Math.atan2(ya - yb, KERB_HALF * 2);
+    if (!(pitch > -KERB_MAX_PITCH && pitch < KERB_MAX_PITCH)) {
+      pitch = 0;
+      p3.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]);
+    } else {
+      p3.set(r[0], (ya + yb) / 2 + r[1], r[2]);
+    }
+    e.set(pitch, r[3], 0, 'YXZ');              // yaw first, then pitch about the run
+    q.setFromEuler(e);
+  };
   const emit = (geo, mat, list, fn) => {
     if (!list.length) return;
     const im = new THREE.InstancedMesh(geo, mat, list.length);
@@ -623,8 +682,7 @@ async function dressStreet(data, axis, target = world, Y = null) {
     if (painted.length) {
       const im = new THREE.InstancedMesh(new THREE.BoxGeometry(0.42, 0.3, 2.0), MAT.kerbPaint, painted.length);
       painted.forEach((r, i) => {
-        p3.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]);
-        e.set(0, r[3], 0); q.setFromEuler(e);
+        seatKerb(r);
         m.compose(p3, q, s3); im.setMatrixAt(i, m);
         // alternate along the run, keyed off position so the pattern is stable
         band = (Math.round(r[0] * 0.5) + Math.round(r[2] * 0.5)) & 1;
@@ -655,7 +713,7 @@ async function dressStreet(data, axis, target = world, Y = null) {
   // these plain ones did not, so on the Bayfront bridge 119 of them sat 1.7m
   // below the deck they belong to. Every prop on this list stands on the road
   // surface, and the road surface is the deck where a bridge crosses.
-    p3.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
+    seatKerb(r);
   });
   // THE LAMP POST, to LTA's published form.
   //
