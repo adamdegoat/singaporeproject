@@ -2332,6 +2332,57 @@ export async function buildTransit(world, data, Y = null) {
   const gateAtlas = new SignAtlas(THREE);
   const gateSigns = new Merger();
 
+  // -- SENSORYSCAPE: three woven diagrid vessels ---------------------------
+  //
+  // The 350m connector from Resorts World down to the beaches (Serie + Multiply,
+  // 2024). Its sensory gardens are "framed by three intricate diagrid
+  // structures... basket-inspired woven structures", and that weave is the
+  // whole identity of the thing — so it is built as two families of crossing
+  // arcs over an elliptical plan, which is what a diagrid basket IS.
+  //
+  // The spine and the garden positions are surveyed (data/sensoryscape.py);
+  // the basket's size and which gardens carry one are authored, and the file
+  // says so.
+  const ss = data.sensoryscape;
+  if (ss && ss.vessels && ss.vessels.length) {
+    const ribMat = new THREE.MeshLambertMaterial({ color: 0xb9a37e });
+    for (const v of ss.vessels) {
+      await YY();
+      const [vx, vz] = v.p;
+      const gy5 = surfaceAt(vx, vz);
+      const RIB = 14;
+      for (const dir of [1, -1]) {
+        for (let k = 0; k < RIB; k++) {
+          const t0 = (k / RIB) * Math.PI * 2;
+          // an arc springing from the rim, leaning with the weave
+          const SEG = 7;
+          for (let sIdx = 0; sIdx < SEG; sIdx++) {
+            const u0 = sIdx / SEG, u1 = (sIdx + 1) / SEG;
+            const pA = ribPoint(t0, u0, dir), pB = ribPoint(t0, u1, dir);
+            const len = Math.hypot(pB[0] - pA[0], pB[1] - pA[1], pB[2] - pA[2]);
+            if (len < 0.05) continue;
+            const bar = new THREE.BoxGeometry(0.16, 0.16, len);
+            const mx2 = (pA[0] + pB[0]) / 2, my2 = (pA[1] + pB[1]) / 2, mz2 = (pA[2] + pB[2]) / 2;
+            const run2 = Math.hypot(pB[0] - pA[0], pB[2] - pA[2]);
+            bar.rotateX(-Math.atan2(pB[1] - pA[1], run2));
+            bar.rotateY(Math.atan2(pB[0] - pA[0], pB[2] - pA[2]));
+            bar.translate(mx2, my2, mz2);
+            merger.add(bar, ribMat, vx, vz);
+          }
+        }
+      }
+      function ribPoint(t0, u, dir) {
+        // a hyperboloid-ish basket: the rib twists as it rises
+        const tw = t0 + dir * u * 1.15;
+        const r = 1 - 0.30 * u * u;
+        const x = vx + Math.cos(tw) * v.rx * r * Math.cos(v.a) - Math.sin(tw) * v.rz * r * Math.sin(v.a);
+        const z = vz + Math.cos(tw) * v.rx * r * Math.sin(v.a) + Math.sin(tw) * v.rz * r * Math.cos(v.a);
+        return [x, gy5 + Math.sin(u * Math.PI * 0.5) * v.h, z];
+      }
+      out.sensoryVessel = (out.sensoryVessel || 0) + 1;
+    }
+  }
+
   // -- THE UNIVERSAL STUDIOS ENTRANCE ARCH ---------------------------------
   //
   // Built from a photograph, because nothing about it is published — see

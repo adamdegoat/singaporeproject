@@ -45,7 +45,16 @@ LINES = [
     ("oceanarium", "Deep-sea habitats, on the Waterfront."),
     ("madame tussauds", "Wax figures, plus a boat ride through Singapore's story."),
     ("images of singapore", "The island's history, told room by room."),
-    ("sensoryscape", "A planted walk linking the beaches to Resorts World."),
+    ("sensoryscape", "A 350m planted walk from Resorts World down to the beaches."),
+    # The six Sensoryscape gardens (Serie + Multiply, opened March 2024).
+    # Three of them sit inside woven diagrid structures; the light show runs
+    # nightly from 7.50pm. archdaily.com / sensoryscape.sentosa.com.sg.
+    ("lookout loop", "The top of the Sensoryscape walk, looking back over Resorts World."),
+    ("tactile trellis", "A Sensoryscape garden, enclosed by a woven diagrid shell."),
+    ("scented sphere", "A Sensoryscape garden of fragrant planting, under a woven shell."),
+    ("symphony streams", "Water and sound, under the third of the woven shells."),
+    ("palate playground", "The taste garden on the Sensoryscape walk."),
+    ("glow garden", "Lit flower stalks up the stair. The show runs nightly from 7.50pm."),
     ("aj hackett", "Bungee, giant swing and a skybridge over Siloso."),
     ("battlestar", "Duelling coasters, 42.5m at the top."),
     ("transformers", "A 3D dark ride."),

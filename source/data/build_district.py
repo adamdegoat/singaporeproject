@@ -440,6 +440,8 @@ def main():
     # Where a real carriageway runs through a real footprint, open the ground
     # storey — the road passes under the structure. See data/openground.py.
     subprocess.run([sys.executable, os.path.join(HERE, "openground.py"), d["id"]], check=False)
+    # Sensoryscape is a landscape, not the 27m block the height bands made it.
+    subprocess.run([sys.executable, os.path.join(HERE, "sensoryscape.py"), d["id"]], check=False)
     # The USS entrance arch is not in OSM either. See data/ussgate.py.
     subprocess.run([sys.executable, os.path.join(HERE, "ussgate.py"), d["id"]], check=False)
     # The Fort Siloso Skywalk is not in OSM either. See data/skywalk.py.
