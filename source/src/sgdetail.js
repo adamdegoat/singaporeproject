@@ -941,6 +941,7 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
   // first, so where a flight meets a path the higher tread still wins the
   // standable lookup (it takes the highest match)
   Object.assign(stats, await buildTrails(world, data, Y));
+  Object.assign(stats, await buildAttractions(world, data, Y));
   return stats;
 }
 
@@ -965,6 +966,122 @@ const WALK_MAT = {
   cheek: new THREE.MeshStandardMaterial({ color: 0xa8a399, roughness: 0.92 }),
   hedge: new THREE.MeshStandardMaterial({ color: 0x4a6b3c, roughness: 1 }),
 };
+
+// THE ATTRACTIONS — the layer this pipeline never fetched.
+//
+// data/attractions.py explains how they were missing; this draws them. 120
+// records on sentosa, 83 named. Only the forms below are built: a record we
+// have no honest form for is counted and left alone rather than turned into a
+// generic box, which is what would make the island look busy and wrong.
+//
+// STALENESS IS CHECKED HERE, NOT IN THE DATA. OSM still tags Madagascar and
+// its rides, which closed in March 2022 and became Minion Land in February
+// 2025, and it still carries Rumours Beach Club, which closed in January 2026.
+// Building from a name alone would ship a theme park that has not existed for
+// four years, so the dead list is refused explicitly.
+const GONE = /madagascar|crate adventure|king julien|rumours|merlion|tiger sky/i;
+export async function buildAttractions(world, data, Y = null) {
+  const YY = Y || (async () => {});
+  const out = { attractions: 0, globes: 0, cannons: 0, attrSkipped: 0 };
+  const list = data.attractions || [];
+  if (!list.length) return out;
+  const merger = new Merger();
+
+  // THE UNIVERSAL STUDIOS GLOBE. The most photographed object on the island
+  // and, until the attractions layer existed, not in this world at all.
+  //
+  // ITS DIAMETER IS UNPUBLISHED. Checked against Resorts World's own releases,
+  // Universal corporate, fabrication trade press and the tourism databases and
+  // it is simply not stated anywhere. 6m is an ESTIMATE scaled from adults
+  // standing at the fountain rail in two independent photographs, and it is
+  // labelled as an estimate here so nobody later reads it as surveyed.
+  //
+  // The rest is photo-verified: a deep navy perforated metal sphere on a
+  // latitude/longitude panel grid, continents in raised bronze relief, and a
+  // gold arc ring wrapping it diagonally carrying the wordmark. NO LETTERING
+  // IS DRAWN — this project reproduces no brand marks — so the ring is drawn
+  // as the ring it is.
+  const navy = new THREE.MeshStandardMaterial({ color: 0x1f2b52, roughness: 0.45, metalness: 0.35 });
+  const bronze = new THREE.MeshStandardMaterial({ color: 0x8a6a3c, roughness: 0.55, metalness: 0.45 });
+  const gold = new THREE.MeshStandardMaterial({ color: 0xc9a447, roughness: 0.35, metalness: 0.6 });
+  const granite = new THREE.MeshStandardMaterial({ color: 0x8e8b86, roughness: 0.85 });
+  const gun = new THREE.MeshStandardMaterial({ color: 0x3b3f42, roughness: 0.6, metalness: 0.4 });
+  const carriage = new THREE.MeshStandardMaterial({ color: 0x4a4034, roughness: 0.8 });
+
+  const globe = (x, z) => {
+    const gy = groundAt(x, z);
+    const R = 3.0;                       // ESTIMATED 6m diameter — see above
+    // the fountain basin it stands in, on granite paving
+    const basin = new THREE.CylinderGeometry(6.4, 6.8, 0.55, 20);
+    basin.translate(x, gy + 0.27, z);
+    merger.add(basin, granite, x, z);
+    const plinth = new THREE.CylinderGeometry(1.5, 1.9, 1.5, 14);
+    plinth.translate(x, gy + 1.3, z);
+    merger.add(plinth, granite, x, z);
+    const cy = gy + 2.05 + R;
+    const sph = new THREE.SphereGeometry(R, 22, 16);
+    sph.translate(x, cy, z);
+    merger.add(sph, navy, x, z);
+    // the lat/long panel grid, as raised meridians and parallels
+    for (let i = 0; i < 8; i++) {
+      const mer = new THREE.TorusGeometry(R * 1.004, 0.045, 4, 26);
+      mer.rotateY((i / 8) * Math.PI);
+      mer.translate(x, cy, z);
+      merger.add(mer, bronze, x, z);
+    }
+    for (let k = -2; k <= 2; k++) {
+      const f = k / 3;
+      const rr = R * Math.sqrt(1 - f * f);
+      const par = new THREE.TorusGeometry(rr * 1.004, 0.04, 4, 28);
+      par.rotateX(Math.PI / 2);
+      par.translate(x, cy + R * f, z);
+      merger.add(par, bronze, x, z);
+    }
+    // the gold arc ring, wrapping diagonally
+    const ring = new THREE.TorusGeometry(R * 1.28, 0.3, 8, 30);
+    ring.rotateX(Math.PI / 2);
+    ring.rotateZ(0.42);
+    ring.translate(x, cy, z);
+    merger.add(ring, gold, x, z);
+    out.globes++;
+  };
+
+  // FORT SILOSO'S GUNS. Fourteen cannon nodes, surveyed individually, on the
+  // island's one genuine historic site. A coastal gun is a barrel on a
+  // traversing mount, and that reads at a glance; no calibre or mark is
+  // claimed because none is tagged.
+  const cannon = (x, z) => {
+    const gy = groundAt(x, z);
+    const h = ((x * 3.1 + z * 1.7) % 1) * Math.PI * 2;   // deterministic bearing
+    const base = new THREE.CylinderGeometry(1.5, 1.7, 0.5, 12);
+    base.translate(x, gy + 0.25, z);
+    merger.add(base, granite, x, z);
+    const mount = new THREE.BoxGeometry(1.5, 0.9, 2.4);
+    mount.applyMatrix4(new THREE.Matrix4().makeRotationY(h));
+    mount.translate(x, gy + 0.95, z);
+    merger.add(mount, carriage, x, z);
+    // the barrel, elevated a few degrees out to sea
+    const bl = 4.2;
+    const barrel = new THREE.CylinderGeometry(0.19, 0.26, bl, 10);
+    barrel.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(
+      new THREE.Euler(-Math.PI / 2 + 0.16, h, 0, 'YXZ')));
+    barrel.translate(x + Math.sin(h) * bl * 0.32, gy + 1.7, z + Math.cos(h) * bl * 0.32);
+    merger.add(barrel, gun, x, z);
+    out.cannons++;
+  };
+
+  for (const a of list) {
+    await YY();
+    const [x, z] = a.p;
+    const nm = a.n || '';
+    if (GONE.test(nm)) { out.attrSkipped++; continue; }
+    if (/universal studios globe/i.test(nm)) { globe(x, z); out.attractions++; continue; }
+    if (a.k === 'cannon') { cannon(x, z); out.attractions++; continue; }
+    out.attrSkipped++;
+  }
+  await merger.flushY(world, {}, Y);
+  return out;
+}
 
 // THE TRAILS. Sentosa carries 833 surveyed footways, 10 pedestrian streets and
 // 43 stair flights — the Imbiah routes, the beach walks, the boardwalks, the
