@@ -127,13 +127,18 @@ export const SKATE = {
   driftMinV: 1.8,      // slides from a fast walk up
   gripSlide: 0.45,     // the slide LINGERS a touch longer — floatier pendulum
   slipMaxDrift: 1.05,  // ~60 degrees of slide before it washes out — more sideways
-  slipDragDrift: 0.65, // being sideways costs a little; flow is still the point
+  // DIFFICULTY UP A NOTCH (owner, 2026-08-03 second phone tune: "tune the
+  // difficulty up abit"): holding a slide costs more, sloppy hook-ups sting
+  // a little, and the tail rotates quicker so a deep slide is a thing you
+  // MANAGE, not a thing that happens to you.
+  slipDragDrift: 0.8,  // being sideways now costs real speed — hold a slide
+                       // because it is worth it, not because it is free
   driftThrust: 0.26,   // the motor pulls through the slide like a slope would —
                        // sized so a held full slide bleeds ~0.4 m/s² AT THE 28 km/h
                        // CAP (the bleed/drag terms scale with speed, so this number
                        // moves whenever vMax does: 0.3 @9.2, 0.2 @5.556, 0.26 @7.778)
-  driftYaw: 0.85,      // SLOW rotation in the slide, a touch more tail than before
-  hookScrub: 0.18,     // the same ~0.5 m/s hook-up toll at THIS cruise — the scrub
+  driftYaw: 0.95,      // SLOW rotation in the slide, a touch more tail than before
+  hookScrub: 0.22,     // the same ~0.5 m/s hook-up toll at THIS cruise — the scrub
                        // is speed-proportional so the coefficient tracks vMax
                        // (0.15 @9.2, 0.25 @5.556, 0.18 @7.778)
   cam: { back: 3.45, up: 1.95, aim: 5.6, fov: 57 },

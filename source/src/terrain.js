@@ -333,6 +333,10 @@ export class Terrain {
           park:  [0.52, 0.78, 0.46],
           grass: [0.58, 0.80, 0.50],
           pitch: [0.46, 0.74, 0.42],
+          // A golf fairway is its own green: brighter and yellower than jungle,
+          // more manicured than a pitch. Sentosa's two courses (The Tanjong,
+          // The Serapong) were drawing as football fields.
+          golf:  [0.55, 0.76, 0.40],
           // A running track is red-brown rubber and a pool is blue, and both
           // are read from a bridge before anything else on the ground is: they
           // are the only two surfaces in the city with a colour nothing else

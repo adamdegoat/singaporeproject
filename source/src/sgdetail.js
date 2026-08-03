@@ -1400,3 +1400,170 @@ export async function buildWalkable(world, data, Y = null) {
   await merger.flushY(world, {}, Y);
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// THE TRANSIT GEOGRAPHY (Sentosa first, 2026-08-03): the Sentosa Express
+// viaduct and the cable car lines. GEOGRAPHY ONLY — nothing moves here; the
+// rideable cable car is its own later feature and reads its line from the
+// same data. Heights are honest about their provenance: OSM gives layer and
+// bridge tags, published sources give nothing in metres, so the offsets below
+// are plausibility values, commented as such, not laundered measurements.
+//
+// Merger.add takes pre-transformed GEOMETRY (mesh transforms are never read —
+// the first cut of this function passed meshes and crashed the boot), so
+// every piece bakes its rotation and position into the buffer here. Cables go
+// through their own merger flushed cast:false — thousands of thin boxes in
+// the shadow map would buy nothing.
+export async function buildTransit(world, data, Y = null) {
+  const YY = Y || (async () => {});
+  const out = { monorail: 0, cablePylons: 0, cableCabins: 0 };
+
+  // OVERHEAD-BY-MECHANISM: materials used ONLY for fabric that hangs above
+  // the world (guideway beams, cables, cabins, pylon arms) carry
+  // userData.transitOverhead, and P1b/W2 in audit_world.js exempt by that
+  // flag — the same identity mechanism as o.name === 'bridgeDeck', chosen
+  // over geometry signatures because this fabric is merged (no parameters
+  // survive) and signatures are the allowlist that has rotted five times.
+  // pierMat and pylonMat are DELIBERATELY unflagged: a support stands on the
+  // ground, and the checks must keep catching one that stands anywhere wrong.
+  const overhead = (m) => { m.userData.transitOverhead = true; return m; };
+  const beamMat = overhead(new THREE.MeshLambertMaterial({ color: 0xc9c4bb }));  // concrete
+  const pierMat = new THREE.MeshLambertMaterial({ color: 0xb5b0a6 });
+  const pylonMat = new THREE.MeshLambertMaterial({ color: 0x85888c });           // tower steel
+  const steelMat = overhead(new THREE.MeshLambertMaterial({ color: 0x8d9094 })); // arms, hangers
+  const cableMat = overhead(new THREE.MeshLambertMaterial({ color: 0x3a3d40 }));
+  const cabinMat = overhead(new THREE.MeshLambertMaterial({ color: 0x2f5f6b })); // teal cabin
+
+  const merger = new Merger();
+  const cables = new Merger();
+  // bake pitch-then-yaw ('YXZ': Ry * Rx) plus position into the geometry
+  const bake = (geo, mat, into, x, y, z, ry = 0, rx = 0) => {
+    if (ry || rx) geo.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, ry, 0, 'YXZ')));
+    geo.translate(x, y, z);
+    into.add(geo, mat, x, z);
+  };
+
+  // -- the monorail guideway: twin concrete beams on slim piers ------------
+  // OSM maps each running direction as its own way, which happens to be how
+  // the real Sentosa Express reads: two parallel beams. Deck height comes
+  // from the layer tag (1/3/5 observed) over smoothed local ground.
+  for (const seg of (data.monorail || [])) {
+    await YY();
+    if (seg.tun) continue;                       // the tunnel run has no fabric
+    const pts = seg.p;
+    if (!pts || pts.length < 2) continue;
+    const lift = 5 + 2.6 * Math.max(1, seg.lyr || 1);   // plausibility, not a survey
+    const hs = pts.map(([x, z]) => groundAt(x, z) + lift);
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 1; i < hs.length - 1; i++) hs[i] = (hs[i - 1] + hs[i] + hs[i + 1]) / 3;
+    }
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x0, z0] = pts[i], [x1, z1] = pts[i + 1];
+      const L = Math.hypot(x1 - x0, z1 - z0);
+      if (L < 0.5) continue;
+      const ang = Math.atan2(x1 - x0, z1 - z0);
+      const y0 = hs[i], y1 = hs[i + 1];
+      bake(new THREE.BoxGeometry(2.2, 1.4, L + 0.4), beamMat, merger,
+           (x0 + x1) / 2, (y0 + y1) / 2 - 0.7, (z0 + z1) / 2, ang, Math.atan2(y1 - y0, L));
+      // piers every ~26m along the segment, skipped over carriageways and
+      // water (the beam spans those, exactly like the road bridges)
+      for (let t = 13; t < L; t += 26) {
+        const px = x0 + (x1 - x0) * (t / L), pz = z0 + (z1 - z0) * (t / L);
+        if (window.__onRoad && window.__onRoad(px, pz, 2)) continue;
+        if (window.__inWater && window.__inWater(px, pz)) continue;
+        const gy = groundAt(px, pz);
+        // DRY LAND BY THE HEIGHTFIELD, not the water polygons: the mapped sea
+        // covers only part of the bbox (measured on the front-door map work),
+        // so __inWater said "dry" over open harbour and piers stood in the
+        // sea. The terrain knows the water everywhere. Where it is not land,
+        // the beam spans — same refusal the road bridges make.
+        if (gy < 0.8) continue;
+        const py = y0 + (y1 - y0) * (t / L) - 1.4;
+        if (py - gy < 2.5) continue;
+        bake(new THREE.CylinderGeometry(0.55, 0.65, py - gy, 8), pierMat, merger,
+             px, gy + (py - gy) / 2, pz);
+      }
+      out.monorail++;
+    }
+  }
+
+  // -- the cable car: pylons, catenary cables, resting cabins --------------
+  const cw = data.cableway || {};
+  const lines = cw.lines || [];
+  const RIDE_H = { gondola: 32, cable_car: 32, chair_lift: 9 };  // plausibility
+  const profiles = lines.map((ln) => {
+    const hs = ln.p.map(([x, z]) => groundAt(x, z) + (RIDE_H[ln.k] || 20));
+    for (let pass = 0; pass < 3; pass++) {
+      for (let i = 1; i < hs.length - 1; i++) hs[i] = (hs[i - 1] + hs[i] + hs[i + 1]) / 3;
+    }
+    return hs;
+  });
+  const lineHeightAt = (x, z) => {
+    let best = null, bd = 1e9;
+    lines.forEach((ln, li) => {
+      ln.p.forEach(([px, pz], i) => {
+        const d = (px - x) ** 2 + (pz - z) ** 2;
+        if (d < bd) { bd = d; best = profiles[li][i]; }
+      });
+    });
+    return bd < 90 * 90 ? best : null;
+  };
+  // pylons: a tapered steel tower up to the cable it carries
+  for (const py of (cw.pylons || [])) {
+    await YY();
+    const [x, z] = py.p;
+    const top = lineHeightAt(x, z);
+    if (top == null) continue;
+    const gy = groundAt(x, z);
+    // a tower needs dry land under it (heightfield test, see the pier note);
+    // the harbour-crossing pylon is honestly refused until it gets a real
+    // marine footing recipe — refuse rather than invent
+    if (gy < 0.8) continue;
+    const h = Math.max(6, top - gy + 1.5);
+    bake(new THREE.CylinderGeometry(0.5, 1.15, h, 8), pylonMat, merger, x, gy + h / 2, z);
+    bake(new THREE.BoxGeometry(6.4, 0.5, 0.7), steelMat, merger, x, gy + h - 0.4, z);
+    out.cablePylons++;
+  }
+  // cables: two parallel lines per way segment with a shallow midpoint sag
+  for (let li = 0; li < lines.length; li++) {
+    const ln = lines[li], hs = profiles[li];
+    const gauge = ln.k === 'chair_lift' ? 1.6 : 2.6;   // cabin track spacing
+    for (let i = 0; i < ln.p.length - 1; i++) {
+      await YY();
+      const [x0, z0] = ln.p[i], [x1, z1] = ln.p[i + 1];
+      const L = Math.hypot(x1 - x0, z1 - z0);
+      if (L < 2) continue;
+      const ang = Math.atan2(x1 - x0, z1 - z0);
+      const nx = Math.cos(ang), nz = -Math.sin(ang);
+      const sag = Math.min(6, L * 0.035);
+      for (const side of [-0.5, 0.5]) {
+        const ox = nx * gauge * side, oz = nz * gauge * side;
+        const mx = (x0 + x1) / 2 + ox, mz = (z0 + z1) / 2 + oz;
+        const my = (hs[i] + hs[i + 1]) / 2 - sag;
+        const halves = [[x0 + ox, hs[i], z0 + oz, mx, my, mz], [mx, my, mz, x1 + ox, hs[i + 1], z1 + oz]];
+        for (const [ax, ay, az, bx, by, bz] of halves) {
+          const run = Math.hypot(bx - ax, bz - az);
+          const cl = Math.hypot(run, by - ay);
+          bake(new THREE.BoxGeometry(0.09, 0.09, cl), cableMat, cables,
+               (ax + bx) / 2, (ay + by) / 2, (az + bz) / 2,
+               Math.atan2(bx - ax, bz - az), Math.atan2(by - ay, run));
+        }
+      }
+      // resting cabins on the gondola lines only, spaced along the span —
+      // static geography today, the rideable cabins replace them later
+      if (ln.k !== 'chair_lift') {
+        for (let t = L * 0.25; t < L; t += Math.max(60, L / 4)) {
+          const cx = x0 + (x1 - x0) * (t / L), cz = z0 + (z1 - z0) * (t / L);
+          const cy = hs[i] + (hs[i + 1] - hs[i]) * (t / L) - Math.sin(Math.PI * (t / L)) * sag - 1.6;
+          bake(new THREE.BoxGeometry(1.9, 2.1, 1.9), cabinMat, merger, cx, cy, cz);
+          bake(new THREE.BoxGeometry(0.12, 1.3, 0.12), steelMat, merger, cx, cy + 1.6, cz);
+          out.cableCabins++;
+        }
+      }
+    }
+  }
+
+  await merger.flushY(world, {}, Y);
+  await cables.flushY(world, { cast: false }, Y);
+  return out;
+}

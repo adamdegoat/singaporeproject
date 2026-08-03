@@ -3297,6 +3297,15 @@ def main():
 
         elif "highway" in tags:
             kind = tags["highway"]
+            # A LIFT LINE IS NOT A ROAD. Sentosa's SkyRide chair lift is
+            # double-tagged aerialway=chair_lift + highway=raceway (the luge
+            # complex), and the raceway tag put the LIFT CORRIDOR into
+            # data.roads — so the rider could ride up a chairlift line, and
+            # P1b reported the lift's own towers as structure standing in a
+            # carriageway. Anything carrying an aerialway tag travels by
+            # cable; it is cableway data (already emitted), never a road.
+            if "aerialway" in tags:
+                continue
             # STAIRS ARE NOT ROADS, AND A PATH IS A FOOTWAY.
             #
             # This branch takes ANY `highway=*`, which was harmless right up to
@@ -4955,7 +4964,9 @@ def main():
         "village_green": "park", "recreation_ground": "park",
         "grass": "grass", "meadow": "grass", "grassland": "grass",
         "greenfield": "grass", "cemetery": "grass",
-        "pitch": "pitch", "golf_course": "pitch",
+        # golf gets its OWN kind (2026-08-03): Sentosa's two courses were
+        # indistinguishable from football pitches, and a fairway is not a pitch
+        "pitch": "pitch", "golf_course": "golf",
         # A track and a pool are not green and must not average into it. Both
         # are also small, so they lose to the 60 m2 floor less often than they
         # lose to being drawn the colour of a lawn.
@@ -4994,8 +5005,13 @@ def main():
             garea = abs(a2) / 2
             if garea < 60:            # a verge smaller than this is dressing
                 continue
-            green.append({"p": [[round(x, 1), round(z, 1)] for x, z in pts],
-                          "k": kind, "a": round(garea)})
+            rec = {"p": [[round(x, 1), round(z, 1)] for x, z in pts],
+                   "k": kind, "a": round(garea)}
+            # a NAMED beach or course is a place, not just a surface — Palawan
+            # and Siloso Beach carried names the pipeline used to throw away
+            if t.get("name") and kind in ("sand", "golf"):
+                rec["n"] = t["name"]
+            green.append(rec)
     # ---- THE GROUND BETWEEN EVERYTHING ------------------------------------
     # A sampled grid over Orchard came back 55% neither building, park nor road
     # even after the green landed: the sand between everything. In the real city
@@ -5635,6 +5651,44 @@ def main():
               f"carriageway (nothing would ever draw them): "
               + ", ".join(f"{int(s[0])},{int(s[1])}" for s in _sig_orphans[:4]))
 
+    # ---- THE CABLE CAR AND THE MONORAIL (Sentosa geography truth, 2026-08-03).
+    # aerialway ways are the cables (both gondola lines and the SkyRide chair
+    # lift); station/pylon nodes are their supports. railway=monorail ways are
+    # the Sentosa Express viaduct. All of it sat in raw caches read by NOTHING
+    # until district mode made Sentosa the game. Same whole-list dispatch as
+    # every other layer: whatever query fetched an element, its tags decide.
+    cableway = {"lines": [], "stations": [], "pylons": []}
+    monorail = []
+    for e in els:
+        t = e.get("tags") or {}
+        aw = t.get("aerialway")
+        if e["type"] == "way" and aw in ("gondola", "cable_car", "chair_lift") and e.get("geometry"):
+            pts = [proj(q["lat"], q["lon"]) for q in e["geometry"] if "lat" in q]
+            if len(pts) >= 2:
+                rec = {"p": [[round(x, 1), round(z, 1)] for x, z in pts], "k": aw}
+                if t.get("name"):
+                    rec["n"] = t["name"]
+                cableway["lines"].append(rec)
+        elif e["type"] == "node" and aw in ("station", "pylon") and "lat" in e:
+            x, z = proj(e["lat"], e["lon"])
+            rec = {"p": [round(x, 1), round(z, 1)]}
+            if t.get("name"):
+                rec["n"] = t["name"]
+            cableway["stations" if aw == "station" else "pylons"].append(rec)
+        elif e["type"] == "way" and t.get("railway") == "monorail" and e.get("geometry"):
+            pts = [proj(q["lat"], q["lon"]) for q in e["geometry"] if "lat" in q]
+            if len(pts) >= 2:
+                rec = {"p": [[round(x, 1), round(z, 1)] for x, z in pts]}
+                try:
+                    rec["lyr"] = int(float(t.get("layer") or 0))
+                except ValueError:
+                    rec["lyr"] = 0
+                if t.get("bridge"):
+                    rec["br"] = 1
+                if t.get("tunnel") or rec["lyr"] < 0:
+                    rec["tun"] = 1
+                monorail.append(rec)
+
     out = {
         "origin": {"lat": LAT0, "lon": LON0},
         "buildings": buildings,
@@ -5657,6 +5711,8 @@ def main():
         "bridges": bridges,
         "covered": covered,
         "shops": shops,
+        "cableway": cableway,
+        "monorail": monorail,
         "axisFullLength": round(axis_full, 1),
         "axis": {"p": [[round(x, 1), round(z, 1)] for x, z in axis],
                  "w": axis_width, "n": axis_name},

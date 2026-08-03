@@ -84,6 +84,12 @@ LAYERS = {
     "rail": ('way["railway"~"^(rail|light_rail|subway|monorail|tram)$"]({bbox});'
              'way["railway"="platform"]({bbox});'
              'rel["railway"="platform"]({bbox});'),
+    # The cable car (Sentosa first: the Mount Faber and Sentosa lines). Never
+    # fetched by anything before 2026-08-03 — the only aerialway element in any
+    # raw cache arrived by accident, because the Imbiah station also carries
+    # building=yes. Ways are the cables, nodes are the pylons and stations.
+    "aerialway": ('way["aerialway"]({bbox});'
+                  'node["aerialway"~"^(station|pylon)$"]({bbox});'),
     "sport": ('way["leisure"~"^(sports_centre|stadium|track|swimming_pool|fitness_station)$"]({bbox});'
               'rel["leisure"~"^(sports_centre|stadium|track|swimming_pool)$"]({bbox});'),
     # ---- THE WALKABLE WORLD, added 2026-08-01.

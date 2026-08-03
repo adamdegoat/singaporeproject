@@ -9,7 +9,7 @@ import { buildVespa, buildRider, buildCar, buildSkate, buildSkater, SKATE_WHEEL_
 import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
 import { axisSpec, buildMarkings, dressSideStreets, selectSideStreets, dedupeProps } from './markings.js';
-import { buildSgDetail } from './sgdetail.js';
+import { buildSgDetail, buildTransit } from './sgdetail.js';
 import { buildShopfronts } from './shopfront.js';
 import { Signals } from './signals.js';
 import { Sound } from './audio.js';
@@ -2564,6 +2564,13 @@ window.__placeBlocked = (x, z) => blocked(x, z);
       bmark('sgdetail');
       for (const k of Object.keys(q)) sg[k] = (sg[k] || 0) + q[k];
     }
+  }
+  // The transit geography: the Sentosa Express viaduct and the cable car
+  // lines. Once per scene, not per axis — the layers are district-wide.
+  if (!P.has('nosg') && (data.monorail || data.cableway)) {
+    const q = await buildTransit(world, data);
+    bmark('transit');
+    for (const k of Object.keys(q)) sg[k] = (sg[k] || 0) + q[k];
   }
   // The crowd is built AFTER the collision grid, not before it.
   //

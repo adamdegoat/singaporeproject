@@ -1063,6 +1063,15 @@ window.__auditWorld = async function auditWorld() {
         || (o.name === 'bridgePier' && window.__bridgeDeckAt
             && window.__bridgeDeckAt(worstX, worstZ) !== null
             && window.__bridgeDeckAt(worstX, worstZ) > worstY + 0.4)
+        // OVERHEAD TRANSIT, BY MECHANISM (2026-08-03). The monorail guideway
+        // and the cable car's cables/cabins/arms cross carriageways the way a
+        // viaduct does — overhead is what they ARE. Their materials carry
+        // userData.transitOverhead, set in ONE place (buildTransit) and only
+        // on fabric built at height by construction (beam lift >= 7.6m, cable
+        // profile >= 9m). Piers and pylon towers use UNFLAGGED materials on
+        // purpose: this check caught three of them standing in the sea on its
+        // first run against the layer, which is exactly the job it keeps.
+        || (o.material && o.material.userData && o.material.userData.transitOverhead)
         || (o.geometry.type === 'CylinderGeometry' && (gp0.radiusTop || 0) > 10)   // ION's shell over its forecourt
         // The ERP gantry itself. Its antenna heads read the tag on a car
         // passing UNDER them and its amber panel tells that car what it is
@@ -2416,7 +2425,14 @@ window.__auditWorld = async function auditWorld() {
           && (Math.abs((gpw.width || 0) - 2.6) < 0.01 || Math.abs((gpw.width || 0) - 2.2) < 0.01);
         const isRail = o.geometry.type === 'CylinderGeometry'
           && Math.abs((gpw.radiusTop || 0) - 0.055) < 0.01;
-        if (hit >= 20 && !isDeck && !isBridgePart && !isRail) {
+        // OVERHEAD TRANSIT, BY MECHANISM — same flag P1b honours. A cable car
+        // cabin 30m above the harbour and the guideway beam over a lagoon are
+        // over water BY DESIGN; their materials carry userData.transitOverhead
+        // (set only in buildTransit, only on fabric built at height). Piers
+        // and pylon towers stay unflagged and this check keeps catching them —
+        // it found three standing in the sea on its first run.
+        const isTransit = o.material && o.material.userData && o.material.userData.transitOverhead;
+        if (hit >= 20 && !isDeck && !isBridgePart && !isRail && !isTransit) {
           inW++;
           // WHERE, AND WHAT COLOUR. This said only "BufferGeometry entirely
           // over water", and everything the Merger produces is a
