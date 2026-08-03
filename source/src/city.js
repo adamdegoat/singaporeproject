@@ -238,6 +238,12 @@ export function setEraMix(buildings) {
 // That is exactly what happened on the first attempt: 633 qualifying buildings
 // in Bugis alone and not one visible tile.
 export const MAT = {
+  // The ceiling of a covered public space: pale, matt, and slightly emissive
+  // so it does not go black under a mass that blocks the sun. It IS the sky
+  // for anyone standing under it.
+  soffit: new THREE.MeshStandardMaterial({
+    color: 0xe6e2d8, roughness: 0.95, emissive: 0x2a2825, emissiveIntensity: 0.55,
+  }),
   clayTile: new THREE.MeshStandardMaterial({ color: 0x9c5a44, roughness: 0.82 }),
   asphalt: new THREE.MeshStandardMaterial({ map: TEX.asphalt, roughness: 0.95 }),
   // Orchard's granite is 1.8m per tile, so the pavement maps at a real size
@@ -1969,6 +1975,19 @@ export async function buildBuildings(world, data, Y = null) {
       // is drawn solid, which is a visible, honest failure rather than a
       // building in the sky.
       if (b.og) {
+        // A SOFFIT, because the underside of a lifted mass is the ceiling of a
+        // public space and it was showing raw facade.
+        //
+        // Rendered from the Universal Studios forecourt, the lifted podium
+        // above read as a DARK BROWN SLAB filling the top half of the frame —
+        // the wall texture, seen from below, unlit. Standing under it felt like
+        // a car park, and it is the single most-looked-at ceiling on the island
+        // because the globe is under it. A real covered plaza has a pale lit
+        // soffit, so build one: a thin cap at the underside, in its own light
+        // material, which also hides the mass's own open bottom face.
+        const soffit = extrudeGeo(pts, 0.38, 0);
+        soffit.translate(0, b.mh - 0.38, 0);
+        merger.add(soffit, MAT.soffit || MAT.conc, pts[0][0], pts[0][1]);
         const cols = [];
         let acc = 0;
         for (let i = 0; i < pts.length - 1; i++) {

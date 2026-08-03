@@ -72,6 +72,22 @@ STOREY = 3.4
 # the mapped name; `floors` is multiplied by STOREY, `m` is used as given.
 # Every entry carries its source, and an entry without one does not belong here.
 RESEARCHED = [
+    # RESORTS WORLD SENTOSA. The owner: "that place got alot of levels and
+    # different architectures. So must do properly please." Researched
+    # 2026-08-04; each figure published.
+    #
+    # Hotel Michael — 11 storeys, 470 rooms, by Michael Graves. e-architect /
+    # RWS. (The site data already gives its outbuildings 36.6m, which is
+    # 11 storeys, so this agrees with the survey rather than overriding it.)
+    ("hotel michael", {"floors": 11}),
+    # Crockfords Tower — 9 storeys, 120 all-suite keys with mansions on the
+    # penthouse level. rwsentosa.com.
+    ("crockfords", {"floors": 9}),
+    # The Laurus (Hard Rock Hotel until July 2025, reopened October 2025) —
+    # 183 suites across FIVE storeys. asgam.com / rwsentosa.com. Ours stood at
+    # 55m before any of this, which is three times the real building.
+    ("hard rock", {"floors": 5}),
+    ("laurus", {"floors": 5}),
     # The Barracks Hotel Sentosa — a restored 1940 British barracks, two
     # storeys. fareasthospitality.com / thebarrackshotel.com.sg, 2026-08-04.
     ("barracks hotel", {"floors": 2}),
@@ -110,6 +126,24 @@ def main():
                 b["h"] = b.pop("h0")
 
     sourced = [b for b in blds if b.get("hs") in SOURCED and b.get("h")]
+    # A BUILDING'S OWN NAME KNOWS BETTER THAN A BAND.
+    #
+    # A complex is mapped as many footprints under one name, and the survey
+    # often tags only some of them. Resorts World is the case that made this
+    # obvious: Hotel Michael's outbuildings carry a surveyed 36.6m — eleven
+    # storeys, exactly what the research says — while its MAIN 4,169 m2
+    # footprint had no tag and got a 27.2m band median, so one hotel stood at
+    # two different heights. Equarius, Crockfords and the Hard Rock block all
+    # did the same.
+    #
+    # So before falling back to a footprint band, ask whether anything else
+    # wearing this name was actually surveyed, and match it.
+    by_name = {}
+    for b in sourced:
+        n = (b.get("n") or "").strip().lower()
+        if n:
+            by_name.setdefault(n, []).append(b["h"])
+    name_h = {n: statistics.median(v) for n, v in by_name.items() if v}
     if len(sourced) < 40:
         print(f"  ! only {len(sourced)} surveyed heights — too few to calibrate, "
               "leaving the guess alone")
@@ -137,20 +171,43 @@ def main():
     for b in blds:
         if b.get("hs") in SOURCED or not b.get("h"):
             continue
+        # A CANOPY'S HEIGHT IS A CLEARANCE, NOT A STOREY COUNT.
+        #
+        # `building=roof` is a slab on columns — city.js draws it that way and
+        # its "height" is how far off the ground the slab sits. Banding it by
+        # footprint like a storeyed building took the canopy over the Universal
+        # Studios forecourt from 5m to 20.4m, and standing by the globe the sky
+        # was replaced by a dark textured slab across the whole frame. The most
+        # photographed spot on the island, ruined by a rule that had no business
+        # touching it.
+        #
+        # Same for anything already lifted (`og`/`mh`): openground.py computed
+        # that clearance against the ground under a real road, and a median has
+        # nothing to add.
+        if b.get("roof") or b.get("og") or (b.get("mh") or 0) > 1:
+            continue
         area = b.get("a") or 0
         med = overall
-        for (lo, hi, m, n) in band_h:
-            if lo <= area < hi:
-                med = m
-                break
+        nm = (b.get("n") or "").strip().lower()
+        inherited = name_h.get(nm) if nm else None
+        if inherited is not None:
+            med = inherited
+        else:
+            for (lo, hi, m, n) in band_h:
+                if lo <= area < hi:
+                    med = m
+                    break
         # A LITTLE VARIATION, FROM THE POSITION, NEVER FROM AN RNG STREAM.
         # 442 identical boxes is its own kind of wrong, and this project's rule
         # is that a cosmetic choice must not be able to move a bus stop.
         p = b.get("p") or [[0, 0]]
         hx = (abs(p[0][0]) * 7.31 + abs(p[0][1]) * 3.17) % 1.0
-        h = med * (0.82 + 0.36 * hx)
+        # an inherited height is a fact about THIS building, so it is taken as
+        # given; only a band median gets the spread
+        h = med if inherited is not None else med * (0.82 + 0.36 * hx)
         # round to a storey, floor at one
-        h = max(STOREY, round(h / STOREY) * STOREY)
+        if inherited is None:
+            h = max(STOREY, round(h / STOREY) * STOREY)
         if area > BIG_AREA and not researched_for(b.get("n")):
             h = max(h, BIG_MIN_H)
         spec = researched_for(b.get("n"))
