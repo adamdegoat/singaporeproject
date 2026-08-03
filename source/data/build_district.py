@@ -433,6 +433,10 @@ def main():
     # stranded pieces sat within 15m of the network, including the 1,751m
     # Imbiah trail at 5.4m. See data/stitch.py.
     subprocess.run([sys.executable, os.path.join(HERE, "stitch.py"), d["id"]], check=True)
+    # One continuous height profile for the Sentosa Express, because OSM's
+    # layer tag is crossing order and reading it as metres built the guideway
+    # at three different heights. See data/monorail.py.
+    subprocess.run([sys.executable, os.path.join(HERE, "monorail.py"), d["id"]], check=False)
     subprocess.run([sys.executable, os.path.join(HERE, "navcheck.py"), d["id"]], check=False)
 
     print(f"\nNext: python3 check.py {d['id']}")

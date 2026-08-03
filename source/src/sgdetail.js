@@ -2103,10 +2103,37 @@ export async function buildTransit(world, data, Y = null) {
     if (seg.tun) continue;                       // the tunnel run has no fabric
     const pts = seg.p;
     if (!pts || pts.length < 2) continue;
-    const lift = 5 + 2.6 * Math.max(1, seg.lyr || 1);   // plausibility, not a survey
-    const hs = pts.map(([x, z]) => groundAt(x, z) + lift);
-    for (let pass = 0; pass < 2; pass++) {
-      for (let i = 1; i < hs.length - 1; i++) hs[i] = (hs[i - 1] + hs[i] + hs[i + 1]) / 3;
+    // THE DECK HEIGHT COMES FROM data/monorail.py, NOT FROM THE LAYER TAG.
+    //
+    // This used to be `lift = 5 + 2.6 * max(1, seg.lyr||1)`, read per way. OSM's
+    // `layer` is crossing order, not altitude, and Sentosa's ways carry 5, 3, 1,
+    // 0 and -2 — so the guideway was built at 18.0m, then 7.6m forty metres
+    // later, then 18.0m again, with nothing joining the steps. That is the slab
+    // hanging over Siloso Beach Walk in shots/street/t1.shot1.jpg.
+    //
+    // monorail.py chains the ways into the actual line and fits ONE profile
+    // along it — smoothed over arc length across way boundaries, held above a
+    // minimum clearance, grade-limited — then hands each way its slice back as
+    // `ys`. Per-way smoothing here could never do that: the discontinuity was
+    // always AT the boundary, which is exactly where a per-way pass has no
+    // neighbour to smooth against.
+    //
+    // The fallback keeps old scene files rendering, and says so out loud rather
+    // than silently drawing the broken version.
+    let hs;
+    if (Array.isArray(seg.ys) && seg.ys.length === pts.length) {
+      hs = seg.ys.slice();
+    } else {
+      if (!window.__monoWarned) {
+        window.__monoWarned = 1;
+        console.warn('monorail: no ys profile in the scene data — run '
+                     + 'data/monorail.py; falling back to the layer tag');
+      }
+      const lift = 5 + 2.6 * Math.max(1, seg.lyr || 1);
+      hs = pts.map(([x, z]) => groundAt(x, z) + lift);
+      for (let pass = 0; pass < 2; pass++) {
+        for (let i = 1; i < hs.length - 1; i++) hs[i] = (hs[i - 1] + hs[i] + hs[i + 1]) / 3;
+      }
     }
     for (let i = 0; i < pts.length - 1; i++) {
       const [x0, z0] = pts[i], [x1, z1] = pts[i + 1];
