@@ -1321,6 +1321,66 @@ export async function buildBuildings(world, data, Y = null) {
   // Proven by restoring the pre-rebuild terrain against the SAME code: W2 168
   // / P1b 9, both passing. So this is the rebuild's consequence, not the sea's
   // and not the trails'.
+  // A SHOPHOUSE IS A TERRACE. IT HAS PARTY WALLS.
+  //
+  // The owner, on Sentosa: "i need sentosa to feel like sentosa meaning all the
+  // building or structures." The single biggest reason it did not was this:
+  // any unnamed building under 520 m2 and 20m tall got the Singapore SHOPHOUSE
+  // recipe — masonry, five-foot-way, pitched clay roof — and on sentosa that
+  // caught 792 of 1,082 buildings. The Cove's villas, the resort chalets, the
+  // beach huts, the Fort Siloso structures and the golf clubhouses were all
+  // wearing Chinatown's clothes.
+  //
+  // Size and height cannot tell those apart, but ADJACENCY can, because it is
+  // what a shophouse physically IS: a unit in a terrace, sharing walls with its
+  // neighbours. Measured over the small-building population of four districts:
+  //
+  //     chinatown    1,710 of 1,805 abut a neighbour   95%
+  //     littleindia  1,772 of 1,870                    95%
+  //     bugis          729 of   774                    94%
+  //     sentosa        103 of   813                    13%
+  //
+  // So the terrace districts keep essentially every shophouse they had and
+  // sentosa keeps only the hundred that really are terraces. This is the same
+  // shape as the supertree-grove test: ask the geometry the question that
+  // defines the real thing, rather than adding a per-district flag someone has
+  // to remember to set.
+  const ABUT_CELL = 60, ABUT_NEAR = 0.9;
+  const _abuts = new Set();
+  {
+    const small = [];
+    for (const b of (data.buildings || [])) {
+      if (!b.k && b.a < 520 && b.h <= 20 && b.p && b.p.length <= 64) small.push(b);
+    }
+    const cells = new Map();
+    small.forEach((b, i) => {
+      for (const [px, pz] of b.p) {
+        const k = Math.floor(px / ABUT_CELL) + ',' + Math.floor(pz / ABUT_CELL);
+        let s = cells.get(k);
+        if (!s) cells.set(k, s = new Set());
+        s.add(i);
+      }
+    });
+    small.forEach((b, i) => {
+      const near = new Set();
+      for (const [px, pz] of b.p) {
+        const ci = Math.floor(px / ABUT_CELL), cj = Math.floor(pz / ABUT_CELL);
+        for (let a = -1; a <= 1; a++) {
+          for (let c = -1; c <= 1; c++) {
+            const s = cells.get((ci + a) + ',' + (cj + c));
+            if (s) for (const j of s) if (j !== i) near.add(j);
+          }
+        }
+      }
+      for (const j of near) {
+        for (const [qx, qz] of small[j].p) {
+          for (const [px, pz] of b.p) {
+            if (Math.hypot(px - qx, pz - qz) < ABUT_NEAR) { _abuts.add(b); return; }
+          }
+        }
+      }
+    });
+  }
   const _wrings = (data.water || []).map((w) => w.p).filter((p) => p && p.length > 3);
   const _inWaterRing = (x, z) => {
     for (const ring of _wrings) {
@@ -1544,7 +1604,8 @@ export async function buildBuildings(world, data, Y = null) {
     // full of small temples and mosques and this would have swallowed every
     // recipe written for any of them.
     const _rec = NORECIPE ? null : recipeFor(b.n);
-    if (!_rec && !b.k && b.a < 520 && b.h <= 20 && b.p.length <= 64) {
+    // ...AND IT ABUTS ITS NEIGHBOURS — see the party-wall measurement above.
+    if (!_rec && !b.k && b.a < 520 && b.h <= 20 && b.p.length <= 64 && _abuts.has(b)) {
       shophouse(api, b);
       stats.count++; stats.shophouses = (stats.shophouses || 0) + 1;
       continue;
