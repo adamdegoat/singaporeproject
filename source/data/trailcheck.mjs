@@ -142,6 +142,19 @@ console.log(`  BLOCKED runs >20m: ${out.longBlocks}   3-20m: ${out.midBlocks}   
 console.log(`  N3 surface spikes: ${out.steps}   of which >1.0m: ${out.bigSteps}`);
 console.log(`  floating >1.5m   : ${out.floating}`);
 for (const e of out.exBlock) console.log(`    BLOCKED ${e.m}m of ${e.n} from ${e.x},${e.z}`);
+// N4 IS A GATE NOW, not a printout. Reached 0 on 2026-08-04 (from 24) and the
+// owner's rule is that nothing may be blocked halfway — so it may go to zero
+// and never back up. The short runs are NOT gated: 124 of them are under 3m,
+// which is a path clipping a corner that a walker steps around, and gating
+// noise is how a gate gets ignored.
+const N4_BUDGET = +(process.env.SG_N4 || 0);
+if (out.longBlocks > N4_BUDGET) {
+  console.log(`   FAIL  ${out.longBlocks} walking route(s) blocked for over 20m `
+    + `(budget ${N4_BUDGET})`);
+  await browser.close();
+  process.exit(1);
+}
+console.log(`   PASS  no walking route blocked for over 20m`);
 for (const e of out.exStep) console.log(`    STEP   ${e.n} at ${e.x},${e.z} d=${e.d} (local grade ${e.trend}m/sample)`);
 for (const e of out.exFloat) console.log(`    FLOAT  ${e.n} at ${e.x},${e.z} up=${e.up}`);
 await browser.close();
