@@ -31,7 +31,7 @@ export class Terrain {
     // raw grid accessor for coastal logic (buildSea, shoreline sand): reads
     // only — nothing may write the heightfield through this
     this.grid = () => this.g;
-    // metres to the nearest open-sea cell (h < -0.4), lazy multi-source BFS
+    // metres to the nearest open-sea cell, lazy multi-source BFS
     // over the grid on first call. Feeds the shoreline sand blend; an inland
     // district computes it once, finds no sea, and answers Infinity forever.
     this._seaD = null;
@@ -42,7 +42,13 @@ export class Terrain {
         const n = g2.nx * g2.nz;
         const d = new Float32Array(n).fill(1e9);
         const q = [];
-        for (let i = 0; i < n; i++) if (g2.h[i] < -0.4) { d[i] = 0; q.push(i); }
+        // SEA IS ZERO HERE, NOT NEGATIVE. This tested `h < -0.4` and the
+        // heightfield's minimum on Sentosa is exactly 0.00 — the pipeline
+        // clamps the sea to sea level — so the BFS found no sources, answered
+        // Infinity everywhere, and the shoreline sand blend that depends on it
+        // HAS NEVER ONCE RUN on this island. It failed silently because
+        // "Infinity" is also the honest answer for an inland district.
+        for (let i = 0; i < n; i++) if (g2.h[i] <= 0.05) { d[i] = 0; q.push(i); }
         if (!q.length) { this._seaD = d; return Infinity; }
         for (let head = 0; head < q.length; head++) {
           const c = q[head];
@@ -244,19 +250,31 @@ export class Terrain {
     for (const n of [1, 2, 3, 4, 6, 8, 12]) { if (n >= need) { n0 = n; break; } }
     // THE WATERLINE NEEDS RESOLUTION THAT TWIST WILL NEVER ASK FOR.
     //
-    // This measured CURVATURE alone, and a shore is a smooth ramp — almost no
-    // twist — so a cell where the ground falls from +2m to -3m was drawn as a
-    // single 35m quad. That is why the sea met the sand in a 35m staircase in
-    // every view from the beaches, which is exactly where a player spawns and
-    // spends their time. Curvature is the right question for a hillside and
-    // the wrong one for an edge.
+    // subdiv measures CURVATURE alone, and a shore is a smooth ramp with almost
+    // no twist, so the sand met the sea in a 35m staircase in every view from
+    // the beaches — which is where a player spawns. Curvature is the right
+    // question for a hillside and the wrong one for an edge.
     //
-    // So: a cell whose corners STRADDLE sea level is subdivided regardless of
-    // how flat it is. It costs triangles only along the coastline, which on
-    // Sentosa is a thin band of the grid, and it is the difference between an
-    // island and a pixelated one.
+    // BUT THE WATERLINE IS NOT WHERE THE HEIGHTFIELD CROSSES ZERO, and the
+    // first version of this rule assumed it was. Measured: `lo < 0.35 &&
+    // hi > -0.35` matched 8,271 of 13,968 cells — FIFTY-NINE PER CENT of the
+    // grid, because the seabed is flat near zero, and it put 543k triangles on
+    // the open sea. The apparently-correct tightening (`lo < 0 < hi`) matches
+    // ZERO cells, because no cell straddles exactly zero.
+    //
+    // This project already knew that: "the DEM smears coasts — absolute
+    // elevation can NEVER find a waterline". So ask the thing that does know.
+    // seaDistAt is a BFS out from genuinely-submarine cells, so a cell that
+    // HAS land in it and sits within a cell's reach of open sea is the shore,
+    // and nothing else is.
+    // Measured on this heightfield: min 0.00, max 81.09 — the pipeline CLAMPS
+    // the sea to exactly zero and never goes below it. So the shore is a cell
+    // holding both a zero corner and a land corner, and that matches 1,019 of
+    // 13,968 cells (7.3%), about 71k triangles. The rejected alternatives, for
+    // whoever tunes this next: "near zero" caught 59% of the grid and 543k
+    // triangles of open sea; "straddles zero" caught none.
     const lo = Math.min(a, b, c, d), hi = Math.max(a, b, c, d);
-    if (lo < 0.35 && hi > -0.35) n0 = Math.max(n0, 6);
+    if (lo <= 0.05 && hi > 0.5) n0 = Math.max(n0, 6);
     return n0;
   }
 
