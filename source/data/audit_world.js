@@ -2553,7 +2553,14 @@ window.__auditWorld = async function auditWorld() {
         // stays fully checked, so this cannot quietly excuse a path in a pond.
         const isBoardwalk = o.material && o.material.userData
           && o.material.userData.boardwalkOverWater;
-        if (hit >= 20 && !isDeck && !isBridgePart && !isRail && !isTransit && !isBoardwalk) {
+        // A ROCK GROYNE IS IN THE WATER BY DEFINITION. Seven surveyed
+        // breakwaters and outcrops shape Siloso's swimming lagoon — they are
+        // the reason it is a lagoon — and every boulder of them stands in the
+        // sea on purpose. Declared on the material by buildAttractions.
+        const isGroyne = o.material && o.material.userData
+          && o.material.userData.groyneInWater;
+        if (hit >= 20 && !isDeck && !isBridgePart && !isRail && !isTransit
+            && !isBoardwalk && !isGroyne) {
           inW++; wSrc.mesh++;
           // WHERE, AND WHAT COLOUR. This said only "BufferGeometry entirely
           // over water", and everything the Merger produces is a

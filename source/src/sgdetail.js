@@ -1119,6 +1119,45 @@ export async function buildAttractions(world, data, Y = null) {
     out.luge = (out.luge || 0) + 1;
   };
 
+  // THE ROCK GROYNES. Photographs of Siloso are the reason these exist: the
+  // beach in every reference image is shaped by boulder groynes running out
+  // into the water, and they are what makes the swimming lagoon read as a
+  // lagoon rather than as open sand meeting open sea. Seven surveyed outcrops
+  // and breakwaters, drawn as heaped boulders along the mapped line — the
+  // rocks are individually sized and placed from a position hash, because no
+  // survey records individual boulders and inventing a regular pattern would
+  // read as a wall.
+  // A GROYNE STANDS IN THE WATER — that is what a groyne is for. Same
+  // mechanism-declared exemption the bridge decks, the cable car and the
+  // boardwalk already carry, so W2 keeps catching everything else.
+  const rockM = new THREE.MeshLambertMaterial({ color: 0x8a8377 });
+  const rockDark = new THREE.MeshLambertMaterial({ color: 0x6e675d });
+  rockM.userData.groyneInWater = true;
+  rockDark.userData.groyneInWater = true;
+  for (const rk of (data.rocks || [])) {
+    await YY();
+    const g2 = rk.g || [];
+    for (let i = 0; i < g2.length - 1; i++) {
+      const [ax, az] = g2[i], [bx, bz] = g2[i + 1];
+      const L = Math.hypot(bx - ax, bz - az);
+      const n = Math.max(1, Math.ceil(L / 3.2));
+      for (let s = 0; s < n; s++) {
+        const t = (s + 0.5) / n;
+        const px = ax + (bx - ax) * t, pz = az + (bz - az) * t;
+        const hh = ((px * 7.7 + pz * 3.3) % 1);
+        const r = 1.0 + hh * 1.4;
+        const gy = groundAt(px, pz);
+        const b = new THREE.DodecahedronGeometry(r, 0);
+        b.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(
+          new THREE.Euler(hh * 2.1, hh * 3.7, hh * 1.3, 'YXZ')));
+        b.scale(1, 0.72, 1);
+        b.translate(px + (hh - 0.5) * 2.2, gy + r * 0.45, pz + (hh - 0.5) * 2.2);
+        merger.add(b, hh > 0.5 ? rockM : rockDark, px, pz);
+        out.rocks = (out.rocks || 0) + 1;
+      }
+    }
+  }
+
   for (const a of list) {
     await YY();
     const [x, z] = a.p;
@@ -2083,9 +2122,14 @@ export async function buildBeachLife(world, data, Y = null) {
   // there is nothing to build it from and inventing courts is exactly what was
   // just taken out of the palms.
   {
+    // THATCH, NOT FABRIC. Reference photographs of Siloso and Palawan show
+    // conical palm-thatch parasols on timber poles down the whole beach — the
+    // modern orange fabric umbrella I built first is a resort-pool object, not
+    // what stands on these beaches. Straw over a timber pole, and a taller,
+    // steeper cone, which is a different silhouette at a distance.
     const loungerM = new THREE.MeshLambertMaterial({ color: 0xe4dccb });
-    const parasolM = new THREE.MeshLambertMaterial({ color: 0xc9743f, side: THREE.DoubleSide });
-    const poleM2 = new THREE.MeshLambertMaterial({ color: 0xb8b2a6 });
+    const parasolM = new THREE.MeshLambertMaterial({ color: 0xb99a5e, side: THREE.DoubleSide });
+    const poleM2 = new THREE.MeshLambertMaterial({ color: 0x7d6647 });
     const edgeDist = (x, z, p) => {
       let best = 1e9;
       for (let i = 0; i < p.length; i++) {
@@ -2143,8 +2187,9 @@ export async function buildBeachLife(world, data, Y = null) {
         const gy = groundAt(px, pz);
         if (gy < 0.9) continue;
         // parasol: a pole and a shallow cone
-        bake(new THREE.CylinderGeometry(0.045, 0.055, 2.3, 6), poleM2, px, gy + 1.15, pz);
-        bake(new THREE.ConeGeometry(1.35, 0.42, 10), parasolM, px, gy + 2.4, pz);
+        bake(new THREE.CylinderGeometry(0.06, 0.08, 2.6, 6), poleM2, px, gy + 1.3, pz);
+        // steeper, taller cone: a thatch parasol is a little roof, not a disc
+        bake(new THREE.ConeGeometry(1.5, 1.1, 9), parasolM, px, gy + 3.05, pz);
         // two loungers under it, laid along the shore
         for (const s2 of [-0.95, 0.95]) {
           const lx = px + az2 * s2, lz = pz - ax2 * s2;

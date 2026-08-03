@@ -3390,13 +3390,32 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
       if (x < mnx) mnx = x; if (x > mxx) mxx = x;
       if (z < mnz) mnz = z; if (z > mxz) mxz = z;
     }
-    for (let gx = Math.ceil(mnx / 16) * 16; gx < mxx; gx += 16) {
-      for (let gz = Math.ceil(mnz / 16) * 16; gz < mxz; gz += 16) {
-        const jx = gx + (((gx * 13.7 + gz * 5.3) % 12) - 6);
-        const jz = gz + (((gx * 3.9 + gz * 11.1) % 12) - 6);
+    // 11m, NOT 16m — and the scale spread widened.
+    //
+    // Set against reference photographs of Siloso (the owner: "cannot seem to
+    // get it like sentosa"), the single clearest difference was not a landmark
+    // at all: the real beach has a DENSE, DARK, LAYERED canopy mass behind it
+    // and this world had a thin row of evenly spaced identical trees, reading
+    // as an orchard on a lawn. A 16m grid over a mapped wood is a plantation;
+    // the jungle is continuous. 11m roughly doubles the count inside woods
+    // only — the survey says a wood is full of trees, so filling one densely is
+    // reporting it, not inventing it, and nothing outside a wood polygon is
+    // touched.
+    //
+    // The scale spread matters as much as the count. Sizes ran 0.75-1.25 and
+    // came out as one repeated tree; 0.55-1.5 gives an understorey and emergent
+    // crowns, which is what makes a canopy read as depth rather than as a row.
+    for (let gx = Math.ceil(mnx / 11) * 11; gx < mxx; gx += 11) {
+      for (let gz = Math.ceil(mnz / 11) * 11; gz < mxz; gz += 11) {
+        const jx = gx + (((gx * 13.7 + gz * 5.3) % 9) - 4.5);
+        const jz = gz + (((gx * 3.9 + gz * 11.1) % 9) - 4.5);
         if (!inRing(jx, jz, gp.p)) continue;
         if (blocked && blocked(jx, jz)) continue;
-        f.add(jx, jz, 0.75 + ((jx * 7.3 + jz * 3.1) % 100) / 200);
+        // top of the spread held at ~1.38, not 1.5: at 1.5 the tallest crown
+        // put a leaf card 19.6m up and P3 ("props off the ground") refused the
+        // deploy on it. The understorey is what the canopy needed anyway — the
+        // gain is at the BOTTOM of this range, not the top.
+        f.add(jx, jz, 0.55 + ((jx * 7.3 + jz * 3.1) % 100) / 120);
         jungle++;
       }
     }

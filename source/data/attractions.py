@@ -78,8 +78,8 @@ def district(did):
     sys.exit(f"no district '{did}'")
 
 
-def fetch(bbox):
-    body = QUERY.format(bbox=bbox)
+def fetch(bbox, query=None):
+    body = (query or QUERY).format(bbox=bbox)
     for m in MIRRORS:
         try:
             print(f"  asking {m.split('/')[2]}")
@@ -92,6 +92,18 @@ def fetch(bbox):
             print(f"    failed: {type(e).__name__} {e}")
             time.sleep(3)
     sys.exit("every Overpass mirror refused; try again later")
+
+
+# THE ROCK GROYNES. Reference photographs of Siloso Beach show the thing that
+# actually shapes it: boulder groynes and rocky outcrops running out into the
+# water, which is what makes the swimming lagoon a lagoon. They are mapped
+# (natural=bare_rock / rock / reef, man_made=breakwater / groyne) and, like the
+# attractions, nothing in this pipeline had ever asked for them.
+ROCK_QUERY = ('[out:json][timeout:120];('
+              'nwr["man_made"="breakwater"]({bbox});'
+              'nwr["man_made"="groyne"]({bbox});'
+              'nwr["natural"~"^(bare_rock|rock|reef|shingle)$"]({bbox});'
+              ');out tags geom;')
 
 
 def main():
@@ -156,6 +168,21 @@ def main():
     print(f"  {len(out)} attractions written to {did}.json "
           f"({named} named, {unnamed} unnamed, {skipped} skipped as hotels/info)")
     print("  by kind: " + ", ".join(f"{k} {v}" for k, v in sorted(kinds.items(), key=lambda kv: -kv[1])))
+
+    # ...and the rock groynes, in the same pass so one run does both
+    rocks = []
+    for e in fetch(d["bbox"], ROCK_QUERY).get("elements", []):
+        t = e.get("tags") or {}
+        geom = e.get("geometry") or []
+        if len(geom) < 3:
+            continue
+        pts = [[round(v[0], 1), round(v[1], 1)]
+               for v in (proj(g["lat"], g["lon"]) for g in geom)]
+        rocks.append({"k": t.get("man_made") or t.get("natural") or "rock", "g": pts,
+                      **({"n": t["name"]} if t.get("name") else {})})
+    scene["rocks"] = rocks
+    json.dump(scene, open(path, "w"), separators=(",", ":"))
+    print(f"  {len(rocks)} rock groynes / outcrops written")
 
 
 if __name__ == "__main__":
