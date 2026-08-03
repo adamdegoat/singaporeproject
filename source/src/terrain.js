@@ -240,8 +240,24 @@ export class Terrain {
     const c = h[(j + 1) * g.nx + i], d = h[(j + 1) * g.nx + i + 1];
     const twist = Math.abs(a + d - b - c) / 4;
     const need = Math.sqrt(twist / TARGET);
-    for (const n of [1, 2, 3, 4, 6, 8, 12]) if (n >= need) return n;
-    return 12;
+    let n0 = 12;
+    for (const n of [1, 2, 3, 4, 6, 8, 12]) { if (n >= need) { n0 = n; break; } }
+    // THE WATERLINE NEEDS RESOLUTION THAT TWIST WILL NEVER ASK FOR.
+    //
+    // This measured CURVATURE alone, and a shore is a smooth ramp — almost no
+    // twist — so a cell where the ground falls from +2m to -3m was drawn as a
+    // single 35m quad. That is why the sea met the sand in a 35m staircase in
+    // every view from the beaches, which is exactly where a player spawns and
+    // spends their time. Curvature is the right question for a hillside and
+    // the wrong one for an edge.
+    //
+    // So: a cell whose corners STRADDLE sea level is subdivided regardless of
+    // how flat it is. It costs triangles only along the coastline, which on
+    // Sentosa is a thin band of the grid, and it is the difference between an
+    // island and a pixelated one.
+    const lo = Math.min(a, b, c, d), hi = Math.max(a, b, c, d);
+    if (lo < 0.35 && hi > -0.35) n0 = Math.max(n0, 6);
+    return n0;
   }
 
   // the height of the DRAWN ground at a point, which is not at(): the mesh is
@@ -414,6 +430,64 @@ export class Terrain {
           parking: [0.72, 0.71, 0.70],
           plaza: [0.93, 0.91, 0.87],
         };
+        // GROUND VARIATION, FROM A POSITION HASH — never from an RNG stream.
+        //
+        // Every tint above is a single flat colour for a whole class, so all of
+        // Sentosa's jungle was one green, all its sand one beige, and the
+        // island read as poster paint: the owner's "empty car park with trees
+        // on it" survived even after the classes were right, because a real
+        // hillside is never one colour.
+        //
+        // The variation is hashed off the VERTEX POSITION, deliberately, and
+        // not drawn from the shared sequence: this project's rule is that a
+        // texture must not be able to move a bus stop, and the determinism
+        // gates compare builds vertex for vertex. Same position, same colour,
+        // every build, forever.
+        //
+        // Two bands, because one is a regular grid you can see: a broad one
+        // for patchiness at ~40m and a fine one at ~7m for break-up.
+        const hash2 = (a, b) => {
+          const n = Math.sin(a * 127.1 + b * 311.7) * 43758.5453123;
+          return n - Math.floor(n);
+        };
+        const smoothNoise = (x, z, scale) => {
+          const fx = x / scale, fz = z / scale;
+          const ix = Math.floor(fx), iz = Math.floor(fz);
+          let tx = fx - ix, tz = fz - iz;
+          tx = tx * tx * (3 - 2 * tx); tz = tz * tz * (3 - 2 * tz);
+          const a = hash2(ix, iz), b = hash2(ix + 1, iz);
+          const c = hash2(ix, iz + 1), d2 = hash2(ix + 1, iz + 1);
+          return (a + (b - a) * tx) * (1 - tz) + (c + (d2 - c) * tx) * tz;
+        };
+        // how much a class is allowed to vary. Paving barely moves; vegetation
+        // moves a lot, because it genuinely does.
+        const VARY = {
+          wood: 0.115, scrub: 0.10, grass: 0.085, park: 0.085, golf: 0.05,
+          sand: 0.055, pitch: 0.05, track: 0.02, pool: 0.012,
+          resi: 0.022, comm: 0.02, civic: 0.02, indus: 0.028, works: 0.03,
+          parking: 0.025, plaza: 0.018,
+        };
+        const varied = (c, x, z, amt, vy) => {
+          const n = smoothNoise(x, z, 41) * 0.65 + smoothNoise(x, z, 7.3) * 0.35;
+          let f = 1 + (n - 0.5) * 2 * amt;
+          // STEEP GROUND SHOWS ITS BONES. A slope holds less soil and less
+          // planting, so it reads browner and darker — which is also what
+          // makes Imbiah and Serapong read as hills rather than green domes.
+          // slopeAlong is the method this class actually has (slopeAt was a
+          // name I assumed and it does not exist); the steepest gradient is
+          // the larger of the two axis slopes, which is close enough here and
+          // costs two heightfield reads instead of a gradient solve.
+          const sl = Math.max(Math.abs(this.slopeAlong(x, z, 1, 0, 6)),
+                              Math.abs(this.slopeAlong(x, z, 0, 1, 6)));
+          const rock = Math.min(0.5, Math.max(0, (sl - 0.22) * 1.5));
+          const out = [c[0] * f, c[1] * f, c[2] * f];
+          if (rock > 0) {
+            out[0] = out[0] * (1 - rock) + 0.52 * rock;
+            out[1] = out[1] * (1 - rock) + 0.46 * rock;
+            out[2] = out[2] * (1 - rock) + 0.38 * rock;
+          }
+          return out;
+        };
         const vid = (qx, qz) => {
           const k = qx + ',' + qz;
           let id = verts.get(k);
@@ -429,7 +503,11 @@ export class Terrain {
             // it should be the quietest. A faint grey-green knocks it back
             // behind the paved tints and reads as the scrubby concrete-and-
             // grass mix that unmapped ground in this city actually is.
-            if (t) col.push(t[0], t[1], t[2]);
+            if (t) {
+              const k = this.greenAt(x, z);
+              const v = varied(t, x, z, VARY[k] !== undefined ? VARY[k] : 0.05, vy);
+              col.push(v[0], v[1], v[2]);
+            }
             else {
               // THE SHORELINE PAINTS ITSELF (2026-08-03). Untinted low ground
               // near open sea IS beach — that is what a shoreline is — so it
@@ -456,8 +534,12 @@ export class Terrain {
                 // Keyed on the district's OWN measured green fraction rather
                 // than on its name, so it follows the data: a district that is
                 // more than a third mapped-green treats the gaps as green too.
-                col.push(0.58, 0.68, 0.50);
-              } else col.push(0.84, 0.87, 0.80);
+                const v = varied([0.58, 0.68, 0.50], x, z, 0.10, vy);
+                col.push(v[0], v[1], v[2]);
+              } else {
+                const v = varied([0.84, 0.87, 0.80], x, z, 0.03, vy);
+                col.push(v[0], v[1], v[2]);
+              }
             }
             verts.set(k, id);
           }
