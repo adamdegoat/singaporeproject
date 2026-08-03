@@ -1322,6 +1322,10 @@ async function addChunk(ch, id, Y, rec = {}) {
     if (!st) return;
     const now = performance.now();
     if (st.step) (st.times = st.times || []).push([id + ':' + st.step, Math.round(now - st._t)]);
+    // diagnostic ring, not a ledger: rebuilds appended forever (one entry per
+    // step per build, unbounded on a long ride). Recent history is all a
+    // probe ever reads.
+    if (st.times && st.times.length > 400) st.times.splice(0, st.times.length - 400);
     st.step = t; st._t = now;
   };
   const data = window.__data;
@@ -1616,7 +1620,20 @@ function unloadChunk(rec) {
   for (let i = LODT.length - 1; i >= 0; i--) if (inG.has(LODT[i])) LODT.splice(i, 1);
   for (let i = LODI.length - 1; i >= 0; i--) if (inG.has(LODI[i].o)) LODI.splice(i, 1);
   world.remove(rec.group);
-  rec.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+  // InstancedMesh.dispose() as well as geometry.dispose(): the per-instance
+  // matrix/colour buffers are freed ONLY through the mesh's own 'dispose'
+  // event — geometry.dispose() never touches them — so every unloaded
+  // district's trees, lamps and posts were leaving their instance VBOs on
+  // the GPU. Invisible to renderer.info.memory (it counts geometries and
+  // textures only), which is exactly the counter the soak used to declare
+  // "no unload leak". Audit find, 2026-08-03.
+  rec.group.traverse((o) => {
+    if (o.isInstancedMesh) o.dispose();
+    if (o.geometry) o.geometry.dispose();
+  });
+  // ...and the LOD exclusion set: a lensMesh entry per district with signals,
+  // never removed, so rebuilds accumulated dead mesh references forever.
+  for (const o of lodExclude) if (inG.has(o)) lodExclude.delete(o);
 
   // AND THE MATERIALS AND TEXTURES, which this used to leave behind entirely.
   //
@@ -1670,11 +1687,16 @@ function unloadChunk(rec) {
   if (rec.crowd) {
     const i = extraCrowds.indexOf(rec.crowd);
     if (i >= 0) extraCrowds.splice(i, 1);
+    rec.crowd = null;   // its meshes died with the group
   }
   if (rec.traffic) {
     const i = extraTraffic.indexOf(rec.traffic);
     if (i >= 0) extraTraffic.splice(i, 1);
-    rec.crowd = null;   // its meshes died with the group
+    // rec.crowd = null used to sit HERE — inside the traffic branch — so
+    // with traffic off (the default) the Crowd object and its ~1,600 agent
+    // records stayed reachable from recs for the life of the page, for
+    // every district ever visited. Audit find, 2026-08-03.
+    rec.traffic = null;
   }
   for (const r of rec.dressedDelta || []) dressedStreets.delete(r);
   rec.dressedDelta = null;
@@ -3542,7 +3564,6 @@ function loop(now) {
       sun.target.updateMatrixWorld();
       clock += dt;
       if (signals) signals.update(clock);
-    for (const es of extraSignals) es.update(clock);
       for (const es of extraSignals) es.update(clock);
       if (trafficSys) trafficSys.update(clock, dt, signals, walker.x, walker.z);
       simRefresh(walker.x, walker.z, clock);
@@ -3665,6 +3686,10 @@ function loop(now) {
     clock += dt;
     fmk('pre');
     if (signals) signals.update(clock);
+    // Streamed districts' signal heads. This line existed TWICE in the walk
+    // branch and ZERO times here — so every traffic light outside the boot
+    // district froze the moment you got on the bike. Audit find, 2026-08-03.
+    for (const es of extraSignals) es.update(clock);
     fmk('signals');
     if (trafficSys) trafficSys.update(clock, dt, signals, S.x, S.z);
     simRefresh(S.x, S.z, clock);
@@ -3684,6 +3709,12 @@ function loop(now) {
 
   const activeCam = CAM === 'top' ? topCam : camera;
   sky.position.copy(activeCam.position);      // keeps the dome inside the far plane
+  // CULL DISTRICTS IN RIDE MODE TOO. This call sat only in the walk branch —
+  // the one mode the rider does not use — while the measurement that
+  // justified it ("1.6 of 9 seconds of riding on a phone-speed CPU inside
+  // three.js's own scene walk") was taken RIDING. Found 2026-08-03 by audit:
+  // the whole documented saving was missing from the hot path.
+  cullDistricts();
   // The first frame of the finished world compiles every shader and uploads
   // every texture and geometry, synchronously. It was invisible to the boot
   // marks — build "done" at 12s, page usable at 21s — so it is timed like a
