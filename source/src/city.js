@@ -1366,6 +1366,63 @@ export async function buildBuildings(world, data, Y = null) {
     if (pts.length < 3) continue;
     if (SOLO && !((b.n || '').toLowerCase().includes(SOLO))) continue;
 
+    // A building=roof IS A CANOPY: a roof held up by columns, open and
+    // walkable underneath — RWS's covered walkways ("The Forum"/WEAVE), bus
+    // shelters writ large. Extruding it like a building gave it WALLS, and
+    // those walls blocked every mapped footway under it (the owner's "ride
+    // halfway stuck"; 2026-08-03 research audit FP-0). Drawn instead as the
+    // slab it is, on slim columns around the ring; no wall ever reaches the
+    // Solid grid, so the paths under it are open the way they are in life.
+    if (b.roof) {
+      FOOT = seatY(b);
+      STREET = streetY(b);
+      // A FLAT slab is only honest on NEAR-FLAT ground at walkway scale.
+      // One 'canopy' at the Serapong spanned falling terrain and drew as a
+      // brown ceiling over the pond (vetted, shots pavilion.png) — a big or
+      // sloped roof structure needs a real recipe; until it has one, refuse
+      // rather than invent. The RWS walkway canopies are flat and stay.
+      let gMin = Infinity, gMax = -Infinity;
+      for (const [qx, qz] of pts) {
+        const g = TERRAIN.at(qx, qz);
+        if (g < gMin) gMin = g;
+        if (g > gMax) gMax = g;
+      }
+      if (gMax - gMin > 4 || (b.a || 0) > 12000) { stats.count++; continue; }
+      const canopyH = Math.max(4, Math.min(9, b.h || 5));
+      const topY = FOOT + canopyH;
+      // columns first, slab only if enough of them stand: a ring whose
+      // column sites are all refused (water, roads) would leave a roof
+      // floating on nothing — W2 caught exactly one doing so over a golf
+      // pond on this branch's first run.
+      const cols = [];
+      let acc = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, az] = pts[i], [bx2, bz2] = pts[i + 1];
+        const L2 = Math.hypot(bx2 - ax, bz2 - az);
+        for (let t = acc === 0 ? 0 : Math.max(0, 12 - acc); t < L2; t += 12) {
+          const px = ax + (bx2 - ax) * (t / L2), pz = az + (bz2 - az) * (t / L2);
+          if (window.__onRoad && window.__onRoad(px, pz, 0)) continue;
+          if (window.__inWater && window.__inWater(px, pz)) continue;
+          const gy = TERRAIN.at(px, pz);
+          if (topY - 0.55 - gy < 2.5) continue;
+          cols.push([px, pz, gy]);
+        }
+        acc = (acc + L2) % 12;
+      }
+      if (cols.length >= 2) {
+        const slab = extrudeGeo(pts, 0.55, 0);
+        slab.translate(0, topY - 0.55 - FOOT, 0);
+        merger.add(slab, MAT.conc, pts[0][0], pts[0][1]);
+        for (const [px, pz, gy] of cols) {
+          const col = new THREE.CylinderGeometry(0.22, 0.22, topY - 0.55 - gy, 6);
+          col.translate(px, gy + (topY - 0.55 - gy) / 2, pz);
+          merger.add(col, MAT.conc, px, pz);
+        }
+      }
+      stats.count++;
+      continue;
+    }
+
     // Seat the building ONCE, here, before anything about it is drawn. The
     // rule is the one the mass already used, so no mass moves; what changes is
     // that every later piece of this building is measured from the same number

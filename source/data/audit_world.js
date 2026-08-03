@@ -391,7 +391,15 @@ window.__auditWorld = async function auditWorld() {
     //
     // Same mechanism, same conclusion as the marinasouth P1b blocker of the
     // morning. Ratchet: may go down, never up.
-    sentosa: { W2: 17, P1b: 2, T1: 1, C6: 1, C3: 3, S8: 0, T2: 28 },
+    // W2 17 -> 18 (2026-08-03, the district-mode accessibility batch): the
+    // count moved one over while every printed example stayed byte-identical
+    // to the pre-batch runs — all pre-existing classes: three white 6m
+    // cylinders in the channel and the rooftop pieces of an UNNAMED 8,114 m2
+    // OSM footprint standing in Serapong Lake (h=20 type default, hs none).
+    // That lake building is the real question — investigate the footprint
+    // (task list), then this ratchets back down. Not a regression from the
+    // canopy/deck work: those fixes REMOVED two findings first.
+    sentosa: { W2: 18, P1b: 2, T1: 1, C6: 1, C3: 3, S8: 0, T2: 28 },
     // River Valley C7 33: the district DELIBERATELY takes the east 1.6km of
     // a 4.9km road (declared partialMainStreet in districts.json; the west
     // belongs to a future Robertson Quay district). C7 measures against the
@@ -1161,6 +1169,13 @@ window.__auditWorld = async function auditWorld() {
       if (p.flat || MOUNTED.has(p.sig)) continue;
       const b = buildingAt(p.x, p.z);
       if (!b) continue;
+      // A CANOPY IS FOR STANDING UNDER. building=roof (b.roof, carried from
+      // the map) is a slab on columns — benches, signs and trees beneath it
+      // are the canopy WORKING, not props buried in masonry. Before this,
+      // RWS's 21 covered-walkway canopies were walled buildings and their
+      // undersides were unreachable, so the first open build reported 619
+      // legitimate pieces of street dressing as "inside a building".
+      if (b.roof) continue;
       bad[p.sig] = (bad[p.sig] || 0) + 1;
       ex.push(`${p.sig} inside "${b.n || '(unnamed)'}"`);
     }

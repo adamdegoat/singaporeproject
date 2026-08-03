@@ -175,6 +175,12 @@ const CELL = 12;
 const colGrid = new Map();
 function indexBuildings(data) {
   for (const b of data.buildings) {
+    // A building=roof CANOPY is a roof on columns — walkable UNDER by
+    // definition. Its footprint in the collision grid walled off every
+    // covered walkway at RWS (81 blocked centreline samples on one Imbiah
+    // footway alone, the owner's "ride halfway stuck"). The columns the
+    // renderer draws still block via SOLID, which is the honest footprint.
+    if (b.roof) continue;
     let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
     for (const [x, z] of b.p) {
       mnx = Math.min(mnx, x); mxx = Math.max(mxx, x);
@@ -299,7 +305,17 @@ function blocked(x, z) {
 // So the split is by QUESTION, not by caller: placement keeps the conservative
 // rule, and the ride gets the honest one. A rider on a deck is on a road.
 function rideBlocked(x, z) {
-  if (inWater(x, z) && bridgeDeckAt(x, z) !== null) {
+  // ANY deck clears the water-wall for MOVEMENT — road bridges AND
+  // footbridges. The Sentosa Boardwalk and the pond-crossing paths at RWS
+  // are bridge-tagged FOOTWAYS: their decks live in the FOOTBRIDGES
+  // registry, this test read only BRIDGES, and so 2,326 centreline samples
+  // across 170 spots answered "wall" over honestly-bridged water — the
+  // owner's "ride halfway then stuck". Only this MOVEMENT gate changes:
+  // the dressing/W2 predicate (blocked/place) keeps its water-is-a-wall
+  // rule, which is the 2026-08-01 revert lesson. Seating stays
+  // carriageway-deck-only; a follow-up gives wide pedestrian causeways a
+  // standable deck.
+  if (inWater(x, z) && anyDeckAt(x, z) !== null) {
     // over a deck: only real geometry stops you
     if (SOLID && SOLID.at(x, z)) return true;
     const l2 = colGrid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));

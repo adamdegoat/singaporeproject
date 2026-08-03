@@ -12,7 +12,7 @@ const SCENE = process.env.SG_SCENE || 'sentosa';
 const PORT = process.env.SG_PORT || 8933;
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=metal'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 500 } });
-await page.goto(`http://localhost:${PORT}/index.html?dpr=1&scene=${SCENE}`, { waitUntil: 'domcontentloaded' });
+await page.goto(`http://localhost:${PORT}/index.html?dpr=1&scene=${SCENE}${process.env.SG_FLAGS || ''}`, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.__ready === true, null, { timeout: 180000, polling: 250 });
 
 const hits = await page.evaluate(() => {

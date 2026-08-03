@@ -222,6 +222,11 @@ const rider = await page.evaluate(() => {
   };
   let tested = 0, porous = 0; const ex = [];
   for (const bl of window.__data.buildings) {
+    // A CANOPY IS WALK-UNDER BY DESIGN. building=roof (bl.roof) is a slab on
+    // columns since 2026-08-03 — its interior point being unblocked is the
+    // feature working, the exact same teaching P2 got the same day. B5 keeps
+    // catching real porous WALLED buildings.
+    if (bl.roof) continue;
     let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
     for (const q of bl.p) {
       if (q[0] < mnx) mnx = q[0]; if (q[0] > mxx) mxx = q[0];

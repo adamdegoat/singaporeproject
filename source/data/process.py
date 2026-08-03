@@ -123,7 +123,7 @@ LANDMARKS = {
     # Research 2026-07-29 (research/forum.md): published 17 storeys (1986,
     # RSP); no metre height anywhere. 40 was our guess and reads short —
     # 17 x 3.3 = 56, labelled derived.
-    "forum":                  {"h": 56},
+    "forum":                  {"h": 56, "district": "orchard"},
     "orchard central":        {"h": 56},   # VERIFIED 12 storeys
 
     # Researched 2026-07-28, for the buildings that FRONT A MAIN STREET and
@@ -2192,6 +2192,15 @@ def height_for(tags):
     # building, and no future insertion can change that.
     best_key, best_spec = "", None
     for key, spec in LANDMARKS.items():
+        # DISTRICT-SCOPED ENTRIES. The table is keyed on bare lowercased names
+        # and was never district-aware, so Orchard Road's "forum" (17-storey
+        # mall, derived 56m) landed on Sentosa's "The Forum" — a building=roof
+        # covered WALKWAY at RWS, tagged height=0 — and raised it into a 56m
+        # slab labelled `named` (found by the 2026-08-03 research audit; the
+        # exact laundering the comment at the table head warns against). An
+        # entry carrying "district" now only fires in that district.
+        if spec.get("district") and spec["district"] != DIST_ID:
+            continue
         if key and key in name and len(key) > len(best_key):
             best_key, best_spec = key, spec
     if best_spec is not None:
