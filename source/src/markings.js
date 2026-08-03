@@ -137,7 +137,24 @@ function emitFlat(world, list, w, l, mat) {
 // Bean, 7-Eleven...) read as "back block" and 14 real shopfronts never drew.
 // Measured 2026-08-02 across marinasouth/tanjongrhu/sentosa: 21 tenants flip
 // from skipped to drawn when the two rules agree. Import THIS, never copy it.
-export const DRESS_REACH = 1200;
+// 1200 -> 2400. HALF THE ISLAND HAD NO KERBS.
+//
+// Measured: 65.5 km of Sentosa's 132.6 km of road lies beyond 1200m of the
+// axis, so Sentosa Cove, Tanjong and Palawan got no kerbs, no lamps and no
+// street furniture at all — which is most of why they read as unfinished.
+//
+// The reason it stayed at 1200 was memory, and that reason has moved. A/B on
+// the phone profile (844x390 dpr2, 4x CPU throttle, four viewpoints):
+//
+//     BEFORE the Int8 normal packing:  1200 -> 2400 cost +62MB (293 -> 355)
+//     AFTER it:                        1200 -> 2400 costs +19MB (284 -> 303)
+//
+// Frame time is unchanged (p50 14.6ms -> 14.0ms, inside the noise), draws go
+// 290 -> 322 against a 900 budget, and boot 9.4s -> 10.5s against the 22s it
+// was this morning. 303MB is BELOW what this game has been shipping at all
+// night, so dressing the whole island is not a memory regression — it is paid
+// for by the packing.
+export const DRESS_REACH = 2400;
 
 export function axisSpec(axis, data = {}) {
   const name = (axis.n || '').toLowerCase();
