@@ -1822,6 +1822,77 @@ export async function buildBuildings(world, data, Y = null) {
         merger.add(extrudeGeo(grow(b.p, 1.19), 0.22, _hh), MAT.paleStone, _cc[0], _cc[1]);
       }
     }
+    // THE GARRISON STOCK. 136 buildings on Sentosa carry cons='SENTOSA' — the
+    // island's conservation area — and they are not a mixed bag: they are the
+    // British military buildings put up between the 1880s and the 1930s, and
+    // the resorts here ARE those buildings. Sofitel Sentosa is a 1930s colonial
+    // block ("designed as separate blocks similar to how the old British
+    // military buildings on Sentosa were designed"), Amara Sanctuary is the
+    // Palawan barracks, The Barracks Hotel is a 1940 barracks, Oasia keeps a
+    // three-storey heritage block, and the Mess Hall is what its name says.
+    // Their surveyed heights agree: median 6.8m, two storeys.
+    //
+    // So they get the form they actually have — white render, a pitched tiled
+    // roof with an overhang, and a verandah colonnade along the long face —
+    // rather than the generic city facade family. This is the single biggest
+    // character change available on the island: it is 136 buildings, and they
+    // are the ones a visitor walks past.
+    //
+    // Sofitel, Amara and Capella are NOT NAMED in the map, so this is keyed on
+    // the conservation tag rather than on names it does not have.
+    if (b.cons && !b.roof && (b.h || 0) <= 14 && (b.a || 0) >= 90 && !(b.mh > 1)) {
+      const _hh = Math.max(3, b.h || 6);
+      const _cc = centroid(b.p);
+      // roof: a shallow hip, done as two stacked rings so it reads pitched
+      // from the ground without a real hip solve
+      merger.add(extrudeGeo(grow(b.p, 1.14), 0.26, _hh), MAT.clayTile, _cc[0], _cc[1]);
+      merger.add(extrudeGeo(grow(b.p, 0.72), 1.15, _hh + 0.26), MAT.clayTile, _cc[0], _cc[1]);
+      // verandah posts along the longest edge, at storey spacing, kept off any
+      // carriageway so this cannot become a T1 finding
+      let bi = 0, bl = 0;
+      for (let i = 0; i < b.p.length; i++) {
+        const a2 = b.p[i], c2 = b.p[(i + 1) % b.p.length];
+        const L2 = Math.hypot(c2[0] - a2[0], c2[1] - a2[1]);
+        if (L2 > bl) { bl = L2; bi = i; }
+      }
+      if (bl > 9) {
+        const a2 = b.p[bi], c2 = b.p[(bi + 1) % b.p.length];
+        const ux = (c2[0] - a2[0]) / bl, uz = (c2[1] - a2[1]) / bl;
+        const nx4 = -uz, nz4 = ux;
+        // push the colonnade OUTWARD, away from the footprint centre
+        const sgn = ((a2[0] + ux * bl / 2 + nx4) - _cc[0]) * nx4
+                  + ((a2[1] + uz * bl / 2 + nz4) - _cc[1]) * nz4 > 0 ? 1 : -1;
+        // A COLONNADE CARRIES SOMETHING. The first pass stood posts along the
+        // facade holding nothing up, which reads as a fence, not a verandah.
+        // So: a shade roof over them, and posts thick enough to look like they
+        // carry it.
+        const vy = _hh * 0.52;
+        const cnt = Math.max(2, Math.floor((bl - 2.8) / 3.1));
+        let placed = 0;
+        for (let k = 0; k <= cnt; k++) {
+          const t = 1.6 + k * ((bl - 3.2) / cnt);
+          const px = a2[0] + ux * t + nx4 * 1.7 * sgn;
+          const pz = a2[1] + uz * t + nz4 * 1.7 * sgn;
+          if (window.__onRoad && window.__onRoad(px, pz, 0)) continue;
+          const gy2 = TERRAIN.at(px, pz);
+          const post = new THREE.CylinderGeometry(0.15, 0.17, vy, 8);
+          post.translate(px, gy2 + vy / 2, pz);
+          merger.add(post, MAT.paleStone || MAT.conc, px, pz);
+          placed++;
+        }
+        if (placed >= 2) {
+          const mid = bl / 2;
+          const mx = a2[0] + ux * mid + nx4 * 0.9 * sgn;
+          const mz = a2[1] + uz * mid + nz4 * 0.9 * sgn;
+          const gy3 = TERRAIN.at(mx, mz);
+          const roof = new THREE.BoxGeometry(bl - 1.0, 0.2, 2.1);
+          roof.rotateY(Math.atan2(ux, uz));
+          roof.translate(mx, gy3 + vy + 0.1, mz);
+          merger.add(roof, MAT.clayTile, mx, mz);
+        }
+      }
+    }
+
     // AND A DEEP ROOF OVER IT. A low building on the sand is a pavilion — a
     // bar, a restaurant, a changing block — and what it has that a city
     // building does not is a roof that oversails its own walls to shade them.
@@ -1960,8 +2031,11 @@ export async function buildBuildings(world, data, Y = null) {
     // The towers keep the mapped facade — ONE°15, The Oceanfront and the
     // Residences are glass-and-frame buildings and genuinely are not render.
     const _isVilla = _isCove && (b.h || 0) <= 20 && !b.roof;
+    // the garrison stock is painted render, like the villas and the beach bars
+    const _isHeritage = !!b.cons && (b.h || 0) <= 14 && !b.roof;
     const mat = b.col ? tintedMat(wallTex, fam.rough, fam.metal, b.col)
       : _isVilla ? renderMat(_coveTint)
+      : _isHeritage ? renderMat(0xf4efe4)
       : _isSmallBeach ? renderMat(_beachTint)
       : _isCove ? tintedMat(wallTex, fam.rough, fam.metal, _coveTint)
       : _isBeach ? tintedMat(wallTex, fam.rough, fam.metal, _beachTint)
