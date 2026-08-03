@@ -577,26 +577,51 @@ export function walkSurfaceAt(x, z) {
   return best;
 }
 export function clearBridges() { BRIDGES.cells.clear(); BRIDGES.segs.length = 0; }
-export function addBridgeWay(pts, width) { return _addSpan(BRIDGES, pts, width); }
+export function addBridgeWay(pts, width, deck = null) { return _addSpan(BRIDGES, pts, width, deck); }
 
 // A pedestrian bridge. Same geometry, a registry nothing seats a rider from.
 export function addFootbridgeWay(pts, width) {
   return _addSpan(FOOTBRIDGES, pts, Math.max(width || 0, 3));
 }
 
-function _addSpan(REG, pts, width) {
+function _addSpan(REG, pts, width, deckOverride = null) {
   if (!pts || pts.length < 2) return 0;
-  let deck = 0;
-  for (const q of pts) deck = Math.max(deck, TERRAIN.at(q[0], q[1]));
-  deck += 1.2;                        // the deck sits above its abutment
+  // deckOverride: a number, or a HEIGHT FUNCTION (x,z)=>h carrying approach
+  // ramps (see the run grouping in buildRoads). The registry already stores a
+  // height PER SEGMENT, so a ramped run is just segments at falling heights.
+  const fn = typeof deckOverride === 'function' ? deckOverride : null;
+  let deck;
+  if (fn) deck = fn.deck;
+  else if (deckOverride != null) deck = deckOverride;
+  else {
+    deck = 0;
+    for (const q of pts) deck = Math.max(deck, TERRAIN.at(q[0], q[1]));
+    deck += 1.2;                      // the deck sits above its abutment
+  }
   const half = width / 2;
+  // With a ramp function, long map segments are SUBDIVIDED (8m) before they
+  // are stored: one 100m segment scored by its two endpoints would take the
+  // ramp's lowest height for its whole length and put the ride surface under
+  // the drawn tarmac mid-span.
+  const src = [];
   for (let i = 0; i < pts.length - 1; i++) {
+    const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+    if (!fn) { src.push([ax, az, bx, bz]); continue; }
+    const L = Math.hypot(bx - ax, bz - az);
+    const n = Math.max(1, Math.ceil(L / 8));
+    for (let s = 0; s < n; s++) {
+      src.push([ax + (bx - ax) * (s / n), az + (bz - az) * (s / n),
+                ax + (bx - ax) * ((s + 1) / n), az + (bz - az) * ((s + 1) / n)]);
+    }
+  }
+  for (const [ax, az, bx, bz] of src) {
     const idx = REG.segs.length;
-    REG.segs.push([pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], half, deck]);
-    const mnx = Math.min(pts[i][0], pts[i + 1][0]) - half;
-    const mxx = Math.max(pts[i][0], pts[i + 1][0]) + half;
-    const mnz = Math.min(pts[i][1], pts[i + 1][1]) - half;
-    const mxz = Math.max(pts[i][1], pts[i + 1][1]) + half;
+    const segDeck = fn ? Math.min(fn(ax, az), fn(bx, bz)) : deck;
+    REG.segs.push([ax, az, bx, bz, half, segDeck]);
+    const mnx = Math.min(ax, bx) - half;
+    const mxx = Math.max(ax, bx) + half;
+    const mnz = Math.min(az, bz) - half;
+    const mxz = Math.max(az, bz) + half;
     for (let cx = Math.floor(mnx / BR_CELL); cx <= Math.floor(mxx / BR_CELL); cx++) {
       for (let cz = Math.floor(mnz / BR_CELL); cz <= Math.floor(mxz / BR_CELL); cz++) {
         const k = cx + ',' + cz;
@@ -1783,11 +1808,18 @@ function ribbon(pts, width, y, flat = false, noExt = false) {
   const g = new THREE.BufferGeometry();
   const pos = [], uv = [];
   let deck = 0;
-  if (flat) {
-    for (const q of pts) deck = Math.max(deck, TERRAIN.at(q[0], q[1]));
-    deck += 1.2;                       // the deck sits above its abutment
+  if (flat && typeof flat !== 'function') {
+    // `flat` may be the RUN deck height (a number) or a HEIGHT FUNCTION with
+    // approach ramps — see the bridge-fragment grouping in buildRoads. A bare
+    // `true` keeps the old per-way derivation.
+    if (typeof flat === 'number') deck = flat;
+    else {
+      for (const q of pts) deck = Math.max(deck, TERRAIN.at(q[0], q[1]));
+      deck += 1.2;                     // the deck sits above its abutment
+    }
   }
-  const H = (x, z) => (flat ? deck : TERRAIN.at(x, z)) + y;
+  const H = (x, z) => (typeof flat === 'function' ? flat(x, z)
+                       : flat ? deck : TERRAIN.at(x, z)) + y;
   const half = width / 2;
 
   // drop repeated points, then work out each vertex's offset direction
@@ -1930,6 +1962,83 @@ export async function buildRoads(world, data, Y = null) {
   const bridgeGeos = [], pierGeos = [];       // deck soffit + parapets, and the bents under them
   const yellowGeos = [];
   const centreGeos = [];
+  // BRIDGE FRAGMENTS SHARE ONE DECK (2026-08-03). OSM splits a bridge into
+  // ways, and each fragment derived its deck from terrain under its OWN
+  // points — so a fragment wholly over water read sea level + 1.2 while its
+  // land-touching neighbour read 8m, and the Sentosa Gateway arrived at the
+  // island as a 6.5m CLIFF in the ride surface (the owner found it riding:
+  // "roads in the air then suddenly drop"; measured 1.52m vs 7.98m decks at
+  // z=11870/11875). Fragments whose endpoints touch now take the MAX deck of
+  // their connected run: one bridge, one height. Connectivity only — name
+  // matching fails on dual carriageways and unnamed ramps.
+  // TWO REFINEMENTS PAID FOR BY MEASUREMENT (roadsteps probe, same day):
+  // (1) SAME CLASS ONLY. The pedestrian Boardwalk shares endpoints with the
+  //     Gateway carriageway; one union handed the footpath an 8m road deck
+  //     and its steps grew from 4.7m to 9.4m. In reality stairs join them —
+  //     a footbridge and a road bridge meeting at a node share a NODE, not
+  //     a deck. Carriageways union with carriageways, paths with paths.
+  // (2) RAMP THE TERMINAL ENDS. A run's deck is max(terrain)+1.2, so where
+  //     it lands, the continuing road can still sit metres lower (Brani
+  //     Terminal Avenue: 3.1m). At endpoints no same-class fragment continues
+  //     from, the height function slopes the last 20m down to the landing
+  //     terrain — an approach ramp, which is what the real bridge has.
+  const BRDECK = new Map();
+  {
+    const bws = data.roads.filter((r) => r.bridge && r.p && r.p.length >= 2);
+    const cls = bws.map((r) => (r.k === 'footway' || r.k === 'pedestrian') ? 'p' : 'c');
+    const parent = bws.map((_, i) => i);
+    const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+    const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
+    const byEnd = new Map();
+    const endKey = (c, cx, cz) => c + '|' + cx + ':' + cz;
+    bws.forEach((r, i) => {
+      for (const p of [r.p[0], r.p[r.p.length - 1]]) {
+        const cx = Math.round(p[0] / 2), cz = Math.round(p[1] / 2);
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dz = -1; dz <= 1; dz++) {
+            const k = endKey(cls[i], cx + dx, cz + dz);
+            if (byEnd.has(k)) union(i, byEnd.get(k).i);
+          }
+        }
+        const k0 = endKey(cls[i], cx, cz);
+        const e = byEnd.get(k0);
+        if (e) { e.n++; } else byEnd.set(k0, { i, n: 1, x: p[0], z: p[1] });
+      }
+    });
+    const runMax = new Map(), runTerms = new Map();
+    bws.forEach((r, i) => {
+      const root = find(i);
+      let d = runMax.get(root) || 0;
+      for (const q of r.p) d = Math.max(d, TERRAIN.at(q[0], q[1]));
+      runMax.set(root, d);
+    });
+    for (const e of byEnd.values()) {
+      // an endpoint only ONE fragment touches is where the run meets the land
+      if (e.n === 1) {
+        const root = find(e.i);
+        if (!runTerms.has(root)) runTerms.set(root, []);
+        runTerms.get(root).push([e.x, e.z, TERRAIN.at(e.x, e.z)]);
+      }
+    }
+    const RAMP = 20;
+    bws.forEach((r, i) => {
+      const root = find(i);
+      const deck = runMax.get(root) + 1.2;
+      const terms = runTerms.get(root) || [];
+      const f = (x, z) => {
+        let h = deck;
+        for (const [tx, tz, tH] of terms) {
+          const target = tH + 0.06;
+          if (deck - target <= 1.2) continue;         // natural abutment, no ramp needed
+          const d = Math.hypot(x - tx, z - tz);
+          if (d < RAMP) h = Math.min(h, target + (deck - target) * (d / RAMP));
+        }
+        return h;
+      };
+      f.deck = deck;
+      BRDECK.set(r, f);
+    });
+  }
   let mainAxis = null, bestLen = Infinity;
   let _yt2 = performance.now();      // same time budget as buildBuildings
   for (const r of data.roads) {
@@ -1959,9 +2068,9 @@ export async function buildRoads(world, data, Y = null) {
       // The deck height comes back from the registry rather than being worked
       // out again here: ribbon() already computes the same `max terrain + 1.2`
       // independently, and a third copy of that rule is a third thing to drift.
-      bridgeFabric(r.p, r.w, addBridgeWay(r.p, r.w), bridgeGeos, pierGeos, r.n);
+      bridgeFabric(r.p, r.w, addBridgeWay(r.p, r.w, BRDECK.get(r)), bridgeGeos, pierGeos, r.n);
     }
-    const g = ribbon(r.p, r.w, y, !!r.bridge);
+    const g = ribbon(r.p, r.w, y, r.bridge ? (BRDECK.get(r) ?? true) : false);
     if (!g.attributes.position || g.attributes.position.count === 0) continue;
     // WHAT IT IS MADE OF, from the map. `surface` is on 61% of ways here and
     // nothing read it until data/unused.py enumerated the extract: 293 ways in
