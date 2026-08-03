@@ -1070,6 +1070,55 @@ export async function buildAttractions(world, data, Y = null) {
     out.cannons++;
   };
 
+  // THE SKYLINE LUGE. Eight surveyed trails winding down from Imbiah to the
+  // beach — Dragon, Expedition, Jungle, Kupu Kupu — and they arrive as LINES,
+  // which is why the fetch was changed to ask for geometry. A luge run is a
+  // shallow concrete channel with a raised lip either side; that section, and
+  // the way it snakes down a slope through the trees, is the whole read.
+  //
+  // No width is published, so the track is drawn at the width of the surveyed
+  // way where one is given and 2.4m otherwise — wide enough for the two carts
+  // abreast the photographs show, and stated here as the assumption it is.
+  const luge = new THREE.MeshLambertMaterial({ color: 0x9a9992 });
+  const lugeLip = new THREE.MeshLambertMaterial({ color: 0xb6b3a8 });
+  const lugeRun = (pts) => {
+    const HALF = 1.2;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+      const L = Math.hypot(bx - ax, bz - az);
+      if (L < 0.6) continue;
+      const ux = (bx - ax) / L, uz = (bz - az) / L;
+      const nx2 = -uz, nz2 = ux;
+      const steps = Math.max(1, Math.ceil(L / 6));
+      for (let s = 0; s < steps; s++) {
+        const t0 = s / steps, t1 = (s + 1) / steps;
+        const p0x = ax + (bx - ax) * t0, p0z = az + (bz - az) * t0;
+        const p1x = ax + (bx - ax) * t1, p1z = az + (bz - az) * t1;
+        const y0 = groundAt(p0x, p0z) + 0.12, y1 = groundAt(p1x, p1z) + 0.12;
+        const g2 = new THREE.BufferGeometry();
+        g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+          p0x - nx2 * HALF, y0, p0z - nz2 * HALF,
+          p1x - nx2 * HALF, y1, p1z - nz2 * HALF,
+          p1x + nx2 * HALF, y1, p1z + nz2 * HALF,
+          p0x - nx2 * HALF, y0, p0z - nz2 * HALF,
+          p1x + nx2 * HALF, y1, p1z + nz2 * HALF,
+          p0x + nx2 * HALF, y0, p0z + nz2 * HALF,
+        ]), 3));
+        g2.computeVertexNormals();
+        merger.add(g2, luge, p0x, p0z);
+        // the lip either side, which is what makes it a channel and not a path
+        for (const sgn of [-1, 1]) {
+          const lip = new THREE.BoxGeometry(0.22, 0.36, Math.hypot(p1x - p0x, p1z - p0z) + 0.1);
+          lip.applyMatrix4(new THREE.Matrix4().makeRotationY(Math.atan2(ux, uz)));
+          lip.translate((p0x + p1x) / 2 + nx2 * HALF * sgn,
+            (y0 + y1) / 2 + 0.18, (p0z + p1z) / 2 + nz2 * HALF * sgn);
+          merger.add(lip, lugeLip, p0x, p0z);
+        }
+      }
+    }
+    out.luge = (out.luge || 0) + 1;
+  };
+
   for (const a of list) {
     await YY();
     const [x, z] = a.p;
@@ -1077,6 +1126,9 @@ export async function buildAttractions(world, data, Y = null) {
     if (GONE.test(nm)) { out.attrSkipped++; continue; }
     if (/universal studios globe/i.test(nm)) { globe(x, z); out.attractions++; continue; }
     if (a.k === 'cannon') { cannon(x, z); out.attractions++; continue; }
+    if (a.k === 'summer_toboggan' && a.g && a.g.length >= 3) {
+      lugeRun(a.g); out.attractions++; continue;
+    }
     out.attrSkipped++;
   }
   await merger.flushY(world, {}, Y);

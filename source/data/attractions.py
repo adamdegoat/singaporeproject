@@ -50,11 +50,16 @@ MIRRORS = [
 
 # nwr = nodes, ways AND relations in one pass. Resorts World is a relation and
 # would be invisible to a node+way query.
+# out tags geom, NOT center: a luge run, a fort's rampart and a coaster's
+# track are LINES, and a centre point throws away the only thing that makes
+# them recognisable. Nodes still return their own position; ways and relations
+# now carry their full geometry, and 160 elements is a small enough response
+# to ask for it.
 QUERY = ('[out:json][timeout:180];('
          'nwr["tourism"]({bbox});'
          'nwr["historic"]({bbox});'
          'nwr["attraction"]({bbox});'
-         ');out tags center;')
+         ');out tags geom;')
 
 # tourism=hotel and tourism=information are already covered by the building and
 # signage layers and would only duplicate them; everything else here is a thing
@@ -109,15 +114,27 @@ def main():
         if not kind or kind in SKIP_KINDS:
             skipped += 1
             continue
-        c = e.get("center") or e
-        lat, lon = c.get("lat"), c.get("lon")
-        if lat is None or lon is None:
-            continue
-        x, z = proj(lat, lon)
+        geom = e.get("geometry") or []
+        if geom:
+            pts = [[round(v[0], 1), round(v[1], 1)]
+                   for v in (proj(g["lat"], g["lon"]) for g in geom)]
+            # the anchor is the ring/line centroid, which is what a point-form
+            # recipe wants; `g` keeps the shape for anything that draws a line
+            x = sum(p[0] for p in pts) / len(pts)
+            z = sum(p[1] for p in pts) / len(pts)
+        else:
+            c = e.get("center") or e
+            lat, lon = c.get("lat"), c.get("lon")
+            if lat is None or lon is None:
+                continue
+            x, z = proj(lat, lon)
+            pts = None
         name = t.get("name")
         if not name:
             unnamed += 1
         rec = {"p": [round(x, 1), round(z, 1)], "k": kind}
+        if pts and len(pts) >= 2:
+            rec["g"] = pts
         if name:
             rec["n"] = name
         # carried through because the DRAW side needs them to tell a 42.5m
