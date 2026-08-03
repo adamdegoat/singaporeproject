@@ -51,10 +51,28 @@ const BALCONY = [texBalcony(0xc6bda9), texBalcony(0xada596)];
 //                        and early 90s, and curtain-wall glass after that.
 //   footprint hash       still the fallback, for the 73% the map says nothing
 //                        about. A guess is fine when it is labelled a guess.
-function familyFor(b) {
+function familyFor(b, beach = false) {
   let h = 0;
   for (const [x, z] of b.p) h = (h * 31 + ((x * 7) | 0) + ((z * 13) | 0)) | 0;
   h = Math.abs(h);
+
+  // A BUILDING ON THE BEACH IS NOT A CITY BUILDING.
+  //
+  // Every family below was written for the CBD — curtain wall, punched
+  // concrete, masonry, balconied slab — and none of them is what stands on
+  // Siloso. Once the shophouse rule stopped catching Sentosa's small buildings
+  // (see the party-wall note in buildBuildings) 692 of them fell through to
+  // these, and a beachfront block came out as a windowless dark concrete slab
+  // standing on the sand — the ugliest thing in the frame, vetted at
+  // shots/street/bch2.shot1 and reported by the owner.
+  //
+  // What a Singapore beachfront building actually is: pale, open, and turned
+  // to the water. Every one of them faces the sea with balconies or a verandah,
+  // because that is the entire reason it is there. So the beachfront gets the
+  // BALCONY pool — horizontal banding, openings on every floor — with a light
+  // finish, rather than a sealed box. Read FIRST, ahead of the size rule that
+  // was sending anything over 1,400 m2 to curtain wall.
+  if (beach) return { pool: BALCONY, rough: 0.72, metal: 0, src: 'beach' };
 
   // a surveyed material beats everything, including the size rule below
   const mat = (b.mat || '').toLowerCase();
@@ -1381,6 +1399,39 @@ export async function buildBuildings(world, data, Y = null) {
       }
     });
   }
+  // WHICH BUILDINGS STAND ON THE BEACH — see the beachfront note in familyFor.
+  // Measured from the mapped sand rings, so this is empty inland and costs
+  // nothing there. 45m, not 70m: at 70 it reaches back across the beach walk
+  // and picks up the road-fronting blocks behind, which are ordinary buildings.
+  const _sandRings = (data.green || [])
+    .filter((g) => g.k === 'sand' && g.p && g.p.length >= 4).map((g) => g.p);
+  const _beach = new Set();
+  if (_sandRings.length) {
+    const edgeD = (x, z, p) => {
+      let best = 1e9;
+      for (let i = 0; i < p.length; i++) {
+        const a = p[i], c = p[(i + 1) % p.length];
+        const vx = c[0] - a[0], vz = c[1] - a[1];
+        const L2 = vx * vx + vz * vz || 1;
+        let t = ((x - a[0]) * vx + (z - a[1]) * vz) / L2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        best = Math.min(best, Math.hypot(x - (a[0] + vx * t), z - (a[1] + vz * t)));
+      }
+      return best;
+    };
+    for (const b of (data.buildings || [])) {
+      if (!b.p || b.p.length < 3) continue;
+      let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+      for (const [x, z] of b.p) {
+        if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+        if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+      }
+      const bx = (mnx + mxx) / 2, bz = (mnz + mxz) / 2;
+      for (const p of _sandRings) {
+        if (edgeD(bx, bz, p) < 45) { _beach.add(b); break; }
+      }
+    }
+  }
   const _wrings = (data.water || []).map((w) => w.p).filter((p) => p && p.length > 3);
   const _inWaterRing = (x, z) => {
     for (const ring of _wrings) {
@@ -1619,7 +1670,18 @@ export async function buildBuildings(world, data, Y = null) {
       stats.count++; stats.bespoke++;
       continue;
     }
-    const fam = familyFor(b);
+    const _isBeach = _beach.has(b);
+    const fam = familyFor(b, _isBeach);
+    // AND A DEEP ROOF OVER IT. A low building on the sand is a pavilion — a
+    // bar, a restaurant, a changing block — and what it has that a city
+    // building does not is a roof that oversails its own walls to shade them.
+    // Only for the low ones: a beachfront hotel keeps its flat top.
+    if (_isBeach && (b.h || 0) <= 12 && !b.roof) {
+      const _hh = Math.max(3, b.h || 6);
+      const _cc = centroid(b.p);
+      merger.add(extrudeGeo(grow(b.p, 1.16), 0.34, _hh), MAT.clayTile, _cc[0], _cc[1]);
+      merger.add(extrudeGeo(grow(b.p, 1.05), 0.9, _hh + 0.34), MAT.clayTile, _cc[0], _cc[1]);
+    }
     // provenance, so the accuracy ledger can say how many facades are a real
     // answer and how many are still a hash
     const fs = (window.__facadeSrc = window.__facadeSrc || {});
@@ -1630,7 +1692,15 @@ export async function buildBuildings(world, data, Y = null) {
     // hash, which is the same mistake `building:material` already fixed once:
     // "a hash was overriding a surveyed fact". Tinting the family's texture
     // keeps the window pattern and takes the real hue.
+    // A BEACH BUILDING IS PALE. The family above gives it openings; this gives
+    // it the finish. Sentosa's beachfront and the Cove are published as white
+    // and light — Bloomberg's own description of the Cove is "white", and the
+    // beach strip is render and timber, not the CBD's grey concrete. Still a
+    // TINT of the surveyed texture, exactly like `building:colour` above, so
+    // the family's window pattern survives; and a surveyed colour still wins.
+    const _beachTint = 0xe8e2d4;
     const mat = b.col ? tintedMat(wallTex, fam.rough, fam.metal, b.col)
+      : _isBeach ? tintedMat(wallTex, fam.rough, fam.metal, _beachTint)
                       : sharedMat(wallTex, fam.rough, fam.metal);
     const per = perimeter(pts);
     const h = b.h;

@@ -1011,9 +1011,31 @@ export async function buildTrails(world, data, Y = null) {
   const sands = (data.green || []).filter((g) => g.k === 'sand' && g.p && g.p.length >= 4);
   // which surface does this path cross? asked at the segment midpoint, because
   // a path that leaves a wood should change underfoot where it leaves it
+  // A BEACH WALK IS A BOARDWALK EVEN WHEN IT IS NOT ON THE SAND.
+  //
+  // The owner: "those beach walk ways or paths can make it look nicer". The
+  // first version only called a path a boardwalk when its midpoint was INSIDE
+  // a sand ring — but Siloso Beach Walk, Palawan Beach Walk and the Tanjong
+  // spine all run just BEHIND the sand, on the dry side, which is exactly
+  // where a boardwalk goes. So they drew as grey paving, the same surface as a
+  // car park. Anything within a short reach of mapped sand is timber.
+  const BOARDWALK_REACH = 30;
+  const edgeDistTo = (x, z, p) => {
+    let best = 1e9;
+    for (let i = 0; i < p.length; i++) {
+      const a = p[i], c = p[(i + 1) % p.length];
+      const vx = c[0] - a[0], vz = c[1] - a[1];
+      const L2 = vx * vx + vz * vz || 1;
+      let t = ((x - a[0]) * vx + (z - a[1]) * vz) / L2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      best = Math.min(best, Math.hypot(x - (a[0] + vx * t), z - (a[1] + vz * t)));
+    }
+    return best;
+  };
   const surfaceFor = (x, z) => {
     for (const p of wpolys) if (inRing(x, z, p)) return 'waterdeck';
     for (const s of sands) if (inRing(x, z, s.p)) return 'deck';
+    for (const s of sands) if (edgeDistTo(x, z, s.p) < BOARDWALK_REACH) return 'deck';
     for (const w of woods) if (inRing(x, z, w.p)) return 'earth';
     return 'pave';
   };
