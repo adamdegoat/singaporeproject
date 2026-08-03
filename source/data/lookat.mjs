@@ -33,7 +33,10 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1400, height: 800 }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.log('  page error:', e.message));
-await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/index.html?dpr=1&scene=${SCENE}`,
+// SG_EXTRA appends query flags (?far=1400, ?noaa, ?lowpower) so an atmosphere
+// or LOD change can be A/B'd from the same camera without editing the source.
+await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/index.html?dpr=1&scene=${SCENE}`
+  + (process.env.SG_EXTRA ? '&' + process.env.SG_EXTRA : ''),
   { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true', null, { polling: 300, timeout: 300000 });
 await page.evaluate(() => window.__ui(false));

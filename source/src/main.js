@@ -84,7 +84,32 @@ const SEASIDE = ATMO === 'island';
 // far plane: the island earns a longer view because the expensive direction
 // (inland) is still district-culled and LOD-capped, while the direction that
 // opens up is open water — two triangles. Overridable for A/B measurement.
-const FAR = +P.get('far') || (SEASIDE ? 900 : 520);
+// 900 -> 1600 ON THE ISLAND (2026-08-03), MEASURED, NOT GUESSED.
+//
+// At 900 the fog density that the density*far~=1.92 rule forces is 0.0021, which
+// leaves ~19% of anything at 600m showing — so from any high ground the sea, the
+// shore, the jungle and the sky converged on one pale grey and Sentosa read as a
+// smear. That is most of "i really dont see it looking like sentosa": you could
+// not see the island at all.
+//
+// The reason it was 900 was an assumption that further costs frames. A/B'd at
+// 844x390 dpr2 with 4x CPU throttle, real GPU, sampling four places across the
+// island via __teleport (beach, cove, resort, inland):
+//
+//     far=900    frame p50 16.9ms   worst p95 34.4ms   draws 236   tris 928k
+//     far=1600   frame p50 15.4ms   worst p95 36.9ms   draws 293   tris 945k
+//
+// It is not slower. Draws rise 24% and stay far under the 900 budget, triangles
+// rise 2%, and the p50 difference is inside the noise — because the direction
+// that opens up is open water, which is two triangles, and everything inland is
+// still district-culled and LOD-capped at LOD_FAR.
+//
+// THE FIRST RUN OF THAT A/B WAS WRONG and nearly shipped: it set
+// camera.position directly, which the game's own loop overwrites on the next
+// frame, so all four "different" viewpoints reported an identical 363 draw
+// calls. window.__teleport is the only thing that moves the view. If a probe
+// reports the same number at four different places, the probe is broken.
+const FAR = +P.get('far') || (SEASIDE ? 1600 : 520);
 scene.fog = new THREE.FogExp2(SEASIDE ? 0xb7cdd9 : 0xc9c3b2, 1.92 / FAR);
 const camera = new THREE.PerspectiveCamera(58, 1, 0.3, FAR);
 

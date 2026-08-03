@@ -1314,15 +1314,43 @@ export async function buildAttractions(world, data, Y = null) {
         const t0 = s / steps, t1 = (s + 1) / steps;
         const p0x = ax + (bx - ax) * t0, p0z = az + (bz - az) * t0;
         const p1x = ax + (bx - ax) * t1, p1z = az + (bz - az) * t1;
-        const y0 = groundAt(p0x, p0z) + 0.12, y1 = groundAt(p1x, p1z) + 0.12;
+        // FOUR CORNERS, AND surfaceAt — this run had BOTH of this file's
+        // documented traps at once, and they compound.
+        //
+        // The luge is the worst possible case for a centreline height: eight
+        // runs whose whole character is SNAKING DOWN A SLOPE, so the ground
+        // under the two edges of a 2.4m channel differs almost everywhere, and
+        // giving both edges the centreline's height left the track hovering
+        // over the hill. Rendered from the woods it read as a row of pale
+        // slabs floating in mid-air with grass under them — the single most
+        // "what is this place" thing in the frame
+        // (shots/street/atmo.shot1.jpg).
+        //
+        // groundAt was the second trap, the one the import note at the top of
+        // this file exists to warn about: where a run crosses a deck or a
+        // stair, the ground is metres below what a rider is actually on.
+        const ly = (x, z) => surfaceAt(x, z) + 0.12;
+        const yAL = ly(p0x - nx2 * HALF, p0z - nz2 * HALF);
+        const yAR = ly(p0x + nx2 * HALF, p0z + nz2 * HALF);
+        const yBL = ly(p1x - nx2 * HALF, p1z - nz2 * HALF);
+        const yBR = ly(p1x + nx2 * HALF, p1z + nz2 * HALF);
+        const y0 = (yAL + yAR) / 2, y1 = (yBL + yBR) / 2;   // the lips ride the middle
         const g2 = new THREE.BufferGeometry();
         g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
-          p0x - nx2 * HALF, y0, p0z - nz2 * HALF,
-          p1x - nx2 * HALF, y1, p1z - nz2 * HALF,
-          p1x + nx2 * HALF, y1, p1z + nz2 * HALF,
-          p0x - nx2 * HALF, y0, p0z - nz2 * HALF,
-          p1x + nx2 * HALF, y1, p1z + nz2 * HALF,
-          p0x + nx2 * HALF, y0, p0z + nz2 * HALF,
+          // WOUND SO THE FACE POINTS UP. With n = (-uz, ux) the old order
+          // gave AB x AC = (0,-1,0): the whole luge SURFACE faced downwards
+          // and was back-face culled, so the eight runs rendered as nothing
+          // but their two lip rails — disconnected pale planks scattered
+          // through the Fort Siloso woods, which is what a player saw.
+          // Proved by forcing side:DoubleSide, which made the channel appear.
+          // DoubleSide is not the fix: this world is fill-rate bound on a
+          // phone and it doubles the cost of every path pixel.
+          p0x - nx2 * HALF, yAL, p0z - nz2 * HALF,
+          p1x + nx2 * HALF, yBR, p1z + nz2 * HALF,
+          p1x - nx2 * HALF, yBL, p1z - nz2 * HALF,
+          p0x - nx2 * HALF, yAL, p0z - nz2 * HALF,
+          p0x + nx2 * HALF, yAR, p0z + nz2 * HALF,
+          p1x + nx2 * HALF, yBR, p1z + nz2 * HALF,
         ]), 3));
         g2.computeVertexNormals();
         merger.add(g2, luge, p0x, p0z);
@@ -1330,8 +1358,11 @@ export async function buildAttractions(world, data, Y = null) {
         for (const sgn of [-1, 1]) {
           const lip = new THREE.BoxGeometry(0.22, 0.36, Math.hypot(p1x - p0x, p1z - p0z) + 0.1);
           lip.applyMatrix4(new THREE.Matrix4().makeRotationY(Math.atan2(ux, uz)));
+          // the lip sits on ITS OWN edge's height, not the run's midpoint, or
+          // it floats off the downhill side exactly like the channel did
+          const eA = sgn < 0 ? yAL : yAR, eB = sgn < 0 ? yBL : yBR;
           lip.translate((p0x + p1x) / 2 + nx2 * HALF * sgn,
-            (y0 + y1) / 2 + 0.18, (p0z + p1z) / 2 + nz2 * HALF * sgn);
+            (eA + eB) / 2 + 0.18, (p0z + p1z) / 2 + nz2 * HALF * sgn);
           merger.add(lip, lugeLip, p0x, p0z);
         }
       }
@@ -1574,15 +1605,39 @@ export async function buildTrails(world, data, Y = null) {
         // Bayfront bridge deck. surfaceAt answers "what does a walker stand
         // on here" for terrain, deck and stair tread alike, which is the
         // question a path surface is asking.
-        const y0 = surfaceAt(p0x, p0z) + 0.02, y1 = surfaceAt(p1x, p1z) + 0.02;
+        // HEIGHT AT ALL FOUR CORNERS, NOT TWICE ALONG THE CENTRELINE.
+        //
+        // This used to read surfaceAt at p0 and p1 only and give BOTH corners
+        // of each end that one height, which is right on a path that runs
+        // along the contour and wrong on every path that crosses one. On a
+        // hillside the ground under the two corners of one end differs by the
+        // cross-slope times the width, so the ribbon was a flat plank with its
+        // downhill edge in the air and its uphill edge in the dirt — visible
+        // as pale slabs hovering over the grass through the Fort Siloso woods
+        // (shots/street/atmo.shot1.jpg), which is exactly the "what is this
+        // place" read.
+        //
+        // Four samples, one per corner, so the quad drapes. It costs two extra
+        // surfaceAt calls per segment and nothing else: surfaceAt already
+        // answers for terrain, deck and stair tread alike, so a boardwalk deck
+        // still comes back flat across its width because the deck IS flat.
+        const cl = (x, z) => surfaceAt(x, z) + 0.02;
+        const aL = cl(p0x - nx * half, p0z - nz * half);
+        const aR = cl(p0x + nx * half, p0z + nz * half);
+        const bL = cl(p1x - nx * half, p1z - nz * half);
+        const bR = cl(p1x + nx * half, p1z + nz * half);
         const g = new THREE.BufferGeometry();
         const pos = new Float32Array([
-          p0x - nx * half, y0, p0z - nz * half,
-          p1x - nx * half, y1, p1z - nz * half,
-          p1x + nx * half, y1, p1z + nz * half,
-          p0x - nx * half, y0, p0z - nz * half,
-          p1x + nx * half, y1, p1z + nz * half,
-          p0x + nx * half, y0, p0z + nz * half,
+          // Same upward winding as the luge, and for the same reason — this
+          // ribbon uses the identical n = (-uz, ux) convention, so every
+          // forest trail, boardwalk and paved path on the island was being
+          // drawn face-down and culled.
+          p0x - nx * half, aL, p0z - nz * half,
+          p1x + nx * half, bR, p1z + nz * half,
+          p1x - nx * half, bL, p1z - nz * half,
+          p0x - nx * half, aL, p0z - nz * half,
+          p0x + nx * half, aR, p0z + nz * half,
+          p1x + nx * half, bR, p1z + nz * half,
         ]);
         const seg = Math.hypot(p1x - p0x, p1z - p0z);
         const uv = new Float32Array([0, 0, seg / 2, 0, seg / 2, 1, 0, 0, seg / 2, 1, 0, 1]);
