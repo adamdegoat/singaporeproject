@@ -1379,6 +1379,8 @@ const SCENE = (P.get('scene') || 'sentosa').replace(/[^a-z0-9_-]/gi, '');
 // BOOT PHASE TIMING. `?boot=1` prints where the seconds go, because the first
 // three attempts at cutting a 29s mobile boot each optimised the wrong thing.
 const BOOTT = [];
+// exposed so sgdetail can push its own sub-marks; see the sgmark note there
+window.__bootMarks = BOOTT;
 let _bt = performance.now();
 const bmark = (name) => { const n = performance.now(); BOOTT.push([name, Math.round(n - _bt)]); _bt = n; };
 window.__boot = BOOTT;

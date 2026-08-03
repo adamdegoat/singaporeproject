@@ -947,13 +947,35 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
   stats.signPages = atlas.finish();
   stats.signMeshes = await signs.flushY(world, {}, Y);
 
+  // SUB-MARKS, because sgdetail is HALF THE BOOT and nothing measured inside
+  // it. Profiled 2026-08-04: the whole boot is 18.1s and this function is
+  // 10.8s of it, which made it the single biggest thing left to attack and the
+  // only one with no numbers. Costs a performance.now() per step under ?boot=1
+  // and nothing otherwise.
+  const _sgT = (typeof window !== 'undefined' && window.__bootMarks) ? window.__bootMarks : null;
+  let _sgLast = performance.now();
+  // NOTE: only call this from buildSgDetail's OWN body. A blind replace that
+  // added it after every `merger.flushY` put it inside buildWalkable and
+  // buildTrails too, where it does not exist, and took the boot down with
+  // "sgmark is not defined" — the third scope error of the night from editing
+  // a 2,600-line file by pattern rather than by position.
+  const sgmark = (name) => {
+    if (!_sgT) return;
+    const now = performance.now();
+    _sgT.push(['sg:' + name, Math.round(now - _sgLast)]);
+    _sgLast = now;
+  };
   Object.assign(stats, await buildWalkable(world, data, Y));
+  sgmark('walkable');
   // after buildWalkable: the stair treads register their own walk surfaces
   // first, so where a flight meets a path the higher tread still wins the
   // standable lookup (it takes the highest match)
   Object.assign(stats, await buildTrails(world, data, Y));
+  sgmark('trails');
   Object.assign(stats, await buildAttractions(world, data, Y));
+  sgmark('attractions');
   Object.assign(stats, await buildBeachWalk(world, data, Y));
+  sgmark('beachWalk');
   return stats;
 }
 
@@ -1508,16 +1530,49 @@ export async function buildTrails(world, data, Y = null) {
       _rsegT.push([_r.p[_i][0], _r.p[_i][1], _r.p[_i + 1][0], _r.p[_i + 1][1], _half]);
     }
   }
+  // INDEXED, AND THIS IS THE BOOT.
+  //
+  // This scanned EVERY road segment in the district, and the trail ribbon calls
+  // it nine times per drawn piece — three positions across three offsets — for
+  // 13,405 pieces. That is ~120,000 full scans of the road table inside the
+  // build. Profiled: buildTrails was 10.3s of an 18.1s boot, more than half of
+  // the whole thing, and it was almost entirely this.
+  //
+  // Same fix, same shape, as the trail-corridor lookup in city.js: bucket the
+  // segments on a grid and look at nine cells. Identical answers.
+  const _RCELL = 24;
+  const _rGrid = new Map();
+  for (const seg of _rsegT) {
+    const [ax, az, bx, bz, half] = seg;
+    const pad = half + 2;
+    const x0 = Math.min(ax, bx) - pad, x1 = Math.max(ax, bx) + pad;
+    const z0 = Math.min(az, bz) - pad, z1 = Math.max(az, bz) + pad;
+    for (let gx = Math.floor(x0 / _RCELL); gx <= Math.floor(x1 / _RCELL); gx++) {
+      for (let gz = Math.floor(z0 / _RCELL); gz <= Math.floor(z1 / _RCELL); gz++) {
+        const k = gx + ',' + gz;
+        let l = _rGrid.get(k);
+        if (!l) { l = []; _rGrid.set(k, l); }
+        l.push(seg);
+      }
+    }
+  }
   const onAnyRoadT = (x, z, margin) => {
     if (window.__onRoad && window.__onRoad(x, z, margin)) return true;
-    for (const [ax, az, bx, bz, half] of _rsegT) {
-      const vx = bx - ax, vz = bz - az;
-      const L2 = vx * vx + vz * vz || 1;
-      let t = ((x - ax) * vx + (z - az) * vz) / L2;
-      t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const dx = x - (ax + vx * t), dz = z - (az + vz * t);
-      const reach = half + margin;
-      if (dx * dx + dz * dz < reach * reach) return true;
+    const cx = Math.floor(x / _RCELL), cz = Math.floor(z / _RCELL);
+    for (let gx = cx - 1; gx <= cx + 1; gx++) {
+      for (let gz = cz - 1; gz <= cz + 1; gz++) {
+        const l = _rGrid.get(gx + ',' + gz);
+        if (!l) continue;
+        for (const [ax, az, bx, bz, half] of l) {
+          const vx = bx - ax, vz = bz - az;
+          const L2 = vx * vx + vz * vz || 1;
+          let t = ((x - ax) * vx + (z - az) * vz) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+          const reach = half + margin;
+          if (dx * dx + dz * dz < reach * reach) return true;
+        }
+      }
     }
     return false;
   };
@@ -1580,6 +1635,8 @@ export async function buildTrails(world, data, Y = null) {
       const steps = Math.max(1, Math.ceil(L / 6));
       const ux = (bx - ax) / L, uz = (bz - az) / L;
       const nx = -uz, nz = ux;
+      // the far corners of one piece are the near corners of the next
+      let carry = null;
       for (let s = 0; s < steps; s++) {
         const t0 = s / steps, t1 = (s + 1) / steps;
         const p0x = ax + (bx - ax) * t0, p0z = az + (bz - az) * t0;
@@ -1632,11 +1689,19 @@ export async function buildTrails(world, data, Y = null) {
         // surfaceAt calls per segment and nothing else: surfaceAt already
         // answers for terrain, deck and stair tread alike, so a boardwalk deck
         // still comes back flat across its width because the deck IS flat.
+        // CARRY THE FAR CORNERS FORWARD. p0 of this piece IS p1 of the last
+        // one, so two of the four surfaceAt calls are asking a question that
+        // was answered a line ago. buildTrails was 10.3s of an 18.1s boot —
+        // more than half of it, and by far the biggest single cost in the
+        // build — and this loop runs for every sub-step of every trail,
+        // boardwalk and paved path on the island. Same output, half the calls.
         const cl = (x, z) => surfaceAt(x, z) + 0.02;
-        const aL = cl(p0x - nx * half, p0z - nz * half);
-        const aR = cl(p0x + nx * half, p0z + nz * half);
+        const reuse = carry && carry.s === s;
+        const aL = reuse ? carry.bL : cl(p0x - nx * half, p0z - nz * half);
+        const aR = reuse ? carry.bR : cl(p0x + nx * half, p0z + nz * half);
         const bL = cl(p1x - nx * half, p1z - nz * half);
         const bR = cl(p1x + nx * half, p1z + nz * half);
+        carry = { s: s + 1, bL, bR };
         const g = new THREE.BufferGeometry();
         const pos = new Float32Array([
           // Same upward winding as the luge, and for the same reason — this
@@ -1654,7 +1719,25 @@ export async function buildTrails(world, data, Y = null) {
         const uv = new Float32Array([0, 0, seg / 2, 0, seg / 2, 1, 0, 0, seg / 2, 1, 0, 1]);
         g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
         g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-        g.computeVertexNormals();
+        // THE NORMAL OF A PATH IS KNOWN, so do not solve for it 13,405 times.
+        //
+        // computeVertexNormals() allocates an array, walks the faces, cross-
+        // products, accumulates and normalises — per SIX-VERTEX quad, and this
+        // loop runs 13,405 times for the island's trails, boardwalks and paved
+        // paths. buildTrails is 10.3s of an 18.1s boot and this is inside its
+        // hot line. A ribbon lies on the ground: cross the two edges of the
+        // first triangle once and write it.
+        const e1x = p1x - p0x, e1y = bL - aL, e1z = p1z - p0z;
+        const e2x = half * 2 * nx, e2y = aR - aL, e2z = half * 2 * nz;
+        let nX = e1y * e2z - e1z * e2y;
+        let nY = e1z * e2x - e1x * e2z;
+        let nZ = e1x * e2y - e1y * e2x;
+        const nL = Math.hypot(nX, nY, nZ) || 1;
+        nX /= nL; nY /= nL; nZ /= nL;
+        if (nY < 0) { nX = -nX; nY = -nY; nZ = -nZ; }   // a path faces up
+        const nrm = new Float32Array(18);
+        for (let q = 0; q < 6; q++) { nrm[q * 3] = nX; nrm[q * 3 + 1] = nY; nrm[q * 3 + 2] = nZ; }
+        g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
         merger.add(g, mat, p0x, p0z);
         // NO WALK SURFACE IS REGISTERED FOR A TRAIL, and registering one was a
         // bug I put in this morning. addWalkSurface stores ONE height per
