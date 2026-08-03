@@ -2321,6 +2321,92 @@ export async function buildTransit(world, data, Y = null) {
     }
   }
 
+  // -- ATTRACTION ENTRANCES: a gate, a name, and a guide -------------------
+  //
+  // The owner: "all those attractions need to have like a entry place with
+  // avatar giving basic guides... make it like an experience that ppl can
+  // explore when with friends playing tgt."
+  //
+  // data/entrances.py finds, for each attraction, the nearest point on a way
+  // you can actually reach it by, and the direction facing back toward it. So
+  // the gate stands ON the approach, facing the visitor, with the name over it
+  // and somebody beside it. The line the guide says is carried in the data and
+  // is written from published facts — an invented fact is worse than silence,
+  // because a player cannot tell.
+  // buildTransit has no atlas of its own — `atlas` and `signs` belong to
+  // buildSgDetail, a different function, and reaching for them here is what
+  // took the boot down with "atlas is not defined". Lettering needs its own
+  // page and its own merger in this scope.
+  const gateAtlas = new SignAtlas(THREE);
+  const gateSigns = new Merger();
+  const guideSkin = new THREE.MeshLambertMaterial({ color: 0x8d6748 });
+  const guideShirt = new THREE.MeshLambertMaterial({ color: 0xc2452f });
+  const guideTrou = new THREE.MeshLambertMaterial({ color: 0x2f3540 });
+  const gatePost = new THREE.MeshLambertMaterial({ color: 0x6d5a46 });
+  for (const e of (data.entrances || [])) {
+    await YY();
+    const [ex, ez] = e.p;
+    const [fx, fz] = e.f || [0, 1];
+    const gy = surfaceAt(ex, ez);
+    // the gate stands just off the way, not on it
+    const bx = ex + fx * 2.2, bz = ez + fz * 2.2;
+    const by = surfaceAt(bx, bz);
+    const yaw = Math.atan2(fx, fz);
+    const HALF = 2.6, TOP = 3.5;
+    for (const sgn of [-1, 1]) {
+      const px = bx + Math.cos(yaw) * HALF * sgn;
+      const pz = bz - Math.sin(yaw) * HALF * sgn;
+      const post = new THREE.BoxGeometry(0.26, TOP, 0.26);
+      post.translate(px, surfaceAt(px, pz) + TOP / 2, pz);
+      merger.add(post, gatePost, bx, bz);
+    }
+    const beam = new THREE.BoxGeometry(HALF * 2 + 0.5, 0.9, 0.3);
+    beam.rotateY(yaw);
+    beam.translate(bx, by + TOP + 0.2, bz);
+    merger.add(beam, gatePost, bx, bz);
+    // the name across the beam, on the shared atlas
+    const uv = gateAtlas.add(e.n, '#1b2a22', '#f2efe6');
+    const face = gateAtlas.plane(HALF * 2 + 0.2, (HALF * 2 + 0.2) * 0.25, uv);
+    // FACING THE VISITOR, NOT THE ATTRACTION. `yaw` points from the approach
+    // TOWARD the thing, so a plate rotated by it faces away from the person
+    // walking up — rendered, the beam was blank and the lettering was on the
+    // side only the trees can see.
+    face.rotateY(yaw + Math.PI);
+    face.translate(bx - fx * 0.22, by + TOP + 0.2, bz - fz * 0.22);
+    gateSigns.add(face, uv.mat, bx, bz);
+    // and a second plate on the far side, so it reads from both approaches
+    const back = gateAtlas.plane(HALF * 2 + 0.2, (HALF * 2 + 0.2) * 0.25, uv);
+    back.rotateY(yaw);
+    back.translate(bx + fx * 0.22, by + TOP + 0.2, bz + fz * 0.22);
+    gateSigns.add(back, uv.mat, bx, bz);
+
+    // THE GUIDE. Stationed, never walking: a figure that wanders needs a path,
+    // a gait and a collision story, and this one exists to be stood next to.
+    const px = bx + Math.cos(yaw) * (HALF - 0.7);
+    const pz = bz - Math.sin(yaw) * (HALF - 0.7);
+    const fy = surfaceAt(px, pz);
+    const legs = new THREE.BoxGeometry(0.34, 0.82, 0.24);
+    legs.translate(px, fy + 0.41, pz);
+    merger.add(legs, guideTrou, bx, bz);
+    const torso = new THREE.BoxGeometry(0.42, 0.62, 0.26);
+    torso.translate(px, fy + 1.13, pz);
+    merger.add(torso, guideShirt, bx, bz);
+    for (const asgn of [-1, 1]) {
+      const arm = new THREE.BoxGeometry(0.11, 0.56, 0.13);
+      arm.translate(px + Math.cos(yaw) * 0.26 * asgn, fy + 1.12,
+                    pz - Math.sin(yaw) * 0.26 * asgn);
+      merger.add(arm, guideShirt, bx, bz);
+    }
+    const head = new THREE.SphereGeometry(0.135, 10, 8);
+    head.translate(px, fy + 1.58, pz);
+    merger.add(head, guideSkin, bx, bz);
+    const capg = new THREE.SphereGeometry(0.142, 10, 7, 0, Math.PI * 2, 0, Math.PI * 0.5);
+    capg.translate(px, fy + 1.60, pz);
+    merger.add(capg, guideShirt, bx, bz);
+    out.entrances = (out.entrances || 0) + 1;
+  }
+  if (data.entrances && data.entrances.length) await gateSigns.flushY(world, {}, Y);
+
   // -- TERMINI: a path that stops, stops AT something ----------------------
   //
   // data/navcheck.py --emit-termini writes one of these at every way end that

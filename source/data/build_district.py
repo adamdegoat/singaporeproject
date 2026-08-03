@@ -443,6 +443,10 @@ def main():
     # MegaZip is not in OSM — authored from measured endpoints against
     # published figures. See data/zipline.py.
     subprocess.run([sys.executable, os.path.join(HERE, "zipline.py"), d["id"]], check=False)
+    # Where you arrive at each attraction, and what the guide there says.
+    subprocess.run([sys.executable, os.path.join(HERE, "entrances.py"), d["id"]], check=False)
+    # Open the mapped walking routes that run through buildings.
+    subprocess.run([sys.executable, os.path.join(HERE, "arcade.py"), d["id"]], check=False)
     # Give every path that stops at nothing a reason to stop, then report.
     subprocess.run([sys.executable, os.path.join(HERE, "navcheck.py"), d["id"],
                     "--emit-termini"], check=False)

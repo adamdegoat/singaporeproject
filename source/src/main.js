@@ -314,6 +314,60 @@ function inWater(x, z) {
   for (const ring of list) if (inPoly(ring, x, z)) return true;
   return false;
 }
+// THE ARCADE CORRIDORS, INDEXED ONCE.
+//
+// A mapped walking route that runs through a building (Festive Walk, WEAVE,
+// the resort podiums) is open to a WALKER and still solid to the DRESSING —
+// which is the split this file's own comments below were written to defend.
+// blocked() answers "may a thing be placed here" as well as "can I move here",
+// and the 2026-08-01 revert is what happens when the two are conflated: 125
+// meshes ended up in open water. So the arcades are applied to MOVEMENT ONLY,
+// through moveBlocked(), and blocked() is left exactly as it was.
+let ARCADES = null;
+function buildArcadeIndex(list) {
+  if (!list || !list.length) return null;
+  const CELLA = 8;
+  const g = new Map();
+  for (const a of list) {
+    const pts = a.p || [];
+    const half = (a.w || 3.6) / 2;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+      const L = Math.hypot(x2 - x1, z2 - z1);
+      const n = Math.max(1, Math.ceil(L / (CELLA * 0.5)));
+      for (let s = 0; s <= n; s++) {
+        const t = s / n;
+        const cx = x1 + (x2 - x1) * t, cz = z1 + (z2 - z1) * t;
+        const k = Math.floor(cx / CELLA) + ',' + Math.floor(cz / CELLA);
+        let l = g.get(k);
+        if (!l) { l = []; g.set(k, l); }
+        l.push([cx, cz, half]);
+      }
+    }
+  }
+  return {
+    at(x, z) {
+      const cx = Math.floor(x / CELLA), cz = Math.floor(z / CELLA);
+      for (let ix = cx - 1; ix <= cx + 1; ix++) {
+        for (let iz = cz - 1; iz <= cz + 1; iz++) {
+          const l = g.get(ix + ',' + iz);
+          if (!l) continue;
+          for (const [px, pz, half] of l) {
+            const dx = px - x, dz = pz - z;
+            if (dx * dx + dz * dz <= half * half) return true;
+          }
+        }
+      }
+      return false;
+    },
+  };
+}
+// What stops you MOVING. Everything blocked() says, minus the arcades.
+function moveBlocked(x, z) {
+  if (ARCADES && ARCADES.at(x, z)) return false;
+  return blocked(x, z);
+}
+
 function blocked(x, z) {
   if (SOLID && SOLID.at(x, z)) return true;
   // WATER IS A WALL — and teaching this otherwise needs the DRESSING fixed in
@@ -370,6 +424,7 @@ function rideBlocked(x, z) {
   // rule, which is the 2026-08-01 revert lesson. Seating stays
   // carriageway-deck-only; a follow-up gives wide pedestrian causeways a
   // standable deck.
+  if (ARCADES && ARCADES.at(x, z)) return false;
   if (inWater(x, z) && anyDeckAt(x, z) !== null) {
     // over a deck: only real geometry stops you
     if (SOLID && SOLID.at(x, z)) return true;
@@ -1261,6 +1316,30 @@ let RIDES = null;
 let PLACES = null;   // 3D names floating over the landmarks
 let onRide = null;                 // { ride, s, from }
 let lastRideLabel = 0;
+// THE GUIDE AT THE GATE. Shown only while you are standing at an entrance;
+// silent everywhere else, which is what makes it a person rather than a HUD.
+let ENTRANCES = null, guideOn = null, lastGuideT = 0;
+function updateGuide(x, z, now) {
+  if (!ENTRANCES || now - lastGuideT < 220) return;
+  lastGuideT = now;
+  let best = null, bd = 15 * 15;
+  for (const e of ENTRANCES) {
+    const dx = e.p[0] - x, dz = e.p[1] - z;
+    const d = dx * dx + dz * dz;
+    if (d < bd) { bd = d; best = e; }
+  }
+  const key = best ? best.n : null;
+  if (key === guideOn) return;
+  guideOn = key;
+  const el = document.getElementById('guide');
+  const nm = document.getElementById('guideName');
+  const tx = document.getElementById('guideText');
+  if (!el || !nm || !tx) return;
+  if (!best) { el.classList.remove('on'); return; }
+  nm.textContent = best.n;
+  tx.textContent = best.t || '';
+  el.classList.add('on');
+}
 // The room server (see relay/); ?relay= overrides for local testing against
 // `node relay/local.mjs`. Null until ?room= activates multiplayer post-boot.
 const SG_RELAY_URL = 'https://sentosa-relay.propsightsg.workers.dev';
@@ -2380,7 +2459,7 @@ async function buildRegion(data, opts = {}) {
   // the solidity test the ride and the walker actually use, so a check can ask
   // the same question they do rather than a lookalike
   // D9 asks whether the RIDE can get down the street, so it gets the ride question
-window.__blocked = (x, z) => rideBlocked(x, z);
+window.__blocked = (x, z) => rideBlocked(x, z);   // movement, arcades open
 // building footprints only, for the occlusion-ceiling measurement
 window.__blockedAt = (x, z) => blocked(x, z);
 window.__placeBlocked = (x, z) => blocked(x, z);
@@ -2589,6 +2668,8 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     const tS = performance.now();
     WALLS = new Solid();
     await WALLS.build(world, (x, z) => terrain.at(x, z));
+    // open the mapped walking routes that run through buildings
+    if (data.arcades) { WALLS.carve(data.arcades); ARCADES = buildArcadeIndex(data.arcades); }
     WALLSREF = WALLS;
     solidMs0 = performance.now() - tS;
     window.__wallBefore = (x, z) => WALLS.at(x, z);
@@ -2831,7 +2912,12 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     const t0 = performance.now();
     SOLID = new Solid();
     const st = await SOLID.build(world, (x, z) => terrain.at(x, z));
-    stats.solidCells = st.cells; stats.solidWalls = st.walls;
+    // ...and again on the final grid: this one is what the player is tested
+    // against, and a route carved only out of the early WALLS grid would be
+    // open to the dressing pass and shut to the walker.
+    const carved = data.arcades ? SOLID.carve(data.arcades) : 0;
+    stats.arcadeCells = carved;
+    stats.solidCells = SOLID.n; stats.solidWalls = st.walls;
     stats.solidMs = Math.round(solidMs0 + (performance.now() - t0));
     window.__solid = (x, z) => SOLID.at(x, z);
   }
@@ -3087,6 +3173,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // and a throw here would cost the whole boot.
   // The island names itself. Never fatal: labels are decoration, and a throw
   // here would cost the whole boot for a caption.
+  ENTRANCES = (data.entrances || []).filter((e) => e && e.p && e.n);
   try {
     PLACES = buildPlaceLabels(THREE, data, world, surfaceAt);
     if (P.has('boot') && PLACES) console.log('place labels: ' + PLACES.count);
@@ -4051,9 +4138,9 @@ function loop(now) {
       if (trafficHits(walker.x, walker.z, 0.32)) {
         walker.x = wx; walker.z = wz; walker.speed = 0;
       }
-      if (blocked(walker.x, walker.z)) {
-        if (!blocked(walker.x, wz)) walker.z = wz;
-        else if (!blocked(wx, walker.z)) walker.x = wx;
+      if (moveBlocked(walker.x, walker.z)) {
+        if (!moveBlocked(walker.x, wz)) walker.z = wz;
+        else if (!moveBlocked(wx, walker.z)) walker.x = wx;
         else { walker.x = wx; walker.z = wz; }
       }
       if (knobEl) {
@@ -4078,6 +4165,7 @@ function loop(now) {
       // the ride offer changes as you walk up to a station; twice a second is
       // plenty and keeps a DOM write out of the frame
       if (RIDES && now - lastRideLabel > 500) { lastRideLabel = now; modeLabel(); }
+      updateGuide(walker.x, walker.z, now);
       sound.update(0, 'walk', walker.speed, walker.phase, trafficNearest(walker.x, walker.z));
       if (SPEC) driveCamera(dt); else walkCamera(dt);
       if (PLACES) PLACES.update(camera);
@@ -4234,6 +4322,7 @@ function loop(now) {
   // The ride branch renders through activeCam (which may be the top-down map
   // camera), so the labels are updated against the camera actually drawing.
   if (PLACES) PLACES.update(activeCam);
+  updateGuide(S.x, S.z, now);
   if (ready && window.__ff === undefined) {
     const tF = performance.now();
     renderer.render(scene, activeCam);

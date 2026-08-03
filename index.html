@@ -178,9 +178,22 @@
     background:#e8ddc6;border-radius:3px;transition:width .25s ease}
   #bootrow{display:flex;justify-content:space-between;gap:12px;margin-top:10px;
     font:11px/1.4 ui-monospace,Menlo,monospace;color:rgba(228,233,238,.72)}
+#guide{position:fixed;left:50%;bottom:74px;transform:translateX(-50%) translateY(8px);
+  max-width:min(560px,84vw);padding:10px 16px;border-radius:14px;
+  background:rgba(16,22,20,.86);color:#eef2ee;font:500 14px/1.45 ui-sans-serif,system-ui,-apple-system,Helvetica,Arial;
+  opacity:0;pointer-events:none;transition:opacity .22s ease,transform .22s ease;z-index:6;
+  box-shadow:0 6px 22px rgba(0,0,0,.35)}
+#guide.on{opacity:1;transform:translateX(-50%) translateY(0)}
+#guide b{display:block;font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:#8fd0a8;margin-bottom:3px}
+@media (max-height:430px){#guide{bottom:60px;font-size:13px;padding:8px 13px}}
 </style>
 <canvas id="c"></canvas>
 <div id="rotate"><div><span>&#8635;</span>Turn your phone sideways<br><small style="opacity:.6">this rides in landscape</small></div></div>
+<!-- The guide speaks when you walk up to an attraction entrance, and is
+     silent otherwise. This is NOT the old place pill: that was a permanent
+     caption telling you where you were, this is somebody at a gate telling
+     you what is behind it, and it is gone the moment you leave. -->
+<div id="guide"><b id="guideName"></b><span id="guideText"></span></div>
 <!-- THE PLACE PILL IS GONE (owner, 2026-08-04): the island labels itself
      now with 3D names floating over the landmarks — see src/places.js.
      The wayfinder still runs; it just has no readout to write to, and

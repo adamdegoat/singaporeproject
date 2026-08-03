@@ -220,6 +220,23 @@ const rider = await page.evaluate(() => {
     }
     return hit;
   };
+  const arcs = window.__data.arcades || [];
+  const inArcade = (x, z) => {
+    for (const a of arcs) {
+      const q = a.p || [];
+      const half = (a.w || 3.6) / 2 + 1.0;   // +1m: the scan point need only be IN the passage
+      for (let i = 0; i < q.length - 1; i++) {
+        const ax = q[i][0], az = q[i][1], bx = q[i + 1][0], bz = q[i + 1][1];
+        const vx = bx - ax, vz = bz - az;
+        const l2 = vx * vx + vz * vz || 1;
+        let t = ((x - ax) * vx + (z - az) * vz) / l2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+        if (dx * dx + dz * dz <= half * half) return true;
+      }
+    }
+    return false;
+  };
   let tested = 0, porous = 0; const ex = [];
   for (const bl of window.__data.buildings) {
     // A CANOPY IS WALK-UNDER BY DESIGN. building=roof (bl.roof) is a slab on
@@ -238,6 +255,20 @@ const rider = await page.evaluate(() => {
       if (inPoly(bl.p, x, z)) { px = x; pz = z; break; }
     }
     if (px === null) continue;
+    // AND AN ARCADE IS WALK-THROUGH BY DESIGN, for the same reason a canopy is.
+    //
+    // data/arcade.py carves the mapped walking routes that run through
+    // buildings — Festive Walk, WEAVE, the resort podiums — because OSM maps a
+    // pedestrian way through them and in life you walk through them. The five
+    // buildings this check caught on 2026-08-04 were ALL within 0.7m of an
+    // arcade centreline: the interior point it scanned happened to land in the
+    // corridor. That is the feature working.
+    //
+    // Exempt BY MECHANISM, never by name: the corridors are published in the
+    // scene, so this asks the data rather than carrying a list that goes stale
+    // the moment a route changes. Same teaching P1 got for the crowd and P2
+    // for the canopies.
+    if (inArcade(px, pz)) continue;
     tested++;
     if (!window.__blocked(px, pz)) {
       porous++;

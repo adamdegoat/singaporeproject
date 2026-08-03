@@ -40,6 +40,46 @@ export class Solid {
 
   mark(x, z) { this.g.add(this._key(x, z)); }
 
+  // OPEN A WALKING ROUTE THAT RUNS THROUGH A BUILDING.
+  //
+  // Twenty-four mapped walking routes on Sentosa are blocked for more than 20m
+  // at a stretch, the worst 226m, and none of them is a mapping error: OSM maps
+  // the pedestrian way through Resorts World, Festive Walk and WEAVE because in
+  // life you walk through them. We model no interiors, so the wall the facade
+  // rasterised here is a dead end on a route the map says is a route — the
+  // owner's "halfway will stuck", exactly.
+  //
+  // Carving AFTER build() rather than skipping the walls during it, because the
+  // facade genuinely IS a wall everywhere else along the same mesh; what is
+  // open is the corridor, not the building. data/arcade.py computes the
+  // corridors, clipped to the footprint and padded past each face.
+  carve(list) {
+    let cleared = 0;
+    for (const arc of (list || [])) {
+      const pts = arc.p || [];
+      const half = (arc.w || 3.6) / 2;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+        const L = Math.hypot(x2 - x1, z2 - z1);
+        const steps = Math.max(1, Math.ceil(L / (CELL * 0.5)));
+        for (let s = 0; s <= steps; s++) {
+          const t = s / steps;
+          const cx = x1 + (x2 - x1) * t, cz = z1 + (z2 - z1) * t;
+          // clear a disc, not a line: a 0.75m grid rasterised from a 3.6m
+          // corridor needs its full width or a walker catches the edge
+          for (let ox = -half; ox <= half; ox += CELL * 0.5) {
+            for (let oz = -half; oz <= half; oz += CELL * 0.5) {
+              if (ox * ox + oz * oz > half * half) continue;
+              if (this.g.delete(this._key(cx + ox, cz + oz))) cleared++;
+            }
+          }
+        }
+      }
+    }
+    this.n = this.g.size;
+    return cleared;
+  }
+
   at(x, z) { return this.g.has(this._key(x, z)); }
 
   // Rasterise a line segment in XZ. A wall is a thin thing; stepping along it

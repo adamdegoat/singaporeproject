@@ -3550,6 +3550,40 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
   //
   // A wire sags and cannot arch over a canopy, so the corridor is the only
   // honest fix, and it has to be applied to whatever plants the trees.
+  // THE TRAIL ITSELF IS NOT PLANTABLE.
+  //
+  // The wood fill guards on blocked(), which knows roads, buildings and water
+  // — and a FOOTPATH is none of those, so nothing stopped a 12m tree being
+  // planted in the middle of a forest trail. Walked, there is a trunk standing
+  // in the path; you cannot pass it and it is the least natural thing in the
+  // world. A real trail is a gap in the trees, which is what makes it a trail.
+  //
+  // Built here rather than in the undergrowth block below, because BOTH the
+  // canopy fill and the undergrowth need it and the undergrowth block owned
+  // the only copy.
+  const trailSegs = [];
+  for (const r of (data.roads || [])) {
+    if (r.k !== 'footway' && r.k !== 'pedestrian' && r.k !== 'path' && r.k !== 'steps') continue;
+    const tp = r.p || [];
+    for (let i = 0; i < tp.length - 1; i++) {
+      trailSegs.push([tp[i][0], tp[i][1], tp[i + 1][0], tp[i + 1][1]]);
+    }
+  }
+  const trailDist2 = (x, z) => {
+    let best = Infinity;
+    for (const [ax, az, bx, bz] of trailSegs) {
+      const vx = bx - ax, vz = bz - az;
+      const l2 = vx * vx + vz * vz || 1;
+      let t = ((x - ax) * vx + (z - az) * vz) / l2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+      const d2 = dx * dx + dz * dz;
+      if (d2 < best) best = d2;
+    }
+    return best;
+  };
+  const onTrail = (x, z) => trailDist2(x, z) < 3.4 * 3.4;
+
   const zip = data.zipline;
   const ZIP_CLEAR = 15.0;
   const inZipCorridor = (!zip || !zip.p) ? () => false : (x, z) => {
@@ -3596,6 +3630,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
     // with the coconut form and would otherwise get a second inland crown
     if (sandRings.some((p) => inRingP(x, z, p) || edgeOfP(x, z, p) <= 45)) continue;
     if (inZipCorridor(x, z)) continue;
+    if (onTrail(x, z)) continue;
     // Park trees are older and bigger than the pruned street stock; the scale
     // spread is wider so a wood does not read as a plantation.
     f.add(x, z, 0.7 + ((x * 7.3 + z * 3.1) % 100) / 250);
@@ -3648,6 +3683,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
         if (!inRing(jx, jz, gp.p)) continue;
         if (blocked && blocked(jx, jz)) continue;
         if (inZipCorridor(jx, jz)) continue;
+        if (onTrail(jx, jz)) continue;
         // top of the spread held at ~1.38, not 1.5: at 1.5 the tallest crown
         // put a leaf card 19.6m up and P3 ("props off the ground") refused the
         // deploy on it. The understorey is what the canopy needed anyway — the
@@ -3665,24 +3701,21 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
   // hundreds, not thousands.
   let shrubs = 0;
   {
-    const segs = [];
-    for (const r of (data.roads || [])) {
-      if (r.k !== 'footway' && r.k !== 'pedestrian') continue;
-      const pts2 = r.p || [];
-      for (let i = 0; i < pts2.length - 1; i++) segs.push([pts2[i][0], pts2[i][1], pts2[i + 1][0], pts2[i + 1][1]]);
-    }
+    // ONE trail index for the whole function — the canopy fill needs it too,
+    // and two copies drift.
+    //
+    // THE BAND IS TIGHTER AND THE WALL IS CLOSER (2026-08-04). It was "clear of
+    // 4m, inside 15m", which leaves a four-metre skirt of bare mown ground on
+    // both sides of every jungle path: walked, the trail reads as a lawn with
+    // columns on it rather than a way THROUGH something. The owner: "those
+    // trails also must be immersive if forest, like thru the forest feeling."
+    //
+    // A real forest path is walled — the cut edge is where the undergrowth
+    // starts, not four metres away. 2.6m clear (enough that nothing overhangs
+    // the walking surface) out to 17m, so the green closes in behind you.
     const nearTrail = (x, z) => {
-      for (const [ax, az, bx, bz] of segs) {
-        const vx = bx - ax, vz = bz - az;
-        const l2 = vx * vx + vz * vz || 1;
-        let t = ((x - ax) * vx + (z - az) * vz) / l2;
-        t = t < 0 ? 0 : t > 1 ? 1 : t;
-        const dx = x - (ax + vx * t), dz = z - (az + vz * t);
-        // 4m clear of the path itself, inside 22m of it
-        const d2 = dx * dx + dz * dz;
-        if (d2 < 15 * 15 && d2 > 4 * 4) return true;
-      }
-      return false;
+      const d2 = trailDist2(x, z);
+      return d2 < 17 * 17 && d2 > 2.6 * 2.6;
     };
     for (const gp of (data.green || [])) {
       if (gp.k !== 'wood' || !gp.p || gp.p.length < 4) continue;
@@ -3691,15 +3724,20 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
         if (x < mnx) mnx = x; if (x > mxx) mxx = x;
         if (z < mnz) mnz = z; if (z > mxz) mxz = z;
       }
-      for (let gx = Math.ceil(mnx / 13) * 13; gx < mxx; gx += 13) {
-        for (let gz = Math.ceil(mnz / 13) * 13; gz < mxz; gz += 13) {
+      // 13m -> 7m. A 13m grid puts one shrub clump every 13 metres, which is
+      // scattered planting, not undergrowth; walked, you see between them to
+      // open ground and the forest reads as a park. 7m closes the floor while
+      // staying instanced and LOD-capped, and it only ever fills the band
+      // beside a trail, which is the only place a walker sees the floor.
+      for (let gx = Math.ceil(mnx / 7) * 7; gx < mxx; gx += 7) {
+        for (let gz = Math.ceil(mnz / 7) * 7; gz < mxz; gz += 7) {
           const jx = gx + (((gx * 9.1 + gz * 4.7) % 10) - 5);
           const jz = gz + (((gx * 5.9 + gz * 7.7) % 10) - 5);
           if (!inRing(jx, jz, gp.p)) continue;
           if (!nearTrail(jx, jz)) continue;
           if (blocked && blocked(jx, jz)) continue;
           if (inZipCorridor(jx, jz)) continue;
-        if (inZipCorridor(jx, jz)) continue;
+          if (onTrail(jx, jz)) continue;
           // A LOW plant's limbs sit at 1.5-3m — the traffic envelope. A
           // full tree over a road is an avenue (crown lifted 6m by rule);
           // a sapling beside one is an obstruction: the widened box put 28
