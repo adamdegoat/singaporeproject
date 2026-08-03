@@ -894,6 +894,7 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
         .filter((hh) => !(hh.object.material && hh.object.material.transparent))  // glass is see-through
         .filter((hh) => !(hh.object.material && hh.object.material.userData
           && hh.object.material.userData.furniture))  // street furniture is not a wall
+        .filter((hh) => !!(hh.object.material && hh.object.material.map))  // every wall here is textured
         .filter((hh) => !(hh.object.geometry.type === 'SphereGeometry'
           && (hh.object.geometry.parameters || {}).radius > 100))
         .filter((hh) => {

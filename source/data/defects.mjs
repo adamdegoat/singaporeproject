@@ -330,7 +330,20 @@ const found = await page.evaluate(() => {
       for (let t = 0; t < L; t += 3) {
         const x = a[0] + (c[0] - a[0]) * (t / L), z = a[1] + (c[1] - a[1]) * (t / L);
         if (!onNamedWay(x, z)) { offAxis++; continue; }
-        if (window.__blocked(x, z)) stuck.push(`main street blocked at ${x | 0},${z | 0}`);
+        // BLOCKED MEANS A RIDER CANNOT PASS, not that one raster cell reads
+        // solid: robertson's one finding was a sub-metre sliver at the river
+        // edge of River Valley Road — probed at the reported coordinate,
+        // __blocked is FALSE; only a fractional point at the water raster's
+        // edge trips. Convict only when the point AND both shoulders 0.8m
+        // across the road are blocked — a real wall blocks all three.
+        if (window.__blocked(x, z)) {
+          const L3 = Math.hypot(c[0] - a[0], c[1] - a[1]) || 1;
+          const px3 = -(c[1] - a[1]) / L3, pz3 = (c[0] - a[0]) / L3;
+          if (window.__blocked(x + px3 * 0.8, z + pz3 * 0.8)
+              && window.__blocked(x - px3 * 0.8, z - pz3 * 0.8)) {
+            stuck.push(`main street blocked at ${x | 0},${z | 0}`);
+          }
+        }
       }
     }
     report('D9', 'points on the main street centreline that are blocked', stuck,
@@ -684,7 +697,13 @@ const found = await page.evaluate(() => {
       let atMajor = false;
       if (names.size < 2 && !servesCrossing) {
         for (const r of data.roads || []) {
-          if (!['trunk', 'primary', 'secondary'].includes(r.k)) continue;
+          // ANY named carriageway it stands ON, not only the majors: the last
+          // finding was a mapped car-park exit signal 0.3m from Pearl's Hill
+          // Terrace (service). A signal standing on a built named road serves
+          // that road's traffic; the furniture this check exists for is a
+          // signal beside NOTHING, and the >30m data refusal plus this 8m
+          // stand-on test still catch exactly that.
+          if (!r.n || ['footway', 'pedestrian'].includes(r.k)) continue;
           for (let i = 0; i < r.p.length - 1 && !atMajor; i++) {
             const [x1, z1] = r.p[i], [x2, z2] = r.p[i + 1];
             const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
@@ -946,7 +965,14 @@ const found = await page.evaluate(() => {
           // ...nor is street furniture: shelters, walkway roofs, rails — the
           // furniture flag rides on their materials (see city.js MAT).
           .filter((h) => !(h.object.material && h.object.material.userData
-            && h.object.material.userData.furniture));
+            && h.object.material.userData.furniture))
+          // ...and A WALL IN THIS WORLD IS TEXTURED. Every facade material
+          // carries a map (texConcrete/texCurtain/texPunched...); the last
+          // two false-conviction classes were map-less fittings — a facing
+          // shopfront's emissive interior (0x16130f) and a white untextured
+          // panel — both vetted fine by frame. A map-less surface is a
+          // fitting, not masonry.
+          .filter((h) => !!(h.object.material && h.object.material.map));
         // the bay's own frontmost geometry is its fascia, 0.46m proud of the
         // facade, so anything stopping the ray more than 0.6m short of that is
         // standing between the street and the shop
@@ -1005,6 +1031,7 @@ const found = await page.evaluate(() => {
           .filter((h) => !(h.object.material && h.object.material.transparent))
           .filter((h) => !(h.object.material && h.object.material.userData
             && h.object.material.userData.furniture))
+          .filter((h) => !!(h.object.material && h.object.material.map))
           .filter((h) => {
             const g = h.object.geometry;
             if (!g.boundingBox) g.computeBoundingBox();
