@@ -34,7 +34,11 @@ function nearestOnAxis(pts, x, z) {
   };
 }
 
-export function buildFurniture(world, axis, isBlocked, data = {}) {
+export async function buildFurniture(world, axis, isBlocked, data = {}, Y = null) {
+  // was one synchronous gulp (the 'furniture' step's ~228ms block,
+  // 2026-08-03); the yields pause without reordering any RNG draw
+  let _ft = performance.now();
+  const FY = async () => { if (Y && performance.now() - _ft > 8) { await Y(); _ft = performance.now(); } };
   // isBlocked already covers buildings AND carriageways; onRoad asks about the
   // carriageway alone, for things that are allowed to sit against a building
   const onRoad = (x, z, m) => (window.__onRoad ? window.__onRoad(x, z, m) : false);
@@ -44,6 +48,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
 
   let acc = 0;
   for (let i = 0; i < pts.length - 1; i++) {
+    await FY();
     const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
     const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
     if (len < 0.5) continue;
@@ -114,6 +119,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
   // ---- real positions from OpenStreetMap ----
   const realCount = { busstops: 0, signals: 0, taxis: 0 };
   for (const b of data.busstops || []) {
+    await FY();
     const [bx, bz] = b.p;
     const on = nearestOnAnyRoad(bx, bz) || nearestOnAxis(pts, bx, bz);
     if (on.dist > 45) continue;                 // not beside a road at all
@@ -128,6 +134,7 @@ export function buildFurniture(world, axis, isBlocked, data = {}) {
     realCount.busstops++;
   }
   for (const sPt of data.signals || []) {
+    await FY();
     const [lx, lz] = sPt;
     const onAxis = nearestOnAxis(pts, lx, lz);
     const on = onAxis.dist <= 40 ? onAxis : (nearestOnAnyRoad(lx, lz) || onAxis);

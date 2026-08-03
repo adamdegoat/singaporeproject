@@ -22,7 +22,18 @@ const hud = document.getElementById('hud');
 const canvas = document.getElementById('c');
 
 /* ---------------- renderer ---------------- */
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+// ?noaa and ?lowpower are A/B handles for the rider's phone, added 2026-08-03:
+// these two flags are the only phone-relevant GPU costs in the file with NO
+// measurement behind them. MSAA costs bandwidth on exactly the tile-based
+// GPUs this project keeps identifying as fill-rate bound, and
+// 'high-performance' asks the driver for the high-clock path on a device
+// whose reported symptom is heat. Constructor-time, so they can only be
+// A/B'd across page loads — hence flags, not runtime toggles.
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: !P.has('noaa'),
+  powerPreference: P.has('lowpower') ? 'default' : 'high-performance',
+});
 window.__renderer = renderer;   // probes read info.programs / info.memory
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -325,7 +336,11 @@ function trimAxes(list, near = 26) {
   return kept;
 }
 
-function dressStreet(data, axis, target = world) {
+async function dressStreet(data, axis, target = world, Y = null) {
+  // was one synchronous gulp (the 'dress' step's ~224ms block, 2026-08-03);
+  // yields pause the walk without reordering a single RNG draw
+  let _dt0 = performance.now();
+  const DY = async () => { if (Y && performance.now() - _dt0 > 8) { await Y(); _dt0 = performance.now(); } };
   if (!axis) return 0;
   const dataRef = data;
   const pts = axis.p, half = axis.w / 2;
@@ -349,6 +364,7 @@ function dressStreet(data, axis, target = world) {
 
   let acc = 0;
   for (let i = 0; i < pts.length - 1; i++) {
+    await DY();
     const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
     const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
     if (len < 0.5) continue;
@@ -388,6 +404,7 @@ function dressStreet(data, axis, target = world) {
   const tactileT = [], refugeT = [];
   let offAxisCrossings = 0;
   for (const c of (dataRef.crossings || [])) {
+    await DY();
     const [cx, cz, tp, isl] = c;
     // find the nearest point on the axis and the local direction there
     let bi = 0, bd = Infinity, bt = 0;
@@ -1363,7 +1380,7 @@ async function addChunk(ch, id, Y, rec = {}) {
   if (!P.has('nowater')) buildWater(g, ch);
   if (!P.has('nowater')) buildPiers(g, ch);
   if (!P.has('notowers')) { statAdd(buildSupertrees(g, ch)); statAdd(buildCranes(g, ch)); }
-  if (!P.has('nofoliage')) statAdd(plantSurveyed(g, ch, place));
+  if (!P.has('nofoliage')) statAdd(await plantSurveyed(g, ch, place, Y));
   await Y();
   mk('buildings');
   if (!P.has('nobuild')) await buildBuildings(g, ch, Y);
@@ -1395,11 +1412,11 @@ async function addChunk(ch, id, Y, rec = {}) {
     ? (trimAxes(data.axes).find((t) => t.did === id) || null) : null;
   if (ax) {
     mk('dress');
-    if (!P.has('nofoliage')) dressStreet(ch, ax, g);
+    if (!P.has('nofoliage')) await dressStreet(ch, ax, g, Y);
     await Y();
     let f = {};
     mk('furniture');
-    if (!P.has('nofurniture')) f = buildFurniture(g, ax, place, ch);
+    if (!P.has('nofurniture')) f = await buildFurniture(g, ax, place, ch, Y);
     // A STREAMED DISTRICT'S FURNITURE COUNTERS WERE THROWN AWAY — only
     // f.signals was read below, so in the streamed world __stats reported
     // realTaxis/realBusStops/realSignals/realCovered = 0 whatever was drawn,
@@ -1408,10 +1425,10 @@ async function addChunk(ch, id, Y, rec = {}) {
     statAdd(f);
     await Y();
     mk('signage');
-    if (!P.has('nosigns')) statAdd(buildSignage(g, ax, ch, place));
+    if (!P.has('nosigns')) statAdd(await buildSignage(g, ax, ch, place, Y));
     await Y();
     mk('markings');
-    if (!P.has('nomarks')) buildMarkings(g, ax, ch);
+    if (!P.has('nomarks')) await buildMarkings(g, ax, ch, Y);
     if (window.__stats) window.__stats.realCrossings = window.__realCrossings;
     await Y();
     mk('side');
@@ -1422,7 +1439,7 @@ async function addChunk(ch, id, Y, rec = {}) {
     }
     await Y();
     mk('sg');
-    if (!P.has('nosg')) statAdd(buildSgDetail(g, ax, ch, place));
+    if (!P.has('nosg')) statAdd(await buildSgDetail(g, ax, ch, place, Y));
     await Y();
     if (f.signals && f.signals.length) {
       const es = new Signals(f.signals, f.lensMesh || null);
@@ -2285,7 +2302,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   await bstep(0.34, 'raising the skyline');
   const trees2 = P.has('notowers') ? { supertrees: 0 } : buildSupertrees(world, data);
   if (!P.has('notowers')) buildCranes(world, data);
-  const surveyed = P.has('nofoliage') ? { surveyedTrees: 0 } : plantSurveyed(world, data, place);
+  const surveyed = P.has('nofoliage') ? { surveyedTrees: 0 } : await plantSurveyed(world, data, place);
   const surround = P.has('nosurround') ? 0 : buildSurround(world, opts.regionData || data);
   bmark('surround');
 
@@ -2340,7 +2357,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   const axes = trimAxes((data.axes && data.axes.length ? data.axes : [axis]).filter(Boolean));
   let treeCount = 0;
   await bstep(0.42, 'planting the Angsana avenue');
-  if (!P.has('nofoliage')) for (const ax of axes) treeCount += dressStreet(data, ax);
+  if (!P.has('nofoliage')) for (const ax of axes) treeCount += await dressStreet(data, ax);
   bmark('dressStreet');
   const sideStreets = [];
   {
@@ -2437,17 +2454,17 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   for (const ax of axes) {
     await bstep(0.46 + 0.06 * Math.min(axi++, 2), `dressing ${ax.n || 'the streets'}`);
     if (!P.has('nofurniture')) {
-      const f = buildFurniture(world, ax, place, data);
+      const f = await buildFurniture(world, ax, place, data);
       for (const k of Object.keys(f)) {
         if (Array.isArray(f[k])) furniture[k] = (furniture[k] || []).concat(f[k]);
         else furniture[k] = (furniture[k] || 0) + f[k];
       }
     }
     if (!P.has('nosigns')) {
-      const g = buildSignage(world, ax, data, place);
+      const g = await buildSignage(world, ax, data, place);
       for (const k of Object.keys(g)) signage[k] = (signage[k] || 0) + g[k];
     }
-    if (!P.has('nomarks')) marks += buildMarkings(world, ax, data);
+    if (!P.has('nomarks')) marks += await buildMarkings(world, ax, data);
       bmark('furniture+signage+markings');
     if (!P.has('noside')) {
       const t = await dressSideStreets(world, data, ax, place, TreeField, dressed);
@@ -2455,7 +2472,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     }
     bmark('sideStreets');
     if (!P.has('nosg')) {
-      const q = buildSgDetail(world, ax, data, place);
+      const q = await buildSgDetail(world, ax, data, place);
       bmark('sgdetail');
       for (const k of Object.keys(q)) sg[k] = (sg[k] || 0) + q[k];
     }

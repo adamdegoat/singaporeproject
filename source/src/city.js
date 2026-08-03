@@ -2419,9 +2419,35 @@ export class TreeField {
     if (window.__inWater && window.__inWater(x, z)) return;
     this.items.push([x, z, scale]);
   }
+  // build() stays SYNCHRONOUS and buildY() yields between trees — both walk
+  // the same per-tree body (_tree) in the same order, so the placement RNG
+  // sequence is identical and determinism is untouched. buildY exists because
+  // the surveyed park layer is the largest single unyielded block in a chunk
+  // build: 52 instance matrices per tree, and tanjongrhu carries 8,284 trees
+  // (~431k composes in one gulp — most of the 'water' step's measured 570 to
+  // 650ms block, 2026-08-03). Sync callers (dressStreet, dressSideStreets)
+  // keep build(): a sync caller that fired an async build and moved on would
+  // interleave the RNG stream with later dressing, which IS a determinism
+  // break — the split makes that mistake unwritable.
   build(world) {
+    const c = this._prep();
+    if (!c) return 0;
+    for (let i = 0; i < this.items.length; i++) this._tree(c, i);
+    return this._finish(c, world);
+  }
+  async buildY(world, Y = null) {
+    const c = this._prep();
+    if (!c) return 0;
+    let _t = performance.now();
+    for (let i = 0; i < this.items.length; i++) {
+      this._tree(c, i);
+      if (Y && performance.now() - _t > 8) { await Y(); _t = performance.now(); }
+    }
+    return this._finish(c, world);
+  }
+  _prep() {
     const n = this.items.length;
-    if (!n) return 0;
+    if (!n) return null;
     const CARDS = 40, BLOBS = 7, BRANCH = 5;
     const trunks = new THREE.InstancedMesh(
       new THREE.CylinderGeometry(0.30, 0.62, 1, 8), MAT.trunk, n);
@@ -2450,11 +2476,17 @@ export class TreeField {
     blobs.userData.treeFoliage = true;
     branches.userData.treeFoliage = true;
 
-    const m = new THREE.Matrix4(), e = new THREE.Euler(), q = new THREE.Quaternion();
-    const p = new THREE.Vector3(), sc = new THREE.Vector3();
-    let bi = 0, li = 0, ci = 0;
-
-    this.items.forEach(([x, z, scale], i) => {
+    return {
+      BLOBS, BRANCH, CARDS, trunks, branches, blobs, cards,
+      m: new THREE.Matrix4(), e: new THREE.Euler(), q: new THREE.Quaternion(),
+      p: new THREE.Vector3(), sc: new THREE.Vector3(),
+      bi: 0, li: 0, ci: 0,
+    };
+  }
+  _tree(c, i) {
+    const [x, z, scale] = this.items[i];
+    const { BLOBS, BRANCH, CARDS, trunks, branches, blobs, cards, m, e, q, p, sc } = c;
+    {
       // total height and crown radius. A mature roadside Angsana is about as
       // wide as it is tall, which is what makes the avenue meet overhead.
       let h = rand(13.0, 17.5) * scale;
@@ -2500,7 +2532,7 @@ export class TreeField {
               z + Math.sin(a) * L * 0.42);
         e.set(Math.cos(a) * tilt, 0, -Math.sin(a) * tilt);
         q.setFromEuler(e); sc.set(scale, L, scale);
-        m.compose(p, q, sc); branches.setMatrixAt(bi++, m);
+        m.compose(p, q, sc); branches.setMatrixAt(c.bi++, m);
       }
 
       // Solid mass inside the dome so the crown is not see-through from below.
@@ -2525,7 +2557,7 @@ export class TreeField {
         }
         p.set(bx, by, bz);
         q.identity(); sc.set(r, r * 0.52, r);
-        m.compose(p, q, sc); blobs.setMatrixAt(li++, m);
+        m.compose(p, q, sc); blobs.setMatrixAt(c.li++, m);
       }
 
       // Leaf cards over the dome surface. The height falls off with the SQUARE
@@ -2546,12 +2578,14 @@ export class TreeField {
         e.set(rand(-1.5, -0.75) - t * 0.35, a + rand(-0.7, 0.7), rand(-0.4, 0.4));
         q.setFromEuler(e);
         const v = rad * rand(0.42, 0.72); sc.set(v, v, v);
-        m.compose(p, q, sc); cards.setMatrixAt(ci++, m);
+        m.compose(p, q, sc); cards.setMatrixAt(c.ci++, m);
       }
-    });
-    branches.count = bi; blobs.count = li; cards.count = ci;
-    world.add(trunks, branches, blobs, cards);
-    return n;
+    }
+  }
+  _finish(c, world) {
+    c.branches.count = c.bi; c.blobs.count = c.li; c.cards.count = c.ci;
+    world.add(c.trunks, c.branches, c.blobs, c.cards);
+    return this.items.length;
   }
 }
 
@@ -2746,7 +2780,7 @@ function mergeGeos(geos) {
 // Planted ONCE per district and not per axis -- the list is the whole scene, so
 // inside the axis loop a two-axis district would grow two trees per node. Same
 // trap as buildParkedCars.
-export function plantSurveyed(world, data, blocked) {
+export async function plantSurveyed(world, data, blocked, Y = null) {
   const list = data.trees || [];
   if (!list.length) return { surveyedTrees: 0 };
   const f = new TreeField();
@@ -2759,7 +2793,7 @@ export function plantSurveyed(world, data, blocked) {
     // spread is wider so a wood does not read as a plantation.
     f.add(x, z, 0.7 + ((x * 7.3 + z * 3.1) % 100) / 250);
   }
-  return { surveyedTrees: f.build(world) };
+  return { surveyedTrees: await f.buildY(world, Y) };
 }
 
 // THE KEPPEL QUAY CRANES — the district's horizon, and it was empty sky.

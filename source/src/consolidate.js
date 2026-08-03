@@ -177,10 +177,14 @@ export async function consolidate(root, Y = null) {
 
   const targets = [];
   root.traverse((o) => { if (bakeable(o)) targets.push(o); });
+  // the matrix update + traverse + grouping above/below ran as one unyielded
+  // prefix before the merge loop's own pacing began
+  if (Y) await Y();
 
   const groups = new Map();
+  const _wp = new THREE.Vector3();
   for (const o of targets) {
-    const p = o.getWorldPosition(new THREE.Vector3());
+    const p = o.getWorldPosition(_wp);
     const key = [
       Math.floor(p.x / TILE), Math.floor(p.z / TILE),
       o.material.uuid,

@@ -258,7 +258,10 @@ export function dedupeProps(list, lim) {
   return out;
 }
 
-export function buildMarkings(world, axis, data = {}) {
+export async function buildMarkings(world, axis, data = {}, Y = null) {
+  // was one synchronous gulp (the 'markings' step's ~190ms block, 2026-08-03)
+  let _mt = performance.now();
+  const MY = async () => { if (Y && performance.now() - _mt > 8) { await Y(); _mt = performance.now(); } };
   const pts = axis.p;
   const widthAt = widthProbe(axis, data);
   let half = axis.w / 2;
@@ -324,6 +327,7 @@ export function buildMarkings(world, axis, data = {}) {
       return [ax + r1 * t, az + r2 * t];
     };
     for (const r of (data.roads || [])) {
+      await MY();
       if (!r.p || r.p.length < 2) continue;
       if (r.k === 'footway' || r.k === 'pedestrian') continue;
       if ((r.n || '').toLowerCase() === axisName) continue;
@@ -912,7 +916,11 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     // on every call, which is fine for the handful of things that used it and
     // is fifty million iterations across 2,669 lamps.
     const LC = 50, lgrid = new Map();
+    let _lgt = performance.now();
     for (const r of (data.roads || [])) {
+      // the index build ran BEFORE the yielding lamp loop and was itself the
+      // 'side' step's unyielded prefix (370ms block, 2026-08-03)
+      if (Y && performance.now() - _lgt > 8) { await Y(); _lgt = performance.now(); }
       if (r.k === 'footway' || r.k === 'pedestrian') continue;
       for (let i = 0; i < r.p.length - 1; i++) {
         const a = r.p[i], c = r.p[i + 1];

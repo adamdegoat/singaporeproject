@@ -351,9 +351,13 @@ function mrtEntrance(world, px, pz, ang, label) {
 }
 
 /* ---------------- main placement pass ---------------- */
-export function buildSgDetail(world, axis, data, isBlocked) {
+export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
   const atlas = new SignAtlas(THREE);
   const signs = new Merger();
+  // time-gated yield shared by every outer pass below — this whole builder
+  // was one synchronous gulp (the 'sg' step's 460ms block, 2026-08-03)
+  let _yt = performance.now();
+  const YY = async () => { if (Y && performance.now() - _yt > 8) { await Y(); _yt = performance.now(); } };
   // WHERE THE STREET IS ACTUALLY DIVIDED.
   //
   // This used to treat ANY one-way primary/secondary/trunk/tertiary way as a
@@ -391,11 +395,20 @@ export function buildSgDetail(world, axis, data, isBlocked) {
     }
   }
   // the median line itself: the midpoint between each anti-parallel same-name pair
+  // Bucketed by name: the inner loop only ever accepted s2 of the SAME name,
+  // so scanning that name's own list — in original owSegs order, first match
+  // wins exactly as before — is result-identical and kills the O(segs²) scan
+  // that made this the 'sg' step's 460ms block (orchard: 3,019 roads).
+  const owByName = new Map();
+  for (const s of owSegs) {
+    if (!s.n) continue;
+    if (!owByName.has(s.n)) owByName.set(s.n, []);
+    owByName.get(s.n).push(s);
+  }
   const medianPts = [];
   for (const s1 of owSegs) {
     if (!s1.n) continue;
-    for (const s2 of owSegs) {
-      if (s2.n !== s1.n) continue;
+    for (const s2 of owByName.get(s1.n)) {
       const d = Math.hypot(s1.mx - s2.mx, s1.mz - s2.mz);
       if (d < 6 || d > 50) continue;
       if (s1.ux * s2.ux + s1.uz * s2.uz > -0.7) continue;   // must oppose
@@ -460,6 +473,7 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   // arbitrary points along the street.
   let realMrt = 0, droppedMrt = 0, farFromAxis = 0;
   for (const m of (data.mrt || [])) {
+    await YY();
     // A STATION IS NOT AN ENTRANCE, and declining it silently is what made
     // A2 call this layer unread. Sentosa's three `mrt` records are all
     // `kind: "station"` — Sentosa Express monorail stops, which have no
@@ -588,6 +602,7 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   // Overhead bridges at the positions OSM records, spanning the way it maps.
   let realBridges = 0, droppedBridges = 0;
   for (const line of (data.bridges || [])) {
+    await YY();
     if (line.length < 2) continue;
     let len = 0;
     for (let i = 0; i < line.length - 1; i++) {
@@ -660,6 +675,7 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   const bannerT = [], medianKerb = [], medianShrub = [], medianPalm = [];
   let acc = 0;
   for (let i = 0; i < pts.length - 1; i++) {
+    await YY();
     const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
     const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
     if (len < 0.5) continue;
@@ -824,6 +840,7 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   // corners of the mid-rise ones. Colour and form only, no lettering.
   const roofSign = [], vertSign = [];
   for (const b of data.buildings) {
+    await YY();
     if (b.a < 700) continue;
     let cx = 0, cz = 0;
     for (const q2 of b.p) { cx += q2[0]; cz += q2[1]; }
@@ -917,9 +934,9 @@ export function buildSgDetail(world, axis, data, isBlocked) {
   stats.banners2 = vertSign.length;
 
   stats.signPages = atlas.finish();
-  stats.signMeshes = signs.flush(world);
+  stats.signMeshes = await signs.flushY(world, {}, Y);
 
-  Object.assign(stats, buildWalkable(world, data));
+  Object.assign(stats, await buildWalkable(world, data, Y));
   return stats;
 }
 
@@ -945,7 +962,9 @@ const WALK_MAT = {
   hedge: new THREE.MeshStandardMaterial({ color: 0x4a6b3c, roughness: 1 }),
 };
 
-export function buildWalkable(world, data) {
+export async function buildWalkable(world, data, Y = null) {
+  let _wt = performance.now();
+  const YW = async () => { if (Y && performance.now() - _wt > 8) { await Y(); _wt = performance.now(); } };
   const out = { stairFlights: 0, stairTreads: 0, barrierRuns: 0, offRoad: 0, parkFurn: 0 };
   const merger = new Merger();
 
@@ -1069,6 +1088,7 @@ export function buildWalkable(world, data) {
   const TREAD = WALK_MAT.tread, CHEEK = WALK_MAT.cheek, RAIL = MAT.metal;
 
   for (const s of data.steps || []) {
+    await YW();
     const p = s.p;
     if (!p || p.length < 2) continue;
     // Which end is UP is decided by the GROUND, not by `incline`. The tag is
@@ -1214,6 +1234,7 @@ export function buildWalkable(world, data) {
   }
 
   for (const b of data.barriers || []) {
+    await YW();
     const p = b.p;
     if (!p || p.length < 2) continue;
     const h = b.h || 1.6;
@@ -1298,6 +1319,7 @@ export function buildWalkable(world, data) {
     roof: new THREE.MeshStandardMaterial({ color: 0x7d8a7a, roughness: 0.8 }),
   };
   for (const f of data.parkfurn || []) {
+    await YW();
     const px = f.p[0], pz = f.p[1];
     if (anyRoad(px, pz, 0.4) || !dryHere(px, pz)) { out.offRoad++; continue; }
     const y = surfaceAt(px, pz);
@@ -1375,6 +1397,6 @@ export function buildWalkable(world, data) {
     out.parkFurn++;
   }
 
-  merger.flush(world);
+  await merger.flushY(world, {}, Y);
   return out;
 }

@@ -111,7 +111,10 @@ export function plateTaken(text, x, z, near = 12) {
 }
 
 /* ---------------- place the signage ---------------- */
-export function buildSignage(world, axis, data, isBlocked) {
+export async function buildSignage(world, axis, data, isBlocked, Y = null) {
+  // was one synchronous gulp (the 'signage' step's ~100ms block, 2026-08-03)
+  let _gt = performance.now();
+  const GY = async () => { if (Y && performance.now() - _gt > 8) { await Y(); _gt = performance.now(); } };
   const pts = axis.p, half = axis.w / 2;
   const placed = { gantries: 0, plates: 0 };
 
@@ -149,6 +152,7 @@ export function buildSignage(world, axis, data, isBlocked) {
 
   let acc = 0;
   for (let i = 0; i < pts.length - 1; i++) {
+    await GY();
     const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
     const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
     if (len < 0.5) continue;

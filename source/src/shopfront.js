@@ -645,8 +645,14 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
     return s2 < 0 ? 0 : s2 > hr.L ? hr.L : s2;
   };
   const szOf = sxOf;   // alias; kept separate for readability at the call
+  // The three phases below (site -> claim -> draw) each walk every run of
+  // every building with no pause — together they were the 'shops' step's
+  // 800ms block (2026-08-03). Same time-gated yield as the facade scan above.
+  let _pt = performance.now();
+  const PY = async () => { if (Y && performance.now() - _pt > 6) { await Y(); _pt = performance.now(); } };
   const runInfo = new Map();
   for (const runs of runsOf.values()) for (const r of runs) {
+    await PY();
     let n = Math.max(1, Math.round(r.L / BAY_PITCH));
     if (r.L / n < BAY_MIN) n = Math.max(1, Math.floor(r.L / BAY_MIN));
     const bw = r.L / n;
@@ -657,6 +663,7 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
     runInfo.set(r, { n, bw, site, usable, claim: new Array(n).fill(null) });
   }
   for (const runs of runsOf.values()) for (const r of runs) {
+    await PY();
     let info = runInfo.get(r);
     r.tenants.sort((p, q) => p.s - q.s);
     for (const t of r.tenants) {
@@ -715,6 +722,7 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
     }
   }
   for (const runs of runsOf.values()) for (const r of runs) {
+    await PY();
     const { n, bw, site, usable, claim } = runInfo.get(r);
     for (const i of usable) {
       if (claim[i]) { drawBay(r, i, n, bw, claim[i], site[i]); stats.bays++; }
@@ -735,6 +743,7 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
   await merger.flushY(world, { cast: false }, Y);
   buildRayGrid();
   for (const [r2, i2, n2, bw2, s2] of deferredBays) {
+    await PY();
     drawBay(r2, i2, n2, bw2, null, s2);
     stats.bays++;
   }
