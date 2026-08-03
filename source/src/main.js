@@ -1213,7 +1213,12 @@ function bootDone() {
 // first district through the exact same buildRegion, then stream the rest in
 // cooperatively-yielding slices while the player rides. The flat file stays
 // the default and the audits' subject until the streamed path has soaked.
-if (!P.has('nostream')) {
+// Only the WORLD scene has a manifest; probing for one on the game's default
+// single-district boot 404s in the console on every player load, and livecheck
+// rightly fails a deploy on any console error. So the manifest path is entered
+// only for scenes that can have one — every other scene goes straight to its
+// flat file with zero failed requests.
+if (SCENE === 'world' && !P.has('nostream')) {
   fetch(`./data/${SCENE}.manifest.json`)
     .then((r) => {
       if (!r.ok) throw new Error('no-manifest');
