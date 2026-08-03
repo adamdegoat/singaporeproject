@@ -277,6 +277,11 @@ export const MAT = {
   openSea: new THREE.MeshStandardMaterial({
     map: texWater(), color: 0x5a8296, roughness: 0.30, metalness: 0.42,
   }),
+  // the beach pavilion: boarded roof and timber posts, the finish every bar on
+  // Siloso and Palawan actually has. Not clay tile, which is the shophouse and
+  // cable-car-station lid and reads as a town building on the sand.
+  beachRoof: new THREE.MeshLambertMaterial({ color: 0x8a7458 }),
+  beachPost: new THREE.MeshLambertMaterial({ color: 0x6f5c46 }),
   // the two surfaces OSM names that are neither asphalt nor our pavement slab
   unitPave: new THREE.MeshStandardMaterial({ map: texPaverBlock(), color: 0x9a9184, roughness: 0.92 }),
   roadConc: new THREE.MeshStandardMaterial({ map: texConcrete(0x9d9a94, 0.6), roughness: 0.93 }),
@@ -1679,8 +1684,17 @@ export async function buildBuildings(world, data, Y = null) {
     if (_isBeach && (b.h || 0) <= 12 && !b.roof) {
       const _hh = Math.max(3, b.h || 6);
       const _cc = centroid(b.p);
-      merger.add(extrudeGeo(grow(b.p, 1.16), 0.34, _hh), MAT.clayTile, _cc[0], _cc[1]);
-      merger.add(extrudeGeo(grow(b.p, 1.05), 0.9, _hh + 0.34), MAT.clayTile, _cc[0], _cc[1]);
+      // TIMBER, NOT CLAY TILE. A beach bar's roof is boards and shade cloth;
+      // the pantile lid belongs on the cable car station and the shophouses.
+      merger.add(extrudeGeo(grow(b.p, 1.16), 0.34, _hh), MAT.beachRoof, _cc[0], _cc[1]);
+      merger.add(extrudeGeo(grow(b.p, 1.05), 0.9, _hh + 0.34), MAT.beachRoof, _cc[0], _cc[1]);
+      // and it stands on posts at the corners, which is what holds an
+      // oversailing roof up and what you actually see from the sand
+      for (const [_px, _pz] of grow(b.p, 1.13)) {
+        const _post = new THREE.CylinderGeometry(0.11, 0.13, _hh, 6);
+        _post.translate(_px, groundAt(_px, _pz) + _hh / 2, _pz);
+        merger.add(_post, MAT.beachPost, _px, _pz);
+      }
     }
     // provenance, so the accuracy ledger can say how many facades are a real
     // answer and how many are still a hash

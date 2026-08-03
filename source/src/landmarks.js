@@ -5671,7 +5671,88 @@ function skyHelix(api, b) {
   }
 }
 
+// AJ HACKETT SENTOSA (Skypark) — the bungy tower. 47m is published and the
+// map tags it 47 too, so the two agree and neither is invented. A steel lattice
+// tower with a cantilevered jump platform; the giant swing and the skybridge
+// share its structure. Kept as structure, not styled: the colour scheme is not
+// published anywhere the research could reach.
+function bungyTower(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = Math.max(20, b.h || 47);        // published 47
+  const half = Math.max(3.5, Math.min(ob.halfLong, ob.halfShort) * 0.8);
+  const steel = COASTER_WHITE, dark = COASTER_GREY;
+  // four legs, slightly battered so it reads as a tower and not a box
+  const legs = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
+  for (const [sx, sz] of legs) {
+    const bx = ob.bx + (sx * half) * ob.ux - (sz * half) * ob.uz;
+    const bz = ob.bz + (sx * half) * ob.uz + (sz * half) * ob.ux;
+    const tx = ob.bx + (sx * half * 0.55) * ob.ux - (sz * half * 0.55) * ob.uz;
+    const tz = ob.bz + (sx * half * 0.55) * ob.uz + (sz * half * 0.55) * ob.ux;
+    const len = Math.hypot(tx - bx, H, tz - bz);
+    const leg = new THREE.CylinderGeometry(0.34, 0.42, len, 8);
+    const dir = new THREE.Vector3(tx - bx, H, tz - bz).normalize();
+    leg.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+    leg.translate((bx + tx) / 2, g0 + H / 2, (bz + tz) / 2);
+    api.merge(leg, steel, ob.cx, ob.cz);
+  }
+  // bracing rings up the tower
+  for (let k = 1; k <= 5; k++) {
+    const y = g0 + (k / 6) * H;
+    const r = half * (1 - 0.45 * (k / 6)) * 1.42;
+    const ring = new THREE.TorusGeometry(r, 0.11, 5, 4);
+    ring.rotateX(Math.PI / 2);
+    ring.rotateY(-ob.ang + Math.PI / 4);
+    ring.translate(ob.bx, y, ob.bz);
+    api.merge(ring, dark, ob.cx, ob.cz);
+  }
+  // the jump platform, cantilevered off one face at the top
+  const deck = new THREE.BoxGeometry(half * 2.6, 0.4, half * 1.5);
+  deck.rotateY(-ob.ang);
+  deck.translate(ob.bx + ob.ux * half * 1.1, g0 + H, ob.bz + ob.uz * half * 1.1);
+  api.merge(deck, dark, ob.cx, ob.cz);
+}
+
+// SINGAPORE CABLE CAR STATION — published description, and an unusually
+// specific one: a WHITE PEDIMENT carried on FOUR FAT COLUMNS under TERRACOTTA
+// PANTILES. That is a real portico, and it is what makes the building
+// recognisable from Siloso Road, so it is drawn rather than approximated by a
+// box with a pitched lid.
+function cableCarStation(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = Math.max(8, b.h || 20);
+  const pale = api.mat.paleStone, tile = api.mat.clayTile;
+  api.world.add(api.extrude(b.p, H, pale));
+  // the pantile roof, oversailing
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.10), 0.45, H), tile, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.86), 1.7, H + 0.45), tile, ob.cx, ob.cz);
+  // the portico: four fat columns on the long face, carrying a pediment
+  const fx = ob.bx - ob.uz * ob.halfShort * 1.16;
+  const fz = ob.bz + ob.ux * ob.halfShort * 1.16;
+  for (let i = 0; i < 4; i++) {
+    const t = (i - 1.5) / 3 * (ob.halfLong * 1.35);
+    const cxp = fx + ob.ux * t, czp = fz + ob.uz * t;
+    const col = new THREE.CylinderGeometry(0.85, 0.95, H * 0.72, 12);
+    col.translate(cxp, g0 + H * 0.36, czp);
+    api.merge(col, pale, ob.cx, ob.cz);
+  }
+  // The pediment: a SHALLOW gable over the columns. A three-sided
+  // CylinderGeometry takes its triangle size from the RADIUS and its span from
+  // the LENGTH, and the first version passed halfLong (about 20m here) as the
+  // radius — which drew a 25m pyramid standing over the station like a tent,
+  // vetted at shots/street/ccs.shot1. Radius is the gable's HEIGHT.
+  const pedH = Math.min(3.2, H * 0.16);
+  const ped = new THREE.CylinderGeometry(pedH, pedH, ob.halfLong * 2.7, 3);
+  ped.rotateZ(Math.PI / 2);          // lay the prism down along its span
+  ped.rotateY(-ob.ang);
+  ped.translate(fx, g0 + H * 0.76 + pedH * 0.5, fz);
+  api.merge(ped, pale, ob.cx, ob.cz);
+}
+
 export const RECIPES = [
+  [/^aj hackett/i, bungyTower],
+  [/^singapore cable car station/i, cableCarStation],
   // SENTOSA — see the research block above this table. Hotel Michael's name is
   // carried by the main mass AND several small annexe footprints, which is
   // correct: they are one hotel and must share a family.
