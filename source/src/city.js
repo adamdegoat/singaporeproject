@@ -2525,9 +2525,14 @@ export class TreeField {
   // from the avenue walk, and neither has any idea where the water is: 97 leaf
   // cards and canopy blobs were standing in Marina Bay. Guarded at add() so
   // every caller is covered rather than each one remembering.
-  add(x, z, scale = 1) {
+  // `low` marks UNDERGROWTH: the traffic-clearance crown lift below is a
+  // street-tree rule (double-deckers pass under a pruned avenue), and applying
+  // it to a 0.3-scale shrub turned every bush into a bare 6m pole — 667 of
+  // them vanished into the jungle canopy before this flag existed. A low
+  // plant keeps its crown where a bush keeps it: on the ground.
+  add(x, z, scale = 1, low = false) {
     if (window.__inWater && window.__inWater(x, z)) return;
-    this.items.push([x, z, scale]);
+    this.items.push([x, z, scale, low]);
   }
   // build() stays SYNCHRONOUS and buildY() yields between trees — both walk
   // the same per-tree body (_tree) in the same order, so the placement RNG
@@ -2601,7 +2606,7 @@ export class TreeField {
     };
   }
   _tree(c, i) {
-    const [x, z, scale] = this.items[i];
+    const [x, z, scale, low] = this.items[i];
     const { BLOBS, BRANCH, CARDS, trunks, branches, blobs, cards, m, e, q, p, sc } = c;
     {
       // total height and crown radius. A mature roadside Angsana is about as
@@ -2622,7 +2627,7 @@ export class TreeField {
       // clearance the audit requires rather than clearing it. Any change in the
       // ground under a tree then tipped it over, and one did. Size the lift so
       // the lowest branch clears, not so the crown base does.
-      const LIFT = 6.0;
+      const LIFT = low ? 0 : 6.0;      // undergrowth is not pruned for buses
       if (crownBase < LIFT) { h += LIFT - crownBase; crownBase = LIFT; }
       const crownTop = h;
       const domeDepth = crownTop - crownBase;
@@ -2984,9 +2989,57 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
       }
     }
   }
-  if (!surveyed && !jungle) return { surveyedTrees: 0, jungleTrees: 0 };
+  // UNDERGROWTH WHERE PLAYERS WALK. Filling every wood with shrubs would
+  // cost more fill-rate than the jungle itself; a walker only sees the floor
+  // beside the trail. So: small clumps (scale 0.28-0.45 trees read as shrub
+  // masses) within 22m of a footway that passes through or beside a wood,
+  // 9m jittered grid, same deterministic position-hash. Sentosa measured:
+  // hundreds, not thousands.
+  let shrubs = 0;
+  {
+    const segs = [];
+    for (const r of (data.roads || [])) {
+      if (r.k !== 'footway' && r.k !== 'pedestrian') continue;
+      const pts2 = r.p || [];
+      for (let i = 0; i < pts2.length - 1; i++) segs.push([pts2[i][0], pts2[i][1], pts2[i + 1][0], pts2[i + 1][1]]);
+    }
+    const nearTrail = (x, z) => {
+      for (const [ax, az, bx, bz] of segs) {
+        const vx = bx - ax, vz = bz - az;
+        const l2 = vx * vx + vz * vz || 1;
+        let t = ((x - ax) * vx + (z - az) * vz) / l2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+        // 4m clear of the path itself, inside 22m of it
+        const d2 = dx * dx + dz * dz;
+        if (d2 < 15 * 15 && d2 > 4 * 4) return true;
+      }
+      return false;
+    };
+    for (const gp of (data.green || [])) {
+      if (gp.k !== 'wood' || !gp.p || gp.p.length < 4) continue;
+      let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+      for (const [x, z] of gp.p) {
+        if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+        if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+      }
+      for (let gx = Math.ceil(mnx / 13) * 13; gx < mxx; gx += 13) {
+        for (let gz = Math.ceil(mnz / 13) * 13; gz < mxz; gz += 13) {
+          const jx = gx + (((gx * 9.1 + gz * 4.7) % 10) - 5);
+          const jz = gz + (((gx * 5.9 + gz * 7.7) % 10) - 5);
+          if (!inRing(jx, jz, gp.p)) continue;
+          if (!nearTrail(jx, jz)) continue;
+          if (blocked && blocked(jx, jz)) continue;
+          f.add(jx, jz, 0.28 + ((jx * 6.1 + jz * 2.9) % 100) / 590, true);
+          if (window.__shrubDbg) window.__shrubDbg.push([jx | 0, jz | 0]);
+          shrubs++;
+        }
+      }
+    }
+  }
+  if (!surveyed && !jungle && !shrubs) return { surveyedTrees: 0, jungleTrees: 0, shrubClumps: 0 };
   const built = await f.buildY(world, Y);
-  return { surveyedTrees: built - jungle, jungleTrees: jungle };
+  return { surveyedTrees: built - jungle - shrubs, jungleTrees: jungle, shrubClumps: shrubs };
 }
 
 // THE KEPPEL QUAY CRANES — the district's horizon, and it was empty sky.

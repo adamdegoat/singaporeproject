@@ -385,7 +385,10 @@ export class Terrain {
           // BRIGHTEST surface in the world because land tints multiply
           // downward. This one is a real surface being painted, not a
           // stand-in for one that is missing.
-          sand:  [0.88, 0.82, 0.66],
+          // Warmed and brightened for the island pass (2026-08-03): beside
+          // real sea the old value read as pale concrete from the beach walk;
+          // golden enough to say "beach" at a glance, still shy of cartoon.
+          sand:  [0.93, 0.85, 0.62],
           resi:  [0.86, 0.86, 0.78],
           comm:  [0.90, 0.89, 0.86],
           civic: [0.88, 0.87, 0.82],
