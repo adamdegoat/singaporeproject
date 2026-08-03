@@ -82,7 +82,16 @@ export function buildPlaceLabels(THREE, data, world, surfaceAt) {
   for (const s of (((data.cableway || {}).stations) || [])) {
     if (s && s.n && Array.isArray(s.p)) push(s.n, s.p[0], s.p[1], 0, 'mid');
   }
-  // 4. NOT buildings. The owner, on seeing the first pass: "can it be obvious
+  // 4. the resorts OSM carries as NODES, which the building layer never had —
+  // Sofitel, Capella, Amara, ONE°15, The Outpost. data/hotels.py explains why
+  // they are places rather than building names: their nodes sit 49-237m from
+  // the nearest unnamed footprint, which is not evidence enough to put a
+  // resort's name on a specific building.
+  for (const h of (data.hotels || [])) {
+    if (h && h.n && Array.isArray(h.p)) push(h.n, h.p[0], h.p[1], 0, 'mid');
+  }
+
+  // 5. NOT buildings. The owner, on seeing the first pass: "can it be obvious
   // shop signs and building signs so can see". A building has a facade, and a
   // name on that facade is both more readable and more of a place than a
   // plaque hovering over the roof — sgdetail.js mounts those, and every named

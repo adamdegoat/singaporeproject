@@ -449,6 +449,8 @@ def main():
     # MegaZip is not in OSM — authored from measured endpoints against
     # published figures. See data/zipline.py.
     subprocess.run([sys.executable, os.path.join(HERE, "zipline.py"), d["id"]], check=False)
+    # The resorts OSM carries as nodes, which the building layer never had.
+    subprocess.run([sys.executable, os.path.join(HERE, "hotels.py"), d["id"]], check=False)
     # Bring names up to date before anything reads them (signs, gates, labels).
     subprocess.run([sys.executable, os.path.join(HERE, "names.py"), d["id"]], check=False)
     # Calibrate guessed building heights against the district's own surveyed
