@@ -48,6 +48,17 @@ WALK = {"footway", "pedestrian", "path", "steps"}
 DRIVE = {"service", "residential", "living_street", "unclassified", "tertiary"}
 DRIVE_W = 7.5
 DRIVE_MIN_RUN = 10.0
+# AND THE WATER CROSSINGS. A mapped footway that runs across water with no
+# bridge tag is the same contradiction as one that runs through a building: the
+# map says you can walk there AND that there is water there, and in life the
+# resolution is that something carries you over it — a boardwalk, a causeway,
+# stepping stones, or a pond polygon drawn a little generously.
+#
+# Measured on Sentosa: two of the seven remaining long blocked runs are exactly
+# this, 27m and 54m, neither carrying a `br` tag. Treated as a deck they become
+# walkable and get a boardwalk drawn over them.
+WATER_W = 3.2
+WATER_MIN_RUN = 8.0
 
 
 def poly_contains(poly, x, y):
@@ -70,6 +81,15 @@ def main():
     a = ap.parse_args()
     path = os.path.join(HERE, f"{a.id}.json")
     d = json.load(open(path))
+
+    # water rings, for the crossings
+    waters = []
+    for w in (d.get("water") or []):
+        p = w.get("p") if isinstance(w, dict) else None
+        if p and len(p) > 2 and isinstance(p[0], list):
+            xs = [q[0] for q in p]
+            ys = [q[1] for q in p]
+            waters.append(((min(xs), min(ys), max(xs), max(ys)), p))
 
     builds = []
     for b in (d.get("buildings") or []):
@@ -118,6 +138,25 @@ def main():
                     return b
             return None
 
+        def in_water(x, y):
+            for (bb, poly) in waters:
+                if bb[0] <= x <= bb[2] and bb[1] <= y <= bb[3] and poly_contains(poly, x, y):
+                    return True
+            return False
+
+        # a WALK route may also be crossing water rather than a building
+        if not is_drive:
+            wrun = []
+            for (x, y) in samples:
+                if in_water(x, y):
+                    wrun.append((x, y))
+                else:
+                    if len(wrun) * 1.5 >= WATER_MIN_RUN:
+                        arcades.append((wrun, {"n": ""}, r, False, True))
+                    wrun = []
+            if len(wrun) * 1.5 >= WATER_MIN_RUN:
+                arcades.append((wrun, {"n": ""}, r, False, True))
+
         run, host = [], None
         for (x, y) in samples:
             b = inside_any(x, y)
@@ -126,13 +165,13 @@ def main():
                 host = host or b
             else:
                 if len(run) * 1.5 >= min_run:
-                    arcades.append((run, host, r, is_drive))
+                    arcades.append((run, host, r, is_drive, False))
                 run, host = [], None
         if len(run) * 1.5 >= min_run:
-            arcades.append((run, host, r, is_drive))
+            arcades.append((run, host, r, is_drive, False))
 
     out = []
-    for (run, host, r, is_drive) in arcades:
+    for (run, host, r, is_drive, is_water) in arcades:
         # pad past each end so the mouth clears the facade
         if len(run) < 2:
             continue
@@ -154,8 +193,8 @@ def main():
         length = sum(math.dist(thin[i], thin[i + 1]) for i in range(len(thin) - 1))
         out.append({
             "p": [[round(q[0], 1), round(q[1], 1)] for q in thin],
-            "w": DRIVE_W if is_drive else CORRIDOR_W,
-            "k": "drive" if is_drive else "walk",
+            "w": DRIVE_W if is_drive else (WATER_W if is_water else CORRIDOR_W),
+            "k": "drive" if is_drive else ("deck" if is_water else "walk"),
             "n": (host or {}).get("n") or "",
             "h": round(min(6.4, max(4.6, ((host or {}).get("h") or 6) * 0.5)), 1)
                  if is_drive else
@@ -167,8 +206,9 @@ def main():
     d["arcades"] = out
     print(f"== arcades {a.id}")
     nd = sum(1 for o in out if o.get("k") == "drive")
-    print(f"   {len(out)-nd} walking route(s) and {nd} drive-through(s) carved "
-          f"through buildings")
+    nw = sum(1 for o in out if o.get("k") == "deck")
+    print(f"   {len(out)-nd-nw} walking route(s) through buildings, {nd} "
+          f"drive-through(s), {nw} water crossing(s) decked")
     for o in out[:12]:
         print(f"     {o['L']:6.0f} m  {o.get('k','walk'):<5} through "
               f"{o['n'] or '(unnamed building)'}")

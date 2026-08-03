@@ -2321,6 +2321,46 @@ export async function buildTransit(world, data, Y = null) {
     }
   }
 
+  // -- BOARDWALKS over the water crossings ---------------------------------
+  //
+  // data/arcade.py marks mapped footways that run across water with no bridge
+  // tag as `k: "deck"`. The route is already carved out of the collision grid
+  // so a walker can cross; this is what they cross ON. A plain plank deck on
+  // short piles — which is what these are in life: pond crossings and pool-
+  // edge walks at Resorts World and the Cove.
+  const bwDeck = new THREE.MeshLambertMaterial({ color: 0x8b7355 });
+  const bwPile = new THREE.MeshLambertMaterial({ color: 0x6b5a44 });
+  for (const arc of (data.arcades || [])) {
+    if (arc.k !== 'deck' || !arc.p || arc.p.length < 2) continue;
+    await YY();
+    const half = (arc.w || 3.2) / 2;
+    for (let i = 0; i < arc.p.length - 1; i++) {
+      const [x0, z0] = arc.p[i], [x1, z1] = arc.p[i + 1];
+      const L = Math.hypot(x1 - x0, z1 - z0);
+      if (L < 0.5) continue;
+      const ang = Math.atan2(x1 - x0, z1 - z0);
+      // the deck sits just above the water it crosses, not on the bed
+      const wy = Math.max(groundAt((x0 + x1) / 2, (z0 + z1) / 2), 0) + 0.55;
+      const deck = new THREE.BoxGeometry(half * 2, 0.18, L + 0.2);
+      deck.rotateY(ang);
+      deck.translate((x0 + x1) / 2, wy, (z0 + z1) / 2);
+      merger.add(deck, bwDeck, x0, z0);
+      const nx3 = Math.cos(ang), nz3 = -Math.sin(ang);
+      for (let t = 0; t <= L; t += 3.4) {
+        for (const sgn of [-1, 1]) {
+          const px = x0 + (x1 - x0) * (t / L) + nx3 * (half - 0.2) * sgn;
+          const pz = z0 + (z1 - z0) * (t / L) + nz3 * (half - 0.2) * sgn;
+          const gy = groundAt(px, pz);
+          const hgt = Math.max(0.6, wy - 0.1 - gy);
+          const pile = new THREE.CylinderGeometry(0.11, 0.13, hgt, 6);
+          pile.translate(px, gy + hgt / 2, pz);
+          merger.add(pile, bwPile, px, pz);
+        }
+      }
+    }
+    out.boardwalk = (out.boardwalk || 0) + 1;
+  }
+
   // -- FORT SILOSO SKYWALK -------------------------------------------------
   //
   // 181m of elevated walkway from a lift tower near Siloso Point to Fort
