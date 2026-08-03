@@ -627,36 +627,95 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
   };
 
   /* --- 3. bays --- */
+  // THREE PHASES, NOT ONE LOOP — site every run, THEN claim, THEN draw.
+  // Claiming needs every run already sited because of the front-row hop
+  // below: a tenant whose own host yields no bays must be able to reach a
+  // run that may not have been visited yet in host order.
+  //
+  // WHICH BAYS CAN EXIST IS SETTLED BEFORE ANY TENANT IS GIVEN ONE.
+  // Tenants used to be assigned first and the bay built second, so a tenant
+  // whose bay then failed a placement test — in a carriageway, solid all the
+  // way out — vanished silently: out of the numerator, out of the
+  // denominator, out of every skip bucket, and coverage fell without anything
+  // saying why. Site the bays, then hand out the ones that are real.
+  // the tenant node's arclength on an arbitrary run (for the hop below)
+  const sxOf = (t, hr) => {
+    const n0 = t.sh.p;
+    let s2 = (n0[0] - hr.a[0]) * hr.ux + (n0[1] - hr.a[1]) * hr.uz;
+    return s2 < 0 ? 0 : s2 > hr.L ? hr.L : s2;
+  };
+  const szOf = sxOf;   // alias; kept separate for readability at the call
+  const runInfo = new Map();
   for (const runs of runsOf.values()) for (const r of runs) {
     let n = Math.max(1, Math.round(r.L / BAY_PITCH));
     if (r.L / n < BAY_MIN) n = Math.max(1, Math.floor(r.L / BAY_MIN));
     const bw = r.L / n;
-    // WHICH BAYS CAN EXIST IS SETTLED BEFORE ANY TENANT IS GIVEN ONE.
-    //
-    // Tenants used to be assigned first and the bay built second, so a tenant
-    // whose bay then failed a placement test — in a carriageway, solid all the
-    // way out — vanished silently: out of the numerator, out of the
-    // denominator, out of every skip bucket, and coverage fell without anything
-    // saying why. Site the bays, then hand out the ones that are real.
     const site = new Array(n);
     for (let i = 0; i < n; i++) site[i] = siteBay(r, i, n, bw);
     const usable = [];
     for (let i = 0; i < n; i++) if (site[i]) usable.push(i);
-
-    const claim = new Array(n).fill(null);
+    runInfo.set(r, { n, bw, site, usable, claim: new Array(n).fill(null) });
+  }
+  for (const runs of runsOf.values()) for (const r of runs) {
+    let info = runInfo.get(r);
     r.tenants.sort((p, q) => p.s - q.s);
     for (const t of r.tenants) {
-      if (!usable.length) { skip(t.sh, 'shopsNoBay'); continue; }
-      // the usable bay nearest where the tenant's own door projects
-      let best = -1, bd = Infinity;
-      for (const i of usable) {
-        if (claim[i]) continue;
-        const d = Math.abs((i + 0.5) * bw - t.s);
-        if (d < bd) { bd = d; best = i; }
+      let tr = r, ti = info, ts = t.s;
+      if (!ti.usable.length) {
+        // THE FRONT-ROW HOP. OSM traces a street shophouse and its rear
+        // extension as separate footprints; the tenant node sits in the
+        // REAR part, whose street side is ring-blocked by the FRONT part —
+        // measured 2026-08-03 with the siteBay stage recorder: every bay of
+        // every such host dies on 'ring'. The shop is real and its window
+        // is the front footprint's, so hop one footprint OUTWARD (the same
+        // family as enclosing()'s unit-to-block hop, sideways instead of
+        // upward) and claim a bay there.
+        // Probe beyond EVERY run of the host, not only the run the tenant
+        // happened to bind to — the nearest run is often a party wall whose
+        // outward side is the neighbouring unit, and the street lies beyond
+        // a different edge.
+        let bestR = null, bd = Infinity, bs = 0;
+        const _dbg = window.__hopDbg ? { host: r.b.n || r.b.a, runs: (runsOf.get(r.b) || []).length, probes: [] } : null;
+        for (const hr of runsOf.get(r.b) || [r]) {
+          const rx0 = sxOf(t, hr), rz0 = szOf(t, hr);
+          const hx = hr.a[0] + hr.ux * rx0 + hr.nx * (hr.off + 2.5);
+          const hz = hr.a[1] + hr.uz * rx0 + hr.nz * (hr.off + 2.5);
+          const fb = index.at(hx, hz);
+          if (_dbg) _dbg.probes.push(fb ? (fb === r.b ? 'self' : `${fb.n || fb.a}:${(runsOf.get(fb) || []).length}runs`) : 'none');
+          if (!fb || fb === r.b) continue;
+          for (const fr of runsOf.get(fb) || []) {
+            const fi = runInfo.get(fr);
+            if (!fi || !fi.usable.length) continue;
+            const rx = hx - fr.a[0], rz = hz - fr.a[1];
+            let s2 = rx * fr.ux + rz * fr.uz;
+            s2 = s2 < 0 ? 0 : s2 > fr.L ? fr.L : s2;
+            const qx = fr.a[0] + fr.ux * s2, qz = fr.a[1] + fr.uz * s2;
+            const d = Math.hypot(hx - qx, hz - qz);
+            if (d < bd) { bd = d; bestR = fr; bs = s2; }
+          }
+        }
+        if (bestR && bd < 15) { tr = bestR; ti = runInfo.get(bestR); ts = bs; }
+        else {
+          if (window.__hopDbg) window.__hopDbg.push(['hopmiss', t.sh.n || '?', _dbg]);
+          skip(t.sh, 'shopsNoBay'); continue;
+        }
       }
-      if (best < 0) { skip(t.sh, 'shopsNoBay'); continue; }   // frontage full
-      claim[best] = t.sh;
+      // the usable bay nearest where the tenant's own door projects
+      let best = -1, bdd = Infinity;
+      for (const i of ti.usable) {
+        if (ti.claim[i]) continue;
+        const d = Math.abs((i + 0.5) * ti.bw - ts);
+        if (d < bdd) { bdd = d; best = i; }
+      }
+      if (best < 0) {
+        if (window.__hopDbg) window.__hopDbg.push(['full', t.sh.n || '?']);
+        skip(t.sh, 'shopsNoBay'); continue;
+      }   // frontage full
+      ti.claim[best] = t.sh;
     }
+  }
+  for (const runs of runsOf.values()) for (const r of runs) {
+    const { n, bw, site, usable, claim } = runInfo.get(r);
     for (const i of usable) {
       if (claim[i]) { drawBay(r, i, n, bw, claim[i], site[i]); stats.bays++; }
       else deferredBays.push([r, i, n, bw, site[i]]);
@@ -722,7 +781,7 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
           // past the last sample (Onze and Newport Tower, D26 2026-08-03).
           if (clearAt(d + 0.7) && clearAt(d + 1.5) && clearAt(d + 2.6) && clearAt(d + 3.4)) { push = d; break; }
         }
-        if (!push) return null;           // solid all the way out: no frontage here
+        if (!push) { if (window.__bayDbg2) window.__bayDbg2.push(['wall', fx|0, fz|0, r.b.a]); return null; }
         fx += nx * push; fz += nz * push;
         onPodium = true;
       }
@@ -749,10 +808,10 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
     const reachOut = prof.depth + 0.26;
     for (const du of [-bw / 2, 0, bw / 2]) {
       const cx2 = fx + ux * du + nx * reachOut, cz2 = fz + uz * du + nz * reachOut;
-      if (onCarriageway(cx2, cz2, 0)) return null;
+      if (onCarriageway(cx2, cz2, 0)) { if (window.__bayDbg2) window.__bayDbg2.push(['road', fx|0, fz|0, r.b.a]); return null; }
     }
     // and the bay must still be on a street once it is placed
-    if (streets.dist(fx + nx * 2.5, fz + nz * 2.5) > ROAD_NEAR + 4) return null;
+    if (streets.dist(fx + nx * 2.5, fz + nz * 2.5) > ROAD_NEAR + 4) { if (window.__bayDbg2) window.__bayDbg2.push(['far', fx|0, fz|0, r.b.a]); return null; }
     // A run is judged at three points along it and accepted on two of them,
     // which says nothing about any particular bay. 271 bays at the ends of
     // otherwise good runs were facing straight into the neighbouring block —
@@ -792,7 +851,7 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
     // two real tenants outrank them. S8 is the ratchet that enforces this
     // trade — respect it before "improving" this loop again.
     for (const dv of [1.2, 2.4]) {
-      if (index.at(fx + nx * dv, fz + nz * dv)) return null;
+      if (index.at(fx + nx * dv, fz + nz * dv)) { if (window.__bayDbg2) window.__bayDbg2.push(['ring', fx|0, fz|0, r.b.a]); return null; }
     }
     // and this wall has not already been glazed by an overlapping footprint.
     // Checked over the whole 3x3 neighbourhood: two bays 1.16m apart landed in
@@ -802,7 +861,7 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
     // sixths of a circle, and two bays on the same wall can fall either side of
     // a bucket edge. Two pairs survived the first version for exactly that.
     for (const dx of [-1, 0, 1]) for (const dz of [-1, 0, 1]) for (const da of [-1, 0, 1]) {
-      if (claimed.has(claimKey(fx, fz, nx, nz, dx, dz, da))) return null;
+      if (claimed.has(claimKey(fx, fz, nx, nz, dx, dz, da))) { if (window.__bayDbg2) window.__bayDbg2.push(['claim', fx|0, fz|0, r.b.a]); return null; }
     }
     claimed.add(claimKey(fx, fz, nx, nz));
     if (onPodium) stats.baysOnPodium++;

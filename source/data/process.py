@@ -1140,7 +1140,8 @@ def postcode_name(tags):
 # small joining words down, keep anything that is already an acronym up, and do
 # not touch what follows an apostrophe.
 _SMALL = {"a", "an", "and", "at", "by", "de", "for", "in", "of", "on", "the", "to"}
-_KEEP_UP = {"HDB", "NTUC", "SMU", "NUS", "UOB", "OCBC", "DBS", "MRT", "JTC",
+_KEEP_UP = {"II", "III", "IV",   # roman numerals: "River Peaks Ii" was live
+            "HDB", "NTUC", "SMU", "NUS", "UOB", "OCBC", "DBS", "MRT", "JTC",
             "URA", "PSA", "SPH", "AXA", "IOI", "OUE", "CPF", "MAS", "SIA"}
 
 
@@ -1367,6 +1368,67 @@ SITE_HEIGHTS = [
     (1.29881, 103.88435, "De Centurion",           16, 40),
     (1.29867, 103.88480, "Fulcrum",                24, 40),
 ]
+
+# NAME-ONLY SITES — sets `n` and NOTHING else, for buildings whose height is
+# honestly unpublished (SITE_HEIGHTS requires storeys; inventing them is the
+# thing this project does not do). Every row was verified point-in-polygon
+# against a named OSM polygon or address on disk (agent pass, 2026-08-03):
+# 43 rows, 57 footprints, zero misfires; radii chosen against the nearest
+# neighbour that must NOT match (Cantonment blocks are 45m apart -> r 22).
+SITE_NAMES = [
+    (1.27047, 103.82741, "Keppel Distripark Blk 519", 35),
+    (1.27230, 103.82942, "Keppel Distripark Blk 513", 35),
+    (1.27120, 103.82853, "Keppel Distripark Blk 511", 35),
+    (1.26911, 103.82761, "Keppel Distripark Blk 517", 35),
+    (1.27181, 103.83652, "SAM at Tanjong Pagar Distripark", 40),
+    (1.27188, 103.83817, "Tanjong Pagar Distripark", 40),
+    (1.27584, 103.83905, "Cantonment Towers", 22),
+    (1.27443, 103.83970, "Cantonment Towers", 22),
+    (1.27449, 103.84013, "Cantonment Towers", 22),
+    (1.27392, 103.84034, "Cantonment Towers", 22),
+    (1.27382, 103.83988, "Cantonment Towers", 22),
+    (1.27389, 103.83947, "Cantonment Towers", 22),
+    (1.27386, 103.83902, "Cantonment Towers", 22),
+    (1.27740, 103.83932, "Everton Park Blk 2", 18),
+    (1.27719, 103.83857, "Everton Park Blk 3", 18),
+    (1.27688, 103.84014, "Everton Park Blk 4", 18),
+    (1.27665, 103.83943, "Everton Park Blk 5", 18),
+    (1.27664, 103.83865, "Everton Park Blk 6", 18),
+    (1.27701, 103.83938, "Everton Park Blk 7", 18),
+    (1.27667, 103.82907, "Avenue South Residence", 30),
+    (1.27678, 103.82972, "Avenue South Residence", 30),
+    (1.27565, 103.83667, "Spottiswoode Residences", 28),
+    (1.27603, 103.83744, "Spottiswoode Suites", 28),
+    (1.27547, 103.83749, "Spottiswoode 18", 30),
+    (1.27576, 103.83818, "Sky Everton", 28),
+    (1.29933, 103.88251, "Dunman High School", 45),
+    (1.30016, 103.88292, "Dunman High School", 40),
+    (1.29692, 103.88113, "Singapore Swimming Club", 100),
+    (1.30141, 103.88215, "Performance Motors BMW East Coast Centre", 45),
+    (1.30204, 103.88612, "Katong Swimming Complex", 35),
+    (1.30516, 103.85633, "River Peaks I", 60),
+    (1.30415, 103.85529, "River Peaks II", 50),
+    (1.30415, 103.85720, "Stamford Primary School", 40),
+    (1.31222, 103.85062, "Farrer Park Primary School", 45),
+    (1.30975, 103.85994, "Jalan Besar Stadium", 45),
+    (1.31153, 103.85680, "City Square Mall", 45),
+    (1.31286, 103.85400, "Connexion", 40),
+    (1.31075, 103.86001, "Jalan Besar Swimming Complex", 35),
+    (1.30976, 103.85116, "Farrer Park Fields", 45),
+    (1.31123, 103.84981, "Farrer Park Arena", 40),
+    (1.30435, 103.85081, "Village Hotel Albert Court", 35),
+    (1.30475, 103.85764, "Madrasah Aljunied Al-Islamiah", 35),
+    (1.30851, 103.85920, "Former Victoria School", 15),
+]
+# Coordinate-scoped RENAMES for names that are WRONG at one place only.
+# NAME_CORRECTIONS cannot carry these: keying "pinnacle @ duxton" by name
+# would rename the real Pinnacle's seven towers. One shipped case: the 1965
+# HDB slab at 1 Everton Park wears "Pinnacle @ Duxton" because OneMap answers
+# its postcode 080001 with "1 CANTONMENT ROAD PINNACLE @ DUXTON".
+SITE_RENAMES = [
+    (1.27716, 103.84000, "Everton Park Blk 1", 18, "Pinnacle @ Duxton"),
+]
+
 SITE_FLOOR_M = 3.1
 SITE_PLANT_M = 2.5
 
@@ -2880,6 +2942,15 @@ def main():
                     _nm = NAMED_BY_WIKIDATA[_wd]
             # LAST, so a surveyed name always wins: OneMap's answer for this
             # footprint's postcode. See postcode_name() above.
+            # addr:neighbourhood before the postcode: OSM tags it on estate
+            # blocks whose way carries no name (Reflections at Keppel Bay x12,
+            # Pinnacle@Duxton x7, Blangah View x9...) — measured 2026-08-03:
+            # 90 buildings >=200m2 across the world gain a name from a tag
+            # already fetched. It is an estate name, honest for the block.
+            if not _nm:
+                _ab = tags.get("addr:neighbourhood")
+                if _ab and len(_ab) > 2:
+                    _nm = _ab
             if not _nm:
                 _pn = postcode_name(tags)
                 if _pn:
@@ -5500,6 +5571,41 @@ def main():
               f"surveyed site coordinates (storeys x {SITE_FLOOR_M}m, DERIVED): "
               + ", ".join(f"{k} x{v}" for k, v in sorted(_site_hit.items())[:4])
               + ("..." if len(_site_hit) > 4 else ""))
+
+    # NAME-ONLY SITES: `n` moves, h/hs do not — see SITE_NAMES.
+    _sn_hit = {}
+    for _slat, _slon, _sname, _srad in SITE_NAMES:
+        _sx, _sz = proj(_slat, _slon)
+        for _b in buildings:
+            if _b.get("n"):
+                continue
+            _cx = sum(p[0] for p in _b["p"]) / len(_b["p"])
+            _cz = sum(p[1] for p in _b["p"]) / len(_b["p"])
+            if math.hypot(_cx - _sx, _cz - _sz) > _srad:
+                continue
+            if (_b.get("a") or 0) < 200:
+                continue
+            _b["n"] = _sname
+            _sn_hit[_sname] = _sn_hit.get(_sname, 0) + 1
+    if _sn_hit:
+        print(f"  named {sum(_sn_hit.values())} footprint(s) from verified site "
+              f"coordinates (name only, heights untouched): "
+              + ", ".join(f"{k} x{v}" for k, v in sorted(_sn_hit.items())[:4])
+              + ("..." if len(_sn_hit) > 4 else ""))
+
+    # Coordinate-scoped renames — only fires when the WRONG name is present.
+    for _slat, _slon, _sname, _srad, _wrong in SITE_RENAMES:
+        _sx, _sz = proj(_slat, _slon)
+        for _b in buildings:
+            if _b.get("n") != _wrong:
+                continue
+            _cx = sum(p[0] for p in _b["p"]) / len(_b["p"])
+            _cz = sum(p[1] for p in _b["p"]) / len(_b["p"])
+            if math.hypot(_cx - _sx, _cz - _sz) > _srad:
+                continue
+            print(f"  renamed {_wrong!r} -> {_sname!r} at {int(_cx)},{int(_cz)} "
+                  f"(coordinate-scoped; the name belongs to a different building)")
+            _b["n"] = _sname
 
     # A SIGNAL WITH NO ROAD IS FURNITURE NOBODY PUT THERE. One node in the
     # Waterloo Street pedestrian mall stands 36m from the nearest carriageway
