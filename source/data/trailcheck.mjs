@@ -29,6 +29,7 @@ const out = await page.evaluate(() => {
   // so the check now asks exactly what the game asks, and runs in seconds.
   const res = {
     ways: 0, pts: 0, noSurface: 0, steps: 0, bigSteps: 0, floating: 0,
+    longBlocks: 0, midBlocks: 0, tinyBlocks: 0, exBlock: [],
     exNoSurface: [], exStep: [], exFloat: [],
   };
 
@@ -40,6 +41,7 @@ const out = await page.evaluate(() => {
     res.ways++;
     let prev = null;
     const trend = [];
+    let blockRun = 0, runX = 0, runZ = 0;
     for (let i = 0; i < p.length - 1; i++) {
       const [ax, az] = p[i], [bx, bz] = p[i + 1];
       const L = Math.hypot(bx - ax, bz - az);
@@ -86,9 +88,28 @@ const out = await page.evaluate(() => {
         // Is this point BLOCKED — a walker cannot stand where a building or a
         // wall is. A mapped path running through solid geometry is a path you
         // cannot explore, which is the owner's actual question.
+        // BLOCKED RUN LENGTH, NOT BLOCKED SAMPLE COUNT.
+        //
+        // The raw percentage was 2.0% and it meant nothing: measured, 122 of
+        // the 184 blocked runs on Sentosa are under 3m — a path clipping a
+        // building corner, which a walker simply steps around. What the owner
+        // means by "halfway will stuck" is a LONG run, and there are 21 of
+        // those over 20m. One number hid the other completely.
         if (window.__blocked && window.__blocked(x, z)) {
           res.noSurface++;
+          if (!blockRun) { runX = x; runZ = z; }
+          blockRun++;
           if (res.exNoSurface.length < 12) res.exNoSurface.push({ n: r.n || k, x: x | 0, z: z | 0 });
+        } else if (blockRun) {
+          const m = blockRun * 1.5;
+          if (m > 20) {
+            res.longBlocks++;
+            if (res.exBlock.length < 12) {
+              res.exBlock.push({ n: r.n || k, x: runX | 0, z: runZ | 0, m: +m.toFixed(0) });
+            }
+          } else if (m > 3) res.midBlocks++;
+          else res.tinyBlocks++;
+          blockRun = 0;
         }
         if (surf - g > 1.5) {
           res.floating++;
@@ -98,14 +119,29 @@ const out = await page.evaluate(() => {
         }
       }
     }
+    // FLUSH A RUN STILL OPEN AT THE END OF THE WAY. Without this, a path that
+    // is blocked all the way to its last sample — which is precisely the worst
+    // case, a way that lies entirely inside a building — is never counted at
+    // all. It under-reported 21 long blocks as 11 and hid a 226m one.
+    if (blockRun) {
+      const m = blockRun * 1.5;
+      if (m > 20) {
+        res.longBlocks++;
+        if (res.exBlock.length < 12) {
+          res.exBlock.push({ n: r.n || k, x: runX | 0, z: runZ | 0, m: +m.toFixed(0) });
+        }
+      } else if (m > 3) res.midBlocks++;
+      else res.tinyBlocks++;
+      blockRun = 0;
+    }
   }
   return res;
 });
 console.log(`ways ${out.ways}  sample points ${out.pts}`);
-console.log(`  path blocked     : ${out.noSurface}  (${(100 * out.noSurface / out.pts).toFixed(1)}%)`);
+console.log(`  BLOCKED runs >20m: ${out.longBlocks}   3-20m: ${out.midBlocks}   under 3m (walk around): ${out.tinyBlocks}`);
 console.log(`  N3 surface spikes: ${out.steps}   of which >1.0m: ${out.bigSteps}`);
 console.log(`  floating >1.5m   : ${out.floating}`);
-for (const e of out.exNoSurface) console.log(`    NOSURF ${e.n} at ${e.x},${e.z}`);
+for (const e of out.exBlock) console.log(`    BLOCKED ${e.m}m of ${e.n} from ${e.x},${e.z}`);
 for (const e of out.exStep) console.log(`    STEP   ${e.n} at ${e.x},${e.z} d=${e.d} (local grade ${e.trend}m/sample)`);
 for (const e of out.exFloat) console.log(`    FLOAT  ${e.n} at ${e.x},${e.z} up=${e.up}`);
 await browser.close();

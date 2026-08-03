@@ -58,11 +58,40 @@ MIN_AREA = 250.0
 # the defect it fixes. Those are listed as needing a porte-cochere recipe,
 # which is authored work, not a rule.
 MAX_H = 26.0
+# A LIFT THAT EATS THE BUILDING IS A CANOPY, AND A LIFT THAT TOWERS IS NEITHER.
+#
+# Two failure modes the first version walked into, both found by reading the
+# numbers rather than the render:
+#   * Beach Arrival Plaza is h=10.2 and wanted a 10.1m lift, leaving 0.1m of
+#     mass. The renderer's lifted-mass path requires mh < h-0.5, so it would
+#     silently have drawn the building SOLID again — the exact defect, back,
+#     with no warning. A structure whose whole height is clearance is not a
+#     lifted building, it is a CANOPY, and city.js already builds those.
+#   * Hotel Ora is h=23.8 with 288m of footway through it and wanted a 16.3m
+#     lift, which would leave a 7m slab floating four storeys up over a resort.
+#     A path through a hotel means an arcade or a lobby, not stilts.
+MIN_MASS = 3.0        # below this much mass left, build a canopy instead
+MAX_LIFT = 10.5       # above this, a rule is guessing — report for a recipe
 # Kinds that are carriageways. Footways are deliberately NOT here: a path
 # through a building is usually an arcade we already handle, and lifting a
 # building for one is far too eager.
 CARRIAGEWAY = {"motorway", "trunk", "primary", "secondary", "tertiary",
                "unclassified", "residential", "living_street", "service"}
+# WALKING ROUTES COUNT TOO — the owner, twice: "cannot like got broken roads or
+# paths or halfway will stuck all."
+#
+# A mapped footway running through a building is the same contradiction as a
+# road running through one, and it has the same real-world resolution: you walk
+# UNDER or THROUGH the structure. Measured before this: 2.0% of all walkable
+# path samples on Sentosa were inside solid geometry, and the cluster at
+# -1800,12730 was two buildings a surveyed footway runs straight through.
+# Walking into a wall on a mapped path is exactly "stuck halfway".
+#
+# The bar is HIGHER than for a carriageway (FOOT_RUN, not MIN_RUN), because a
+# footway clipping a building corner is common and lifting a building for it
+# would be far too eager.
+FOOTWAY = {"footway", "pedestrian", "path", "steps"}
+FOOT_RUN = 16.0
 
 
 class Ground:
@@ -111,7 +140,10 @@ def main():
 
     roads = []
     for r in (d.get("roads") or []):
-        if not isinstance(r, dict) or r.get("k") not in CARRIAGEWAY:
+        if not isinstance(r, dict):
+            continue
+        k = r.get("k")
+        if k not in CARRIAGEWAY and k not in FOOTWAY:
             continue
         p = r.get("p")
         if isinstance(p, list) and len(p) > 1:
@@ -127,9 +159,10 @@ def main():
             bx, by = p[i + 1][0], p[i + 1][1]
             for gx in range(int(min(ax, bx) // cell), int(max(ax, bx) // cell) + 1):
                 for gy in range(int(min(ay, by) // cell), int(max(ay, by) // cell) + 1):
-                    grid.setdefault((gx, gy), []).append((ax, ay, bx, by, r))
+                    grid.setdefault((gx, gy), []).append(
+                        (ax, ay, bx, by, r, r.get("k") in FOOTWAY))
 
-    hits, tootall, cleared = [], [], 0
+    hits, tootall, toosteep, canopies, raised, cleared = [], [], [], [], [], 0
     for b in (d.get("buildings") or []):
         if not isinstance(b, dict):
             continue
@@ -143,6 +176,11 @@ def main():
             b.pop("og", None)
             if b.pop("ogm", None):
                 b.pop("mh", None)
+        if b.pop("ogc", None):
+            b.pop("roof", None)        # canopy flag was ours; undo it too
+            cleared += 1
+        if "ogh" in b:
+            b["h"] = b.pop("ogh")      # restore the height we raised
         pts = b.get("p")
         if not pts or len(pts) < 3:
             continue
@@ -154,10 +192,10 @@ def main():
         ys = [q[1] for q in pts]
         bx0, bx1, by0, by1 = min(xs), max(xs), min(ys), max(ys)
 
-        seen, run, road_top = set(), 0.0, -1e9
+        seen, run, foot_run, road_top = set(), 0.0, 0.0, -1e9
         for gx in range(int(bx0 // cell), int(bx1 // cell) + 1):
             for gy in range(int(by0 // cell), int(by1 // cell) + 1):
-                for (ax, ay, bx2, by2, r) in grid.get((gx, gy), ()):
+                for (ax, ay, bx2, by2, r, is_foot) in grid.get((gx, gy), ()):
                     L = math.hypot(bx2 - ax, by2 - ay)
                     if L < 0.01:
                         continue
@@ -172,12 +210,17 @@ def main():
                             if gy > road_top:
                                 road_top = gy
                     if inside:
-                        run += L * inside / (n + 1)
+                        if is_foot:
+                            foot_run += L * inside / (n + 1)
+                        else:
+                            run += L * inside / (n + 1)
                         seen.add(id(r))
-        if run >= MIN_RUN and (b.get("h") or 0) > MAX_H:
-            tootall.append((b.get("n") or "(unnamed)", b.get("h"), round(run, 1)))
+        qualifies = run >= MIN_RUN or foot_run >= FOOT_RUN
+        if qualifies and (b.get("h") or 0) > MAX_H:
+            tootall.append((b.get("n") or "(unnamed)", b.get("h"),
+                            round(max(run, foot_run), 1)))
             continue
-        if run >= MIN_RUN:
+        if qualifies:
             # CLEARANCE IS MEASURED AGAINST THE GROUND UNDER THE ROAD, NOT THE
             # BUILDING'S OWN FOOT.
             #
@@ -194,21 +237,60 @@ def main():
             # the renderer will measure from, so the underside really clears.
             foot = min(ground.at(q[0], q[1]) for q in pts)
             lift = round(max(CLEAR, (road_top - foot) + CLEAR), 1)
+            h = b.get("h") or 0
+            if lift > MAX_LIFT:
+                toosteep.append((b.get("n") or "(unnamed)", h, lift,
+                                 round(max(run, foot_run), 1)))
+                continue
+            if h - lift < MIN_MASS:
+                # ALL CLEARANCE, NO BUILDING — so the ROOF RISES.
+                #
+                # Beach Arrival Plaza is h=10.2 and needs 10.1m of clearance to
+                # clear the road that runs through it. Two wrong answers were
+                # tried first: the renderer's lifted-mass path requires
+                # mh < h-0.5, so leaving it alone drew the building SOLID again
+                # with no warning; and handing it to the b.roof canopy builder
+                # gets it REFUSED and drawn as nothing at all, because that
+                # builder rightly rejects a slab spanning more than 4m of fall
+                # and this footprint spans 4.6m.
+                #
+                # The clearance is a MEASURED fact — it is the ground under a
+                # surveyed road. The height is not: it came from a levels tag,
+                # not a published figure. So the measured number wins and the
+                # roof goes up to sit on it. Authored, and recorded as authored.
+                raised.append((b.get("n") or "(unnamed)", h, lift + MIN_MASS))
+                b["h"] = round(lift + MIN_MASS, 1)
+                b["ogh"] = h           # remember the original, to undo
             b["og"] = lift
             if not b.get("mh"):
                 b["mh"] = lift         # the renderer's existing lifted-mass path
                 b["ogm"] = 1           # ...and remember that WE set it
             hits.append((b.get("n") or "(unnamed)", int(b.get("a") or 0),
-                         b.get("h"), round(run, 1), len(seen), lift))
+                         b.get("h"), round(run, 1), round(foot_run, 1), lift))
 
     print(f"== open ground {a.id}")
-    print(f"   {len(hits)} building(s) a carriageway runs through "
-          f"(>= {MIN_RUN:.0f}m inside, >= {MIN_AREA:.0f} m2)")
-    for (n, area, h, run, nroads, lift) in sorted(hits, key=lambda r: -r[3]):
-        print(f"     {run:6.1f} m of road inside   {area:>6} m2  h={h}  "
-              f"lift {lift:4.1f}m  {n}")
+    print(f"   {len(hits)} building(s) a route runs through "
+          f"(road >= {MIN_RUN:.0f}m or path >= {FOOT_RUN:.0f}m inside, "
+          f">= {MIN_AREA:.0f} m2)")
+    for (n, area, h, run, froad, lift) in sorted(hits, key=lambda r: -(r[3] + r[4])):
+        print(f"     road {run:6.1f}m  path {froad:6.1f}m  inside {area:>6} m2  "
+              f"h={h:<6} lift {lift:4.1f}m  {n}")
     if not hits:
         print("     (none — nothing lifted)")
+    if raised:
+        print(f"   {len(raised)} roof(s) raised so the measured clearance fits:")
+        for (n, was, now) in raised:
+            print(f"     h {was} -> {now:.1f}   {n}")
+    if canopies:
+        print(f"   {len(canopies)} built as a CANOPY instead (clearance is their "
+              f"whole height):")
+        for (n, h, run) in sorted(canopies, key=lambda r: -r[2]):
+            print(f"     h={h:<6} {run:6.1f} m of route inside   {n}")
+    if toosteep:
+        print(f"   {len(toosteep)} need more than {MAX_LIFT:.1f}m of lift — an "
+              f"arcade or lobby recipe, not a rule:")
+        for (n, h, lift, run) in sorted(toosteep, key=lambda r: -r[3]):
+            print(f"     h={h:<6} would need {lift:5.1f}m   {run:6.1f} m inside   {n}")
     if tootall:
         print(f"   {len(tootall)} too tall to lift (> {MAX_H:.0f}m) — these need a "
               f"porte-cochere recipe, not a rule:")
