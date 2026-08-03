@@ -59,6 +59,25 @@ DRIVE_MIN_RUN = 10.0
 # walkable and get a boardwalk drawn over them.
 WATER_W = 3.2
 WATER_MIN_RUN = 8.0
+# A FOOTPRINT IS NOT THE EDGE OF A BUILDING'S GEOMETRY.
+#
+# The "inside the footprint" test missed four blocked runs at Equarius Hotel and
+# ESPA, because a landmark RECIPE draws terraces, colonnades and oversailing
+# masses that reach past the polygon OSM traced. Probed at knee height, the
+# walker is stopped 0.7-1.0m from RWS_WALL geometry while standing OUTSIDE
+# every mapped footprint.
+#
+# So a run also counts when it hugs a footprint. Carving it is right either
+# way: a mapped footway beside a building is a route somebody walks, and if our
+# fabric leans over it, the fabric is what is wrong.
+#
+# KEEP THIS SMALL. At 6m it carved 375 routes instead of 39 and 115
+# drive-throughs instead of 10 — nearly every path in the world that runs
+# alongside a wall — and since B5 exempts arcades by mechanism, that would have
+# blinded the one check that catches buildings you can walk into. Walking
+# through walls is a worse defect than walking into one. 2.2m is the reach of
+# the oversailing fabric that caused this, and no more.
+NEAR_MARGIN = 2.2
 
 
 def poly_contains(poly, x, y):
@@ -132,11 +151,24 @@ def main():
         samples.append((p[-1][0], p[-1][1]))
 
         def inside_any(x, y):
+            near = None
             for idx in grid.get((int(x // cell), int(y // cell)), ()):
                 bb, poly, b = builds[idx]
                 if bb[0] <= x <= bb[2] and bb[1] <= y <= bb[3] and poly_contains(poly, x, y):
                     return b
-            return None
+                # ...or hugging it: nearest edge within NEAR_MARGIN
+                if (bb[0] - NEAR_MARGIN <= x <= bb[2] + NEAR_MARGIN
+                        and bb[1] - NEAR_MARGIN <= y <= bb[3] + NEAR_MARGIN):
+                    for i in range(len(poly) - 1):
+                        ax, ay = poly[i]
+                        bx2, by2 = poly[i + 1]
+                        vx, vy = bx2 - ax, by2 - ay
+                        L2 = vx * vx + vy * vy
+                        t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((x - ax) * vx + (y - ay) * vy) / L2))
+                        if math.hypot(ax + t * vx - x, ay + t * vy - y) <= NEAR_MARGIN:
+                            near = near or b
+                            break
+            return near
 
         def in_water(x, y):
             for (bb, poly) in waters:
