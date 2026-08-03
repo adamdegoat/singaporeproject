@@ -148,10 +148,14 @@ export class Net {
       if (m.code === 'version') this.deps.onStatus && this.deps.onStatus('version');
     } else if (m.t === 'pjoin') {
       this._ensureRemote(m.p);
+      if (this.deps.onToast) this.deps.onToast(`${m.p.name} joined the island`);
       this._roster();
     } else if (m.t === 'pleave') {
       const r = this.remotes.get(m.id);
-      if (r) { r.dispose(); this.remotes.delete(m.id); }
+      if (r) {
+        if (this.deps.onToast) this.deps.onToast(`${r.name} left`);
+        r.dispose(); this.remotes.delete(m.id);
+      }
       this._roster();
     } else if (m.t === 's') {
       const r = this.remotes.get(m.id);

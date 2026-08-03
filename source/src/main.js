@@ -2929,7 +2929,32 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     try {
       let sid = sessionStorage.getItem('sg_sid');
       if (!sid) { sid = 'p' + Math.random().toString(36).slice(2, 10); sessionStorage.setItem('sg_sid', sid); }
-      const name = (P.get('name') || localStorage.getItem('sg_name') || 'rider').slice(0, 16);
+      // THE NAME ASK — once, ever. Without it every floating tag reads
+      // "rider" and hide and seek cannot tell anyone apart. Deliberately
+      // plain (the designed join screen waits for the landing-page phase).
+      let name = (P.get('name') || localStorage.getItem('sg_name') || '').slice(0, 16);
+      if (!name) {
+        name = await new Promise((done) => {
+          const wrap = document.createElement('div');
+          wrap.id = 'nameask';
+          wrap.style.cssText = 'position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;background:rgba(12,16,20,.72)';
+          wrap.innerHTML = '<div style="background:#e8ddc6;border-radius:14px;padding:22px 20px;max-width:280px;text-align:center;font:15px/1.4 ui-sans-serif,system-ui">'
+            + '<div style="font-weight:700;margin-bottom:10px;color:#12161b">What should friends call you?</div>'
+            + '<input id="nameinput" maxlength="16" autocomplete="off" style="width:100%;box-sizing:border-box;font:16px ui-sans-serif;padding:9px 10px;border:2px solid #12161b;border-radius:9px;background:#fff" placeholder="your name">'
+            + '<button id="namego" style="margin-top:12px;font:600 15px ui-sans-serif;background:#12161b;color:#e8ddc6;border:0;border-radius:9px;padding:10px 26px">Go</button></div>';
+          document.body.appendChild(wrap);
+          const inp = wrap.querySelector('#nameinput');
+          const go = () => {
+            const v = (inp.value || '').trim().slice(0, 16);
+            if (!v) { inp.focus(); return; }
+            wrap.remove();
+            done(v);
+          };
+          wrap.querySelector('#namego').addEventListener('click', go);
+          inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+          setTimeout(() => inp.focus(), 50);
+        });
+      }
       try { localStorage.setItem('sg_name', name); } catch {}
       const hue = +(P.get('hue') || localStorage.getItem('sg_hue') || (Math.random() * 360) | 0);
       try { localStorage.setItem('sg_hue', String(hue | 0)); } catch {}
@@ -2940,7 +2965,25 @@ window.__placeBlocked = (x, z) => blocked(x, z);
         getState: () => (mode === 'walk'
           ? { x: walker.x, z: walker.z, heading: walker.heading || 0, speed: walker.speed || 0, mode: 'w' }
           : { x: S.x, z: S.z, heading: S.heading, speed: S.speed, mode: 'r' }),
-        onRoster: null,
+        onRoster: (list) => {
+          const fb = document.getElementById('friendsbtn');
+          if (fb && P.get('room')) {
+            fb.textContent = P.get('room').toUpperCase() + (list.length ? ' · ' + (list.length + 1) : '');
+          }
+        },
+        onToast: (msg) => {
+          let el = document.getElementById('nettoast');
+          if (!el) {
+            el = document.createElement('div');
+            el.id = 'nettoast';
+            el.style.cssText = 'position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:60;font:600 13px ui-sans-serif,system-ui;color:#12161b;background:rgba(232,221,198,.94);padding:9px 16px;border-radius:16px;box-shadow:0 1px 6px rgba(0,0,0,.3);transition:opacity .4s;pointer-events:none';
+            document.body.appendChild(el);
+          }
+          el.textContent = msg;
+          el.style.opacity = '1';
+          clearTimeout(el._t);
+          el._t = setTimeout(() => { el.style.opacity = '0'; }, 2600);
+        },
         onEvent: null,
         onStatus: (s) => { if (s === 'version') location.reload(); },
       });
