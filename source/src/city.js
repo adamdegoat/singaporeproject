@@ -51,6 +51,32 @@ const BALCONY = [texBalcony(0xc6bda9), texBalcony(0xada596)];
 //                        and early 90s, and curtain-wall glass after that.
 //   footprint hash       still the fallback, for the 73% the map says nothing
 //                        about. A guess is fine when it is labelled a guess.
+// IS THIS DISTRICT A RESORT OR A CBD? Measured from its own surveyed tags.
+//
+// The size rule below — "a big footprint is a glazed podium" — is true in the
+// CBD and false on Sentosa, where a big footprint is a hotel. It fired on 62
+// of the island's 92 large buildings, because only 30 of them carry a
+// `building=` tag at all, and it turned the Cove Arrival Plaza and the Village
+// Hotel into walls of blue curtain glass.
+//
+// The district already knows the answer. Of Sentosa's tagged buildings, 499
+// are dwellings or hotels and 18 are retail or commercial — 96% — so an
+// UNTAGGED big building here is far more likely to be another resort block
+// than a mall. Same method as the height calibration and the green fraction:
+// let the place set its own default instead of inheriting the CBD's.
+let RESORTISH = false;
+export function setDistrictCharacter(buildings) {
+  let home = 0, comm = 0;
+  for (const b of (buildings || [])) {
+    const t = (b.bt || '').toLowerCase();
+    if (!t) continue;
+    if (/^(apartments|residential|house|terrace|dormitory|bungalow|hotel)$/.test(t)) home++;
+    else if (/^(retail|commercial|office|supermarket)$/.test(t)) comm++;
+  }
+  RESORTISH = (home + comm) >= 40 && home / (home + comm) > 0.75;
+  return RESORTISH;
+}
+
 function familyFor(b, beach = false) {
   let h = 0;
   for (const [x, z] of b.p) h = (h * 31 + ((x * 7) | 0) + ((z * 13) | 0)) | 0;
@@ -92,9 +118,60 @@ function familyFor(b, beach = false) {
     if (/concrete|cement|plaster|render/.test(mat)) return { pool: PUNCHED, rough: 0.88, metal: 0, src: 'mat' };
   }
 
+  // WHAT A BUILDING IS BEATS HOW BIG IT IS, so this is asked FIRST.
+  //
+  // This block used to sit BELOW the size rule, and the size rule says "a big
+  // footprint is a glazed podium" — which is true in the CBD and false on a
+  // resort island. So Sentosa's large hotels and apartment blocks never
+  // reached it: the Sentosa Cove Arrival Plaza (4,871 m2) came out as a wall
+  // of blue curtain glass, and so did every big resort block. `building=` is
+  // surveyed on 494 buildings here (422 residential, 72 hotel) and it was
+  // being outvoted by a footprint area.
+  //
+  // It is the same lesson as the beach note above, which this file learned the
+  // hard way: WHERE a building stands — or how big it is — cannot decide what
+  // it looks like. What it IS decides that.
+  const bt = b.bt;
+  if (bt) {
+    if (/^(apartments|residential|house|terrace|dormitory|bungalow)$/.test(bt)) {
+      // Singapore housing reads as balconies and service yards, at every price
+      return { pool: BALCONY, rough: 0.8, metal: 0, src: 'type' };
+    }
+    if (/^hotel$/.test(bt)) {
+      // A HOTEL IS ROOMS. It has floors of them, and on this island they open
+      // onto the sea — so it reads like housing, not like an office, whatever
+      // its footprint. Split out of the commercial line below, where a 5,000
+      // m2 resort was being drawn as a shop.
+      return (b.h || 0) >= 12
+        ? { pool: BALCONY, rough: 0.78, metal: 0, src: 'type' }
+        : { pool: PUNCHED, rough: 0.86, metal: 0, src: 'type' };
+    }
+    if (/^(retail|commercial|office|supermarket)$/.test(bt)) {
+      // low commercial is punched masonry; a tower is glass
+      return (b.h || 0) >= 28
+        ? { pool: CURTAINS, rough: 0.36, metal: 0.08, src: 'type' }
+        : { pool: PUNCHED, rough: 0.86, metal: 0, src: 'type' };
+    }
+    if (/^(industrial|warehouse|service|garage|garages|carport)$/.test(bt)) {
+      return { pool: PUNCHED, rough: 0.9, metal: 0, src: 'type' };
+    }
+    if (/^(church|temple|mosque|cathedral|school|university|college|civic|public|government|hospital|train_station)$/.test(bt)) {
+      return { pool: STONE, rough: 0.9, metal: 0, src: 'type' };
+    }
+  }
+
   // a big footprint or a landmark is a podium or a mall, and those are glazed
-  // whatever year they went up
-  if (b.a > 1400 || b.k) return { pool: CURTAINS, rough: 0.34, metal: 0.08, src: mat ? 'mat' : 'size' };
+  // whatever year they went up — UNLESS this district's own tags say it is a
+  // place of hotels and homes, in which case a big untagged block is another
+  // one of those (see setDistrictCharacter above)
+  if (b.a > 1400 || b.k) {
+    if (RESORTISH && !b.k) {
+      return (b.h || 0) >= 12
+        ? { pool: BALCONY, rough: 0.78, metal: 0, src: 'resort' }
+        : { pool: PUNCHED, rough: 0.86, metal: 0, src: 'resort' };
+    }
+    return { pool: CURTAINS, rough: 0.34, metal: 0.08, src: mat ? 'mat' : 'size' };
+  }
 
   // era
   const yr = b.yr;
@@ -142,25 +219,6 @@ function familyFor(b, beach = false) {
   // a hash of the footprint, so River Valley — which is condo country — dealt
   // curtain walls and pre-war stone to blocks of flats at the same rate as the
   // CBD.
-  const bt = b.bt;
-  if (bt) {
-    if (/^(apartments|residential|house|terrace|dormitory|bungalow)$/.test(bt)) {
-      // Singapore housing reads as balconies and service yards, at every price
-      return { pool: BALCONY, rough: 0.8, metal: 0, src: 'type' };
-    }
-    if (/^(retail|commercial|office|hotel|supermarket)$/.test(bt)) {
-      // low commercial is punched masonry; a tower is glass
-      return (b.h || 0) >= 28
-        ? { pool: CURTAINS, rough: 0.36, metal: 0.08, src: 'type' }
-        : { pool: PUNCHED, rough: 0.86, metal: 0, src: 'type' };
-    }
-    if (/^(industrial|warehouse|service|garage|garages|carport)$/.test(bt)) {
-      return { pool: PUNCHED, rough: 0.9, metal: 0, src: 'type' };
-    }
-    if (/^(church|temple|mosque|cathedral|school|university|college|civic|public|government|hospital|train_station)$/.test(bt)) {
-      return { pool: STONE, rough: 0.9, metal: 0, src: 'type' };
-    }
-  }
 
   // A BUILDING WITH NO DATE LOOKS LIKE ITS NEIGHBOURS THAT HAVE ONE.
   //
@@ -1380,6 +1438,8 @@ function renderMat(hex) {
 }
 
 export async function buildBuildings(world, data, Y = null) {
+  // the district decides its own default facade character from its own tags
+  setDistrictCharacter(data.buildings || []);
   const stats = { count: 0, tall: 0, bespoke: 0 };
   // A PODIUM SKIRT MUST NOT WALL INTO THE WATER — the same rule the skirt
   // already follows for carriageways, for the same reason.
