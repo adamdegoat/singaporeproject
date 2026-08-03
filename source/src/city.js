@@ -2936,8 +2936,8 @@ function mergeGeos(geos) {
 // trap as buildParkedCars.
 export async function plantSurveyed(world, data, blocked, Y = null) {
   const list = data.trees || [];
-  if (!list.length) return { surveyedTrees: 0 };
   const f = new TreeField();
+  let surveyed = 0;
   for (const t of list) {
     const x = t[0], z = t[1];
     // The street walk already planted its own trees off the kerb line, and a
@@ -2946,8 +2946,47 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
     // Park trees are older and bigger than the pruned street stock; the scale
     // spread is wider so a wood does not read as a plantation.
     f.add(x, z, 0.7 + ((x * 7.3 + z * 3.1) % 100) / 250);
+    surveyed++;
   }
-  return { surveyedTrees: await f.buildY(world, Y) };
+  // THE JUNGLE IS DENSE (island pass, 2026-08-03). A mapped wood is full of
+  // trees, not the handful OSM happened to survey — Imbiah's slopes carried
+  // 23 natural=wood polygons and read as lawn with occasional specimens.
+  // Fill k='wood' polygons on a jittered 16m grid: positions are
+  // DETERMINISTIC from the position hash (the same device-independent trick
+  // as the scale spread above), never from the placement RNG streams, so
+  // determinism gates are untouched. blocked() keeps the fill off roads,
+  // buildings and street trees; instanced leaf cards + LOD carry the cost
+  // (phones cull past 280m and draw 24/40 cards).
+  let jungle = 0;
+  const inRing = (x, z, pts) => {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, zi] = pts[i], [xj, zj] = pts[j];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  for (const gp of (data.green || [])) {
+    if (gp.k !== 'wood' || !gp.p || gp.p.length < 4) continue;
+    let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+    for (const [x, z] of gp.p) {
+      if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+      if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+    }
+    for (let gx = Math.ceil(mnx / 16) * 16; gx < mxx; gx += 16) {
+      for (let gz = Math.ceil(mnz / 16) * 16; gz < mxz; gz += 16) {
+        const jx = gx + (((gx * 13.7 + gz * 5.3) % 12) - 6);
+        const jz = gz + (((gx * 3.9 + gz * 11.1) % 12) - 6);
+        if (!inRing(jx, jz, gp.p)) continue;
+        if (blocked && blocked(jx, jz)) continue;
+        f.add(jx, jz, 0.75 + ((jx * 7.3 + jz * 3.1) % 100) / 200);
+        jungle++;
+      }
+    }
+  }
+  if (!surveyed && !jungle) return { surveyedTrees: 0, jungleTrees: 0 };
+  const built = await f.buildY(world, Y);
+  return { surveyedTrees: built - jungle, jungleTrees: jungle };
 }
 
 // THE KEPPEL QUAY CRANES — the district's horizon, and it was empty sky.
