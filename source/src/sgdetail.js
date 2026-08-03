@@ -2231,6 +2231,18 @@ export async function buildTransit(world, data, Y = null) {
     }
     return hs;
   });
+  // THE RIDE READS THE DRAWN WIRE, IT DOES NOT RE-DERIVE IT.
+  //
+  // src/rides.js carries the player along these lines. If it computed its own
+  // profile from the same inputs it would be correct only until one of the two
+  // changed — the exact two-sources-of-one-fact trap that put the monorail at
+  // three different heights and the kerbs under a bridge deck. So the wire is
+  // published here, once, and the cabin hangs from THIS array.
+  window.__cableways = lines.map((ln, li) => ({
+    k: ln.k, n: ln.n || '', p: ln.p, hs: profiles[li],
+    gauge: ln.k === 'chair_lift' ? 1.6 : 2.6,
+    stations: (cw.stations || []),
+  }));
   const lineHeightAt = (x, z) => {
     let best = null, bd = 1e9;
     lines.forEach((ln, li) => {

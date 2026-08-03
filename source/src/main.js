@@ -11,6 +11,7 @@ import { Net } from './net.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
 import { axisSpec, buildMarkings, dressSideStreets, selectSideStreets, dedupeProps } from './markings.js';
 import { buildSgDetail, buildTransit, buildBeachLife } from './sgdetail.js';
+import { buildRides, BOARD_REACH, EYE } from './rides.js';
 import { buildShopfronts } from './shopfront.js';
 import { Signals } from './signals.js';
 import { Sound } from './audio.js';
@@ -876,6 +877,19 @@ let rideParams = SKATE;
 function modeLabel() {
   const btn = document.getElementById('modebtn');
   if (!btn) return;
+  if (mode === 'onride') { btn.textContent = 'Get off'; return; }
+  // Name the thing in front of you. "Ride" beside a cable car station and
+  // "Skate" in the middle of a road are different offers, and a button that
+  // does not say which is a button you do not press.
+  if (mode === 'walk') {
+    const hit = (typeof nearestRide === 'function') ? nearestRide() : null;
+    if (hit) {
+      const k = hit.ride.kind;
+      btn.textContent = k === 'luge' ? 'Ride the luge'
+        : k === 'chair_lift' ? 'Ride the SkyRide' : 'Ride the cable car';
+      return;
+    }
+  }
   btn.textContent = mode === 'ride' ? 'Get off' : vehicleAt(vehicleKind).verb;
 }
 function setVehicle(kind) {
@@ -1239,7 +1253,12 @@ function registerLod(root) {
   });
 }
 let terrain = new Terrain(null);
-let mode = 'ride';                 // 'ride' | 'walk'
+let mode = 'ride';                 // 'ride' | 'walk' | 'onride'
+// The cable car / SkyRide / luge network, and the seat the player is in.
+// `onRide` is null unless the player is being carried.
+let RIDES = null;
+let onRide = null;                 // { ride, s, from }
+let lastRideLabel = 0;
 // The room server (see relay/); ?relay= overrides for local testing against
 // `node relay/local.mjs`. Null until ?room= activates multiplayer post-boot.
 const SG_RELAY_URL = 'https://sentosa-relay.propsightsg.workers.dev';
@@ -3061,6 +3080,13 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // Open the sound hardware and build the synth graph here, silent, rather
   // than on the rider's first throttle press. See Sound.prewarm().
   try { sound.prewarm(); } catch (e) { /* never fatal: the world is playable mute */ }
+  // THE RIDES, built after the world because they read the wire sgdetail drew.
+  // Never fatal: an island you cannot ride the cable car on is still an island,
+  // and a throw here would cost the whole boot.
+  try {
+    RIDES = buildRides(THREE, data, world, surfaceAt);
+    if (P.has('boot')) console.log('rides: ' + RIDES.rides.map((r) => r.kind).join(','));
+  } catch (e) { console.warn('rides failed to build: ' + e.message); }
   await bstep(1, 'ready');
   bootDone();
   ready = true;
@@ -3257,6 +3283,15 @@ topCam.position.set(0, 900, 0);
 topCam.lookAt(0, 0, 0);
 
 function toggleMode() {
+  // ON A RIDE, THE BUTTON GETS YOU OUT. Nothing else in this function applies
+  // — you are not on a scooter and there is no scooter to summon.
+  if (mode === 'onride') { alightRide(); return; }
+  // STANDING AT A STATION, IT PUTS YOU IN. Boarding beats fetching the board:
+  // if you walked to the cable car you meant to ride the cable car.
+  if (mode === 'walk') {
+    const hit = nearestRide();
+    if (hit && boardRide(hit)) return;
+  }
   if (mode === 'ride') {
     // step off to the left of the scooter, onto the kerb side
     const nx = Math.cos(S.heading), nz = -Math.sin(S.heading);
@@ -3340,6 +3375,75 @@ function updateHelp() {
 // reflect the STARTING mode once everything the helper reads exists — called
 // above the const block it crashed the whole module in the temporal dead zone
 updateHelp();
+
+// ---- rides: board, carry, alight ----------------------------------------
+//
+// A ride is entered from the WALK mode, because you walk up to a station. The
+// carrier is moved along the published path; the camera sits in the seat. The
+// player's walker is parked at the boarding point and put back down at the far
+// end, so getting off never drops anyone into the sea.
+function nearestRide() {
+  if (!RIDES || mode === 'onride') return null;
+  const x = mode === 'walk' ? walker.x : S.x;
+  const z = mode === 'walk' ? walker.z : S.z;
+  return RIDES.nearest(x, z, BOARD_REACH);
+}
+
+function boardRide(hit) {
+  if (!hit) return false;
+  onRide = { ride: hit.ride, s: hit.board.s, dir: hit.board.s > 0 ? -1 : 1 };
+  walkerRig.group.visible = false;
+  rider.visible = false;
+  skater.visible = false;
+  hit.ride.carrier.visible = true;
+  mode = 'onride';
+  camInit = false;
+  updateHelp();
+  return true;
+}
+
+function alightRide() {
+  if (!onRide) return;
+  const r = onRide.ride;
+  const p = RIDES.at(r, onRide.s);
+  r.carrier.visible = false;
+  // Put the walker on the ground UNDER the carrier, and only somewhere it can
+  // stand: stepping off a gondola over open water would be a drowning, not a
+  // dismount. If nothing near is standable, walk back to the boarding point.
+  let wx = p.x, wz = p.z;
+  if (blocked(wx, wz) || surfaceAt(wx, wz) < 0.6) {
+    const home = r.boards[0];
+    wx = home.x; wz = home.z;
+  }
+  walker.x = wx; walker.z = wz; walker.speed = 0;
+  walkerRig.group.visible = true;
+  onRide = null;
+  mode = 'walk';
+  camInit = false;
+  updateHelp();
+}
+
+function rideStep(dt) {
+  const r = onRide.ride;
+  onRide.s += r.speed * dt * onRide.dir;
+  const done = onRide.dir > 0 ? onRide.s >= r.len : onRide.s <= 0;
+  if (done) { onRide.s = Math.max(0, Math.min(r.len, onRide.s)); alightRide(); return; }
+  const p = RIDES.at(r, onRide.s);
+  // the walker rides along invisibly under the seat: crowd, traffic, streaming
+  // and the wayfinder all key off walker.x/z, and a frozen walker would freeze
+  // the island around a moving player
+  walker.x = p.x; walker.z = p.z;
+  const yaw = Math.atan2(p.dir.x * onRide.dir, p.dir.z * onRide.dir);
+  r.carrier.position.set(p.x, p.y - (r.hang || 0), p.z);
+  r.carrier.rotation.set(0, yaw, 0);
+  // the seat, plus the free look the walk mode already gives
+  const eye = EYE[r.kind] !== undefined ? EYE[r.kind] : 0.6;
+  const fx = Math.sin(camYaw), fz = Math.cos(camYaw);
+  camera.position.set(p.x, p.y - (r.hang || 0) + eye, p.z);
+  camera.lookAt(p.x + fx * 30, p.y - (r.hang || 0) + eye - Math.sin(camPitch) * 30,
+                p.z + fz * 30);
+  camera.fov = 68; camera.updateProjectionMatrix();
+}
 
 function walkCamera(dt) {
   // just above head height and offset to the shoulder, so the view forward is
@@ -3895,6 +3999,36 @@ function loop(now) {
       inp.steer = window.__force.steer ?? inp.steer;
     }
 
+    if (mode === 'onride') {
+      // A COMPLETE BRANCH, ending in its own render and return.
+      //
+      // The walk branch below owns the frame it is in — it simulates, draws and
+      // returns — so falling through from here would have run the SCOOTER
+      // physics underneath the cable car and then overwritten the seat camera
+      // with the chase camera. The ride has to finish its own frame.
+      camYaw -= inp.lookDX * 0.0045;
+      camPitch = Math.max(-0.6, Math.min(0.7, camPitch + inp.lookDY * 0.0035));
+      rideStep(dt);
+      // the world simulates AROUND THE CARRIER: rideStep parks the walker
+      // under the seat, so every "near the player" system keeps working and
+      // the island does not freeze while you are in the air.
+      clock += dt;
+      if (signals) signals.update(clock);
+      for (const es of extraSignals) es.update(clock);
+      if (trafficSys) trafficSys.update(clock, dt, signals, walker.x, walker.z);
+      simRefresh(walker.x, walker.z, clock);
+      for (const t of extraTraffic) if (simNear(t)) t.update(clock, dt, signals, walker.x, walker.z);
+      if (crowdSys) crowdSys.update(clock, dt, walker.x, walker.z, signals);
+      for (const c of extraCrowds) if (simNear(c)) c.update(clock, dt, walker.x, walker.z, signals);
+      if (wayfinder) wayfinder.update(walker, dt);
+      sound.update(0, 'walk', 0, 0, trafficNearest(walker.x, walker.z));
+      cullDistricts();
+      renderer.render(scene, camera);
+      frames++;
+      if (now - t0 > 1000) reportHud(now);
+      requestAnimationFrame(loop);
+      return;
+    }
     if (mode === 'walk') {
       camYaw -= inp.lookDX * 0.0045;
       camPitch = Math.max(-0.35, Math.min(0.95, camPitch + inp.lookDY * 0.0035));
@@ -3932,6 +4066,9 @@ function loop(now) {
       if (crowdSys) crowdSys.update(clock, dt, walker.x, walker.z, signals);
       for (const c of extraCrowds) if (simNear(c)) c.update(clock, dt, walker.x, walker.z, signals);
       if (wayfinder) wayfinder.update(walker, dt);
+      // the ride offer changes as you walk up to a station; twice a second is
+      // plenty and keeps a DOM write out of the frame
+      if (RIDES && now - lastRideLabel > 500) { lastRideLabel = now; modeLabel(); }
       sound.update(0, 'walk', walker.speed, walker.phase, trafficNearest(walker.x, walker.z));
       if (SPEC) driveCamera(dt); else walkCamera(dt);
       cullDistricts();
@@ -4335,6 +4472,26 @@ window.__allTraffic = () => {
 };
 window.__camYaw = () => camYaw;
 window.__mode = () => mode;
+// VET HOOKS for the rides. `__rides()` lists what exists and where you board;
+// `__board(i)` puts the player in seat i without walking there, so a probe can
+// ride the whole line and check the seat against the wire.
+window.__rides = () => (RIDES ? RIDES.rides.map((r, i) => ({
+  i, kind: r.kind, name: r.name, len: +r.len.toFixed(0),
+  boards: r.boards.map((b) => [Math.round(b.x), Math.round(b.z), +b.y.toFixed(1)]),
+})) : []);
+window.__board = (i, endIdx = 0) => {
+  if (!RIDES || !RIDES.rides[i]) return false;
+  const r = RIDES.rides[i];
+  const b = r.boards[Math.min(endIdx, r.boards.length - 1)];
+  walker.x = b.x; walker.z = b.z;
+  if (mode === 'ride') toggleMode();
+  return boardRide({ ride: r, board: b });
+};
+window.__rideState = () => (onRide ? {
+  name: onRide.ride.name, kind: onRide.ride.kind,
+  s: +onRide.s.toFixed(1), len: +onRide.ride.len.toFixed(1),
+  cam: [+camera.position.x.toFixed(1), +camera.position.y.toFixed(1), +camera.position.z.toFixed(1)],
+} : null);
 window.__toggle = () => toggleMode();
 window.__walker = () => ({ x: +walker.x.toFixed(1), z: +walker.z.toFixed(1), sp: +walker.speed.toFixed(2) });
 window.__state = () => ({ x: +S.x.toFixed(1), z: +S.z.toFixed(1), kmh: +(S.speed * 3.6).toFixed(1) });
