@@ -2142,6 +2142,7 @@ export async function buildTransit(world, data, Y = null) {
 
   const merger = new Merger();
   const cables = new Merger();
+  const MAT_DECK = new THREE.MeshLambertMaterial({ color: 0x8a8578 });
   // bake pitch-then-yaw ('YXZ': Ry * Rx) plus position into the geometry
   const bake = (geo, mat, into, x, y, z, ry = 0, rx = 0) => {
     if (ry || rx) geo.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, ry, 0, 'YXZ')));
@@ -2306,6 +2307,71 @@ export async function buildTransit(world, data, Y = null) {
         }
       }
     }
+  }
+
+  // -- MEGAZIP: launch tower, span, landing deck ---------------------------
+  //
+  // The only ride here the map does not carry, so data/zipline.py authors it
+  // from two MEASURED endpoints (Imbiah Hill's highest terrain cell and the
+  // real coastline ring of the islet off Siloso) against three PUBLISHED
+  // figures (450m, 75m, Imbiah-to-island). The proof it is the right islet is
+  // that the span falls out at 424m without being forced.
+  const zip = data.zipline;
+  if (zip && zip.p && zip.p.length === 2) {
+    const [[ax, az], [bx, bz]] = zip.p;
+    const y0 = zip.y0, y1 = zip.y1;
+    const gy = groundAt(ax, az);
+    const run = Math.hypot(bx - ax, bz - az);
+    const ang = Math.atan2(bx - ax, bz - az);
+    // the tower: four raked legs and three bracing rings, which reads as a
+    // lattice from the beach without paying for real lattice geometry
+    const legH = y0 - gy;
+    for (const [ox, oz] of [[-1.9, -1.9], [1.9, -1.9], [-1.9, 1.9], [1.9, 1.9]]) {
+      const leg = new THREE.BoxGeometry(0.34, legH, 0.34);
+      leg.translate(ax + ox, gy + legH / 2, az + oz);
+      merger.add(leg, steelMat, ax, az);
+    }
+    for (let t = 0.28; t < 1.0; t += 0.28) {
+      const ry = gy + legH * t;
+      for (const [w, dd] of [[4.2, -1.9], [4.2, 1.9]]) {
+        const b1 = new THREE.BoxGeometry(w, 0.22, 0.22);
+        b1.translate(ax, ry, az + dd);
+        merger.add(b1, steelMat, ax, az);
+        const b2 = new THREE.BoxGeometry(0.22, 0.22, w);
+        b2.translate(ax + dd, ry, az);
+        merger.add(b2, steelMat, ax, az);
+      }
+    }
+    const deck = new THREE.BoxGeometry(5.0, 0.3, 5.0);
+    deck.translate(ax, y0, az);
+    merger.add(deck, MAT_DECK, ax, az);
+    // the span: three parallel wires, which is what MegaZip runs
+    for (const side of [-1.4, 0, 1.4]) {
+      const nx2 = Math.cos(ang), nz2 = -Math.sin(ang);
+      const sx = ax + nx2 * side, sz = az + nz2 * side;
+      const ex2 = bx + nx2 * side, ez2 = bz + nz2 * side;
+      const sag = Math.min(9, run * 0.02);
+      const mx = (sx + ex2) / 2, mz = (sz + ez2) / 2, my = (y0 + y1) / 2 - sag;
+      for (const [p0x, p0y, p0z, p1x, p1y, p1z] of
+           [[sx, y0, sz, mx, my, mz], [mx, my, mz, ex2, y1 + 4, ez2]]) {
+        const rr = Math.hypot(p1x - p0x, p1z - p0z);
+        const cl = Math.hypot(rr, p1y - p0y);
+        bake(new THREE.BoxGeometry(0.07, 0.07, cl), cableMat, cables,
+             (p0x + p1x) / 2, (p0y + p1y) / 2, (p0z + p1z) / 2,
+             Math.atan2(p1x - p0x, p1z - p0z), Math.atan2(p1y - p0y, rr));
+      }
+    }
+    // the landing deck on the islet, and the mast that stops you
+    const land = new THREE.BoxGeometry(9.0, 0.4, 7.0);
+    land.translate(bx, y1, bz);
+    merger.add(land, MAT_DECK, bx, bz);
+    for (const ox of [-3.0, 3.0]) {
+      const m = new THREE.BoxGeometry(0.3, 5.4, 0.3);
+      m.translate(bx + ox * Math.cos(ang), y1 + 2.7, bz - ox * Math.sin(ang));
+      merger.add(m, steelMat, bx, bz);
+    }
+    window.__zipline = { p: zip.p, y0, y1, n: zip.n || 'MegaZip' };
+    out.zipline = 1;
   }
 
   await merger.flushY(world, {}, Y);

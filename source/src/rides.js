@@ -39,7 +39,7 @@ const HANG = { gondola: 1.6, chair_lift: 0.9 };
 // the camera 0.55 ABOVE the carrier, which on a gondola is above the roof: you
 // rode the cable car sitting on top of the cabin. The cabin body hangs from
 // -2.2 to 0 under the attach point, so an occupant's eyeline is about -1.05.
-export const EYE = { gondola: -1.05, chair_lift: -0.45, luge: 0.85 };
+export const EYE = { gondola: -1.05, chair_lift: -0.45, luge: 0.85, zip: -0.55 };
 // board within this of an end
 export const BOARD_REACH = 14.0;
 
@@ -125,6 +125,31 @@ export function buildRides(THREE, data, world, surfaceAt) {
     });
   }
 
+  // ---- MegaZip: one span, one direction, and it is the fast one -----------
+  const zl = window.__zipline;
+  if (zl && zl.p && zl.p.length === 2) {
+    const [[ax, az], [bx, bz]] = zl.p;
+    const run = Math.hypot(bx - ax, bz - az);
+    const sag = Math.min(9, run * 0.02);
+    const pts = [];
+    const n = Math.max(8, Math.ceil(run / 8));
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      pts.push({
+        x: ax + (bx - ax) * t,
+        z: az + (bz - az) * t,
+        // the rider hangs under the wire, and the wire sags
+        y: zl.y0 + (zl.y1 + 4 - zl.y0) * t - Math.sin(Math.PI * t) * sag,
+      });
+    }
+    const len = arcLength(pts);
+    rides.push({
+      id: 'zip', kind: 'zip', name: zl.n || 'MegaZip',
+      pts, len, speed: SPEED.zip, hang: 1.5,
+      boards: [{ s: 0 }],            // you do not zip back up
+    });
+  }
+
   // ---- carriers ----------------------------------------------------------
   const group = new THREE.Group();
   group.name = 'rideCarriers';
@@ -159,6 +184,16 @@ export function buildRides(THREE, data, world, surfaceAt) {
         new THREE.MeshLambertMaterial({ color: 0x3a3d40 }));
       arm.position.y = 0.2;
       g.add(seat, back, arm);
+    } else if (kind === 'zip') {
+      // a harness and a trolley: you are hanging, so there is little to draw
+      const bar = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 0.14, 0.2),
+        new THREE.MeshLambertMaterial({ color: 0x3a3d40 }));
+      const strap = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 1.1, 0.08),
+        new THREE.MeshLambertMaterial({ color: 0xd8b44a }));
+      strap.position.y = -0.6;
+      g.add(bar, strap);
     } else {
       const shell = new THREE.Mesh(
         new THREE.BoxGeometry(0.78, 0.34, 1.5),

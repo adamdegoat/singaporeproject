@@ -440,6 +440,9 @@ def main():
     # Where a real carriageway runs through a real footprint, open the ground
     # storey — the road passes under the structure. See data/openground.py.
     subprocess.run([sys.executable, os.path.join(HERE, "openground.py"), d["id"]], check=False)
+    # MegaZip is not in OSM — authored from measured endpoints against
+    # published figures. See data/zipline.py.
+    subprocess.run([sys.executable, os.path.join(HERE, "zipline.py"), d["id"]], check=False)
     subprocess.run([sys.executable, os.path.join(HERE, "navcheck.py"), d["id"]], check=False)
 
     print(f"\nNext: python3 check.py {d['id']}")

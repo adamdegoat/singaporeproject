@@ -3523,6 +3523,28 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
   const list = data.trees || [];
   const f = new TreeField();
   let surveyed = 0;
+  // THE ZIP LINE'S FLIGHT CORRIDOR IS KEPT CLEAR, HERE, WHERE THE JUNGLE IS
+  // ACTUALLY MADE.
+  //
+  // data/zipline.py clears surveyed trees from the corridor, and that removed
+  // twenty-one of them and changed nothing you could see — because the jungle
+  // on Imbiah is not surveyed. It is FILLED procedurally from the wood
+  // polygons a few lines below, so clearing the data layer cleared the wrong
+  // trees. Rendered from the harness, the ride was still a tour of the inside
+  // of a tree.
+  //
+  // A wire sags and cannot arch over a canopy, so the corridor is the only
+  // honest fix, and it has to be applied to whatever plants the trees.
+  const zip = data.zipline;
+  const ZIP_CLEAR = 15.0;
+  const inZipCorridor = (!zip || !zip.p) ? () => false : (x, z) => {
+    const [[ax, az], [bx, bz]] = zip.p;
+    const vx = bx - ax, vz = bz - az;
+    const wx = x - ax, wz = z - az;
+    const L2 = vx * vx + vz * vz;
+    const t = L2 ? Math.max(0, Math.min(1, (wx * vx + wz * vz) / L2)) : 0;
+    return Math.hypot(ax + t * vx - x, az + t * vz - z) < ZIP_CLEAR;
+  };
   // A SURVEYED TREE ON THE SAND IS A PALM, AND IT IS DRAWN ONCE.
   // buildBeachLife draws the beach trees with a palm form, so planting them
   // here as well would put a generic crown inside every palm. The rings are
@@ -3558,6 +3580,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
     // 45m of a sand edge, matching buildBeachLife: those trees are drawn there
     // with the coconut form and would otherwise get a second inland crown
     if (sandRings.some((p) => inRingP(x, z, p) || edgeOfP(x, z, p) <= 45)) continue;
+    if (inZipCorridor(x, z)) continue;
     // Park trees are older and bigger than the pruned street stock; the scale
     // spread is wider so a wood does not read as a plantation.
     f.add(x, z, 0.7 + ((x * 7.3 + z * 3.1) % 100) / 250);
@@ -3609,6 +3632,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
         const jz = gz + (((gx * 3.9 + gz * 11.1) % 9) - 4.5);
         if (!inRing(jx, jz, gp.p)) continue;
         if (blocked && blocked(jx, jz)) continue;
+        if (inZipCorridor(jx, jz)) continue;
         // top of the spread held at ~1.38, not 1.5: at 1.5 the tallest crown
         // put a leaf card 19.6m up and P3 ("props off the ground") refused the
         // deploy on it. The understorey is what the canopy needed anyway — the
@@ -3659,6 +3683,8 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
           if (!inRing(jx, jz, gp.p)) continue;
           if (!nearTrail(jx, jz)) continue;
           if (blocked && blocked(jx, jz)) continue;
+          if (inZipCorridor(jx, jz)) continue;
+        if (inZipCorridor(jx, jz)) continue;
           // A LOW plant's limbs sit at 1.5-3m — the traffic envelope. A
           // full tree over a road is an avenue (crown lifted 6m by rule);
           // a sapling beside one is an obstruction: the widened box put 28
