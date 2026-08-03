@@ -42,13 +42,42 @@ export class Terrain {
         const n = g2.nx * g2.nz;
         const d = new Float32Array(n).fill(1e9);
         const q = [];
-        // SEA IS ZERO HERE, NOT NEGATIVE. This tested `h < -0.4` and the
+        // SEA IS ZERO HERE, NOT NEGATIVE, AND IT REACHES THE EDGE OF THE MAP.
+        //
+        // Two bugs, one after the other. This first tested `h < -0.4`, and the
         // heightfield's minimum on Sentosa is exactly 0.00 — the pipeline
         // clamps the sea to sea level — so the BFS found no sources, answered
         // Infinity everywhere, and the shoreline sand blend that depends on it
-        // HAS NEVER ONCE RUN on this island. It failed silently because
-        // "Infinity" is also the honest answer for an inland district.
-        for (let i = 0; i < n; i++) if (g2.h[i] <= 0.05) { d[i] = 0; q.push(i); }
+        // HAD NEVER ONCE RUN. Failing silently, because Infinity is also the
+        // right answer for an inland district.
+        //
+        // Then `h <= 0.05` alone was too generous the other way: 7,932 of
+        // 14,210 cells sit at that height, including flat INLAND ground, so
+        // the sand blend spread across the middle of the island and painted
+        // Palawan's hinterland as beach. Rendered, it was a pale desert.
+        //
+        // The sea is the zero region that REACHES THE EDGE OF THE MAP. An
+        // inland flat does not. So flood in from the border through zero cells
+        // and take that, and only that, as open water.
+        const SEA_Y = 0.05;
+        const isSea = new Uint8Array(n);
+        const stack = [];
+        const pushIf = (idx) => {
+          if (idx >= 0 && idx < n && !isSea[idx] && g2.h[idx] <= SEA_Y) {
+            isSea[idx] = 1; stack.push(idx);
+          }
+        };
+        for (let i = 0; i < g2.nx; i++) { pushIf(i); pushIf((g2.nz - 1) * g2.nx + i); }
+        for (let j = 0; j < g2.nz; j++) { pushIf(j * g2.nx); pushIf(j * g2.nx + g2.nx - 1); }
+        while (stack.length) {
+          const c = stack.pop();
+          const ci = c % g2.nx, cj = (c / g2.nx) | 0;
+          if (ci > 0) pushIf(c - 1);
+          if (ci < g2.nx - 1) pushIf(c + 1);
+          if (cj > 0) pushIf(c - g2.nx);
+          if (cj < g2.nz - 1) pushIf(c + g2.nx);
+        }
+        for (let i = 0; i < n; i++) if (isSea[i]) { d[i] = 0; q.push(i); }
         if (!q.length) { this._seaD = d; return Infinity; }
         for (let head = 0; head < q.length; head++) {
           const c = q[head];
@@ -506,6 +535,7 @@ export class Terrain {
           }
           return out;
         };
+        const LANDUSE = new Set(['resi', 'comm', 'civic', 'indus', 'works']);
         const vid = (qx, qz) => {
           const k = qx + ',' + qz;
           let id = verts.get(k);
@@ -514,7 +544,28 @@ export class Terrain {
             const x = g.x0 + (qx / 24) * g.cell, z = g.z0 + (qz / 24) * g.cell;
             const vy = this.vertexY(x, z);
             pos.push(x, vy, z);
-            const t = this.gGrid ? TINT[this.greenAt(x, z)] : null;
+            let t = this.gGrid ? TINT[this.greenAt(x, z)] : null;
+            // A LANDUSE PARCEL ON A RESORT ISLAND IS GROUNDS, NOT CONCRETE.
+            //
+            // The paved tints are right in the CBD, where a `comm` polygon is
+            // a block of buildings and apron. On Sentosa they are badly wrong:
+            // the parcel behind Palawan is a SINGLE `comm` polygon of 57,255
+            // m2 and it was painted 0.90,0.89,0.86 — five and a half hectares
+            // of near-white, which from the ground reads as an airport apron
+            // with palm trees on it. That one polygon is most of why the
+            // middle of the island looked empty.
+            //
+            // Landuse says who OWNS the ground, not what is on it. What is
+            // actually on a resort parcel is lawn, planting and driveway, and
+            // the driveways and buildings are drawn on top of this anyway. So
+            // on a district whose own measured green fraction says it is a
+            // green place, these blend most of the way to vegetation.
+            if (t && this.greenFrac > 0.35 && LANDUSE.has(this.greenAt(x, z))) {
+              const G = [0.60, 0.69, 0.51];
+              t = [t[0] * 0.32 + G[0] * 0.68,
+                   t[1] * 0.32 + G[1] * 0.68,
+                   t[2] * 0.32 + G[2] * 0.68];
+            }
             // Untinted ground used to push (1,1,1) — the material colour
             // straight through, which made UNCLASSIFIED ground the brightest
             // surface in the world. It is the one thing we know least about, so

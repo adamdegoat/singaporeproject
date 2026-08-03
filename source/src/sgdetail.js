@@ -2143,6 +2143,7 @@ export async function buildTransit(world, data, Y = null) {
   const merger = new Merger();
   const cables = new Merger();
   const MAT_DECK = new THREE.MeshLambertMaterial({ color: 0x8a8578 });
+  const benchMat = new THREE.MeshLambertMaterial({ color: 0x7a5f43 });
   // bake pitch-then-yaw ('YXZ': Ry * Rx) plus position into the geometry
   const bake = (geo, mat, into, x, y, z, ry = 0, rx = 0) => {
     if (ry || rx) geo.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, ry, 0, 'YXZ')));
@@ -2307,6 +2308,40 @@ export async function buildTransit(world, data, Y = null) {
         }
       }
     }
+  }
+
+  // -- TERMINI: a path that stops, stops AT something ----------------------
+  //
+  // data/navcheck.py --emit-termini writes one of these at every way end that
+  // is not a junction, a door, the sand, a lookout, the sea or the map edge.
+  // A real path that ends has a reason — a viewing deck, a turning head — and
+  // giving it one is both the honest fix for "it just stops halfway" and a
+  // better place to arrive at than a severed kerb.
+  for (const t of (data.termini || [])) {
+    await YY();
+    const [tx, tz] = t.p;
+    const gy = surfaceAt(tx, tz);
+    const r = t.k === 'turn' ? 4.6 : 3.0;
+    const pad = new THREE.CylinderGeometry(r, r, 0.16, t.k === 'turn' ? 18 : 12);
+    pad.translate(tx, gy + 0.06, tz);
+    merger.add(pad, MAT.conc, tx, tz);
+    if (t.k === 'deck') {
+      // a lookout: low rail on the outer half, and a bench facing out
+      for (let i = 0; i < 7; i++) {
+        const ang = (-0.55 + i * 0.18) * Math.PI;
+        const px = tx + Math.cos(ang) * (r - 0.2), pz = tz + Math.sin(ang) * (r - 0.2);
+        const post = new THREE.BoxGeometry(0.09, 0.95, 0.09);
+        post.translate(px, gy + 0.5, pz);
+        merger.add(post, steelMat, tx, tz);
+      }
+      const seat = new THREE.BoxGeometry(1.6, 0.11, 0.42);
+      seat.translate(tx, gy + 0.46, tz);
+      merger.add(seat, benchMat, tx, tz);
+      const legs = new THREE.BoxGeometry(1.4, 0.4, 0.09);
+      legs.translate(tx, gy + 0.24, tz);
+      merger.add(legs, steelMat, tx, tz);
+    }
+    out.termini = (out.termini || 0) + 1;
   }
 
   // -- MEGAZIP: launch tower, span, landing deck ---------------------------

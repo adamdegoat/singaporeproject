@@ -443,7 +443,9 @@ def main():
     # MegaZip is not in OSM — authored from measured endpoints against
     # published figures. See data/zipline.py.
     subprocess.run([sys.executable, os.path.join(HERE, "zipline.py"), d["id"]], check=False)
-    subprocess.run([sys.executable, os.path.join(HERE, "navcheck.py"), d["id"]], check=False)
+    # Give every path that stops at nothing a reason to stop, then report.
+    subprocess.run([sys.executable, os.path.join(HERE, "navcheck.py"), d["id"],
+                    "--emit-termini"], check=False)
 
     print(f"\nNext: python3 check.py {d['id']}")
 
