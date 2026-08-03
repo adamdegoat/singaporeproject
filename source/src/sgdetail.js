@@ -2321,6 +2321,57 @@ export async function buildTransit(world, data, Y = null) {
     }
   }
 
+  // -- PORTE-COCHERE: drive in, stop at the lobby, drive out ---------------
+  //
+  // The owner: "even like hotels can drive thru to the main lobby like drop off
+  // point like realistic resorts kind?"
+  //
+  // data/arcade.py marks the road runs that pass through a building footprint
+  // as `k: "drive"`. openground.py deliberately refuses to lift these — a 55m
+  // tower standing on columns looks far worse than the defect — and lists them
+  // as needing exactly this instead: not the whole ground storey opened, just
+  // a canopy over the driveway, which is what a real resort entrance is.
+  const pcSlab = new THREE.MeshLambertMaterial({ color: 0xe8e2d6 });
+  const pcCol = new THREE.MeshLambertMaterial({ color: 0xcfc7b8 });
+  for (const arc of (data.arcades || [])) {
+    if (arc.k !== 'drive' || !arc.p || arc.p.length < 2) continue;
+    await YY();
+    const half = (arc.w || 7.5) / 2;
+    const top = arc.h || 5.4;
+    for (let i = 0; i < arc.p.length - 1; i++) {
+      const [x0, z0] = arc.p[i], [x1, z1] = arc.p[i + 1];
+      const L = Math.hypot(x1 - x0, z1 - z0);
+      if (L < 0.5) continue;
+      const ang = Math.atan2(x1 - x0, z1 - z0);
+      const gy = surfaceAt((x0 + x1) / 2, (z0 + z1) / 2);
+      // the deck: one slab per run, a little wider than the carriageway
+      const slab = new THREE.BoxGeometry(half * 2 + 2.4, 0.55, L + 0.4);
+      slab.rotateY(ang);
+      slab.translate((x0 + x1) / 2, gy + top, (z0 + z1) / 2);
+      merger.add(slab, pcSlab, x0, z0);
+      // a fascia band so the edge reads as a canopy and not a floating plate
+      const band = new THREE.BoxGeometry(half * 2 + 2.6, 0.22, L + 0.5);
+      band.rotateY(ang);
+      band.translate((x0 + x1) / 2, gy + top - 0.36, (z0 + z1) / 2);
+      merger.add(band, pcCol, x0, z0);
+      // columns down BOTH sides, clear of the carriageway itself
+      const nx = Math.cos(ang), nz = -Math.sin(ang);
+      for (let t = 0; t <= L; t += 8.5) {
+        for (const sgn of [-1, 1]) {
+          const px = x0 + (x1 - x0) * (t / L) + nx * (half + 0.85) * sgn;
+          const pz = z0 + (z1 - z0) * (t / L) + nz * (half + 0.85) * sgn;
+          if (window.__onRoad && window.__onRoad(px, pz, 0)) continue;
+          const cy = surfaceAt(px, pz);
+          if (top - 0.55 - (cy - gy) < 2.6) continue;
+          const col = new THREE.CylinderGeometry(0.3, 0.34, top - 0.28 - (cy - gy), 10);
+          col.translate(px, cy + (top - 0.28 - (cy - gy)) / 2, pz);
+          merger.add(col, pcCol, px, pz);
+        }
+      }
+    }
+    out.porteCochere = (out.porteCochere || 0) + 1;
+  }
+
   // -- ATTRACTION ENTRANCES: a gate, a name, and a guide -------------------
   //
   // The owner: "all those attractions need to have like a entry place with

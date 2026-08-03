@@ -37,6 +37,17 @@ MIN_RUN = 12.0        # metres inside a footprint before it is a route, not a cl
 CORRIDOR_W = 3.6      # how wide the carved passage is
 PAD = 2.5             # push past the facade so the mouth is genuinely open
 WALK = {"footway", "pedestrian", "path", "steps"}
+# AND THE DRIVE-THROUGH. The owner: "even like hotels can drive thru to the
+# main lobby like drop off point like realistic resorts kind?"
+#
+# A road running through a hotel footprint is a porte-cochere — you drive in
+# under the building, stop at the lobby, drive out. openground.py already
+# refuses to lift these (a 55m tower on columns looks worse than the defect) and
+# lists them as needing exactly this. Same carve, wider corridor, and a canopy
+# drawn over it instead of an arcade mouth.
+DRIVE = {"service", "residential", "living_street", "unclassified", "tertiary"}
+DRIVE_W = 7.5
+DRIVE_MIN_RUN = 10.0
 
 
 def poly_contains(poly, x, y):
@@ -78,8 +89,11 @@ def main():
 
     arcades = []
     for r in (d.get("roads") or []):
-        if not isinstance(r, dict) or r.get("k") not in WALK:
+        kind = r.get("k") if isinstance(r, dict) else None
+        if kind not in WALK and kind not in DRIVE:
             continue
+        is_drive = kind in DRIVE
+        min_run = DRIVE_MIN_RUN if is_drive else MIN_RUN
         p = r.get("p")
         if not isinstance(p, list) or len(p) < 2:
             continue
@@ -111,14 +125,14 @@ def main():
                 run.append((x, y))
                 host = host or b
             else:
-                if len(run) * 1.5 >= MIN_RUN:
-                    arcades.append((run, host, r))
+                if len(run) * 1.5 >= min_run:
+                    arcades.append((run, host, r, is_drive))
                 run, host = [], None
-        if len(run) * 1.5 >= MIN_RUN:
-            arcades.append((run, host, r))
+        if len(run) * 1.5 >= min_run:
+            arcades.append((run, host, r, is_drive))
 
     out = []
-    for (run, host, r) in arcades:
+    for (run, host, r, is_drive) in arcades:
         # pad past each end so the mouth clears the facade
         if len(run) < 2:
             continue
@@ -140,19 +154,24 @@ def main():
         length = sum(math.dist(thin[i], thin[i + 1]) for i in range(len(thin) - 1))
         out.append({
             "p": [[round(q[0], 1), round(q[1], 1)] for q in thin],
-            "w": CORRIDOR_W,
+            "w": DRIVE_W if is_drive else CORRIDOR_W,
+            "k": "drive" if is_drive else "walk",
             "n": (host or {}).get("n") or "",
-            "h": round(min(6.0, max(3.4, ((host or {}).get("h") or 6) * 0.5)), 1),
+            "h": round(min(6.4, max(4.6, ((host or {}).get("h") or 6) * 0.5)), 1)
+                 if is_drive else
+                 round(min(6.0, max(3.4, ((host or {}).get("h") or 6) * 0.5)), 1),
             "L": round(length, 1),
         })
 
     out.sort(key=lambda o: -o["L"])
     d["arcades"] = out
     print(f"== arcades {a.id}")
-    print(f"   {len(out)} walking route(s) carved through buildings "
-          f"(runs of {MIN_RUN:.0f}m or more)")
-    for o in out[:10]:
-        print(f"     {o['L']:6.0f} m  through {o['n'] or '(unnamed building)'}")
+    nd = sum(1 for o in out if o.get("k") == "drive")
+    print(f"   {len(out)-nd} walking route(s) and {nd} drive-through(s) carved "
+          f"through buildings")
+    for o in out[:12]:
+        print(f"     {o['L']:6.0f} m  {o.get('k','walk'):<5} through "
+              f"{o['n'] or '(unnamed building)'}")
     if len(out) > 10:
         print(f"     ... {len(out) - 10} more")
 
