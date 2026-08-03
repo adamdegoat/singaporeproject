@@ -1954,6 +1954,44 @@ export async function buildBuildings(world, data, Y = null) {
       const lift = extrude(pts, h - b.mh, mat, b.mh);
       lift.castShadow = true; lift.receiveShadow = true;
       world.add(lift);
+      // AN OPEN GROUND STOREY NEEDS SOMETHING TO STAND ON.
+      //
+      // `og` is set by data/openground.py on a footprint that a real
+      // carriageway genuinely runs through — Beach Arrival Plaza's surveyed
+      // outline comes within 0.20m of Siloso Beach Walk's surveyed centreline,
+      // because the road passes UNDER it. Lifting the mass alone would leave a
+      // building floating; these are the columns that hold it up, and they are
+      // the reason the road below is clear.
+      //
+      // Column sites refuse the carriageway itself (that is the whole point)
+      // and refuse water, exactly as the b.roof canopy above does. If too few
+      // stand, the mass would hang on nothing — so it is NOT lifted at all and
+      // is drawn solid, which is a visible, honest failure rather than a
+      // building in the sky.
+      if (b.og) {
+        const cols = [];
+        let acc = 0;
+        for (let i = 0; i < pts.length - 1; i++) {
+          const [ax, az] = pts[i], [bx2, bz2] = pts[i + 1];
+          const L2 = Math.hypot(bx2 - ax, bz2 - az);
+          for (let t = acc === 0 ? 0 : Math.max(0, 9 - acc); t < L2; t += 9) {
+            const px = ax + (bx2 - ax) * (t / L2), pz = az + (bz2 - az) * (t / L2);
+            if (window.__onRoad && window.__onRoad(px, pz, 0)) continue;
+            if (window.__inWater && window.__inWater(px, pz)) continue;
+            const gy = TERRAIN.at(px, pz);
+            if (gy < 0.8) continue;
+            cols.push([px, pz, gy]);
+          }
+          acc = (acc + L2) % 9;
+        }
+        for (const [px, pz, gy] of cols) {
+          const top = FOOT + b.mh;
+          if (top - gy < 2.2) continue;
+          const col = new THREE.CylinderGeometry(0.34, 0.38, top - gy, 8);
+          col.translate(px, gy + (top - gy) / 2, pz);
+          merger.add(col, MAT.conc, px, pz);
+        }
+      }
       stats.count++;
       if (h > 40) stats.tall++;
       continue;

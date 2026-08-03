@@ -39,10 +39,11 @@ const out = await page.evaluate(() => {
     if (p.length < 2) continue;
     res.ways++;
     let prev = null;
+    const trend = [];
     for (let i = 0; i < p.length - 1; i++) {
       const [ax, az] = p[i], [bx, bz] = p[i + 1];
       const L = Math.hypot(bx - ax, bz - az);
-      const n = Math.max(1, Math.ceil(L / 3));
+      const n = Math.max(1, Math.ceil(L / 1.5));   // 1.5m: a stride, so a wall cannot hide between samples
       for (let s = 0; s <= n; s++) {
         const t = s / n;
         const x = ax + (bx - ax) * t, z = az + (bz - az) * t;
@@ -50,15 +51,34 @@ const out = await page.evaluate(() => {
         const g = window.__terrain.at(x, z);
         // what does a walker stand on here?
         const surf = window.__surfaceAt ? window.__surfaceAt(x, z) : g;
+        // N3 — A STEP IS A DISCONTINUITY, NOT A SLOPE.
+        //
+        // This used to flag every |delta| over 0.45m between samples 3m apart,
+        // which is a 15% grade — and Sentosa's trails genuinely climb harder
+        // than that up Imbiah and Mount Serapong. It read 452 "steps" on a
+        // network whose real walls are a tiny fraction of that, and a check
+        // that reports defects which are not there is worse than no check,
+        // because the fix for a phantom is a change to something that was
+        // right.
+        //
+        // So a step is now a SPIKE ABOVE THE LOCAL TREND: the jump between two
+        // adjacent samples, compared with the grade the path is actually
+        // running at either side of it. A staircase is exempt by kind — a
+        // tread IS a discontinuity and that is what stairs are for.
         if (prev !== null) {
-          const d = Math.abs(surf - prev);
-          if (d > 0.45) {
+          const d = surf - prev;
+          trend.push(d);
+          if (trend.length > 6) trend.shift();
+          // typical rise per sample nearby, ignoring this one
+          const others = trend.slice(0, -1).map(Math.abs).sort((a, b) => a - b);
+          const typical = others.length ? others[Math.floor(others.length / 2)] : 0;
+          const spike = Math.abs(d) > 0.40 && Math.abs(d) > 3 * Math.max(typical, 0.05);
+          if (spike && k !== 'steps') {
             res.steps++;
-            if (d > 1.2) {
-              res.bigSteps++;
-              if (res.exStep.length < 12) {
-                res.exStep.push({ n: r.n || k, x: x | 0, z: z | 0, d: +d.toFixed(2) });
-              }
+            if (Math.abs(d) > 1.0) res.bigSteps++;
+            if (res.exStep.length < 25) {
+              res.exStep.push({ n: r.n || k, x: x | 0, z: z | 0,
+                                d: +d.toFixed(2), trend: +typical.toFixed(2) });
             }
           }
         }
@@ -83,9 +103,9 @@ const out = await page.evaluate(() => {
 });
 console.log(`ways ${out.ways}  sample points ${out.pts}`);
 console.log(`  path blocked     : ${out.noSurface}  (${(100 * out.noSurface / out.pts).toFixed(1)}%)`);
-console.log(`  steps >0.45m     : ${out.steps}   of which >1.2m: ${out.bigSteps}`);
+console.log(`  N3 surface spikes: ${out.steps}   of which >1.0m: ${out.bigSteps}`);
 console.log(`  floating >1.5m   : ${out.floating}`);
 for (const e of out.exNoSurface) console.log(`    NOSURF ${e.n} at ${e.x},${e.z}`);
-for (const e of out.exStep) console.log(`    STEP   ${e.n} at ${e.x},${e.z} d=${e.d}`);
+for (const e of out.exStep) console.log(`    STEP   ${e.n} at ${e.x},${e.z} d=${e.d} (local grade ${e.trend}m/sample)`);
 for (const e of out.exFloat) console.log(`    FLOAT  ${e.n} at ${e.x},${e.z} up=${e.up}`);
 await browser.close();
