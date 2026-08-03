@@ -38,7 +38,13 @@ window.__renderer = renderer;   // probes read info.programs / info.memory
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
-renderer.shadowMap.enabled = !P.has('noshadow');
+// SHADOWS OFF FOR EVERYONE — the owner's call, 2026-08-03, made looking at
+// a same-spot A/B pair: "make all smooth for gameplay". Measured: shadows
+// cost ~20% of the frame (2504k->1995k tris, 645->488 draws at the spawn;
+// 13->16fps on the throttled phone path) and the visual difference is soft
+// shading only — nothing disappears. ?shadow restores them; ?noshadow kept
+// for old links.
+renderer.shadowMap.enabled = P.has('shadow');
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
@@ -73,13 +79,23 @@ const sky = new THREE.Mesh(
       sun: { value: SUNDIR.clone() },
     },
     vertexShader: `varying vec3 vW;
-      void main(){ vW = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      void main(){ vW = normalize(position);
+        vec4 gp = projectionMatrix*modelViewMatrix*vec4(position,1.0);
+        // pin the dome to the far plane so it can draw LAST (renderOrder
+        // below) and depth-test away every pixel the city already covers —
+        // it used to draw FIRST and be fully overdrawn, paying its cloud
+        // shader on 100% of the screen. Far-plane depth keeps the surround
+        // massing beyond the dome's 480m radius in front of the sky.
+        gp.z = gp.w * 0.999999;
+        gl_Position = gp; }`,
     fragmentShader: `
       uniform vec3 top, mid, haze, cloud; uniform vec3 sun; varying vec3 vW;
       float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }
       float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
         return mix(mix(hash(i),hash(i+vec2(1,0)),f.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x), f.y); }
-      float fbm(vec2 p){ float v=0.0,a=0.5; for(int i=0;i<5;i++){ v+=a*vnoise(p); p*=2.03; a*=0.5; } return v; }
+      // 3 octaves, not 5: the last two octaves are sub-pixel at phone DPR
+      // and this runs per sky pixel per frame (was 10 vnoise taps, now 6)
+      float fbm(vec2 p){ float v=0.0,a=0.5; for(int i=0;i<3;i++){ v+=a*vnoise(p); p*=2.03; a*=0.5; } return v; }
       void main(){
         vec3 d = normalize(vW);
         float h = clamp(d.y, 0.0, 1.0);
@@ -102,7 +118,9 @@ const sky = new THREE.Mesh(
       }`,
   }));
 sky.frustumCulled = false;
-sky.renderOrder = -1;
+// LAST among opaques (transparent glass still draws after and blends over
+// the sky correctly) — see the far-plane note in the vertex shader
+sky.renderOrder = 1;
 scene.add(sky);
 
 const sun = new THREE.DirectionalLight(0xfff0d6, 2.6);
@@ -739,14 +757,17 @@ skateRig.group.visible = false;
 // brake. The board is 0.85m long and 0.245m wide, so it is the smallest of the
 // three and takes the scooter's lateral figure rather than anything tighter —
 // a rider is wider than their deck.
+// THE SENTOSA GAME IS SKATE-ONLY (owner's call, 2026-08-03): the electric
+// surfskate is the game's one vehicle. The bike and car rows are PARKED, not
+// deleted — RIDE/CAR stay exported and tested in ride.js, their rigs still
+// build, and restoring a row here restores the whole cycle. vehicleAt falls
+// back to VEHICLES[0], so an old localStorage 'bike'/'car' lands on the board.
 const VEHICLES = [
-  { kind: 'bike',  label: 'Bike',  verb: 'Ride',  params: RIDE,  rr: 0.55, rlat: 0.34 },
-  { kind: 'car',   label: 'Car',   verb: 'Drive', params: CAR,   rr: 0.95, rlat: 0.89 },
   { kind: 'skate', label: 'Skate', verb: 'Skate', params: SKATE, rr: 0.48, rlat: 0.34 },
 ];
 const vehicleAt = (kind) => VEHICLES.find((v) => v.kind === kind) || VEHICLES[0];
-let vehicleKind = 'bike';
-let rideParams = RIDE;
+let vehicleKind = 'skate';
+let rideParams = SKATE;
 // The mode pill's text, in one place. A `function` declaration so it can be
 // called from setVehicle — which runs during boot, long before updateHelp's
 // `const` block exists — without walking into the temporal dead zone that
@@ -778,10 +799,14 @@ function setVehicle(kind) {
     skater.visible = vehicleKind === 'skate';
   }
   try { localStorage.setItem('sg_vehicle', vehicleKind); } catch (e) { /* private mode */ }
-  // The button offers the NEXT vehicle, so three of them cycle on one control
-  // rather than needing a picker. With two it read as a toggle and still does.
+  // The button offers the NEXT vehicle. With ONE vehicle in the game there is
+  // nothing to offer, so the button hides entirely rather than cycling to
+  // itself — restore a second VEHICLES row and it comes back on its own.
   const b = document.getElementById('vehiclebtn');
-  if (b) b.textContent = nextVehicle().label;
+  if (b) {
+    if (VEHICLES.length < 2) b.style.display = 'none';
+    else b.textContent = nextVehicle().label;
+  }
   // swapping vehicle while on foot changes Ride <-> Drive <-> Skate.
   // modeLabel ONLY — setVehicle runs during boot and updateHelp closes over
   // `const stickEl` declared further down, so calling it from here is the
@@ -1022,7 +1047,9 @@ const statAdd = (o) => {
 // DO NOT "FIX" THIS AGAIN. Vehicles yes, pedestrians no. The whole crowd
 // system stays in the tree and stays correct behind the flag.
 const PEOPLE = P.has('people');
-const LOD_FAR = PHONE ? 340 : 500;
+// 280 on phones (was 340), part of the owner's 2026-08-03 "make all smooth"
+// package: small dressing (kerbs, benches, plates) drops out 60m earlier.
+const LOD_FAR = PHONE ? 280 : 500;
 // OCCLUSION CULLING WAS BUILT, MEASURED AND REMOVED ON 2026-08-02. Read this
 // before building it again.
 //
@@ -1139,11 +1166,12 @@ walkerRig.group.visible = false;
 scene.add(walkerRig.group);
 let clock = 0;
 
-// The region, merged from the districts by data/merge.py. ?scene=orchard still
-// loads a single district, which is what the per-district gates want.
-// The region: Orchard Road and Bras Basah, merged by data/merge.py. ?scene=orchard
-// still loads the single district, which is what the per-district gates want.
-const SCENE = (P.get('scene') || 'world').replace(/[^a-z0-9_-]/gi, '');
+// THE GAME IS ONE DISTRICT: sentosa (the 2026-08-03 pivot — district-select,
+// no free roam). A bare URL boots Sentosa standalone via the flat path (no
+// manifest exists for it, so the fetch falls through to data/sentosa.json and
+// none of the streaming machinery runs). ?scene=<id> still loads any district,
+// which is what the per-district audit gates and the old world tooling want.
+const SCENE = (P.get('scene') || 'sentosa').replace(/[^a-z0-9_-]/gi, '');
 // BOOT PHASE TIMING. `?boot=1` prints where the seconds go, because the first
 // three attempts at cutting a 29s mobile boot each optimised the wrong thing.
 const BOOTT = [];
@@ -2019,8 +2047,34 @@ async function streamRest(rest) {
   // kept — there is nowhere else to be — then neighbours are admitted
   // nearest-first while the budget holds; the first that does not fit ends the
   // admission, exactly as the sweep has always done.
+  // HOW FAR IS THIS DISTRICT'S OWN FABRIC from the rider — the honest
+  // "which district is the rider actually in" measure. Box distance cannot
+  // answer it (the boxes overlap by design, so at any seam two or three all
+  // read 0) and axis distance answers the wrong question (measured
+  // 2026-08-03 at Clarke Quay, 1500,8200: chinatown's axis was nearer than
+  // rivervalley's own, so the budget kept chinatown's 2,239 buildings and
+  // left the ground AROUND THE RIDER bare — the rider's "back streets weird
+  // / empty patches" report, in every seam zone). Sampled every Nth
+  // footprint (~120 checks per district), first ring vertex is plenty at
+  // this scale.
+  const contentNear = (rec) => {
+    const B = rec.ch && rec.ch.buildings;
+    if (!B || !B.length) return axDist(rec);
+    const stride = Math.max(1, Math.floor(B.length / 120));
+    let best = Infinity;
+    for (let i = 0; i < B.length; i += stride) {
+      const v = B[i].p && B[i].p[0];
+      if (!v) continue;
+      const d = (v[0] - px()) ** 2 + (v[1] - pz()) ** 2;
+      if (d < best) best = d;
+    }
+    return best === Infinity ? axDist(rec) : Math.sqrt(best);
+  };
   const keptSet = (list) => {
-    const sorted = list.slice().sort((a, b) => axDist(a) - axDist(b));
+    // Rank by the district's own CONTENT distance (see contentNear above),
+    // axis as tiebreak. One rule, shared by sweep/admission/pre-evict as
+    // before — the churn-fix invariant holds.
+    const sorted = list.slice().sort((a, b) => (contentNear(a) - contentNear(b)) || (axDist(a) - axDist(b)));
     const kept = new Set();
     let load = 0;
     for (const r of sorted) {
@@ -2071,7 +2125,7 @@ async function streamRest(rest) {
       // bboxes overlap by design so the region closes with no seam holes)
       // both measure zero, so break the tie on whose main street you are
       // actually near — that is the one you are looking down.
-      cand.sort((a, b) => (nearDist(a) - nearDist(b)) || (axDist(a) - axDist(b)));
+      cand.sort((a, b) => (contentNear(a) - contentNear(b)) || (axDist(a) - axDist(b)));
       const next = cand[0];
       // EVICT THE DOOMED BEFORE BUILDING THE ADMITTED. wouldKeep() says the
       // sweep will keep `next` — but the sweep only runs at the TOP of this
@@ -2218,7 +2272,36 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   //
   // The midpoint of the street by arclength is a real place and does not care
   // where the origin is.
-  if (data.axis && data.axis.p.length > 1) {
+  //
+  // PER-DISTRICT SPAWN OVERRIDE (Sentosa game, 2026-08-03). The axis midpoint
+  // is a fine default for a street district, but sentosa's axis is the Gateway
+  // BRIDGE — arriving mid-bridge sells nothing. Each entry is a target point
+  // (Beach Station for sentosa, the owner's pick); the spawn snaps to the
+  // nearest carriageway point within 80m of it, so a data re-fetch moves the
+  // road and the spawn follows it instead of going stale. No road in reach
+  // falls through to the axis midpoint, so a broken table cannot break a boot.
+  const SPAWNS = { sentosa: [-1732.4, 12757.1] };   // Beach Station (monorail)
+  let spawnDone = false;
+  const want = SPAWNS[SCENE];
+  if (want && Array.isArray(data.roads)) {
+    let bx = 0, bz = 0, bh = 0, bd = 80 * 80;
+    for (const r of data.roads) {
+      const pts = r.p;
+      if (!pts || pts.length < 2 || (r.w || 0) < 3.5) continue;  // carriageways only
+      for (let i = 0; i < pts.length - 1; i++) {
+        const ax = pts[i][0], az = pts[i][1];
+        const dx = pts[i + 1][0] - ax, dz = pts[i + 1][1] - az;
+        const L2 = dx * dx + dz * dz;
+        if (!L2) continue;
+        const t = Math.max(0, Math.min(1, ((want[0] - ax) * dx + (want[1] - az) * dz) / L2));
+        const px = ax + dx * t, pz = az + dz * t;
+        const d2 = (px - want[0]) ** 2 + (pz - want[1]) ** 2;
+        if (d2 < bd) { bd = d2; bx = px; bz = pz; bh = Math.atan2(dx, dz); }
+      }
+    }
+    if (bd < 80 * 80) { S = newState(bx, bz, bh); spawnDone = true; }
+  }
+  if (!spawnDone && data.axis && data.axis.p.length > 1) {
     const P0 = data.axis.p;
     let total = 0;
     for (let i = 0; i < P0.length - 1; i++) {
@@ -2865,8 +2948,8 @@ attachMouse(canvas);
     vbtn.addEventListener('click', tap);
     vbtn.addEventListener('touchstart', tap, { passive: false });
   }
-  let saved = 'bike';
-  try { saved = localStorage.getItem('sg_vehicle') || 'bike'; } catch (e) { /* fine */ }
+  let saved = 'skate';
+  try { saved = localStorage.getItem('sg_vehicle') || 'skate'; } catch (e) { /* fine */ }
   setVehicle(saved);
 }
 

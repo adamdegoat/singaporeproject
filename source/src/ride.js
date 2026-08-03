@@ -71,7 +71,9 @@ export const CAR = {
 // Every one of these is off by default, so RIDE and CAR are untouched — and
 // test/ride.test.mjs asserts that they measure exactly zero slip.
 export const SKATE = {
-  vMax: 9.2,           // m/s, ~33 km/h — an electric carver, not a scooter
+  vMax: 5.556,         // m/s, 20 km/h — the owner's cap for the Sentosa game (2026-08-03);
+                       // was 9.2 (~33). Drift/pump margins in test/ride.test.mjs are
+                       // tuned to THIS value — retune them together, never separately.
   vReverse: 1.4,
   accel: 5.4,          // a hub motor: it pulls from a standstill and keeps pulling
   reverseAccel: 1.4,
@@ -121,10 +123,14 @@ export const SKATE = {
   gripSlide: 0.5,      // the slide LINGERS — a long floaty pendulum
   slipMaxDrift: 0.95,  // ~54 degrees of slide before it washes out
   slipDragDrift: 0.65, // being sideways costs a little; flow is still the point
-  driftThrust: 0.3,    // the motor pulls through the slide like a slope would —
-                       // sized so a held full slide bleeds ~0.4 m/s², a gentle tax
+  driftThrust: 0.2,    // the motor pulls through the slide like a slope would —
+                       // sized so a held full slide bleeds ~0.35 m/s² AT THE 20 km/h
+                       // CAP (was 0.3 at vMax 9.2; drag shrinks with v² so the same
+                       // thrust made a held slide FREE at the lower cruise)
   driftYaw: 0.8,       // SLOW rotation in the slide: big sweeping arcs, no spin
-  hookScrub: 0.15,     // a whisper of scrub on hook-up, not a punishment
+  hookScrub: 0.25,     // the same ~0.5 m/s hook-up toll it had at the old cruise —
+                       // the scrub is speed-proportional, so the coefficient rises
+                       // as vMax falls to keep the ABSOLUTE feel (was 0.15 at 9.2)
   cam: { back: 3.45, up: 1.95, aim: 5.6, fov: 57 },
 };
 

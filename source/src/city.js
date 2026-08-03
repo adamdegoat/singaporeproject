@@ -1,6 +1,7 @@
 // Build the street from real OSM geometry: extruded footprints, road ribbons,
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
+import { TOUCH } from './input.js';
 import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng } from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV,
          constructionSite } from './landmarks.js';
@@ -2449,6 +2450,13 @@ export class TreeField {
     const n = this.items.length;
     if (!n) return null;
     const CARDS = 40, BLOBS = 7, BRANCH = 5;
+    // PHONES DRAW 24 OF THE 40 LEAF CARDS — but every tree still COMPUTES
+    // all 40, consuming the identical RNG sequence, so the world's placement
+    // stream (which the determinism gate fingerprints) is byte-identical on
+    // every device; only how many of the same cards reach the GPU differs.
+    // Foliage is the classic fill-rate cost on a phone GPU and the canopy at
+    // 24 cards still reads as a canopy (owner-approved trade, 2026-08-03).
+    const CARDS_DRAWN = TOUCH ? 24 : CARDS;
     const trunks = new THREE.InstancedMesh(
       new THREE.CylinderGeometry(0.30, 0.62, 1, 8), MAT.trunk, n);
     const branches = new THREE.InstancedMesh(
@@ -2456,7 +2464,7 @@ export class TreeField {
     const blobs = new THREE.InstancedMesh(
       new THREE.IcosahedronGeometry(1, 0), MAT.canopy, n * BLOBS);
     const cards = new THREE.InstancedMesh(
-      new THREE.PlaneGeometry(1, 0.55), MAT.leaf, n * CARDS);
+      new THREE.PlaneGeometry(1, 0.55), MAT.leaf, n * CARDS_DRAWN);
     trunks.castShadow = branches.castShadow = blobs.castShadow = cards.castShadow = true;
     // THE ONLY RELIABLE WAY TO KNOW A TRUNK IS A TRUNK. D6 and D37 both used
     // to find trees by geometry signature -- a tapered instanced cylinder in a
@@ -2477,7 +2485,7 @@ export class TreeField {
     branches.userData.treeFoliage = true;
 
     return {
-      BLOBS, BRANCH, CARDS, trunks, branches, blobs, cards,
+      BLOBS, BRANCH, CARDS, CARDS_DRAWN, trunks, branches, blobs, cards,
       m: new THREE.Matrix4(), e: new THREE.Euler(), q: new THREE.Quaternion(),
       p: new THREE.Vector3(), sc: new THREE.Vector3(),
       bi: 0, li: 0, ci: 0,
@@ -2578,7 +2586,9 @@ export class TreeField {
         e.set(rand(-1.5, -0.75) - t * 0.35, a + rand(-0.7, 0.7), rand(-0.4, 0.4));
         q.setFromEuler(e);
         const v = rad * rand(0.42, 0.72); sc.set(v, v, v);
-        m.compose(p, q, sc); cards.setMatrixAt(c.ci++, m);
+        // every card COMPUTES (the RNG draws above must happen for all 40 —
+        // see CARDS_DRAWN in _prep); only the first CARDS_DRAWN are written
+        if (k < c.CARDS_DRAWN) { m.compose(p, q, sc); cards.setMatrixAt(c.ci++, m); }
       }
     }
   }

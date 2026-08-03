@@ -165,7 +165,8 @@ t('the throttle alone gets you there — it is an ELECTRIC board', () => {
   // opposite so it cannot quietly come back.
   const s = run(newState(), 40, 1, 0, 0, SKATE);
   const kmh = s.speed * 3.6;
-  assert.ok(kmh > 26, 'throttle-only top speed too low: ' + kmh.toFixed(1) + ' km/h');
+  // vMax is the owner's 20 km/h cap (2026-08-03); throttle alone must reach it
+  assert.ok(kmh > 19, 'throttle-only top speed too low: ' + kmh.toFixed(1) + ' km/h');
   assert.ok(s.speed <= SKATE.vMax + 1e-6, 'exceeded vMax');
 });
 
