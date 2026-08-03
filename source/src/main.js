@@ -7,6 +7,7 @@ import { buildRoadIndex, claim } from './roads.js';
 import { Solid } from './solid.js';
 import { buildVespa, buildRider, buildCar, buildSkate, buildSkater, SKATE_WHEEL_X as SK_WHEEL_X, newState, step, RIDE, CAR, SKATE } from './vespa.js';
 import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
+import { Net } from './net.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
 import { axisSpec, buildMarkings, dressSideStreets, selectSideStreets, dedupeProps } from './markings.js';
 import { buildSgDetail, buildTransit } from './sgdetail.js';
@@ -1140,6 +1141,10 @@ function registerLod(root) {
 }
 let terrain = new Terrain(null);
 let mode = 'ride';                 // 'ride' | 'walk'
+// The room server (see relay/); ?relay= overrides for local testing against
+// `node relay/local.mjs`. Null until ?room= activates multiplayer post-boot.
+const SG_RELAY_URL = 'https://sentosa-relay.propsightsg.workers.dev';
+let NET = null;
 // OFF unless ?audio — see the note in audio.js. The rider asked for it out
 // while it is unreliable, and a silent world is better than a flaky one.
 const sound = new Sound(P.has('audio'));
@@ -2916,6 +2921,62 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   ready = true;
   if (P.has('boot')) console.log('BOOT ' + JSON.stringify(BOOTT));
   window.__ready = true;
+  // MULTIPLAYER, INERT WITHOUT ?room= — every audit/probe boot skips this
+  // block entirely (zero net code, zero remote rigs, zero RNG contact).
+  // Identity: name via ?name= or localStorage; a per-tab session id so an
+  // iOS app-switch rejoins the SAME seat idempotently.
+  if (P.get('room')) {
+    try {
+      let sid = sessionStorage.getItem('sg_sid');
+      if (!sid) { sid = 'p' + Math.random().toString(36).slice(2, 10); sessionStorage.setItem('sg_sid', sid); }
+      const name = (P.get('name') || localStorage.getItem('sg_name') || 'rider').slice(0, 16);
+      try { localStorage.setItem('sg_name', name); } catch {}
+      const hue = +(P.get('hue') || localStorage.getItem('sg_hue') || (Math.random() * 360) | 0);
+      try { localStorage.setItem('sg_hue', String(hue | 0)); } catch {}
+      NET = new Net(P.get('relay') || SG_RELAY_URL, P.get('room'), { id: sid, name, hue }, {
+        scene, camera,
+        surfaceAt: (x, z) => surfaceAt(x, z),
+        buildSkate, buildSkater, buildWalker,
+        getState: () => (mode === 'walk'
+          ? { x: walker.x, z: walker.z, heading: walker.heading || 0, speed: walker.speed || 0, mode: 'w' }
+          : { x: S.x, z: S.z, heading: S.heading, speed: S.speed, mode: 'r' }),
+        onRoster: null,
+        onEvent: null,
+        onStatus: (s) => { if (s === 'version') location.reload(); },
+      });
+      NET.sendReady();
+      window.__net = NET;
+    } catch (e) { console.warn('net init failed (solo ride continues)', e); }
+  }
+  // THE FRIENDS BUTTON — the deliberately PLAIN v1 join flow (the designed
+  // landing page waits until Sentosa itself is done, the owner's call).
+  // Solo: one tap creates a room and reloads into it. In a room: shows the
+  // shareable link and copies it — send it on WhatsApp, friends tap, they
+  // spawn beside you.
+  {
+    const fb = document.getElementById('friendsbtn');
+    if (fb) {
+      if (P.get('room')) fb.textContent = P.get('room').toUpperCase();
+      const tap = async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (P.get('room')) {
+          const link = location.origin + location.pathname + '?room=' + P.get('room').toUpperCase();
+          try { await navigator.clipboard.writeText(link); fb.textContent = 'LINK COPIED'; }
+          catch { fb.textContent = link.slice(-14); }
+          setTimeout(() => { fb.textContent = P.get('room').toUpperCase(); }, 1800);
+        } else {
+          fb.textContent = '...';
+          try {
+            const r = await fetch(SG_RELAY_URL + '/create');
+            const { code } = await r.json();
+            if (code) location.search = (location.search ? location.search + '&' : '?') + 'room=' + code;
+          } catch { fb.textContent = 'Friends'; }
+        }
+      };
+      fb.addEventListener('click', tap);
+      fb.addEventListener('touchstart', tap, { passive: false });
+    }
+  }
   // Chunks that streamed in during boot accumulated their counters in
   // __statsAcc — __stats did not exist yet to receive them. Merge ONCE here;
   // statAdd keeps both in step from now on. Without this, the first wave's
@@ -3818,6 +3879,10 @@ function loop(now) {
     driveCamera(dt);
     fmk('camera');
   }
+
+  // friends' avatars interpolate here — cheap (no physics, a few lerps);
+  // the 10Hz network send runs on its own timer inside Net, never in a frame
+  if (NET) NET.update();
 
   const activeCam = CAM === 'top' ? topCam : camera;
   sky.position.copy(activeCam.position);      // keeps the dome inside the far plane

@@ -98,6 +98,13 @@
     padding:8px 13px;border-radius:16px;box-shadow:0 1px 6px rgba(0,0,0,.3)}
   #vehiclebtn:active{background:#cfc4ad}
   @media (orientation:portrait){ #vehiclebtn{display:none} }
+  #friendsbtn{position:fixed;right:calc(10px + env(safe-area-inset-right));
+    bottom:calc(92px + env(safe-area-inset-bottom));
+    font:600 11px/1 ui-sans-serif,-apple-system,Helvetica,Arial;
+    letter-spacing:.03em;color:#12161b;background:rgba(232,221,198,.88);border:0;
+    padding:8px 13px;border-radius:16px;box-shadow:0 1px 6px rgba(0,0,0,.3)}
+  #friendsbtn:active{background:#cfc4ad}
+  @media (orientation:portrait){ #friendsbtn{display:none} }
   #modebtn{position:fixed;right:calc(10px + env(safe-area-inset-right));
     bottom:calc(12px + env(safe-area-inset-bottom));
     font:600 11px/1 ui-sans-serif,system-ui,-apple-system,Helvetica,Arial;
@@ -206,5 +213,6 @@
 <div id="steerhint"><div id="steertrack"></div><div id="steerdot"></div></div>
 <div id="lookhint">drag to look</div>
 <button id="vehiclebtn" type="button">Car</button>
+<button id="friendsbtn" type="button">Friends</button>
 <button id="modebtn" type="button">Get off</button>
 <script type="module" src="./src/main.js"></script>
