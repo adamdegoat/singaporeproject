@@ -2321,6 +2321,90 @@ export async function buildTransit(world, data, Y = null) {
     }
   }
 
+  // LETTERING FOR EVERYTHING IN THIS FUNCTION, DECLARED BEFORE FIRST USE.
+  //
+  // `atlas` and `signs` belong to buildSgDetail, a different function, and
+  // reaching for them here took the boot down once with "atlas is not
+  // defined". Then the USS gate was written 250 lines ABOVE where these were
+  // declared and took it down again, in the temporal dead zone — the same
+  // mistake wearing a different hat. Shared resources go at the top of the
+  // scope that uses them.
+  const gateAtlas = new SignAtlas(THREE);
+  const gateSigns = new Merger();
+
+  // -- THE UNIVERSAL STUDIOS ENTRANCE ARCH ---------------------------------
+  //
+  // Built from a photograph, because nothing about it is published — see
+  // data/ussgate.py for the reference and for which parts are measured
+  // (position) and which are authored (every dimension).
+  const ug = data.ussgate;
+  if (ug && ug.p) {
+    await YY();
+    const [gx, gz] = ug.p;
+    const [fx2, fz2] = ug.f || [0, 1];
+    const yaw2 = Math.atan2(fx2, fz2);
+    const gy4 = surfaceAt(gx, gz);
+    const ashlar = new THREE.MeshStandardMaterial({ color: 0xdccfb6, roughness: 0.88 });
+    const corniceMat = new THREE.MeshStandardMaterial({
+      color: 0xe8d6b4, roughness: 0.7, emissive: 0x3a2a12, emissiveIntensity: 0.55,
+    });
+    const finMat = new THREE.MeshStandardMaterial({
+      color: 0xc98b3a, roughness: 0.6, emissive: 0x54300c, emissiveIntensity: 0.7,
+    });
+    const panelMat = new THREE.MeshLambertMaterial({ color: 0x14161a });
+    const halfSpan = ug.gap / 2 + ug.pierW / 2;
+    // right-hand vector across the gate
+    const rx = Math.cos(yaw2), rz = -Math.sin(yaw2);
+    // the two piers
+    for (const sgn of [-1, 1]) {
+      const px = gx + rx * halfSpan * sgn, pz = gz + rz * halfSpan * sgn;
+      const pier = new THREE.BoxGeometry(ug.pierW, ug.pierH, ug.pierD);
+      pier.rotateY(yaw2);
+      pier.translate(px, gy4 + ug.pierH / 2, pz);
+      merger.add(pier, ashlar, gx, gz);
+    }
+    // the arch head: a stepped band spanning the opening, which reads as a
+    // round head from the ground without a real voussoir solve
+    for (let k = 0; k < 5; k++) {
+      const t = k / 4;
+      const w = ug.gap * (1 - 0.16 * t) + 1.0;
+      const yy = gy4 + ug.pierH * 0.62 + t * 2.2;
+      const band = new THREE.BoxGeometry(w, 0.62, ug.pierD * 0.92);
+      band.rotateY(yaw2);
+      band.translate(gx, yy, gz);
+      merger.add(band, ashlar, gx, gz);
+    }
+    // the dark sign panel above the arch, between the piers
+    const panel = new THREE.BoxGeometry(ug.gap + 0.6, 3.6, ug.pierD * 0.55);
+    panel.rotateY(yaw2);
+    panel.translate(gx - fx2 * 0.1, gy4 + ug.pierH - 2.6, gz - fz2 * 0.1);
+    merger.add(panel, panelMat, gx, gz);
+    const uv2 = gateAtlas.add('UNIVERSAL STUDIOS SINGAPORE', '#14161a', '#f6f2e8');
+    const face2 = gateAtlas.plane(ug.gap - 0.4, (ug.gap - 0.4) * 0.25, uv2);
+    face2.rotateY(yaw2 + Math.PI);
+    face2.translate(gx + fx2 * (ug.pierD * 0.3), gy4 + ug.pierH - 2.6,
+                    gz + fz2 * (ug.pierD * 0.3));
+    gateSigns.add(face2, uv2.mat, gx, gz);
+    // THE FLARED CORNICE, which is the whole silhouette
+    const cw = halfSpan * 2 + ug.pierW + ug.corniceOut * 2;
+    const cd = ug.pierD + ug.corniceOut * 2;
+    const cornice = new THREE.BoxGeometry(cw, ug.corniceH, cd);
+    cornice.rotateY(yaw2);
+    cornice.translate(gx, gy4 + ug.pierH + ug.corniceH / 2, gz);
+    merger.add(cornice, corniceMat, gx, gz);
+    // and the row of lit fins under it
+    for (let k = 0; k < ug.fins; k++) {
+      const t = (k + 0.5) / ug.fins - 0.5;
+      const px = gx + rx * t * (cw - 1.8);
+      const pz = gz + rz * t * (cw - 1.8);
+      const fin = new THREE.BoxGeometry(0.5, 2.4, cd * 0.8);
+      fin.rotateY(yaw2);
+      fin.translate(px, gy4 + ug.pierH - 0.4, pz);
+      merger.add(fin, finMat, gx, gz);
+    }
+    out.ussGate = 1;
+  }
+
   // -- BOARDWALKS over the water crossings ---------------------------------
   //
   // data/arcade.py marks mapped footways that run across water with no bridge
@@ -2496,12 +2580,6 @@ export async function buildTransit(world, data, Y = null) {
   // and somebody beside it. The line the guide says is carried in the data and
   // is written from published facts — an invented fact is worse than silence,
   // because a player cannot tell.
-  // buildTransit has no atlas of its own — `atlas` and `signs` belong to
-  // buildSgDetail, a different function, and reaching for them here is what
-  // took the boot down with "atlas is not defined". Lettering needs its own
-  // page and its own merger in this scope.
-  const gateAtlas = new SignAtlas(THREE);
-  const gateSigns = new Merger();
   const guideSkin = new THREE.MeshLambertMaterial({ color: 0x8d6748 });
   const guideShirt = new THREE.MeshLambertMaterial({ color: 0xc2452f });
   const guideTrou = new THREE.MeshLambertMaterial({ color: 0x2f3540 });

@@ -440,6 +440,8 @@ def main():
     # Where a real carriageway runs through a real footprint, open the ground
     # storey — the road passes under the structure. See data/openground.py.
     subprocess.run([sys.executable, os.path.join(HERE, "openground.py"), d["id"]], check=False)
+    # The USS entrance arch is not in OSM either. See data/ussgate.py.
+    subprocess.run([sys.executable, os.path.join(HERE, "ussgate.py"), d["id"]], check=False)
     # The Fort Siloso Skywalk is not in OSM either. See data/skywalk.py.
     subprocess.run([sys.executable, os.path.join(HERE, "skywalk.py"), d["id"]], check=False)
     # MegaZip is not in OSM — authored from measured endpoints against
