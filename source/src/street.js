@@ -43,6 +43,46 @@ export async function buildFurniture(world, axis, isBlocked, data = {}, Y = null
   // carriageway alone, for things that are allowed to sit against a building
   const onRoad = (x, z, m) => (window.__onRoad ? window.__onRoad(x, z, m) : false);
   const pts = axis.p, half = axis.w / 2;
+  // WHERE THE WALKING LINE RUNS. Bucketed on a grid because it is asked once
+  // per piece of furniture and a linear scan of every footway segment in a
+  // per-object loop is the exact shape that cost this project ten seconds of
+  // boot time on 2026-08-04.
+  const _FCELL = 20, _fGrid = new Map();
+  for (const r of (data.roads || [])) {
+    if (r.k !== 'footway' && r.k !== 'pedestrian' && r.k !== 'path') continue;
+    const fp = r.p || [];
+    for (let i = 0; i < fp.length - 1; i++) {
+      const seg = [fp[i][0], fp[i][1], fp[i + 1][0], fp[i + 1][1]];
+      const x0 = Math.min(seg[0], seg[2]), x1 = Math.max(seg[0], seg[2]);
+      const z0 = Math.min(seg[1], seg[3]), z1 = Math.max(seg[1], seg[3]);
+      for (let gx = Math.floor(x0 / _FCELL); gx <= Math.floor(x1 / _FCELL); gx++) {
+        for (let gz = Math.floor(z0 / _FCELL); gz <= Math.floor(z1 / _FCELL); gz++) {
+          const k = gx + ',' + gz;
+          let l = _fGrid.get(k);
+          if (!l) { l = []; _fGrid.set(k, l); }
+          l.push(seg);
+        }
+      }
+    }
+  }
+  const onFootLine = (x, z, reach = 1.5) => {
+    const cx = Math.floor(x / _FCELL), cz = Math.floor(z / _FCELL);
+    for (let gx = cx - 1; gx <= cx + 1; gx++) {
+      for (let gz = cz - 1; gz <= cz + 1; gz++) {
+        const l = _fGrid.get(gx + ',' + gz);
+        if (!l) continue;
+        for (const [ax, az, bx2, bz2] of l) {
+          const vx = bx2 - ax, vz = bz2 - az;
+          const L2 = vx * vx + vz * vz || 1;
+          let t = ((x - ax) * vx + (z - az) * vz) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+          if (dx * dx + dz * dz < reach * reach) return true;
+        }
+      }
+    }
+    return false;
+  };
   const railT = [], postT = [], shelterAt = [], lightAt = [], signT = [], planterT = [], binT = [];
   const crossingS = [], taxiAt = [];
 
@@ -261,6 +301,31 @@ export async function buildFurniture(world, axis, isBlocked, data = {}, Y = null
     const moved = window.__pushClear && window.__pushClear(sx, sz, 0.9, 18);
     if (!moved) continue;
     let [px, pz] = moved;
+    // ...AND IT MUST NOT STAND IN THE WALKING LINE.
+    //
+    // pushClear knows carriageways, and the search below knows buildings.
+    // Neither knows a FOOTPATH, so a shelter could land squarely on a mapped
+    // footway: probed at knee height, a bus shelter at 1000,13278 blocked five
+    // metres of one, and it was one of the last blockages left on the island.
+    //
+    // A shelter belongs ON the pavement and BESIDE the walking line — back to
+    // the boundary, open to the road — so nudge it outward along the same
+    // direction pushClear used until it clears the centreline, and leave it
+    // where it was if there is nowhere better. It is furniture: never delete a
+    // real mapped stop over this.
+    if (onFootLine(px, pz)) {
+      const ox = px - sx, oz = pz - sz;
+      const oL = Math.hypot(ox, oz) || 1;
+      for (let extra = 1.2; extra <= 4.8; extra += 1.2) {
+        const tx = px + (ox / oL) * extra, tz = pz + (oz / oL) * extra;
+        if (!onFootLine(tx, tz) && !isBlocked(tx, tz)
+            && (!window.__onRoad || window.__onRoad(tx, tz, 13))
+            && (!window.__onRoad || !window.__onRoad(tx, tz, 0))) {
+          px = tx; pz = tz;
+          break;
+        }
+      }
+    }
     // A stop has to end up beside the street it serves. pushClear is allowed to
     // travel eighteen metres to escape a wide carriageway, and twice that left a
     // pole stranded in the middle of a block with no road near it. Treat "too
