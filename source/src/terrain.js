@@ -474,8 +474,21 @@ export class Terrain {
           civic: [0.88, 0.87, 0.82],
           indus: [0.80, 0.79, 0.76],
           works: [0.84, 0.80, 0.72],
-          parking: [0.72, 0.71, 0.70],
-          plaza: [0.93, 0.91, 0.87],
+          parking: [0.70, 0.70, 0.70],
+          // A PLAZA IS PAVING, AND PAVING IS COOL GREY.
+          //
+          // This was 0.93,0.91,0.87 — a warm near-white, brighter than the
+          // beaches. Standing at the Universal Studios globe, which sits on a
+          // mapped 9,350 m2 plaza outside the park entrance, the forecourt read
+          // as SAND: the owner saw the render and said the globe looked like it
+          // was on the beach. The globe is in the right place (confirmed: it
+          // stands outside the USS main entrance inside Resorts World) — the
+          // ground under it was the lie.
+          //
+          // Cool and a shade darker, so paving reads as paving and the sand
+          // beside it is the brightest thing on the island again, which is what
+          // sand actually is.
+          plaza: [0.80, 0.80, 0.79],
         };
         // GROUND VARIATION, FROM A POSITION HASH — never from an RNG stream.
         //
