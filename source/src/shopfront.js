@@ -732,7 +732,7 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
   // walls the last slot bays. The flush clears its buckets, so the final
   // flush below carries only this pass — the cost is a second set of merged
   // shop meshes per district, a handful of draw calls.
-  merger.flush(world, { cast: false });
+  await merger.flushY(world, { cast: false }, Y);
   buildRayGrid();
   for (const [r2, i2, n2, bw2, s2] of deferredBays) {
     drawBay(r2, i2, n2, bw2, null, s2);
@@ -1145,7 +1145,7 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
   // Bays are fabric on a wall that already casts, and they are the most
   // numerous geometry in the district. Keeping them out of the shadow map is
   // the same trade the kerbs and railings took: 4,000 of them, no visible loss.
-  const meshes = merger.flush(world, { cast: false });
+  const meshes = await merger.flushY(world, { cast: false }, Y);
   atlas.finish();
   stats.shopMeshes = meshes;
   stats.shopPages = atlas.pages.length;

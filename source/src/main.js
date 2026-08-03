@@ -1366,6 +1366,20 @@ async function addChunk(ch, id, Y, rec = {}) {
   mk('prune');
   await pruneCarriageway(g, ROADIX.onRoad, (x, z) => terrain.at(x, z), Y);
   await Y();
+  // FREEZE THE BUILDINGS' MATRICES NOW, NOT AT THE END OF THE CHUNK. The
+  // end-of-build freeze below still runs and catches everything; this early
+  // pass exists because the buildings are ~80% of a district's meshes and
+  // the build takes long enough that leaving them on matrixAutoUpdate meant
+  // three.js recomputed thousands of static matrices EVERY FRAME for the
+  // whole raw window — part of the 380-430ms frames measured 2026-08-03
+  // riding into littleindia. Same type-based skip rules as the end pass;
+  // safe because nothing after this step repositions building meshes (prune
+  // only removes), and a frozen matrix is computed once here first.
+  g.traverse((o) => {
+    if (o === g || o.isInstancedMesh || o.isGroup || !o.isMesh || !o.matrixAutoUpdate) return;
+    o.updateMatrix();
+    o.matrixAutoUpdate = false;
+  });
   mk('roads');
   await buildRoads(g, ch, Y);
   await Y();
@@ -1675,6 +1689,20 @@ function unloadChunk(rec) {
 // happened to be loaded). Distances are measured to the district's AXIS,
 // not its bbox: the boxes deliberately overlap at every seam, so a bbox
 // distance would read 0 from anywhere and build the whole world at boot.
+// THE RENDER BUDGET THE BUILD PACER JUDGES FRAMES AGAINST. 16.7ms is a 60Hz
+// frame; the phone frame cap rewrites it once it has measured the screen
+// (see the capHz block), because on a capped phone a HEALTHY frame is ~33ms
+// by design. Judged against a raw 60Hz budget — which is what the fixed
+// 22/30/45 thresholds below used to be — a capped phone permanently read as
+// "struggling" and the pacer backed off to multi-frame waits: a district
+// build that needs ~30s of CPU ran at a few percent duty and took MINUTES,
+// so a rider was nearly always inside a build window and felt its every
+// spike. Measured 2026-08-03 at 2400,6600: littleindia still building 45s
+// after the arrival panel dropped, on a desktop CPU.
+// Declared BEFORE streamRest for the same temporal-dead-zone reason as
+// FAST0 below: Y() runs during module evaluation, and FPS_CAP is declared
+// two thousand lines further down.
+let CAP_REF = 16.7;
 async function streamRest(rest) {
   // MessageChannel, not setTimeout: timers are clamped to a second or more
   // in occluded pages (every headless harness, any backgrounded phone tab),
@@ -1725,7 +1753,18 @@ async function streamRest(rest) {
   let sliceT0 = performance.now();
   const Y = () => {
     const FAST = FAST0 || ARRIVING;
-    if (performance.now() - sliceT0 < (FAST ? 20 : 6)) return Promise.resolve();
+    // FINISH-FAST once the picture is already degraded. Measured 2026-08-03
+    // riding into littleindia at 2400,6600: EVERY frame of the ride was
+    // 380-430ms and the worst single build block only 135ms — the frames were
+    // not being killed by build slices but by RENDERING THE HALF-BUILT
+    // DISTRICT (thousands of raw meshes, merged only at the end), while this
+    // pacer, reading those slow frames, backed off 8x and stretched the raw
+    // window to minutes. A doom loop: the slower the frames, the longer the
+    // district stays raw, the slower the frames. So past ~1.8x the render
+    // budget the gentle pacing has already lost — the lesser evil is bigger
+    // slices, single-frame waits, and a district that gets DONE.
+    const FASTB = !FAST && FRAME_MS > CAP_REF * 1.8;
+    if (performance.now() - sliceT0 < (FAST ? 20 : FASTB ? 16 : 6)) return Promise.resolve();
     if (FAST) {
       return new Promise((r) => { wake = r; chan.port2.postMessage(0); })
         .then(() => { sliceT0 = performance.now(); });
@@ -1753,10 +1792,15 @@ async function streamRest(rest) {
     // them, up to eight. The world finishes filling in a few seconds later and
     // the ride stays smooth, which is the trade worth making — nobody notices a
     // district arriving late, everybody notices the picture stuttering.
+    // Judged against CAP_REF, the device's own render budget, not a raw
+    // 60Hz frame — on a capped phone a healthy frame is ~33ms by design and
+    // the old fixed 22/30/45 thresholds kept this permanently backed off.
+    // Two bands only now: healthy frames get the gentle single-frame pacing,
+    // mildly-over frames get one extra frame of air, and past 1.8x FASTB
+    // (above) has already taken over — the old 4- and 8-frame backoffs are
+    // gone because they were the doom loop's other half.
     let waits = 1;
-    if (FRAME_MS > 22) waits = 2;
-    if (FRAME_MS > 30) waits = 4;
-    if (FRAME_MS > 45) waits = 8;
+    if (!FASTB && FRAME_MS > CAP_REF * 1.32) waits = 2;
     const p2 = (typeof document !== 'undefined' && document.visibilityState === 'visible')
       ? new Promise((r) => {
         let k = 0;
@@ -3296,6 +3340,7 @@ let lastCapT = 0, shadowFlip = true;
 // under a single settled world with everything else held still.
 window.__fpsCap = (n) => { FPS_CAP = +n || 0; lastCapT = 0;
   capSkip = (FPS_CAP && capHz) ? Math.max(1, Math.round(capHz / FPS_CAP)) : 1;
+  CAP_REF = capHz ? Math.max(16.7, capSkip * (1000 / capHz)) : 16.7;
   return FPS_CAP; };
 
 function loop(now) {
@@ -3409,6 +3454,9 @@ function loop(now) {
         const g = [...capGaps].sort((a, b) => a - b)[12];
         capHz = g > 0 ? 1000 / g : 60;
         capSkip = Math.max(1, Math.round(capHz / FPS_CAP));
+        // the build pacer's notion of a healthy frame follows the cap:
+        // drawing every capSkip-th refresh makes ~capSkip vsyncs the budget
+        CAP_REF = Math.max(16.7, capSkip * (1000 / capHz));
       }
     } else if (capSkip > 1 && (capTick % capSkip) !== 0) {
       last = lastFrameT;                 // see the note above: never eat time

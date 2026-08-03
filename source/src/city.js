@@ -878,7 +878,27 @@ export class Merger {
   flush(world, opts = {}) {
     const cast = opts.cast !== false;
     let meshes = 0;
+    for (const [key, _list] of this.groups) meshes += this._bucket(world, key, _list, cast);
+    this.groups.clear(); this.mats.clear();
+    return meshes;
+  }
+  // flush, but yielding to the frame loop between buckets. Same iteration
+  // order and identical geometry to flush() — the buckets are independent —
+  // so determinism is untouched; only who gets the CPU between them changes.
+  // Built for the streamed addChunk path, where the whole-district flush at
+  // the end of buildBuildings was a single indivisible block.
+  async flushY(world, opts = {}, Y = null) {
+    const cast = opts.cast !== false;
+    let meshes = 0;
+    let _ft = performance.now();
     for (const [key, _list] of this.groups) {
+      if (Y && performance.now() - _ft > 8) { await Y(); _ft = performance.now(); }
+      meshes += this._bucket(world, key, _list, cast);
+    }
+    this.groups.clear(); this.mats.clear();
+    return meshes;
+  }
+  _bucket(world, key, _list, cast) {
       let list = _list;
       const mat = this.mats.get(key);
       // DROP NON-FINITE GEOMETRY, KEEP ITS NEIGHBOURS.
@@ -905,7 +925,7 @@ export class Merger {
         if (ok) good.push(g);
         else { BAD_GEO++; g.dispose(); }
       }
-      if (!good.length) continue;
+      if (!good.length) return 0;
       list = good;
       let n = 0;
       for (const g of list) n += g.attributes.position.count;
@@ -952,10 +972,7 @@ export class Merger {
       const mesh = new THREE.Mesh(merged, mat);
       mesh.castShadow = cast; mesh.receiveShadow = true;
       world.add(mesh);
-      meshes++;
-    }
-    this.groups.clear(); this.mats.clear();
-    return meshes;
+      return 1;
   }
 }
 
@@ -1577,7 +1594,7 @@ export async function buildBuildings(world, data, Y = null) {
     stats.count++;
   }
   FOOT = STREET = null;   // nothing outside this loop belongs to a building
-  stats.mergedMeshes = merger.flush(world);
+  stats.mergedMeshes = await merger.flushY(world, {}, Y);
   return stats;
 }
 
