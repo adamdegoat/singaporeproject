@@ -1809,7 +1809,12 @@ export async function buildBuildings(world, data, Y = null) {
       const _cc = centroid(b.p);
       let _ph = 0;
       for (const [x, z] of b.p) _ph = (_ph * 31 + ((x * 7) | 0) + ((z * 13) | 0)) | 0;
-      if (Math.abs(_ph) % 5 === 0) {
+      // 1-in-5 pitched -> 1-in-3. The Cove's villa islands carry a lot of
+      // pitched terracotta among the flat-roofed modern houses, and one in
+      // five read as an estate of flat boxes with the odd exception. Authored
+      // proportion, not a surveyed one — the roof form of an individual villa
+      // is not published anywhere.
+      if (Math.abs(_ph) % 3 === 0) {
         merger.add(extrudeGeo(grow(b.p, 1.08), 0.3, _hh), MAT.clayTile, _cc[0], _cc[1]);
         merger.add(extrudeGeo(grow(b.p, 0.82), 1.5, _hh + 0.3), MAT.clayTile, _cc[0], _cc[1]);
       } else {
@@ -1944,7 +1949,19 @@ export async function buildBuildings(world, data, Y = null) {
     // beach building is smooth painted render with almost nothing on it, so it
     // gets a plain material in the tint colour rather than a tinted map.
     const _isSmallBeach = _isBeach && (b.a || 0) <= 1200 && b.h <= 14;
+    // A SENTOSA COVE VILLA IS PAINTED RENDER TOO, and it was getting the
+    // tinted-map path three lines below — the exact mistake the note above
+    // describes, made twice. Tinting multiplies, so a near-white tint over a
+    // stone map came out grey-taupe: ridden down Ocean Drive the Cove read as
+    // rows of beige office blocks where the real thing is white rendered
+    // villas on the water. Same fix as the beach: a plain material in the
+    // colour, no map.
+    //
+    // The towers keep the mapped facade — ONE°15, The Oceanfront and the
+    // Residences are glass-and-frame buildings and genuinely are not render.
+    const _isVilla = _isCove && (b.h || 0) <= 20 && !b.roof;
     const mat = b.col ? tintedMat(wallTex, fam.rough, fam.metal, b.col)
+      : _isVilla ? renderMat(_coveTint)
       : _isSmallBeach ? renderMat(_beachTint)
       : _isCove ? tintedMat(wallTex, fam.rough, fam.metal, _coveTint)
       : _isBeach ? tintedMat(wallTex, fam.rough, fam.metal, _beachTint)
