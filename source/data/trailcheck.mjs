@@ -29,7 +29,7 @@ const out = await page.evaluate(() => {
   // so the check now asks exactly what the game asks, and runs in seconds.
   const res = {
     ways: 0, pts: 0, noSurface: 0, steps: 0, bigSteps: 0, floating: 0,
-    longBlocks: 0, midBlocks: 0, tinyBlocks: 0, exBlock: [],
+    longBlocks: 0, midBlocks: 0, tinyBlocks: 0, exBlock: [], exMid: [],
     exNoSurface: [], exStep: [], exFloat: [],
   };
 
@@ -107,7 +107,12 @@ const out = await page.evaluate(() => {
             if (res.exBlock.length < 12) {
               res.exBlock.push({ n: r.n || k, x: runX | 0, z: runZ | 0, m: +m.toFixed(0) });
             }
-          } else if (m > 3) res.midBlocks++;
+          } else if (m > 3) {
+            res.midBlocks++;
+            if (res.exMid.length < 14) {
+              res.exMid.push({ n: r.n || k, x: runX | 0, z: runZ | 0, m: +m.toFixed(0) });
+            }
+          }
           else res.tinyBlocks++;
           blockRun = 0;
         }
@@ -130,7 +135,12 @@ const out = await page.evaluate(() => {
         if (res.exBlock.length < 12) {
           res.exBlock.push({ n: r.n || k, x: runX | 0, z: runZ | 0, m: +m.toFixed(0) });
         }
-      } else if (m > 3) res.midBlocks++;
+      } else if (m > 3) {
+        res.midBlocks++;
+        if (res.exMid.length < 14) {
+          res.exMid.push({ n: r.n || k, x: runX | 0, z: runZ | 0, m: +m.toFixed(0) });
+        }
+      }
       else res.tinyBlocks++;
       blockRun = 0;
     }
@@ -155,6 +165,7 @@ if (out.longBlocks > N4_BUDGET) {
   process.exit(1);
 }
 console.log(`   PASS  no walking route blocked for over 20m`);
+for (const e of out.exMid) console.log(`    MID ${e.m}m of ${e.n} from ${e.x},${e.z}`);
 for (const e of out.exStep) console.log(`    STEP   ${e.n} at ${e.x},${e.z} d=${e.d} (local grade ${e.trend}m/sample)`);
 for (const e of out.exFloat) console.log(`    FLOAT  ${e.n} at ${e.x},${e.z} up=${e.up}`);
 await browser.close();

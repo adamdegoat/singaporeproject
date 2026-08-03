@@ -33,7 +33,13 @@ import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-MIN_RUN = 12.0        # metres inside a footprint before it is a route, not a clip
+# 12m -> 4m. The long blockages were gone but 21 runs of 5-9m remained, and a
+# five-metre wall across a footpath is still a detour a player has to notice.
+# Measured at 4m: blocked runs of 3-20m fall 21 -> 9, the carve grows from 115
+# routes to 219 (not the 375 that a loose margin produced), and B5 — the check
+# that catches buildings you can walk INTO — still passes, which is the guard
+# that matters. Below this it is a corner clip, not a route.
+MIN_RUN = 4.0
 CORRIDOR_W = 3.6      # how wide the carved passage is
 PAD = 2.5             # push past the facade so the mouth is genuinely open
 WALK = {"footway", "pedestrian", "path", "steps"}
