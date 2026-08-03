@@ -1,0 +1,188 @@
+"""HEIGHTS — calibrate the guess against the district's OWN surveyed buildings.
+
+The owner: "make the entire sentosa like real sentosa ya meaning the buildings
+too everything need research."
+
+Some of that is research one building at a time, and that work is real (see
+research/). But the biggest single error on this island is not any one
+building, it is the DEFAULT, and it is measurable:
+
+    sourced heights (OSM building:levels)   n=580   median  6.8 m
+    guessed heights                         n=501   median 14.4 m
+
+The guess is more than twice as tall as the reality standing next to it. 119
+buildings sit at exactly 20m — six storeys — on an island whose surveyed
+median is two. That single number is most of why Sentosa reads as a wall of
+mid-rise blocks instead of a low-rise resort island.
+
+And the map already contains the answer. 580 buildings HERE carry a real levels
+tag, so the district can calibrate its own guess: band the surveyed ones by
+footprint, take the median of each band, and give unsourced buildings the
+figure their neighbours of the same size actually have. Measured on Sentosa:
+
+    footprint < 300 m2    median  6.8 m
+    300 - 1,000 m2        median  6.8 m
+    1,000 - 3,000 m2      median 20.4 m
+    3,000 m2 +            median 23.8 m
+
+so footprint genuinely predicts height here, and the bands are not invented —
+each is the median of real tagged buildings in the same place.
+
+THIS IS STILL A GUESS AND IT SAYS SO. Every building it touches is marked
+`hs: "calib"`, never "levels". The accuracy ledger counts a rule as INVENTED no
+matter how well founded, which is correct and must not be laundered: this
+replaces a bad guess with a defensible one, it does not turn a guess into a
+measurement.
+
+A band needs MIN_SAMPLE surveyed buildings before it is trusted; below that it
+falls back to the district median, because a "median" of three buildings is an
+anecdote.
+
+Run:  python3 data/heights.py sentosa [--dry-run]
+"""
+import argparse
+import json
+import math
+import os
+import statistics
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+# footprint bands, in m2
+# FINER BANDS. 300-1000 m2 is far too coarse a bucket to carry one median: it
+# lumps a 320 m2 villa in with a 950 m2 hall, and giving both the villa's 6.8m
+# put fifty large footprints under 8m — which data/check.py refuses, correctly,
+# because a 600 m2 building three metres high is a shed and not a building.
+BANDS = [(0, 150), (150, 400), (400, 700), (700, 1200),
+         (1200, 3000), (3000, 1e12)]
+# ...AND A HARD FLOOR TIED TO FOOTPRINT, which is the same rule check.py
+# enforces. Calibration may make a building shorter than its neighbours; it may
+# not make it a shed.
+BIG_AREA, BIG_MIN_H = 600.0, 8.5
+MIN_SAMPLE = 12
+SOURCED = {"levels", "osm", "site", "named"}
+# a storey, for rounding to something a building could actually be
+STOREY = 3.4
+
+
+# RESEARCHED HEIGHTS BEAT THE CALIBRATION, and a published figure beats both.
+#
+# The bands above are a defensible guess for a building nobody has written
+# about. Where somebody HAS, the fact wins. Keyed on a lowercase substring of
+# the mapped name; `floors` is multiplied by STOREY, `m` is used as given.
+# Every entry carries its source, and an entry without one does not belong here.
+RESEARCHED = [
+    # The Barracks Hotel Sentosa — a restored 1940 British barracks, two
+    # storeys. fareasthospitality.com / thebarrackshotel.com.sg, 2026-08-04.
+    ("barracks hotel", {"floors": 2}),
+    # Oasia Resort Sentosa — a three-storey 1940 heritage barracks block with a
+    # six-storey modern annexe. The mapped footprints are separate, so the
+    # taller figure goes to the larger one. oasiahotels.com / Far East
+    # Hospitality, 2026-08-04.
+    ("oasia resort", {"floors": 6}),
+    ("oasis resort", {"floors": 3}),
+]
+
+
+def researched_for(name):
+    low = (name or "").lower()
+    for (needle, spec) in RESEARCHED:
+        if needle in low:
+            return spec
+    return None
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("id", nargs="?", default="sentosa")
+    ap.add_argument("--dry-run", action="store_true")
+    a = ap.parse_args()
+    path = os.path.join(HERE, f"{a.id}.json")
+    d = json.load(open(path))
+    blds = d.get("buildings") or []
+
+    # undo a previous run so this is idempotent
+    for b in blds:
+        if b.get("hs") in ("calib", "research"):
+            b.pop("hs", None)
+            b.pop("low", None)
+            if "h0" in b:
+                b["h"] = b.pop("h0")
+
+    sourced = [b for b in blds if b.get("hs") in SOURCED and b.get("h")]
+    if len(sourced) < 40:
+        print(f"  ! only {len(sourced)} surveyed heights — too few to calibrate, "
+              "leaving the guess alone")
+        return
+    overall = statistics.median([b["h"] for b in sourced])
+
+    band_h = []
+    for (lo, hi) in BANDS:
+        got = [b["h"] for b in sourced if lo <= (b.get("a") or 0) < hi]
+        if len(got) >= MIN_SAMPLE:
+            band_h.append((lo, hi, statistics.median(got), len(got)))
+        else:
+            band_h.append((lo, hi, overall, len(got)))
+
+    print(f"== heights {a.id}")
+    print(f"   {len(sourced)} surveyed, district median {overall:.1f} m")
+    for (lo, hi, med, n) in band_h:
+        tag = "" if n >= MIN_SAMPLE else f"  (only {n} surveyed — using district median)"
+        his = "+" if hi > 1e11 else f"-{hi:.0f}"
+        print(f"     footprint {lo:.0f}{his:<8} median {med:5.1f} m from {n:4d} surveyed{tag}")
+
+    changed = 0
+    before = []
+    after = []
+    for b in blds:
+        if b.get("hs") in SOURCED or not b.get("h"):
+            continue
+        area = b.get("a") or 0
+        med = overall
+        for (lo, hi, m, n) in band_h:
+            if lo <= area < hi:
+                med = m
+                break
+        # A LITTLE VARIATION, FROM THE POSITION, NEVER FROM AN RNG STREAM.
+        # 442 identical boxes is its own kind of wrong, and this project's rule
+        # is that a cosmetic choice must not be able to move a bus stop.
+        p = b.get("p") or [[0, 0]]
+        hx = (abs(p[0][0]) * 7.31 + abs(p[0][1]) * 3.17) % 1.0
+        h = med * (0.82 + 0.36 * hx)
+        # round to a storey, floor at one
+        h = max(STOREY, round(h / STOREY) * STOREY)
+        if area > BIG_AREA and not researched_for(b.get("n")):
+            h = max(h, BIG_MIN_H)
+        spec = researched_for(b.get("n"))
+        if spec:
+            h = spec["m"] if "m" in spec else spec["floors"] * STOREY
+            # A RESEARCHED FACT IS NOT A SHED. check.py refuses a footprint over
+            # 600 m2 standing under 8m, which is the right guard against the
+            # pipeline guessing a big hall short — and The Barracks Hotel really
+            # is a two-storey 1940 barracks on a 1,930 m2 plan. check.py already
+            # has the mechanism for this: `low` means A SOURCE SAYS SO, as
+            # opposed to the pipeline having guessed it. So say so.
+            if h < 8.0:
+                b["low"] = 1
+        elif b.pop("low", None):
+            pass
+        before.append(b["h"])
+        b["h0"] = b["h"]
+        b["h"] = round(h, 1)
+        b["hs"] = "research" if spec else "calib"
+        after.append(b["h"])
+        changed += 1
+
+    if before:
+        print(f"   recalibrated {changed} guessed heights: "
+              f"median {statistics.median(before):.1f} m -> "
+              f"{statistics.median(after):.1f} m")
+    if a.dry_run:
+        print("   dry run — nothing written")
+        return
+    json.dump(d, open(path, "w"), separators=(",", ":"))
+    print(f"   written: {path}")
+
+
+if __name__ == "__main__":
+    main()

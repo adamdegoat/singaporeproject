@@ -443,6 +443,9 @@ def main():
     # MegaZip is not in OSM — authored from measured endpoints against
     # published figures. See data/zipline.py.
     subprocess.run([sys.executable, os.path.join(HERE, "zipline.py"), d["id"]], check=False)
+    # Calibrate guessed building heights against the district's own surveyed
+    # ones — the blanket default was twice the island's real median.
+    subprocess.run([sys.executable, os.path.join(HERE, "heights.py"), d["id"]], check=False)
     # Where you arrive at each attraction, and what the guide there says.
     subprocess.run([sys.executable, os.path.join(HERE, "entrances.py"), d["id"]], check=False)
     # Open the mapped walking routes that run through buildings.
