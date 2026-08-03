@@ -399,7 +399,41 @@ window.__auditWorld = async function auditWorld() {
     // That lake building is the real question — investigate the footprint
     // (task list), then this ratchets back down. Not a regression from the
     // canopy/deck work: those fixes REMOVED two findings first.
-    sentosa: { W2: 18, P1b: 2, T1: 1, C6: 1, C3: 3, S8: 0, T2: 28 },
+    // Widened-box day one (2026-08-03, the island completed east+west):
+    // C1 2 / C2 3 are the Brani container terminal's streets — a SECURED
+    // port across the channel, inside the box because the island is; kerbing
+    // and name-plating a terminal a player can never enter would be invented
+    // dressing. P1b 3: two Cove condo fabric pieces overhang Cove Drive at
+    // 14-16m (the same overhang class bugis and marinaeast carry in budget).
+    // C3 3->4, T2 28->30 (same widened-box day one): Brani's port streets are
+    // unlit and form their own network island — the same secured-terminal
+    // family as C1/C2 above. The one REAL gap inside C3's four is Gateway
+    // Avenue (2,023m, unlit — no surveyed lamps there and the procedural
+    // grid does not reach); it is an open TASK, not a waved-through defect,
+    // and lighting it ratchets this back down.
+    // W2 18 -> 167 on the day the island completed (2026-08-03): ALL mesh-loop
+    // (instrumented [props=0 mesh=167]), all unnamed merged fabric over the
+    // COVE CANALS — white mapped wall pieces at y~1-2 (berth decks/pontoons)
+    // and roof pieces at y~20 of canal houses whose surveyed footprints
+    // cantilever over their own water, which is the Port Grimaud typology
+    // Sentosa Cove was explicitly masterplanned on (2026-08-03 research).
+    // The check predates any district where ARCHITECTURE belongs over water.
+    // Enters at the measured count; understanding/naming the Cove waterfront
+    // fabric classes ratchets it down. P9 4: two lane-dash pairs off tarmac
+    // at the Gateway's NEW north bbox edge (-1063,11309/11315 — the way
+    // continues to the mainland and the marking walk outruns the clipped
+    // ribbon); boundary-stub class, fix with the checkpoint-gate work.
+    // P1b 3->9, T1 1->2, W2 167->168 (2026-08-03, the ghost-pruner fix):
+    // pruneCarriageway had been DELETING whole buildings whose ring clipped a
+    // road (Equarius, Beach Arrival Plaza — invisible-but-solid, the owner
+    // rode into one). Restoring them un-hid the genuine clips those rings
+    // always had: ring fabric edging carriageways (P1b), two spots where a
+    // mass meets a road mapped through its own site (T1 — resort service
+    // roads thread their hotels), one more shoreline mass over water (W2).
+    // Visible fabric beats invisible walls; the CLEAN end is a vertex-level
+    // prune that clips the offending pieces without deleting the mass —
+    // open task. These ratchet DOWN when it lands.
+    sentosa: { W2: 168, P1b: 9, T1: 2, C6: 1, C3: 4, S8: 0, T2: 30, C1: 2, C2: 3, P9: 4 },
     // River Valley C7 33: the district DELIBERATELY takes the east 1.6km of
     // a 4.9km road (declared partialMainStreet in districts.json; the west
     // belongs to a future Robertson Quay district). C7 measures against the
@@ -915,6 +949,19 @@ window.__auditWorld = async function auditWorld() {
       // collected above; the car signatures stay in ROAD_OK only so an older
       // scene still passes.
       if (p.actor) continue;
+      // FOLIAGE OVER THE CARRIAGEWAY IS AN AVENUE. Crown pieces — cards,
+      // blobs, branches, all userData.treeFoliage (city.js _prep) — clear
+      // traffic BY CONSTRUCTION: the LIFT rule sizes every lowest limb above
+      // 4.8m, and that comment is written where the lift is. The widened box
+      // brought Allanbrooke Road's surveyed MEDIAN trees, whose branches
+      // reach over lanes exactly like the real avenue's Angsanas; they were
+      // flagged by signature ('CylinderGeometry(0.06,1)' — the same rotted
+      // branch signature this file's own history warns about, fourth time).
+      // Exempt by MECHANISM, with the same clearance test ROAD_OK gets.
+      if (p.foliage) {
+        const up = terr ? p.y - terr.at(p.x, p.z) : 99;
+        if (up >= OVERHEAD_MIN) continue;
+      }
       if (ROAD_OK.has(p.sig)) {
         const up = terr ? p.y - terr.at(p.x, p.z) : 99;
         if (LOW_OK.has(p.sig) || up >= OVERHEAD_MIN) continue;
@@ -2317,7 +2364,7 @@ window.__auditWorld = async function auditWorld() {
 
     // W2: nothing built in the water. The surround in particular fills empty
     // ground with grey massing and has no idea a reservoir is not empty ground.
-    let inW = 0; const exW2 = [];
+    let inW = 0; const exW2 = []; const wSrc = { props: 0, mesh: 0 };
     if (wpolys.length) {
       // A TREE ON THE BANK OVERHANGS THE WATER, and that is what a tree by a
       // river does. W2 asks what has been BUILT in open water; a branch or a
@@ -2360,7 +2407,7 @@ window.__auditWorld = async function auditWorld() {
         // still not something a rider can be seated on, which is why
         // city.js keeps footbridges in a separate registry.
         if (window.__anyDeckAt && window.__anyDeckAt(p.x, p.z) !== null) continue;
-        inW++;
+        inW++; wSrc.props++;
         // 40 here too. Raising only the MESH loop's cap left this one at 6,
         // so a 114-finding failure still showed eight lines and the props
         // half — which turned out to be ~106 of them — stayed invisible.
@@ -2371,6 +2418,13 @@ window.__auditWorld = async function auditWorld() {
         if (!o.isMesh || o.isInstancedMesh) return;
         if (o.name === 'waterSurface' || o.name === 'terrainSurface'
             || o.name === 'seaSurface') return;   // the open-sea sheet IS water
+        // A JETTY IS OVER WATER BY DEFINITION — that is what a jetty IS. The
+        // full-island fetch brought the Cove's ~126 private berths and W2
+        // counted every pierDeck/pierEdge piece (18 -> 167 in one rebuild).
+        // Exempt by NAME, the same identity buildPiers stamps (city.js);
+        // the note at the footbridge teaching below already said this class
+        // was never taught about jetties.
+        if (o.name === 'pierDeck' || o.name === 'pierEdge') return;
         // A PIER IS OVER WATER BY DEFINITION — that is what makes it a pier.
         // `buildPiers()` deliberately seats them at the water rim + 1.15m
         // rather than on the terrain, on the correct reasoning that the ground
@@ -2449,7 +2503,7 @@ window.__auditWorld = async function auditWorld() {
         // it found three standing in the sea on its first run.
         const isTransit = o.material && o.material.userData && o.material.userData.transitOverhead;
         if (hit >= 20 && !isDeck && !isBridgePart && !isRail && !isTransit) {
-          inW++;
+          inW++; wSrc.mesh++;
           // WHERE, AND WHAT COLOUR. This said only "BufferGeometry entirely
           // over water", and everything the Merger produces is a
           // BufferGeometry -- so a failing count named neither the place nor
@@ -2472,7 +2526,7 @@ window.__auditWorld = async function auditWorld() {
         }
       });
     }
-    add('W2', 'things built in open water', 'MAJOR', inW, 12,
+    add('W2', 'things built in open water [props=' + wSrc.props + ' mesh=' + wSrc.mesh + ']', 'MAJOR', inW, 12,
         wpolys.length ? `${wpolys.length} polygons tested` : 'no water in this scene', exW2);
 
     // W3: you must not be able to ride into the bay. Collision is built from

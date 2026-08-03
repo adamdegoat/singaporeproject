@@ -2918,6 +2918,15 @@ export function buildPiers(world, data) {
   for (const p of polys) {
     const pts = p.p;
     if (pts.length < 4) continue;
+    // A MARINA PIER NEVER CROSSES A STREET. The Cove's ~126 private jetties
+    // abut the island loop roads, and one traced ring reached into the
+    // carriageway raster — its 0.45m lip became "structure in a carriageway"
+    // (P1b, first full-island audit). A ring touching a road keeps its deck
+    // and drops the lip; the deck is flat at water level and blocks nothing.
+    let lipOK = true;
+    for (const [qx, qz] of pts) {
+      if (window.__onRoad && window.__onRoad(qx, qz, 0.2)) { lipOK = false; break; }
+    }
     // the rim of the water it stands in, read the same way buildWater does
     let lo = Infinity;
     for (const [x, z] of pts) {
@@ -2931,9 +2940,11 @@ export function buildPiers(world, data) {
     g1.translate(0, level, 0);
     geos.push(g1);
     // a lip round the edge so it reads as a structure rather than a painted area
-    const g2 = extrudeGeo(pts, 0.45, 0);
-    g2.translate(0, level - 0.45 - (FOOT !== null ? FOOT : 0), 0);
-    edges.push(g2);
+    if (lipOK) {
+      const g2 = extrudeGeo(pts, 0.45, 0);
+      g2.translate(0, level - 0.45 - (FOOT !== null ? FOOT : 0), 0);
+      edges.push(g2);
+    }
   }
   if (!geos.length) return { piers: 0 };
   const deck = new THREE.Mesh(mergeGeos(geos), deckMat);
@@ -3087,6 +3098,13 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
           if (!inRing(jx, jz, gp.p)) continue;
           if (!nearTrail(jx, jz)) continue;
           if (blocked && blocked(jx, jz)) continue;
+          // A LOW plant's limbs sit at 1.5-3m — the traffic envelope. A
+          // full tree over a road is an avenue (crown lifted 6m by rule);
+          // a sapling beside one is an obstruction: the widened box put 28
+          // of them in Allanbrooke Road's raster (P1, probed: branch
+          // centres 2.4-3.4m up, foliage=true). Low plants stand off ANY
+          // carriageway by their own reach.
+          if (window.__onRoad && window.__onRoad(jx, jz, 3)) continue;
           f.add(jx, jz, 0.28 + ((jx * 6.1 + jz * 2.9) % 100) / 590, true);
           if (window.__shrubDbg) window.__shrubDbg.push([jx | 0, jz | 0]);
           shrubs++;

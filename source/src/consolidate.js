@@ -335,6 +335,18 @@ export async function pruneCarriageway(root, onRoad, groundAt, Y = null) {
     // anything this wide spans the street on purpose: canopies over a forecourt,
     // ION's shell, a porte-cochere
     if (Math.max(gp.width || 0, gp.depth || 0, (gp.radiusTop || 0) * 2) > 12) continue;
+    // A WHOLE BUILDING MASS MEETS ROADS ON PURPOSE. The widened Sentosa box
+    // brought resort-interior service roads that thread THROUGH their own
+    // hotels' mapped rings (a drop-off is a road through a building), and one
+    // clipped vertex doomed the ENTIRE mass: Equarius Hotel (5,857 m2), Beach
+    // Arrival Plaza and two more stood invisible while their collision
+    // stayed — the owner rode into them ("buildings on map but invisible").
+    // Extruded masses carry no geometry.parameters, so the primitive-width
+    // exemption above never reached them: measure the world bbox instead.
+    // Small fittings (fins, trim, bollard-scale pieces) stay prunable.
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    const bb = o.geometry.boundingBox;
+    if ((bb.max.x - bb.min.x) * (bb.max.z - bb.min.z) > 250) continue;
 
     const step = Math.max(1, Math.floor(pos.count / 60));
     for (let i = 0; i < pos.count; i += step) {
@@ -349,6 +361,13 @@ export async function pruneCarriageway(root, onRoad, groundAt, Y = null) {
     }
   }
   for (const o of doomed) {
+    // THE OTHER HALF OF THE GHOST BUG: pruning removed the DRAWN mesh while
+    // the data footprint kept blocking in colGrid — an invisible wall by
+    // construction. Record where each doomed mesh stood so the caller can
+    // release its collision too.
+    if (!window.__prunedAt) window.__prunedAt = [];
+    const bb2 = new THREE.Box3().setFromObject(o);
+    window.__prunedAt.push([(bb2.min.x + bb2.max.x) / 2, (bb2.min.z + bb2.max.z) / 2]);
     if (o.parent) o.parent.remove(o);
     o.geometry.dispose();
   }

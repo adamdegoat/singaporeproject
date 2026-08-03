@@ -2306,7 +2306,11 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // nearest carriageway point within 80m of it, so a data re-fetch moves the
   // road and the spawn follows it instead of going stale. No road in reach
   // falls through to the axis midpoint, so a broken table cannot break a boot.
-  const SPAWNS = { sentosa: [-1732.4, 12757.1] };   // Beach Station (monorail)
+  // Siloso Beach, not Beach Station (owner rode it 2026-08-03: "doesnt even
+  // look like the beach station... change to start at siloso beach") — the
+  // station is a junction under a viaduct; the beach walk sells sand and sea
+  // at frame one. Snaps to Siloso Beach Walk's carriageway.
+  const SPAWNS = { sentosa: [-1800, 12740] };
   let spawnDone = false;
   const want = SPAWNS[SCENE];
   if (want && Array.isArray(data.roads)) {

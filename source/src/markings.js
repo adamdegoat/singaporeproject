@@ -958,6 +958,12 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
       // `blockedIn` is the parameter; `isBlocked` is an alias declared inside
       // the per-road loop and is not in scope out here.
       if (blockedIn(lx, lz)) continue;
+      // A SURVEYED POST INSIDE OUR DRAWN CARRIAGEWAY IS A RASTER CONFLICT,
+      // not a lamp: Allanbrooke Road's median posts sit between twin
+      // carriageways our ribbons cover (28 of the widened box's 29 lamps
+      // stood in live lanes, P1). Refuse rather than stand in traffic —
+      // the same rule every failed clearance search follows.
+      if (window.__onRoad && window.__onRoad(lx, lz, 0.3)) continue;
       if (!claim('lamp', lx, lz, 3)) continue;
       // the arm reaches toward the carriageway: take the road direction here and
       // decide the side from which way the road actually lies

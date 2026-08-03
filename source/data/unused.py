@@ -212,6 +212,14 @@ DEFERRED = {
     "addr:housenumber":    "no building-number signage is modelled anywhere yet",
     "addr:street":         "same",
     "kerb":                "lowered/flush/raised; every kerb is drawn the same",
+    # Surfaced by the 2026-08-03 whole-island Sentosa box:
+    "traffic_calming":     "humps/tables on resort roads; belongs to the "
+                           "surface-aware riding roadmap item (committed) — a "
+                           "hump is a ride-feel feature, not a prop",
+    "golf":                "cartpath/hole/green ways on The Serapong and The "
+                           "Tanjong; drawn when the golf places batch lands "
+                           "(research banked 2026-08-03, incl. the Sand Belt "
+                           "bunker aesthetic that needs them)",
     "crossing:markings":   "zebra vs ladder vs dashes; all drawn as zebra",
     "amenity":             "building use; the facade family uses material and era instead",
     # Same class as `amenity` above, and it appeared for the same reason the
