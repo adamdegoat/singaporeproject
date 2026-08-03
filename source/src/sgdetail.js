@@ -1090,9 +1090,19 @@ export async function buildTrails(world, data, Y = null) {
           }
         }
         if (onRoad) continue;
-        // +4cm: clear of the terrain surface, under the kerbs and treads that
-        // are seated on it, same offset the pavement layer uses
-        const y0 = groundAt(p0x, p0z) + 0.04, y1 = groundAt(p1x, p1z) + 0.04;
+        // surfaceAt, NOT groundAt — THE EXACT TRAP THIS FILE'S OWN HEADER
+        // WARNS ABOUT, and I walked into it. The Sentosa Boardwalk is an
+        // elevated structure: measured, its deck stands 2.5m above the terrain
+        // under it, so a ribbon drawn on groundAt was laid two and a half
+        // metres BELOW the walkway, and a player crossing it met a 2.5m wall
+        // where the deck began (data/trailcheck.mjs: every remaining floating
+        // point and four of the five worst steps were this one way).
+        //
+        // The same two-numbers trap that put 119 median kerbs under the
+        // Bayfront bridge deck. surfaceAt answers "what does a walker stand
+        // on here" for terrain, deck and stair tread alike, which is the
+        // question a path surface is asking.
+        const y0 = surfaceAt(p0x, p0z) + 0.02, y1 = surfaceAt(p1x, p1z) + 0.02;
         const g = new THREE.BufferGeometry();
         const pos = new Float32Array([
           p0x - nx * half, y0, p0z - nz * half,
@@ -1108,9 +1118,19 @@ export async function buildTrails(world, data, Y = null) {
         g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
         g.computeVertexNormals();
         merger.add(g, mat, p0x, p0z);
-        // carried underfoot, so the walker stands ON the trail and not in the
-        // slope beside it
-        addWalkSurface(p0x, p0z, p1x, p1z, half, (y0 + y1) / 2);
+        // NO WALK SURFACE IS REGISTERED FOR A TRAIL, and registering one was a
+        // bug I put in this morning. addWalkSurface stores ONE height per
+        // piece and walkSurfaceAt returns it flat, taking the highest match —
+        // which is exactly right for a stair tread, because a tread IS flat,
+        // and exactly wrong for a path on a slope: each 6m piece became a
+        // level platform at its own midpoint height, so a climbing trail was a
+        // staircase. Measured on the Imbiah Trail: repeated 1.2-1.3m steps
+        // every few metres, on the island's flagship walk (data/trailcheck.mjs).
+        //
+        // Nothing is needed in its place. The ribbon is drawn at terrain +4cm
+        // and surfaceAt already carries a walker on terrain + SURFACE_PATH, so
+        // the walker is on the trail by construction — the registration was
+        // only ever making it worse.
         out.trailSegs++;
         drew++;
       }

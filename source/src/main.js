@@ -2456,6 +2456,38 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   const groundMat = new THREE.MeshStandardMaterial({
     color: 0x9d9e99, roughness: 0.95, vertexColors: true,
   });
+  // THE GROUND HAD NO TEXTURE AT ALL — one flat colour per vertex tint across
+  // the whole island. Every probe of a "big blank untextured mass" in a vet
+  // shot came back as this material (`#9d9e99 no-map`), and on Sentosa that is
+  // most of what you look at: the reclaimed Cove platform, the beaches, the
+  // golf, every apron. Flat colour over a large area reads as plastic, and it
+  // was being mistaken for a modelling bug repeatedly, including by me.
+  //
+  // The terrain carries only position and colour — no UVs, and adding a UV
+  // attribute to 493k vertices to hang a texture on is memory this world does
+  // not have to spend. So the detail is generated in the shader from WORLD
+  // POSITION instead: one smooth octave for cloudy variation at ~10m and one
+  // cheap blocky octave for grain underfoot. It costs five hash evaluations
+  // per ground pixel and nothing at all in memory or geometry, and being
+  // position-keyed it is deterministic and identical on every device.
+  groundMat.onBeforeCompile = (sh) => {
+    sh.vertexShader = 'varying vec3 vGPos;\n' + sh.vertexShader.replace(
+      '#include <begin_vertex>',
+      '#include <begin_vertex>\n  vGPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = 'varying vec3 vGPos;\n'
+      + 'float gHash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }\n'
+      + 'float gNoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);\n'
+      + '  return mix(mix(gHash(i),gHash(i+vec2(1,0)),f.x), mix(gHash(i+vec2(0,1)),gHash(i+vec2(1,1)),f.x), f.y); }\n'
+      + sh.fragmentShader.replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          vec2 gp = vGPos.xz;
+          float n = gNoise(gp * 0.10);                 // ~10m patches
+          float g = gHash(floor(gp * 1.6));            // grain underfoot
+          diffuseColor.rgb *= 0.90 + 0.15 * n + 0.04 * g;
+        }`);
+  };
   await bstep(0.31, 'shaping the ground');
   // EVERY district's green, not just the spawn one: the ground mesh is built
   // once for the whole region, so it has to know about all of it up front.

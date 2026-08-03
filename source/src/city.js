@@ -282,6 +282,13 @@ export const MAT = {
   // cable-car-station lid and reads as a town building on the sand.
   beachRoof: new THREE.MeshLambertMaterial({ color: 0x8a7458 }),
   beachPost: new THREE.MeshLambertMaterial({ color: 0x6f5c46 }),
+  // A ROOF IS NOT A WALL. The top face of an extruded building took the wall
+  // material and nothing else, so from anywhere with height — the cable car,
+  // the bungy tower, the Cove, any hill — a large building read as a blank
+  // slab of flat colour. Roof decks are darker, dirtier and matte, and they
+  // have an upstand round the edge.
+  roofDeck: new THREE.MeshLambertMaterial({ color: 0x77787a }),
+  roofParapet: new THREE.MeshLambertMaterial({ color: 0xa9a498 }),
   // the two surfaces OSM names that are neither asphalt nor our pavement slab
   unitPave: new THREE.MeshStandardMaterial({ map: texPaverBlock(), color: 0x9a9184, roughness: 0.92 }),
   roadConc: new THREE.MeshStandardMaterial({ map: texConcrete(0x9d9a94, 0.6), roughness: 0.93 }),
@@ -1754,6 +1761,18 @@ export async function buildBuildings(world, data, Y = null) {
         merger.add(_post, MAT.beachPost, _px, _pz);
       }
     }
+    // GIVE IT A ROOF. See MAT.roofDeck: the extrusion's top face wore the wall
+    // material, so every flat-topped building was a blank slab from above —
+    // the recurring "big untextured mass" in vet shots across the Cove, the
+    // beach and the resort. A recessed deck plus an upstand round the edge is
+    // the whole fix, and it is what a real flat roof looks like from the cable
+    // car. Skipped for canopies (b.roof), for masses that start in the air,
+    // and for anything under 300 m2, where the cost is not worth the pixels.
+    if (!b.roof && !(b.mh && b.mh > 1) && (b.a || 0) > 300 && b.h > 3) {
+      const _rc = centroid(b.p);
+      merger.add(extrudeGeo(grow(b.p, 0.985), 0.12, b.h - 0.12), MAT.roofDeck, _rc[0], _rc[1]);
+      merger.add(extrudeGeo(grow(b.p, 1.006), 0.65, b.h - 0.1), MAT.roofParapet, _rc[0], _rc[1]);
+    }
     // provenance, so the accuracy ledger can say how many facades are a real
     // answer and how many are still a hash
     const fs = (window.__facadeSrc = window.__facadeSrc || {});
@@ -2303,9 +2322,21 @@ export async function buildRoads(world, data, Y = null) {
             if (byEnd.has(k)) union(i, byEnd.get(k).i);
           }
         }
+        // COUNT DISTINCT FRAGMENTS, NOT ENDPOINTS. A CLOSED RING starts and
+        // ends at the same coordinate, so counting endpoints saw two arrivals
+        // there and called it a junction — which meant a ring-shaped bridge
+        // never had a terminal and never got an approach ramp.
+        //
+        // The Sentosa Boardwalk is exactly that: ONE pedestrian way, bridge=1,
+        // 34 points, running out and back to -1118,11456. Its deck sat at
+        // runMax+1.2 for its whole length with a hard 2.5m drop where it meets
+        // the land, on the walk every visitor arrives by (measured: every
+        // floating point and four of the five worst steps in
+        // data/trailcheck.mjs were this one way). One way touching a point is
+        // a landing however many of its own ends arrive there.
         const k0 = endKey(cls[i], cx, cz);
         const e = byEnd.get(k0);
-        if (e) { e.n++; } else byEnd.set(k0, { i, n: 1, x: p[0], z: p[1] });
+        if (e) { e.frags.add(i); } else byEnd.set(k0, { i, frags: new Set([i]), x: p[0], z: p[1] });
       }
     });
     const runMax = new Map(), runTerms = new Map();
@@ -2317,7 +2348,7 @@ export async function buildRoads(world, data, Y = null) {
     });
     for (const e of byEnd.values()) {
       // an endpoint only ONE fragment touches is where the run meets the land
-      if (e.n === 1) {
+      if (e.frags.size === 1) {
         const root = find(e.i);
         if (!runTerms.has(root)) runTerms.set(root, []);
         runTerms.get(root).push([e.x, e.z, TERRAIN.at(e.x, e.z)]);
