@@ -2321,6 +2321,78 @@ export async function buildTransit(world, data, Y = null) {
     }
   }
 
+  // -- FORT SILOSO SKYWALK -------------------------------------------------
+  //
+  // 181m of elevated walkway from a lift tower near Siloso Point to Fort
+  // Siloso, through the canopy. Published length and route; the deck LEVEL is
+  // authored, because our heightfield gives Fort Siloso's hill 18m where the
+  // real one is about forty and a published 43m deck would float. See
+  // data/skywalk.py for the whole argument.
+  const sw = data.skywalk;
+  if (sw && sw.p && sw.p.length === 2) {
+    await YY();
+    const [[ax, az], [bx, bz]] = sw.p;
+    const y = sw.y, half = (sw.w || 2.6) / 2, rail = sw.rail || 1.25;
+    const L = Math.hypot(bx - ax, bz - az);
+    const ang = Math.atan2(bx - ax, bz - az);
+    const nx2 = Math.cos(ang), nz2 = -Math.sin(ang);
+    const steelSW = new THREE.MeshLambertMaterial({ color: 0x6f7378 });
+    const deckMat = new THREE.MeshLambertMaterial({ color: 0x8a7f6e });
+    // deck
+    const deckG = new THREE.BoxGeometry(half * 2, 0.32, L);
+    deckG.rotateY(ang);
+    deckG.translate((ax + bx) / 2, y, (az + bz) / 2);
+    merger.add(deckG, deckMat, ax, az);
+    // parapet either side, and uprights so it reads as a walkway not a plank
+    for (const sgn of [-1, 1]) {
+      const top = new THREE.BoxGeometry(0.1, 0.09, L);
+      top.rotateY(ang);
+      top.translate((ax + bx) / 2 + nx2 * half * sgn, y + rail,
+                    (az + bz) / 2 + nz2 * half * sgn);
+      merger.add(top, steelSW, ax, az);
+      for (let t = 0; t <= L; t += 3.2) {
+        const px = ax + (bx - ax) * (t / L) + nx2 * half * sgn;
+        const pz = az + (bz - az) * (t / L) + nz2 * half * sgn;
+        const up = new THREE.BoxGeometry(0.07, rail, 0.07);
+        up.translate(px, y + rail / 2, pz);
+        merger.add(up, steelSW, ax, az);
+      }
+    }
+    // piers down to the ground, skipped where they would stand in water
+    for (let t = 14; t < L - 6; t += 26) {
+      const px = ax + (bx - ax) * (t / L), pz = az + (bz - az) * (t / L);
+      const gy = groundAt(px, pz);
+      if (gy < 0.8) continue;
+      const hgt = y - 0.16 - gy;
+      if (hgt < 3) continue;
+      const col = new THREE.CylinderGeometry(0.34, 0.44, hgt, 8);
+      col.translate(px, gy + hgt / 2, pz);
+      merger.add(col, steelSW, px, pz);
+    }
+    // the lift tower at the Siloso Point end — the ride up is the way in
+    const tgy = groundAt(ax, az);
+    const th = y - tgy + 2.6;
+    for (const [ox, oz] of [[-1.7, -1.7], [1.7, -1.7], [-1.7, 1.7], [1.7, 1.7]]) {
+      const leg = new THREE.BoxGeometry(0.3, th, 0.3);
+      leg.translate(ax + ox, tgy + th / 2, az + oz);
+      merger.add(leg, steelSW, ax, az);
+    }
+    for (let ty = 4; ty < th; ty += 4) {
+      for (const [w2, dd] of [[3.7, -1.7], [3.7, 1.7]]) {
+        const b1 = new THREE.BoxGeometry(w2, 0.16, 0.16);
+        b1.translate(ax, tgy + ty, az + dd);
+        merger.add(b1, steelSW, ax, az);
+        const b2 = new THREE.BoxGeometry(0.16, 0.16, w2);
+        b2.translate(ax + dd, tgy + ty, az);
+        merger.add(b2, steelSW, ax, az);
+      }
+    }
+    const cap = new THREE.BoxGeometry(4.4, 0.4, 4.4);
+    cap.translate(ax, tgy + th, az);
+    merger.add(cap, deckMat, ax, az);
+    out.skywalk = 1;
+  }
+
   // -- PORTE-COCHERE: drive in, stop at the lobby, drive out ---------------
   //
   // The owner: "even like hotels can drive thru to the main lobby like drop off

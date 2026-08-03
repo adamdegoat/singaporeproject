@@ -377,9 +377,24 @@ export class Terrain {
     this.greenFrac = 0;
     if (this.g) {
       const g = this.g;
+      // COUNT LAND, NOT SEA. This asked every cell in the grid, and on an
+      // ISLAND most of the grid is water — so Sentosa's own green fraction came
+      // out at 0.18 against a threshold of 0.35, the "on a green island,
+      // unknown ground is vegetation" rule NEVER FIRED, and every unmapped
+      // cell fell through to pale khaki.
+      //
+      // That one number is why bare pale ground kept turning up all over the
+      // island: the whole Fort Siloso headland, which is dense jungle in life,
+      // rendered as an empty beige plain (45 of 48 sampled cells there are
+      // unmapped). Measured: 650 of 3,577 cells are green — 0.18 — but 650 of
+      // the 1,582 LAND cells are, which is 0.41 and the truth about the place.
+      //
+      // A district's greenness is a fact about its GROUND. The sea is not
+      // ungreen land, it is not land.
       let hit = 0, n = 0;
       for (let j = 0; j < g.nz; j += 2) {
         for (let i = 0; i < g.nx; i += 2) {
+          if (g.h[j * g.nx + i] <= 0.05) continue;      // sea
           n++;
           const k = this.greenAt(g.x0 + i * g.cell, g.z0 + j * g.cell);
           if (k && k !== 'pool') hit++;

@@ -39,7 +39,12 @@ const SCREEN_K = 0.042;
 const MIN_H = 1.8, MAX_H = 17.0;
 
 // Attractions worth naming. `k` values that are furniture, not places.
-const SKIP_KINDS = new Set(['artwork', 'cannon', 'bench', 'picnic_table']);
+// `building` goes too: OSM tags a fort's outbuildings as attractions, so
+// "Store Room" and "Engine Room" were floating names the same size as FORT
+// SILOSO and overlapping it. A place label is for somewhere you would tell a
+// friend to meet you.
+const SKIP_KINDS = new Set(['artwork', 'cannon', 'bench', 'picnic_table',
+                            'building', 'city_gate']);
 // Names that are not places you navigate to.
 const SKIP_NAME = /^(entrance|exit|toilets?|shelter|car ?park)$/i;
 
