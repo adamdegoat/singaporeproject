@@ -2310,7 +2310,11 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // look like the beach station... change to start at siloso beach") — the
   // station is a junction under a viaduct; the beach walk sells sand and sea
   // at frame one. Snaps to Siloso Beach Walk's carriageway.
-  const SPAWNS = { sentosa: [-1800, 12740] };
+  // MEASURED CLEAR, NOT GUESSED (the first Siloso point snapped beside
+  // AltitudeX and the owner spawned pinned by its collision — "load alr
+  // cannot even move"): this one probes 12/12 open directions at 6m, on the
+  // beach walk with sand on one side and the strip on the other.
+  const SPAWNS = { sentosa: [-1737, 12718] };
   let spawnDone = false;
   const want = SPAWNS[SCENE];
   if (want && Array.isArray(data.roads)) {

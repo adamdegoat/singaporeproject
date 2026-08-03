@@ -1367,6 +1367,14 @@ SITE_HEIGHTS = [
     (1.29962, 103.88378, "Emerald East",           18, 40),
     (1.29881, 103.88435, "De Centurion",           16, 40),
     (1.29867, 103.88480, "Fulcrum",                24, 40),
+    # RWS hotels by PUBLISHED STOREYS (2026-08-03 research; no RWS building
+    # has a metre height anywhere — Graves/Wikipedia/CDL all publish storeys
+    # only, and this table exists precisely so storeys are never laundered
+    # into fake metre provenance). Crockfords: sources conflict 9 vs 11; the
+    # architect's own page says 9 and is the authority on his building.
+    (1.25866, 103.81679, "Equarius Hotel",         7, 120),
+    (1.25592, 103.82033, "Hotel Michael",          11, 90),
+    (1.25623, 103.81957, "Crockfords Tower",       9, 70),
 ]
 
 # NAME-ONLY SITES — sets `n` and NOTHING else, for buildings whose height is
@@ -1427,6 +1435,14 @@ SITE_NAMES = [
 # its postcode 080001 with "1 CANTONMENT ROAD PINNACLE @ DUXTON".
 SITE_RENAMES = [
     (1.27716, 103.84000, "Everton Park Blk 1", 18, "Pinnacle @ Duxton"),
+    # RWS 2025 rebrands OSM has not caught up with (2026-08-03 research):
+    # Hard Rock Hotel closed 5 Aug 2025, reopened October 2025 as The Laurus,
+    # a Luxury Collection Resort; The Forum/Festive Walk retail complex
+    # reopened July 2025 as WEAVE (Benoy, 3 levels, 20,000 m2).
+    (1.25827, 103.81905, "The Laurus", 80, "Hard Rock Hotel Singapore"),
+    (1.25764, 103.82018, "WEAVE", 150, "The Forum"),
+    (1.25764, 103.82018, "WEAVE", 150, "Festive Walk"),
+    (1.25764, 103.82018, "WEAVE", 150, "The Galleria"),
 ]
 
 SITE_FLOOR_M = 3.1
@@ -5682,7 +5698,10 @@ def main():
             x, z = proj(e["lat"], e["lon"])
             rec = {"p": [round(x, 1), round(z, 1)]}
             if t.get("name"):
-                rec["n"] = t["name"]
+                # the cable car's "Merlion" station was renamed Sensoryscape
+                # (~Oct 2024) after the statue's 2019 demolition; OSM still
+                # carries the old name (2026-08-03 research)
+                rec["n"] = "Sensoryscape" if t["name"] == "Merlion" else t["name"]
             cableway["stations" if aw == "station" else "pylons"].append(rec)
         elif e["type"] == "way" and t.get("railway") == "monorail" and e.get("geometry"):
             pts = [proj(q["lat"], q["lon"]) for q in e["geometry"] if "lat" in q]
