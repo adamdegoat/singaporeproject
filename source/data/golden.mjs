@@ -46,6 +46,13 @@ const SPOTS = [
   // the owner's own 2026-08-04 screenshot spot: the guideway must never fly
   // unsupported down Gateway Avenue again
   ['gateway-viaduct', -1700, 12690, -0.5],
+  // ...and his 2026-08-05 one. Siloso Beach Walk is tagged bridge=yes in OSM
+  // over what is really a culvert, so it was drawn as a flat deck at
+  // max-terrain+1.2 with no piers under it: a tan carriageway and its double
+  // yellows floating a metre over the grass, which is the frame he sent. None
+  // of the thirteen viewpoints above covered it and all thirteen passed while
+  // it was broken.
+  ['beachwalk-grade', -1580, 12729, 0.9],
 ];
 
 mkdirSync(ACT, { recursive: true });

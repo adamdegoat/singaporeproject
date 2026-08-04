@@ -876,6 +876,13 @@ function _addSpan(REG, pts, width, deckOverride = null) {
 //            something. An embankment with 2m of fill under it gets none, or
 //            every kerbside ramp in the CBD would sprout stilts.
 const DECK_T = 0.85;                  // deck + edge beam, in metres
+// HOW MUCH AIR MAKES A BRIDGE A BRIDGE. The soffit's lowest face sits
+// `clear - DECK_T/2` above the ground, so a span is genuinely aloft once
+// `clear` passes 2.6 + DECK_T/2. Module scope because TWO passes now ask it —
+// the pier pass (does this span get a bent?) and the deck-height pass (is this
+// run a viaduct at all, or a road OSM happens to tag bridge=yes?) — and two
+// copies of the same threshold is exactly the drift this file keeps paying for.
+const LOW_CLEAR = 2.6 + DECK_T / 2 + 0.05;
 const PIER_GAP = 26;                  // metres between pier bents
 const PIER_MIN = 2.4;                 // below this the deck is on fill, not piers
 
@@ -923,7 +930,6 @@ export function bridgeFabric(pts, width, deck, deckGeos, pierGeos, ownName) {
   // for the whole way, using the maximum clearance anywhere along it — which
   // is how harbourfront kept building parapets on the parts of a viaduct that
   // come back down to grade at its abutments while the middle was 8m up.
-  const LOW_CLEAR = 2.6 + DECK_T / 2 + 0.05;
   const clearAt = (sg, t) => deck - DECK_T - TERRAIN.at(sg.x + sg.dx * t, sg.z + sg.dz * t);
   for (const sg of segs) {
     if (Math.min(clearAt(sg, 0), clearAt(sg, 0.5), clearAt(sg, 1)) < LOW_CLEAR) {
@@ -3068,9 +3074,48 @@ export async function buildRoads(world, data, Y = null) {
         runTerms.get(root).push([e.x, e.z, tH]);
       }
     }
+    // A BRIDGE THAT IS NEVER IN THE AIR IS A ROAD.
+    //
+    // `deck` is one flat height for a whole run: max terrain along it + 1.2m.
+    // That is right for a viaduct and wrong for a street that OSM happens to
+    // tag bridge=yes over a culvert or a buried service duct — and Siloso
+    // Beach Walk is tagged exactly that way. The run then floats a tan
+    // carriageway, its kerbs and its double yellows a metre over the ground
+    // for its whole length, with no piers under it (the pier pass separately
+    // decides those spans are "too low to be in the air" and skips them). That
+    // is the floating road in the owner's 2026-08-05 screenshot, and the
+    // reason paint measured 0.85m proud of the ground beside the plaza.
+    //
+    // So ask the question the pier pass already asks, once per RUN: does this
+    // deck ever achieve real clearance anywhere along itself? If it never
+    // does, it is not a bridge — it is a road, and it follows the ground like
+    // one. A genuine viaduct is untouched: one segment with clearance is
+    // enough to keep the whole run flat, which is what a viaduct that comes
+    // down to grade at its abutments needs.
+    const runAloft = new Map();
+    bws.forEach((r, i) => {
+      const root = find(i);
+      if (runAloft.get(root)) return;
+      const deck0 = runMax.get(root) + 1.2;
+      for (const q of r.p) {
+        // A CROSSING OVER WATER IS ALWAYS A BRIDGE, whatever the arithmetic
+        // says. TERRAIN.at over a causeway reads the made ground it sits on,
+        // so the clearance test can decide the Sentosa Gateway — the road
+        // every visitor arrives on — is at grade and drop its deck, soffit and
+        // piers into the strait. Whether a span is high enough to need piers
+        // is a judgement; whether it is over water is a fact, and the fact
+        // wins.
+        if (TERRAIN.waterFloor && TERRAIN.waterFloor(q[0], q[1]) !== null) {
+          runAloft.set(root, true); break;
+        }
+        if (deck0 - DECK_T - TERRAIN.at(q[0], q[1]) >= LOW_CLEAR) { runAloft.set(root, true); break; }
+      }
+      if (!runAloft.has(root)) runAloft.set(root, false);
+    });
     const RAMP = 20;
     bws.forEach((r, i) => {
       const root = find(i);
+      if (!runAloft.get(root)) { BRDECK.set(r, false); return; }
       const deck = runMax.get(root) + 1.2;
       const terms = runTerms.get(root) || [];
       const f = (x, z) => {
@@ -3119,7 +3164,7 @@ export async function buildRoads(world, data, Y = null) {
       // at TERRAIN inside the neighbouring road deck, buried to the helmet
       // (sweep w_-1096_11883, P0). The pontoon-crossing registry is exactly
       // the walked-deck mechanism, so causeway footpaths register there.
-      if (/causeway/.test(r.ws || '')) {
+      if (/causeway/.test(r.ws || '') && BRDECK.get(r)) {
         const f = BRDECK.get(r);
         for (let i = 0; i < r.p.length - 1; i++) {
           const [x1, z1] = r.p[i], [x2, z2] = r.p[i + 1];
@@ -3128,7 +3173,12 @@ export async function buildRoads(world, data, Y = null) {
         }
       }
     }
-    if (r.bridge && !isPath && (r.w || 0) >= 5.5) {
+    // BRDECK === false means the run was judged at grade above and is being
+    // drawn on the ground. It must not register a deck OR grow soffits and
+    // parapets: passing that `false` through as a height registered a standable
+    // deck at zero, and paintcheck went from 870 offenders to 11,352 with paint
+    // measuring 11m proud of a surface that had collapsed to sea level.
+    if (r.bridge && !isPath && (r.w || 0) >= 5.5 && BRDECK.get(r) !== false) {
       // The deck height comes back from the registry rather than being worked
       // out again here: ribbon() already computes the same `max terrain + 1.2`
       // independently, and a third copy of that rule is a third thing to drift.
@@ -3188,6 +3238,33 @@ export async function buildRoads(world, data, Y = null) {
     // frames caught the moment there was other paint to compare against.
     if (!isPath && r.bridge && r.k !== 'service' && r.k !== 'service_link' && (r.w || 0) >= 5.5) {
       for (const sgn of [-1, 1]) {
+        // THE PAINT VERIFIES ITSELF HERE TOO.
+        //
+        // The streetRuns consumer below samples its kerb line and refuses to
+        // paint a side whose line has wandered off the carriageway. This
+        // branch never did, and it is the branch that produced the owner's
+        // 2026-08-05 frame: double yellows running across grass and plaza
+        // beside Beach Arrival Plaza with no carriageway under them at all.
+        // A bridge way that runs on past its deck takes its paint with it.
+        // Same rule, same threshold: sample at 3m, and if more than a fifth
+        // of that side is off the road, do not paint that side.
+        {
+          const kerbOff = sgn * (r.w / 2 - 0.45);
+          let acc3 = 0, off3 = 0, tot3 = 0;
+          for (let i2 = 0; i2 < r.p.length - 1 && tot3 < 60; i2++) {
+            const dx3 = r.p[i2 + 1][0] - r.p[i2][0], dz3 = r.p[i2 + 1][1] - r.p[i2][1];
+            const L3 = Math.hypot(dx3, dz3) || 1;
+            for (; acc3 < L3; acc3 += 3) {
+              const t3 = acc3 / L3;
+              const px3 = r.p[i2][0] + dx3 * t3 + (-dz3 / L3) * kerbOff;
+              const pz3 = r.p[i2][1] + dz3 * t3 + (dx3 / L3) * kerbOff;
+              tot3++;
+              if (window.__onRoad && !window.__onRoad(px3, pz3, -0.05)) off3++;
+            }
+            acc3 -= L3;
+          }
+          if (tot3 && off3 / tot3 > 0.2) continue;
+        }
         for (const inset of [0.45, 0.70]) {
           const off = sgn * (r.w / 2 - inset);
           // THE PAINT TAKES THE DECK'S OWN HEIGHT, not a guess at it.
@@ -3534,9 +3611,27 @@ export async function buildRoads(world, data, Y = null) {
     for (const g of geos) total += g.attributes.position.count;
     const pos = new Float32Array(total * 3), uv = new Float32Array(total * 2);
     let o = 0, ou = 0;
+    // COPY BY VERTEX COUNT, NOT BY ARRAY LENGTH.
+    //
+    // `total` is summed from position.count, but the copy walked
+    // position.array.length. Those are the same number only while every
+    // geometry's buffer is exactly the size of its vertex count — and when one
+    // is not, the write offsets drift and the tail of the merged buffer stays
+    // ZERO. Zeroed vertices are the world origin, so the layer grows a sliver
+    // of triangles reaching from wherever it is to (0,0,0): data/paintcheck.mjs
+    // reported a road marking at (0,0), and there is no road there and no
+    // source geometry within a kilometre of it (checked, 2026-08-05).
+    //
+    // Clamping to count*3 also means a mismatched geometry loses its own tail
+    // rather than corrupting every layer merged after it. UVs are guarded
+    // separately: a geometry without them would otherwise throw here.
     for (const g of geos) {
-      pos.set(g.attributes.position.array, o); o += g.attributes.position.array.length;
-      uv.set(g.attributes.uv.array, ou); ou += g.attributes.uv.array.length;
+      const pa = g.attributes.position;
+      pos.set(pa.array.subarray(0, pa.count * 3), o);
+      o += pa.count * 3;
+      const ua = g.attributes.uv;
+      if (ua) uv.set(ua.array.subarray(0, Math.min(ua.count, pa.count) * 2), ou);
+      ou += pa.count * 2;
     }
     const m = new THREE.BufferGeometry();
     m.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -4803,9 +4898,27 @@ export function buildCranes(world, data) {
     for (const g of geos) total += g.attributes.position.count;
     const pos = new Float32Array(total * 3), uv = new Float32Array(total * 2);
     let o = 0, ou = 0;
+    // COPY BY VERTEX COUNT, NOT BY ARRAY LENGTH.
+    //
+    // `total` is summed from position.count, but the copy walked
+    // position.array.length. Those are the same number only while every
+    // geometry's buffer is exactly the size of its vertex count — and when one
+    // is not, the write offsets drift and the tail of the merged buffer stays
+    // ZERO. Zeroed vertices are the world origin, so the layer grows a sliver
+    // of triangles reaching from wherever it is to (0,0,0): data/paintcheck.mjs
+    // reported a road marking at (0,0), and there is no road there and no
+    // source geometry within a kilometre of it (checked, 2026-08-05).
+    //
+    // Clamping to count*3 also means a mismatched geometry loses its own tail
+    // rather than corrupting every layer merged after it. UVs are guarded
+    // separately: a geometry without them would otherwise throw here.
     for (const g of geos) {
-      pos.set(g.attributes.position.array, o); o += g.attributes.position.array.length;
-      uv.set(g.attributes.uv.array, ou); ou += g.attributes.uv.array.length;
+      const pa = g.attributes.position;
+      pos.set(pa.array.subarray(0, pa.count * 3), o);
+      o += pa.count * 3;
+      const ua = g.attributes.uv;
+      if (ua) uv.set(ua.array.subarray(0, Math.min(ua.count, pa.count) * 2), ou);
+      ou += pa.count * 2;
     }
     const m = new THREE.BufferGeometry();
     m.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
