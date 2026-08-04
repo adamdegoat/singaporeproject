@@ -347,6 +347,55 @@ export class Terrain {
   // terrain's own tessellation exactly or z-fight it. Tinting the ground costs
   // no extra draw call, no extra triangle, and follows the land by
   // construction.
+  // WHAT IS ACTUALLY GROWING OVERHEAD, not what the map drew a polygon around.
+  //
+  // "Forest trails must feel like forest, not a path with trees beside it" —
+  // the owner. The reason they did not is that the floor under Sentosa's jungle
+  // is not painted as jungle: most of the island's tree cover has no `wood`
+  // landuse polygon over it, so those vertices fall through to the green-island
+  // fallback, which is a pale sage LAWN colour. Trees were being planted on a
+  // mown field.
+  //
+  // The trees themselves are the honest source — 3,700 of them, positioned. So
+  // count how many stand within a canopy radius of each ground vertex and shade
+  // the floor by it: deep shade and leaf litter under a closed canopy, the
+  // ordinary surface out in the open, and a real gradient at the edge where a
+  // clearing opens. Built once into a coarse grid, so the colour loop pays one
+  // lookup per vertex and nothing per tree.
+  setCanopy(trees) {
+    this.cCell = 12;
+    this.cGrid = new Map();
+    let n = 0;
+    for (const t of (trees || [])) {
+      // trees arrive as [x, z, ...] or {p:[x,z]}; accept both rather than
+      // assuming, because this list is shared with the instancing pass
+      const x = Array.isArray(t) ? t[0] : (t && t.p ? t.p[0] : null);
+      const z = Array.isArray(t) ? t[1] : (t && t.p ? t.p[1] : null);
+      if (x === null || z === null || !isFinite(x) || !isFinite(z)) continue;
+      const k = Math.floor(x / this.cCell) + ',' + Math.floor(z / this.cCell);
+      this.cGrid.set(k, (this.cGrid.get(k) || 0) + 1);
+      n++;
+    }
+    this.canopyN = n;
+    return n;
+  }
+
+  // 0 = open ground, 1 = closed canopy. Counts the 3x3 block of cells around
+  // the point — a 36m window, which is about the width at which a Sentosa
+  // trail stops feeling enclosed.
+  canopyAt(x, z) {
+    if (!this.cGrid || !this.canopyN) return 0;
+    const cx = Math.floor(x / this.cCell), cz = Math.floor(z / this.cCell);
+    let n = 0;
+    for (let ix = cx - 1; ix <= cx + 1; ix++) {
+      for (let iz = cz - 1; iz <= cz + 1; iz++) n += this.cGrid.get(ix + ',' + iz) || 0;
+    }
+    // 9 cells of 12m hold roughly 14 trees at Sentosa's densest; saturate a
+    // little below that so the deep jungle is uniformly dark rather than
+    // shading right up to its own maximum
+    return Math.min(1, n / 11);
+  }
+
   setGreen(list) {
     this.green = [];
     this.gGrid = new Map();
@@ -521,6 +570,18 @@ export class Terrain {
         //
         // Two bands, because one is a regular grid you can see: a broad one
         // for patchiness at ~40m and a fine one at ~7m for break-up.
+        // Shade + leaf litter under a canopy. Browner than the greens above on
+        // purpose: a forest floor is not dark grass, it is dead leaves.
+        // These are LINEAR values, and that is the whole reason the first two
+        // attempts at a forest floor looked like a lawn. Vertex colours are not
+        // gamma-encoded: a component of 0.26 leaves the renderer at about 0.55
+        // in sRGB, so "dark brown" written as 0.26 arrives on screen as mid
+        // sage. Deep shade under a closed tropical canopy is roughly 0.30 sRGB,
+        // which is 0.075 linear — a quarter of what reads as dark on paper.
+        const LITTER = [0.098, 0.090, 0.058];
+        // classes a canopy is allowed to darken. Everything paved, plus sand
+        // and water surfaces, is excluded — see the note at the call site.
+        const CANOPYABLE = new Set(['wood', 'scrub', 'grass', 'park', 'golf']);
         const hash2 = (a, b) => {
           const n = Math.sin(a * 127.1 + b * 311.7) * 43758.5453123;
           return n - Math.floor(n);
@@ -639,11 +700,51 @@ export class Terrain {
                 // Keyed on the district's OWN measured green fraction rather
                 // than on its name, so it follows the data: a district that is
                 // more than a third mapped-green treats the gaps as green too.
-                const v = varied([0.58, 0.68, 0.50], x, z, 0.10, vy);
+                // ...AND VEGETATION IS NOT A FAIRWAY. Measured off the drawn
+                // vertices: this fallback, not any mapped class, is what most
+                // of Imbiah's slopes actually render as, and at 0.58,0.68,0.50
+                // it leaves the renderer near 0.79,0.85,0.74 in sRGB — lighter
+                // than the mapped `wood` beside it and reading as mown grass.
+                // The island looked like a golf course with jungle at the edges
+                // because, in the places you walk, it was one.
+                const v = varied([0.40, 0.50, 0.33], x, z, 0.10, vy);
                 col.push(v[0], v[1], v[2]);
               } else {
                 const v = varied([0.84, 0.87, 0.80], x, z, 0.03, vy);
                 col.push(v[0], v[1], v[2]);
+              }
+            }
+            // UNDER A CLOSED CANOPY THE FLOOR IS DARK AND BROWN.
+            //
+            // Applied here, after every branch, because it is true whichever
+            // colour the ground started from. Vegetation and unclassified
+            // ground ONLY: street trees line half the roads on this island and
+            // shading by tree count alone turned pavements, plazas and the
+            // beach itself into mud.
+            const cls = this.gGrid ? this.greenAt(x, z) : null;
+            if (!cls || CANOPYABLE.has(cls)) {
+              // THE CANOPY IS THE WOOD POLYGON, NOT THE SURVEYED TREES.
+              //
+              // First attempt counted `data.trees` — 3,713 of them, one per
+              // ~2,150 m2 of island — and shaded almost nothing, because that
+              // list is only the individually-surveyed trees. The jungle a
+              // player actually walks under is GENERATED, planted by city.js
+              // on an 11m grid inside every k='wood' polygon. So the honest
+              // canopy test is the one the planting itself uses: is this ground
+              // inside a wood?
+              //
+              // The surveyed trees still contribute, at a fraction, so a lone
+              // clump of specimen trees outside a mapped wood still casts a
+              // little floor shade instead of none.
+              const cn = Math.min(1,
+                (cls === 'wood' ? 1 : cls === 'scrub' ? 0.45 : 0)
+                + this.canopyAt(x, z) * 0.5);
+              if (cn > 0.02) {
+                const i0 = col.length - 3;
+                const f = cn * 0.62;              // never all the way to black
+                for (let ci = 0; ci < 3; ci++) {
+                  col[i0 + ci] = col[i0 + ci] * (1 - f) + LITTER[ci] * f;
+                }
               }
             }
             verts.set(k, id);

@@ -67,9 +67,22 @@ def main():
     o = d["origin"]
     lat0, lon0 = o["lat"], o["lon"]
 
+    # THE SAME PROJECTION THE BUILDINGS USE, OR THE LABEL IS NOT ON ITS BUILDING.
+    #
+    # process.py places every footprint with M_PER_DEG_LAT = 110574.0. This used
+    # 111320.0 for latitude as well — the equatorial figure for LONGITUDE — a
+    # 0.67% stretch that at Sentosa's z of about 13,400m puts every hotel node
+    # 85 to 91 metres SOUTH of its own building.
+    #
+    # That single constant is why "attach these hotels to a footprint" was
+    # measured as impossible: the nearest unnamed footprint was reported 49m
+    # away at best and 237m at worst, and the reasoning that followed — that a
+    # wrong name on a landmark is worse than none — was sound but was answering
+    # a question created by this line.
+    MPD_LAT = 110574.0
     def proj(lat, lon):
         x = (lon - lon0) * 111320.0 * math.cos(math.radians(lat))
-        z = (lat0 - lat) * 111320.0
+        z = (lat0 - lat) * MPD_LAT
         return round(x, 1), round(z, 1)
 
     # names the building layer ALREADY carries are not repeated as a floating

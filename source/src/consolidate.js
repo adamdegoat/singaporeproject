@@ -107,6 +107,24 @@ export function lambertise(root, THREE) {
       vertexColors: m.vertexColors, fog: m.fog,
     });
     l.name = m.name;
+    // AND ITS CUSTOM SHADER, WHICH THIS SILENTLY THREW AWAY.
+    //
+    // The ground's procedural detail is injected through onBeforeCompile on a
+    // Standard material. This function rebuilt it as Lambert and copied only
+    // the uniforms a constructor takes, so the hook was dropped and the whole
+    // island rendered as one flat untextured colour — on EVERY device, because
+    // this runs everywhere despite the phone-only reasoning above it. Editing
+    // the ground shader then changed nothing at all, which is what sent the
+    // hunt for "a giant blank untextured mass" off into the geometry twice.
+    //
+    // Both materials' shaders include <begin_vertex> and <color_fragment>, so
+    // a hook written against one compiles against the other unchanged.
+    if (m.onBeforeCompile) {
+      l.onBeforeCompile = m.onBeforeCompile;
+      // distinct cache key, or three.js reuses the un-hooked program
+      if (m.customProgramCacheKey) l.customProgramCacheKey = m.customProgramCacheKey;
+      else l.customProgramCacheKey = () => 'hooked:' + (m.name || m.uuid);
+    }
     swap.set(m.uuid, l);
     done++;
     return l;

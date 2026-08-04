@@ -141,9 +141,19 @@ export class Solid {
       if (!pos) continue;
       if (o.userData && o.userData.nosolid) continue;
       meshes++;
+
       // A merged tile mesh is usually unnamed, so the useful identity is the
       // chain of parents plus whatever the recipe stashed in userData. Built
       // once per mesh, never in the triangle loop.
+      // A NAME IS NOT AVAILABLE HERE AND THAT IS NOT A REASON TO GIVE UP.
+      //
+      // Buildings are merged per material and per tile by Merger BEFORE this
+      // runs, so almost every mesh reaching this point is an unnamed tile
+      // batch: a chain-of-parents tag answers "(unnamed)" for the entire
+      // island and identifies nothing. What survives the merge is the
+      // MATERIAL — merging is grouped BY material, so the material is a true
+      // statement about what the geometry is — plus the geometry's own shape.
+      // Together those name a thing well enough to go and fix it.
       let tag = null;
       if (this.why) {
         const chain = [];
@@ -151,10 +161,19 @@ export class Solid {
           if (p.name) chain.push(p.name);
         }
         const ud = o.userData ? Object.keys(o.userData).filter((k) => k !== 'nosolid') : [];
-        const mat = o.material && o.material.name;
-        tag = (chain.join('<') || '(unnamed)')
-            + (ud.length ? ' {' + ud.join(',') + '}' : '')
-            + (mat ? ' mat:' + mat : '');
+        const m = o.material;
+        const bits = [];
+        if (chain.length) bits.push(chain.join('<'));
+        if (ud.length) bits.push('{' + ud.join(',') + '}');
+        if (m) {
+          if (m.name) bits.push('mat:' + m.name);
+          if (m.color) bits.push('#' + m.color.getHexString());
+          if (m.map) bits.push('MAP');
+          if (m.transparent) bits.push('transparent');
+          bits.push(m.type.replace('Mesh', '').replace('Material', ''));
+        }
+        bits.push('v=' + (geo.attributes.position ? geo.attributes.position.count : 0));
+        tag = bits.join(' ') || '(unidentifiable)';
       }
       const idx = geo.index;
       const count = idx ? idx.count : pos.count;

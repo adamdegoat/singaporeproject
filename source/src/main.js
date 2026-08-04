@@ -2693,10 +2693,25 @@ window.__placeBlocked = (x, z) => blocked(x, z);
         '#include <color_fragment>',
         `#include <color_fragment>
         {
+          // BRIGHTNESS ALONE IS NOT TEXTURE. The first version modulated only
+          // value, by +-7%, and every vet frame still came back reading as flat
+          // plastic — because real ground varies in HUE across a few metres
+          // (sun-bleached and yellow here, damp and blue-green in shade there)
+          // far more than it varies in lightness. Three scales, because one
+          // frequency is a pattern and three is a surface:
           vec2 gp = vGPos.xz;
-          float n = gNoise(gp * 0.10);                 // ~10m patches
-          float g = gHash(floor(gp * 1.6));            // grain underfoot
-          diffuseColor.rgb *= 0.90 + 0.15 * n + 0.04 * g;
+          float broad = gNoise(gp * 0.035);            // ~30m, which patch of ground
+          float mid   = gNoise(gp * 0.22);             // ~4.5m, clumping
+          float fine  = gHash(floor(gp * 2.2));        // underfoot grain
+          // value: widened from 0.15 to a range that survives being looked at
+          diffuseColor.rgb *= 0.82 + 0.22 * broad + 0.10 * mid + 0.05 * fine;
+          // hue: warm and dry where broad is high, cool and lush where it is
+          // low. Applied as a tint on the existing vertex colour so beach, road
+          // apron and canopy floor each shift around their OWN colour instead
+          // of all drifting toward one shared brown.
+          vec3 warm = vec3(1.09, 1.02, 0.86);
+          vec3 cool = vec3(0.88, 1.00, 0.90);
+          diffuseColor.rgb *= mix(cool, warm, smoothstep(0.25, 0.75, broad * 0.65 + mid * 0.35));
         }`);
   };
   await bstep(0.31, 'shaping the ground');
@@ -2708,6 +2723,9 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     if (data.land) allGreen.push(...data.land);
     if (window.__allGreen) allGreen.push(...window.__allGreen);
     terrain.setGreen(allGreen);
+    // and what is growing over it, so the floor under the jungle is painted as
+    // jungle rather than as the lawn the landuse fallback assumes
+    terrain.setCanopy(data.trees || []);
   }
   world.add(terrain.build(groundMat));
   bmark('terrain');

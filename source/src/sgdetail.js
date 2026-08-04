@@ -1496,18 +1496,48 @@ export async function buildTrails(world, data, Y = null) {
   const YY = Y || (async () => {});
   const out = { trails: 0, trailSegs: 0, boardwalk: 0, forestTrail: 0, pavedPath: 0 };
   const merger = new Merger();
+  // A PATH IS A SURFACE, NOT A COLOUR. The owner, walking the Sensoryscape:
+  // "all the walking paths look like coloured floor". They were: one flat
+  // Lambert colour per kind over the whole island, no grain, no wear, no edge.
+  //
+  // Same procedural detail the ground uses, keyed off WORLD POSITION so it
+  // needs no UVs on geometry that has none — and it survives the material swap
+  // in consolidate.js now that the swap carries onBeforeCompile across, which
+  // is why this was not worth doing before.
+  const grainy = (m, amt = 0.16, grain = 2.6) => {
+    m.onBeforeCompile = (sh) => {
+      sh.vertexShader = 'varying vec3 vTPos;\n' + sh.vertexShader.replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\n  vTPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = 'varying vec3 vTPos;\n'
+        + 'float tHash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }\n'
+        + 'float tNoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);\n'
+        + '  return mix(mix(tHash(i),tHash(i+vec2(1,0)),f.x), mix(tHash(i+vec2(0,1)),tHash(i+vec2(1,1)),f.x), f.y); }\n'
+        + sh.fragmentShader.replace('#include <color_fragment>',
+          `#include <color_fragment>
+          {
+            vec2 tp = vTPos.xz;
+            float w = tNoise(tp * 0.13);           // wear and damp patches, ~8m
+            float g = tHash(floor(tp * ${grain.toFixed(1)}));  // aggregate underfoot
+            diffuseColor.rgb *= (1.0 - ${amt.toFixed(2)}) + ${amt.toFixed(2)} * (0.55 * w + 0.45 * g) * 2.0;
+          }`);
+    };
+    m.customProgramCacheKey = () => 'trailgrain' + amt + '_' + grain;
+    return m;
+  };
   // packed granite dust — what a Singapore park path actually is underfoot
-  const earthM = new THREE.MeshLambertMaterial({ color: 0x9c8768 });
+  const earthM = grainy(new THREE.MeshLambertMaterial({ color: 0x9c8768 }));
   // timber decking: the beach boardwalks and anything crossing sand
-  const deckM = new THREE.MeshLambertMaterial({ color: 0x8d7a63 });
-  const paveM = new THREE.MeshLambertMaterial({ color: 0xb0a898 });
+  // timber decking: a board pattern is coarser than gravel grain
+  const deckM = grainy(new THREE.MeshLambertMaterial({ color: 0x8d7a63 }), 0.13, 1.1);
+  const paveM = grainy(new THREE.MeshLambertMaterial({ color: 0xb0a898 }), 0.11, 3.2);
   // A BOARDWALK OVER WATER IS OVER WATER BY DESIGN — the Sentosa Boardwalk,
   // the jetty approaches, every deck round the Cove's basins. W2 counts things
   // standing in mapped water and is right to; this is the same exemption a
   // bridge deck and the cable car already carry, declared on the MATERIAL so
   // the check reads a mechanism rather than guessing from a shape. Its own
   // material, not deckM, so a boardwalk over SAND stays fully checked.
-  const waterDeckM = new THREE.MeshLambertMaterial({ color: 0x8d7a63 });
+  const waterDeckM = grainy(new THREE.MeshLambertMaterial({ color: 0x8d7a63 }), 0.13, 1.1);
   waterDeckM.userData.boardwalkOverWater = true;
   const wpolys = (data.water || []).map((w) => w.p).filter((p) => p && p.length > 3);
 
@@ -1609,12 +1639,45 @@ export async function buildTrails(world, data, Y = null) {
     return 'pave';
   };
 
+  // A PATH DOES NOT TURN A CORNER IN ONE VERTEX.
+  //
+  // Each ribbon below is built between two consecutive mapped points, offset
+  // perpendicular to THAT segment. Where the survey turns, two ribbons meet at
+  // an angle and leave a notch on the inside and a spike on the outside — the
+  // owner, at the Sensoryscape: "all the boardwalk looks jagged and not nicely
+  // designed". A real path has a radius.
+  //
+  // Corner-cut, with the cut CAPPED AT THE PATH'S OWN HALF-WIDTH. That cap is
+  // the whole point: the rounded line never leaves the ribbon the true
+  // centreline would have drawn, so the route still goes exactly where the map
+  // says it goes — this rounds how the corner is DRAWN, it does not re-route
+  // anything. Endpoints are untouched, so junctions still meet.
+  const roundCorners = (pts, maxCut) => {
+    if (pts.length < 3) return pts;
+    const out = [pts[0]];
+    for (let i = 1; i < pts.length - 1; i++) {
+      const [px, pz] = pts[i - 1], [cx, cz] = pts[i], [nx2, nz2] = pts[i + 1];
+      const d1 = Math.hypot(cx - px, cz - pz), d2 = Math.hypot(nx2 - cx, nz2 - cz);
+      if (d1 < 0.2 || d2 < 0.2) { out.push(pts[i]); continue; }
+      // a straight run needs no rounding, and rounding it would only add
+      // vertices for the ribbon loop to pay for
+      const dot = ((cx - px) * (nx2 - cx) + (cz - pz) * (nz2 - cz)) / (d1 * d2);
+      if (dot > 0.985) { out.push(pts[i]); continue; }
+      const c1 = Math.min(maxCut, d1 * 0.4), c2 = Math.min(maxCut, d2 * 0.4);
+      out.push([cx - ((cx - px) / d1) * c1, cz - ((cz - pz) / d1) * c1]);
+      out.push([cx + ((nx2 - cx) / d2) * c2, cz + ((nz2 - cz) / d2) * c2]);
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+  };
+
   for (const r of (data.roads || [])) {
     const k = r.k || '';
     if (k !== 'footway' && k !== 'pedestrian') continue;
-    const pts = r.p || [];
-    if (pts.length < 2) continue;
+    const raw = r.p || [];
+    if (raw.length < 2) continue;
     const half = Math.max(0.7, (r.w || (k === 'pedestrian' ? 4.0 : 2.0)) / 2);
+    const pts = roundCorners(raw, half);
     let drew = 0;
     for (let i = 0; i < pts.length - 1; i++) {
       await YY();

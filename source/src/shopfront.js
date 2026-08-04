@@ -470,6 +470,21 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
     // the bay builder was not asking it: 77 bays of retail glazing went onto
     // museums and churches. Ask the one list rather than keeping a second.
     if (!hasShopfront(b.n)) continue;
+    // A CANOPY HAS NO FACADE TO GLAZE.
+    //
+    // `building=roof` is a roof held up on posts, open on every side — WEAVE,
+    // Festive Walk, the RWS covered walkways, the beach shelters. buildBuildings
+    // knows this and draws them as a slab on columns with no walls at all, so
+    // nothing of theirs ever reaches the Solid grid. This pass did not know it,
+    // walked their outlines as street frontage, and hung shop glazing around
+    // them — which DOES reach the grid.
+    //
+    // Measured with `?solidtrace=1`: 11 of the island's 31 canopies had solid
+    // cells under them and the glazing was the top cause under nine of them.
+    // The owner: "buildings is open air but top covered but cannot ride in like
+    // got invisible wall." That is this, exactly — you can see through it
+    // because there are no walls, and you stop because there is glass.
+    if (b.roof) continue;
     const isShophouse = !b.k && b.a < 520 && b.h <= 20 && b.p.length <= 64;
     const prof = isShophouse ? SHOP : BIG;
     // addShopfront's own test for whether a ground-floor band was drawn

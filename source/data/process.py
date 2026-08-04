@@ -1186,7 +1186,59 @@ def _titlecase_sg(s):
 # published; where sources conflict (Crystal Court, 1983 vs 1988) an era BAND
 # is given instead, because a band is what is known.
 _OSM_WAY_SEEN = set()
+# THE SAME HANDLE, FOR A MULTIPOLYGON. OSM_WAY below is keyed on way ids and
+# the lookup that reads it is gated on `type == "way"`, so a building that OSM
+# holds as a RELATION cannot be reached by it at all — and the island's biggest
+# unnamed footprint is exactly that. Kept as a separate table rather than mixed
+# into OSM_WAY because way ids and relation ids are different namespaces and a
+# collision between them would be silent.
+#
+# Researched 2026-08-04; every figure carries its source. These arrived in the
+# scene for the first time with data/relgeom.py — before that their geometry
+# never reached the pipeline, so there was nothing to key on.
+OSM_REL = {
+    # Sofitel Singapore Sentosa Resort & Spa. 211 rooms in two wings on a 27-acre
+    # clifftop site; the footprint is a 19,226 m2 ring of linked pavilions around
+    # nine courtyards, which is a LOW building, and OSM tags building:levels=2.
+    # Aggregators say "five floors" with no primary source, so the survey wins.
+    # sofitel.accor.com / OSM building:levels.
+    2177128: {"n": "Sofitel Singapore Sentosa Resort & Spa", "st": 2},
+    # Amara Sanctuary Resort Sentosa, 2007, on the 1930s Larkhill barracks.
+    # OSM tags the arrival block building:levels=3; the second block is the
+    # restored two-storey barracks terrace. sentosa.amarahotels.com.
+    2182899: {"n": "Amara Sanctuary Resort Sentosa", "st": 3},
+    2182898: {"st": 2},
+    # Sentosa Golf Club clubhouse. Named in OSM already; left unsized, because
+    # no storey count for it is published anywhere I could find.
+}
+
 OSM_WAY = {
+    # --- Sentosa resorts, researched 2026-08-04. All three stood at the
+    # calibrated 23.8m — seven storeys — on buildings whose whole character is
+    # that they are low. That is the single most visible height error left on
+    # the island, because these are its most photographed buildings.
+    #
+    # Capella Singapore, Foster + Partners with DP Architects, opened 2009.
+    # TWO footprints and the geometry tells them apart on its own: 116818220 is
+    # 32 right angles and no curves — the restored 1880s Tanah Merah colonial
+    # blocks, two storeys under a steep pitched roof. 116818069 is 61 gentle
+    # turns and 3 right angles — the curved Foster wings, which Foster describe
+    # as topping out LEVEL WITH the Tanah Merah ridge with a shallow-curved
+    # canopy over one more storey. fosterandpartners.com / Wikipedia.
+    116818220: {"n": "Capella Singapore", "st": 2},
+    116818069: {"st": 3},
+    # ONE°15 Marina Sentosa Cove, opened 2007. Already named in OSM. Its
+    # building:parts carry the real massing — a 6-storey north block stepping
+    # down to 3 and then 2 at the water — and the parts are not read by this
+    # pipeline, so the main block's figure goes on the whole footprint.
+    # one15marina.com / OSM building:part levels.
+    159582891: {"st": 6},
+    # W Singapore Sentosa Cove, opened September 2012, WATG. OSM tags this
+    # footprint building:levels=7 on both the outline and its 3D part, and it
+    # carries addr 21 Ocean Way / 098374, which OneMap gives as W SINGAPORE
+    # SENTOSA COVE HOTEL. marriott.com / businesswire.com.
+    764585959: {"n": "W Singapore Sentosa Cove", "st": 7},
+
     # --- research/mustafa-centre.md section 5
     # Mustafa Centre is FOUR footprints and OSM gives all four building:levels=5.
     # The research keeps storeys and metres deliberately apart and finds only one
@@ -2909,6 +2961,11 @@ def main():
             # through the same path, with nothing special-cased downstream.
             _wid = e.get("id") if e.get("type") == "way" else None
             _ow = OSM_WAY.get(_wid) if _wid else None
+            # ...and the same by relation id, for multipolygon buildings. See
+            # OSM_REL. `_wid` stays a way id so _OSM_WAY_SEEN keeps reporting on
+            # ways only, which is what its "not in this extract" warning means.
+            if _ow is None and e.get("type") == "relation":
+                _ow = OSM_REL.get(e.get("id"))
             if _ow:
                 _OSM_WAY_SEEN.add(_wid)
                 if _ow.get("n") and not tags.get("name"):
@@ -3782,12 +3839,23 @@ def main():
                 # the right one anyway.
                 ux, uz = c[0] - a[0], c[1] - a[1]
                 uL = math.hypot(ux, uz)
-                nx, nz = -uz / uL, ux / uL
-                s2 = (nx * out[0] + nz * out[1]) * ONCENTRE_SIDE
-                if uL < 1e-9 or abs(s2) < 1e-6:
+                # THE DEGENERATE GUARD HAS TO COME FIRST. It was written and it
+                # was correct, and it sat one line BELOW the division it was
+                # protecting: `uL < 1e-9` was tested after `-uz / uL` had
+                # already raised. It never fired because no corridor in the
+                # scene had a zero-length segment — until the building
+                # multipolygons arrived (see data/relgeom.py), one of which
+                # stitches a ring with a repeated point, and the whole build
+                # died with ZeroDivisionError.
+                if uL < 1e-9:
                     nx, nz = out[0] * ONCENTRE_SIDE, out[1] * ONCENTRE_SIDE
-                elif s2 < 0:
-                    nx, nz = -nx, -nz
+                else:
+                    nx, nz = -uz / uL, ux / uL
+                    s2 = (nx * out[0] + nz * out[1]) * ONCENTRE_SIDE
+                    if abs(s2) < 1e-6:
+                        nx, nz = out[0] * ONCENTRE_SIDE, out[1] * ONCENTRE_SIDE
+                    elif s2 < 0:
+                        nx, nz = -nx, -nz
                 _oncentre[0] += 1
             else:
                 continue

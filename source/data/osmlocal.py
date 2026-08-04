@@ -191,6 +191,24 @@ def fetch_many(bbox, queries, pbf=PBF):
     # ways, so filtering them out would leave the reservoir's own outline
     # invisible and every water relation unselectable.
     inbox_nodes, inbox_ways = set(), set()
+    # ...AND THE WAYS' SHAPES, BECAUSE A RELATION IS ONLY ITS MEMBERS.
+    #
+    # process.py's stitch_outer() builds a multipolygon's ring by reading
+    # m["geometry"] on each outer member, exactly as it does for water. This
+    # reader emitted members as {type, ref, role} with no geometry at all, so
+    # every stitch produced an empty ring and process.py's own guard dropped
+    # the relation on the next line — silently, with a clean run.
+    #
+    # Measured on the Sentosa extract: 8 of the 10 building relations in the
+    # bbox never reached the scene, and among them was the WHOLE of Sofitel's
+    # main building, 198x294m of it. The two that survived did so by accident,
+    # because their outer way is itself tagged `building` and the way scan
+    # caught it. This is the identical failure the comment at process.py's
+    # relation branch describes and warns about, reintroduced one layer down.
+    #
+    # Bounded by the bbox: only ways with a node inside it are kept, which is
+    # the same set inbox_ways already holds.
+    way_geom = {}
 
     fp = osmium.FileProcessor(pbf, osmium.osm.NODE | osmium.osm.WAY | osmium.osm.RELATION)
     fp = fp.with_locations()
@@ -224,6 +242,9 @@ def fetch_many(bbox, queries, pbf=PBF):
             if not (hit and geom):
                 continue
             inbox_ways.add(o.id)
+            # kept whether or not the way is tagged: a multipolygon's outer
+            # members usually carry no tags of their own
+            way_geom[o.id] = geom
             if not tags:
                 continue
             wanted = [label for label, kk in byk.items()
@@ -240,7 +261,9 @@ def fetch_many(bbox, queries, pbf=PBF):
                       if any(_match(tags, p) for p in kk["relation"])]
             if not wanted:
                 continue
-            members = [{"type": m.type, "ref": m.ref, "role": m.role} for m in o.members]
+            members = [{"type": m.type, "ref": m.ref, "role": m.role,
+                        "geometry": way_geom.get(m.ref)}
+                       for m in o.members]
             touches = any((m["ref"] in inbox_ways and str(m["type"]).startswith("w"))
                           or (m["ref"] in inbox_nodes and str(m["type"]).startswith("n"))
                           for m in members)
