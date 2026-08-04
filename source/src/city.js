@@ -3850,6 +3850,59 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
 
   const zip = data.zipline;
   const ZIP_CLEAR = 15.0;
+  // A LUGE RUNS THROUGH THE JUNGLE, NOT THROUGH TREE TRUNKS.
+  //
+  // The MegaZip already has a corridor below and the luge never did, and the
+  // luge is the one you actually ride down. Measured: 136 of the 147 mapped
+  // luge vertices fall inside a k='wood' polygon, which is exactly where the
+  // jungle fill plants on an 11m grid, and 71 of them have a SURVEYED tree
+  // within 6m as well. So the island's signature ride descends through a
+  // plantation, with trunks standing on the track.
+  //
+  // Same shape as inZipCorridor: bucket the segments and test nine cells.
+  // 5.5m of clearance — the track is about 3m wide and a crown overhangs.
+  const LUGE_CLEAR = 5.5;
+  const _lugeSegs = [];
+  for (const a of (data.attractions || [])) {
+    if (a.k !== 'summer_toboggan' || !a.g || a.g.length < 2) continue;
+    for (let i = 0; i < a.g.length - 1; i++) {
+      _lugeSegs.push([a.g[i][0], a.g[i][1], a.g[i + 1][0], a.g[i + 1][1]]);
+    }
+  }
+  const _LCELL = 24;
+  const _lGrid = new Map();
+  for (const s of _lugeSegs) {
+    const pad = LUGE_CLEAR + 1;
+    for (let gx = Math.floor((Math.min(s[0], s[2]) - pad) / _LCELL);
+         gx <= Math.floor((Math.max(s[0], s[2]) + pad) / _LCELL); gx++) {
+      for (let gz = Math.floor((Math.min(s[1], s[3]) - pad) / _LCELL);
+           gz <= Math.floor((Math.max(s[1], s[3]) + pad) / _LCELL); gz++) {
+        const k = gx + ',' + gz;
+        let l = _lGrid.get(k);
+        if (!l) { l = []; _lGrid.set(k, l); }
+        l.push(s);
+      }
+    }
+  }
+  const inLugeCorridor = !_lugeSegs.length ? () => false : (x, z) => {
+    const cx = Math.floor(x / _LCELL), cz = Math.floor(z / _LCELL);
+    for (let gx = cx - 1; gx <= cx + 1; gx++) {
+      for (let gz = cz - 1; gz <= cz + 1; gz++) {
+        const l = _lGrid.get(gx + ',' + gz);
+        if (!l) continue;
+        for (const [ax, az, bx, bz] of l) {
+          const vx = bx - ax, vz = bz - az;
+          const L2 = vx * vx + vz * vz || 1;
+          let t = ((x - ax) * vx + (z - az) * vz) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+          if (dx * dx + dz * dz < LUGE_CLEAR * LUGE_CLEAR) return true;
+        }
+      }
+    }
+    return false;
+  };
+
   const inZipCorridor = (!zip || !zip.p) ? () => false : (x, z) => {
     const [[ax, az], [bx, bz]] = zip.p;
     const vx = bx - ax, vz = bz - az;
@@ -3893,7 +3946,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
     // 45m of a sand edge, matching buildBeachLife: those trees are drawn there
     // with the coconut form and would otherwise get a second inland crown
     if (sandRings.some((p) => inRingP(x, z, p) || edgeOfP(x, z, p) <= 45)) continue;
-    if (inZipCorridor(x, z)) continue;
+    if (inZipCorridor(x, z) || inLugeCorridor(x, z)) continue;
     if (onTrail(x, z)) continue;
     // Park trees are older and bigger than the pruned street stock; the scale
     // spread is wider so a wood does not read as a plantation.
@@ -3946,7 +3999,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
         const jz = gz + (((gx * 3.9 + gz * 11.1) % 9) - 4.5);
         if (!inRing(jx, jz, gp.p)) continue;
         if (blocked && blocked(jx, jz)) continue;
-        if (inZipCorridor(jx, jz)) continue;
+        if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz)) continue;
         if (onTrail(jx, jz)) continue;
         // top of the spread held at ~1.38, not 1.5: at 1.5 the tallest crown
         // put a leaf card 19.6m up and P3 ("props off the ground") refused the
@@ -4000,7 +4053,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
           if (!inRing(jx, jz, gp.p)) continue;
           if (!nearTrail(jx, jz)) continue;
           if (blocked && blocked(jx, jz)) continue;
-          if (inZipCorridor(jx, jz)) continue;
+          if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz)) continue;
           if (onTrail(jx, jz)) continue;
           // A LOW plant's limbs sit at 1.5-3m — the traffic envelope. A
           // full tree over a road is an avenue (crown lifted 6m by rule);
