@@ -145,8 +145,10 @@ const out = await page.evaluate(({ STEP, MIN_POCKET }) => {
     const cx = i % W, cz = (i - cx) / W;
     const x = mnx + cx * STEP, z = mnz + cz * STEP;
     a.n++; a.sx += x; a.sz += z;
-    for (const q of [cx > 0 ? i - 1 : -1, cx < W - 1 ? i + 1 : -1,
-                     cz > 0 ? i - W : -1, cz < H - 1 ? i + W : -1]) {
+    // Each perimeter direction, kept WITH its step so the cell BEYOND a wall
+    // can be looked at — see the revetment rule below.
+    for (const [q, step] of [[cx > 0 ? i - 1 : -1, -1], [cx < W - 1 ? i + 1 : -1, 1],
+                             [cz > 0 ? i - W : -1, -W], [cz < H - 1 ? i + W : -1, W]]) {
       // THE PERIMETER IS SOLID **OR** SEA, and the ratio is the whole answer.
       //
       // An islet off Siloso came out as "sealed by geometry" on the strength of
@@ -156,6 +158,28 @@ const out = await page.evaluate(({ STEP, MIN_POCKET }) => {
       // a pocket is our defect when the geometry is what is holding it in.
       if (q < 0 || grid[q] === 0) { a.sea++; continue; }
       if (grid[q] !== SOLID) continue;
+      // A REVETMENT IS A SHORELINE, NOT AN ENCLOSURE.
+      //
+      // Water cells never enter the raster, so open sea already counts as
+      // `sea` — but the ROCK RIM around an islet sits on the islet's own land
+      // edge and counted as wall. Five of the thirteen pockets reported on
+      // 2026-08-05 were offshore islets ringed by the Siloso groyne boulders,
+      // read as invisible walls at 85-100% enclosure. A check that cries wolf
+      // on five islets is a check that hides the real pocket behind them.
+      //
+      // The test is what lies BEYOND the solid cell: rock with open water
+      // directly behind it is the edge of the world, not something walling you
+      // in. Rock with more land behind it is a genuine wall and still counts.
+      // MEASURED 2026-08-05, and worth knowing before trusting either label:
+      // Palawan Island is reported here as a separate component and it is NOT
+      // one — every point along the mapped footway from Palawan Beach onto it
+      // is dry land, unblocked, walkable (probed at 5m spacing, terrain 1.9 to
+      // 2.2m, waterFloor null throughout). The 2m raster pinches its neck shut
+      // on the rock cells. So a component reported here means "the raster
+      // could not find a way through", not "a player cannot get there" —
+      // confirm with a walk before building a bridge to anywhere.
+      const beyond = q + step;
+      if (beyond >= 0 && beyond < W * H && grid[beyond] === 0) { a.sea++; continue; }
       a.wall++;
       if (ghostFlag[q]) a.ghost++;
       const qx = q % W, qz = (q - qx) / W;

@@ -60,9 +60,25 @@ const res = await page.evaluate((limit) => {
     if (!c) return;
     const hex = c.getHexString();
     if (hex !== 'd8b44a' && hex !== 'dedad0') return;   // PAL.yellow, centre line
+    // NOT THE PLAYER'S OWN KIT. Matching on colour also matches the parked
+    // scooter and the hidden walker rig, which are authored at their local
+    // origin and only moved when they are in use — so they sit at world (0,0)
+    // and reported as a road marking 'buried 1.17m' at the world origin. The
+    // island is kilometres from (0,0) and nothing real is ever drawn there,
+    // so anything that close is a rig, not a road (measured 2026-08-05: 51
+    // meshes at the origin, every one of them a body part, a wheel or a deck).
     const pos = o.geometry?.attributes?.position;
     if (!pos) return;
     o.updateWorldMatrix(true, false);
+    // ...and test the GEOMETRY's centre, not the object's transform. The
+    // merged marking layers sit at a transform of (0,0,0) with their vertices
+    // spread across the island, so excluding by world POSITION excluded every
+    // real marking mesh and the check cheerfully reported '0 of 0'.
+    {
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      const c = o.geometry.boundingBox.getCenter(new T.Vector3()).applyMatrix4(o.matrixWorld);
+      if (Math.hypot(c.x, c.z) < 50) return;
+    }
     for (let i = 0; i < pos.count; i++) {
       v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
       checked++;
