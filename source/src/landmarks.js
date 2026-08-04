@@ -5896,9 +5896,9 @@ function emeraldPavilion(api, b) {
   const ob = orientedBox(b.p);
   const g0 = api.footingY(b.p);
   const cream = new THREE.MeshStandardMaterial({ color: 0xe2dac6, roughness: 0.8 });
-  const green = new THREE.MeshStandardMaterial({ color: 0x1f4a37, roughness: 0.55 });
-  const slab = api.extrudeGeo(b.p, 0.35, g0);
-  api.merge(slab, cream, ob.cx, ob.cz);
+  const greenShell = new THREE.MeshStandardMaterial({
+    color: 0x1f4a37, roughness: 0.55, side: THREE.DoubleSide });
+  api.merge(api.extrudeGeo(b.p, 0.35, 0), cream, ob.cx, ob.cz);
   // columns down both long sides, spring line ~4.6m
   const SPRING = 4.6;
   const n = Math.max(4, Math.round(ob.halfLong / 3.2));
@@ -5915,13 +5915,22 @@ function emeraldPavilion(api, b) {
   }
   // the vault: a half-cylinder along the long axis, radius the short half
   const R = Math.min(ob.halfShort * 0.98, (b.h || 8) - SPRING + 1.2);
-  const vault = new THREE.CylinderGeometry(R, R, ob.halfLong * 2 * 0.98, 22, 1,
-                                           true, 0, Math.PI);
-  vault.rotateZ(Math.PI / 2);              // axis along X
-  vault.rotateX(Math.PI / 2);              // opening downward, crown up
-  vault.rotateY(-ob.ang + Math.PI / 2);
-  vault.translate(ob.bx, g0 + SPRING, ob.bz);
-  api.merge(vault, green, ob.cx, ob.cz);
+  // Built as SLATS along the arc, not a rotated half-cylinder: two attempts
+  // at composing cylinder rotations produced a floating plane and a vertical
+  // fin. A slat's place on the arch is arithmetic — across = R cos(phi),
+  // up = R sin(phi), tilt = phi — and arithmetic cannot end up sideways.
+  const LEN = ob.halfLong * 2 * 0.98;
+  const NS = 16;
+  for (let k = 0; k < NS; k++) {
+    const phi = (k + 0.5) / NS * Math.PI;
+    const w = (Math.PI * R) / NS * 1.12;   // slight overlap, no gaps
+    const slat = new THREE.BoxGeometry(LEN, 0.16, w);
+    slat.applyMatrix4(new THREE.Matrix4().makeRotationX(phi - Math.PI / 2));
+    slat.translate(0, R * Math.sin(phi), R * Math.cos(phi));
+    slat.applyMatrix4(new THREE.Matrix4().makeRotationY(-ob.ang));
+    slat.translate(ob.bx, g0 + SPRING, ob.bz);
+    api.merge(slat, greenShell, ob.cx, ob.cz);
+  }
   // cream ring beams the vault springs from
   for (const sgn of [-1, 1]) {
     const beam = new THREE.BoxGeometry(ob.halfLong * 2 * 0.98, 0.5, 0.5);
@@ -5944,7 +5953,7 @@ function coastesBar(api, b) {
   const timber = new THREE.MeshStandardMaterial({ color: 0x9a8264, roughness: 0.9 });
   const paleRoof = new THREE.MeshStandardMaterial({ color: 0xd8d2c2, roughness: 0.8 });
   const navy = new THREE.MeshStandardMaterial({ color: 0x24344d, roughness: 0.7 });
-  api.merge(api.extrudeGeo(b.p, 0.4, g0), timber, ob.cx, ob.cz);   // the deck
+  api.merge(api.extrudeGeo(b.p, 0.4, 0), timber, ob.cx, ob.cz);   // the deck
   // back-of-house: a low white box hugging the INLAND long edge
   const backW = ob.halfShort * 0.55;
   const back = new THREE.BoxGeometry(ob.halfLong * 2 * 0.9, 3.1, backW);
@@ -5967,9 +5976,9 @@ function coastesBar(api, b) {
       api.merge(post, timber, ob.cx, ob.cz);
     }
   }
-  api.merge(api.extrudeGeo(api.grow(b.p, 1.06), 0.28, g0 + 0.4 + RH), paleRoof, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.06), 0.28, 0.4 + RH), paleRoof, ob.cx, ob.cz);
   // the navy fascia line, the brand accent
-  api.merge(api.extrudeGeo(api.grow(b.p, 1.062), 0.14, g0 + 0.4 + RH + 0.28), navy, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.062), 0.14, 0.4 + RH + 0.28), navy, ob.cx, ob.cz);
 }
 
 // OLA BEACH CLUB — two storeys + open roof deck: weathered grey vertical
@@ -5982,12 +5991,12 @@ function olaBeachClub(api, b) {
   const grey = new THREE.MeshStandardMaterial({ color: 0xa7a49b, roughness: 0.85 });
   const navy = new THREE.MeshStandardMaterial({ color: 0x22334e, roughness: 0.7 });
   const white = new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.6 });
-  api.merge(api.extrudeGeo(b.p, 3.1, g0), grey, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(b.p, 3.1, 0), grey, ob.cx, ob.cz);
   // navy louvre band, slightly oversailing
-  api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 2.1, g0 + 3.1), navy, ob.cx, ob.cz);
-  api.merge(api.extrudeGeo(b.p, 0.25, g0 + 5.2), grey, ob.cx, ob.cz);   // deck slab
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 2.1, 3.1), navy, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(b.p, 0.25, 5.2), grey, ob.cx, ob.cz);   // deck slab
   // white deck rail
-  api.merge(api.extrudeGeo(api.grow(b.p, 1.0), 0.08, g0 + 6.25), white, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.0), 0.08, 6.25), white, ob.cx, ob.cz);
   const per = perimeterOf(b.p);
   const np = Math.max(10, Math.round(per / 2.2));
   for (let i = 0; i < np; i++) {
@@ -6013,11 +6022,11 @@ function trapizza(api, b) {
   const apricot = new THREE.MeshStandardMaterial({ color: 0xc98d68, roughness: 0.85 });
   const cream = new THREE.MeshStandardMaterial({ color: 0xe8e0cc, roughness: 0.8 });
   const blue = new THREE.MeshStandardMaterial({ color: 0x93a7b4, roughness: 0.75 });
-  api.merge(api.extrudeGeo(b.p, 3.6, g0), apricot, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(b.p, 3.6, 0), apricot, ob.cx, ob.cz);
   // the deep eave: oversails a metre and a half, faced cream
-  api.merge(api.extrudeGeo(api.grow(b.p, 1.22), 0.75, g0 + 3.6), cream, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.22), 0.75, 3.6), cream, ob.cx, ob.cz);
   // pale grey-blue panel band under the eave
-  api.merge(api.extrudeGeo(api.grow(b.p, 1.005), 0.7, g0 + 2.8), blue, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.005), 0.7, 2.8), blue, ob.cx, ob.cz);
 }
 
 export const RECIPES = [

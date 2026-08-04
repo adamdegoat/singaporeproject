@@ -86,9 +86,25 @@ def main():
         return round(x, 1), round(z, 1)
 
     # names the building layer ALREADY carries are not repeated as a floating
-    # place — the facade sign is better than a label hanging over the roof
-    have = {str(b.get("n") or "").strip().lower()
-            for b in (d.get("buildings") or []) if b.get("n")}
+    # place — the facade sign is better than a label hanging over the roof.
+    #
+    # MATCHED BY TOKEN SET, NOT SUBSTRING. The plain substring test let three
+    # of four "floating" hotels through on punctuation alone (research/
+    # resort-footprints.md §0.2): the node says "Sofitel Sentosa Resort &
+    # Spa" while the facade says "Sofitel SINGAPORE Sentosa..." (an inserted
+    # word defeats substring both ways); Amara differs by one comma; and
+    # ONE°15's building name literally uses SPACE + U+030A COMBINING RING
+    # where the node uses U+00B0 — no string comparison survives that without
+    # stripping combining marks first. So: NFKD, drop combining marks and
+    # punctuation, and call it the same hotel when either token set contains
+    # the other.
+    import unicodedata
+    def toks(s):
+        s = unicodedata.normalize("NFKD", s)
+        s = "".join(c for c in s if not unicodedata.combining(c))
+        s = "".join(c if c.isalnum() else " " for c in s.lower())
+        return set(s.split())
+    have = [toks(str(b.get("n") or "")) for b in (d.get("buildings") or []) if b.get("n")]
 
     out, skipped = [], 0
     for e in els:
@@ -96,8 +112,8 @@ def main():
         n = (t.get("name") or "").strip()
         if not n or "lat" not in e:
             continue
-        low = n.lower()
-        if any(low in h or h in low for h in have if h):
+        tn = toks(n)
+        if any(h and (h <= tn or tn <= h) for h in have):
             skipped += 1
             continue
         x, z = proj(e["lat"], e["lon"])

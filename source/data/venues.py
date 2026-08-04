@@ -77,11 +77,11 @@ def main():
             # excluded by provenance, never by fudging the threshold
             b["low"] = 1
             lowered += 1
-        if len(vs) == 1 and not b.get("name"):
-            b["name"] = vs[0][0]
+        if len(vs) == 1 and not b.get("n"):
+            b["n"] = vs[0][0]
             b["ns"] = "venue-bind"
             named += 1
-        elif len(vs) > 1 and not b.get("name"):
+        elif len(vs) > 1 and not b.get("n"):
             # a terrace holding two venues: the recipe needs ONE hook, so the
             # footprint takes the name of the venue whose point sits nearest
             # its centroid; the other keeps its tenant sign. Provenance says
@@ -96,7 +96,7 @@ def main():
                 d2 = math.hypot(cx - x2, cz - z2)
                 if best is None or d2 < best[0]:
                     best = (d2, name)
-            b["name"] = best[1]
+            b["n"] = best[1]
             b["ns"] = "venue-bind-shared"
             named += 1
             print(f"   shared footprint named {best[1]!r} (closest of: "
