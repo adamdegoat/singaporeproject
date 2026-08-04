@@ -43,6 +43,9 @@ const SPOTS = [
   ['rws-globe',      -1349, 12210, -0.2],
   ['sensoryscape',   -1420, 12480, 0.6],
   ['serapong',       7, 12890, 2.4],
+  // the owner's own 2026-08-04 screenshot spot: the guideway must never fly
+  // unsupported down Gateway Avenue again
+  ['gateway-viaduct', -1700, 12690, -0.5],
 ];
 
 mkdirSync(ACT, { recursive: true });

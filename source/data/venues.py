@@ -81,9 +81,26 @@ def main():
             b["name"] = vs[0][0]
             b["ns"] = "venue-bind"
             named += 1
-        elif len(vs) > 1:
-            print(f"   shared footprint, no building name (tenant signs carry them): "
-                  + ", ".join(n for n, _ in vs))
+        elif len(vs) > 1 and not b.get("name"):
+            # a terrace holding two venues: the recipe needs ONE hook, so the
+            # footprint takes the name of the venue whose point sits nearest
+            # its centroid; the other keeps its tenant sign. Provenance says
+            # shared, so nobody later reads the name as exclusive.
+            p2 = b["p"]
+            cx = sum(q[0] for q in p2) / len(p2)
+            cz = sum(q[1] for q in p2) / len(p2)
+            best = None
+            for name, h in vs:
+                lon, lat = next((lo, la) for n2, lo, la, _ in VENUES if n2 == name)
+                x2 = (lon - lon0) * m_lon; z2 = (lat0 - lat) * m_lat
+                d2 = math.hypot(cx - x2, cz - z2)
+                if best is None or d2 < best[0]:
+                    best = (d2, name)
+            b["name"] = best[1]
+            b["ns"] = "venue-bind-shared"
+            named += 1
+            print(f"   shared footprint named {best[1]!r} (closest of: "
+                  + ", ".join(n for n, _ in vs) + ")")
     json.dump(data, open(path, "w"), separators=(",", ":"))
     print(f"   {named} venue building(s) named, {lowered} honest height(s) set "
           f"of {len(VENUES)} venues; unbound venues were left unbound on purpose")

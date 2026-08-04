@@ -2767,6 +2767,7 @@ export async function buildTransit(world, data, Y = null) {
         for (let i = 1; i < hs.length - 1; i++) hs[i] = (hs[i - 1] + hs[i] + hs[i + 1]) / 3;
       }
     }
+    let pierAcc = 13;          // arc-length to the next pier, carried ACROSS segments
     for (let i = 0; i < pts.length - 1; i++) {
       const [x0, z0] = pts[i], [x1, z1] = pts[i + 1];
       const L = Math.hypot(x1 - x0, z1 - z0);
@@ -2775,24 +2776,45 @@ export async function buildTransit(world, data, Y = null) {
       const y0 = hs[i], y1 = hs[i + 1];
       bake(new THREE.BoxGeometry(2.2, 1.4, L + 0.4), beamMat, merger,
            (x0 + x1) / 2, (y0 + y1) / 2 - 0.7, (z0 + z1) / 2, ang, Math.atan2(y1 - y0, L));
-      // piers every ~26m along the segment, skipped over carriageways and
-      // water (the beam spans those, exactly like the road bridges)
-      for (let t = 13; t < L; t += 26) {
-        const px = x0 + (x1 - x0) * (t / L), pz = z0 + (z1 - z0) * (t / L);
-        if (window.__onRoad && window.__onRoad(px, pz, 2)) continue;
-        if (window.__inWater && window.__inWater(px, pz)) continue;
-        const gy = groundAt(px, pz);
-        // DRY LAND BY THE HEIGHTFIELD, not the water polygons: the mapped sea
-        // covers only part of the bbox (measured on the front-door map work),
-        // so __inWater said "dry" over open harbour and piers stood in the
-        // sea. The terrain knows the water everywhere. Where it is not land,
-        // the beam spans — same refusal the road bridges make.
-        if (gy < 0.8) continue;
+      // PIERS EVERY ~26M OF RUN, NOT OF SEGMENT. The owner walked out of
+      // arrival and photographed the guideway flying unsupported down
+      // Gateway Avenue (2026-08-04) — 32 of 54 elevated samples had nothing
+      // beneath them, for two stacked reasons this loop used to have:
+      // (1) `for t=13; t<L` restarted per SEGMENT, and OSM chops the line
+      //     into pieces mostly shorter than 13m, so most segments placed
+      //     ZERO piers and the remainder never carried over;
+      // (2) "skip over carriageways" was written for a beam CROSSING a road
+      //     and silently deleted every pier where the beam runs PARALLEL
+      //     above one for hundreds of metres. The real Sentosa Express
+      //     stands its columns in the median and verge — so a road-blocked
+      //     pier now tries a sideways seat before giving up.
+      const nx2 = -(z1 - z0) / L, nz2 = (x1 - x0) / L;
+      for (; pierAcc < L; pierAcc += 26) {
+        const t = pierAcc;
+        const bx2 = x0 + (x1 - x0) * (t / L), bz2 = z0 + (z1 - z0) * (t / L);
+        let seat = null;
+        for (const off of [0, 3.5, -3.5, 5.5, -5.5]) {
+          const px = bx2 + nx2 * off, pz = bz2 + nz2 * off;
+          if (window.__onRoad && window.__onRoad(px, pz, 1.2)) continue;
+          if (window.__inWater && window.__inWater(px, pz)) continue;
+          const gy = groundAt(px, pz);
+          // DRY LAND BY THE HEIGHTFIELD, not the water polygons: the mapped
+          // sea covers only part of the bbox, so __inWater said "dry" over
+          // open harbour and piers stood in the sea. The terrain knows the
+          // water everywhere. Where it is not land, the beam spans — same
+          // refusal the road bridges make.
+          if (gy < 0.8) continue;
+          seat = [px, pz, gy];
+          break;
+        }
+        if (!seat) continue;
         const py = y0 + (y1 - y0) * (t / L) - 1.4;
-        if (py - gy < 2.5) continue;
-        bake(new THREE.CylinderGeometry(0.55, 0.65, py - gy, 8), pierMat, merger,
-             px, gy + (py - gy) / 2, pz);
+        if (py - seat[2] < 2.5) continue;
+        bake(new THREE.CylinderGeometry(0.55, 0.65, py - seat[2], 8), pierMat, merger,
+             seat[0], seat[2] + (py - seat[2]) / 2, seat[1]);
+        out.piers = (out.piers || 0) + 1;
       }
+      pierAcc -= L;
       out.monorail++;
     }
   }

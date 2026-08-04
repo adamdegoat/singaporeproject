@@ -5875,7 +5875,156 @@ function hotelOra(api, b) {
   }
 }
 
+// ---- THE SILOSO BEACH VENUES (research/siloso-venues.md, per-venue) -------
+// Every dimension below is EST-PHOTO unless the brief marks it published; the
+// brief is explicit that none of these buildings publish a metre figure.
+// Sea direction on this strip: the sand and water lie toward (-2231, 12550)
+// from every venue, so props orient by that bearing — authored, like all
+// Layer-2 detail.
+const SEAWARD = (ob) => {
+  const dx = -2231 - ob.cx, dz = 12550 - ob.cz;
+  const L = Math.hypot(dx, dz) || 1;
+  return [dx / L, dz / L];
+};
+
+// EMERALD PAVILION, 40 Siloso Beach Walk — ONE building through four tenants
+// (Café del Mar, Mambo, Rumours, Baristart — all gone by 2026; the PAVILION
+// is what stands): a tall single volume under a dark bottle-green barrel
+// vault on cream columns, a big arched opening at each end so the sea shows
+// straight through.
+function emeraldPavilion(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const cream = new THREE.MeshStandardMaterial({ color: 0xe2dac6, roughness: 0.8 });
+  const green = new THREE.MeshStandardMaterial({ color: 0x1f4a37, roughness: 0.55 });
+  const slab = api.extrudeGeo(b.p, 0.35, g0);
+  api.merge(slab, cream, ob.cx, ob.cz);
+  // columns down both long sides, spring line ~4.6m
+  const SPRING = 4.6;
+  const n = Math.max(4, Math.round(ob.halfLong / 3.2));
+  for (const sgn of [-1, 1]) {
+    for (let i = 0; i < n; i++) {
+      const u = ((i + 0.5) / n - 0.5) * 2 * ob.halfLong * 0.94;
+      const col = new THREE.BoxGeometry(0.6, SPRING, 0.6);
+      col.rotateY(-ob.ang);
+      col.translate(ob.bx + u * ob.ux + sgn * ob.halfShort * 0.9 * -ob.uz,
+                    g0 + SPRING / 2,
+                    ob.bz + u * ob.uz + sgn * ob.halfShort * 0.9 * ob.ux);
+      api.merge(col, cream, ob.cx, ob.cz);
+    }
+  }
+  // the vault: a half-cylinder along the long axis, radius the short half
+  const R = Math.min(ob.halfShort * 0.98, (b.h || 8) - SPRING + 1.2);
+  const vault = new THREE.CylinderGeometry(R, R, ob.halfLong * 2 * 0.98, 22, 1,
+                                           true, 0, Math.PI);
+  vault.rotateZ(Math.PI / 2);              // axis along X
+  vault.rotateX(Math.PI / 2);              // opening downward, crown up
+  vault.rotateY(-ob.ang + Math.PI / 2);
+  vault.translate(ob.bx, g0 + SPRING, ob.bz);
+  api.merge(vault, green, ob.cx, ob.cz);
+  // cream ring beams the vault springs from
+  for (const sgn of [-1, 1]) {
+    const beam = new THREE.BoxGeometry(ob.halfLong * 2 * 0.98, 0.5, 0.5);
+    beam.rotateY(-ob.ang);
+    beam.translate(ob.bx + sgn * ob.halfShort * 0.9 * -ob.uz,
+                   g0 + SPRING - 0.25,
+                   ob.bz + sgn * ob.halfShort * 0.9 * ob.ux);
+    api.merge(beam, cream, ob.cx, ob.cz);
+  }
+}
+
+// COASTES + BIKINI BAR terrace — single-storey open verandah: white
+// weatherboard back-of-house on the inland edge, deep timber deck, a flat
+// pale roof of exposed rafters floating on timber posts, navy accents.
+function coastesBar(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const [sx, sz] = SEAWARD(ob);
+  const white = new THREE.MeshStandardMaterial({ color: 0xf0ede4, roughness: 0.75 });
+  const timber = new THREE.MeshStandardMaterial({ color: 0x9a8264, roughness: 0.9 });
+  const paleRoof = new THREE.MeshStandardMaterial({ color: 0xd8d2c2, roughness: 0.8 });
+  const navy = new THREE.MeshStandardMaterial({ color: 0x24344d, roughness: 0.7 });
+  api.merge(api.extrudeGeo(b.p, 0.4, g0), timber, ob.cx, ob.cz);   // the deck
+  // back-of-house: a low white box hugging the INLAND long edge
+  const backW = ob.halfShort * 0.55;
+  const back = new THREE.BoxGeometry(ob.halfLong * 2 * 0.9, 3.1, backW);
+  back.rotateY(Math.atan2(sx, sz));
+  back.translate(ob.cx - sx * (ob.halfShort - backW / 2) * 0.9,
+                 g0 + 0.4 + 1.55,
+                 ob.cz - sz * (ob.halfShort - backW / 2) * 0.9);
+  api.merge(back, white, ob.cx, ob.cz);
+  // posts + the floating flat roof over everything
+  const RH = 4.6;
+  const n = Math.max(4, Math.round(ob.halfLong / 3.5));
+  for (const sgn of [-1, 1]) {
+    for (let i = 0; i < n; i++) {
+      const u = ((i + 0.5) / n - 0.5) * 2 * ob.halfLong * 0.92;
+      const post = new THREE.BoxGeometry(0.22, RH, 0.22);
+      post.rotateY(-ob.ang);
+      post.translate(ob.bx + u * ob.ux + sgn * ob.halfShort * 0.86 * -ob.uz,
+                     g0 + 0.4 + RH / 2,
+                     ob.bz + u * ob.uz + sgn * ob.halfShort * 0.86 * ob.ux);
+      api.merge(post, timber, ob.cx, ob.cz);
+    }
+  }
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.06), 0.28, g0 + 0.4 + RH), paleRoof, ob.cx, ob.cz);
+  // the navy fascia line, the brand accent
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.062), 0.14, g0 + 0.4 + RH + 0.28), navy, ob.cx, ob.cz);
+}
+
+// OLA BEACH CLUB — two storeys + open roof deck: weathered grey vertical
+// timber below, a navy louvre band the length of the upper level, external
+// beach stair, white rail on the deck.
+function olaBeachClub(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const [sx, sz] = SEAWARD(ob);
+  const grey = new THREE.MeshStandardMaterial({ color: 0xa7a49b, roughness: 0.85 });
+  const navy = new THREE.MeshStandardMaterial({ color: 0x22334e, roughness: 0.7 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.6 });
+  api.merge(api.extrudeGeo(b.p, 3.1, g0), grey, ob.cx, ob.cz);
+  // navy louvre band, slightly oversailing
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 2.1, g0 + 3.1), navy, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(b.p, 0.25, g0 + 5.2), grey, ob.cx, ob.cz);   // deck slab
+  // white deck rail
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.0), 0.08, g0 + 6.25), white, ob.cx, ob.cz);
+  const per = perimeterOf(b.p);
+  const np = Math.max(10, Math.round(per / 2.2));
+  for (let i = 0; i < np; i++) {
+    const p2 = alongRing(b.p, (i + 0.5) / np, 1.0, ob);
+    if (!p2) continue;
+    const post = new THREE.BoxGeometry(0.07, 0.85, 0.07);
+    post.translate(p2[0], g0 + 5.45 + 0.42, p2[1]);
+    api.merge(post, white, ob.cx, ob.cz);
+  }
+  // external stair block on the beach side
+  const stair = new THREE.BoxGeometry(1.6, 3.1, 3.4);
+  stair.rotateY(Math.atan2(sx, sz));
+  stair.translate(ob.cx + sx * (ob.halfShort + 0.9), g0 + 1.55,
+                  ob.cz + sz * (ob.halfShort + 0.9));
+  api.merge(stair, grey, ob.cx, ob.cz);
+}
+
+// TRAPIZZA — Palm Springs one-storey: apricot render, a very deep flat
+// cantilevered eave faced cream (the breeze-block screen), open to the sand.
+function trapizza(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const apricot = new THREE.MeshStandardMaterial({ color: 0xc98d68, roughness: 0.85 });
+  const cream = new THREE.MeshStandardMaterial({ color: 0xe8e0cc, roughness: 0.8 });
+  const blue = new THREE.MeshStandardMaterial({ color: 0x93a7b4, roughness: 0.75 });
+  api.merge(api.extrudeGeo(b.p, 3.6, g0), apricot, ob.cx, ob.cz);
+  // the deep eave: oversails a metre and a half, faced cream
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.22), 0.75, g0 + 3.6), cream, ob.cx, ob.cz);
+  // pale grey-blue panel band under the eave
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.005), 0.7, g0 + 2.8), blue, ob.cx, ob.cz);
+}
+
 export const RECIPES = [
+  [/^emerald pavilion/i, emeraldPavilion],
+  [/^coastes/i, coastesBar],
+  [/^ola beach club/i, olaBeachClub],
+  [/^trapizza/i, trapizza],
   [/^aj hackett/i, bungyTower],
   [/^hard rock hotel|^the laurus/i, theLaurus],
   [/^hotel ora|^festive hotel/i, hotelOra],

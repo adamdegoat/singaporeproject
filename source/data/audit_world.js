@@ -1358,12 +1358,20 @@ window.__auditWorld = async function auditWorld() {
       if (!trunkGrid.has(k)) trunkGrid.set(k, []);
       trunkGrid.get(k).push(p);
     }
-    const overATree = (p) => {
-      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+    // `mul` widens the search for the FLOATING branch only: on the restored
+    // hills (260804-1248) a wide crown's outer card legitimately overhangs
+    // ground 19m+ below it — the sideways-reach truth this check already
+    // wrote down for the SUNK branch, now true upward too. Measured before
+    // widening: the one P3 blocker was a leaf card on a steep slope whose
+    // trunk stood just past the 13m cell reach.
+    const overATree = (p, mul = 1) => {
+      const R = CROWN * mul;
+      const reach = Math.ceil(mul);
+      for (let dx = -reach; dx <= reach; dx++) for (let dz = -reach; dz <= reach; dz++) {
         const list = trunkGrid.get((Math.floor(p.x / CROWN) + dx) + ',' + (Math.floor(p.z / CROWN) + dz));
         if (!list) continue;
         for (const t of list)
-          if ((t.x - p.x) ** 2 + (t.z - p.z) ** 2 < CROWN * CROWN) return true;
+          if ((t.x - p.x) ** 2 + (t.z - p.z) ** 2 < R * R) return true;
       }
       return false;
     };
@@ -1387,13 +1395,14 @@ window.__auditWorld = async function auditWorld() {
       if (p.actor) continue;
       const d = p.y - terr.at(p.x, p.z);
       if (d > 19) {
-        if ((CANOPY.has(p.sig) || p.flat) && overATree(p)) continue;
+        if ((CANOPY.has(p.sig) || p.flat) && overATree(p, 1.6)) continue;
         // A tall box centred on its own middle is not floating. The distant
         // massing is a unit cube scaled to the block's size, so a 40m block has
         // its origin 20m up while its underside is on the ground. Ask where the
         // BOTTOM is, which is the question this check was always trying to ask.
         if (p.sy > 2 && Math.abs(d - p.sy / 2) < 2.5) continue;
-        floating++; ex.push(`${p.sig} ${d.toFixed(1)}m up`);
+        // coordinates in the example, so the next finding is a teleport
+        floating++; ex.push(`${p.sig} ${d.toFixed(1)}m up at ${p.x.toFixed(0)},${p.z.toFixed(0)}`);
       }
       if (d < -1.2) {
         // A CROWN REACHES SIDEWAYS OVER GROUND THAT IS NOT ITS OWN. The
