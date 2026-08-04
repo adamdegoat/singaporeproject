@@ -34,7 +34,16 @@ mkdirSync(OUT, { recursive: true });
 // and a chinatown sweep teleported through orchard coordinates inside a
 // chinatown world: 220 frames of empty terrain, measured and budgeted.
 // The check-reads-the-input disease, again.
-const data = JSON.parse(readFileSync(`data/${process.env.SG_SCENE || 'world'}.json`, 'utf8'));
+// SENTOSA IS THE DEFAULT, because Sentosa is the game.
+//
+// This defaulted to `world` — the eight-district build the project pivoted
+// away from on 2026-08-03. Run without SG_SCENE on 2026-08-05 it dutifully
+// swept Orchard Road, Cairnhill Rise and the East Coast Park Service Road,
+// and reported two budget FAILURES (1,666 draws, 4.7M triangles) against a
+// world that is no longer shipped. Two lines above, this file warns about
+// exactly that: "the check-reads-the-input disease, again."
+const SCENE = process.env.SG_SCENE || 'sentosa';
+const data = JSON.parse(readFileSync(`data/${SCENE}.json`, 'utf8'));
 
 // one stop every `stride` metres along every carriageway, plus the main axis
 function stops() {
@@ -102,7 +111,7 @@ page.on('pageerror', (e) => errors.push(e.message.slice(0, 200)));
 
 // SG_SCENE picks the district (flat path — single-district scenes have no
 // manifest); streamall makes a manifest scene build fully before the sweep
-await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/?dpr=2&touch=1&streamall=1&scene=${process.env.SG_SCENE || 'world'}`, { waitUntil: 'load' });
+await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/?dpr=2&touch=1&streamall=1&scene=${SCENE}`, { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true || window.__bootError',
                            null, { timeout: 120000 });
 const bootErr = await page.evaluate(() => window.__bootError || null);

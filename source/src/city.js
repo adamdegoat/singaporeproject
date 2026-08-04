@@ -2,7 +2,7 @@
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
 import { TOUCH } from './input.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng } from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng } from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV,
          constructionSite } from './landmarks.js';
 
@@ -32,6 +32,11 @@ const STONE = [
 // same between reloads.
 const PUNCHED = [texPunched(0xa8a091), texPunched(0xbdb3a0), texPunched(0x938c82)];
 const BALCONY = [texBalcony(0xc6bda9), texBalcony(0xada596)];
+// Painted render WITH openings, on a white base so a tint lands exactly on the
+// surveyed colour — see the note at texRender(). Two variants: dark glazing
+// for the villas and the Cove, and a greener shutter for the garrison stock.
+const RENDER_TEX = texRender(false);
+const RENDER_TEX_SHUTTER = texRender(true);
 // WHAT A BUILDING IS MADE OF, FROM THE MAP.
 //
 // This used to hash the footprint and pick a family from the remainder, which is
@@ -1609,9 +1614,22 @@ function grow(pts, f) {
 // with no masonry pattern on them at all, and every textured pool in this file
 // puts one there.
 const _RENDER = new Map();
-function renderMat(hex) {
-  let m = _RENDER.get(hex);
-  if (!m) _RENDER.set(hex, m = new THREE.MeshStandardMaterial({ color: hex, roughness: 0.9 }));
+function renderMat(hex, shutter = false) {
+  const key = hex + (shutter ? '|s' : '');
+  let m = _RENDER.get(key);
+  if (!m) {
+    // A WALL WITH NOTHING ON IT IS A BLOCKOUT BOX. This returned a flat colour
+    // and no map, which is honest about the FINISH — these are painted render
+    // — and produced buildings with no windows anywhere on them. The map is
+    // drawn on white precisely so this tint keeps working: white x tint is the
+    // tint, and the openings stay dark through the same multiply. That is the
+    // failure the previous stone-map attempts hit, designed out.
+    m = new THREE.MeshStandardMaterial({
+      map: shutter ? RENDER_TEX_SHUTTER : RENDER_TEX, roughness: 0.9,
+    });
+    m.color = new THREE.Color(hex);
+    _RENDER.set(key, m);
+  }
   return m;
 }
 
@@ -2322,7 +2340,7 @@ export async function buildBuildings(world, data, Y = null) {
     const _isHeritage = !!b.cons && (b.h || 0) <= 14 && !b.roof;
     const mat = b.col ? tintedMat(wallTex, fam.rough, fam.metal, b.col)
       : _isVilla ? renderMat(_coveTint)
-      : _isHeritage ? renderMat(0xf4efe4)
+      : _isHeritage ? renderMat(0xf4efe4, true)
       : _isSmallBeach ? renderMat(_beachTint)
       : _isCove ? tintedMat(wallTex, fam.rough, fam.metal, _coveTint)
       : _isBeach ? tintedMat(wallTex, fam.rough, fam.metal, _beachTint)

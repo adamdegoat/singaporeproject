@@ -944,3 +944,73 @@ export function texFace() {
   x.fill();
   return finish(c, null);
 }
+
+// PAINTED RENDER WITH OPENINGS IN IT — and a WHITE base, which is the whole
+// point of this texture existing.
+//
+// Sentosa Cove's villas, the Siloso beach bars and the garrison stock are all
+// painted render, so they were given `renderMat`: a flat colour and no map at
+// all. That was right about the finish and wrong about the result — ridden
+// past, they are untextured boxes with no windows anywhere on them, which is
+// most of why the Cove reads as grey blockout (owner, 2026-08-05: "alot of
+// things needs to polish and more nicer").
+//
+// The obvious fix — put the masonry map back and tint it — was tried before
+// and reverted, twice, with the reason written down: tinting MULTIPLIES, so a
+// near-white tint over a dark stone map came out grey-taupe and the villas
+// read as beige offices. That reasoning is correct and it is exactly why this
+// texture is drawn on WHITE: white x tint IS the tint, so the wall keeps the
+// surveyed colour it was given, while the openings — which are dark — stay
+// dark through the same multiply. The failure mode is designed out rather
+// than argued with.
+//
+// Openings are few and large because that is what a villa and a beach bar
+// have; a curtain-wall grid here would read as an office block.
+export function texRender(shutter = false) {
+  const r2 = rng(0x726e6472 ^ (shutter ? 1 : 0)), rand = (a, b) => a + r2() * (b - a);
+  const S = 256, [c, x] = cvs(S);
+  x.fillStyle = '#ffffff'; x.fillRect(0, 0, S, S);
+  const rows = 4, rh = S / rows, cols = 3, cw = S / cols;
+  for (let r = 0; r < rows; r++) {
+    for (let cN = 0; cN < cols; cN++) {
+      const ox = cN * cw, oy = r * rh;
+      // the opening: dark glazing, and it must READ as a hole rather than a
+      // panel, so the head is darker than the sill end
+      const w = cw * 0.52, h = rh * 0.44;
+      const px = ox + (cw - w) / 2, py = oy + rh * 0.20;
+      x.fillStyle = shutter ? '#5c6a63' : '#39434b';
+      x.fillRect(px, py, w, h);
+      x.fillStyle = 'rgba(18,22,26,0.45)';
+      x.fillRect(px, py, w, h * 0.22);
+      // a reveal on the left, so the opening has depth in raking light
+      x.fillStyle = 'rgba(120,116,108,0.30)';
+      x.fillRect(px - cw * 0.02, py, cw * 0.02, h);
+      // white frame, which is what makes render-and-window read as render
+      x.strokeStyle = 'rgba(255,255,255,0.95)';
+      x.lineWidth = Math.max(1, cw * 0.035);
+      x.strokeRect(px, py, w, h);
+      // sill
+      x.fillStyle = 'rgba(236,232,224,0.95)';
+      x.fillRect(px - cw * 0.03, py + h, w + cw * 0.06, rh * 0.045);
+    }
+    // FLOOR SHADOW, very light. Painted render has almost nothing on it, and
+    // a heavy band here turns a villa into a car park.
+    x.fillStyle = 'rgba(150,146,138,0.16)';
+    x.fillRect(0, r * rh + rh * 0.86, S, rh * 0.035);
+  }
+  // the faintest dirt, so a flat white wall is not literally flat
+  for (let i = 0; i < 420; i++) {
+    x.fillStyle = `rgba(214,210,202,${rand(0.05, 0.16)})`;
+    x.fillRect(rand(0, S), rand(0, S), rand(1, 3), rand(1, 2));
+  }
+  // [1,1], like every other facade texture in this file.
+  //
+  // I reasoned that ExtrudeGeometry's UVs are world units and set this to
+  // 1/12.6 to make one tile a 3.2m storey. The walls came back FLAT WHITE:
+  // the facade UVs are not metres, so that scaled the tile twelve times finer
+  // than intended and the openings fell below a pixel, averaging out to the
+  // base colour. texPunched, texBalcony and texShophouse all use [1,1] and all
+  // land their floors at a plausible size — that is the measurement, and it
+  // beats the reasoning.
+  return finish(c, [1, 1]);
+}
