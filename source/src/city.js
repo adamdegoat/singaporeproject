@@ -2281,7 +2281,22 @@ export async function buildBuildings(world, data, Y = null) {
     // inside the buildings since the day it was written. Same two-numbers trap
     // as the bike riding 5.5cm under the road: the height a thing is DRAWN at
     // and the height a thing STANDS on.
-    if (b.a > 900 && h > 12) {
+    // ...ON THE KIND OF ROOF THAT ACTUALLY CARRIES IT.
+    //
+    // Tanks, ducting and a stair housing are what you see on a commercial
+    // block or an HDB slab, and this recipe was written looking at those. On
+    // Sentosa it was putting a row of rust-coloured water drums along the top
+    // of Sentosa Cove's waterfront residences (vetted from above at 275,13692)
+    // — the most expensive housing in Singapore, wearing a CBD service roof.
+    // A resort or a home on this island has a clean roof, a terrace or a pool.
+    //
+    // Beach and Cove buildings and anything the district reads as a dwelling
+    // or a hotel are exempt; the island's actual commercial and transport
+    // blocks still get their plant.
+    const _btLow = (b.bt || '').toLowerCase();
+    const _domestic = _isCove || _isBeach
+      || /^(apartments|residential|house|terrace|dormitory|bungalow|hotel|villa)$/.test(_btLow);
+    if (b.a > 900 && h > 12 && !_domestic) {
       const c = centroid(pts);
       const roof = FOOT + h;
       for (let i = 0; i < 3; i++) {
