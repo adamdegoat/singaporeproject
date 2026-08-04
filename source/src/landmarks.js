@@ -6014,6 +6014,127 @@ function olaBeachClub(api, b) {
   api.merge(stair, grey, ob.cx, ob.cz);
 }
 
+// BEACH ARRIVAL PLAZA — the Beach Station Bus Terminal with the Sentosa
+// Express monorail DEPOT stacked on top (research/siloso-venues.md §5).
+// Wikipedia (PUBLISHED): at-grade terminal "under the Sentosa Express
+// Monorail Depot, which serves as the upper floor"; opened 15 Jan 2007;
+// 13 end-on bus berths. OSM: building:levels=3, footprint 89x69m.
+// Heights UNPUBLISHED — EST-PHOTO: ground clear ~5.6m, ~15m to the roof.
+//
+// THE GROUND FLOOR IS OPEN-SIDED ON COLUMNS AND BUSES DRIVE UNDER IT. The
+// generic build put a glazed facade across Siloso Beach Walk and the owner
+// hit it ELEVEN SECONDS after spawning (stuck at 1km/h against the glass —
+// reproduced 2026-08-04, scratchpad probe_ride.mjs). Solid only rasterises
+// the 0.45-2.4m band, so an open storey on columns opens the route by
+// construction; columns skip anything on a road (__onRoad 1.2m margin), so
+// neither the Walk nor the bus loop can ever gain a column.
+//
+// The name is carried by TWO footprints: the 3,632m2 terminal+depot and the
+// 1,086m2 station hall beside it (curved standing-seam grey roof over the
+// elevated platform — spec §5 "alongside it"). Branch on area.
+function beachArrivalPlaza(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const white = new THREE.MeshStandardMaterial({ color: 0xeceee9, roughness: 0.7 });
+  const beige = new THREE.MeshStandardMaterial({ color: 0xd6cbb0, roughness: 0.85 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x9db4c0, roughness: 0.25, metalness: 0.25 });
+  const soffit = new THREE.MeshStandardMaterial({ color: 0x3d4145, roughness: 0.9 });
+  const pv = new THREE.MeshStandardMaterial({ color: 0x18222f, roughness: 0.45, metalness: 0.5 });
+  const greyRoof = new THREE.MeshStandardMaterial({
+    color: 0x8d9297, roughness: 0.6, metalness: 0.2, side: THREE.DoubleSide });
+  const inFoot = (x, z) => {
+    let hit = false;
+    const pts = b.p;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const xi = pts[i][0], zi = pts[i][1], xj = pts[j][0], zj = pts[j][1];
+      if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
+    }
+    return hit;
+  };
+  // the ground floor is open-sided — movement passes between the columns
+  if (api.openGround) api.openGround(b.p);
+  if (b.a >= 2000) {
+    // ---- the terminal + depot ----
+    const CLEAR = 5.6;                                  // EST-PHOTO
+    const TOTAL = Math.max(b.h || 14, 14);
+    // column grid over the whole covered ground floor, skipping roads
+    const step = 7.5;
+    for (let u = -ob.halfLong + step / 2; u < ob.halfLong; u += step) {
+      for (let v = -ob.halfShort + step / 2; v < ob.halfShort; v += step) {
+        const x = ob.bx + u * ob.ux + v * -ob.uz;
+        const z = ob.bz + u * ob.uz + v * ob.ux;
+        if (!inFoot(x, z)) continue;
+        if (window.__onRoad && window.__onRoad(x, z, 1.2)) continue;
+        const col = new THREE.BoxGeometry(0.55, CLEAR, 0.55);
+        col.translate(x, g0 + CLEAR / 2, z);
+        api.merge(col, white, ob.cx, ob.cz);
+      }
+    }
+    // the deck the depot sits on: dark soffit face, slightly oversailing
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.02), 0.6, CLEAR), soffit, ob.cx, ob.cz);
+    // upper mass: beige ribbed cladding with a horizontal glazed strip
+    const upper = TOTAL - CLEAR - 0.6;
+    api.merge(api.extrudeGeo(b.p, upper, CLEAR + 0.6), beige, ob.cx, ob.cz);
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.004), 1.2, CLEAR + 0.6 + upper * 0.45),
+              glass, ob.cx, ob.cz);
+    // projecting flat roof with a dark soffit, then the PV deck on top
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.05), 0.35, TOTAL), soffit, ob.cx, ob.cz);
+    api.merge(api.extrudeGeo(api.grow(b.p, 0.96), 0.2, TOTAL + 0.35), pv, ob.cx, ob.cz);
+    // stair/lift core with vertical fins, breaking the parapet (spec §5)
+    for (let t = 0.6; t >= 0.2; t -= 0.1) {
+      const cx2 = ob.bx + t * ob.halfLong * ob.ux, cz2 = ob.bz + t * ob.halfLong * ob.uz;
+      if (!inFoot(cx2, cz2)) continue;
+      const core = new THREE.BoxGeometry(7.5, 4.2, 5.5);
+      core.rotateY(-ob.ang);
+      core.translate(cx2, g0 + TOTAL + 0.35 + 2.1, cz2);
+      api.merge(core, beige, ob.cx, ob.cz);
+      for (let f = -3; f <= 3; f++) {
+        const fin = new THREE.BoxGeometry(0.22, 4.2, 0.7);
+        fin.rotateY(-ob.ang);
+        fin.translate(cx2 + f * ob.ux, g0 + TOTAL + 0.35 + 2.1, cz2 + f * ob.uz);
+        api.merge(fin, white, ob.cx, ob.cz);
+      }
+      break;
+    }
+  } else {
+    // ---- the station hall: elevated platform under a curved grey roof ----
+    const PLAT = 6.2;                                   // platform deck level
+    const H = Math.max(b.h || 10, 10);
+    // platform box: beige sides, open below via the same column treatment
+    const step = 6.5;
+    for (let u = -ob.halfLong + step / 2; u < ob.halfLong; u += step) {
+      for (let v = -ob.halfShort + step / 2; v < ob.halfShort; v += step) {
+        const x = ob.bx + u * ob.ux + v * -ob.uz;
+        const z = ob.bz + u * ob.uz + v * ob.ux;
+        if (!inFoot(x, z)) continue;
+        if (window.__onRoad && window.__onRoad(x, z, 1.2)) continue;
+        const col = new THREE.BoxGeometry(0.5, PLAT, 0.5);
+        col.translate(x, g0 + PLAT / 2, z);
+        api.merge(col, white, ob.cx, ob.cz);
+      }
+    }
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.01), 1.4, PLAT), beige, ob.cx, ob.cz);
+    // glazed platform enclosure
+    api.merge(api.extrudeGeo(api.grow(b.p, 0.94), H - PLAT - 1.4 - 1.0, PLAT + 1.4),
+              glass, ob.cx, ob.cz);
+    // the curved standing-seam roof, read as three stepped rings — a slat
+    // barrel on this 7-point L-ish footprint took a diagonal oriented-box
+    // axis and rendered as a fan of plates (vetted twice); the stepped
+    // silhouette reads curved from the ground and cannot end up sideways
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.06), 0.3, H - 1.0), greyRoof, ob.cx, ob.cz);
+    api.merge(api.extrudeGeo(api.grow(b.p, 0.8), 0.55, H - 0.7), greyRoof, ob.cx, ob.cz);
+    api.merge(api.extrudeGeo(api.grow(b.p, 0.55), 0.55, H - 0.15), greyRoof, ob.cx, ob.cz);
+    // the orange-brown BEACH STATION sign panel on the long face
+    const sign = new THREE.BoxGeometry(Math.min(9, ob.halfLong), 1.1, 0.25);
+    sign.rotateY(-ob.ang);
+    sign.translate(ob.bx + ob.halfShort * 1.03 * -ob.uz,
+                   g0 + PLAT + 2.2,
+                   ob.bz + ob.halfShort * 1.03 * ob.ux);
+    api.merge(sign, new THREE.MeshStandardMaterial({ color: 0xb06a2f, roughness: 0.6 }),
+              ob.cx, ob.cz);
+  }
+}
+
 // TRAPIZZA — Palm Springs one-storey: apricot render, a very deep flat
 // cantilevered eave faced cream (the breeze-block screen), open to the sand.
 function trapizza(api, b) {
@@ -6034,6 +6155,7 @@ export const RECIPES = [
   [/^coastes/i, coastesBar],
   [/^ola beach club/i, olaBeachClub],
   [/^trapizza/i, trapizza],
+  [/^beach arrival plaza/i, beachArrivalPlaza],
   [/^aj hackett/i, bungyTower],
   [/^hard rock hotel|^the laurus/i, theLaurus],
   [/^hotel ora|^festive hotel/i, hotelOra],

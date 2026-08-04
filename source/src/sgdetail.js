@@ -3239,6 +3239,30 @@ export async function buildTransit(world, data, Y = null) {
   // a canopy over the driveway, which is what a real resort entrance is.
   const pcSlab = new THREE.MeshLambertMaterial({ color: 0xe8e2d6 });
   const pcCol = new THREE.MeshLambertMaterial({ color: 0xcfc7b8 });
+  // A COLUMN MUST NOT STAND IN A CARVED CORRIDOR. The sweep (w_-892_12977,
+  // w_-925_13039) caught porte-cochere columns planted mid-walkway: the
+  // column test asked only __onRoad, and the carved WALK corridors are not
+  // roads. Collect every corridor segment once; a column lands only where
+  // no corridor passes.
+  const _corr = [];
+  for (const a2 of (data.arcades || [])) {
+    if (!a2.p || a2.p.length < 2) continue;
+    const h2 = (a2.w || 3.6) / 2 + 0.6;
+    for (let i = 0; i < a2.p.length - 1; i++) {
+      _corr.push([a2.p[i][0], a2.p[i][1], a2.p[i + 1][0], a2.p[i + 1][1], h2]);
+    }
+  }
+  const inCorridor = (px, pz) => {
+    for (const [ax, az, bx2, bz2, h2] of _corr) {
+      const vx = bx2 - ax, vz = bz2 - az;
+      const L2 = vx * vx + vz * vz || 1;
+      let t = ((px - ax) * vx + (pz - az) * vz) / L2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const dx = px - (ax + vx * t), dz = pz - (az + vz * t);
+      if (dx * dx + dz * dz < h2 * h2) return true;
+    }
+    return false;
+  };
   for (const arc of (data.arcades || [])) {
     if (arc.k !== 'drive' || !arc.p || arc.p.length < 2) continue;
     await YY();
@@ -3267,6 +3291,7 @@ export async function buildTransit(world, data, Y = null) {
           const px = x0 + (x1 - x0) * (t / L) + nx * (half + 0.85) * sgn;
           const pz = z0 + (z1 - z0) * (t / L) + nz * (half + 0.85) * sgn;
           if (window.__onRoad && window.__onRoad(px, pz, 0)) continue;
+          if (inCorridor(px, pz)) continue;
           const cy = surfaceAt(px, pz);
           if (top - 0.55 - (cy - gy) < 2.6) continue;
           const col = new THREE.CylinderGeometry(0.3, 0.34, top - 0.28 - (cy - gy), 10);

@@ -671,6 +671,44 @@ const FOOTBRIDGES = { cells: new Map(), segs: [] };
 // treads overlap at a turn.
 const WALKS = { cells: new Map(), segs: [] };
 
+// OPEN GROUND STOREYS — footprints whose ground floor is open-sided on
+// columns (the Beach Arrival Plaza bus terminal: buses drive under the
+// depot). MOVEMENT ONLY: rideBlocked consults this before the footprint
+// test, so a rider passes between the columns (which still block via
+// SOLID, the honest geometry). Placement/dressing keep the footprint —
+// the 2026-08-01 revert lesson. Registered by recipes via api.openGround.
+const OPENGROUND = { cells: new Map(), polys: [] };
+export function addOpenGround(poly) {
+  const OG_CELL = 12;
+  let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
+  for (const [x, z] of poly) {
+    mnx = Math.min(mnx, x); mxx = Math.max(mxx, x);
+    mnz = Math.min(mnz, z); mxz = Math.max(mxz, z);
+  }
+  OPENGROUND.polys.push(poly);
+  for (let cx = Math.floor(mnx / OG_CELL); cx <= Math.floor(mxx / OG_CELL); cx++) {
+    for (let cz = Math.floor(mnz / OG_CELL); cz <= Math.floor(mxz / OG_CELL); cz++) {
+      const k = cx + ',' + cz;
+      let l = OPENGROUND.cells.get(k);
+      if (!l) { l = []; OPENGROUND.cells.set(k, l); }
+      l.push(poly);
+    }
+  }
+}
+export function openGroundAt(x, z) {
+  const l = OPENGROUND.cells.get(Math.floor(x / 12) + ',' + Math.floor(z / 12));
+  if (!l) return false;
+  for (const poly of l) {
+    let hit = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i][0], zi = poly[i][1], xj = poly[j][0], zj = poly[j][1];
+      if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
+    }
+    if (hit) return true;
+  }
+  return false;
+}
+
 export function addWalkSurface(x1, z1, x2, z2, half, y) {
   const idx = WALKS.segs.length;
   WALKS.segs.push([x1, z1, x2, z2, half, y]);
@@ -1759,6 +1797,9 @@ export async function buildBuildings(world, data, Y = null) {
     // the same building could get two different seats — the exact split that
     // left parapets in the sky. One building, one number.
     footingY: (pts) => (FOOT !== null ? FOOT : footingY(pts)),
+    // a recipe with an open-sided ground storey registers its footprint so
+    // MOVEMENT passes between the columns; placement keeps the footprint
+    openGround: addOpenGround,
     merge: (geo, mat, x, z) => merger.add(autoUV(geo, mat), mat, x, z),
     // the ground under a point, so a recipe can seat a dome or a spire on the
     // terrain instead of on y=0. Without it every hand-placed piece floats or

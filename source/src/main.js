@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance } from './tex.js';
-import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, plantSurveyed } from './city.js';
+import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, plantSurveyed, openGroundAt } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, lambertise, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
@@ -395,9 +395,12 @@ function buildArcadeIndex(list) {
     },
   };
 }
-// What stops you MOVING. Everything blocked() says, minus the arcades.
+// What stops you MOVING. Everything blocked() says, minus the arcades and
+// minus open ground storeys (Beach Arrival Plaza: buses drive under the
+// depot; only the columns — real SOLID geometry — stop you there).
 function moveBlocked(x, z) {
   if (ARCADES && ARCADES.at(x, z)) return false;
+  if (openGroundAt(x, z)) return SOLID ? SOLID.at(x, z) : false;
   return blocked(x, z);
 }
 
@@ -458,6 +461,8 @@ function rideBlocked(x, z) {
   // carriageway-deck-only; a follow-up gives wide pedestrian causeways a
   // standable deck.
   if (ARCADES && ARCADES.at(x, z)) return false;
+  // an open ground storey passes; only its columns (SOLID) stop you
+  if (openGroundAt(x, z)) return SOLID ? SOLID.at(x, z) : false;
   if (inWater(x, z) && anyDeckAt(x, z) !== null) {
     // over a deck: only real geometry stops you
     if (SOLID && SOLID.at(x, z)) return true;
@@ -2569,6 +2574,8 @@ async function buildRegion(data, opts = {}) {
   // the same question they do rather than a lookalike
   // D9 asks whether the RIDE can get down the street, so it gets the ride question
 window.__blocked = (x, z) => rideBlocked(x, z);   // movement, arcades open
+// open-sided ground storeys (Beach Arrival Plaza), for B5's exemption
+window.__openGround = (x, z) => openGroundAt(x, z);
 // building footprints only, for the occlusion-ceiling measurement
 window.__blockedAt = (x, z) => blocked(x, z);
 window.__placeBlocked = (x, z) => blocked(x, z);

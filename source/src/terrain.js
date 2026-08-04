@@ -231,7 +231,19 @@ export class Terrain {
   vertexY(x, z) {
     const y = this.at(x, z) - (this.inRoad(x, z) ? 0.51 : 0.06);
     const bed = this.waterFloor(x, z);
-    return bed === null ? y : Math.min(y, bed);
+    if (bed === null) return y;
+    // A RING EDGE THAT OVERREACHES ONTO FIRM LAND DOES NOT SINK A HILL.
+    // The grid's own data-side passes already sank every genuine water cell,
+    // so a drawn sink deeper than ~7m below the logical ground is the water
+    // POLYGON being sloppy at its edge, not the world having water there.
+    // Measured 2026-08-04 NW of Beach Station: a 40m shore strip stood
+    // 6-10m of standing height over a drawn sea at 0.2 (gaps -5..-9m) —
+    // the owner's "road floating up in the air" — because the strait ring
+    // cuts inland of the surveyed coastline there while the sea pass had
+    // rightly kept those cells as land. Rivers and quays sink 2-6m and are
+    // untouched by this gate.
+    if (y - bed > 7) return y;
+    return Math.min(y, bed);
   }
 
   // bilinear height at a world point; 0 everywhere if the district has no grid

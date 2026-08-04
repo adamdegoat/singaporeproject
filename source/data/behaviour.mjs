@@ -269,6 +269,13 @@ const rider = await page.evaluate(() => {
     // the moment a route changes. Same teaching P1 got for the crowd and P2
     // for the canopies.
     if (inArcade(px, pz)) continue;
+    // AND AN OPEN GROUND STOREY IS WALK-UNDER BY DESIGN (2026-08-04): the
+    // Beach Arrival Plaza recipe builds the real bus terminal — open-sided
+    // on columns, buses drive beneath the monorail depot — and registers
+    // its footprint via api.openGround. Walking in at ground level is the
+    // building built CORRECTLY: same mechanism-not-name teaching as
+    // bl.roof and inArcade above.
+    if (window.__openGround && window.__openGround(px, pz)) continue;
     tested++;
     if (!window.__blocked(px, pz)) {
       porous++;
