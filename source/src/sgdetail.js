@@ -3190,9 +3190,18 @@ export async function buildTransit(world, data, Y = null) {
       if (gy < 0.8) continue;
       const hgt = y - 0.16 - gy;
       if (hgt < 3) continue;
-      const col = new THREE.CylinderGeometry(0.34, 0.44, hgt, 8);
+      // girth scales with the drop: a 0.34m stick under a 50m deck reads as
+      // nothing and the deck read as floating (sweep w_-2679_12137). The
+      // real Skywalk stands on substantial columns; ours thicken with
+      // height and carry a cross-head under the deck.
+      const r = 0.4 + hgt * 0.018;
+      const col = new THREE.CylinderGeometry(r, r * 1.25, hgt, 8);
       col.translate(px, gy + hgt / 2, pz);
       merger.add(col, steelSW, px, pz);
+      const head = new THREE.BoxGeometry(half * 2 + 0.8, 0.35, 1.1);
+      head.rotateY(ang);
+      head.translate(px, y - 0.35, pz);
+      merger.add(head, steelSW, px, pz);
     }
     // the lift tower at the Siloso Point end — the ride up is the way in
     const tgy = groundAt(ax, az);

@@ -921,6 +921,8 @@ export function anyDeckAt(x, z) {
   return _deckIn(FOOTBRIDGES, x, z);
 }
 
+
+
 // The deck height under a point, or null if there is no bridge over it. The
 // widest deck wins where two overlap, which is the ramp rather than the slip
 // road and is the one you are actually riding on.
@@ -993,6 +995,15 @@ export function surfaceAt(x, z) {
   const step = walkSurfaceAt(x, z);
   if (step !== null) return step;
   const g = TERRAIN.at(x, z);
+  // A LOW FOOTBRIDGE IS A BOARDWALK YOU STAND ON. Footbridge decks were kept
+  // out of this function so a rider passing UNDER one is not lifted onto it
+  // — right for overpasses, and it buried every player ON the Sentosa
+  // Boardwalk to the helmet for 1.2km (sweep w_-1096_11883, P0): the deck
+  // draws ~1.5m above terrain and the seat read the terrain. The 2m line
+  // keeps both truths: under 2m of air there is nothing to walk beneath, so
+  // standing on it is the only reading; 2m and up stays an overpass.
+  const fb = _deckIn(FOOTBRIDGES, x, z);
+  if (fb !== null && fb - g < 2.0 && fb > g) return fb + 0.04;
   if (window.__onRoad && window.__onRoad(x, z, 0.4)) return g + SURFACE_ROAD;
   return g + SURFACE_PATH;
 }
@@ -2790,12 +2801,48 @@ export async function buildRoads(world, data, Y = null) {
         || (seaLv !== null && TERRAIN.at(x, z) <= seaLv + 0.6);
       for (const r of data.roads) {
         if (r.bridge || !r.p || r.p.length < 2) continue;
-        if (r.k === 'footway' || r.k === 'pedestrian' || r.k === 'steps') continue;
+        // footways promote too: the causeway's parallel footpath stayed
+        // excluded and walkers draped at TERRAIN level inside the drawn road
+        // deck — sunk to the helmet (sweep finding w_-1096_11883, P0). The
+        // deck machinery already unions pedestrian-class runs separately, so
+        // a promoted footway becomes a walkway deck, not a road deck.
+        if (r.k === 'steps') continue;
         let low = 0;
         for (const q of r.p) if (overWater(q[0], q[1])) low++;
         if (low > 0.6 * r.p.length) {
           r.bridge = 1;
           r.ws = (r.ws || '') + '+causeway';
+        }
+      }
+      // SECOND PASS: a way that runs INSIDE a promoted causeway's corridor
+      // joins it. The promotion is judged per way, and the strait polygon's
+      // edge ran between the Gateway's road lanes (promoted, deck 5.9) and
+      // the footway 16m beside them (not promoted, terrain 4.0) — a walker
+      // on that footway was buried to the helmet in the deck slabs
+      // (sweep w_-1096_11883). Levels on one causeway must agree.
+      {
+        const cells = new Map();
+        const CW = 12;
+        for (const r of data.roads) {
+          if (!r.bridge || !/causeway/.test(r.ws || '')) continue;
+          for (const q of r.p) {
+            for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+              cells.set((Math.floor(q[0] / CW) + dx) + ',' + (Math.floor(q[1] / CW) + dz), true);
+            }
+          }
+        }
+        if (cells.size) {
+          for (const r of data.roads) {
+            if (r.bridge || !r.p || r.p.length < 2 || r.k === 'steps') continue;
+            let nearP = 0;
+            for (const q of r.p) {
+              if (cells.has(Math.floor(q[0] / CW) + ',' + Math.floor(q[1] / CW))) nearP++;
+            }
+            if (nearP > 0.6 * r.p.length) {
+              r.bridge = 1;
+              r.ws = (r.ws || '') + '+causeway-join';
+            }
+          }
         }
       }
     }
@@ -2899,7 +2946,23 @@ export async function buildRoads(world, data, Y = null) {
     // and lifting the crowd onto one would put pedestrians in mid-air.
     // A footbridge over the sea is still a bridge, for the one question W2
     // asks. It is NOT registered as something to stand on — see FOOTBRIDGES.
-    if (r.bridge && isPath) addFootbridgeWay(r.p, r.w || 3);
+    if (r.bridge && isPath) {
+      addFootbridgeWay(r.p, r.w || 3);
+      // A PROMOTED CAUSEWAY FOOTPATH IS WALKED AT DECK LEVEL. Footbridge
+      // decks deliberately never reach surfaceAt (a rider does not belong on
+      // a 2m footbridge) — but on the causeway that left the walker draped
+      // at TERRAIN inside the neighbouring road deck, buried to the helmet
+      // (sweep w_-1096_11883, P0). The pontoon-crossing registry is exactly
+      // the walked-deck mechanism, so causeway footpaths register there.
+      if (/causeway/.test(r.ws || '')) {
+        const f = BRDECK.get(r);
+        for (let i = 0; i < r.p.length - 1; i++) {
+          const [x1, z1] = r.p[i], [x2, z2] = r.p[i + 1];
+          const yd = f ? f((x1 + x2) / 2, (z1 + z2) / 2) : TERRAIN.at(x1, z1) + 1.2;
+          addWalkSurface(x1, z1, x2, z2, Math.max(1.2, (r.w || 3) / 2), yd + 0.06);
+        }
+      }
+    }
     if (r.bridge && !isPath && (r.w || 0) >= 5.5) {
       // The deck height comes back from the registry rather than being worked
       // out again here: ribbon() already computes the same `max terrain + 1.2`
@@ -3787,6 +3850,44 @@ export function buildWater(world, data) {
     // +2cm, not equal: coplanar with the sea sheet the two z-fight across the
     // whole channel, and the finer mapped ring is the one that should win
     const level = SEA_LEVEL[0] === null ? lo - 0.35 : Math.max(lo - 0.35, SEA_LEVEL[0] + 0.02);
+    // A GIANT INLAND RING IS A MULTIPOLYGON THAT LOST ITS PARTS, and filling
+    // it solid paints the LAND between its ponds. Sentosa carries one such
+    // ring — 10.4 hectares, unnamed — and its single sheet at the lowest
+    // pond's level surfaced as cyan patches on lawns in ~27 of 404 sweep
+    // frames (2026-08-04). The honest fill for a big ring: keep only the
+    // cells whose ground actually lies below the water level. Small rings
+    // (a real pond fits its own rim) keep the exact shape.
+    if ((w.a || 0) > 20000) {
+      const STEP2 = 12;
+      const xs = pts.map((q) => q[0]), zs = pts.map((q) => q[1]);
+      const x0r = Math.min(...xs), x1r = Math.max(...xs);
+      const z0r = Math.min(...zs), z1r = Math.max(...zs);
+      const insideRing = (px, pz) => {
+        let c = false;
+        for (let i2 = 0, j2 = pts.length - 1; i2 < pts.length; j2 = i2++) {
+          const [xi, zi] = pts[i2], [xj, zj] = pts[j2];
+          if ((zi > pz) !== (zj > pz) && px < (xj - xi) * (pz - zi) / (zj - zi) + xi) c = !c;
+        }
+        return c;
+      };
+      const cells = [];
+      for (let gx = x0r; gx < x1r; gx += STEP2) {
+        for (let gz = z0r; gz < z1r; gz += STEP2) {
+          const mx = gx + STEP2 / 2, mz = gz + STEP2 / 2;
+          if (!insideRing(mx, mz)) continue;
+          if (TERRAIN.at(mx, mz) > level + 0.15) continue;   // dry land, no sheet
+          const q = new THREE.PlaneGeometry(STEP2 + 0.4, STEP2 + 0.4);
+          q.rotateX(-Math.PI / 2);
+          q.translate(mx, level, mz);
+          const uv2 = q.attributes.uv;
+          for (let i2 = 0; i2 < uv2.count; i2++) uv2.setXY(i2, (mx + uv2.getX(i2)) / 24, (mz + uv2.getY(i2)) / 24);
+          cells.push(q);
+        }
+      }
+      for (const q of cells) geos.push(q);
+      area += w.a || 0;
+      continue;
+    }
     const geo = new THREE.ShapeGeometry(shapeFrom(pts));
     // THE WATER WAS FACING DOWNWARDS AND NOBODY COULD SEE IT.
     //
