@@ -1537,6 +1537,225 @@ export async function buildAttractions(world, data, Y = null) {
     }
   }
 
+  // LIFEGUARD TOWERS. Sentosa's are NOT the red-white "Baywatch" hut that
+  // image search returns (that is Miami stock photography — the research
+  // brief §4 caught the trap): a bright-YELLOW rendered base with a red cross
+  // and a blue wave band, an open timber cabin in terracotta above it, and a
+  // grey-brown shingle PYRAMID roof with a solar panel on the seaward slope.
+  // Spacing ~100m is PUBLISHED (Biamp PA case study); the count is not, so it
+  // falls out of the spacing along the mapped sand. Placed on the beach off
+  // the coast layer — the same surveyed line the sea meets.
+  {
+    const sands = (data.green || []).filter((g2) => g2.k === 'sand' && g2.p && g2.p.length > 2)
+      .map((g2) => {
+        const xs = g2.p.map((q) => q[0]), zs = g2.p.map((q) => q[1]);
+        return { x0: Math.min(...xs) - 50, z0: Math.min(...zs) - 50,
+                 x1: Math.max(...xs) + 50, z1: Math.max(...zs) + 50,
+                 cx: xs.reduce((a, b) => a + b, 0) / xs.length,
+                 cz: zs.reduce((a, b) => a + b, 0) / zs.length };
+      });
+    const nearSand = (x, z) => sands.find((s) => x > s.x0 && x < s.x1 && z > s.z0 && z < s.z1);
+    // coast WAYS are fragments that only chain into islet rings later, so a
+    // per-way closure test misses them — exclude by the islet rings we hold
+    const isletBoxes = (data.rocks || []).filter((r2) => r2.k === 'islet' && r2.g && r2.g.length > 3)
+      .map((r2) => {
+        const xs = r2.g.map((q) => q[0]), zs = r2.g.map((q) => q[1]);
+        return [Math.min(...xs) - 8, Math.min(...zs) - 8, Math.max(...xs) + 8, Math.max(...zs) + 8];
+      });
+    const onIslet = (x, z) => isletBoxes.some((b2) => x > b2[0] && z > b2[1] && x < b2[2] && z < b2[3]);
+    const matYellow = new THREE.MeshLambertMaterial({ color: 0xe0b52a });
+    const matBlue = new THREE.MeshLambertMaterial({ color: 0x2d6fae });
+    const matRed = new THREE.MeshLambertMaterial({ color: 0xc03028 });
+    const matTerra = new THREE.MeshLambertMaterial({ color: 0x9a5b40 });
+    const matShingle = new THREE.MeshLambertMaterial({ color: 0x6f6353 });
+    const matRust = new THREE.MeshLambertMaterial({ color: 0x9a5433 });
+    const matSolar = new THREE.MeshLambertMaterial({ color: 0x243040 });
+    let acc = 0, towers = 0;
+    for (const cwv of (data.coast || [])) {
+      const p = cwv.p || [];
+      // never on an offshore islet: a small closed coast ring is an islet,
+      // and 9 of the "beaches" the 100m walk found were islet rims — the
+      // count came out 50 against a derived ~27 for the real three beaches
+      if (p.length > 3) {
+        const loop = Math.hypot(p[0][0] - p[p.length - 1][0], p[0][1] - p[p.length - 1][1]);
+        let len2 = 0;
+        for (let i2 = 0; i2 < p.length - 1; i2++) len2 += Math.hypot(p[i2 + 1][0] - p[i2][0], p[i2 + 1][1] - p[i2][1]);
+        if (loop < 30 && len2 < 560) continue;
+      }
+      for (let i = 0; i < p.length - 1; i++) {
+        const [x1, z1] = p[i], [x2, z2] = p[i + 1];
+        const L = Math.hypot(x2 - x1, z2 - z1);
+        let t = 100 - acc;
+        while (t < L) {
+          const wx = x1 + (x2 - x1) * t / L, wz = z1 + (z2 - z1) * t / L;
+          t += 100;
+          const s = nearSand(wx, wz);
+          if (!s || onIslet(wx, wz)) continue;
+          // stand a few metres up the beach from the waterline, facing the sea
+          const dx0 = s.cx - wx, dz0 = s.cz - wz;
+          const dL = Math.hypot(dx0, dz0) || 1;
+          const px = wx + dx0 / dL * 9, pz = wz + dz0 / dL * 9;
+          const gy = groundAt(px, pz);
+          if (gy < 0.5 || gy > 4.5) continue;
+          const seaYaw = Math.atan2(-dx0, -dz0);
+          const rotT = new THREE.Matrix4().makeRotationY(seaYaw);
+          const put = (geo, m2) => {
+            geo.applyMatrix4(rotT);
+            geo.translate(px, gy, pz);
+            merger.add(geo, m2, px, pz);
+          };
+          const box = (w, h, d2, x0b, y0b, z0b) => {
+            const b = new THREE.BoxGeometry(w, h, d2);
+            b.translate(x0b, y0b + h / 2, z0b);
+            return b;
+          };
+          put(box(2.3, 2.2, 2.3, 0, 0, 0), matYellow);
+          put(box(2.32, 0.42, 2.32, 0, 0.18, 0), matBlue);
+          put(box(0.55, 0.16, 0.06, 0, 1.25, 1.18), matRed);
+          put(box(0.16, 0.55, 0.06, 0, 1.06, 1.18), matRed);
+          for (const [ox, oz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+            put(box(0.15, 2.1, 0.15, ox * 1.02, 2.2, oz * 1.02), matTerra);
+          }
+          put(box(2.5, 0.14, 2.5, 0, 2.2, 0), matTerra);         // cabin floor
+          for (const [w2, d2, ox, oz] of [[2.4, 0.1, 0, -1.15], [2.4, 0.1, 0, 1.15],
+                                          [0.1, 2.4, -1.15, 0], [0.1, 2.4, 1.15, 0]]) {
+            put(box(w2, 0.1, d2, ox, 3.15, oz), matTerra);       // balustrade
+          }
+          const roof = new THREE.ConeGeometry(2.55, 1.25, 4);
+          roof.applyMatrix4(new THREE.Matrix4().makeRotationY(Math.PI / 4));
+          roof.translate(0, 4.3 + 0.62, 0);
+          put(roof, matShingle);
+          put(box(1.2, 0.06, 0.7, 0, 4.62, 1.05), matSolar);     // panel, seaward slope
+          put(box(1.3, 0.8, 0.07, 0, 2.5, 1.2), matRust);        // signboard to the sea
+          towers++;
+        }
+        acc = (acc + L) % 100;
+      }
+    }
+    out.lifeguards = towers;
+  }
+
+  // THE LAGOON CROSSINGS. Not a truss bridge on spans — the research brief
+  // corrected its own premise from the photographs: a fixed piled JETTY, a
+  // hinged white truss GANGWAY riding the tide, then a LOW FLOATING PONTOON
+  // to the islet, with white post-and-rail sides, orange ring lifebuoys and
+  // black lamps with white globes. One per lagoon-mouth islet (shore to
+  // islet; the brief's "middle to west, 55m" pairing cannot be right — those
+  // islets are 530m apart — so each islet takes its crossing from its own
+  // nearest shore, which is what the satellite shows). Deck registered with
+  // addWalkSurface so the pontoons are walked, not just seen — which also
+  // makes the islets honestly reachable.
+  {
+    const islets2 = (data.rocks || []).filter((rk2) => rk2.k === 'islet' && rk2.g && rk2.g.length > 3)
+      .map((rk2) => {
+        const g2 = rk2.g;
+        const cx = g2.reduce((s, p2) => s + p2[0], 0) / g2.length;
+        const cz = g2.reduce((s, p2) => s + p2[1], 0) / g2.length;
+        const rad = Math.max(...g2.map((p2) => Math.hypot(p2[0] - cx, p2[1] - cz)));
+        return { g: g2, cx, cz, rad };
+      });
+    // the two surveyed lagoon islets (OSM place=islet, via the research brief)
+    const TARGETS = [[-2089, 12646], [-2527, 12338]];
+    const mWhite = new THREE.MeshLambertMaterial({ color: 0xf2f2ee });
+    const mPile = new THREE.MeshLambertMaterial({ color: 0x4a4640 });
+    const mJetty = new THREE.MeshLambertMaterial({ color: 0x8a7358 });
+    const mPont = new THREE.MeshLambertMaterial({ color: 0xd9d5cc });
+    const mBuoy = new THREE.MeshLambertMaterial({ color: 0xe66a1e });
+    const mLamp = new THREE.MeshLambertMaterial({ color: 0x2b2d30 });
+    const mGlobe = new THREE.MeshLambertMaterial({ color: 0xf4f1e4 });
+    for (const [tx, tz] of TARGETS) {
+      const isl = islets2.reduce((b2, s2) => {
+        const d2 = Math.hypot(s2.cx - tx, s2.cz - tz);
+        return !b2 || d2 < b2.d ? { s: s2, d: d2 } : b2;
+      }, null);
+      if (!isl || isl.d > 120) continue;              // refuse rather than guess
+      const s2 = isl.s;
+      // nearest SHORE vertex: on a coast way, clear of the islet's own ring
+      let shore = null, bestD = 1e9;
+      for (const cwv of (data.coast || [])) {
+        for (const p2 of (cwv.p || [])) {
+          const dIsl = Math.hypot(p2[0] - s2.cx, p2[1] - s2.cz);
+          if (dIsl < s2.rad + 18) continue;
+          if (dIsl < bestD) { bestD = dIsl; shore = p2; }
+        }
+      }
+      if (!shore || bestD > 220) continue;
+      // islet-side landing: the ring point nearest the shore anchor
+      let land = s2.g[0], lb = 1e9;
+      for (const p2 of s2.g) {
+        const d2 = Math.hypot(p2[0] - shore[0], p2[1] - shore[1]);
+        if (d2 < lb) { lb = d2; land = p2; }
+      }
+      const ax2 = shore[0], az2 = shore[1], bx2 = land[0], bz2 = land[1];
+      const L = Math.hypot(bx2 - ax2, bz2 - az2);
+      if (L < 24) continue;
+      const ux2 = (bx2 - ax2) / L, uz2 = (bz2 - az2) / L;
+      const nx2 = -uz2, nz2 = ux2;
+      const yaw2 = Math.atan2(ux2, uz2);
+      const jettyEnd = Math.min(20, L * 0.3);
+      const gangEnd = jettyEnd + 13;
+      const landStart = L - 7;
+      const yAt = (d2) => {
+        if (d2 <= jettyEnd) return 1.8;
+        if (d2 <= gangEnd) return 1.8 + (0.55 - 1.8) * ((d2 - jettyEnd) / (gangEnd - jettyEnd));
+        if (d2 < landStart) return 0.55;
+        return 0.55 + (2.3 - 0.55) * ((d2 - landStart) / (L - landStart));
+      };
+      const putAt = (geo, m2, d2, off, y2) => {
+        geo.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw2));
+        const px = ax2 + ux2 * d2 + nx2 * off, pz = az2 + uz2 * d2 + nz2 * off;
+        geo.translate(px, y2, pz);
+        merger.add(geo, m2, px, pz);
+      };
+      for (let d2 = 0; d2 < L; d2 += 3) {
+        const seg = Math.min(3, L - d2);
+        const y0 = yAt(d2), y1 = yAt(d2 + seg), ym = (y0 + y1) / 2;
+        const deck = new THREE.BoxGeometry(2.2, 0.14, seg - (d2 > gangEnd && d2 < landStart ? 0.16 : 0));
+        deck.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.atan2(y1 - y0, seg)));
+        putAt(deck, d2 <= jettyEnd ? mJetty : mPont, d2 + seg / 2, 0, ym);
+        // rails: continuous top rail + posts
+        for (const sgn of [-1, 1]) {
+          const rail = new THREE.BoxGeometry(0.06, 0.05, seg);
+          rail.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.atan2(y1 - y0, seg)));
+          putAt(rail, mWhite, d2 + seg / 2, sgn * 1.06, ym + 0.95);
+          const post = new THREE.BoxGeometry(0.06, 0.95, 0.06);
+          putAt(post, mWhite, d2 + 0.6, sgn * 1.06, y0 + 0.48);
+          // gangway truss diagonals
+          if (d2 >= jettyEnd && d2 < gangEnd) {
+            const diag = new THREE.BoxGeometry(0.06, 0.06, Math.hypot(seg, 0.9));
+            diag.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.atan2(0.9, seg) + Math.atan2(y1 - y0, seg)));
+            putAt(diag, mWhite, d2 + seg / 2, sgn * 1.06, ym + 0.5);
+          }
+        }
+        // piles: jetty bents every 4.5m; pontoon guide piles every 9m
+        if (d2 <= jettyEnd && Math.floor(d2 / 4.5) !== Math.floor((d2 - 3) / 4.5)) {
+          for (const sgn of [-1, 1]) {
+            const pile = new THREE.CylinderGeometry(0.13, 0.13, y0 + 2.2, 6);
+            putAt(pile, mPile, d2, sgn * 0.92, (y0 - 2.2) / 2);
+          }
+        }
+        if (d2 > gangEnd && d2 < landStart && Math.floor(d2 / 9) !== Math.floor((d2 - 3) / 9)) {
+          const pile = new THREE.CylinderGeometry(0.11, 0.11, 3.4, 6);
+          putAt(pile, mPile, d2, (Math.floor(d2 / 9) % 2 ? 1 : -1) * 1.35, 0.6);
+        }
+        // lifebuoys and lamps
+        if (Math.floor(d2 / 9) !== Math.floor((d2 - 3) / 9)) {
+          const buoy = new THREE.TorusGeometry(0.28, 0.07, 6, 12);
+          putAt(buoy, mBuoy, d2 + 1, (Math.floor(d2 / 9) % 2 ? 1 : -1) * 1.12, y0 + 0.7);
+        }
+        if (Math.floor(d2 / 12) !== Math.floor((d2 - 3) / 12) && d2 < landStart) {
+          const lp = new THREE.CylinderGeometry(0.05, 0.06, 2.6, 6);
+          putAt(lp, mLamp, d2 + 1.6, -1.02, y0 + 1.3);
+          const gl = new THREE.SphereGeometry(0.16, 8, 6);
+          putAt(gl, mGlobe, d2 + 1.6, -1.02, y0 + 2.65);
+        }
+        addWalkSurface(ax2 + ux2 * d2, az2 + uz2 * d2,
+                       ax2 + ux2 * (d2 + seg), az2 + uz2 * (d2 + seg), 1.1, ym + 0.07);
+      }
+      out.crossings = (out.crossings || 0) + 1;
+    }
+  }
+
   // THE SILOSO LETTERS. The colour-block letter sculpture at the west end of
   // Siloso Beach is a surveyed OSM artwork node ("Siloso", -2444,12163) — the
   // POSITION is truth. Everything else is authored from the reference frame
@@ -1559,34 +1778,69 @@ export async function buildAttractions(world, data, Y = null) {
         }
       }
     }
-    // +180: with the walk's own tangent the word read MIRRORED from the sand
-    // (vetted, b1/letters) — the sculpture is photographed from the beach
-    // side, so that is the side that must read forwards
-    const yaw = Math.atan2(ux, uz) + Math.PI;
+    // The 2026 composition, from the frontal references (research brief §2 +
+    // ref-siloso/shots/silosoletters.jpeg): "S i l o s o" — a tall crimson S,
+    // a leaning amber i whose orange tittle is TWO LOOSE CUBES on the sand, a
+    // leaning jade l, a thick mid-blue disc o tilted on its side, a smaller
+    // cyan s tucked behind, and a violet ring o lying with its hole facing
+    // out. Front faces INLAND: every frontal photo has the sea behind the
+    // letters (walk.jpg was shot from behind — the first flip here chased
+    // that frame and was wrong).
+    const yaw = Math.atan2(ux, uz);
     const gy = groundAt(ax, az);
-    const T = 0.5, W = 1.9, H = 2.8, D = 0.7, GAP = 0.55;
-    const y0mid = (H - T) / 2;
-    const STROKES = {
-      S: [[0, H - T, W, T], [0, y0mid, W, T], [0, 0, W, T],
-          [0, y0mid + T, T, H - T - y0mid - T], [W - T, T, T, y0mid - T]],
-      I: [[(W - T) / 2, 0, T, H], [0, 0, W, T], [0, H - T, W, T]],
-      L: [[0, 0, T, H], [T, 0, W - T, T]],
-      O: [[0, 0, T, H], [W - T, 0, T, H], [T, 0, W - 2 * T, T], [T, H - T, W - 2 * T, T]],
-    };
-    const COLS = [0xd23b33, 0xe07b2c, 0xe3c33b, 0x4d9e4f, 0x3b6fc0, 0x8455a5];
-    const word = 'SILOSO';
-    const total = word.length * W + (word.length - 1) * GAP;
     const rot = new THREE.Matrix4().makeRotationY(yaw);
-    for (let li = 0; li < word.length; li++) {
-      const mat = new THREE.MeshLambertMaterial({ color: COLS[li] });
-      const lx0 = li * (W + GAP) - total / 2;
-      for (const [sx, sy, sw, sh] of STROKES[word[li]]) {
-        const b = new THREE.BoxGeometry(sw, sh, D);
-        b.translate(lx0 + sx + sw / 2, sy + sh / 2, 0);
-        b.applyMatrix4(rot);
-        b.translate(ax, gy + 0.02, az);
-        merger.add(b, mat, ax, az);
+    const D = 0.85, T = 0.55;
+    const place = (geoOrList, lx, lean, color) => {
+      const mat = new THREE.MeshLambertMaterial({ color });
+      for (const geo of Array.isArray(geoOrList) ? geoOrList : [geoOrList]) {
+        if (lean) geo.applyMatrix4(new THREE.Matrix4().makeRotationZ(lean));
+        geo.translate(lx, 0, 0);
+        geo.applyMatrix4(rot);
+        geo.translate(ax, gy + 0.02, az);
+        merger.add(geo, mat, ax, az);
       }
+    };
+    const bar = (w, h) => { const g = new THREE.BoxGeometry(w, h, D); g.translate(0, h / 2, 0); return g; };
+    const sGeo = (w, h) => {
+      const y0 = (h - T) / 2;
+      const parts = [[-w / 2, h - T, w, T], [-w / 2, y0, w, T], [-w / 2, 0, w, T],
+                     [-w / 2, y0 + T, T, h - T - y0 - T], [w / 2 - T, T, T, y0 - T]];
+      return parts.map(([sx, sy, sw, sh]) => {
+        const b = new THREE.BoxGeometry(sw, sh, D);
+        b.translate(sx + sw / 2, sy + sh / 2, 0);
+        return b;
+      });
+    };
+    // S — crimson, upright, the tallest
+    place(sGeo(1.9, 2.9), -4.4, 0, 0xb8272e);
+    // i — amber bar, leaning forward; tittle = two orange cubes on the sand
+    place(bar(0.75, 1.8), -2.7, -0.14, 0xd9a026);
+    for (const [dxc, dzc, sc] of [[-3.4, 0.9, 0.55], [-2.4, 1.2, 0.5]]) {
+      const c = new THREE.BoxGeometry(sc, sc, sc);
+      c.applyMatrix4(new THREE.Matrix4().makeRotationY(0.6 + dxc));
+      c.translate(dxc, sc / 2, dzc);
+      c.applyMatrix4(rot);
+      c.translate(ax, gy + 0.02, az);
+      merger.add(c, new THREE.MeshLambertMaterial({ color: 0xd96a1e }), ax, az);
+    }
+    // l — jade, leaning
+    place(bar(0.75, 2.3), -1.5, 0.12, 0x53a04a);
+    // o — thick mid-blue disc tilted on its side
+    {
+      const disc = new THREE.CylinderGeometry(1.05, 1.05, 0.75, 22);
+      disc.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI / 2));
+      disc.applyMatrix4(new THREE.Matrix4().makeRotationZ(0.35));
+      disc.translate(0.1, 0.95, 0);
+      place(disc, 0, 0, 0x2f5fa8);
+    }
+    // s — lighter cyan, smaller, tucked behind the disc
+    place(sGeo(1.15, 1.75).map((g) => { g.translate(0, 0.5, -0.7); return g; }), 1.1, 0.1, 0x5fb3d4);
+    // o — violet ring lying with the hole facing outward
+    {
+      const ring = new THREE.TorusGeometry(0.85, 0.34, 10, 22);
+      ring.applyMatrix4(new THREE.Matrix4().makeRotationZ(0.18));
+      ring.translate(0, 1.05, 0);
+      place(ring, 2.9, 0, 0x7a4f9e);
     }
     out.letters = (out.letters || 0) + 1;
   };
