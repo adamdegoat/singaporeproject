@@ -149,6 +149,36 @@ if (ready && /loading/i.test(info.hud || '')) {
   errors.push('HUD still reads "loading" after __ready — the render loop is dead');
 }
 
+// PERF BUDGETS, ASSERTED — F1-F4 were declared BLOCKER in SENTOSA.md and had
+// never run anywhere (the workflow audit's finding #4). fps is deliberately
+// NOT here: this browser is throttled behind a terminal and its frame rate is
+// meaningless (it read 5fps at Ocean Drive where the phone reads 60). What IS
+// meaningful in this environment and cannot drift silently: boot wall-clock,
+// JS heap, and the settled triangle/draw counts. Budgets live in
+// data/perfbudget.json, committed — raising one is a diff someone reviews,
+// never a drift. Values sized off 260804 measurements with honest headroom:
+// boot ~12-15s here, heap 326MB, 1282k tris, 494 draws.
+try {
+  const { readFileSync } = await import('fs');
+  const { fileURLToPath } = await import('url');
+  const { dirname, join } = await import('path');
+  const here = dirname(fileURLToPath(import.meta.url));
+  const budget = JSON.parse(readFileSync(join(here, 'perfbudget.json'), 'utf8'));
+  const tris = +((info.hud || '').match(/(\d+)k tris/) || [])[1] || null;
+  const draws = +((info.hud || '').match(/(\d+) draws/) || [])[1] || null;
+  const perf = { bootMs, heapMB: info.mem, trisK: tris, draws };
+  console.log(`   PERF ${JSON.stringify(perf)}`);        // parsed by data/ledger.py
+  const over = [];
+  if (bootMs > budget.bootMs) over.push(`boot ${bootMs}ms > ${budget.bootMs}`);
+  if (info.mem !== null && info.mem > budget.heapMB) over.push(`heap ${info.mem}MB > ${budget.heapMB}`);
+  if (tris !== null && tris > budget.trisK) over.push(`tris ${tris}k > ${budget.trisK}k`);
+  if (draws !== null && draws > budget.draws) over.push(`draws ${draws} > ${budget.draws}`);
+  if (over.length) errors.push('over perf budget (data/perfbudget.json): ' + over.join('; '));
+  else console.log('   PASS  perf within budget');
+} catch (e) {
+  console.log(`   perf budget skipped: ${String(e.message).slice(0, 80)}`);
+}
+
 if (errors.length) {
   console.log('   FAIL  the deployed site does not run cleanly on a phone:');
   for (const e of errors.slice(0, 8)) console.log(`         ${e}`);

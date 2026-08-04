@@ -1,0 +1,6 @@
+{
+  "bootMs": 30000,
+  "heapMB": 380,
+  "trisK": 1600,
+  "draws": 680
+}
