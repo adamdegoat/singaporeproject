@@ -2888,7 +2888,12 @@ export async function buildTransit(world, data, Y = null) {
         for (const [ax, ay, az, bx, by, bz] of halves) {
           const run = Math.hypot(bx - ax, bz - az);
           const cl = Math.hypot(run, by - ay);
-          bake(new THREE.BoxGeometry(0.09, 0.09, cl), cableMat, cables,
+          // 0.09m read as NOTHING from the causeway — the mid-channel cabin
+          // hung 478m away on an invisible wire and the sweep filed it as a
+          // floating box (r_-1070_12167). 0.28m is fatter than a real cable
+          // bundle but is what it takes to hold a pixel at that range, the
+          // same trade the kerbs already make.
+          bake(new THREE.BoxGeometry(0.28, 0.28, cl), cableMat, cables,
                (ax + bx) / 2, (ay + by) / 2, (az + bz) / 2,
                Math.atan2(bx - ax, bz - az), Math.atan2(by - ay, run));
         }
@@ -3301,6 +3306,68 @@ export async function buildTransit(world, data, Y = null) {
       }
     }
     out.porteCochere = (out.porteCochere || 0) + 1;
+  }
+
+  // -- GARAGE DOORS: a mapped service road that ENDS inside a footprint ----
+  //
+  // Sweep r_-706_13152 (P0): a Cove service road runs straight into a blank
+  // parking-structure facade — in life that is the car-park entrance. The
+  // route is honestly a dead end for the rider (the door is shut), but a
+  // blank wall reads as a bug where a roller door reads as a place. Drawn
+  // at the point the road's end segment crosses the building ring, facing
+  // back down the road.
+  {
+    const doorMat = new THREE.MeshStandardMaterial({ color: 0x3f4449, roughness: 0.6, metalness: 0.3 });
+    const jambMat = new THREE.MeshStandardMaterial({ color: 0xb9b2a4, roughness: 0.85 });
+    const inRing = (poly, x, z) => {
+      let hit = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i][0], zi = poly[i][1], xj = poly[j][0], zj = poly[j][1];
+        if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
+      }
+      return hit;
+    };
+    let doors = 0;
+    for (const r of (data.roads || [])) {
+      if (r.k !== 'service' || !r.p || r.p.length < 2) continue;
+      for (const endIdx of [0, r.p.length - 1]) {
+        const pe = r.p[endIdx];
+        const po = r.p[endIdx === 0 ? 1 : r.p.length - 2];
+        for (const bl of (data.buildings || [])) {
+          if (!bl.p || bl.p.length < 3 || bl.roof) continue;
+          // cheap reject before the ring test
+          let close = false;
+          for (const q of bl.p) {
+            if (Math.abs(q[0] - pe[0]) < 90 && Math.abs(q[1] - pe[1]) < 90) { close = true; break; }
+          }
+          if (!close) continue;
+          if (!inRing(bl.p, pe[0], pe[1]) || inRing(bl.p, po[0], po[1])) continue;
+          // walk the end segment to the ring crossing
+          let t0 = 0, t1 = 1;
+          for (let it = 0; it < 18; it++) {
+            const tm = (t0 + t1) / 2;
+            const mx = po[0] + (pe[0] - po[0]) * tm, mz = po[1] + (pe[1] - po[1]) * tm;
+            if (inRing(bl.p, mx, mz)) t1 = tm; else t0 = tm;
+          }
+          const cx2 = po[0] + (pe[0] - po[0]) * t1, cz2 = po[1] + (pe[1] - po[1]) * t1;
+          const yaw2 = Math.atan2(pe[0] - po[0], pe[1] - po[1]);
+          const gy2 = surfaceAt(po[0], po[1]);
+          const W2 = Math.min((r.w || 6) + 0.8, 7.5);
+          // the roller door, proud of the facade so it cannot z-fight
+          const door = new THREE.BoxGeometry(W2, 3.4, 0.18);
+          door.rotateY(yaw2);
+          door.translate(cx2 - Math.sin(yaw2) * 0.35, gy2 + 1.7, cz2 - Math.cos(yaw2) * 0.35);
+          merger.add(door, doorMat, cx2, cz2);
+          const jamb = new THREE.BoxGeometry(W2 + 0.7, 3.85, 0.14);
+          jamb.rotateY(yaw2);
+          jamb.translate(cx2 - Math.sin(yaw2) * 0.42, gy2 + 1.92, cz2 - Math.cos(yaw2) * 0.42);
+          merger.add(jamb, jambMat, cx2, cz2);
+          doors++;
+          break;
+        }
+      }
+    }
+    out.garageDoors = doors;
   }
 
   // -- ATTRACTION ENTRANCES: a gate, a name, and a guide -------------------

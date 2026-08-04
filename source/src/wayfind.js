@@ -169,8 +169,16 @@ export async function buildSignage(world, axis, data, isBlocked, Y = null) {
       // is worse than leaving the junction unsigned.
       if (crossHere && (crossHere.left || crossHere.right)) {
         const g = new THREE.Group();
+        // ON A BRIDGE THE POST STANDS ON THE DECK, NOT BESIDE IT. The verge
+        // offset (half + 1.0) put the Sentosa Gateway causeway sign's post a
+        // metre past the deck edge — over open water, standing on nothing —
+        // so the rider saw only the panel hanging in the sky (sweep
+        // r_-1070_12167, the fourth investigation of a floating sign panel;
+        // the first three were the black BACK, see below).
+        const _wx = px + nx * (half + 1.0), _wz = pz + nz * (half + 1.0);
+        const _postOff = (window.__inWater && window.__inWater(_wx, _wz)) ? half - 0.7 : half + 1.0;
         const post = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 7.2, 8), MAT.darkMetal);
-        post.position.set(nx * (half + 1.0), 3.6, nz * (half + 1.0));
+        post.position.set(nx * _postOff, 3.6, nz * _postOff);
         post.castShadow = true; g.add(post);
         const arm = new THREE.Mesh(new THREE.BoxGeometry(half * 1.1, 0.16, 0.16), MAT.darkMetal);
         arm.position.set(nx * (half * 0.45), 7.0, nz * (half * 0.45));
