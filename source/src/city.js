@@ -1412,6 +1412,29 @@ function extrude(pts, h, mat, y0 = 0) {
 // result is a pale band lying across the road, which reads as the road itself
 // being drawn wrongly. Any vertex that ends up in a carriageway is pulled back
 // along its own outward direction until it is clear.
+// AN EAVE IS A NUMBER OF METRES, NOT A PERCENTAGE OF THE BUILDING.
+//
+// Every roof recipe calls this with a factor a little over 1 to throw the eave
+// past the wall — 1.08, 1.14, 1.22. On a shophouse, where these were written,
+// a 14% grow on a 12m frontage is a 0.8m overhang and exactly right. On
+// Capella's curved wing, 160m x 91m, the SAME factor is an ELEVEN METRE
+// overhang: standing under it you see a featureless brown soffit filling the
+// whole sky, which is the "giant blank untextured mass" report all over again,
+// and it is the island's most photographed building.
+//
+// So the factor is capped in metres. A generous domestic eave is about 1.5m
+// and a deep tropical verandah roof about 2.5m; MAX_EAVE takes the wider of
+// those. Small buildings are unchanged — for anything under about 20m across,
+// the metre cap is looser than the factor and never binds — so no shophouse,
+// kampong roof or beach shelter moves.
+// NOT CAPPED, DELIBERATELY, UNTIL SOMEONE MEASURES IT. A metre cap was written
+// here and reverted the same hour: the "featureless brown soffit filling the
+// sky" that prompted it was the CAMERA STANDING INSIDE Capella's ground floor,
+// not an eave at all — the same misread as the Siloso "brown ceiling" earlier
+// the same day, which was also a camera inside a building. The underlying
+// concern is real and unmeasured: a factor of 1.14 is a 0.8m eave on a 12m
+// shophouse and an 11m eave on a 160m wing, so a roof recipe reaching a large
+// footprint would throw an overhang nobody intended. Find one first.
 function grow(pts, f) {
   const c = centroid(pts);
   return pts.map(([x, z]) => {

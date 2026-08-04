@@ -357,6 +357,38 @@ def main():
     if not ledger:
         print("    (nothing outside the island — already clipped)")
 
+    # THE AXIS IS DRESSING, AND DRESSING NEEDS A ROAD UNDER IT.
+    #
+    # `axis` sits in SKYLINE and so was kept whole, while `roads` is a WAY_LAYER
+    # and is cut at SCENERY_MARGIN. On Sentosa that leaves the axis running from
+    # z=11231 while the northernmost Sentosa Gateway carriageway starts at
+    # z=11706 — 475 metres where every pass that dresses the axis (lane
+    # markings, kerbs, lamps, street trees) paints onto BARE GRASS, because
+    # there is no tarmac there to paint on. Caught by the coverage sweep at
+    # -1073,11317: a four-lane road, fully marked, dark green.
+    #
+    # Cut with the same knife as the roads, and take the longest surviving
+    # piece: the axis is one continuous route by construction, and every pass
+    # that walks it by arclength needs it to stay that way.
+    # the axis is {p, w, n}, not a bare polyline — the first cut of this read it
+    # as a list, found no points, and silently did nothing
+    _ax = d.get("axis")
+    _axp = _ax.get("p") if isinstance(_ax, dict) else _ax
+    if isinstance(_axp, list) and len(_axp) > 1 and island is not None:
+        _pieces = cut_way([[p[0], p[1]] for p in _axp], island)
+        if _pieces:
+            _best = max(_pieces, key=seglen)
+            if len(_best) > 1 and len(_best) != len(_axp):
+                _bz = [q[1] for q in _best]
+                print(f"  axis clipped to the carriageway: {len(_axp)} -> {len(_best)} pts, "
+                      f"z {min(_bz):.0f}..{max(_bz):.0f}")
+                _clipped = [[round(q[0], 1), round(q[1], 1)] for q in _best]
+                if isinstance(_ax, dict):
+                    _ax["p"] = _clipped
+                else:
+                    d["axis"] = _clipped
+                d["axisFullLength"] = round(seglen(_best), 1)
+
     kept_whole = [s for s in SKYLINE if s in d]
     print(f"  kept whole (the view, not the map): {', '.join(kept_whole)}")
     if unread:
