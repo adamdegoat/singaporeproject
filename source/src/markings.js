@@ -526,6 +526,9 @@ export function selectSideStreets(data, axis, reach = 230) {
   for (const r of data.roads) {
     if (!r.n || /orchard road/i.test(r.n)) continue;
     if (r.k === 'footway' || r.k === 'pedestrian') continue;
+    // a beachfront promenade takes no lane paint — same rule as city.js's
+    // PROMENADE: unit pavers with dashed lane lines is a category error
+    if (/beach walk$/i.test(r.n)) continue;
     // NOT ON A BRIDGE DECK. Markings are placed at groundAt(), and a bridge
     // deck is by definition not at ground level -- so every causeway across
     // Marina Bay had its lane lines painted on the seabed. 1,900 of them, which

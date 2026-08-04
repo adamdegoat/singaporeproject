@@ -19,7 +19,20 @@ export const NET_PROTO = 1;
 const SEND_HZ = 10;                      // on a TIMER, never per frame
 const INTERP_MS = 120;                   // render remotes this far in the past
 const SNAP_MS = 500;                     // gaps beyond this snap, no ghosts
-const HEARTBEAT_MS = 5000;
+const HEARTBEAT_MS = 3000;               // was 5000: a silent socket is now
+                                         // detected in ~6s, not ~10 — the
+                                         // stuck-friend window (below) shrinks
+// A REMOTE NOBODY HAS HEARD FROM IS NOT A PERSON STANDING THERE. The owner
+// caught this live: his friend got off, remounted and rode away, and the
+// standing walker stayed planted at the get-off point — the interpolator
+// freezes on the last snapshot, so ANY delivery gap (backgrounded tab
+// throttling the send timer, a silently dead socket, a reconnect window, DO
+// hibernation wake) shows a frozen body indistinguishable from a real one.
+// Measured in the two-client repro: 8s-stale remotes on a healthy relay.
+// A genuinely idle player still sends ~1Hz keepalives, so silence past this
+// window means the state is UNKNOWN — and the honest render of unknown is
+// nothing, not a mannequin. The avatar returns on the next snapshot.
+const STALE_MS = 4000;
 
 export class Net {
   // deps: { scene, surfaceAt, buildSkate, buildSkater, buildWalker,
@@ -141,6 +154,9 @@ export class Net {
       }
       for (const [id, r] of this.remotes) {
         if (!seen.has(id)) { r.dispose(); this.remotes.delete(id); }
+        // a welcome after a reconnect: whatever sat in the buffer predates
+        // the gap — showing it would freeze friends at pre-gap positions
+        else if (id !== this.id) r.buf.length = 0;
       }
       this._roster();
     } else if (m.t === 'err') {
@@ -256,7 +272,11 @@ class RemotePlayer {
   }
 
   update(t) {
-    if (!this._built || !this.buf.length) return;
+    if (!this._built || !this.buf.length) { if (this._built) this.group.visible = false; return; }
+    // silence past the keepalive window = unknown state = no avatar
+    const stale = performance.now() - this.buf[this.buf.length - 1].at > STALE_MS;
+    this.group.visible = !stale;
+    if (stale) return;
     // find the two snapshots straddling t
     let a = this.buf[0], b = this.buf[this.buf.length - 1];
     for (let i = this.buf.length - 1; i >= 0; i--) {

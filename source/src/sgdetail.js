@@ -1460,13 +1460,143 @@ export async function buildAttractions(world, data, Y = null) {
         }
       }
     }
+    // AN ISLET IS LAND, NOT A NECKLACE. The lagoon-mouth islets come in as
+    // closed coast rings up to ~160m across (data/groynes.py; Palawan Island
+    // itself is one), and boulders along the OUTLINE alone leave a ring of
+    // rock around open sea. The reference frames show low green islands with
+    // riprap edges — so the ring keeps its boulders and the interior gets a
+    // filled top just above the water with the vegetation tone, plus a few
+    // hash-placed trees. The islets are too small for the 35m heightfield,
+    // which is why the terrain cannot supply this ground itself.
+    if (rk.k === 'islet' && g2.length >= 4) {
+      // A raised top WITH a skirt: from water level a flat 1.35m disc read as
+      // a RAFT with palms on it (vetted, sea2/bay-panorama) — the islet needs
+      // visible mass between waterline and top. Shape convention and the
+      // winding flip copied from buildWater's own note: Shape(x, z) +
+      // rotateX(+90) lands the polygon in the right place facing DOWN, and
+      // reversing the winding turns it over where it is (rotateX(-90) mirrors
+      // the polygon into the wrong half of the world — measured there).
+      const ILY = 2.3;
+      const cx0 = g2.reduce((s, p) => s + p[0], 0) / g2.length;
+      const cz0 = g2.reduce((s, p) => s + p[1], 0) / g2.length;
+      const top = new THREE.ShapeGeometry(
+        new THREE.Shape(g2.map(([x, z]) => new THREE.Vector2(x, z))));
+      top.rotateX(Math.PI / 2);
+      {
+        const a = top.index.array;
+        for (let f = 0; f < a.length; f += 3) { const t0 = a[f]; a[f] = a[f + 2]; a[f + 2] = t0; }
+        top.index.needsUpdate = true;
+      }
+      top.computeVertexNormals();
+      top.translate(0, ILY, 0);
+      merger.add(top, new THREE.MeshLambertMaterial({ color: 0x55663f }), cx0, cz0);
+      // the rock face from the water up to the green top, wound outward
+      const sk = [];
+      for (let e = 0; e < g2.length - 1; e++) {
+        const [ax3, az3] = g2[e], [bx3, bz3] = g2[e + 1];
+        const outward = ((ax3 + bx3) / 2 - cx0) * (az3 - bz3) - ((az3 + bz3) / 2 - cz0) * (ax3 - bx3);
+        const [p0, p1] = outward > 0 ? [[ax3, az3], [bx3, bz3]] : [[bx3, bz3], [ax3, az3]];
+        sk.push(p0[0], -1.2, p0[1], p1[0], -1.2, p1[1], p1[0], ILY, p1[1],
+                p0[0], -1.2, p0[1], p1[0], ILY, p1[1], p0[0], ILY, p0[1]);
+      }
+      const skirt = new THREE.BufferGeometry();
+      skirt.setAttribute('position', new THREE.BufferAttribute(new Float32Array(sk), 3));
+      skirt.computeVertexNormals();
+      merger.add(skirt, new THREE.MeshLambertMaterial({ color: 0x6e675d, side: THREE.DoubleSide }), cx0, cz0);
+      out.isletTops = (out.isletTops || 0) + 1;
+      // interior trees, one per ~300m2, position-hashed, kept off the edge
+      const xs = g2.map((p) => p[0]), zs = g2.map((p) => p[1]);
+      const inx = (px, pz) => {
+        let c = false;
+        for (let i2 = 0, j2 = g2.length - 1; i2 < g2.length; j2 = i2++) {
+          const [xi, zi] = g2[i2], [xj, zj] = g2[j2];
+          if ((zi > pz) !== (zj > pz) && px < (xj - xi) * (pz - zi) / (zj - zi) + xi) c = !c;
+        }
+        return c;
+      };
+      for (let gx2 = Math.min(...xs) + 8; gx2 < Math.max(...xs); gx2 += 15) {
+        for (let gz2 = Math.min(...zs) + 8; gz2 < Math.max(...zs); gz2 += 15) {
+          const hh2 = ((gx2 * 5.3 + gz2 * 8.1) % 1 + 1) % 1;
+          const px = gx2 + (hh2 - 0.5) * 8, pz = gz2 + (hh2 * 7 % 1 - 0.5) * 8;
+          if (!inx(px, pz)) continue;
+          const th = 6.0 + hh2 * 5.0;
+          const tr = new THREE.CylinderGeometry(0.15, 0.24, th, 6);
+          tr.translate(px, ILY + th / 2, pz);
+          merger.add(tr, new THREE.MeshLambertMaterial({ color: 0x53483d }), px, pz);
+          for (let c2 = 0; c2 < 5; c2++) {
+            const a2 = (c2 / 5) * Math.PI * 2 + hh2 * 5;
+            const cd = new THREE.PlaneGeometry(3.6, 2.3);
+            cd.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(
+              new THREE.Euler(-0.35, a2, 0, 'YXZ')));
+            cd.translate(px + Math.sin(a2) * 0.9, ILY + th - 0.4, pz + Math.cos(a2) * 0.9);
+            merger.add(cd, MAT.leaf, px, pz);
+          }
+          out.isletTrees = (out.isletTrees || 0) + 1;
+        }
+      }
+    }
   }
+
+  // THE SILOSO LETTERS. The colour-block letter sculpture at the west end of
+  // Siloso Beach is a surveyed OSM artwork node ("Siloso", -2444,12163) — the
+  // POSITION is truth. Everything else is authored from the reference frame
+  // (research/ref-siloso/walk.jpg): six block letters, each its own colour,
+  // rainbow order as photographed; ~2.8m letters estimated from the people
+  // beside them — no published dimension exists. Laid along the Beach Walk's
+  // own direction so they read from the promenade and the sand both.
+  const silosoLetters = (ax, az) => {
+    let ux = 1, uz = 0, best = Infinity;
+    for (const r of (data.roads || [])) {
+      if (!/beach walk$/i.test(r.n || '')) continue;
+      for (let i = 0; i < r.p.length - 1; i++) {
+        const [x1, z1] = r.p[i], [x2, z2] = r.p[i + 1];
+        const mx = (x1 + x2) / 2, mz = (z1 + z2) / 2;
+        const d2 = (mx - ax) * (mx - ax) + (mz - az) * (mz - az);
+        if (d2 < best) {
+          best = d2;
+          const L = Math.hypot(x2 - x1, z2 - z1) || 1;
+          ux = (x2 - x1) / L; uz = (z2 - z1) / L;
+        }
+      }
+    }
+    // +180: with the walk's own tangent the word read MIRRORED from the sand
+    // (vetted, b1/letters) — the sculpture is photographed from the beach
+    // side, so that is the side that must read forwards
+    const yaw = Math.atan2(ux, uz) + Math.PI;
+    const gy = groundAt(ax, az);
+    const T = 0.5, W = 1.9, H = 2.8, D = 0.7, GAP = 0.55;
+    const y0mid = (H - T) / 2;
+    const STROKES = {
+      S: [[0, H - T, W, T], [0, y0mid, W, T], [0, 0, W, T],
+          [0, y0mid + T, T, H - T - y0mid - T], [W - T, T, T, y0mid - T]],
+      I: [[(W - T) / 2, 0, T, H], [0, 0, W, T], [0, H - T, W, T]],
+      L: [[0, 0, T, H], [T, 0, W - T, T]],
+      O: [[0, 0, T, H], [W - T, 0, T, H], [T, 0, W - 2 * T, T], [T, H - T, W - 2 * T, T]],
+    };
+    const COLS = [0xd23b33, 0xe07b2c, 0xe3c33b, 0x4d9e4f, 0x3b6fc0, 0x8455a5];
+    const word = 'SILOSO';
+    const total = word.length * W + (word.length - 1) * GAP;
+    const rot = new THREE.Matrix4().makeRotationY(yaw);
+    for (let li = 0; li < word.length; li++) {
+      const mat = new THREE.MeshLambertMaterial({ color: COLS[li] });
+      const lx0 = li * (W + GAP) - total / 2;
+      for (const [sx, sy, sw, sh] of STROKES[word[li]]) {
+        const b = new THREE.BoxGeometry(sw, sh, D);
+        b.translate(lx0 + sx + sw / 2, sy + sh / 2, 0);
+        b.applyMatrix4(rot);
+        b.translate(ax, gy + 0.02, az);
+        merger.add(b, mat, ax, az);
+      }
+    }
+    out.letters = (out.letters || 0) + 1;
+  };
 
   for (const a of list) {
     await YY();
     const [x, z] = a.p;
     const nm = a.n || '';
     if (GONE.test(nm)) { out.attrSkipped++; continue; }
+    if (a.k === 'artwork' && /^siloso$/i.test(nm)) { silosoLetters(x, z); out.attractions++; continue; }
     if (/universal studios globe/i.test(nm)) { globe(x, z); out.attractions++; continue; }
     if (a.k === 'cannon') { cannon(x, z); out.attractions++; continue; }
     if (a.k === 'summer_toboggan' && a.g && a.g.length >= 3) {

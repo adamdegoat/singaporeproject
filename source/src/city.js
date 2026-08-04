@@ -367,7 +367,14 @@ export const MAT = {
   roofDeck: new THREE.MeshLambertMaterial({ color: 0x77787a }),
   roofParapet: new THREE.MeshLambertMaterial({ color: 0xa9a498 }),
   // the two surfaces OSM names that are neither asphalt nor our pavement slab
-  unitPave: new THREE.MeshStandardMaterial({ map: texPaverBlock(), color: 0x9a9184, roughness: 0.92 }),
+  // cooled 0x9a9184 -> grey for the Siloso pass: the beach-walk pavers in
+  // every reference frame are grey brick, and the warm tint read as dirt.
+  // repeat 2x: at one tile per metre the blocks were ~35cm and the promenade
+  // read as big slabs; the reference bricks are half that.
+  unitPave: new THREE.MeshStandardMaterial({
+    map: (() => { const t = texPaverBlock(); t.repeat.set(2, 2); return t; })(),
+    color: 0x9b9d97, roughness: 0.92,
+  }),
   roadConc: new THREE.MeshStandardMaterial({ map: texConcrete(0x9d9a94, 0.6), roughness: 0.93 }),
   // LTA SDRE Ch.11 BUS5 publishes the bus-stop colour scheme outright, so
   // these are surveyed values rather than chosen ones. RAL 6027 on the back
@@ -2734,6 +2741,10 @@ function polyLen(pts) {
 
 export async function buildRoads(world, data, Y = null) {
   const roadGeos = [], paveGeos = [], unitPaveGeos = [], concGeos = [], busGeos = [];
+  // A beachfront promenade: unit-paved, unpainted. Named, because that is the
+  // family (`* Beach Walk` — Siloso, Palawan, Tanjong), and paint on brick
+  // pavers is wrong wherever it happens.
+  const PROMENADE = (r) => /beach walk$/i.test(r.n || '');
   const bridgeGeos = [], pierGeos = [];       // deck soffit + parapets, and the bents under them
   const yellowGeos = [];
   const centreGeos = [];
@@ -2759,6 +2770,35 @@ export async function buildRoads(world, data, Y = null) {
   //     terrain — an approach ramp, which is what the real bridge has.
   const BRDECK = new Map();
   {
+    // A CARRIAGEWAY WHOSE OWN GROUND IS AWASH IS PART OF THE BRIDGE, whatever
+    // OSM tags. The Gateway's parallel arrival lanes are bridge-tagged only
+    // over mid-channel; the approach lanes used to drape onto ground that
+    // read +12m from contaminated samples, and the day the terrain became
+    // honest (260804-1248) that ground fell to the water it really is — the
+    // tagged deck stayed at 6.3 while the untagged lanes beside it dropped
+    // to sea level, and the rider fell through the seam ("the road halfway
+    // float up in the air... i inside the road"). Promotion is judged from
+    // the terrain the world actually has, so it cannot drift from it.
+    {
+      const g0 = TERRAIN.grid && TERRAIN.grid();
+      const seaLv = g0 && typeof g0.sea === 'number' ? g0.sea : null;
+      // over water = the DRAWN world says so: inside a mapped water ring
+      // (waterFloor is the same test vertexY sinks the drawn bed with — the
+      // two cannot disagree), or on ground at open-sea level
+      const overWater = (x, z) =>
+        (TERRAIN.waterFloor && TERRAIN.waterFloor(x, z) !== null)
+        || (seaLv !== null && TERRAIN.at(x, z) <= seaLv + 0.6);
+      for (const r of data.roads) {
+        if (r.bridge || !r.p || r.p.length < 2) continue;
+        if (r.k === 'footway' || r.k === 'pedestrian' || r.k === 'steps') continue;
+        let low = 0;
+        for (const q of r.p) if (overWater(q[0], q[1])) low++;
+        if (low > 0.6 * r.p.length) {
+          r.bridge = 1;
+          r.ws = (r.ws || '') + '+causeway';
+        }
+      }
+    }
     const bws = data.roads.filter((r) => r.bridge && r.p && r.p.length >= 2);
     const cls = bws.map((r) => (r.k === 'footway' || r.k === 'pedestrian') ? 'p' : 'c');
     const parent = bws.map((_, i) => i);
@@ -2802,9 +2842,18 @@ export async function buildRoads(world, data, Y = null) {
     for (const e of byEnd.values()) {
       // an endpoint only ONE fragment touches is where the run meets the land
       if (e.frags.size === 1) {
+        const tH = TERRAIN.at(e.x, e.z);
+        // ...unless the "land" there is open water: a scenery-cut bridge (the
+        // Gateway stub toward HarbourFront stops at the clip margin) has no
+        // landing, and a ramp would dive the deck into the sea at the cut.
+        // A cut bridge ends level, the way a drawbridge does.
+        const g0 = TERRAIN.grid && TERRAIN.grid();
+        const seaLv = g0 && typeof g0.sea === 'number' ? g0.sea : null;
+        if ((seaLv !== null && tH <= seaLv + 0.6)
+            || (TERRAIN.waterFloor && TERRAIN.waterFloor(e.x, e.z) !== null)) continue;
         const root = find(e.i);
         if (!runTerms.has(root)) runTerms.set(root, []);
-        runTerms.get(root).push([e.x, e.z, TERRAIN.at(e.x, e.z)]);
+        runTerms.get(root).push([e.x, e.z, tH]);
       }
     }
     const RAMP = 20;
@@ -2873,6 +2922,14 @@ export async function buildRoads(world, data, Y = null) {
       else if (/concrete/.test(sf)) bucket = concGeos;
       else if (/asphalt|paved|tarmac/.test(sf)) bucket = isPath ? paveGeos : roadGeos;
     }
+    // THE BEACH WALKS ARE PROMENADES, NOT CARRIAGEWAYS. Siloso Beach Walk is
+    // 19 ways here: 12 untagged, 6 asphalt, 1 sett — and the untagged ones
+    // were drawing as lane-marked tarmac along the beachfront. Every
+    // reference frame (research/ref-siloso/walk.jpg) shows grey brick unit
+    // paving. Where OSM is silent the authored layer decides, and it decides
+    // pavers; where OSM says asphalt outright (the service stretches) the
+    // map wins, as always.
+    if (PROMENADE(r) && !/asphalt|tarmac/.test(sf)) bucket = unitPaveGeos;
     bucket.push(g);
 
     // THE DOUBLE YELLOW LINE, on every street that has one.
@@ -3144,7 +3201,7 @@ export async function buildRoads(world, data, Y = null) {
     if (Y) await Y();
     for (const { key, pieces } of streetRuns(
       (r) => r.k !== 'footway' && r.k !== 'pedestrian' && r.k !== 'service' && r.k !== 'service_link'
-        && (r.w || 0) >= 5.5 && !r.bridge,
+        && (r.w || 0) >= 5.5 && !r.bridge && !PROMENADE(r),
       (r) => `${r.n || '?'}|${r.w}`
     )) {
       const w = +key.split('|')[1];
@@ -3186,7 +3243,7 @@ export async function buildRoads(world, data, Y = null) {
     if (Y) await Y();
     for (const { pieces } of streetRuns(
       (r) => !r.oneway && CARRIAGEWAY.has(r.k) && (r.w || 0) >= 5.5 && !r.bridge
-        && !axisNames.has((r.n || '').toLowerCase()),
+        && !axisNames.has((r.n || '').toLowerCase()) && !PROMENADE(r),
       (r) => `${r.n || '?'}|${r.w}`
     )) {
       for (const sub of pieces) {
@@ -3625,6 +3682,64 @@ function buildSea(world) {
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geo.computeVertexNormals();
+  // THE LAGOON IS NOT THE ANCHORAGE. Every reference frame of Siloso
+  // (research/ref-siloso/strip.jpg is the clearest) shows two waters: jade
+  // over the sandy swim lagoons inside the groynes, dark silty teal beyond
+  // them where the ships sit. One flat colour is the single biggest reason
+  // the coast reads as "wet pavement". The boundary between the two is,
+  // physically, DEPTH — shallow sand floor near the shore — so the tint is
+  // keyed to distance-from-land over the sea cells of the heightfield: a
+  // multi-source BFS out from land, baked to a one-channel texture the sea
+  // shader samples by world position. Past ~4 cells (140m) the open colour
+  // wins outright, which is about where the real buoy lines and groyne
+  // mouths sit. Colours are observed from the reference frames, not
+  // published — same standing as MAT.openSea's own note.
+  {
+    const W = g.nx, H = g.nz, cap = 5;
+    const dist = new Uint8Array(W * H).fill(cap);
+    const q = [];
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+      if (g.h[j * W + i] > wetAt) { dist[j * W + i] = 0; q.push(j * W + i); }
+    }
+    for (let head = 0; head < q.length; head++) {
+      const k = q[head], d = dist[k];
+      if (d >= cap) continue;
+      const i = k % W, j = (k - i) / W;
+      for (const [ni, nj] of [[i-1,j],[i+1,j],[i,j-1],[i,j+1]]) {
+        if (ni < 0 || nj < 0 || ni >= W || nj >= H) continue;
+        const nk = nj * W + ni;
+        if (dist[nk] > d + 1) { dist[nk] = d + 1; q.push(nk); }
+      }
+    }
+    const px = new Uint8Array(W * H);
+    for (let k = 0; k < W * H; k++) px[k] = Math.round(255 * dist[k] / cap);
+    const shoreTex = new THREE.DataTexture(px, W, H, THREE.RedFormat, THREE.UnsignedByteType);
+    shoreTex.magFilter = THREE.LinearFilter;
+    shoreTex.minFilter = THREE.LinearFilter;
+    shoreTex.wrapS = shoreTex.wrapT = THREE.ClampToEdgeWrapping;
+    shoreTex.needsUpdate = true;
+    MAT.openSea.onBeforeCompile = (sh) => {
+      sh.uniforms.uShore = { value: shoreTex };
+      sh.uniforms.uGrid = { value: new THREE.Vector4(g.x0, g.z0, g.cell * g.nx, g.cell * g.nz) };
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vSeaW;')
+        .replace('#include <worldpos_vertex>',
+                 '#include <worldpos_vertex>\nvSeaW = (modelMatrix * vec4(position, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>',
+                 '#include <common>\nvarying vec3 vSeaW;\nuniform sampler2D uShore;\nuniform vec4 uGrid;')
+        .replace('#include <map_fragment>', `#include <map_fragment>
+        {
+          vec2 uvg = clamp((vSeaW.xz - uGrid.xy) / uGrid.zw, 0.0, 1.0);
+          float d = texture2D(uShore, uvg).r;
+          float lag = 1.0 - smoothstep(0.22, 0.8, d);
+          // jade #3f9e90 in linear terms; mixed, never replaced, so the wave
+          // texture keeps reading through the shallows
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.048, 0.34, 0.27), lag * 0.8);
+        }`);
+    };
+    MAT.openSea.needsUpdate = true;
+  }
   const mesh = new THREE.Mesh(geo, MAT.openSea);
   mesh.name = 'seaSurface';
   mesh.receiveShadow = false;

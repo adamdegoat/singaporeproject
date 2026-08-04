@@ -532,7 +532,12 @@ export class Terrain {
           // Warmed and brightened for the island pass (2026-08-03): beside
           // real sea the old value read as pale concrete from the beach walk;
           // golden enough to say "beach" at a glance, still shy of cartoon.
-          sand:  [0.93, 0.85, 0.62],
+          // Cooled back toward cream for the Siloso pass (2026-08-04): every
+          // reference frame (research/ref-siloso/strip.jpg clearest) shows
+          // pale cream-white sand, not gold — Siloso's sand is imported pale.
+          // The old fear was reading as concrete, but that came from the flat
+          // grey sea beside it; with the jade lagoon in, cream reads as beach.
+          sand:  [0.94, 0.89, 0.74],
           resi:  [0.86, 0.86, 0.78],
           comm:  [0.90, 0.89, 0.86],
           civic: [0.88, 0.87, 0.82],
@@ -661,6 +666,35 @@ export class Terrain {
             // it should be the quietest. A faint grey-green knocks it back
             // behind the paved tints and reads as the scrubby concrete-and-
             // grass mix that unmapped ground in this city actually is.
+            // WET SAND IS ITS OWN COLOUR. The waterline band in every
+            // reference frame is distinctly darker and warmer than the dry
+            // beach above it, and that band is most of what says "tide" at a
+            // glance. Keyed to height above sea within mapped sand, gated on
+            // coastal distance like the shoreline blend below, so an inland
+            // sand pit (a bunker is `sand` too) stays dry.
+            if (t && this.greenAt(x, z) === 'sand') {
+              const sdw = this.seaDistAt ? this.seaDistAt(x, z) : Infinity;
+              if (sdw < 70 && vy < 1.1) {
+                const w = Math.max(0, 1 - Math.max(0, vy) / 1.1) * 0.85;
+                t = [t[0] + (0.72 - t[0]) * w,
+                     t[1] + (0.63 - t[1]) * w,
+                     t[2] + (0.48 - t[2]) * w];
+              }
+              // ...AND THE BACK-BEACH IS PLANTED. OSM's beach polygons on
+              // Sentosa run far inland of the sand a visitor sees — Siloso's
+              // reaches 100m+ up the slope, and painting all of it sand is
+              // most of why the strip read as a pale apron (spec item 3).
+              // The open sand in every reference is a ~40m band at the water;
+              // behind that it is lawn, planting beds and palms. Blend with
+              // distance from the sea, so the mapped extent stays and only
+              // the READ changes.
+              if (sdw > 45) {
+                const f = Math.min(1, (sdw - 45) / 40) * 0.8;
+                t = [t[0] + (0.50 - t[0]) * f,
+                     t[1] + (0.60 - t[1]) * f,
+                     t[2] + (0.42 - t[2]) * f];
+              }
+            }
             if (t) {
               const k = this.greenAt(x, z);
               const v = varied(t, x, z, VARY[k] !== undefined ? VARY[k] : 0.05, vy);
@@ -684,7 +718,9 @@ export class Terrain {
               // water's edge, so the floor is the sea clamp, not below it.
               if (sd < 80 && vy > 0.06 && vy < 2.4) {
                 const f = Math.max(0, 1 - Math.max(0, vy) / 2.4) * Math.max(0, 1 - sd / 80);
-                col.push(0.84 + (0.90 - 0.84) * f, 0.87 + (0.84 - 0.87) * f, 0.80 + (0.64 - 0.80) * f);
+                // endpoint matches the cream TINT.sand above, or the painted
+                // shoreline and the mapped beach beside it disagree by a hue
+                col.push(0.84 + (0.91 - 0.84) * f, 0.87 + (0.86 - 0.87) * f, 0.80 + (0.70 - 0.80) * f);
               } else if (this.greenFrac > 0.35) {
                 // ON A GREEN ISLAND, UNKNOWN GROUND IS VEGETATION.
                 //

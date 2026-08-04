@@ -54,8 +54,13 @@ SCENERY_MARGIN = 220.0
 MIN_PIECE = 8.0
 
 # Clipped: the player interacts with these.
+# `rocks` is NOT here: a groyne or outcrop is a coastal feature and lives at or
+# past the waterline BY NATURE — clipping them cost Siloso 6 of its 7 surveyed
+# rock groynes for a whole deploy cycle (attractions.py wrote 7, this file kept
+# the one that happened to sit inland enough), and a rock in the sea blocks no
+# route that the water itself does not.
 POINT_LAYERS = ["trees", "lamps", "busstops", "crossings", "signals", "taxis",
-                "parkfurn", "attractions", "shops", "mrt", "towers", "rocks",
+                "parkfurn", "attractions", "shops", "mrt", "towers",
                 "gantries"]
 WAY_LAYERS = ["roads", "steps", "bridges", "monorail"]
 AREA_LAYERS = ["green", "covered", "barriers", "land", "piers"]
@@ -74,8 +79,10 @@ AREA_LAYERS = ["green", "covered", "barriers", "land", "piers"]
 # no roads, paths, trees or shops out there to reach them by.
 BACKGROUND_LAYERS = ["buildings"]
 # Kept whole: these are the view, not the map. Cutting them empties the horizon.
+# `rocks` ride along here: surveyed coastal outcrops, already bounded by the
+# district bbox, standing in water the player can already reach.
 SKYLINE = ["coast", "water", "cranes", "cableway", "terrain", "origin", "axis",
-           "axisFullLength"]
+           "axisFullLength", "rocks"]
 
 
 def dist_point_seg(px, py, ax, ay, bx, by):
@@ -346,6 +353,28 @@ def main():
                 else:
                     q = dict(o)
                     q[key] = piece
+                    # A CARRIAGEWAY OVER THE CHANNEL IS ELEVATED, whatever OSM
+                    # tags. The Gateway's approach viaduct is bridge-tagged
+                    # only over mid-channel; its approach ways used to drape
+                    # onto ground that read +12m from contaminated samples,
+                    # and the day the terrain became honest (260804-1248) that
+                    # ground fell to the water it really is — leaving the
+                    # tagged span in mid-air and the untagged approach awash
+                    # at sea level (the owner rode it: "the road halfway
+                    # float up in the air"). A road piece mostly OUTSIDE the
+                    # coastline ring, reaching well off the shore, is standing
+                    # over water; mark it bridge and the deck-run machinery
+                    # (shared run deck + terminal ramps) rebuilds the causeway
+                    # the way the real one stands.
+                    if layer == "roads" and not q.get("bridge") \
+                            and q.get("k") not in ("footway", "pedestrian", "steps") \
+                            and len(piece) >= 2 and seglen(piece) >= 30.0:
+                        outv = [p2 for p2 in piece if not island.contains(p2[0], p2[1])]
+                        far = max((island.edge_dist(p2[0], p2[1]) for p2 in outv),
+                                  default=0.0)
+                        if len(outv) > 0.6 * len(piece) and far >= 30.0:
+                            q["bridge"] = 1
+                            q["ws"] = (q.get("ws") or "") + "+causeway"
                     kept.append(q)
         if len(kept) != len(v):
             ledger.append((layer, len(v), len(kept)))
