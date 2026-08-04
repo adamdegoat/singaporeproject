@@ -176,8 +176,17 @@ const found = await page.evaluate(() => {
       if (Math.abs((pr.radiusTop || 0) - 0.085) > 0.005) return;
       if (Math.abs((pr.height || 0) - 3.1) > 0.05) return;
       box.setFromObject(o); box.getCenter(c3);
+      // A SHELTERED STOP IS A CORRECT STOP. `building=roof` is a roof on
+      // columns with no walls, and in Singapore a bus stop under a covered
+      // walkway is the normal case, not a defect. Measured: all four findings
+      // this check reported were exactly the four mapped stops that fall
+      // inside a canopy, and none was inside anything with walls — so the
+      // check was counting the right thing and calling it wrong. Same
+      // exemption, and the same reasoning, as the collision index in main.js.
       const b = buildingAt(c3.x, c3.z);
-      if (b) inBuilding.push(`a bus stop pole stands inside "${b.n || '(unnamed)'}"`);
+      if (b && !b.roof) {
+        inBuilding.push(`a bus stop pole stands inside "${b.n || '(unnamed)'}"`);
+      }
       if (!window.__onRoad(c3.x, c3.z, 16)) notRoad.push(`a bus stop pole is nowhere near a road at ${c3.x | 0},${c3.z | 0}`);
     });
     report('D3', 'bus stop poles not beside a road', notRoad);
