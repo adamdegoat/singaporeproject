@@ -1789,7 +1789,11 @@ const found = await page.evaluate(() => {
     // in silence, which is the same blindness D38 shipped with.
     const WIRED = [
       ['trees', 'surveyedTrees'],
-      ['towers', 'supertrees'],
+      // TWO builders answer for this layer, and for a long time only one was
+      // wired. buildSupertrees claims the Gardens by the Bay grove; buildTowers
+      // draws everything the grove test does not claim, which on Sentosa is all
+      // twelve. Either moving means the layer is alive.
+      ['towers', ['supertrees', 'towers']],
       ['busstops', 'realBusStops'],
       ['mrt', 'mrt'],
       ['taxis', 'realTaxis'],
@@ -1815,8 +1819,12 @@ const found = await page.evaluate(() => {
       // A MISSING COUNTER IS A DEFECT, NOT A SKIP. If the stat gets renamed,
       // silently passing would leave this check watching nothing -- which is
       // precisely the failure it was written to catch.
-      if (!(stat in drawn)) {
-        dead.push(`no counter named '${stat}' — D39 cannot see the ${key} layer any more`);
+      // A layer may legitimately be answered by MORE THAN ONE builder, so a
+      // stat can be a list: the layer is alive if any of them moved.
+      const stats = Array.isArray(stat) ? stat : [stat];
+      const missing = stats.filter((s2) => !(s2 in drawn));
+      if (missing.length === stats.length) {
+        dead.push(`no counter named '${missing.join("' or '")}' — D39 cannot see the ${key} layer any more`);
         continue;
       }
       // Crossings are drawn by TWO passes with two counters: the axis pass
@@ -1840,7 +1848,7 @@ const found = await page.evaluate(() => {
           + (drawn.shopsNoHost || 0) + (drawn.shopsBackBlock || 0)
           + (drawn.shopsNoBay || 0) + (drawn.shopsFarFromRun || 0)
         : 0;
-      const n = drawn[stat]
+      const n = stats.reduce((acc, s2) => acc + (drawn[s2] || 0), 0)
         + (key === 'crossings' ? (drawn.sideCrossings || 0) : 0)
         + (key === 'bridges' ? (drawn.bridgesRefused || 0) : 0)
         + (ledger >= have * 0.9 ? ledger : 0);

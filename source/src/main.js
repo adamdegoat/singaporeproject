@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance } from './tex.js';
-import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildCranes, buildPiers, plantSurveyed } from './city.js';
+import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, plantSurveyed } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, lambertise, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
@@ -1701,7 +1701,7 @@ async function addChunk(ch, id, Y, rec = {}) {
   mk('water');
   if (!P.has('nowater')) buildWater(g, ch);
   if (!P.has('nowater')) buildPiers(g, ch);
-  if (!P.has('notowers')) { statAdd(buildSupertrees(g, ch)); statAdd(buildCranes(g, ch)); }
+  if (!P.has('notowers')) { statAdd(buildSupertrees(g, ch)); statAdd(buildTowers(g, ch, null)); statAdd(buildCranes(g, ch)); }
   if (!P.has('nofoliage')) statAdd(await plantSurveyed(g, ch, place, Y));
   await Y();
   mk('buildings');
@@ -2737,6 +2737,10 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // of the bay rather than built across it.
   await bstep(0.34, 'raising the skyline');
   const trees2 = P.has('notowers') ? { supertrees: 0 } : buildSupertrees(world, data);
+  // ...and every tower the grove test did not claim. On Sentosa that is all
+  // twelve of them: D39 has been reporting the layer as written-but-never-drawn
+  // since the island was built. See buildTowers in city.js.
+  if (!P.has('notowers')) statAdd(buildTowers(world, data, null));
   if (!P.has('notowers')) buildCranes(world, data);
   const surveyed = P.has('nofoliage') ? { surveyedTrees: 0 } : await plantSurveyed(world, data, place);
   const surround = P.has('nosurround') ? 0 : buildSurround(world, opts.regionData || data);

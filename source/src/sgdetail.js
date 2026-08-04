@@ -1492,6 +1492,43 @@ export async function buildAttractions(world, data, Y = null) {
 //
 // Width comes from the way's own `w` where the survey gives one. The defaults
 // are the narrowest thing that still reads as a path from the saddle.
+const surfaced = (m, { amt = 0.16, grain = 2.6, planks = 0, edge = 0.26 } = {}) => {
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = 'varying vec3 vTPos;\nvarying vec2 vTUv;\n'
+      + sh.vertexShader.replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\n  vTPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\n'
+        + '  vTUv = uv;');
+    sh.fragmentShader = 'varying vec3 vTPos;\nvarying vec2 vTUv;\n'
+      + 'float tHash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }\n'
+      + 'float tNoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);\n'
+      + '  return mix(mix(tHash(i),tHash(i+vec2(1,0)),f.x), mix(tHash(i+vec2(0,1)),tHash(i+vec2(1,1)),f.x), f.y); }\n'
+      + sh.fragmentShader.replace('#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          vec2 tp = vTPos.xz;
+          float w = tNoise(tp * 0.13);
+          float g = tHash(floor(tp * ${grain.toFixed(1)}));
+          diffuseColor.rgb *= (1.0 - ${amt.toFixed(2)})
+                            + ${amt.toFixed(2)} * (0.55 * w + 0.45 * g) * 2.0;
+          // the margin, both sides
+          float e = smoothstep(0.0, 0.11, vTUv.y) * smoothstep(0.0, 0.11, 1.0 - vTUv.y);
+          diffuseColor.rgb *= mix(${(1.0 - edge).toFixed(2)}, 1.0, e);
+          ${planks > 0 ? `
+          // plank joints across the deck, and a per-board tint so the boards
+          // are not all one colour — a deck of identical boards still reads
+          // as a printed pattern
+          float m0 = vTUv.x * 2.0 / ${planks.toFixed(3)};
+          float j = abs(fract(m0) - 0.5) * 2.0;
+          diffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 0.22, j));
+          diffuseColor.rgb *= 0.94 + 0.12 * tHash(vec2(floor(m0), 3.0));
+          ` : ''}
+        }`);
+  };
+  m.customProgramCacheKey = () => `surf${amt}_${grain}_${planks}_${edge}`;
+  return m;
+};
+
 export async function buildTrails(world, data, Y = null) {
   const YY = Y || (async () => {});
   const out = { trails: 0, trailSegs: 0, boardwalk: 0, forestTrail: 0, pavedPath: 0 };
@@ -1504,32 +1541,28 @@ export async function buildTrails(world, data, Y = null) {
   // needs no UVs on geometry that has none — and it survives the material swap
   // in consolidate.js now that the swap carries onBeforeCompile across, which
   // is why this was not worth doing before.
-  const grainy = (m, amt = 0.16, grain = 2.6) => {
-    m.onBeforeCompile = (sh) => {
-      sh.vertexShader = 'varying vec3 vTPos;\n' + sh.vertexShader.replace(
-        '#include <begin_vertex>',
-        '#include <begin_vertex>\n  vTPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      sh.fragmentShader = 'varying vec3 vTPos;\n'
-        + 'float tHash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }\n'
-        + 'float tNoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);\n'
-        + '  return mix(mix(tHash(i),tHash(i+vec2(1,0)),f.x), mix(tHash(i+vec2(0,1)),tHash(i+vec2(1,1)),f.x), f.y); }\n'
-        + sh.fragmentShader.replace('#include <color_fragment>',
-          `#include <color_fragment>
-          {
-            vec2 tp = vTPos.xz;
-            float w = tNoise(tp * 0.13);           // wear and damp patches, ~8m
-            float g = tHash(floor(tp * ${grain.toFixed(1)}));  // aggregate underfoot
-            diffuseColor.rgb *= (1.0 - ${amt.toFixed(2)}) + ${amt.toFixed(2)} * (0.55 * w + 0.45 * g) * 2.0;
-          }`);
-    };
-    m.customProgramCacheKey = () => 'trailgrain' + amt + '_' + grain;
-    return m;
-  };
+  // AND THE RIBBON ALREADY CARRIES UVs, which is what makes this cheap: `u`
+  // runs ALONG the path in metres/2 and `v` runs ACROSS it from 0 to 1 (see the
+  // uv array in the segment emit below). So the two things that actually make a
+  // path stop reading as paint need no extra geometry at all:
+  //
+  //   EDGE    darken the outer eighth of the width. A real path has a lip, a
+  //           kerb or a worn margin where it meets the grass, and its absence
+  //           is most of why a flat quad reads as a coloured floor rather than
+  //           as something built.
+  //   PLANKS  a boardwalk is BOARDS. `u * 2` is metres along the deck, so a
+  //           line every 0.14m is a plank joint. This is the single biggest
+  //           difference between the Sensoryscape boardwalk as it was and a
+  //           boardwalk.
+  //
+  // planks = 0 leaves a path smooth; grain is the aggregate underfoot.
+  const grainy = (m, amt = 0.16, grain = 2.6) => surfaced(m, { amt, grain });
   // packed granite dust — what a Singapore park path actually is underfoot
   const earthM = grainy(new THREE.MeshLambertMaterial({ color: 0x9c8768 }));
   // timber decking: the beach boardwalks and anything crossing sand
   // timber decking: a board pattern is coarser than gravel grain
-  const deckM = grainy(new THREE.MeshLambertMaterial({ color: 0x8d7a63 }), 0.13, 1.1);
+  const deckM = surfaced(new THREE.MeshLambertMaterial({ color: 0x8d7a63 }),
+                         { amt: 0.11, grain: 1.1, planks: 0.14, edge: 0.30 });
   const paveM = grainy(new THREE.MeshLambertMaterial({ color: 0xb0a898 }), 0.11, 3.2);
   // A BOARDWALK OVER WATER IS OVER WATER BY DESIGN — the Sentosa Boardwalk,
   // the jetty approaches, every deck round the Cove's basins. W2 counts things
@@ -1537,7 +1570,8 @@ export async function buildTrails(world, data, Y = null) {
   // bridge deck and the cable car already carry, declared on the MATERIAL so
   // the check reads a mechanism rather than guessing from a shape. Its own
   // material, not deckM, so a boardwalk over SAND stays fully checked.
-  const waterDeckM = grainy(new THREE.MeshLambertMaterial({ color: 0x8d7a63 }), 0.13, 1.1);
+  const waterDeckM = surfaced(new THREE.MeshLambertMaterial({ color: 0x8d7a63 }),
+                              { amt: 0.11, grain: 1.1, planks: 0.14, edge: 0.30 });
   waterDeckM.userData.boardwalkOverWater = true;
   const wpolys = (data.water || []).map((w) => w.p).filter((p) => p && p.length > 3);
 
@@ -2490,6 +2524,70 @@ export async function buildTransit(world, data, Y = null) {
   // the basket's size and which gardens carry one are authored, and the file
   // says so.
   const ss = data.sensoryscape;
+  // THE CONNECTOR IS A WALK, AND NOTHING WAS DRAWING THE WALK.
+  //
+  // The owner: "the boardwalk also must be able to walk bro. its a fucking
+  // boardwalk ya. there should be a fucking trail or path way there too."
+  // He is right and the data was already here: `ss.spine` is the surveyed
+  // 350m centreline of the Resorts World -> beaches connector, and this
+  // function used it for NOTHING. It built the three woven baskets and left
+  // the promenade they stand on unbuilt.
+  //
+  // OSM does carry footways through the gardens, at 3.4m — a garden path. The
+  // Sensoryscape itself is a broad landscaped deck, and drawing it at footpath
+  // width is why the place reads as a lawn with a stripe across it. So: the
+  // LINE is surveyed and the WIDTH is authored, which is the working rule, and
+  // it is boarded because that is what it is.
+  //
+  // Laid at the same +0.02m as every trail ribbon, so a walker is carried by
+  // the terrain underneath exactly as they are on a path — no new standable
+  // surface, nothing to fall through.
+  if (ss && ss.spine && ss.spine.length > 1) {
+    const promM = surfaced(new THREE.MeshLambertMaterial({ color: 0x9a8a72 }),
+                           { amt: 0.10, grain: 1.2, planks: 0.16, edge: 0.34 });
+    const HALF = 4.6;                       // authored: a generous garden walk
+    const sp = ss.spine;
+    for (let i = 0; i < sp.length - 1; i++) {
+      await YY();
+      const [ax, az] = sp[i], [bx2, bz2] = sp[i + 1];
+      const L = Math.hypot(bx2 - ax, bz2 - az);
+      if (L < 0.5) continue;
+      const ux = (bx2 - ax) / L, uz = (bz2 - az) / L;
+      const nx3 = -uz, nz3 = ux;
+      const steps = Math.max(1, Math.ceil(L / 4));
+      let run = 0;
+      for (let s2 = 0; s2 < steps; s2++) {
+        const t0 = s2 / steps, t1 = (s2 + 1) / steps;
+        const q0x = ax + (bx2 - ax) * t0, q0z = az + (bz2 - az) * t0;
+        const q1x = ax + (bx2 - ax) * t1, q1z = az + (bz2 - az) * t1;
+        const cl2 = (x, z) => surfaceAt(x, z) + 0.02;
+        const aL = cl2(q0x - nx3 * HALF, q0z - nz3 * HALF);
+        const aR = cl2(q0x + nx3 * HALF, q0z + nz3 * HALF);
+        const bL = cl2(q1x - nx3 * HALF, q1z - nz3 * HALF);
+        const bR = cl2(q1x + nx3 * HALF, q1z + nz3 * HALF);
+        const g2 = new THREE.BufferGeometry();
+        g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+          q0x - nx3 * HALF, aL, q0z - nz3 * HALF,
+          q1x + nx3 * HALF, bR, q1z + nz3 * HALF,
+          q1x - nx3 * HALF, bL, q1z - nz3 * HALF,
+          q0x - nx3 * HALF, aL, q0z - nz3 * HALF,
+          q0x + nx3 * HALF, aR, q0z + nz3 * HALF,
+          q1x + nx3 * HALF, bR, q1z + nz3 * HALF,
+        ]), 3));
+        const segL = L / steps;
+        g2.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([
+          run / 2, 0, (run + segL) / 2, 1, (run + segL) / 2, 0,
+          run / 2, 0, run / 2, 1, (run + segL) / 2, 1,
+        ]), 2));
+        g2.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([
+          0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0,
+        ]), 3));
+        merger.add(g2, promM, q0x, q0z);
+        run += segL;
+      }
+    }
+    out.sensoryPromenade = 1;
+  }
   if (ss && ss.vessels && ss.vessels.length) {
     const ribMat = new THREE.MeshLambertMaterial({ color: 0xb9a37e });
     for (const v of ss.vessels) {

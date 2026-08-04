@@ -4127,6 +4127,94 @@ export function buildCranes(world, data) {
 // grove is identified rather than inferred; this is the honest test until then.
 const GROVE_REACH = 250;      // metres — Gardens by the Bay's cluster is ~220m across
 const GROVE_MIN = 6;          // neighbours within reach before a tower is a supertree
+// THE TOWERS NOBODY DREW.
+//
+// buildSupertrees above answers one question — "is this the Gardens by the Bay
+// grove?" — and answers it correctly: Sentosa's twelve `man_made=tower` are
+// spread over more than a kilometre, so the grove test rejects every one of
+// them and nothing is drawn. That is right for supertrees and wrong for the
+// island, because those twelve are real structures standing in real places:
+// the SkyHelix mast, the megazip and zipline towers, the masts above Siloso
+// Point. D39 ("a scene layer written but never drawn") has been reporting the
+// whole layer as dead for as long as the island has existed.
+//
+// SURVEYED: position, height and radius, all from the map. AUTHORED: that it
+// is drawn as a tapered open lattice, which is what most man_made=tower is and
+// is the honest shape to give one whose name we do not have. Nothing here
+// claims to be a named ride — a tower we cannot name gets a tower, not a guess.
+export function buildTowers(world, data, taken) {
+  const all = data.towers || [];
+  if (!all.length) return { towers: 0 };
+  const skip = taken || new Set();
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x8d9196, roughness: 0.55, metalness: 0.35 });
+  const deckMat = new THREE.MeshStandardMaterial({ color: 0xb0b5b8, roughness: 0.6, metalness: 0.2 });
+  // A TOWER THAT IS ALREADY A RIDE MUST NOT GET A SECOND STRUCTURE.
+  //
+  // Vetted the first version: `man_made=tower` at -1750,12352 IS the SkyHelix,
+  // which rides.js already builds as a white mast with its red gondola ring —
+  // and the generic lattice went up around it, two structures in one place.
+  // Same for the megazip and zipline masts, which zipline.py builds. So a
+  // tower standing on top of something we have already drawn is skipped: it is
+  // the same real object arriving twice, not two objects.
+  const built = [];
+  for (const a of (data.attractions || [])) {
+    const k = (a.k || '') + ' ' + (a.n || '');
+    if (!/zip|helix|cable|luge|tower|bungee/i.test(k)) continue;
+    const p = a.p;
+    if (Array.isArray(p) && p.length && !Array.isArray(p[0])) built.push([p[0], p[1]]);
+  }
+  for (const zt of (data.zipline && data.zipline.towers) || []) {
+    if (Array.isArray(zt) && zt.length >= 2) built.push([zt[0], zt[1]]);
+  }
+  const onSomething = (x, z) => built.some(([bx, bz]) => Math.hypot(bx - x, bz - z) < 40);
+
+  let n = 0;
+  for (const t of all) {
+    const [x, z] = t.p;
+    if (skip.has(x + ',' + z)) continue;
+    if (onSomething(x, z)) continue;
+    const H = Math.max(8, t.h || 25);
+    const R = Math.max(1.6, Math.min(9, t.r || 3));
+    const g0 = groundAt(x, z);
+    const LEGS = 4;
+    const topR = R * 0.42;                 // a mast tapers; a box does not read as one
+    const legs = [];
+    for (let i = 0; i < LEGS; i++) {
+      const a = (i / LEGS) * Math.PI * 2 + Math.PI / 4;
+      const bx = x + Math.cos(a) * R, bz = z + Math.sin(a) * R;
+      const tx = x + Math.cos(a) * topR, tz = z + Math.sin(a) * topR;
+      legs.push([bx, bz, tx, tz]);
+      const len = Math.hypot(tx - bx, H, tz - bz);
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.26, len, 6), legMat);
+      leg.position.set((bx + tx) / 2, g0 + H / 2, (bz + tz) / 2);
+      const run = Math.hypot(tx - bx, tz - bz);
+      leg.rotation.z = Math.atan2(run, H);
+      leg.rotation.y = -Math.atan2(tz - bz, tx - bx);
+      leg.castShadow = true;
+      world.add(leg);
+    }
+    // bracing rings, spaced so the lattice reads from the ground rather than
+    // becoming a solid-looking pole at distance
+    const RINGS = Math.max(2, Math.round(H / 7));
+    for (let r2 = 1; r2 <= RINGS; r2++) {
+      const u = r2 / (RINGS + 1);
+      const rr = R + (topR - R) * u;
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(rr, 0.10, 4, LEGS * 2), legMat);
+      ring.position.set(x, g0 + H * u, z);
+      ring.rotation.x = Math.PI / 2;
+      world.add(ring);
+    }
+    // a platform on top: every one of these carries something — a ride head, an
+    // aerial, a lookout — and a mast that stops in mid-air reads as unfinished
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(topR * 1.9, topR * 1.5, 1.5, 10), deckMat);
+    cap.position.set(x, g0 + H + 0.75, z);
+    cap.castShadow = true;
+    world.add(cap);
+    n++;
+  }
+  return { towers: n };
+}
+
 export function buildSupertrees(world, data) {
   const all = data.towers || [];
   const list = all.filter((t) => {
