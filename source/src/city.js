@@ -2322,28 +2322,74 @@ export async function buildBuildings(world, data, Y = null) {
     if (b.a > 900 && h > 12 && !_domestic) {
       const c = centroid(pts);
       const roof = FOOT + h;
+      // ...AND IT ALL HAS TO LAND ON THE ROOF.
+      //
+      // Every piece below was offset from the CENTROID by up to nine metres,
+      // with no idea where the roof's edge is. On a compact block that is
+      // fine; on a long thin one — Quayside Isle's terrace, most of the
+      // island's retail — nine metres sideways is off the parapet, and a water
+      // tank was left hanging over the edge in mid-air (vetted from above at
+      // 990,13215). Ask the footprint: try a few offsets and keep the first
+      // that is genuinely inside it, with a margin so nothing overhangs.
+      const inFoot = (x, z) => {
+        let hit = false;
+        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+          const xi = pts[i][0], zi = pts[i][1], xj = pts[j][0], zj = pts[j][1];
+          if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
+        }
+        return hit;
+      };
+      // spiral in toward the centroid until the point sits inside: the
+      // centroid of a concave footprint can itself be outside, so the last
+      // resort is "do not place this piece" rather than "place it anywhere"
+      const onRoof = (reach, need) => {
+        for (let k = 0; k < 8; k++) {
+          const f = 1 - k / 8;
+          const x = c[0] + rand(-reach, reach) * f, z = c[1] + rand(-reach, reach) * f;
+          // the piece's own half-width must be inside too, or it overhangs
+          if (inFoot(x, z) && inFoot(x + need, z) && inFoot(x - need, z)
+              && inFoot(x, z + need) && inFoot(x, z - need)) return [x, z];
+        }
+        return null;
+      };
       for (let i = 0; i < 3; i++) {
-        const g2 = new THREE.BoxGeometry(rand(3, 7), rand(1.6, 3.4), rand(3, 6));
-        g2.translate(c[0] + rand(-8, 8), roof + rand(1, 1.8), c[1] + rand(-8, 8));
+        const w2 = rand(3, 7), d2 = rand(3, 6);
+        const at = onRoof(8, Math.max(w2, d2) / 2 + 0.6);
+        if (!at) continue;
+        const g2 = new THREE.BoxGeometry(w2, rand(1.6, 3.4), d2);
+        g2.translate(at[0], roof + rand(1, 1.8), at[1]);
         merger.add(g2, MAT.conc, c[0], c[1]);
       }
       // lift and stair housing
-      const sh = new THREE.BoxGeometry(rand(4, 7), rand(3.2, 4.6), rand(4, 6));
-      sh.translate(c[0] + rand(-6, 6), roof + 2.2, c[1] + rand(-6, 6));
-      merger.add(sh, MAT.trim, c[0], c[1]);
+      {
+        const w2 = rand(4, 7), d2 = rand(4, 6);
+        const at = onRoof(6, Math.max(w2, d2) / 2 + 0.6);
+        if (at) {
+          const sh = new THREE.BoxGeometry(w2, rand(3.2, 4.6), d2);
+          sh.translate(at[0], roof + 2.2, at[1]);
+          merger.add(sh, MAT.trim, c[0], c[1]);
+        }
+      }
       // water tanks
       if (chance(0.6)) {
         for (let i = 0; i < 2; i++) {
-          const tk = new THREE.CylinderGeometry(rand(0.9, 1.4), rand(0.9, 1.4), 1.7, 10);
-          tk.translate(c[0] + rand(-9, 9), roof + 0.9, c[1] + rand(-9, 9));
+          const r2 = rand(0.9, 1.4);
+          const at = onRoof(9, r2 + 0.6);
+          if (!at) continue;
+          const tk = new THREE.CylinderGeometry(r2, r2, 1.7, 10);
+          tk.translate(at[0], roof + 0.9, at[1]);
           merger.add(tk, MAT.trim, c[0], c[1]);
         }
       }
       // duct run
       if (chance(0.5)) {
-        const dz = new THREE.BoxGeometry(rand(9, 16), 0.7, 0.7);
-        dz.translate(c[0] + rand(-4, 4), roof + 0.9, c[1] + rand(-7, 7));
-        merger.add(dz, MAT.metal, c[0], c[1]);
+        const L2 = rand(9, 16);
+        const at = onRoof(4, L2 / 2 + 0.6);
+        if (at) {
+          const dz = new THREE.BoxGeometry(L2, 0.7, 0.7);
+          dz.translate(at[0], roof + 0.9, at[1]);
+          merger.add(dz, MAT.metal, c[0], c[1]);
+        }
       }
     }
     stats.count++;
@@ -3271,8 +3317,22 @@ export class TreeField {
   // it to a 0.3-scale shrub turned every bush into a bare 6m pole — 667 of
   // them vanished into the jungle canopy before this flag existed. A low
   // plant keeps its crown where a bush keeps it: on the ground.
+  // NOR INSIDE A BUILDING, and for the same reason it is guarded HERE.
+  //
+  // Every planting pass already tests something before calling this — place(),
+  // isBlocked(), the jungle fill's own guard — and between them they still let
+  // fifteen trunks through into buildings at Sentosa Cove, which D6 and D37
+  // have been reporting ever since. The footprints they stand in are small
+  // (60 and 188 m2) and a small footprint is exactly what a per-pass test is
+  // most likely to miss, because each pass samples at its own spacing.
+  //
+  // One test at the single choke point covers every caller and cannot be
+  // forgotten by the next pass somebody writes — the same argument the water
+  // guard above was written on, and the water guard has never regressed.
   add(x, z, scale = 1, low = false) {
     if (window.__inWater && window.__inWater(x, z)) return;
+    if (window.__inFootprint && window.__inFootprint(x, z)) return;
+    if (window.__underCanopy && window.__underCanopy(x, z)) return;
     this.items.push([x, z, scale, low]);
   }
   // build() stays SYNCHRONOUS and buildY() yields between trees — both walk

@@ -228,6 +228,11 @@ scene.add(world);
 /* ---------------- collision from real footprints ---------------- */
 const CELL = 12;
 const colGrid = new Map();
+// ...and the canopies, kept SEPARATELY. They are rightly absent from colGrid
+// (see the note below — indexing them walled off every covered walkway), but a
+// canopy is still a roof, and nothing should GROW through a roof. Planting is
+// the one pass that needs to know where they are.
+const roofGrid = new Map();
 function indexBuildings(data) {
   for (const b of data.buildings) {
     // A building=roof CANOPY is a roof on columns — walkable UNDER by
@@ -235,17 +240,17 @@ function indexBuildings(data) {
     // covered walkway at RWS (81 blocked centreline samples on one Imbiah
     // footway alone, the owner's "ride halfway stuck"). The columns the
     // renderer draws still block via SOLID, which is the honest footprint.
-    if (b.roof) continue;
     let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
     for (const [x, z] of b.p) {
       mnx = Math.min(mnx, x); mxx = Math.max(mxx, x);
       mnz = Math.min(mnz, z); mxz = Math.max(mxz, z);
     }
+    const into = b.roof ? roofGrid : colGrid;
     for (let cx = Math.floor(mnx / CELL); cx <= Math.floor(mxx / CELL); cx++)
       for (let cz = Math.floor(mnz / CELL); cz <= Math.floor(mxz / CELL); cz++) {
         const k = cx + ',' + cz;
-        if (!colGrid.has(k)) colGrid.set(k, []);
-        colGrid.get(k).push(b.p);
+        if (!into.has(k)) into.set(k, []);
+        into.get(k).push(b.p);
       }
   }
 }
@@ -267,6 +272,24 @@ function inFootprint(x, z) {
   for (const poly of list) if (inPoly(poly, x, z)) return true;
   return false;
 }
+// EXPOSED HERE, NOT AT THE END OF THE BUILD. TreeField.add in city.js refuses
+// to plant inside a footprint by calling window.__inFootprint, and every tree
+// on the island is added while the district is being built — long before the
+// probe block near the end of this file runs. Assigned at definition, the
+// guard is live for the whole build; assigned there, it was a no-op and the
+// fifteen trunks D6 and D37 report stayed exactly where they were.
+window.__inFootprint = (x, z) => inFootprint(x, z);
+// A CANOPY IS A ROOF, AND NOTHING GROWS THROUGH A ROOF. Fifteen trunks stood
+// inside `building=roof` shelters at Sentosa Cove — reported by D6 and D37
+// since the island was built, and invisible to every existing guard because
+// those footprints are deliberately kept out of the collision index.
+window.__underCanopy = (x, z) => {
+  const list = roofGrid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));
+  if (!list) return false;
+  for (const poly of list) if (inPoly(poly, x, z)) return true;
+  return false;
+};
+
 // Street dressing must dodge two things: buildings AND carriageways. The old
 // test only knew about buildings, so a tree could sit in the middle of a back
 // road and nothing objected. The bike and the walker keep using the raw
