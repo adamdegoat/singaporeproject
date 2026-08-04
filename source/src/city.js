@@ -3923,7 +3923,27 @@ export class TreeField {
           by = gy + 9.2 + r * 0.52;
         }
         p.set(bx, by, bz);
-        q.identity(); sc.set(r, r * 0.52, r);
+        // EVERY BLOB USED THE SAME ORIENTATION, which is why a crown reads as
+        // stacked flat PLATES rather than as a mass. An icosahedron at detail
+        // 0 is twenty faces; squashed to about half height and left unrotated,
+        // all ~117,000 of them present the same broad facet at the same angle,
+        // and where trees are sparse (Sentosa Cove, the avenue trees) the
+        // canopy comes out as hard angular slabs against the sky.
+        //
+        // Rotating each one hides the shared silhouette for nothing: no extra
+        // triangles, no extra memory, the matrix was being composed anyway.
+        //
+        // FROM A POSITION HASH, NOT FROM rand(). Three rand() calls per blob
+        // would consume the placement RNG stream and reshuffle every
+        // downstream decision in the world — the rule this file states as "a
+        // texture must not be able to move a bus stop". The hash is
+        // deterministic, so the determinism gate is untouched.
+        const hb = (bx * 73.13 + bz * 41.71 + k * 17.37);
+        e.set(Math.sin(hb) * 1.9, Math.sin(hb * 1.7 + 2.1) * 3.14, Math.sin(hb * 2.3 + 4.2) * 1.9);
+        q.setFromEuler(e);
+        // ...and a touch rounder, so a rotated facet does not simply present a
+        // flat edge instead of a flat face.
+        sc.set(r, r * 0.62, r);
         m.compose(p, q, sc); blobs.setMatrixAt(c.li++, m);
       }
 
