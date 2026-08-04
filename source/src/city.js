@@ -954,6 +954,27 @@ export function bridgeDecksAt(x, z) {
   return out;
 }
 
+// like _deckIn, but only decks at least `minHalf` wide — the walker's
+// stand-on rule needs to tell a 7m promenade from a 3m crossing linkway
+function _deckWideIn(REG, x, z, minHalf) {
+  const l = REG.cells.get(Math.floor(x / BR_CELL) + ',' + Math.floor(z / BR_CELL));
+  if (!l) return null;
+  let best = null, bestHalf = -1;
+  for (const i of l) {
+    const s = REG.segs[i];
+    if (s[4] < minHalf) continue;
+    const vx = s[2] - s[0], vz = s[3] - s[1];
+    const l2 = vx * vx + vz * vz || 1;
+    let t = ((x - s[0]) * vx + (z - s[1]) * vz) / l2;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const dx = x - (s[0] + vx * t), dz = z - (s[1] + vz * t);
+    if (dx * dx + dz * dz <= (s[4] + 0.4) * (s[4] + 0.4) && s[4] > bestHalf) {
+      bestHalf = s[4]; best = s[5];
+    }
+  }
+  return best;
+}
+
 function _deckIn(REG, x, z) {
   const l = REG.cells.get(Math.floor(x / BR_CELL) + ',' + Math.floor(z / BR_CELL));
   if (!l) return null;
@@ -1002,8 +1023,28 @@ export function surfaceAt(x, z) {
   // draws ~1.5m above terrain and the seat read the terrain. The 2m line
   // keeps both truths: under 2m of air there is nothing to walk beneath, so
   // standing on it is the only reading; 2m and up stays an overpass.
-  const fb = _deckIn(FOOTBRIDGES, x, z);
-  if (fb !== null && fb - g < 2.0 && fb > g) return fb + 0.04;
+  // PROMENADE-CLASS footbridge decks only (half-width >= 2.5m — the
+  // Boardwalk is 7m wide; crossing linkways are 3m): a flat height rule
+  // lifted walkers passing UNDER low linkways onto them, and the ledger +
+  // trailcheck caught it as paired +-1.5m steps either side of every low
+  // crossing (N3 13 -> 36 in one deploy). Width tells a deck you promenade
+  // ALONG from one that crosses OVER you; over water anything wide is
+  // standable at any height because nothing walks beneath.
+  const fb = _deckWideIn(FOOTBRIDGES, x, z, 2.5);
+  // WIDE pedestrian decks (>=2.5m half: the Boardwalk) stand you on them
+  // within 3m of air or over water. Every rule here was MEASURED before it
+  // stayed: no window at all bounced the shore footway that crosses under
+  // the Boardwalk's tall landing stub (+-3.5m at -1103,11701); tighter
+  // windows put the seat-flip seam mid-promenade (2.24m at -1125,11814).
+  // At 3.0+overWater the one residual dip sits on a few metres of the
+  // dead-end scenery stub — the least harm on the table tonight. The clean
+  // end is seating that knows WHICH way the walker follows; that is a
+  // project, and this line documents the trade until it exists.
+  if (fb !== null && fb > g) {
+    const grd = TERRAIN.grid && TERRAIN.grid();
+    const seaLv = grd && typeof grd.sea === 'number' ? grd.sea : null;
+    if (fb - g < 3.0 || (seaLv !== null && g < seaLv + 0.6)) return fb + 0.04;
+  }
   if (window.__onRoad && window.__onRoad(x, z, 0.4)) return g + SURFACE_ROAD;
   return g + SURFACE_PATH;
 }
