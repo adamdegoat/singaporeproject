@@ -1225,8 +1225,16 @@ OSM_WAY = {
     # turns and 3 right angles — the curved Foster wings, which Foster describe
     # as topping out LEVEL WITH the Tanah Merah ridge with a shallow-curved
     # canopy over one more storey. fosterandpartners.com / Wikipedia.
-    116818220: {"n": "Capella Singapore", "st": 2},
-    116818069: {"st": 3},
+    # NAME THE ONE THAT IS ACTUALLY HERE. Measured after the first attempt:
+    # 116818220, the colonial block, is NOT in this extract — nothing near
+    # Capella has its 1,917 m2 — so a name hung on it reached nothing, and the
+    # island's most famous hotel stayed an unnamed 3,607 m2 mass while seven
+    # 235-317 m2 villas of The Club at Capella carried the label instead.
+    # The curved Foster wings ARE here, at 67 vertices against the surveyed 70,
+    # so the name goes where the building is. The entry below stays for the
+    # colonial block in case a later extract reaches it.
+    116818220: {"st": 2},
+    116818069: {"n": "Capella Singapore", "st": 3},
     # ONE°15 Marina Sentosa Cove, opened 2007. Already named in OSM. Its
     # building:parts carry the real massing — a 6-storey north block stepping
     # down to 3 and then 2 at the water — and the parts are not read by this

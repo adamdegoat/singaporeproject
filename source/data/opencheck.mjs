@@ -141,13 +141,21 @@ const out = await page.evaluate(({ STEP, MIN_POCKET }) => {
     if (id === -1 || id === mainId) continue;
     if (sizes[id] * area1 < MIN_POCKET) continue;
     let a = agg.get(id);
-    if (!a) { a = { n: 0, sx: 0, sz: 0, wall: 0, ghost: 0, tags: {} }; agg.set(id, a); }
+    if (!a) { a = { n: 0, sx: 0, sz: 0, wall: 0, sea: 0, ghost: 0, tags: {} }; agg.set(id, a); }
     const cx = i % W, cz = (i - cx) / W;
     const x = mnx + cx * STEP, z = mnz + cz * STEP;
     a.n++; a.sx += x; a.sz += z;
     for (const q of [cx > 0 ? i - 1 : -1, cx < W - 1 ? i + 1 : -1,
                      cz > 0 ? i - W : -1, cz < H - 1 ? i + W : -1]) {
-      if (q < 0 || grid[q] !== SOLID) continue;
+      // THE PERIMETER IS SOLID **OR** SEA, and the ratio is the whole answer.
+      //
+      // An islet off Siloso came out as "sealed by geometry" on the strength of
+      // 32 solid cells, because it happens to carry one building — while every
+      // other metre of its boundary is open water. Counting only the solid
+      // neighbours cannot tell an enclosure from a shoreline. So count both:
+      // a pocket is our defect when the geometry is what is holding it in.
+      if (q < 0 || grid[q] === 0) { a.sea++; continue; }
+      if (grid[q] !== SOLID) continue;
       a.wall++;
       if (ghostFlag[q]) a.ghost++;
       const qx = q % W, qz = (q - qx) / W;
@@ -167,6 +175,9 @@ const out = await page.evaluate(({ STEP, MIN_POCKET }) => {
     where: nameAt(a.sx / a.n, a.sz / a.n),
     ghostPct: a.wall ? Math.round(100 * a.ghost / a.wall) : 0,
     wall: a.wall,
+    sea: a.sea,
+    // share of the boundary that is GEOMETRY rather than water
+    sealPct: (a.wall + a.sea) ? Math.round(100 * a.wall / (a.wall + a.sea)) : 0,
     tags: Object.entries(a.tags).sort((p, q) => q[1] - p[1]).slice(0, 2),
   })).sort((p, q) => q.m2 - p.m2);
 
@@ -183,15 +194,15 @@ console.log(`   land ${out.landM2.toLocaleString()} m2, `
             + `solid ${out.solidM2.toLocaleString()} m2 `
             + `(${out.ghostM2.toLocaleString()} m2 of it with no mapped building)`);
 console.log(`   main rideable body ${out.mainM2.toLocaleString()} m2`);
-const walled = out.pockets.filter((p) => p.wall > 0);
-const bywater = out.pockets.filter((p) => p.wall === 0);
+const walled = out.pockets.filter((p) => p.sealPct >= 60);
+const bywater = out.pockets.filter((p) => p.sealPct < 60);
 console.log(`   sealed by GEOMETRY: ${walled.length}`
             + `   (${walled.reduce((s, p) => s + p.m2, 0).toLocaleString()} m2)`);
 console.log(`   separated by water: ${bywater.length}`
             + `   (${bywater.reduce((s, p) => s + p.m2, 0).toLocaleString()} m2, not a defect)\n`);
 for (const p of walled.slice(0, 20)) {
   console.log(`   ${String(p.m2).padStart(6)} m2  at ${p.at[0]},${p.at[1]}  ${p.where}`
-              + `   walled ${p.wall} cells, ${p.ghostPct}% with no building behind`);
+              + `   ${p.sealPct}% of its edge is geometry (${p.wall} solid / ${p.sea} sea), ${p.ghostPct}% of that with no building behind`);
   for (const [t, n] of p.tags) console.log(`            x${n}  ${t}`);
 }
 console.log(`\n   ${walled.length ? 'FAIL' : 'PASS'}  `
