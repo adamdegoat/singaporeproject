@@ -3386,12 +3386,24 @@ export class TreeField {
       // replaced. Two things keep them hidden: they are shorter than the crown
       // radius, and they carry no vertical lift, so the tip is never higher
       // than where the leaf cards sit.
+      // ...AND THEY STILL SHOWED. The two rules above are right and were not
+      // enough: a branch springing from crownBase sits at the BOTTOM of the
+      // dome, where there is little foliage under it, so from a rider's eye it
+      // is silhouetted against the sky as a bare brown spoke. Counted across
+      // the 126-frame coverage sweep, it is the single most repeated ugliness
+      // on the island — visible on almost every tree-lined road.
+      //
+      // Two changes, both toward the same rule the comment already states:
+      // spring from a quarter of the way UP the dome instead of its underside,
+      // and shorten the reach so the tip is well inside the leaf cards rather
+      // than level with their outer edge.
+      const crownDepth = Math.max(1.5, (h - crownBase));
       for (let k = 0; k < BRANCH; k++) {
         const a = (k / BRANCH) * Math.PI * 2 + rand(-0.35, 0.35);
-        const L = rad * rand(0.40, 0.62);
+        const L = rad * rand(0.30, 0.46);
         const tilt = rand(1.32, 1.52);          // radians from vertical: near flat
         p.set(x + Math.cos(a) * L * 0.42,
-              gy + crownBase + rand(-0.4, 0.6),
+              gy + crownBase + crownDepth * 0.26 + rand(-0.3, 0.5),
               z + Math.sin(a) * L * 0.42);
         e.set(Math.cos(a) * tilt, 0, -Math.sin(a) * tilt);
         q.setFromEuler(e); sc.set(scale, L, scale);
