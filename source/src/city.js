@@ -407,12 +407,64 @@ export const MAT = {
     emissive: 0x24331a, emissiveIntensity: 0.55,
   }),
   canopy: new THREE.MeshLambertMaterial({ color: 0x3a4f24, emissive: 0x1d2812, emissiveIntensity: 0.4 }),
+  // (foliageVariation() is applied to leaf + canopy just below this table)
   trunk: new THREE.MeshStandardMaterial({ color: PAL.trunk, roughness: 0.95 }),
   ao: new THREE.MeshBasicMaterial({
     map: TEX.ao, transparent: true, blending: THREE.MultiplyBlending,
     premultipliedAlpha: true, depthWrite: false,
   }),
 };
+
+// A FOREST IS NOT ONE COLOUR. Every leaf card and canopy blob on the island
+// shared a single flat green, and once the 2026-08-04 forest pass filled the
+// unmapped slopes that green became most of the screen — a poster-paint mass
+// with no depth in it, which is the plainest "cheap 3D" tell there is. Real
+// canopy from a distance is patchy: species, age, aspect and how much sun a
+// crown gets all pull it between olive, blue-green and near-black.
+//
+// PER-INSTANCE COLOUR IS NOT AN OPTION HERE. setColorAt would allocate an
+// instanceColor buffer across roughly four million leaf-card instances —
+// tens of megabytes on a device already sitting near an iOS memory ceiling
+// that this project has not yet settled. So the variation is COMPUTED, in
+// the vertex shader, from the instance's own position: no attribute, no
+// buffer, no memory, three sines.
+//
+// Two long wavelengths (~200m and ~240m) give patches of woodland that read
+// as different stands; one short one (~7m) dapples within a single crown.
+// Warm-and-light one way, cool-and-dark the other, because that is the axis
+// real foliage varies along — a green that only changes brightness reads as
+// bad lighting, not as different trees.
+//
+// The ground shader in this project silently never ran for a year because
+// consolidate dropped onBeforeCompile. This one cannot be swallowed the same
+// way: consolidate never merges InstancedMeshes (see the isInstancedMesh
+// guard there), and the shots are the proof either way.
+function foliageVariation(mat) {
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vFolT;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        #ifdef USE_INSTANCING
+          vec3 folP = instanceMatrix[3].xyz;
+          vFolT = sin(folP.x * 0.031 + folP.z * 0.017) * 0.58
+                + sin(folP.z * 0.026 - folP.x * 0.011 + 2.1) * 0.42
+                + sin(folP.x * 0.9 + folP.z * 0.6) * 0.16;
+        #else
+          vFolT = 0.0;
+        #endif`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vFolT;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        diffuseColor.rgb *= vec3(1.0 + vFolT * 0.30,
+                                 1.0 + vFolT * 0.17,
+                                 1.0 - vFolT * 0.20);`);
+  };
+  // three.js caches compiled programs per material; without a key of its own
+  // an injected shader can be handed a cached program built without it.
+  mat.customProgramCacheKey = () => 'foliageVariation';
+}
+foliageVariation(MAT.leaf);
+foliageVariation(MAT.canopy);
 
 // STREET FURNITURE IS NOT A WALL — the flag rides on the MATERIAL because
 // merging strips names and types. D26 and the shopfront ray pass exempt any
@@ -2020,6 +2072,37 @@ export async function buildBuildings(world, data, Y = null) {
         merger.add(extrudeGeo(grow(b.p, 1.19), 0.22, _hh), MAT.paleStone, _cc[0], _cc[1]);
       }
     }
+    // A CALIBRATED TOWER ON A FAIRWAY IS A SHED (owner, 2026-08-04: "just
+    // generic looking coloured building... everything looks same same").
+    // The sweep's park-belt "blockout boxes" were 183 unnamed buildings
+    // wearing CITY calibration bands — 23.8m windowless slabs standing on
+    // golf and park land. An unnamed building on a fairway is maintenance
+    // stock, a pavilion or a clubhouse annexe: one to two storeys. Clamp
+    // the invented height and hand it the garrison whitewash + pitched
+    // roof below — the island's own vernacular. Named buildings and
+    // surveyed/levels heights are untouched; provenance moves to
+    // 'calib-park' so the ledger still counts it invented.
+    const _parkStock = !b.n && b.hs === 'calib' && !b.roof && (() => {
+      const _cc0 = centroid(b.p);
+      for (const g2 of (data.green || [])) {
+        if ((g2.k !== 'golf' && g2.k !== 'park') || !g2.p || g2.p.length < 4) continue;
+        let hit = false;
+        const pg = g2.p;
+        for (let i = 0, j = pg.length - 1; i < pg.length; j = i++) {
+          const xi = pg[i][0], zi = pg[i][1], xj = pg[j][0], zj = pg[j][1];
+          if (((zi > _cc0[1]) !== (zj > _cc0[1]))
+              && (_cc0[0] < ((xj - xi) * (_cc0[1] - zi)) / (zj - zi) + xi)) hit = !hit;
+        }
+        if (hit) return true;
+      }
+      return false;
+    })();
+    if (_parkStock && (b.h || 0) > 8.5) {
+      let _ph2 = 0;
+      for (const [x, z] of b.p) _ph2 = (_ph2 * 31 + ((x * 5) | 0) + ((z * 9) | 0)) | 0;
+      b.h = 4.6 + (Math.abs(_ph2) % 3);
+      b.hs = 'calib-park';
+    }
     // THE GARRISON STOCK. 136 buildings on Sentosa carry cons='SENTOSA' — the
     // island's conservation area — and they are not a mixed bag: they are the
     // British military buildings put up between the 1880s and the 1930s, and
@@ -2038,7 +2121,7 @@ export async function buildBuildings(world, data, Y = null) {
     //
     // Sofitel, Amara and Capella are NOT NAMED in the map, so this is keyed on
     // the conservation tag rather than on names it does not have.
-    if (b.cons && !b.roof && (b.h || 0) <= 14 && (b.a || 0) >= 90 && !(b.mh > 1)) {
+    if ((b.cons || _parkStock) && !b.roof && (b.h || 0) <= 14 && (b.a || 0) >= 90 && !(b.mh > 1)) {
       const _hh = Math.max(3, b.h || 6);
       const _cc = centroid(b.p);
       // roof: a shallow hip, done as two stacked rings so it reads pitched
@@ -3107,7 +3190,23 @@ export async function buildRoads(world, data, Y = null) {
       for (const sgn of [-1, 1]) {
         for (const inset of [0.45, 0.70]) {
           const off = sgn * (r.w / 2 - inset);
-          const yg = ribbonOffset(r.p, 0.10, 0.087, off, true);
+          // THE PAINT TAKES THE DECK'S OWN HEIGHT, not a guess at it.
+          //
+          // This passed a bare `true`, which sends ribbon() down its fallback
+          // path: deck = max(TERRAIN.at) along the way + 1.2. The TARMAC three
+          // lines up takes `BRDECK.get(r)` — the height the deck registry
+          // actually measured — so the road and the lines painted on it were
+          // computed from two different rules, and the comment at the tarmac
+          // call says in as many words that a second copy of the rule is "a
+          // third thing to drift". It drifted.
+          //
+          // Measured 2026-08-05, island-wide: the worst marking vertices on
+          // the island are all on bridge ways, up to 1.27m out — buried under
+          // the deck where the registry sits higher than the guess, standing
+          // proud of it where it sits lower. A line standing 1.2m proud of the
+          // surface cuts a walking figure across the chest, which is the frame
+          // the owner sent.
+          const yg = ribbonOffset(r.p, 0.10, 0.087, off, BRDECK.get(r) ?? true);
           if (yg && yg.attributes.position && yg.attributes.position.count) yellowGeos.push(yg);
         }
       }
@@ -3536,6 +3635,24 @@ export class TreeField {
     if (window.__inFootprint && window.__inFootprint(x, z)) return;
     if (window.__underCanopy && window.__underCanopy(x, z)) return;
     this.items.push([x, z, scale, low]);
+    // AND THE CHASE CAMERA NEEDS TO KNOW WHERE THE TRUNKS ARE. Trees are
+    // InstancedMeshes and solid.js deliberately skips those, so a trunk is
+    // invisible to every collision test in the world — which is right for
+    // MOVEMENT (riding into a bush should not stop you) and wrong for the
+    // CAMERA, which sits 3.45m behind you and ends up inside one. The
+    // 2026-08-05 golden frame at RWS came back with a third of the screen
+    // solid black: a trunk, in the lens.
+    //
+    // A coarse 16m spatial hash, written at the one choke point every
+    // planting pass already goes through, so no future pass can forget it.
+    // Undergrowth is skipped — a 0.4-scale bush sits below the lens.
+    if (!low && scale >= 0.5) {
+      const IX = (window.__treeIx = window.__treeIx || new Map());
+      const k = (Math.floor(x / 16) + 4096) * 8192 + (Math.floor(z / 16) + 4096);
+      let a = IX.get(k);
+      if (!a) IX.set(k, a = []);
+      a.push(x, z, scale);
+    }
   }
   // build() stays SYNCHRONOUS and buildY() yields between trees — both walk
   // the same per-tree body (_tree) in the same order, so the placement RNG
@@ -4368,6 +4485,146 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
       }
     }
   }
+  // THE FOREST EDGE GROWS OUTWARD (owner mandate, 2026-08-04 night: "there
+  // are a lot more trees... resorts are supposed to be hidden in forest...
+  // cannot be like a bare and empty land"). The ground BETWEEN mapped woods
+  // is painted vegetation by the terrain fallback but PLANTED with nothing,
+  // so a resort behind a thin mapped wood stands in full view across open
+  // lawn that is dense jungle in life. A bounded halo — unclaimed ground
+  // within 25m of a wood ring, 12m jittered grid, same deterministic hash —
+  // knits the woods into the continuous mass the satellite shows, without
+  // planting a single tree on mapped lawns, golf, sand or anything built.
+  let halo = 0;
+  // THE ATTRACTIONS KEEP THEIR CLEARING. The two fills below invent planting
+  // on ground OSM never classified — which is the right default on a jungle
+  // island and the wrong one on the places people come to look at. The
+  // 2026-08-05 golden frame at Fort Siloso came back with a 6-inch coastal
+  // gun aiming into a wall of trees and no sea behind it: a battery has a
+  // field of fire by definition, a viewpoint has a view by definition, and an
+  // artwork is placed to be seen. Each gets a clearing; the woods still close
+  // in immediately beyond it, so the mandate ("resorts hidden in forest,
+  // cannot be bare and empty land") is untouched.
+  //
+  // MAPPED woods are NOT filtered by this — if OSM says there are trees
+  // there, there are trees there. Only the invented planting defers.
+  const CLEARING_R = {
+    cannon: 26, fort: 34, viewpoint: 32, ruins: 20,
+    castle: 22, museum: 20, artwork: 14, city_gate: 18,
+  };
+  const clearings = [];
+  for (const a of (data.attractions || [])) {
+    const r = CLEARING_R[a.k];
+    if (!r || !a.p || typeof a.p[0] !== 'number') continue;
+    clearings.push([a.p[0], a.p[1], r * r]);
+  }
+  const inClearing = (x, z) => {
+    for (let i = 0; i < clearings.length; i++) {
+      const dx = x - clearings[i][0], dz = z - clearings[i][1];
+      if (dx * dx + dz * dz < clearings[i][2]) return true;
+    }
+    return false;
+  };
+  {
+    const claimed = (data.green || []).filter((g2) => g2.k !== 'wood' && g2.p && g2.p.length > 3);
+    const inClaimed = (x, z) => {
+      for (const g2 of claimed) if (inRing(x, z, g2.p)) return true;
+      return false;
+    };
+    const nearRing = (x, z, pts, d) => {
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const ax = pts[j][0], az = pts[j][1], bx = pts[i][0], bz = pts[i][1];
+        const vx = bx - ax, vz = bz - az;
+        const l2 = vx * vx + vz * vz || 1;
+        let t = ((x - ax) * vx + (z - az) * vz) / l2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+        if (dx * dx + dz * dz < d * d) return true;
+      }
+      return false;
+    };
+    for (const gp of (data.green || [])) {
+      if (gp.k !== 'wood' || !gp.p || gp.p.length < 4) continue;
+      let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+      for (const [x, z] of gp.p) {
+        if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+        if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+      }
+      for (let gx = Math.ceil((mnx - 25) / 12) * 12; gx < mxx + 25; gx += 12) {
+        for (let gz = Math.ceil((mnz - 25) / 12) * 12; gz < mxz + 25; gz += 12) {
+          const jx = gx + (((gx * 11.3 + gz * 7.7) % 9) - 4.5);
+          const jz = gz + (((gx * 5.1 + gz * 13.9) % 9) - 4.5);
+          if (inRing(jx, jz, gp.p)) continue;              // inside is already planted
+          if (!nearRing(jx, jz, gp.p, 25)) continue;
+          if (blocked && blocked(jx, jz)) continue;
+          if (inClaimed(jx, jz)) continue;                 // mapped lawn/golf/sand stays
+          if (inClearing(jx, jz)) continue;                // guns, viewpoints, artworks
+          if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz)) continue;
+          if (onTrail(jx, jz)) continue;
+          if (window.__underCanopy && window.__underCanopy(jx, jz)) continue;
+          f.add(jx, jz, 0.5 + ((jx * 7.3 + jz * 3.1) % 100) / 140);
+          halo++;
+        }
+      }
+    }
+    // ...AND THE UNMAPPED SLOPES ARE FOREST, NOT LAWN. The terrain fallback
+    // already PAINTS unclassified ground as vegetation on a green island
+    // (greenFrac > 0.35) — but nothing PLANTED it, so whole hillsides
+    // (most of Imbiah's slopes render from that fallback) stood as bare
+    // green with the resorts in full view. Same rule, applied to planting:
+    // unclaimed, unblocked ground gets canopy on a sparse 15m grid.
+    // Bounded to within 130m of a mapped way so the cost lands where a
+    // player can stand — the perf gate (heapMB 380 / trisK 1600) is the
+    // arbiter, and the fill prints its count so nothing is silent.
+    {
+      const wayCell = 64;
+      const wayGrid = new Set();
+      for (const r of (data.roads || [])) {
+        for (const q of (r.p || [])) {
+          const cx = Math.floor(q[0] / wayCell), cz = Math.floor(q[1] / wayCell);
+          for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) wayGrid.add((cx + a) + ',' + (cz + b));
+        }
+      }
+      const nearWays = (x, z) => wayGrid.has(Math.floor(x / wayCell) + ',' + Math.floor(z / wayCell));
+      const greens = (data.green || []).filter((g2) => g2.p && g2.p.length > 3);
+      const inAnyGreen = (x, z) => {
+        for (const g2 of greens) if (inRing(x, z, g2.p)) return g2.k;
+        return null;
+      };
+      // a mapped plaza, car park or works parcel is not forest either
+      const lands = (data.land || []).filter((l2) => l2.p && l2.p.length > 3);
+      const inLand = (x, z) => {
+        for (const l2 of lands) if (inRing(x, z, l2.p)) return true;
+        return false;
+      };
+      let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+      for (const c of (data.coast || [])) {
+        for (const q of (c.p || [])) {
+          if (q[0] < mnx) mnx = q[0]; if (q[0] > mxx) mxx = q[0];
+          if (q[1] < mnz) mnz = q[1]; if (q[1] > mxz) mxz = q[1];
+        }
+      }
+      if (mnx < mxx) {
+        for (let gx = Math.ceil(mnx / 15) * 15; gx < mxx; gx += 15) {
+          for (let gz = Math.ceil(mnz / 15) * 15; gz < mxz; gz += 15) {
+            const jx = gx + (((gx * 9.7 + gz * 6.1) % 11) - 5.5);
+            const jz = gz + (((gx * 4.3 + gz * 12.7) % 11) - 5.5);
+            if (!nearWays(jx, jz)) continue;
+            if (blocked && blocked(jx, jz)) continue;
+            const gk = inAnyGreen(jx, jz);
+            if (gk !== null) continue;    // mapped lawn/golf/sand/wood all handled elsewhere
+            if (inLand(jx, jz)) continue; // plazas, car parks, works parcels stay open
+            if (inClearing(jx, jz)) continue;   // guns, viewpoints, artworks
+            if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz)) continue;
+            if (onTrail(jx, jz)) continue;
+            if (window.__underCanopy && window.__underCanopy(jx, jz)) continue;
+            if (window.__inFootprint && window.__inFootprint(jx, jz)) continue;
+            f.add(jx, jz, 0.5 + ((jx * 7.3 + jz * 3.1) % 100) / 150);
+            halo++;
+          }
+        }
+      }
+    }
+  }
   // UNDERGROWTH WHERE PLAYERS WALK. Filling every wood with shrubs would
   // cost more fill-rate than the jungle itself; a walker only sees the floor
   // beside the trail. So: small clumps (scale 0.28-0.45 trees read as shrub
@@ -4427,9 +4684,9 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
       }
     }
   }
-  if (!surveyed && !jungle && !shrubs) return { surveyedTrees: 0, jungleTrees: 0, shrubClumps: 0 };
+  if (!surveyed && !jungle && !halo && !shrubs) return { surveyedTrees: 0, jungleTrees: 0, haloTrees: 0, shrubClumps: 0 };
   const built = await f.buildY(world, Y);
-  return { surveyedTrees: built - jungle - shrubs, jungleTrees: jungle, shrubClumps: shrubs };
+  return { surveyedTrees: built - jungle - halo - shrubs, jungleTrees: jungle, haloTrees: halo, shrubClumps: shrubs };
 }
 
 // THE KEPPEL QUAY CRANES — the district's horizon, and it was empty sky.

@@ -1,6 +1,7 @@
 // The player on foot: a walking figure and a small walk model.
 // Kept separate from the ride model so both stay simple.
 import * as THREE from '../lib/three.module.js';
+import { wardrobeMats } from './wardrobe.js';
 
 export const WALK = {
   speed: 1.85,
@@ -42,11 +43,11 @@ export function buildWalker() {
   // This is the player, so there is one of it and detail is affordable. The
   // crowd is 460 instanced figures and deliberately stays simple.
   const g = new THREE.Group();
-  const shirt = new THREE.MeshLambertMaterial({ color: 0xc9553f });
-  const jeans = new THREE.MeshLambertMaterial({ color: 0x38414f });
-  const skin = new THREE.MeshLambertMaterial({ color: 0x8a6a52 });
-  const hair = new THREE.MeshLambertMaterial({ color: 0x241c16 });
-  const shoe = new THREE.MeshLambertMaterial({ color: 0x2b2723 });
+  // ONE WARDROBE — see src/wardrobe.js. This figure used to wear a terracotta
+  // shirt and near-black shoes while the skater wore teal and white, so the
+  // player changed clothes every time they stepped off the board.
+  const W = wardrobeMats(THREE);
+  const shirt = W.shirt, jeans = W.legs, skin = W.skin, hair = W.hair, shoe = W.shoe;
 
   // a limb segment hanging from a pivot: the group sits at the joint, the mesh
   // is offset half its length below, so rotating the group swings it correctly
@@ -95,6 +96,21 @@ export function buildWalker() {
   blob(headPivot, 0.082, hair, 0, 0.055, -0.055, 0.8);
   blob(headPivot, 0.03, skin, -0.104, 0.06, 0, 1.1);     // ears
   blob(headPivot, 0.03, skin, 0.104, 0.06, 0, 1.1);
+  // THE CAP COMES OFF THE BOARD WITH YOU. The skater wore one and the walker
+  // did not, which is half of why the two read as different people. Radius
+  // clears the hair mass (0.113) so it sits ON the head rather than inside it;
+  // the hemisphere puts the brim line where a hairline is.
+  const capM = new THREE.Mesh(
+    new THREE.SphereGeometry(0.119, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), W.cap);
+  capM.position.set(0, 0.082, -0.004);
+  capM.rotation.x = -0.14;
+  capM.castShadow = true;
+  headPivot.add(capM);
+  const peak = new THREE.Mesh(new THREE.BoxGeometry(0.165, 0.019, 0.088), W.cap);
+  peak.position.set(0, 0.064, 0.108);
+  peak.rotation.x = -0.18;
+  peak.castShadow = true;
+  headPivot.add(peak);
 
   /* ---- arms: shoulder then elbow ---- */
   const arm = (side) => {

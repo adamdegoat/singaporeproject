@@ -2,6 +2,7 @@
 // The physics deliberately touches no three.js types so it can be asserted in
 // Node without a browser.
 import * as THREE from '../lib/three.module.js';
+import { wardrobeMats } from './wardrobe.js';
 
 export { RIDE, CAR, SKATE, newState, step, turnRadius } from './ride.js';
 
@@ -121,11 +122,10 @@ export function buildVespa() {
 
 export function buildRider() {
   const g = new THREE.Group();
-  const shirt = new THREE.MeshLambertMaterial({ color: 0xc9553f });
-  const jeans = new THREE.MeshLambertMaterial({ color: 0x38414f });
-  const skin = new THREE.MeshLambertMaterial({ color: 0x8a6a52 });
-  const helmet = new THREE.MeshStandardMaterial({ color: 0xe6e2d8, roughness: 0.3, metalness: 0.1 });
-  const visor = new THREE.MeshStandardMaterial({ color: 0x2a3138, roughness: 0.1, metalness: 0.3 });
+  // ONE WARDROBE — see src/wardrobe.js. The helmet is the ONLY thing that
+  // changes when you get on the scooter, which is what changes in life too.
+  const W = wardrobeMats(THREE);
+  const shirt = W.shirt, jeans = W.legs, skin = W.skin, helmet = W.helmet, visor = W.visor;
 
   const torso = part(new THREE.CapsuleGeometry(0.17, 0.40, 4, 10), shirt, 0, 1.16, -0.10, -0.22);
   g.add(torso);
@@ -152,7 +152,7 @@ export function buildRider() {
   // arm, forearm, hand ON THE GRIP — with each segment placed where the one
   // before it ends. Still capsules, still no textures, still no skinning: this
   // is the same handful of meshes arranged so they connect.
-  const shoe = new THREE.MeshLambertMaterial({ color: 0x23262a });
+  const shoe = W.shoe;   // same trainers as on foot and on the board
   for (const sx of [-0.15, 0.15]) {
     // thigh runs forward and slightly down from the hip
     g.add(part(new THREE.CapsuleGeometry(0.088, 0.30, 4, 8), jeans, sx, 0.88, 0.09, Math.PI / 2.15));
@@ -287,11 +287,12 @@ function bone(a, b, r, mat) {
 
 export function buildSkater() {
   const g = new THREE.Group();
-  const shirt = new THREE.MeshLambertMaterial({ color: 0x2f6f7d });
-  const shorts = new THREE.MeshLambertMaterial({ color: 0x3b4250 });
-  const skin = new THREE.MeshLambertMaterial({ color: 0x8a6a52 });
-  const cap = new THREE.MeshStandardMaterial({ color: 0xe0dccf, roughness: 0.6 });
-  const shoe = new THREE.MeshLambertMaterial({ color: 0xf0ece1 });
+  // ONE WARDROBE — see src/wardrobe.js. These colours are the reference the
+  // walker and the rider now match; the one thing this figure was MISSING is
+  // hair, so the head under the cap was a bald scalp while the walker had a
+  // full head of it.
+  const W = wardrobeMats(THREE);
+  const shirt = W.shirt, shorts = W.legs, skin = W.skin, cap = W.cap, shoe = W.shoe;
 
   // EVERY JOINT, ONCE. The board's nose is +z and the deck top is y 0.16.
   // Regular stance: left foot forward, shoulders open toward the nose, both
@@ -345,7 +346,20 @@ export function buildSkater() {
   for (const k of ['handF', 'handB']) g.add(part(new THREE.SphereGeometry(0.050, 8, 7), skin, ...J[k]));
   // HEAD, looking where the board is going
   g.add(part(new THREE.SphereGeometry(0.128, 14, 12), skin, ...J.head));
-  g.add(part(new THREE.SphereGeometry(0.132, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), cap,
+  // HAIR under the cap. Without it this head was a bald scalp with a cap
+  // balanced on top while the walker — the same person, ten metres away — had
+  // a full head of dark hair.
+  //
+  // A HEMISPHERE, NOT A BALL. The first attempt used full spheres slightly
+  // larger than the 0.128 head, centred on it, which enclosed the whole skull:
+  // the vet sheet came back with the face blacked out under a helmet of hair.
+  // The dome is capped at the equator so the hairline sits where a hairline
+  // sits, and the back mass is pushed behind the skull rather than around it.
+  g.add(part(new THREE.SphereGeometry(0.133, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), W.hair,
+    J.head[0], J.head[1] + 0.004, J.head[2] - 0.010, -0.14));
+  g.add(part(new THREE.SphereGeometry(0.088, 12, 10), W.hair,
+    J.head[0], J.head[1] - 0.018, J.head[2] - 0.086));
+  g.add(part(new THREE.SphereGeometry(0.138, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), cap,
     J.head[0], J.head[1] + 0.008, J.head[2] - 0.004, -0.14));
   g.add(part(new THREE.BoxGeometry(0.185, 0.020, 0.100), cap,
     J.head[0], J.head[1] - 0.018, J.head[2] + 0.120, -0.18));    // peak

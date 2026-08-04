@@ -2578,6 +2578,13 @@ window.__blocked = (x, z) => rideBlocked(x, z);   // movement, arcades open
 window.__openGround = (x, z) => openGroundAt(x, z);
 // building footprints only, for the occlusion-ceiling measurement
 window.__blockedAt = (x, z) => blocked(x, z);
+// GEOMETRY ONLY — the rasterised wall grid, with none of the movement rules
+// layered on top. `blocked` and `rideBlocked` both answer "may the ride be
+// here", and their answer over the sea is YES IT IS A WALL, which is correct
+// for a scooter and nonsense for a camera: the chase camera hangs over water
+// on every causeway, groyne and pier on the island. Asking them shortened the
+// boom at four of the thirteen golden spots for nothing (measured 2026-08-05).
+window.__solidAt = (x, z) => (SOLID ? SOLID.at(x, z) : false);
 window.__placeBlocked = (x, z) => blocked(x, z);
   window.__data = data;
   // the limit must be passed through: dropping it capped every search at the
@@ -3750,6 +3757,89 @@ function cullDistricts() {
     r.group.visible = _dFru.intersectsBox(_dBox);
   }
 }
+// HOW FAR BACK THE CHASE CAMERA CAN ACTUALLY SIT.
+//
+// The camera hangs 3.45m behind the board on a fixed boom, and nothing ever
+// asked what was in that 3.45m. Riding a tree-lined avenue — which is most of
+// Sentosa now the forest pass has shipped — puts a trunk between the lens and
+// the rider several times a minute, and a trunk at 0.5m from the near plane is
+// not a tree, it is a black wall across the frame. The 2026-08-05 golden at
+// RWS is the evidence: a third of the screen, solid black.
+//
+// Trees cannot be tested with the collision grid: solid.js skips
+// InstancedMeshes on purpose, so every trunk in the world is invisible to it.
+// They come from the planting index instead (TreeField.add), and building
+// walls come from the grid, which is a lookup.
+//
+// COST: the boom is 3.45m, so it spans at most two hash cells on each axis;
+// four Map gets and a handful of point-segment tests per frame. This runs in
+// the frame loop and it has to stay that cheap.
+// Closer than this and you are inside your own shoulders. Measured against
+// the frames: at 1.45 the rider's head fills a third of the screen, which is
+// its own kind of broken shot.
+const _BOOM_MIN = 1.85;
+function boomClear(px, pz, bx, bz, full) {
+  let lim = full;
+  const IX = window.__treeIx;
+  if (IX) {
+    // the boom runs from the rider outward along (bx,bz), which is BACKWARD
+    const c0x = Math.floor(Math.min(px, px + bx * full) / 16) - 1;
+    const c1x = Math.floor(Math.max(px, px + bx * full) / 16) + 1;
+    const c0z = Math.floor(Math.min(pz, pz + bz * full) / 16) - 1;
+    const c1z = Math.floor(Math.max(pz, pz + bz * full) / 16) + 1;
+    for (let cx = c0x; cx <= c1x; cx++) {
+      for (let cz = c0z; cz <= c1z; cz++) {
+        const arr = IX.get((cx + 4096) * 8192 + (cz + 4096));
+        if (!arr) continue;
+        for (let i = 0; i < arr.length; i += 3) {
+          const dx = arr[i] - px, dz = arr[i + 1] - pz;
+          // distance along the boom, and how far off it the trunk sits
+          const t = dx * bx + dz * bz;
+          if (t < 0 || t > full + 1) continue;
+          const ox = dx - bx * t, oz = dz - bz * t;
+          // trunk radius at lens height (CylinderGeometry 0.30 top / 0.62
+          // base, scaled) plus enough that the bark is not ON the near plane.
+          // 0.38, not 0.55: the margin is subtracted from the boom length, so
+          // an over-generous one throws the camera into the rider's back every
+          // time it passes a tree — and this world is now mostly trees.
+          const r = 0.58 * arr[i + 2] + 0.38;
+          if (ox * ox + oz * oz > r * r) continue;
+          const stop = t - r;
+          if (stop < lim) lim = stop;
+        }
+      }
+    }
+  }
+  // ...and the same for a wall. Sampling beats a raycast here for the same
+  // reason it does everywhere else in this file: a Set lookup against a
+  // rasterised grid, not a scene walk.
+  //
+  // __solidAt, NOT __blocked. See the note at __solidAt: the movement
+  // predicates call open water a wall, and the chase camera hangs over water
+  // on every causeway and pier on this island. Geometry is the only question
+  // a camera has.
+  if (window.__solidAt) {
+    for (let t = 1.0; t <= full; t += 0.6) {
+      if (window.__solidAt(px + bx * t, pz + bz * t)) { if (t - 0.6 < lim) lim = t - 0.6; break; }
+    }
+  }
+  return Math.max(_BOOM_MIN, Math.min(full, lim));
+}
+// what the boom decided, and why — a shortened boom is invisible in a frame
+// unless you already know the camera is meant to be further back
+window.__boom = () => {
+  const bx = -Math.sin(S.heading), bz = -Math.cos(S.heading);
+  const C = (rideParams && rideParams.cam) || RIDE.cam;
+  const walls = [];
+  for (let t = 1.0; t <= C.back; t += 0.6) {
+    walls.push([+t.toFixed(1), !!(window.__solidAt && window.__solidAt(S.x + bx * t, S.z + bz * t))]);
+  }
+  const IX = window.__treeIx;
+  let nTrees = 0;
+  if (IX) for (const [, a] of IX) nTrees += a.length / 3;
+  return { at: [S.x | 0, S.z | 0], full: C.back, got: boomClear(S.x, S.z, bx, bz, C.back), walls, nTrees };
+};
+
 function driveCamera(dt) {
   if (SPEC) {
     camera.position.set(SPEC[0], SPEC[1], SPEC[2]);
@@ -3785,8 +3875,10 @@ function driveCamera(dt) {
   // 55 degrees. The board is closest of the three at 3.45 / 1.95, which is
   // about where your own eyes are over a deck.
   const C = (rideParams && rideParams.cam) || RIDE.cam;
+  // THE BOOM SHORTENS RATHER THAN PUTTING A TREE IN THE LENS. See boomClear().
+  const back = boomClear(S.x, S.z, -Math.sin(S.heading), -Math.cos(S.heading), C.back);
   const want = new THREE.Vector3(S.x, gy, S.z)
-    .addScaledVector(fwd, -C.back)
+    .addScaledVector(fwd, -back)
     .add(new THREE.Vector3(0, C.up, 0));
   want.y = Math.max(want.y, surfaceAt(want.x, want.z) + 1.6);
   const aim = new THREE.Vector3(S.x, gy + 1.35, S.z).addScaledVector(fwd, C.aim);
@@ -4742,8 +4834,10 @@ window.__rideState = () => (onRide ? {
   cam: [+camera.position.x.toFixed(1), +camera.position.y.toFixed(1), +camera.position.z.toFixed(1)],
 } : null);
 window.__toggle = () => toggleMode();
-window.__walker = () => ({ x: +walker.x.toFixed(1), z: +walker.z.toFixed(1), sp: +walker.speed.toFixed(2) });
-window.__state = () => ({ x: +S.x.toFixed(1), z: +S.z.toFixed(1), kmh: +(S.speed * 3.6).toFixed(1) });
+window.__walker = () => ({ x: +walker.x.toFixed(1), z: +walker.z.toFixed(1), h: +walker.heading.toFixed(3), sp: +walker.speed.toFixed(2) });
+// heading included: a probe that wants to stand in front of the rider rather
+// than behind them cannot work it out from x/z alone (data/avatar.mjs)
+window.__state = () => ({ x: +S.x.toFixed(1), z: +S.z.toFixed(1), h: +S.heading.toFixed(3), kmh: +(S.speed * 3.6).toFixed(1) });
 window.__dbg = () => {
   const bb = new THREE.Box3().setFromObject(world);
   const c = CAM === 'top' ? topCam : camera;
