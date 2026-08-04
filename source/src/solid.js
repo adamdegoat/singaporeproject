@@ -40,6 +40,17 @@ export class Solid {
 
   mark(x, z) { this.g.add(this._key(x, z)); }
 
+  // WHICH MESH MARKED THIS CELL. Opt-in only (`?solidtrace=1`), because a
+  // second Map over ~290k cells is real phone memory and this is a diagnostic,
+  // not a runtime need.
+  //
+  // It exists because the question "what is the wall at this point" has now
+  // been answered wrongly twice by raycasting: a bounding box cannot tell a
+  // thin diagonal rail from a wide plate, and after the per-tile merge a hit
+  // names a mesh that spans 110m. The grid is rasterised from triangles, so
+  // the grid is the only thing that knows the truth — ask it directly.
+  what(x, z) { return this.why ? (this.why.get(this._key(x, z)) || null) : null; }
+
   // OPEN A WALKING ROUTE THAT RUNS THROUGH A BUILDING.
   //
   // Twenty-four mapped walking routes on Sentosa are blocked for more than 20m
@@ -84,12 +95,16 @@ export class Solid {
 
   // Rasterise a line segment in XZ. A wall is a thin thing; stepping along it
   // at half a cell guarantees no gap a rider could squeeze through.
-  _segment(x1, z1, x2, z2) {
+  _segment(x1, z1, x2, z2, tag) {
     const d = Math.hypot(x2 - x1, z2 - z1);
     const steps = Math.max(1, Math.ceil(d / (CELL * 0.5)));
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
-      this.mark(x1 + (x2 - x1) * t, z1 + (z2 - z1) * t);
+      const x = x1 + (x2 - x1) * t, z = z1 + (z2 - z1) * t;
+      this.mark(x, z);
+      if (this.why && tag && !this.why.has(this._key(x, z))) {
+        this.why.set(this._key(x, z), tag);
+      }
     }
   }
 
@@ -115,6 +130,7 @@ export class Solid {
     // Collect first, then walk with a time budget: traverse() takes a callback
     // and cannot be paused from inside one.
     const Y = opts.yield || null;
+    if (opts.trace) this.why = new Map();
     const meshList = [];
     root.traverse((o) => { if (o.isMesh && !o.isInstancedMesh) meshList.push(o); });
     let _st = performance.now();
@@ -125,6 +141,21 @@ export class Solid {
       if (!pos) continue;
       if (o.userData && o.userData.nosolid) continue;
       meshes++;
+      // A merged tile mesh is usually unnamed, so the useful identity is the
+      // chain of parents plus whatever the recipe stashed in userData. Built
+      // once per mesh, never in the triangle loop.
+      let tag = null;
+      if (this.why) {
+        const chain = [];
+        for (let p = o; p && chain.length < 4; p = p.parent) {
+          if (p.name) chain.push(p.name);
+        }
+        const ud = o.userData ? Object.keys(o.userData).filter((k) => k !== 'nosolid') : [];
+        const mat = o.material && o.material.name;
+        tag = (chain.join('<') || '(unnamed)')
+            + (ud.length ? ' {' + ud.join(',') + '}' : '')
+            + (mat ? ' mat:' + mat : '');
+      }
       const idx = geo.index;
       const count = idx ? idx.count : pos.count;
       for (let i = 0; i < count; i += 3) {
@@ -159,9 +190,9 @@ export class Solid {
         if (hi < LOW || lo > HIGH) continue;
 
         walls++;
-        this._segment(a.x, a.z, b.x, b.z);
-        this._segment(b.x, b.z, c.x, c.z);
-        this._segment(c.x, c.z, a.x, a.z);
+        this._segment(a.x, a.z, b.x, b.z, tag);
+        this._segment(b.x, b.z, c.x, c.z, tag);
+        this._segment(c.x, c.z, a.x, a.z, tag);
       }
     }
     this.n = this.g.size;

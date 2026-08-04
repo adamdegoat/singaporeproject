@@ -39,7 +39,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # routes to 219 (not the 375 that a loose margin produced), and B5 — the check
 # that catches buildings you can walk INTO — still passes, which is the guard
 # that matters. Below this it is a corner clip, not a route.
-MIN_RUN = 4.0
+MIN_RUN = 2.5
 CORRIDOR_W = 3.6      # how wide the carved passage is
 PAD = 2.5             # push past the facade so the mouth is genuinely open
 WALK = {"footway", "pedestrian", "path", "steps"}
@@ -64,7 +64,7 @@ DRIVE_MIN_RUN = 10.0
 # this, 27m and 54m, neither carrying a `br` tag. Treated as a deck they become
 # walkable and get a boardwalk drawn over them.
 WATER_W = 3.2
-WATER_MIN_RUN = 8.0
+WATER_MIN_RUN = 3.0
 # A FOOTPRINT IS NOT THE EDGE OF A BUILDING'S GEOMETRY.
 #
 # The "inside the footprint" test missed four blocked runs at Equarius Hotel and

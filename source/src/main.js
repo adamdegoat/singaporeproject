@@ -257,6 +257,16 @@ function inPoly(poly, x, z) {
   }
   return hit;
 }
+// FOOTPRINT ALONE — no drawn geometry, no water. blocked() tests the drawn
+// grid first, so it can never answer "is there a MAPPED building here", and a
+// probe that asked it reported every blocked cell as a building when five of
+// them were walls with nothing in the map behind them at all.
+function inFootprint(x, z) {
+  const list = colGrid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));
+  if (!list) return false;
+  for (const poly of list) if (inPoly(poly, x, z)) return true;
+  return false;
+}
 // Street dressing must dodge two things: buildings AND carriageways. The old
 // test only knew about buildings, so a tree could sit in the middle of a back
 // road and nothing objected. The bike and the walker keep using the raw
@@ -434,6 +444,79 @@ function rideBlocked(x, z) {
     return false;
   }
   return blocked(x, z);
+}
+
+// A WALL WE DREW, ACROSS A PATH THE MAP SAYS IS A PATH.
+//
+// data/arcade.py opens walking routes that run through buildings, and it works
+// from BUILDING POLYGONS. That makes it structurally blind to the case that
+// actually remained: solid.js rasterises collision from the geometry that is
+// DRAWN, and its own opening measurement found 11.5% of the walls standing at
+// rider height have no footprint behind them — podiums, entrance canopies,
+// colonnades, plaza edges, shopfront lines, all placed by recipes. Probed cell
+// by cell with `?solidtrace=1`, five of the last blocked runs on the island
+// were exactly that: SOLID true, footprint FALSE, so no polygon existed for
+// arcade.py to carve a corridor through and none ever would.
+//
+// The rule, and it is narrow on purpose:
+//   - the route must be a MAPPED footway or pedestrian way (OSM says you walk
+//     here, so a wall across it is our defect, not the map's)
+//   - the cell must have NO building footprint (a mapped building is a real
+//     wall and stays one — that case belongs to arcade.py, which can see it)
+//   - the run must be SHORT (<= MAXRUN). A long one is not a stray canopy
+//     edge, it is a building we have modelled and not mapped, and silently
+//     tunnelling through it would hide a real problem behind a green gate.
+//
+// Anything longer is left blocked and REPORTED, so it still fails a check
+// rather than disappearing.
+const SELFCARVE_MAX = 12.0;   // metres of run we are willing to call our own defect
+function unmappedWallRuns(data) {
+  const arcs = [];
+  let kept = 0, tooLong = 0;
+  for (const r of (data.roads || [])) {
+    const k = r.k || '';
+    if (k !== 'footway' && k !== 'pedestrian') continue;
+    const p = r.p || [];
+    if (p.length < 2) continue;
+    let run = null;
+    const close = () => {
+      if (!run) return;
+      const m = (run.length - 1) * 0.75;
+      // EVERY run, including a single cell. The first version skipped one-cell
+      // runs on the reasoning that a walker steps around a corner clip — but
+      // these are not corners. Probed at 0.75m, the wall left on the Imbiah
+      // footway was a line of ISOLATED single cells about 1.5m apart, so a
+      // stride-length check saw four blocked samples in a row and called it a
+      // 5m wall while a cell-length check saw nothing over 0.75m and called it
+      // clear. Both were right. A single cell of geometry we drew, standing on
+      // a path the map says is a path, is a defect at any length.
+      if (m <= SELFCARVE_MAX) {
+        // carve() needs two points to sweep between; give a lone cell a
+        // degenerate segment so it still clears its disc
+        arcs.push({ p: run.length >= 2 ? run : [run[0], [run[0][0] + 0.01, run[0][1]]], w: 3.2 });
+        kept++;
+      } else tooLong++;
+      run = null;
+    };
+    for (let i = 0; i < p.length - 1; i++) {
+      const [ax, az] = p[i], [bx, bz] = p[i + 1];
+      const L = Math.hypot(bx - ax, bz - az);
+      const n = Math.max(1, Math.ceil(L / 0.75));
+      for (let s = 0; s <= n; s++) {
+        const t = s / n;
+        const x = ax + (bx - ax) * t, z = az + (bz - az) * t;
+        // SOLID only, and only where the map has no building. inWater is left
+        // alone deliberately: a path over water needs a DECK to stand on, and
+        // deleting the water-wall without building one drops the walker in.
+        if (SOLID && SOLID.at(x, z) && !inFootprint(x, z) && !inWater(x, z)) {
+          if (!run) run = [];
+          run.push([x, z]);
+        } else close();
+      }
+    }
+    close();
+  }
+  return { arcs, kept, tooLong };
 }
 
 /* ---------------- street dressing, all instanced ---------------- */
@@ -2458,6 +2541,7 @@ async function buildRegion(data, opts = {}) {
     return best;
   };
   window.__surfaceAt = (x, z) => surfaceAt(x, z);
+  window.__inFootprint = (x, z) => inFootprint(x, z);
   // the solidity test the ride and the walker actually use, so a check can ask
   // the same question they do rather than a lookalike
   // D9 asks whether the RIDE can get down the street, so it gets the ride question
@@ -2913,15 +2997,24 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   if (!P.has('nosolid')) {
     const t0 = performance.now();
     SOLID = new Solid();
-    const st = await SOLID.build(world, (x, z) => terrain.at(x, z));
+    const st = await SOLID.build(world, (x, z) => terrain.at(x, z),
+                                 { trace: P.has('solidtrace') });
     // ...and again on the final grid: this one is what the player is tested
     // against, and a route carved only out of the early WALLS grid would be
     // open to the dressing pass and shut to the walker.
     const carved = data.arcades ? SOLID.carve(data.arcades) : 0;
     stats.arcadeCells = carved;
+    // ...and then the walls we drew ourselves across mapped paths, which no
+    // polygon-based pass can reach. Runs longer than SELFCARVE_MAX are left
+    // blocked on purpose and counted here so they stay visible to a check.
+    const self = unmappedWallRuns(data);
+    stats.selfCarveCells = self.arcs.length ? SOLID.carve(self.arcs) : 0;
+    stats.selfCarveRuns = self.kept;
+    stats.selfCarveTooLong = self.tooLong;
     stats.solidCells = SOLID.n; stats.solidWalls = st.walls;
     stats.solidMs = Math.round(solidMs0 + (performance.now() - t0));
     window.__solid = (x, z) => SOLID.at(x, z);
+    window.__solidWhat = (x, z) => SOLID.what(x, z);
   }
   bmark('solid-grid');
 
