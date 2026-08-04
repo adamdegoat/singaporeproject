@@ -50,6 +50,43 @@ ANCHORS = [
      "Halim 2008 NTU thesis, NEL Farrer Park-KK CH 31+895"),
     ("Fort Canning summit", 1.29400, 103.84600, 48.0, 48.0,
      "published summit height"),
+    # SENTOSA — AND IT IS THE ONLY DISTRICT THE GAME SHIPS.
+    #
+    # Every anchor above is Marina Bay, Little India or Fort Canning: districts
+    # that are built but not published. So this check — the project's only
+    # comparison against something OUTSIDE the world — has been running every
+    # deploy over seven districts nobody plays and none over the island.
+    #
+    # That is not theoretical. Measured 2026-08-04 against raw Copernicus
+    # GLO-30 along a transect over the Fort Siloso headland, the shipped model
+    # is 29 to 39 metres LOW: 5.8m at the Fort Siloso node against a raw 34.7m,
+    # 13.3m at the peak against 52.8m. Every gate passed. A flattened headland
+    # is smooth, so it satisfies the step and scale checks by construction, and
+    # with no anchor within two kilometres nothing else was looking.
+    #
+    # PUBLISHED FIGURES DISAGREE, so this is a BAND, not a point, and the band
+    # is the spread of what is actually published rather than a number chosen
+    # to pass. Mount Serapong is the highest point of Sentosa:
+    #   84.7 m  1898 "Map of the Island of Singapore and its Dependencies", 278 ft
+    #   89.81 m bench mark, Singapore 1:50,000 Series SMU 075 Ed. 8,
+    #           MINDEF Mapping Unit 2006
+    #   85 m    commonly cited
+    #   92 m    commonly cited as the summit of Blakang Mati
+    #   97 m    PeakVisor
+    # The band takes the two figures with a traceable primary document behind
+    # them (84.7 and 89.81) and widens to the common 92; 97 is an outlier with
+    # no document behind it and is left out deliberately.
+    #
+    # Coordinates from PeakVisor, 1.2503 N 103.833417 E, which lands 9,12867 in
+    # world space — inside the Serapong ridge in our own data.
+    #
+    # AT THE TIME OF WRITING THIS PASSES BY 0.8 m (model 75.8, band floor
+    # 84.7 - TOL 10 = 74.7). That is on purpose and it is worth saying plainly:
+    # it is not a gate that fails today, it is a gate that will fail the moment
+    # the ridge is flattened any further, and it is the first thing on this
+    # island a rebuild is measured against at all.
+    ("Mount Serapong, Sentosa", 1.2503, 103.833417, 84.7, 92.0,
+     "SMU 075 Ed. 8 bench mark 89.81m (MINDEF 2006); 1898 map 278ft=84.7m"),
 ]
 
 # How far outside its published band an anchor may sit before this fails. Set

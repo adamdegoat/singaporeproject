@@ -98,7 +98,7 @@ def drop_roofed(pts, data, keep_min=0.30):
     """
     near_building = contam_fn(data)
     if near_building is None:
-        return list(range(len(pts))), len(pts), len(pts), False
+        return list(range(len(pts))), len(pts), len(pts), False, None
     keep = [i for i, (x, z) in enumerate(pts) if not near_building(x, z)]
     # Returns the REAL clean list, always. It used to hand back every index when
     # the clean fraction fell under keep_min, which made "correction abandoned"
@@ -106,7 +106,9 @@ def drop_roofed(pts, data, keep_min=0.30):
     # caller stopped reading the flag on 2026-08-01 and silently corrected
     # nothing in three districts for one build. A filter that lies about what it
     # filtered is worse than no filter.
-    return keep, len(keep), len(pts), len(keep) >= keep_min * len(pts)
+    # The contamination fn rides along so the caller can ask what CAUSED a
+    # sample's contamination — the repair cap needs the building's height.
+    return keep, len(keep), len(pts), len(keep) >= keep_min * len(pts), near_building
 
 
 def contam_fn(data):
@@ -143,6 +145,8 @@ def contam_fn(data):
     polys = [b["p"] for b in data.get("buildings", []) if len(b.get("p", [])) > 2]
     pads = [max(24.0, min(120.0, 24.0 + 0.45 * (b.get("h") or 12.0)))
             for b in data.get("buildings", []) if len(b.get("p", [])) > 2]
+    bh = [b.get("h") or 12.0
+          for b in data.get("buildings", []) if len(b.get("p", [])) > 2]
     # A water ring contaminates the reading INSIDE it, not for 34m around it:
     # the quay beside the river is real ground. So water rings are carried in
     # the same index but tested with a zero pad.
@@ -186,6 +190,41 @@ def contam_fn(data):
                     return True
         return False
 
+    def contam_h(x, z):
+        """(tallest contaminating BUILDING height, water-contaminated?) —
+        what the repair loop needs to decide HOW MUCH a reading can be wrong.
+        A surface model over a building reads at most that building's height
+        too high; over water it reads garbage in the other direction."""
+        best = 0.0
+        wat = False
+        for idx in grid.get((int(x // CELLB), int(z // CELLB)), ()):
+            ring = polys[idx]
+            rpad = pads[idx]
+            c = False
+            j = len(ring) - 1
+            for i in range(len(ring)):
+                xi, zi = ring[i]; xj, zj = ring[j]
+                if (zi > z) != (zj > z) and x < (xj - xi) * (z - zi) / (zj - zi) + xi:
+                    c = not c
+                j = i
+            hit = c
+            if not hit:
+                for i in range(len(ring)):
+                    ax, az = ring[i]; bx, bz = ring[(i + 1) % len(ring)]
+                    vx, vz = bx - ax, bz - az
+                    L2 = vx * vx + vz * vz
+                    t = 0.0 if L2 < 1e-9 else max(0.0, min(1.0, ((x - ax) * vx + (z - az) * vz) / L2))
+                    if math.dist((x, z), (ax + vx * t, az + vz * t)) < rpad:
+                        hit = True
+                        break
+            if hit:
+                if idx >= nb:
+                    wat = True               # water ring
+                else:
+                    best = max(best, bh[idx])
+        return best, wat
+
+    near_building.contam_h = contam_h
     return near_building
 
 
@@ -444,6 +483,23 @@ def despike(pts, elev, radius=110.0, tol=4.5, tol_down=7.0):
                     if (x - x2) ** 2 + (z - z2) ** 2 < r2:
                         near.append(elev[j])
         med = statistics.median(near) if near else elev[i]
+        # THE MEDIAN OF A DISK IS THE WRONG EXPECTATION ON A HILL. "Nothing
+        # legitimately rises 4.5m above its neighbours within 110m" is a rule
+        # about FLAT urban Singapore, and it beheaded Fort Siloso: a 52.5m
+        # summit against a disk median of ~30m reads as a rooftop and was cut
+        # to the median, sample after sample, until the headland was gone.
+        # Same default-from-the-wrong-kind-of-place as greenFrac counting the
+        # sea. So: where the disk itself says the ground is steep (its p10-p90
+        # span beats 10m), a sample is a spike only if it beats EVERY
+        # neighbour by the tolerance — a summit legitimately tops the median,
+        # but even a summit sits within a grade of its own hillside, while a
+        # needle tops everything at once. Flat ground keeps the strict rule.
+        up = elev[i] - med > tol
+        if up and len(near) >= 8:
+            srt = sorted(near)
+            n9 = len(srt) - 1
+            if srt[int(n9 * 0.9)] - srt[int(n9 * 0.1)] > 10.0:
+                up = elev[i] - srt[-2] > tol
         # DOWNWARD only where the value is impossible, not merely low.
         #
         # The first version repaired any sample more than tol_down below its
@@ -454,7 +510,7 @@ def despike(pts, elev, radius=110.0, tol=4.5, tol_down=7.0):
         # below sea level, so a sample under -2m is the dataset returning
         # bathymetry or nodata, and that is the only downward case worth
         # touching.
-        if elev[i] - med > tol or (elev[i] < -2.0 and med - elev[i] > tol_down):
+        if up or (elev[i] < -2.0 and med - elev[i] > tol_down):
             kept.append(med); fixed += 1
         else:
             kept.append(elev[i])
@@ -467,7 +523,17 @@ def despike(pts, elev, radius=110.0, tol=4.5, tol_down=7.0):
 # a 240m reach now averages a hill flat against hundreds of neighbours. Cells
 # with nothing in reach widen their search rather than falling back to zero —
 # the interior of a large mall has neither road nor open ground in it.
-REACH = 140.0
+#
+# 140 STILL DID THE SAME THING, just less: with 1/(d^2+25) weights, the ~40
+# samples in the outer disk collectively outweigh the one 25m away, so every
+# cell is a ~100m low-pass filter and any hill narrower than the disk loses
+# its top (the Fort Canning "7m short" note at the smoothing pass below was
+# this, compensated instead of cured). Samples are never further than ~25m
+# apart now, so 70 keeps every cell genuinely local. A/B measured on sentosa,
+# 140 vs 70: Fort Imbiah 56.7 -> 62.6 against 65.6 raw, Mount Serapong 75.9 ->
+# 78.6 against 83.1 raw; flat ground moved under a metre (median cell delta
+# 0.54m, and the moved cells are the hills).
+REACH = 70.0
 
 
 def build_grid(pts, elev, pad=90.0, extent=None):
@@ -559,6 +625,21 @@ def grid_at(grid, x, z):
     return grid["h"][j * grid["nx"] + i]
 
 
+def probe(grid, label):
+    """TERRAIN_PROBE="x,z;x,z" prints the grid height at each point after every
+    stage of main(). This exists because a 39m terrain error at Fort Siloso
+    shipped with no way to say WHICH of six ground passes had flattened it —
+    the answer is one env var and one rerun, never a bisect."""
+    spec = os.environ.get("TERRAIN_PROBE")
+    if not spec:
+        return
+    vals = []
+    for part in spec.split(";"):
+        x, z = (float(v) for v in part.split(","))
+        vals.append(f"({x:.0f},{z:.0f})={grid_at(grid, x, z):.1f}")
+    print(f"   PROBE {label:<14} {'  '.join(vals)}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("id", nargs="?", default="orchard")
@@ -577,6 +658,16 @@ def main():
     print(f"== terrain: {a.id}")
     print(f"   {len(pts)} road samples at {SAMPLE_EVERY:.0f}m spacing")
     extent_pts = [tuple(q) for r in data["roads"] for q in r["p"]]
+    # The grid must cover the SCENERY, not just the playable roads. The far
+    # shore keeps its buildings (bg:1) for the view across the water, and a
+    # building past the grid's edge stands in open sea: the roads that used to
+    # stretch the extent to HarbourFront were dropped from the extract, and
+    # the Keppel blocks spent a rebuild afloat before anyone looked north.
+    # Coverage only — nothing here is SAMPLED from a building.
+    for b in data.get("buildings", []):
+        extent_pts += [tuple(q) for q in b.get("p", [])]
+    for w in data.get("piers", []):
+        extent_pts += [tuple(q) for q in w.get("p", [])]
     opens = open_samples(data, extent_pts)
     n_road = len(pts)
     pts = pts + opens
@@ -594,7 +685,7 @@ def main():
         sys.exit(f"   got {len(elev)} elevations for {len(pts)} points")
 
     raw_range = (min(elev), max(elev))
-    keep, n_clean, n_all, _ = drop_roofed(pts, data)
+    keep, n_clean, n_all, _, near_fn = drop_roofed(pts, data)
     # CORRECT them, do not DELETE them.
     #
     # Dropping 893 of Marina Bay's 1,428 samples removed the rooftop bias
@@ -644,7 +735,32 @@ def main():
             # median of the five nearest still ignores an outlier without
             # dragging the sample down to the district's average ground.
             near.sort(key=lambda t: t[0])
-            elev[i] = statistics.median([v for _, v in near[:5]])
+            med = statistics.median([v for _, v in near[:5]])
+            # HOW WRONG CAN THIS READING BE? A building can only have LIFTED
+            # it by its own height. Fort Siloso is why the correction is now
+            # bounded by that: its loop road reads 26-45m, is "contaminated"
+            # by 3-7m casemates, and the nearest clean ground is the beach
+            # BELOW the hill — so the repair rewrote a real 40m headland at
+            # 10-30m and every later pass inherited the loss, until the model
+            # sat 29-39m under raw Copernicus and passed every gate (a
+            # flattened hill is smooth).
+            #
+            # Two rules, both scaled by the contaminating building itself:
+            # - shorter than 8m (a 30m DEM's own noise): the reading cannot
+            #   be materially wrong, so it is KEPT — any correction here is
+            #   pure damage on a slope.
+            # - taller: repaired from donors, but never deeper than raw minus
+            #   the building minus a cell of smear. In town the cap sits far
+            #   below the donors and never fires (MBS: 55 - 200 - 6 is
+            #   negative); on a hill it is the floor that keeps the hill.
+            # Water contamination always repairs — a reading over water is
+            # garbage in the other direction and raw is no anchor at all.
+            hmax, wat = near_fn.contam_h(x, z) if near_fn else (0.0, True)
+            if not wat and hmax < 8.0:
+                continue                     # reading kept; error <= 8m
+            if hmax > 0.0:
+                med = max(med, elev[i] - hmax - 6.0)
+            elev[i] = med
             fixed_roof += 1
         else:
             orphan += 1        # keep the raw value; it is all we have here
@@ -676,6 +792,7 @@ def main():
     # bridges are still excluded from the samples above (extent_pts is built
     # once, above, because the open-ground lattice is laid over the same span)
     grid = build_grid(pts, elev, extent=extent_pts)
+    probe(grid, "grid")
 
     # WHAT THIS DISTRICT HAS BUILT ON IT, IN GRID CELLS. Shared by BOTH sinking
     # passes below (mapped water polygons, then everything outside the
@@ -735,6 +852,46 @@ def main():
     # where the shoreline is, and hard-coding zero either floods the promenade
     # or leaves the bay as a pit. This mirrors what buildWater does to find the
     # surface, so the two cannot disagree about where the waterline is.
+    # The coastline ring is assembled BEFORE the water sink because the sink
+    # needs it as a judge: OSM carries the surrounding STRAIT as a water
+    # polygon too, and treating the sea as a lake is how two cells of the
+    # Imbiah hillside spent every build floored at rim-2 — a 715-vertex ring
+    # spanning the whole district passed even-odd containment at a concavity,
+    # and the "pond floor" it wrote sat 21m below the restored hill beside it.
+    # A ring that mostly lies OUTSIDE the coast is the sea, and the sea has
+    # its own pass below.
+    cw = [c["p"] for c in data.get("coast", []) if len(c.get("p", [])) >= 2]
+    coast_rings = []
+    if cw:
+        def _keyp(p):
+            return (round(p[0] / 1.5), round(p[1] / 1.5))
+        ways2 = [list(w) for w in cw]
+        changed = True
+        while changed and len(ways2) > 1:
+            changed = False
+            for a in range(len(ways2)):
+                for b in range(a + 1, len(ways2)):
+                    A, B = ways2[a], ways2[b]
+                    if _keyp(A[-1]) == _keyp(B[0]):
+                        ways2[a] = A + B[1:]
+                    elif _keyp(A[-1]) == _keyp(B[-1]):
+                        ways2[a] = A + list(reversed(B))[1:]
+                    elif _keyp(A[0]) == _keyp(B[-1]):
+                        ways2[a] = B + A[1:]
+                    elif _keyp(A[0]) == _keyp(B[0]):
+                        ways2[a] = list(reversed(B)) + A[1:]
+                    else:
+                        continue
+                    del ways2[b]
+                    changed = True
+                    break
+                if changed:
+                    break
+        for w in ways2:
+            if len(w) >= 8 and math.hypot(w[0][0] - w[-1][0], w[0][1] - w[-1][1]) < 30:
+                coast_rings.append(w)
+        # refuse rather than guess: unclosed fragments sink nothing
+
     rings = [w["p"] for w in data.get("water", []) if len(w.get("p", [])) > 3]
     if rings:
         def inside(px, pz, ring):
@@ -778,7 +935,15 @@ def main():
         INSET = CELL * 1.2
         sunk = 0
         kept_w = 0
+        skipped_sea = 0
         for ring in rings:
+            if coast_rings:
+                inn = sum(1 for p in ring[::max(1, len(ring)//60)]
+                          if any(inside(p[0], p[1], cr) for cr in coast_rings))
+                tot = len(ring[::max(1, len(ring)//60)])
+                if inn * 2 < tot:
+                    skipped_sea += 1     # mostly outside the coast: the sea
+                    continue
             rim = min((grid_at(grid, x, z) for x, z in ring), default=None)
             if rim is None:
                 continue
@@ -814,10 +979,14 @@ def main():
                             continue
                         grid["h"][k] = floor
                         sunk += 1
+        if skipped_sea:
+            print(f"   {skipped_sea} water ring(s) mostly outside the coast — "
+                  f"left to the sea pass")
         if sunk:
             print(f"   sank {sunk} grid cells under {len(rings)} water polygons")
         if kept_w:
             print(f"   kept {kept_w} of those dry — they carry a road or a building")
+        probe(grid, "water-sink")
 
     # ---- THE SEA IS EVERYTHING OUTSIDE THE COASTLINE (2026-08-03) ---------
     # Copernicus smears the shore: a 35m cell blending jungle hill into beach
@@ -828,37 +997,6 @@ def main():
     # `coast` layer in metre space. The ways chain into the island's closed
     # ring; every grid cell OUTSIDE every ring sinks to sea floor, with a
     # one-cell lip at land height so the coast slopes rather than steps.
-    cw = [c["p"] for c in data.get("coast", []) if len(c.get("p", [])) >= 2]
-    coast_rings = []
-    if cw:
-        def _keyp(p):
-            return (round(p[0] / 1.5), round(p[1] / 1.5))
-        ways2 = [list(w) for w in cw]
-        changed = True
-        while changed and len(ways2) > 1:
-            changed = False
-            for a in range(len(ways2)):
-                for b in range(a + 1, len(ways2)):
-                    A, B = ways2[a], ways2[b]
-                    if _keyp(A[-1]) == _keyp(B[0]):
-                        ways2[a] = A + B[1:]
-                    elif _keyp(A[-1]) == _keyp(B[-1]):
-                        ways2[a] = A + list(reversed(B))[1:]
-                    elif _keyp(A[0]) == _keyp(B[-1]):
-                        ways2[a] = B + A[1:]
-                    elif _keyp(A[0]) == _keyp(B[0]):
-                        ways2[a] = list(reversed(B)) + A[1:]
-                    else:
-                        continue
-                    del ways2[b]
-                    changed = True
-                    break
-                if changed:
-                    break
-        for w in ways2:
-            if len(w) >= 8 and math.hypot(w[0][0] - w[-1][0], w[0][1] - w[-1][1]) < 30:
-                coast_rings.append(w)
-        # refuse rather than guess: unclosed fragments sink nothing
     if coast_rings:
         def _inside(px, pz, ring):
             c = False
@@ -913,7 +1051,7 @@ def main():
             for i in range(grid["nx"]):
                 gx = grid["x0"] + i * CELL
                 k = j * grid["nx"] + i
-                if grid["h"][k] <= -1.5:
+                if grid["h"][k] <= -1.9:
                     continue
                 if any(_inside(gx, gz, r) for r in coast_rings):
                     continue
@@ -930,6 +1068,38 @@ def main():
             print(f"   kept {kept_built} cells dry — they carry a road or a building")
         if sunk_sea:
             print(f"   sank {sunk_sea} cells outside {len(coast_rings)} coastline ring(s) — the open sea")
+        probe(grid, "sea-sink")
+
+        # A BLUFF IS NOT A BEACH. Every pass below exists to fix LOW coast —
+        # DEM smear over sand reads 5-16m and must be eased, cut and smoothed
+        # into the beach the survey says is there. Fort Siloso is why they must
+        # not touch HIGH coast: the headland's western arm is narrower than the
+        # beach reach, so all three passes ran over a real 40-50m hill and
+        # carved it to 2.5-8m — a 39m error that passed every gate, because a
+        # flattened hill is smooth. The test is the 3x3 MEDIAN of the cell's
+        # own neighbourhood before any shore pass runs: an isolated 20m
+        # building spike amid sand keeps a low median and is still smoothed
+        # away (the torn-cardboard fix stays), but a cell whose whole
+        # neighbourhood is high is a hill, and the sea meets it as a cliff —
+        # which is what Siloso Point IS.
+        CLIFF_H = 18.0
+        Hpre = list(grid["h"])
+        bluff = [False] * len(Hpre)
+        for j in range(grid["nz"]):
+            for i in range(grid["nx"]):
+                k = j * grid["nx"] + i
+                if Hpre[k] <= CLIFF_H:
+                    continue
+                neigh = []
+                for dj in (-1, 0, 1):
+                    for di in (-1, 0, 1):
+                        ni, nj = i + di, j + dj
+                        if 0 <= ni < grid["nx"] and 0 <= nj < grid["nz"]:
+                            neigh.append(Hpre[nj * grid["nx"] + ni])
+                if statistics.median(neigh) > CLIFF_H:
+                    bluff[k] = True
+        if any(bluff):
+            print(f"   {sum(bluff)} cells classified bluff — shore passes keep off")
 
         # THE SHORE SLOPES. Sinking only the outside leaves the DEM's smeared
         # 10-35m coast standing as a one-cell CLIFF into the water. A shore is
@@ -944,7 +1114,7 @@ def main():
             gz = grid["z0"] + j * CELL
             for i in range(grid["nx"]):
                 k = j * grid["nx"] + i
-                if H0[k] <= -1.5 or H0[k] > 40.0:
+                if H0[k] <= -1.9 or bluff[k]:
                     continue
                 gx = grid["x0"] + i * CELL
                 if on_building(gx, gz):
@@ -955,7 +1125,7 @@ def main():
                         ni, nj = i + di, j + dj
                         if ni < 0 or nj < 0 or ni >= grid["nx"] or nj >= grid["nz"]:
                             continue
-                        if H0[nj * grid["nx"] + ni] <= -1.5:
+                        if H0[nj * grid["nx"] + ni] <= -1.9:
                             best = min(best, max(abs(di), abs(dj)))
                 if best > 3:
                     continue
@@ -965,6 +1135,7 @@ def main():
                     eased += 1
         if eased:
             print(f"   eased {eased} shore cells into a beach profile")
+        probe(grid, "shore-ease")
 
         # THE BEACH IS CUT FROM THE SURVEYED COASTLINE, NOT FROM THE DEM.
         #
@@ -998,8 +1169,8 @@ def main():
             gz = grid["z0"] + j * CELL
             for i in range(grid["nx"]):
                 k = j * grid["nx"] + i
-                if grid["h"][k] <= SEA_SINK:
-                    continue                     # already sea
+                if grid["h"][k] <= SEA_SINK or bluff[k]:
+                    continue                     # already sea, or a real hill
                 gx = grid["x0"] + i * CELL
                 if not any(_inside(gx, gz, r) for r in coast_rings):
                     continue                     # seaward of the coast
@@ -1014,6 +1185,7 @@ def main():
                     cut += 1
         if cut:
             print(f"   cut {cut} cells to a beach profile off the surveyed coastline")
+        probe(grid, "beach-cut")
 
         # THE COAST WAS SCALLOPED INTO CLIFFS, and the easing above is why.
         # It pulls open shore down to a ramp but SKIPS cells under buildings —
@@ -1038,7 +1210,7 @@ def main():
         for j in range(grid["nz"]):
             for i in range(grid["nx"]):
                 k = j * grid["nx"] + i
-                if grid["h"][k] <= -1.5:
+                if grid["h"][k] <= -1.9:
                     continue
                 found = False
                 for dj in range(-SHORE_BAND, SHORE_BAND + 1):
@@ -1047,7 +1219,7 @@ def main():
                     for di in range(-SHORE_BAND, SHORE_BAND + 1):
                         ni, nj = i + di, j + dj
                         if 0 <= ni < grid["nx"] and 0 <= nj < grid["nz"] \
-                                and grid["h"][nj * grid["nx"] + ni] <= -1.5:
+                                and grid["h"][nj * grid["nx"] + ni] <= -1.9:
                             found = True
                             break
                 near_sea[k] = found
@@ -1058,7 +1230,7 @@ def main():
                 gz = grid["z0"] + j * CELL
                 for i in range(grid["nx"]):
                     k = j * grid["nx"] + i
-                    if not near_sea[k] or src[k] <= -1.5:
+                    if not near_sea[k] or src[k] <= -1.9 or bluff[k]:
                         continue
                     gx = grid["x0"] + i * CELL
                     # BUILDING CELLS SMOOTH TOO, WITHIN LIMITS — and the first
@@ -1088,7 +1260,7 @@ def main():
                             if not (0 <= ni < grid["nx"] and 0 <= nj < grid["nz"]):
                                 continue
                             v = src[nj * grid["nx"] + ni]
-                            if v <= -1.5:
+                            if v <= -1.9:
                                 v = SEA_SINK      # the sea pulls the ramp down into itself
                             w = 2.0 if (di == 0 and dj == 0) else 1.0
                             tot += v * w
@@ -1112,6 +1284,7 @@ def main():
                         smoothed += 1
         if smoothed:
             print(f"   smoothed {smoothed} shore-band cell writes into a coast")
+        probe(grid, "shore-smooth")
 
     # store relative to the lowest point, so the world sits near y=0
     #
