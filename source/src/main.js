@@ -5,7 +5,7 @@ import { Terrain } from './terrain.js';
 import { dedupeMaterials, lambertise, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
 import { Solid } from './solid.js';
-import { buildVespa, buildRider, buildCar, buildSkate, buildSkater, SKATE_WHEEL_X as SK_WHEEL_X, newState, step, RIDE, CAR, SKATE } from './vespa.js';
+import { buildVespa, buildRider, buildCar, buildSkate, buildSkater, SKATE_WHEEL_X as SK_WHEEL_X, newState, step, RIDE, CAR, SKATE, SURFACES, SURF_ROAD } from './vespa.js';
 import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
 import { Net } from './net.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
@@ -295,6 +295,7 @@ window.__underCanopy = (x, z) => {
 // road and nothing objected. The bike and the walker keep using the raw
 // building test below, because they are supposed to be on the road.
 let ROADIX = null;
+let PATHIX = null;      // footways/pedestrian/steps, for the surface model
 // the whole region's data, unioned at boot, for passes that must see across a
 // chunk boundary (see the shopfront index)
 let REGIONB = null;
@@ -2535,6 +2536,9 @@ async function buildRegion(data, opts = {}) {
   // standing in the street, including the row you meet at the spawn point.
   ROADIX = buildRoadIndex(opts.regionData || data, data.axis || null);
   window.__onRoad = (x, z, m, ex) => ROADIX.onRoad(x, z, m || 0, ex || null);
+  // ...and the footways, for the surface model. See surfaceKindAt().
+  PATHIX = buildRoadIndex(opts.regionData || data, null, { paths: true });
+  window.__onPath = (x, z, m) => PATHIX.onRoad(x, z, m || 0, null);
   window.__nearestStreet = (x, z) => ROADIX.nearestName(x, z);
   // the direction of the carriageway under a point, so a check can ask whether
   // something is laid ACROSS the road or along it
@@ -3042,6 +3046,9 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   signals = new Signals(furniture.signals || [], furniture.lensMesh || null);
   window.__signalsSys = signals;
   if (axis) wayfinder = new Wayfinder(data, axis);
+  // the map is now the travel interface, so a vet harness has to be able to
+  // open it, read which pins survived clustering, and select one
+  window.__wayfinder = wayfinder;
   window.__axis = axis;
   window.__roadList = data.roads.filter((r) => r.k !== 'footway' && r.k !== 'pedestrian');
   const people = crowdSys ? crowdSys.people.length : 0;
@@ -3840,6 +3847,78 @@ window.__boom = () => {
   return { at: [S.x | 0, S.z | 0], full: C.back, got: boomClear(S.x, S.z, bx, bz, C.back), walls, nTrees };
 };
 
+// WHAT IS UNDER THE BOARD, and it has to be cheap enough to ask every frame.
+//
+// Four grid lookups, no raycast, no scene walk — the same shape as every other
+// per-frame question in this file. Ordered by what wins: a carriageway is a
+// carriageway even if it crosses a park, and a mapped footpath beats the
+// ground it is laid on (paths are how you get around Sentosa, and classifying
+// them by the grass underneath would have made the whole island feel like a
+// bog).
+function surfaceKindAt(x, z) {
+  if (window.__onRoad && window.__onRoad(x, z, 0)) return 'road';
+  // A DECK OVERRIDES THE GROUND UNDER IT, and a ROAD bridge is a road.
+  //
+  // These two ran last, under the green tests, and the Sentosa Gateway came
+  // back as TIMBER: the causeway carries a deck, `onRoad` did not claim that
+  // particular point, and the boardwalk rule caught it — a 500m tarmac
+  // causeway classified as planking. Road bridges are asked about first and
+  // separately from footbridges and piers, which are the only timber here.
+  if (typeof bridgeDeckAt === 'function' && bridgeDeckAt(x, z) !== null) return 'road';
+  if (typeof anyDeckAt === 'function' && anyDeckAt(x, z) !== null) return 'timber';
+  const T = window.__terrain;
+  const green = (T && T.greenAt) ? T.greenAt(x, z) : null;
+  if (window.__onPath && window.__onPath(x, z, 0)) {
+    // a trail through the woods is dirt; everything else paved is paved
+    return green === 'wood' ? 'dirt' : 'paved';
+  }
+  if (green === 'sand') return 'sand';
+  if (green === 'wood') return 'dirt';
+  if (green) return 'grass';                       // grass, park, golf, pitch
+  // NO `land` TEST HERE, and it is not an oversight. A parcel index was built
+  // for plazas and car parks and measured dead: all 2,141 sampled cells inside
+  // a mapped land parcel are ALSO inside a green ring, so the green test above
+  // claims every one of them first. Measured 2026-08-05; do not add it back
+  // without re-measuring that.
+  // UNCLASSIFIED GROUND BESIDE A WAY IS HARDSTANDING, NOT FIELD.
+  //
+  // The default below is 'grass', which matches what the terrain shader paints
+  // on unclassified ground (greenFrac) and is right for a hillside. It is
+  // wrong for the metre of kerb, verge and forecourt either side of every road
+  // and path on the island — and the guard in data/surfcheck.mjs caught the
+  // worst case of that immediately: THE SPAWN POINT classified as grass, so
+  // the game opened with the board at 55% speed before the player had moved.
+  //
+  // A generous margin off the carriageway, and a smaller one off a footway,
+  // covers the forecourts and verges without reaching open ground.
+  if (window.__onRoad && window.__onRoad(x, z, 6)) return 'paved';
+  if (window.__onPath && window.__onPath(x, z, 4)) return 'paved';
+  // ...and beyond that it really is vegetation.
+  return 'grass';
+}
+
+// ...AND IT BLENDS. Snapping the profile at a kerb reads as hitting something.
+// A ~0.28s blend means riding onto sand SINKS into it over about a second
+// (the profile eases, then the bog term in step() bleeds the excess speed),
+// which is what leaving the road actually feels like.
+const _sfNow = { vMax: 1, coast: 1, pump: 1, grip: 1, rumble: 0 };
+let _sfKind = 'road';
+function surfaceNow(x, z, dt) {
+  _sfKind = surfaceKindAt(x, z);
+  const t = SURFACES[_sfKind] || SURF_ROAD;
+  const k = Math.min(1, dt / 0.28);
+  for (const key of ['vMax', 'coast', 'pump', 'grip', 'rumble']) {
+    _sfNow[key] += (t[key] - _sfNow[key]) * k;
+  }
+  return _sfNow;
+}
+// so a probe, the HUD and the audio can all name the same surface
+window.__surface = () => ({ kind: _sfKind, ..._sfNow });
+// the raw classifier at any point, for data/surfcheck.mjs — a spot check of
+// where the RIDER happens to be cannot tell a working classifier from one
+// that answers the same thing everywhere
+window.__surfaceKindAt = (x, z) => surfaceKindAt(x, z);
+
 function driveCamera(dt) {
   if (SPEC) {
     camera.position.set(SPEC[0], SPEC[1], SPEC[2]);
@@ -4431,10 +4510,11 @@ function loop(now) {
     // everything else keeps the clamped dt and merely slow-mos through
     // the jank, which is cosmetic.
     {
+      const SF = surfaceNow(S.x, S.z, dt);
       let realDt = Math.min(0.24, rawDt);
       while (realDt > 0.0001) {
         const slice = Math.min(0.05, realDt);
-        step(S, slice, inp.throttle, inp.brake, inp.steer, rideParams);
+        step(S, slice, inp.throttle, inp.brake, inp.steer, rideParams, SF);
         realDt -= slice;
       }
     }
@@ -4562,7 +4642,21 @@ function loop(now) {
   // camera), so the labels are updated against the camera actually drawing.
   if (PLACES) PLACES.update(activeCam);
   updateGuide(S.x, S.z, now);
-  if (ready && window.__ff === undefined) {
+  // NOTHING IS RENDERED BEHIND THE OPEN MAP.
+  //
+  // The map is an opaque full-screen canvas, and the world kept drawing at
+  // full rate underneath it — 1.4M triangles and ~509 draws per frame that
+  // nobody can see. It is not only waste: it is what starved the place card's
+  // slide-in, which measured 50ms of CSS transition taking over 700ms of wall
+  // clock to finish because the main thread never had a gap (2026-08-05, the
+  // map-travel check). Skipping the render frees the thread for the interface
+  // that IS on screen, and stops a phone cooking while someone reads the map.
+  //
+  // The loop itself keeps running: the wayfinder needs its per-frame update to
+  // know where you are, and the map redraws from that.
+  const mapUp = document.body.classList.contains('mapopen');
+  if (mapUp) { /* the map is the frame */ }
+  else if (ready && window.__ff === undefined) {
     const tF = performance.now();
     renderer.render(scene, activeCam);
     window.__ff = Math.round(performance.now() - tF);

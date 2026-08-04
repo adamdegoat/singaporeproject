@@ -10,7 +10,14 @@
 
 const CELL = 40;
 
-export function buildRoadIndex(data, axis) {
+// `opts.paths` builds the MIRROR of this index: the footways, pedestrian
+// streets and steps that the carriageway index deliberately excludes. The
+// surface model needs both — a paved footpath rolls like a road, and without
+// this index every path on the island classified as whatever ground lay under
+// it, which is usually grass. Paths are how you get around Sentosa; making
+// them feel like grass would have been worse than having no surfaces at all.
+export function buildRoadIndex(data, axis, opts = {}) {
+  const PATHS = !!opts.paths;
   const grid = new Map();
   let segs = 0;
 
@@ -31,14 +38,15 @@ export function buildRoadIndex(data, axis) {
 
   for (const r of (data.roads || [])) {
     // footways and pedestrian streets are places you walk, not carriageways
-    if (r.k === 'footway' || r.k === 'pedestrian' || r.k === 'steps') continue;
-    const half = (r.w || 6) / 2;
+    const isPath = r.k === 'footway' || r.k === 'pedestrian' || r.k === 'steps';
+    if (isPath !== PATHS) continue;
+    const half = (r.w || (PATHS ? 2.4 : 6)) / 2;
     for (let i = 0; i < r.p.length - 1; i++) {
       add(r.p[i][0], r.p[i][1], r.p[i + 1][0], r.p[i + 1][1], half, r.n || null);
     }
   }
   // the stitched main axis is wider than the fragments it was built from
-  if (axis) {
+  if (axis && !PATHS) {
     const half = axis.w / 2;
     for (let i = 0; i < axis.p.length - 1; i++) {
       add(axis.p[i][0], axis.p[i][1], axis.p[i + 1][0], axis.p[i + 1][1], half, axis.n || 'Orchard Road');

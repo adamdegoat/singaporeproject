@@ -4,7 +4,7 @@
 import * as THREE from '../lib/three.module.js';
 import { wardrobeMats } from './wardrobe.js';
 
-export { RIDE, CAR, SKATE, newState, step, turnRadius } from './ride.js';
+export { RIDE, CAR, SKATE, SURFACES, SURF_ROAD, newState, step, turnRadius } from './ride.js';
 
 /* ================= model ================= */
 const BODY = 0x9fc4b8;      // classic pale mint

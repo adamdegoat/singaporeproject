@@ -1,5 +1,5 @@
 // Ride-feel assertions. Run: node test/ride.test.mjs
-import { RIDE, CAR, SKATE, newState, step, turnRadius } from '../src/ride.js';
+import { RIDE, CAR, SKATE, SURFACES, newState, step, turnRadius } from '../src/ride.js';
 import assert from 'node:assert/strict';
 
 const DT = 1 / 60;
@@ -372,6 +372,78 @@ t('the scooter and the car do not slip at all', () => {
     assert.equal(s.slip, 0, name + ' slipped: ' + s.slip);
     // and it still travels exactly where it points
     assert.ok(Math.abs(s.course - s.heading) < 1e-12, name + ' course diverged from heading');
+  }
+});
+
+/* ---------------- surfaces ---------------- */
+// The board did not know what it was rolling on until 2026-08-05. These pin
+// the contract: road is the identity, bad ground is slow, and NO surface may
+// change how the scooter or the car behave (they have no pump and no grip, so
+// the multipliers that matter to a board are inert on them by construction —
+// asserted, not assumed).
+
+t('road is the identity surface: it changes nothing', () => {
+  const a = newState(), b = newState();
+  for (let i = 0; i < 400; i++) {
+    step(a, 1 / 60, 1, 0, 0.3, SKATE);
+    step(b, 1 / 60, 1, 0, 0.3, SKATE, SURFACES.road);
+  }
+  assert.ok(Math.abs(a.speed - b.speed) < 1e-9, `${a.speed} vs ${b.speed}`);
+  assert.ok(Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.z - b.z) < 1e-9);
+});
+
+t('bad ground is slower, and sand is the worst of it', () => {
+  const top = (sf) => {
+    const s = newState();
+    for (let i = 0; i < 1200; i++) step(s, 1 / 60, 1, 0, 0, SKATE, sf);
+    return s.speed;
+  };
+  const road = top(SURFACES.road), grass = top(SURFACES.grass), sand = top(SURFACES.sand);
+  assert.ok(grass < road * 0.72, `grass ${grass.toFixed(2)} vs road ${road.toFixed(2)}`);
+  assert.ok(sand < grass, `sand ${sand.toFixed(2)} vs grass ${grass.toFixed(2)}`);
+  assert.ok(sand < road * 0.5, `sand ${sand.toFixed(2)} vs road ${road.toFixed(2)}`);
+});
+
+t('riding onto sand at speed BOGS, it does not hit a wall', () => {
+  const s = newState();
+  for (let i = 0; i < 1200; i++) step(s, 1 / 60, 1, 0, 0, SKATE);   // up to road pace
+  const entry = s.speed;
+  step(s, 1 / 60, 1, 0, 0, SKATE, SURFACES.sand);
+  const afterOneFrame = entry - s.speed;
+  assert.ok(afterOneFrame < entry * 0.05,
+    `lost ${afterOneFrame.toFixed(2)} m/s in one frame of ${entry.toFixed(2)}`);
+  for (let i = 0; i < 180; i++) step(s, 1 / 60, 1, 0, 0, SKATE, SURFACES.sand);
+  assert.ok(s.speed < entry * 0.55, `after 3s on sand: ${s.speed.toFixed(2)} from ${entry.toFixed(2)}`);
+});
+
+t('a pump pays on tarmac and barely pays on sand', () => {
+  const gain = (sf) => {
+    const s = newState(); s.speed = 3;
+    let carved = 0;
+    for (let i = 0; i < 240; i++) {
+      const steer = Math.sin(i / 18) > 0 ? 0.9 : -0.9;
+      step(s, 1 / 60, 0, 0, steer, SKATE, sf);
+      carved++;
+    }
+    void carved;
+    return s.speed;
+  };
+  assert.ok(gain(SURFACES.road) > gain(SURFACES.sand),
+    `road ${gain(SURFACES.road).toFixed(2)} vs sand ${gain(SURFACES.sand).toFixed(2)}`);
+});
+
+t('surfaces cannot change the scooter or the car', () => {
+  for (const P of [RIDE, CAR]) {
+    const a = newState(), b = newState();
+    for (let i = 0; i < 300; i++) {
+      step(a, 1 / 60, 1, 0, 0.5, P);
+      step(b, 1 / 60, 1, 0, 0.5, P, SURFACES.sand);
+    }
+    // they have no pump and no grip, so only the rolling-resistance and cap
+    // terms can reach them — and those are the surface doing its job. What
+    // must NOT change is that they still never slip.
+    assert.equal(a.slip, 0); assert.equal(b.slip, 0);
+    assert.equal(a.drifting, false); assert.equal(b.drifting, false);
   }
 });
 

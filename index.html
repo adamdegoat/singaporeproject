@@ -67,30 +67,33 @@
     color:#12161b;background:#e8ddc6;border:0;border-radius:22px;
     box-shadow:0 2px 8px rgba(0,0,0,.35)}
   #bigzoom button:active{background:#cfc4ad}
-  /* ONE small teleport pill that opens a dropdown list — a row of seven
-     pills covered the map on a phone (user feedback, 2026-07-30) */
-  #tpbar{position:absolute;left:calc(12px + env(safe-area-inset-left));
-    top:12px;z-index:3}
-  #tpbtn{font:600 11px/1 ui-sans-serif,system-ui,Helvetica,Arial;
-    letter-spacing:.05em;text-transform:uppercase;color:#12161b;
-    background:#e8ddc6;border:0;padding:10px 13px;border-radius:18px;
-    box-shadow:0 2px 8px rgba(0,0,0,.35)}
-  #tpbtn:active{background:#cfc4ad}
-  /* Sized to hold every district WITHOUT scrolling where it can: at seven it
-     fit inside 62vh and at eight it did not, which is when the list first had
-     to scroll and the scroll turned out to be broken. 76vh holds eight on a
-     390px-tall landscape phone with the tighter row height below. It still
-     scrolls past that — a ninth district must not be unreachable. */
-  #tplist{display:none;margin-top:8px;flex-direction:column;gap:2px;
-    background:rgba(16,20,24,.96);border:1px solid rgba(232,221,198,.22);
-    border-radius:14px;padding:5px;max-height:min(76vh,420px);overflow-y:auto;
-    overscroll-behavior:contain;
-    -webkit-overflow-scrolling:touch;width:max-content}
-  #tplist.on{display:flex}
-  #tplist button{font:500 13px/1 ui-sans-serif,system-ui,Helvetica,Arial;
-    color:#e8ddc6;background:none;border:0;text-align:left;
-    padding:9px 14px 9px 11px;border-radius:9px;white-space:nowrap}
-  #tplist button:active{background:#e8ddc6;color:#12161b}
+  /* THE TELEPORT PILL IS GONE (owner, 2026-08-05). It listed DISTRICTS, which
+     is a leftover from when the game had eight of them; with one island it
+     offered a single entry while the island's actual attractions sat on the
+     map as dots you could not touch. The map itself is the way you travel now:
+     tap a pin, read what the place is, go. */
+  #mapcard{position:absolute;left:50%;transform:translateX(-50%) translateY(120%);
+    bottom:calc(14px + env(safe-area-inset-bottom));z-index:5;
+    width:min(430px,calc(100vw - 28px));
+    background:#f7efdd;border-radius:16px;padding:14px 16px 13px;
+    box-shadow:0 10px 34px rgba(0,0,0,.42);
+    transition:transform .18s cubic-bezier(.22,.9,.3,1),opacity .18s;
+    opacity:0;pointer-events:none}
+  #mapcard.on{transform:translateX(-50%) translateY(0);opacity:1;pointer-events:auto}
+  #mapcard .mk{font:600 10px/1 ui-sans-serif,system-ui,Helvetica,Arial;
+    letter-spacing:.11em;text-transform:uppercase;color:#8a6a4a}
+  #mapcard .mn{font:650 19px/1.22 ui-sans-serif,system-ui,Helvetica,Arial;
+    color:#20262c;margin:5px 0 4px}
+  #mapcard .mt{font:400 13px/1.45 ui-sans-serif,system-ui,Helvetica,Arial;
+    color:#4d5560}
+  #mapcard .mrow{display:flex;align-items:center;gap:10px;margin-top:11px}
+  #mapcard .md{font:500 12px/1 ui-sans-serif,system-ui,Helvetica,Arial;color:#7b8590;flex:1}
+  #mapcard button{font:650 13px/1 ui-sans-serif,system-ui,Helvetica,Arial;
+    color:#f7efdd;background:#1f6f5c;border:0;padding:12px 20px;border-radius:22px}
+  #mapcard button:active{background:#17594a}
+  #mapcard .mx{position:absolute;right:8px;top:8px;width:32px;height:32px;
+    background:none;color:#8a8f96;padding:0;border-radius:16px;font-size:17px}
+  #mapcard .mx:active{background:rgba(0,0,0,.07);color:#20262c}
   #vehiclebtn{position:fixed;right:calc(10px + env(safe-area-inset-right));
     bottom:calc(52px + env(safe-area-inset-bottom));
     font:600 11px/1 ui-sans-serif,-apple-system,Helvetica,Arial;
@@ -201,14 +204,18 @@
 <canvas id="map" width="248" height="248"></canvas>
 <div id="maphint">tap map</div>
 <div id="big">
-    <div id="tpbar">
-      <button id="tpbtn">Teleport</button>
-      <div id="tplist"></div>
-    </div>
   <canvas id="bigmap"></canvas>
   <button id="bigclose" type="button">Close</button>
-  <div id="bigkey"><b>&#9679;</b> you<br>
-    <span style="opacity:.75">pinch or drag to zoom &middot; Close when done</span></div>
+  <div id="bigkey"><b style="color:#ff9e18">&#9679;</b> you<br>
+    <span style="opacity:.75">tap a place to travel &middot; pinch to zoom</span></div>
+  <div id="mapcard">
+    <button class="mx" id="mapcardx" type="button">&times;</button>
+    <div class="mk" id="mapcardk"></div>
+    <div class="mn" id="mapcardn"></div>
+    <div class="mt" id="mapcardt"></div>
+    <div class="mrow"><span class="md" id="mapcardd"></span>
+      <button id="mapcardgo" type="button">Go here</button></div>
+  </div>
   <div id="bigzoom">
     <button id="zoomin" type="button">+</button>
     <button id="zoomout" type="button">&minus;</button>

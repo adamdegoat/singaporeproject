@@ -305,6 +305,216 @@ export async function buildSignage(world, axis, data, isBlocked, Y = null) {
 const COMPASS = ['north', 'north east', 'east', 'south east',
   'south', 'south west', 'west', 'north west'];
 
+/* ---------------- the island map: palette, pins, glyphs ---------------- */
+//
+// A PRINTED TOURIST MAP, not a diagram. The owner asked for "a fun sentosa map
+// design like game concept that is visually nice and easy for ppl to
+// understand", and picked this look over a dark game map. Sentosa's own
+// visitor maps are warm paper with a green island on a pale sea, so this is
+// also the honest reference rather than a house style.
+//
+// Every colour is muted except the pins. That is the whole trick: the map is
+// background, the places you can go are foreground.
+const MAPCOL = {
+  sea: '#a9d2d4',
+  land: '#f2e6cd',
+  landFar: '#e2dac6',   // Keppel, Brani, the far shore: present, not the subject
+  lagoon: '#7fc3c9',
+  road: '#fffaf0',
+  roadCase: '#d8c4a0',
+  path: 'rgba(150,124,88,0.55)',
+  bld: 'rgba(198,180,150,0.42)',
+  green: {
+    wood: '#9dbf8a',
+    park: '#b6d3a0',
+    grass: '#c3daad',
+    golf: '#a9cf94',
+    pitch: '#b9d2a6',
+    sand: '#f4e3bb',
+    pool: '#8fcbd4',
+  },
+};
+
+// The pin families, and a glyph for each. NO EMOJI — the repo's design rules
+// forbid them in anything customer-facing, and a canvas emoji renders
+// differently on every device anyway. These are drawn from paths.
+const PIN_CAT = {
+  ride:     { c: '#e2603f', g: 'ride' },
+  water:    { c: '#2f9bb5', g: 'wave' },
+  beach:    { c: '#e0a53c', g: 'wave' },
+  heritage: { c: '#6b7f9e', g: 'fort' },
+  nature:   { c: '#4f9463', g: 'tree' },
+  view:     { c: '#3f8f7a', g: 'view' },
+  food:     { c: '#c2565f', g: 'food' },
+  stay:     { c: '#8a6a9e', g: 'bed' },
+  transport:{ c: '#557089', g: 'rail' },
+  other:    { c: '#7b8590', g: 'dot' },
+};
+
+// OSM kind -> family. Anything unlisted falls to `other` rather than being
+// dropped: a pin with a generic glyph is still a place you can travel to.
+const PIN_FAMILY = {
+  theme_park: 'ride', roller_coaster: 'ride', amusement_ride: 'ride',
+  dark_ride: 'ride', summer_toboggan: 'ride', bungee_jumping: 'ride',
+  attraction: 'ride', zip_line: 'ride',
+  aquarium: 'water', water_park: 'water', swimming_area: 'water',
+  beach: 'beach',
+  fort: 'heritage', ruins: 'heritage', castle: 'heritage', museum: 'heritage',
+  artwork: 'heritage', city_gate: 'heritage', cannon: 'heritage',
+  viewpoint: 'view',
+  nature_reserve: 'nature', garden: 'nature',
+  restaurant: 'food', bar: 'food', cafe: 'food',
+  hotel: 'stay', resort: 'stay',
+  station: 'transport',
+};
+
+// What the card calls each family, in a visitor's words rather than OSM's.
+const PIN_LABEL = {
+  ride: 'attraction', water: 'on the water', beach: 'beach',
+  heritage: 'history', nature: 'nature', view: 'viewpoint',
+  food: 'food and drink', stay: 'hotel', transport: 'getting around',
+  other: 'place',
+};
+
+function drawGlyph(g, kind, cx, cy, r, col) {
+  g.save();
+  g.translate(cx, cy);
+  g.strokeStyle = col; g.fillStyle = col;
+  g.lineWidth = Math.max(1, r * 0.30);
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  g.beginPath();
+  switch (kind) {
+    case 'ride':      // a big wheel: a hub and four spokes
+      g.arc(0, 0, r * 0.86, 0, Math.PI * 2); g.stroke();
+      g.beginPath();
+      for (let i = 0; i < 4; i++) {
+        const a = i * Math.PI / 4;
+        g.moveTo(-Math.cos(a) * r * 0.86, -Math.sin(a) * r * 0.86);
+        g.lineTo(Math.cos(a) * r * 0.86, Math.sin(a) * r * 0.86);
+      }
+      g.stroke();
+      break;
+    case 'wave':      // two waves
+      for (const dy of [-r * 0.34, r * 0.34]) {
+        g.moveTo(-r, dy);
+        g.quadraticCurveTo(-r * 0.5, dy - r * 0.55, 0, dy);
+        g.quadraticCurveTo(r * 0.5, dy + r * 0.55, r, dy);
+      }
+      g.stroke();
+      break;
+    case 'fort':      // a battlement
+      g.moveTo(-r, r * 0.8); g.lineTo(-r, -r * 0.25); g.lineTo(-r * 0.45, -r * 0.25);
+      g.lineTo(-r * 0.45, -r * 0.75); g.lineTo(r * 0.45, -r * 0.75);
+      g.lineTo(r * 0.45, -r * 0.25); g.lineTo(r, -r * 0.25); g.lineTo(r, r * 0.8);
+      g.closePath(); g.stroke();
+      break;
+    case 'tree':
+      g.moveTo(0, r); g.lineTo(0, -r * 0.1); g.stroke();
+      g.beginPath(); g.arc(0, -r * 0.42, r * 0.62, 0, Math.PI * 2); g.fill();
+      break;
+    case 'view':      // an eye
+      g.moveTo(-r, 0);
+      g.quadraticCurveTo(0, -r * 0.95, r, 0);
+      g.quadraticCurveTo(0, r * 0.95, -r, 0);
+      g.stroke();
+      g.beginPath(); g.arc(0, 0, r * 0.28, 0, Math.PI * 2); g.fill();
+      break;
+    case 'food':      // fork and knife
+      g.moveTo(-r * 0.42, -r * 0.85); g.lineTo(-r * 0.42, r * 0.85);
+      g.moveTo(r * 0.42, -r * 0.85); g.lineTo(r * 0.42, r * 0.85);
+      g.moveTo(-r * 0.78, -r * 0.85); g.lineTo(-r * 0.78, -r * 0.15);
+      g.stroke();
+      break;
+    case 'bed':
+      g.moveTo(-r, r * 0.6); g.lineTo(-r, -r * 0.4);
+      g.moveTo(-r, r * 0.1); g.lineTo(r, r * 0.1); g.lineTo(r, r * 0.6);
+      g.stroke();
+      g.beginPath(); g.arc(-r * 0.42, -r * 0.2, r * 0.3, 0, Math.PI * 2); g.fill();
+      break;
+    case 'rail':
+      g.moveTo(-r * 0.7, -r * 0.85); g.lineTo(-r * 0.7, r * 0.85);
+      g.moveTo(r * 0.7, -r * 0.85); g.lineTo(r * 0.7, r * 0.85);
+      g.moveTo(-r, -r * 0.4); g.lineTo(r, -r * 0.4);
+      g.moveTo(-r, r * 0.4); g.lineTo(r, r * 0.4);
+      g.stroke();
+      break;
+    default:
+      g.arc(0, 0, r * 0.55, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+}
+
+// EVERY PIN IS A REAL PLACE WITH A TRUE LINE ABOUT IT.
+//
+// data/entrances.py already produced 54 attraction gates each carrying a name
+// and a sentence a stationed guide says, and those sentences were researched
+// rather than invented — so the map card reuses them instead of writing new
+// copy. Attractions with no entrance still become pins; they just show their
+// kind instead of a description, which is honest and not a blank.
+// OSM MISSPELLINGS DO NOT GO ON A MAP PEOPLE READ. The extract carries both
+// 'Palawan Beach' and 'Palavan Beach' as separate sand rings; the second is a
+// typo for the first, and Sentosa has three beaches, not four. The map's SHAPE
+// is truth — a misspelled label is not shape, it is a data error, and it would
+// be the most visible thing on the screen.
+const NAME_FIX = { 'Palavan Beach': 'Palawan Beach' };
+
+function buildPins(data) {
+  const byName = new Map();
+  for (const e of (data.entrances || [])) {
+    if (e.n) byName.set(e.n.toLowerCase(), e);
+  }
+  const out = [];
+  const seen = new Set();
+  const push = (n0, k, x, z, t, major) => {
+    const n = NAME_FIX[n0] || n0;
+    // beaches and parks are mapped as several rings; one pin each
+    const key = (n || '').toLowerCase() + (major ? '' : '|' + Math.round(x) + ',' + Math.round(z));
+    if (!n || seen.has(key)) return;
+    seen.add(key);
+    out.push({
+      id: out.length, n, cat: PIN_FAMILY[k] || 'other', kind: k,
+      x, z, t: t || null, major: !!major,
+    });
+  };
+
+  for (const a of (data.attractions || [])) {
+    if (!a.n || !a.p || typeof a.p[0] !== 'number') continue;
+    const e = byName.get(a.n.toLowerCase());
+    // A cannon is not a destination — there are fourteen of them at Fort
+    // Siloso and they would bury the fort itself.
+    if (a.k === 'cannon') continue;
+    push(a.n, a.k, a.p[0], a.p[1], e ? e.t : null,
+      a.k === 'theme_park' || a.k === 'aquarium' || a.k === 'fort' || a.k === 'museum');
+  }
+  // beaches and the big named greens, which are most of why people come
+  for (const q of (data.green || [])) {
+    if (!q.n || !q.p || q.p.length < 3) continue;
+    if (q.k !== 'sand' && q.k !== 'park') continue;
+    let x = 0, z = 0;
+    for (const [px, pz] of q.p) { x += px; z += pz; }
+    push(q.n, q.k === 'sand' ? 'beach' : 'nature_reserve',
+      x / q.p.length, z / q.p.length, null, true);
+  }
+  // the monorail stations, because "how do I get to the other end" is the
+  // first thing anyone asks about Sentosa
+  for (const t of (data.termini || [])) {
+    if (!t.n || !t.p) continue;
+    const px = typeof t.p[0] === 'number' ? t.p : t.p[0];
+    push(t.n, 'station', px[0], px[1], 'Sentosa Express station.', false);
+  }
+  // hotels, from the named buildings that carry one
+  for (const h of (data.hotels || [])) {
+    if (!h.n || !h.p) continue;
+    const px = typeof h.p[0] === 'number' ? h.p : h.p[0];
+    push(h.n, 'hotel', px[0], px[1], null, false);
+  }
+  // Biggest first, so the clustering below keeps the landmark and drops the
+  // kiosk beside it rather than the other way round.
+  out.sort((a, b) => (b.major ? 1 : 0) - (a.major ? 1 : 0));
+  out.forEach((p, i) => { p.id = i; });
+  return out;
+}
+
 export class Wayfinder {
   constructor(data, axis) {
     this.data = data;
@@ -324,6 +534,7 @@ export class Wayfinder {
     this._last = null;
 
     this._wireTap();
+    this._wireCard();
   }
 
   // Re-derive everything that was snapshotted from `data`. The streamed
@@ -427,60 +638,13 @@ export class Wayfinder {
     }
     // ONE small Teleport pill opening a dropdown list — the first version
     // was a row of seven pills and covered the map on a phone. The list is
-    // rebuilt on every open because districts stream in over time.
-    const tpbtn = document.getElementById('tpbtn');
-    const tplist = document.getElementById('tplist');
-    const tpToggle = (e) => {
-      if (e) { e.preventDefault(); e.stopPropagation(); }
-      if (!tplist) return;
-      tplist.classList.toggle('on');
-    };
-    if (tpbtn) {
-      tpbtn.addEventListener('click', tpToggle);
-      tpbtn.addEventListener('touchstart', tpToggle, { passive: false });
-    }
-    this._fillTpbar = () => {
-      if (!tplist) return;
-      tplist.classList.remove('on');   // opens closed each time
-      tplist.innerHTML = '';
-      // A TAP IS NOT A SCROLL, AND THIS LIST NOW SCROLLS.
-      //
-      // Every entry fired on TOUCHSTART with preventDefault, which is fine for
-      // a button you can always see and fatal for one in a scrolling list: a
-      // finger placed on an entry to drag the list teleported instead, and the
-      // map closed under it. It only became reachable when the eighth district
-      // pushed the list past 62vh — at seven it fit and never needed to scroll,
-      // so the bug shipped invisible. The user found it the first evening
-      // Little India existed, trying to reach Little India.
-      //
-      // So: remember where the finger went down, and only act on touchEND if it
-      // barely moved. Anything else is a scroll and is left alone — no
-      // preventDefault, or the list cannot move at all.
-      for (const d of (window.__districts || [])) {
-        const btn = document.createElement('button');
-        btn.textContent = d.name;
-        const fire = () => {
-          tplist.classList.remove('on');
-          if (window.__teleportTo && window.__teleportTo(d.id)) this.setOpen(false);
-        };
-        btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); fire(); });
-        let tx = 0, ty = 0, tt = 0, moved = false;
-        btn.addEventListener('touchstart', (e) => {
-          const t = e.touches[0];
-          tx = t.clientX; ty = t.clientY; tt = Date.now(); moved = false;
-        }, { passive: true });
-        btn.addEventListener('touchmove', (e) => {
-          const t = e.touches[0];
-          if (Math.hypot(t.clientX - tx, t.clientY - ty) > 10) moved = true;
-        }, { passive: true });
-        btn.addEventListener('touchend', (e) => {
-          if (moved || Date.now() - tt > 700) return;   // that was a scroll
-          e.preventDefault(); e.stopPropagation();
-          fire();
-        }, { passive: false });
-        tplist.appendChild(btn);
-      }
-    };
+    // THE DISTRICT TELEPORT LIST IS GONE (owner, 2026-08-05). It listed the
+    // eight-district world's districts; with one island it offered one entry
+    // while the island's own attractions sat on the map untouchable. Travel is
+    // the map now — see _wireCard(). The careful tap-vs-scroll handling that
+    // list grew is not lost: a pin tap uses the same "did the finger move"
+    // rule, for the same reason.
+    this._fillTpbar = null;
     const close = document.getElementById('bigclose');
     if (close) {
       close.addEventListener('click', shut);
@@ -495,13 +659,21 @@ export class Wayfinder {
     this.zoom = 1; this.panX = 0; this.panZ = 0;
     if (this.bigMap) {
       let pt = null, startD = 0, startZ = 1, sx = 0, sy = 0, spx = 0, spz = 0;
+      // A TAP IS NOT A DRAG. Same rule the old teleport list had to learn: a
+      // finger put down to pan the map must not also select whatever pin it
+      // happened to land on. Remember where it went down and only treat it as
+      // a tap if it barely moved.
+      let tapX = 0, tapY = 0, tapT = 0, tapMoved = false;
       const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
       const redraw = () => { if (this._last) this._drawBig(this._last); };
       this.bigMap.addEventListener('touchstart', (e) => {
         e.preventDefault(); e.stopPropagation();
         const t = e.touches;
-        if (t.length === 2) { pt = 'pinch'; startD = dist(t) || 1; startZ = this.zoom; }
-        else { pt = 'pan'; sx = t[0].clientX; sy = t[0].clientY; spx = this.panX; spz = this.panZ; }
+        if (t.length === 2) { pt = 'pinch'; startD = dist(t) || 1; startZ = this.zoom; tapMoved = true; }
+        else {
+          pt = 'pan'; sx = t[0].clientX; sy = t[0].clientY; spx = this.panX; spz = this.panZ;
+          tapX = t[0].clientX; tapY = t[0].clientY; tapT = Date.now(); tapMoved = false;
+        }
       }, { passive: false });
       this.bigMap.addEventListener('touchmove', (e) => {
         e.preventDefault(); e.stopPropagation();
@@ -511,10 +683,15 @@ export class Wayfinder {
         } else if (pt === 'pan' && t.length === 1) {
           this.panX = spx + (t[0].clientX - sx);
           this.panZ = spz + (t[0].clientY - sy);
+          if (Math.hypot(t[0].clientX - tapX, t[0].clientY - tapY) > 9) tapMoved = true;
         }
         redraw();
       }, { passive: false });
-      this.bigMap.addEventListener('touchend', (e) => { e.stopPropagation(); pt = null; });
+      this.bigMap.addEventListener('touchend', (e) => {
+        e.stopPropagation();
+        if (pt === 'pan' && !tapMoved && Date.now() - tapT < 700) this._tap(tapX, tapY);
+        pt = null;
+      });
       // and a wheel, for anyone on a laptop
       this.bigMap.addEventListener('wheel', (e) => {
         e.preventDefault();
@@ -531,6 +708,12 @@ export class Wayfinder {
         this.panX = spx + (e.clientX - sx); this.panZ = spz + (e.clientY - sy); redraw();
       });
       addEventListener('mouseup', () => { md = false; });
+      // and a plain click selects, for anyone on a laptop
+      this.bigMap.addEventListener('click', (e) => {
+        if (Math.hypot(e.clientX - sx, e.clientY - sy) > 9) return;   // that was a drag
+        this._tap(e.clientX, e.clientY);
+      });
+      this.bigMap.addEventListener('mousedown', (e) => { sx = e.clientX; sy = e.clientY; });
     }
     const zin = document.getElementById('zoomin');
     const zout = document.getElementById('zoomout');
@@ -547,9 +730,75 @@ export class Wayfinder {
     addEventListener('keydown', (e) => { if (e.code === 'KeyM') this.setOpen(!this.open); });
   }
 
+  /* ---------- tap a place, read what it is, go there ---------- */
+
+  // The hit test measures against `_shown` — the pins the last draw actually
+  // PUT ON SCREEN, with the screen positions it gave them. Re-projecting here
+  // would be a second copy of the projection and a second thing to drift, and
+  // it would also let you tap a pin that clustering had hidden.
+  _tap(clientX, clientY) {
+    const r = this.bigMap.getBoundingClientRect();
+    const dpr = (this._proj && this._proj.dpr) || 1;
+    const px = (clientX - r.left) * dpr, py = (clientY - r.top) * dpr;
+    let best = null, bestD = Infinity;
+    for (const p of (this._shown || [])) {
+      const d = Math.hypot(p.px - px, p.py - py);
+      if (d < bestD) { bestD = d; best = p; }
+    }
+    // A THUMB IS NOT A PIXEL. 26 logical px of slack, which is roughly the
+    // 44px target the rest of this interface is built to.
+    if (best && bestD < 26 * dpr) this._select(best);
+    else this._select(null);
+  }
+
+  _select(pin) {
+    this.selected = pin;
+    const card = document.getElementById('mapcard');
+    if (card) card.classList.toggle('on', !!pin);
+    if (pin) {
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      set('mapcardk', PIN_LABEL[pin.cat] || 'place');
+      set('mapcardn', pin.n);
+      // NO INVENTED COPY. If research never produced a line for this place the
+      // card says what KIND of place it is and stops. Making something up here
+      // would be the one thing this project does not do.
+      set('mapcardt', pin.t || '');
+      const el = document.getElementById('mapcardt');
+      if (el) el.style.display = pin.t ? '' : 'none';
+      const S = this._last;
+      set('mapcardd', S ? `${Math.round(Math.hypot(pin.x - S.x, pin.z - S.z))} m away` : '');
+    }
+    if (this._last) this._drawBig(this._last);
+  }
+
+  _wireCard() {
+    const go = document.getElementById('mapcardgo');
+    const x = document.getElementById('mapcardx');
+    const fire = (e) => {
+      if (e) { e.preventDefault(); e.stopPropagation(); }
+      const p = this.selected;
+      if (!p) return;
+      // Face the way you were already facing; arriving spun round to face
+      // north for no reason is disorienting.
+      const h = this._last ? this._last.heading : 0;
+      if (window.__teleport) window.__teleport(p.x, p.z, h);
+      this._select(null);
+      this.setOpen(false);
+    };
+    const shut = (e) => { if (e) { e.preventDefault(); e.stopPropagation(); } this._select(null); };
+    if (go) {
+      go.addEventListener('click', fire);
+      go.addEventListener('touchend', fire, { passive: false });
+    }
+    if (x) {
+      x.addEventListener('click', shut);
+      x.addEventListener('touchend', shut, { passive: false });
+    }
+  }
+
   setOpen(v) {
-    if (v && this._fillTpbar) this._fillTpbar();
     this.open = !!v;
+    if (!this.open) this._select(null);
     if (this.big) this.big.classList.toggle('on', this.open);
     document.body.classList.toggle('mapopen', this.open);
     if (this.open && this._last) this._drawBig(this._last);
@@ -678,6 +927,25 @@ export class Wayfinder {
 
   /* ---------- the whole street ---------- */
 
+  // THE ISLAND MAP.
+  //
+  // What this replaced, and why (owner, 2026-08-05): "the mini map need to
+  // change. Now look too basic and not fun. Its supposes to be a fun sentosa
+  // map design like game concept that is visually nice and easy for ppl to
+  // understand. And like can click on map to teleport to attractions."
+  //
+  // The old map drew grey road centrelines and grey building footprints on
+  // black — a technical diagram of the geometry. And travel lived in a
+  // TELEPORT pill listing DISTRICTS, a leftover from the eight-district world:
+  // with one island it offered one entry, while the island's 54 real
+  // attractions sat on the map as unlabelled dots you could not touch.
+  //
+  // So this is drawn as a printed tourist map instead — paper, sea, the green
+  // mass, beaches, roads as ribbons — and every attraction is a PIN you tap.
+  // The pill is gone; the map is how you travel.
+  //
+  // It is still one canvas and no images: the whole thing is paths and text,
+  // which is what keeps it cheap enough to redraw on every pan frame.
   _drawBig(S) {
     if (!this.bigCtx) return;
     const dpr = Math.min(2, devicePixelRatio || 1);
@@ -688,146 +956,261 @@ export class Wayfinder {
     }
     const g = this.bigCtx;
     g.setTransform(1, 0, 0, 1, 0, 0);
-    g.clearRect(0, 0, W, H);
 
     const { mnx, mxx, mnz, mxz } = this.bounds;
-    const pad = 30 * dpr;
-    // zoom and pan, so the map can actually be read at street level
+    const pad = 26 * dpr;
     const zoom = this.zoom || 1;
     const k = Math.min((W - pad * 2) / (mxx - mnx), (H - pad * 2) / (mxz - mnz)) * zoom;
     const ox = (W - (mxx - mnx) * k) / 2 - mnx * k + (this.panX || 0) * dpr;
     const oz = (H - (mxz - mnz) * k) / 2 - mnz * k + (this.panZ || 0) * dpr;
     const X = (x) => x * k + ox, Z = (z) => z * k + oz;
+    // the projection the tap handler measures against — kept on the instance
+    // so a hit test can never disagree with what was drawn
+    this._proj = { X, Z, k, dpr };
 
+    const C = MAPCOL;
     g.lineCap = 'round'; g.lineJoin = 'round';
-    g.strokeStyle = 'rgba(74,82,90,0.9)';
-    for (const r of this.data.roads) {
-      if (r.k === 'footway' || r.k === 'pedestrian') continue;
-      g.lineWidth = Math.max(1, (r.w || 7) * k * 0.7);
+
+    /* ---- the sea, and the paper it is printed on ---- */
+    g.fillStyle = C.sea;
+    g.fillRect(0, 0, W, H);
+
+    const ring = (pts) => {
+      g.beginPath();
+      pts.forEach(([x, z], i) => (i ? g.lineTo(X(x), Z(z)) : g.moveTo(X(x), Z(z))));
+      g.closePath();
+    };
+
+    /* ---- the island ---- */
+    // A soft shadow under the coast so the land sits ON the water rather than
+    // being a hole cut in it. This one shadow is most of why the map reads as
+    // printed rather than as a diagram.
+    // THE ISLAND IS THE SUBJECT; THE MAINLAND IS THE FRAME.
+    //
+    // The extract keeps Keppel, Brani and the far shore on purpose (see
+    // SENTOSA.md), and drawing every coast ring the same cream made the
+    // mainland the brightest mass on a map of Sentosa. The ring the PLAYER is
+    // standing in is the island — that is the only test that cannot be fooled
+    // by which ring happens to be biggest — and everything else is drawn back.
+    const coasts = (this.data.coast || []).filter((c) => c.p && c.p.length > 2);
+    const inRing = (x, z, pts) => {
+      let h = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const xi = pts[i][0], zi = pts[i][1], xj = pts[j][0], zj = pts[j][1];
+        if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) h = !h;
+      }
+      return h;
+    };
+    if (this._island === undefined) {
+      this._island = coasts.find((c) => inRing(S.x, S.z, c.p)) || null;
+    }
+    g.fillStyle = C.landFar;
+    for (const c of coasts) { if (c !== this._island) { ring(c.p); g.fill(); } }
+    g.save();
+    g.shadowColor = 'rgba(24,58,66,0.34)';
+    g.shadowBlur = 13 * dpr; g.shadowOffsetY = 3 * dpr;
+    g.fillStyle = C.land;
+    if (this._island) { ring(this._island.p); g.fill(); }
+    g.restore();
+
+    /* ---- what the land is made of ---- */
+    // Drawn biggest-first so a beach inside a park is not painted over by it.
+    const greens = (this.data.green || []).filter((q) => q.p && q.p.length > 2);
+    const order = { golf: 0, park: 1, grass: 2, wood: 3, pitch: 4, sand: 5, pool: 6 };
+    for (const q of [...greens].sort((a, b) => (order[a.k] ?? 9) - (order[b.k] ?? 9))) {
+      const col = C.green[q.k];
+      if (!col) continue;
+      g.fillStyle = col; ring(q.p); g.fill();
+    }
+    // THE SEA IS NOT A LAGOON. The `water` layer holds both the sea sheet —
+    // which spans the whole extract — and the inland ponds. Painting them all
+    // the lagoon colour drew a hard-edged teal RECTANGLE across the map where
+    // the sea sheet ended, which was the first thing the eye went to. Big
+    // water is the sea and takes the sea colour it is already sitting on;
+    // small water is a pond and gets the brighter teal.
+    for (const w of (this.data.water || [])) {
+      if (!w.p || w.p.length < 3) continue;
+      let mnx2 = Infinity, mxx2 = -Infinity, mnz2 = Infinity, mxz2 = -Infinity;
+      for (const [x, z] of w.p) {
+        if (x < mnx2) mnx2 = x; if (x > mxx2) mxx2 = x;
+        if (z < mnz2) mnz2 = z; if (z > mxz2) mxz2 = z;
+      }
+      const big = (mxx2 - mnx2) > 900 || (mxz2 - mnz2) > 900;
+      g.fillStyle = big ? C.sea : C.lagoon;
+      ring(w.p); g.fill();
+    }
+
+    /* ---- roads, as ribbons with a casing ---- */
+    // Two passes: every casing, then every fill. One pass per road draws each
+    // road's casing over its neighbour's fill and the junctions come apart.
+    const roads = (this.data.roads || []).filter(
+      (r) => r.p && r.p.length > 1 && r.k !== 'footway' && r.k !== 'pedestrian' && r.k !== 'steps');
+    const rw = (r) => Math.max(1.1 * dpr, (r.w || 7) * k * 0.68);
+    const line = (r) => {
       g.beginPath();
       r.p.forEach(([x, z], i) => (i ? g.lineTo(X(x), Z(z)) : g.moveTo(X(x), Z(z))));
       g.stroke();
-    }
-    g.fillStyle = 'rgba(190,199,208,0.32)';
-    for (const b of this.data.buildings) {
-      g.beginPath();
-      b.p.forEach(([x, z], i) => (i ? g.lineTo(X(x), Z(z)) : g.moveTo(X(x), Z(z))));
-      g.closePath(); g.fill();
+    };
+    g.strokeStyle = C.roadCase;
+    for (const r of roads) { g.lineWidth = rw(r) + 2.4 * dpr; line(r); }
+    g.strokeStyle = C.road;
+    for (const r of roads) { g.lineWidth = rw(r); line(r); }
+    // footpaths, dashed and thin — they are how you get around on foot and
+    // leaving them off made the island look emptier than it is
+    if (zoom > 1.6) {
+      g.save();
+      g.strokeStyle = C.path;
+      g.lineWidth = Math.max(1, 1.5 * dpr);
+      g.setLineDash([4 * dpr, 4 * dpr]);
+      for (const r of (this.data.roads || [])) {
+        if (!r.p || r.p.length < 2) continue;
+        if (r.k !== 'footway' && r.k !== 'pedestrian') continue;
+        line(r);
+      }
+      g.restore();
     }
 
-    // DISTRICTS THAT HAVE NOT BEEN BUILT ARE STILL PART OF THE CITY. Boot
-    // fetches every chunk and builds only the near ones, so the geometry for
-    // Little India is sitting in memory while the map draws nothing there —
-    // which is why the teleport list offered a place the map could not show.
-    // Drawn dimmer than the built districts, because "not here yet" is honest
-    // and a blank rectangle is not.
-    {
-      const recs = window.__streamRecs || [];
-      g.strokeStyle = 'rgba(74,82,90,0.45)';
-      for (const r of recs) {
-        if (r.pushed || !r.ch || !Array.isArray(r.ch.roads)) continue;
-        for (const rd of r.ch.roads) {
-          if (rd.k === 'footway' || rd.k === 'pedestrian') continue;
-          g.lineWidth = Math.max(1, (rd.w || 7) * k * 0.7);
-          g.beginPath();
-          rd.p.forEach(([x, z], i) => (i ? g.lineTo(X(x), Z(z)) : g.moveTo(X(x), Z(z))));
-          g.stroke();
-        }
-      }
-      g.fillStyle = 'rgba(190,199,208,0.16)';
-      for (const r of recs) {
-        if (r.pushed || !r.ch || !Array.isArray(r.ch.buildings)) continue;
-        for (const b of r.ch.buildings) {
-          g.beginPath();
-          b.p.forEach(([x, z], i) => (i ? g.lineTo(X(x), Z(z)) : g.moveTo(X(x), Z(z))));
-          g.closePath(); g.fill();
-        }
-      }
+    /* ---- buildings, quiet on purpose ---- */
+    // They are context, not content: the pins are what you are looking for,
+    // and 1,095 filled footprints at full contrast bury them.
+    g.fillStyle = C.bld;
+    for (const b of (this.data.buildings || [])) {
+      if (!b.p || b.p.length < 3) continue;
+      ring(b.p); g.fill();
     }
-    // (the amber axis line is gone from this map too — the user read the
-    // highlighted street as a glitch on the minimap, and a real map should
-    // highlight nothing but YOU. Same decision, both maps, 2026-07-30.)
 
-    // DISTRICT NAMES FIRST, and they always get their space. Reserving their
-    // boxes before the building labels means a district can never be crowded
-    // off its own map by a shopping centre — the user went looking for Little
-    // India on this map twice and found nothing, which is the failure this
-    // whole block exists to prevent.
-    const taken = [];
-    {
-      g.font = `700 ${Math.round(13 * dpr)}px ui-sans-serif,system-ui,Helvetica,Arial`;
+    /* ---- the pins ---- */
+    // Built once (they do not move), hit-tested by the tap handler against the
+    // same projection this draw used.
+    const pins = this._pins || (this._pins = buildPins(this.data));
+    // Cluster by dropping pins that would land on top of one another at this
+    // zoom: at island scale 54 pins is pin soup and nothing is readable. The
+    // SELECTED pin always survives, or tapping one would make it vanish.
+    const shown = [];
+    const near = (a, b, d) => Math.hypot(a.px - b.px, a.py - b.py) < d;
+    const minGap = 34 * dpr;
+    const sel = this.selected;
+    for (const p of pins) {
+      p.px = X(p.x); p.py = Z(p.z);
+      if (p.px < -40 * dpr || p.px > W + 40 * dpr || p.py < -40 * dpr || p.py > H + 40 * dpr) continue;
+      const isSel = sel && sel.id === p.id;
+      if (!isSel && shown.some((q) => near(p, q, minGap))) continue;
+      shown.push(p);
+    }
+    this._shown = shown;
+
+    // MEASURE, THEN DECIDE, THEN DRAW. The first cut drew the label and then
+    // erased it with clearRect when it collided — which punches a hole in the
+    // map, because there is a map under it.
+    // FOUR PLACES A LABEL CAN GO, not one.
+    //
+    // With only "below the pin" available, FORT SILOSO — the biggest thing on
+    // the west of the island — lost its name to a collision with the Trickeye
+    // PIN 86px away, while Trickeye kept its own. A label that has nowhere to
+    // go should move, not vanish. Below first (it reads best under a marker),
+    // then above, then out to either side.
+    const labelBoxes = (p, big) => {
+      g.font = `${big ? 650 : 600} ${Math.round((big ? 12 : 11) * dpr)}px `
+        + 'ui-sans-serif,system-ui,Helvetica,Arial';
+      const tw = g.measureText(p.n).width;
+      const w2 = tw + 12 * dpr, h2 = 17 * dpr, r2 = (big ? 13 : 10) * dpr;
+      return [
+        [p.px - w2 / 2, p.py + r2 + 3 * dpr, w2, h2],
+        [p.px - w2 / 2, p.py - r2 - 3 * dpr - h2, w2, h2],
+        [p.px + r2 + 4 * dpr, p.py - h2 / 2, w2, h2],
+        [p.px - r2 - 4 * dpr - w2, p.py - h2 / 2, w2, h2],
+      ];
+    };
+    const drawLabel = (p, big, box) => {
+      g.font = `${big ? 650 : 600} ${Math.round((big ? 12 : 11) * dpr)}px `
+        + 'ui-sans-serif,system-ui,Helvetica,Arial';
+      g.fillStyle = big ? 'rgba(32,38,44,0.94)' : 'rgba(255,252,244,0.92)';
+      g.beginPath(); g.roundRect(box[0], box[1], box[2], box[3], 5 * dpr); g.fill();
+      g.fillStyle = big ? '#f7efdd' : '#3d444c';
       g.textAlign = 'center'; g.textBaseline = 'middle';
-      for (const d of (window.__districts || [])) {
-        const px2 = X(d.x), pz2 = Z(d.z);
-        const w = g.measureText(d.name).width + 14 * dpr, h = 18 * dpr;
-        if (px2 < 4 || px2 > W - 4 || pz2 < 4 || pz2 > H - 4) continue;
-        // NUDGE, DO NOT DROP. Bras Basah and Bugis overlap at this scale
-        // because their axis midpoints are 300m apart; dropping one would put
-        // us back to a district you cannot find on the map. Step vertically
-        // until clear, alternating up and down so a label stays near its own
-        // district rather than drifting off in one direction.
-        const hits = (bx, bz) => taken.some((t) => bx < t[0] + t[2] && bx + w > t[0]
-          && bz < t[1] + t[3] && bz + h > t[1]);
-        let ly = pz2;
-        for (let n2 = 1; n2 <= 6 && hits(px2 - w / 2, ly - h / 2); n2++) {
-          ly = pz2 + (n2 % 2 ? 1 : -1) * Math.ceil(n2 / 2) * (h + 3 * dpr);
-        }
-        taken.push([px2 - w / 2, ly - h / 2, w, h]);
-        g.fillStyle = 'rgba(16,20,24,0.55)';
-        g.beginPath();
-        g.roundRect(px2 - w / 2, ly - h / 2, w, h, 5 * dpr);
-        g.fill();
-        g.fillStyle = 'rgba(255,238,205,0.96)';
-        g.fillText(d.name, px2, ly);
+      g.fillText(p.n, box[0] + box[2] / 2, box[1] + box[3] / 2);
+    };
+
+    // SEED THE COLLISION SET WITH THE PINS THEMSELVES. Labels were only
+    // tested against other labels, so a name landed on top of a neighbouring
+    // pin — 'Madame Tussauds Singapore' sat across two of them in the first
+    // render. The pin is the thing you tap; nothing may cover it.
+    const taken = shown.map((p) => {
+      const rr = ((sel && sel.id === p.id) ? 13 : 10) * dpr + 2 * dpr;
+      return [p.px - rr, p.py - rr, rr * 2, rr * 2];
+    });
+    // LANDMARKS CLAIM THEIR LABEL FIRST. Drawn in pin order, Trickeye and
+    // Scentopia took the space and FORT SILOSO — the thing people come for —
+    // came out unlabelled. The circles are all drawn first so no pin is ever
+    // missing; only the naming is prioritised.
+    for (const p of shown) {
+      const isSel = sel && sel.id === p.id;
+      const cat = PIN_CAT[p.cat] || PIN_CAT.other;
+      const r = (isSel ? 13 : 10) * dpr;
+      g.save();
+      g.shadowColor = 'rgba(20,40,45,0.35)';
+      g.shadowBlur = 5 * dpr; g.shadowOffsetY = 1.5 * dpr;
+      g.fillStyle = cat.c;
+      g.beginPath(); g.arc(p.px, p.py, r, 0, Math.PI * 2); g.fill();
+      g.restore();
+      g.strokeStyle = 'rgba(255,252,244,0.95)';
+      g.lineWidth = 2 * dpr;
+      g.beginPath(); g.arc(p.px, p.py, r, 0, Math.PI * 2); g.stroke();
+      // the glyph: paths, never emoji — see the design rules in the repo
+      drawGlyph(g, cat.g, p.px, p.py, r * 0.62, '#fffcf4');
+      void 0;
+    }
+    for (const p of [...shown].sort((a, b) => (b.major ? 1 : 0) - (a.major ? 1 : 0)
+        + ((sel && sel.id === b.id) ? 2 : 0) - ((sel && sel.id === a.id) ? 2 : 0))) {
+      const isSel = sel && sel.id === p.id;
+      // Only label what there is room for, and always label the selection.
+      if (!(isSel || zoom > 1.35 || p.major)) continue;
+      let box = null;
+      for (const cand of labelBoxes(p, isSel)) {
+        // A CLIPPED LABEL IS WORSE THAN NO LABEL: the first render shipped
+        // 'ntopia' and 'g ruins' at the screen edges.
+        if (cand[0] < 4 * dpr || cand[0] + cand[2] > W - 4 * dpr
+            || cand[1] < 4 * dpr || cand[1] + cand[3] > H - 4 * dpr) continue;
+        const hit = taken.some((t) => cand[0] < t[0] + t[2] && cand[0] + cand[2] > t[0]
+          && cand[1] < t[1] + t[3] && cand[1] + cand[3] > t[1]);
+        if (!hit) { box = cand; break; }
       }
-    }
-
-    // Label the biggest places, and only as many as will not collide. A map
-    // with forty overlapping labels is less readable than one with none.
-    g.font = `600 ${Math.round(11 * dpr)}px ui-sans-serif,system-ui,Helvetica,Arial`;
-    g.textAlign = 'left'; g.textBaseline = 'middle';
-    let placed = 0;
-    for (const p of this.places) {
-      if (placed >= 22) break;
-      const px = X(p.x), pz = Z(p.z);
-      const w = g.measureText(p.n).width + 10 * dpr, h = 15 * dpr;
-      const box = [px + 5 * dpr, pz - h / 2, w, h];
-      if (box[0] + w > W - 8 || box[1] < 8 || box[1] + h > H - 8) continue;
-      if (taken.some((t) => box[0] < t[0] + t[2] && box[0] + box[2] > t[0]
-        && box[1] < t[1] + t[3] && box[1] + box[3] > t[1])) continue;
+      if (!box) continue;
       taken.push(box);
-      g.fillStyle = 'rgba(255,255,255,0.92)';
-      g.beginPath(); g.arc(px, pz, 2.6 * dpr, 0, Math.PI * 2); g.fill();
-      g.fillStyle = 'rgba(238,233,222,0.9)';
-      g.fillText(p.n, px + 6 * dpr, pz);
-      placed++;
+      drawLabel(p, isSel, box);
     }
 
-    // you
+    /* ---- you ---- */
     const px = X(S.x), pz = Z(S.z);
     g.save();
     g.translate(px, pz);
     g.rotate(Math.atan2(Math.sin(S.heading), -Math.cos(S.heading)));
-    g.fillStyle = 'rgba(255,214,150,0.30)';
+    g.fillStyle = 'rgba(255,168,38,0.30)';
     g.beginPath(); g.moveTo(0, 0);
     g.arc(0, 0, 46 * dpr, -Math.PI / 2 - 0.40, -Math.PI / 2 + 0.40); g.closePath(); g.fill();
     g.restore();
-    g.fillStyle = '#ffd696';
-    g.beginPath(); g.arc(px, pz, 5.5 * dpr, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = 'rgba(11,15,19,0.9)'; g.lineWidth = 2 * dpr; g.stroke();
+    // AMBER, not the map's own green: a dark green dot on a green island is
+    // the one marker that must never be hunted for, and it was.
+    g.save();
+    g.shadowColor = 'rgba(0,0,0,0.45)'; g.shadowBlur = 7 * dpr;
+    g.fillStyle = '#ff9e18';
+    g.beginPath(); g.arc(px, pz, 7.5 * dpr, 0, Math.PI * 2); g.fill();
+    g.restore();
+    g.strokeStyle = '#2b2318'; g.lineWidth = 2.6 * dpr;
+    g.beginPath(); g.arc(px, pz, 7.5 * dpr, 0, Math.PI * 2); g.stroke();
 
-    // scale bar, in real metres
+    /* ---- scale ---- */
     const bar = 200 * k;
-    g.strokeStyle = 'rgba(240,235,222,0.7)'; g.lineWidth = 2 * dpr;
+    g.strokeStyle = 'rgba(45,60,66,0.6)'; g.lineWidth = 2 * dpr;
     const bx = W - bar - 20 * dpr, by = H - 22 * dpr;
     g.beginPath(); g.moveTo(bx, by); g.lineTo(bx + bar, by); g.stroke();
-    g.fillStyle = 'rgba(240,235,222,0.7)';
+    g.fillStyle = 'rgba(45,60,66,0.72)';
     g.font = `500 ${Math.round(11 * dpr)}px ui-sans-serif,system-ui,Helvetica,Arial`;
-    // RIGHT-ALIGNED to the bar's right end: centring a label wider than
-    // the bar pushed it off the screen edge and it shipped to the user's
-    // phone clipped. The text now grows leftwards over the map, never off.
+    // RIGHT-ALIGNED to the bar's right end: centring a label wider than the
+    // bar pushed it off the screen edge and it shipped to the user's phone
+    // clipped. The text grows leftwards over the map, never off.
     g.textAlign = 'right'; g.textBaseline = 'alphabetic';
-    g.fillText('scale: this line = 200 m', bx + bar, by - 6 * dpr);
+    g.fillText('this line = 200 m', bx + bar, by - 6 * dpr);
   }
 
   update(S, dt) {

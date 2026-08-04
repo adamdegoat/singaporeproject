@@ -83,10 +83,10 @@ export const SKATE = {
   drag: 0.010,
   wheelbase: 1.05,     // EFFECTIVE — see the note above
   steerMax: 0.80,
-  steerFalloff: 0.055, // a surf truck keeps its bite at speed
+  steerFalloff: 0.065, // a surf truck keeps its bite at speed
   leanMax: 0.80,       // the deck goes right over in a carve
   leanRate: 8.5,       // and it gets there fast
-  pump: 2.6,           // carving still pays, it is just no longer compulsory
+  pump: 2.2,           // carving still pays, it is just no longer compulsory
   // THE DRIFT. Low grip means the deck slides across its own direction of
   // travel before it hooks up; slipMax stops it ever swapping ends; slipDrag
   // makes the slide cost speed so holding a long drift is a decision.
@@ -131,20 +131,65 @@ export const SKATE = {
   // difficulty up abit"): holding a slide costs more, sloppy hook-ups sting
   // a little, and the tail rotates quicker so a deep slide is a thing you
   // MANAGE, not a thing that happens to you.
-  slipDragDrift: 0.8,  // being sideways now costs real speed — hold a slide
+  // DIFFICULTY UP A NOTCH AGAIN (owner, 2026-08-05: "make the skating
+  // difficulty just abit harder... in terms of the game feeling"). Explicitly
+  // NO wipeout — he ruled it out on the spot, "i scared irritate ppl" — so
+  // there is still no fail state and none should be added. The difficulty is
+  // in what a sloppy line COSTS, not in punishing it with a reset:
+  //   driftThrust 0.26 -> 0.19   the motor pulls less through a slide
+  //   slipDragDrift 0.8 -> 1.05  sideways costs more speed
+  //   hookScrub 0.22 -> 0.30     a sloppy exit stings
+  //   pump 2.6 -> 2.2            carve properly; a wiggle no longer pays
+  //   steerFalloff 0.055 -> 0.065  top speed is now a commitment
+  // 0.065 and not the 0.070 first tried: the looser-than-the-scooter
+  // contract in test/ride.test.mjs holds only below 0.0679 at 8 m/s, and
+  // that contract is the whole reason the board reads as a board.
+  // Together with the SURFACES above this is a real step up, because a missed
+  // line now puts you on grass and grass is slow.
+  slipDragDrift: 1.05, // being sideways now costs real speed — hold a slide
                        // because it is worth it, not because it is free
-  driftThrust: 0.26,   // the motor pulls through the slide like a slope would —
+  driftThrust: 0.19,   // the motor pulls through the slide like a slope would —
                        // sized so a held full slide bleeds ~0.4 m/s² AT THE 28 km/h
                        // CAP (the bleed/drag terms scale with speed, so this number
                        // moves whenever vMax does: 0.3 @9.2, 0.2 @5.556, 0.26 @7.778)
   driftYaw: 0.95,      // SLOW rotation in the slide, a touch more tail than before
-  hookScrub: 0.22,     // the same ~0.5 m/s hook-up toll at THIS cruise — the scrub
+  hookScrub: 0.30,     // the same ~0.5 m/s hook-up toll at THIS cruise — the scrub
                        // is speed-proportional so the coefficient tracks vMax
                        // (0.15 @9.2, 0.25 @5.556, 0.18 @7.778)
   cam: { back: 3.45, up: 1.95, aim: 5.6, fov: 57 },
 };
 
-export function step(s, dt, throttle, brakeIn, steer, P = RIDE) {
+// WHAT YOU ARE ROLLING ON.
+//
+// Until 2026-08-05 the board behaved identically on tarmac, plaza paving,
+// grass and beach sand — nothing in the physics knew what was under it, which
+// is most of why it read as arcadey. The owner: "can the skating be like more
+// realistic as in when it skate off the road or go into bad terrain it will
+// slow down".
+//
+// Each profile is a set of MULTIPLIERS on the vehicle's own numbers, so a
+// surface cannot invent behaviour a vehicle does not have — sand makes the
+// board's pump weak, and a vehicle with no pump is unaffected.
+//
+//   vMax   the top speed this surface will carry, as a fraction
+//   coast  rolling resistance multiplier — this is the "bogs down" feel
+//   pump   how much a carve still pays. On sand, almost nothing
+//   grip   lower grip means the tail steps out sooner and lingers
+//   rumble 0-1, for the renderer and the audio. Physics ignores it.
+//
+// ROAD IS THE DEFAULT AND IT IS ALL 1.0, so every existing caller and both
+// other vehicles are untouched — asserted in test/ride.test.mjs.
+export const SURFACES = {
+  road:   { vMax: 1.00, coast: 1.0, pump: 1.00, grip: 1.00, rumble: 0.00 },
+  paved:  { vMax: 1.00, coast: 1.1, pump: 1.00, grip: 1.00, rumble: 0.06 },
+  timber: { vMax: 0.96, coast: 1.3, pump: 0.95, grip: 0.98, rumble: 0.34 },
+  dirt:   { vMax: 0.75, coast: 2.4, pump: 0.70, grip: 0.86, rumble: 0.55 },
+  grass:  { vMax: 0.55, coast: 4.0, pump: 0.40, grip: 0.80, rumble: 0.46 },
+  sand:   { vMax: 0.35, coast: 7.0, pump: 0.15, grip: 0.72, rumble: 0.72 },
+};
+export const SURF_ROAD = SURFACES.road;
+
+export function step(s, dt, throttle, brakeIn, steer, P = RIDE, SF = SURF_ROAD) {
   // Reverse: keep holding the brake once you have stopped and it backs up.
   // No extra control to learn, which matters when you only have two thumbs.
   if (throttle > 0) { s.revHold = 0; s.reversing = false; }
@@ -168,11 +213,20 @@ export function step(s, dt, throttle, brakeIn, steer, P = RIDE) {
     const thrust = (s.drifting && P.driftThrust != null) ? P.driftThrust : 1;
     a = throttle * P.accel * push * thrust - brakeIn * P.brake * (s.speed > 0 ? 1 : 0);
   }
-  // rolling resistance and drag always oppose motion
+  // rolling resistance and drag always oppose motion — and rolling resistance
+  // is where the surface lives. Sand is seven times the road's.
   if (Math.abs(s.speed) > 0.05) {
     const dir = Math.sign(s.speed);
-    a -= dir * (P.coast + P.drag * s.speed * s.speed);
+    a -= dir * (P.coast * SF.coast + P.drag * s.speed * s.speed);
   }
+  // THE SURFACE'S OWN TOP SPEED, AND IT BOGS RATHER THAN WALLS.
+  //
+  // Clamping to the surface cap would stop you dead the instant a wheel
+  // touched grass, which reads as hitting an invisible barrier. Instead the
+  // excess over the cap is bled off — ride onto sand at speed and you sink
+  // into it over a second or so, which is what actually happens.
+  const vCap = P.vMax * SF.vMax;
+  if (s.speed > vCap) a -= (s.speed - vCap) * 2.2;
   // THE PUMP. Weighting the board through a carve drives it forward, so a hard
   // turn ADDS speed where every other vehicle here scrubs it. Three gates keep
   // it honest: it needs the board already rolling (you cannot pump from a
@@ -184,10 +238,13 @@ export function step(s, dt, throttle, brakeIn, steer, P = RIDE) {
   // No pumping while the tail is out: wheels sliding across the tarmac cannot
   // drive the board forward, and without this a held drift would be free
   // speed (pump 2.6 x carve beats the drift bleed of ~0.66 m/s²).
+  // ...and a pump only works if the wheels have something to push against.
+  // On sand it is worth almost nothing, which is what makes leaving the road
+  // a decision rather than a shortcut.
   if (P.pump && !s.reversing && !s.drifting && s.speed > 0.4) {
     const carve = Math.min(1, Math.abs(steer));
-    const room = Math.max(0, 1 - s.speed / P.vMax);
-    a += P.pump * carve * room * Math.min(1, (s.speed - 0.4) / 1.8);
+    const room = Math.max(0, 1 - s.speed / vCap);
+    a += P.pump * SF.pump * carve * room * Math.min(1, (s.speed - 0.4) / 1.8);
   }
   s.speed = Math.max(-P.vReverse, Math.min(P.vMax, s.speed + a * dt));
   // without a deadzone the coast term asymptotes and the scooter creeps forever
@@ -231,7 +288,8 @@ export function step(s, dt, throttle, brakeIn, steer, P = RIDE) {
     // hook-up scrub for however sideways it still was, once.
     if (P.driftIn) {
       if (!s.drifting) {
-        if (Math.abs(steer) >= (P.driftSteer || 0.5) && s.speed >= (P.driftMinV || 3)
+        // loose ground breaks traction on less steer than tarmac does
+        if (Math.abs(steer) >= (P.driftSteer || 0.5) * SF.grip && s.speed >= (P.driftMinV || 3)
             && Math.abs(d) >= P.driftIn) { s.drifting = true; s.driftDir = Math.sign(steer); }
       } else if (Math.abs(steer) < 0.18 || Math.sign(steer) !== s.driftDir
                  || s.speed < 1.2) {
@@ -251,7 +309,8 @@ export function step(s, dt, throttle, brakeIn, steer, P = RIDE) {
     const cap = (s.drifting && P.slipMaxDrift) ? P.slipMaxDrift : (P.slipMax || 0.5);
     if (d > cap) { s.course += d - cap; d = cap; }
     else if (d < -cap) { s.course += d + cap; d = -cap; }
-    const grip = (s.drifting && P.gripSlide) ? P.gripSlide : P.grip;
+    // loose ground lets the tail hang out longer before it hooks back up
+    const grip = ((s.drifting && P.gripSlide) ? P.gripSlide : P.grip) * SF.grip;
     s.course += d * Math.min(1, grip * dt);
     s.slip = s.heading - s.course;
     while (s.slip > Math.PI) s.slip -= Math.PI * 2;
