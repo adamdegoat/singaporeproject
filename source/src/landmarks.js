@@ -6150,6 +6150,91 @@ function trapizza(api, b) {
   api.merge(api.extrudeGeo(api.grow(b.p, 1.005), 0.7, 2.8), blue, ob.cx, ob.cz);
 }
 
+
+// ---- FESTIVE WALK: THE ETFE CANOPY RUN (research/rws-architecture.md §1.11)
+//
+// The single most important read at Resorts World, and the one the research
+// puts before every individual building (§1.0): "RWS does not read as a row of
+// buildings. It reads as one long curved ridge of pale barrel vaults." Roughly
+// 400m of parallel half-cylinders in pale silver-white — some of it Hotel
+// Michael's vaulted roof, some the ETFE canopy over the open walkways, and
+// "from outside you cannot tell them apart, and for our purposes you should
+// not try to."
+//
+// Festive Walk was the roof POLYGON extruded: a flat 7,700 m2 grey slab where
+// the resort's defining canopy should be.
+//
+// HOW IT IS MADE, from §1.11 measured off satellite at 0.3 m/px: "a field of
+// long rounded inflated pillows laid side by side like a row of cushions",
+// each 6-7m wide and 30-60m long with rounded ends. And the instruction the
+// research states outright: "One pillow, instanced and arrayed on a fan, is
+// the entire canopy." A capsule is a cylinder with hemispherical ends, which
+// is exactly an inflated pillow.
+//
+// NOTE FOR THE NEXT RECIPE: api.merge takes (GEOMETRY, MATERIAL, cx, cz) — not
+// a mesh. Passing a Mesh drew nothing at all and cost a render round.
+function festiveWalkCanopy(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  // Pale silver-white. Kept opaque: transparency would cost a sorted draw per
+  // pillow for a look nobody can resolve at range.
+  const etfe = new THREE.MeshStandardMaterial({
+    color: 0xeef0ee, roughness: 0.42, metalness: 0.05,
+  });
+  const rib = new THREE.MeshStandardMaterial({ color: 0xb9bdbe, roughness: 0.6, metalness: 0.3 });
+  const colM = new THREE.MeshStandardMaterial({ color: 0xd9d6cf, roughness: 0.65 });
+
+  const PILLOW_W = 6.6;                       // §1.11: 6-7m, measured
+  const long = ob.halfLong * 2, short = ob.halfShort * 2;
+  const n = Math.max(2, Math.round(short / PILLOW_W));
+  const r = PILLOW_W * 0.5;
+  // The canopy sits ON the walkway: the polygon's height is the walkway
+  // envelope and the pillows crown above it.
+  const deck = g0 + Math.max(4.2, (b.h || 5) - 0.6);
+
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n - 0.5;            // -0.5..0.5 across the short axis
+    const v = t * short;
+    // The run shortens toward the edges so the field reads as a rounded ridge
+    // rather than a rectangular slab with a corrugated top.
+    const taper = 1 - Math.pow(Math.abs(t) * 2, 2.2) * 0.18;
+    const len = Math.max(8, long * taper - r * 2);
+    const px = ob.bx - ob.uz * v, pz = ob.bz + ob.ux * v;
+    // a capsule's axis is Y, so lay it down onto the long axis first
+    const cap = new THREE.CapsuleGeometry(r, len, 4, 10);
+    cap.rotateX(Math.PI / 2);
+    cap.rotateY(-ob.ang);
+    cap.translate(px, deck + r * 0.62, pz);
+    api.merge(cap, etfe, ob.cx, ob.cz);
+    // the rib between pillows, which stops a row of cushions reading as one
+    // lumpy blanket
+    if (i < n - 1) {
+      const vr = (t + 0.5 / n) * short;
+      const rx = ob.bx - ob.uz * vr, rz = ob.bz + ob.ux * vr;
+      const bar = new THREE.BoxGeometry(0.34, 0.34, len * 0.98);
+      bar.rotateY(-ob.ang);
+      bar.translate(rx, deck + r * 0.30, rz);
+      api.merge(bar, rib, ob.cx, ob.cz);
+    }
+  }
+  // Columns down both edges, so 180m of canopy is not floating. Slim, because
+  // the real ones are: the span is carried by the inflated field, not by posts.
+  const steps = Math.max(2, Math.round(long / 22));
+  for (let s = 0; s <= steps; s++) {
+    const u = (s / steps - 0.5) * (long - r * 2);
+    for (const sgn of [-1, 1]) {
+      const v = sgn * (short * 0.5 - r * 0.55);
+      const px = ob.bx + ob.ux * u - ob.uz * v;
+      const pz = ob.bz + ob.uz * u + ob.ux * v;
+      const h = deck - g0 + r * 0.2;
+      const col = new THREE.CylinderGeometry(0.22, 0.26, h, 8);
+      col.translate(px, g0 + h / 2, pz);
+      api.merge(col, colM, ob.cx, ob.cz);
+    }
+  }
+  return true;
+}
+
 export const RECIPES = [
   [/^emerald pavilion/i, emeraldPavilion],
   [/^coastes/i, coastesBar],
@@ -6161,6 +6246,7 @@ export const RECIPES = [
   [/^hotel ora|^festive hotel/i, hotelOra],
   [/^equarius hotel/i, equariusHotel],
   [/^weave$/i, weave],
+  [/^festive walk/i, festiveWalkCanopy],
   [/^singapore cable car station/i, cableCarStation],
   // SENTOSA — see the research block above this table. Hotel Michael's name is
   // carried by the main mass AND several small annexe footprints, which is

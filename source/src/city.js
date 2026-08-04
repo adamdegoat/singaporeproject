@@ -1922,6 +1922,22 @@ export async function buildBuildings(world, data, Y = null) {
     // slab it is, on slim columns around the ring; no wall ever reaches the
     // Solid grid, so the paths under it are open the way they are in life.
     if (b.roof) {
+      // A NAMED RECIPE OUTRANKS THE GENERIC SLAB. This branch's own note says
+      // "a big or sloped roof structure needs a real recipe; until it has one,
+      // refuse rather than invent" — so when one exists, use it. Festive Walk
+      // is tagged bt=roof, so the ETFE canopy recipe written for it was never
+      // reached and the resort's defining 180m canopy stayed a flat grey slab.
+      // Cost a render round and a probe to find; the recipe was registered,
+      // matched and correct, and simply never called.
+      const _roofRec = NORECIPE ? null : recipeFor(b.n);
+      if (_roofRec) {
+        FOOT = seatY(b);
+        STREET = streetY(b);
+        _roofRec(api, b);
+        FOOT = null; STREET = null;
+        stats.count++; stats.bespoke++;
+        continue;
+      }
       FOOT = seatY(b);
       STREET = streetY(b);
       // A FLAT slab is only honest on NEAR-FLAT ground at walkway scale.
