@@ -970,7 +970,13 @@ export function texRender(shutter = false) {
   const r2 = rng(0x726e6472 ^ (shutter ? 1 : 0)), rand = (a, b) => a + r2() * (b - a);
   const S = 256, [c, x] = cvs(S);
   x.fillStyle = '#ffffff'; x.fillRect(0, 0, S, S);
-  const rows = 4, rh = S / rows, cols = 3, cw = S / cols;
+  // DENSER THAN IT LOOKS IT SHOULD BE. The facade UVs stretch a tile across a
+  // whole wall face rather than tiling at a fixed metre scale, so 3 columns on
+  // a 40m mess-hall frontage became one continuous 13m-wide band of glazing.
+  // 6 x 5 keeps a plausible window on a wide wall and still reads as separate
+  // openings on a narrow villa, which is the range this one texture has to
+  // cover (261 villas, 126 heritage, 877 small beach buildings).
+  const rows = 5, rh = S / rows, cols = 6, cw = S / cols;
   for (let r = 0; r < rows; r++) {
     for (let cN = 0; cN < cols; cN++) {
       const ox = cN * cw, oy = r * rh;
