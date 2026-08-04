@@ -906,7 +906,19 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     }
     return true;
   });
-  emit(new THREE.BoxGeometry(0.38, 0.3, 4.0), MAT.kerb, dedupeProps(kerbClear, 0.6), kerbSeat);
+  // LONGER THAN THE STEP, SO A BEND CANNOT OPEN A GAP.
+  //
+  // Kerbs are laid every 4m as 4m boxes, each square to ITS OWN road segment.
+  // Butted end to end that is exact on a straight and wrong on every curve:
+  // where the road turns, consecutive boxes splay and the outside of the bend
+  // opens into a visible sawtooth of concrete ends — the owner's "no weird
+  // kerbs", and it is on most curved roads on the island.
+  //
+  // 4.7 on a 4m step means neighbouring kerbs always overlap by 0.7m, so the
+  // joint closes at any angle a road actually turns through. They are opaque
+  // boxes, so an overlap costs nothing to look at and no extra draw call —
+  // the count is unchanged.
+  emit(new THREE.BoxGeometry(0.38, 0.3, 4.7), MAT.kerb, dedupeProps(kerbClear, 0.6), kerbSeat);
 
   // The signalised crossings' boundary squares: 200mm, flat, one instanced
   // mesh for the whole district. There are far more of these than zebras --
