@@ -6262,6 +6262,42 @@ function beachArrivalPlaza(api, b) {
         const col = new THREE.BoxGeometry(0.55, CLEAR, 0.55);
         col.translate(x, g0 + CLEAR / 2, z);
         api.merge(col, white, ob.cx, ob.cz);
+        // A COLUMN IS THE ONE THING UNDER HERE THAT IS NOT OPEN.
+        //
+        // The owner walked into this plaza and asked "why the building can pass
+        // thru?". The open ground storey is correct and deliberate — Siloso
+        // Beach Walk really does run under it — but the arcade carve opens a
+        // CORRIDOR through the collision grid and cannot tell a column from the
+        // wall it was written to remove.
+        //
+        // main.js re-marks the columns after both carves, reading this list.
+        // It already did that for the columns city.js stands under a generic
+        // lifted mass; THIS recipe builds its own and never published them, so
+        // the fix looked done and the plaza kept letting people through. Probed
+        // on the ring: 43 samples stop on something solid, 17 pass through
+        // drawn fabric, and the 17 are these.
+        (window.__ogCols || (window.__ogCols = [])).push([x, z]);
+        //
+        // AND THAT DID NOT CLOSE THE PROBE, so the next person does not repeat
+        // the three fixes that failed. scratchpad phantom.mjs walks this ring
+        // and has reported the SAME 17 pass-throughs across all of:
+        //   1. re-marking city.js's generic open-ground columns after the carve
+        //   2. publishing THESE columns and re-marking them too (306 published,
+        //      84 cells newly solid — the mechanism demonstrably works)
+        //   3. the height-aware walk surface
+        // Measured with ?solo=Beach Arrival Plaza, so only this building exists,
+        // every one of the 17 hits is the same thing: a WHITE (#ffffff) mesh of
+        // exactly 168 vertices — seven boxes — sitting ON the ring at 1.1m above
+        // local ground, carrying no userData and not flagged furniture. It is
+        // not the columns (now solid), not the mass (starts at CLEAR above), and
+        // not this recipe's `white`, which is 0xeceee9 rather than pure white.
+        //
+        // The strongest unproven candidate is an ATTRACTION ENTRANCE GATE
+        // (data/entrances.py builds 54 of them, and a gate belongs exactly here,
+        // on a footprint ring at an entrance). If that is what it is then the
+        // probe is right that you pass through it and WRONG that it is a defect
+        // — a gate is a thing you walk through. Confirm the identity before
+        // treating the 17 as a bug: name the mesh, do not infer it.
       }
     }
     // the deck the depot sits on: dark soffit face, slightly oversailing
