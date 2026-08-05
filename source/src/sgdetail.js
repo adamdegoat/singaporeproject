@@ -4,7 +4,7 @@
 //
 // No brand marks anywhere: signage is colour and form only.
 import * as THREE from '../lib/three.module.js';
-import { R, rand, pick, chance, rng, SignAtlas } from './tex.js';
+import { R, rand, pick, chance, rng, sharedSignAtlas } from './tex.js';
 // surfaceAt, NOT groundAt. Everything this file places stands on the ROAD, and
 // the road is not the terrain: it is drawn 6cm above it, and where a bridge
 // crosses it is the DECK, which can be metres above the ground. Using groundAt
@@ -352,7 +352,7 @@ function mrtEntrance(world, px, pz, ang, label) {
 
 /* ---------------- main placement pass ---------------- */
 export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
-  const atlas = new SignAtlas(THREE);
+  const atlas = sharedSignAtlas(THREE);
   const signs = new Merger();
   // time-gated yield shared by every outer pass below — this whole builder
   // was one synchronous gulp (the 'sg' step's 460ms block, 2026-08-03)
@@ -2920,7 +2920,7 @@ export async function buildTransit(world, data, Y = null) {
   // declared and took it down again, in the temporal dead zone — the same
   // mistake wearing a different hat. Shared resources go at the top of the
   // scope that uses them.
-  const gateAtlas = new SignAtlas(THREE);
+  const gateAtlas = sharedSignAtlas(THREE);
   const gateSigns = new Merger();
 
   // -- SENSORYSCAPE: three woven diagrid vessels ---------------------------

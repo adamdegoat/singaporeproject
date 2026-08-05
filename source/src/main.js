@@ -1,5 +1,5 @@
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, reseedPlacement, rand, pick, chance } from './tex.js';
+import { PAL, R, reseedPlacement, rand, pick, chance, resetSignAtlas } from './tex.js';
 import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, plantSurveyed, openGroundAt } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, lambertise, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
@@ -2491,6 +2491,13 @@ async function streamRest(rest) {
   }
 }
 async function buildRegion(data, opts = {}) {
+  // A FRESH SIGN ATLAS PER REGION BUILD. The shared atlas hands out materials
+  // that belong to THIS scene's textures; carrying them into a second build
+  // would hand out materials whose textures went with the old scene, and the
+  // signs would silently draw as nothing. Resetting here is also never worse
+  // than the old behaviour — that was one atlas per CALL SITE per build, this
+  // is one per build — so a streamed multi-region world is unaffected.
+  resetSignAtlas();
   // Streaming prerequisite, testable today: `?reseed` pins the placement
   // stream to a seed derived from the scene name at the START of the build,
   // and `?burn=N` deliberately consumes N draws first. With reseed, a burnt
@@ -2589,6 +2596,15 @@ window.__blockedAt = (x, z) => blocked(x, z);
 // on every causeway, groyne and pier on the island. Asking them shortened the
 // boom at four of the thirteen golden spots for nothing (measured 2026-08-05).
 window.__solidAt = (x, z) => (SOLID ? SOLID.at(x, z) : false);
+// THE MATERIAL TABLE, for probes that need to tell one merged layer from
+// another. consolidate re-merges the named layers into tileBatch meshes and
+// the NAME does not survive — so a check written against mesh.name reports a
+// clean island (paintcheck learned this), and a check written against "white
+// with a map" catches the road markings and the zebra crossings along with the
+// paving it meant (2026-08-05). Material IDENTITY survives both merges, so a
+// probe can compare `mesh.material.map === window.__MAT.paving.map` and get
+// exactly the layer it asked for.
+window.__MAT = MAT;
 window.__placeBlocked = (x, z) => blocked(x, z);
   window.__data = data;
   // the limit must be passed through: dropping it capped every search at the

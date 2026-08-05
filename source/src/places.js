@@ -22,7 +22,7 @@
 // eighty objects, which is both cheaper and immune to the roll a banking
 // camera would otherwise put into the text.
 
-import { SignAtlas } from './tex.js';
+import { sharedSignAtlas } from './tex.js';
 
 // how far a name is legible before it is noise
 const SHOW_NEAR = 18;      // fades in past this (you are on top of it)
@@ -49,7 +49,7 @@ const SKIP_KINDS = new Set(['artwork', 'cannon', 'bench', 'picnic_table',
 const SKIP_NAME = /^(entrance|exit|toilets?|shelter|car ?park)$/i;
 
 export function buildPlaceLabels(THREE, data, world, surfaceAt) {
-  const atlas = new SignAtlas(THREE);
+  const atlas = sharedSignAtlas(THREE);
   const items = [];
 
   const push = (name, x, z, y, tier) => {

@@ -891,6 +891,32 @@ export class SignAtlas {
   finish() { for (const p of this.pages) p.t.needsUpdate = true; return this.pages.length; }
 }
 
+// ONE ATLAS FOR THE WHOLE WORLD.
+//
+// `new SignAtlas(THREE)` was called FOUR times — places.js, shopfront.js and
+// twice in sgdetail.js — and each instance allocates its own 2048x2048 page on
+// its first label. Measured 2026-08-05 on the phone profile: three live pages,
+// 48MB of retained canvas out of a 242MB heap, against a ~206MB iOS ceiling.
+// Four part-full pages instead of one or two is pure waste, and it is waste in
+// the one resource this project is actually short of.
+//
+// Sharing is safe because the contract is per-label: add() hands back the
+// MATERIAL its label landed on, and every caller uses that material rather
+// than assuming the atlas has only one. Callers also share pages now, so
+// fewer distinct materials means fewer draw calls, not more.
+//
+// RESET IS NOT OPTIONAL. The pages hold CanvasTextures and materials belonging
+// to one scene; a second world build that reused them would be handing out
+// materials whose textures had been disposed with the old scene — signs that
+// silently draw as nothing. resetSignAtlas() is called at the top of the world
+// build for exactly that reason.
+let _sharedAtlas = null;
+export function sharedSignAtlas(THREE) {
+  if (!_sharedAtlas) _sharedAtlas = new SignAtlas(THREE);
+  return _sharedAtlas;
+}
+export function resetSignAtlas() { _sharedAtlas = null; }
+
 // A FACE, so a person at arm's length is a person.
 //
 // Drawn into the head sphere's own UV rather than added as geometry: eyes as

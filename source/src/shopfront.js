@@ -29,7 +29,7 @@
 // map labels it.
 import * as THREE from '../lib/three.module.js';
 import { Merger, onCarriageway, groundAt, streetY } from './city.js';
-import { SignAtlas } from './tex.js';
+import { sharedSignAtlas } from './tex.js';
 import { hasShopfront } from './landmarks.js';
 import { TOUCH as SHOP_TOUCH } from './input.js';
 
@@ -321,7 +321,7 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
   };
   if (!data.buildings || !data.buildings.length) return stats;
 
-  const atlas = new SignAtlas(THREE);
+  const atlas = sharedSignAtlas(THREE);
   const merger = new Merger();
   // `?shopreach=` A/Bs the shop grid alone; `?reach=` moves dressing AND shops
   // together, which is the shipped relationship.
