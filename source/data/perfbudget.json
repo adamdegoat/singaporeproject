@@ -1,6 +1,7 @@
 {
   "bootMs": 30000,
-  "heapMB": 380,
+  "heapMB": 260,
   "trisK": 1600,
-  "draws": 680
+  "draws": 680,
+  "_heapMB_note": "MEASURED AFTER A COLLECTION since 2026-08-06 \u2014 livecheck now forces gc before sampling, so this is LIVE memory, not whatever the collector had not reached. The old 380 was calibrated against the un-GC'd number, which on this build flips between 307 and 391 with nothing changed and refused two deploys at random. Settled heap is 218MB. 260 leaves ~40MB of headroom and would still catch a real regression; against the ~206MB iOS ceiling the island is already about 12MB over, which is the honest position and is tracked rather than hidden by a loose budget."
 }

@@ -2049,6 +2049,44 @@ export async function buildBuildings(world, data, Y = null) {
       if (_inUss(c[0], c[1])) _uss.add(q);
     }
   }
+  // THE PARK IS SEVEN ZONES, AND IT WAS ONE COLOUR.
+  //
+  // The owner, 2026-08-06: "u need do everything properly including like USS".
+  // Every show building inside the ring took a tint from the same five warm
+  // neutrals, so Ancient Egypt, Sci-Fi City and Far Far Away were all the same
+  // beige and the park read as an industrial estate that happened to have
+  // rollercoasters in it — the flatter half of the "office park" complaint that
+  // the shopfront fix only partly answered.
+  //
+  // THE ZONES ARE TRUTH: OSM carries Hollywood, New York, Sci-Fi City, Ancient
+  // Egypt, Far Far Away and Madagascar as named nodes at real positions. The
+  // PALETTES are authored (SENTOSA.md Layer 2) — scenic paint families, nothing
+  // branded and no character or logo anywhere near it. A building takes the
+  // zone it is nearest to, and still varies within that family by position hash
+  // so a row is not one flat colour.
+  const _ussZones = [];
+  {
+    const want = { 'Hollywood': [0xe8dcc4, 0xdcc9a8, 0xe3d3bb],
+                   'New York': [0x9d6b57, 0x8a5f4e, 0xa87a63],
+                   'Sci-Fi City': [0x8f9aa6, 0x7d8894, 0x9caab6],
+                   'Ancient Egypt': [0xd9bd86, 0xcaa970, 0xe0c894],
+                   'Far Far Away': [0xbfa9cb, 0xa892b8, 0xcdb9d6],
+                   'Madagascar': [0x8fae76, 0x7d9b66, 0xa0bd88] };
+    for (const a of (data.attractions || [])) {
+      const pal = a && a.n && want[a.n];
+      if (pal && a.p) _ussZones.push({ x: a.p[0], z: a.p[1], pal });
+    }
+  }
+  const _zoneTint = (pts, hash) => {
+    if (!_ussZones.length) return null;
+    const c = centroid(pts);
+    let best = null, bd = Infinity;
+    for (const q of _ussZones) {
+      const d = (q.x - c[0]) ** 2 + (q.z - c[1]) ** 2;
+      if (d < bd) { bd = d; best = q; }
+    }
+    return best ? best.pal[Math.abs(hash) % best.pal.length] : null;
+  };
 
   const _parts = data.buildings.filter((q) => q.mh && q.mh > 1 && q.p && q.p.length >= 3);
   const _partHost = new Map();
@@ -2539,7 +2577,11 @@ export async function buildBuildings(world, data, Y = null) {
     if (_isShow) {
       let _sh = 0;
       for (const [x, z] of b.p) _sh = (_sh * 31 + ((x * 3) | 0) + ((z * 7) | 0)) | 0;
-      _showTint = [0xd8cbb6, 0xcdb79c, 0xc9c3b2, 0xd9c3a8, 0xc2b6a4][Math.abs(_sh) % 5];
+      // the zone it stands in decides the family; the hash decides which of
+      // that family. Falls back to the old neutrals if the zone nodes are
+      // missing from a scene file, rather than drawing nothing.
+      _showTint = _zoneTint(b.p, _sh)
+        || [0xd8cbb6, 0xcdb79c, 0xc9c3b2, 0xd9c3a8, 0xc2b6a4][Math.abs(_sh) % 5];
     }
     const mat = b.col ? tintedMat(wallTex, fam.rough, fam.metal, b.col)
       : _isShow ? renderMat(_showTint)

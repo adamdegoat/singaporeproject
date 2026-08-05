@@ -25,6 +25,9 @@ const { chromium } = await import(
 
 const browser = await chromium.launch({
   args: [
+    // so the heap can be measured after a collection rather than before one —
+    // see the note at the info evaluate below
+    '--js-flags=--expose-gc',
     // --use-gl=angle IS THE REAL GPU HERE, and its absence is why this file was
     // the slowest thing in the project. Measured 2026-07-30 by reading
     // UNMASKED_RENDERER_WEBGL under five flag sets on this machine:
@@ -68,12 +71,44 @@ try {
   // times the poller rather than the boot.
   await page.waitForFunction('window.__ready === true || window.__bootError',
     null, { timeout: BUDGET_MS, polling: 100 });
-  info = await page.evaluate(() => ({
-    ready: window.__ready === true,
-    bootError: window.__bootError ? String(window.__bootError).slice(0, 300) : null,
-    hud: (document.querySelector('#hud') || {}).textContent || '',
-    mem: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null,
-  }));
+  // HEAP, MEASURED AFTER A COLLECTION, BECAUSE THE RAW NUMBER IS BIMODAL.
+  //
+  // This read usedJSHeapSize the instant the world came up, which counts
+  // everything the collector has not got to yet — and on this build that is a
+  // coin flip between 307 MB and 391 MB with NOTHING CHANGED in the world.
+  // Measured 2026-08-06: the gate refused a deploy whose only content was a
+  // de-duplication of the travel list, at 391MB, while the settled heap sat at
+  // 218MB before and after. It had already refused a deploy the same way once
+  // before. A gate that fails at random is a gate people learn to ignore.
+  //
+  // --expose-gc (in the launch args above) lets us ask for a collection first,
+  // so this measures LIVE memory. Three reads, take the lowest: consecutive
+  // settled reads agree exactly, so a high one means the collection had not
+  // finished. If the flag is ever missing the raw value is used and says so,
+  // rather than silently reporting a different quantity than the budget means.
+  info = await page.evaluate(async () => {
+    let mem = null, settled = false;
+    if (performance.memory) {
+      if (window.gc) {
+        const reads = [];
+        for (let i = 0; i < 3; i++) {
+          window.gc(); window.gc();
+          await new Promise((r) => setTimeout(r, 500));
+          reads.push(performance.memory.usedJSHeapSize);
+        }
+        mem = Math.round(Math.min(...reads) / 1048576);
+        settled = true;
+      } else {
+        mem = Math.round(performance.memory.usedJSHeapSize / 1048576);
+      }
+    }
+    return {
+      ready: window.__ready === true,
+      bootError: window.__bootError ? String(window.__bootError).slice(0, 300) : null,
+      hud: (document.querySelector('#hud') || {}).textContent || '',
+      mem, memSettled: settled,
+    };
+  });
   // the loading overlay removes itself 600ms after ready; still standing
   // means the page is stuck behind it even though the world came up
   await page.waitForTimeout(1200);
@@ -139,7 +174,8 @@ const bootMs = Date.now() - t0;
 await page.waitForTimeout(2500);
 
 console.log(`   live check   ${URL_BASE}`);
-console.log(`   boot ${bootMs} ms   ready ${ready}   heap ${info.mem ?? '?'} MB`);
+console.log(`   boot ${bootMs} ms   ready ${ready}   heap ${info.mem ?? '?'} MB`
+  + (info.memSettled ? ' (settled)' : ' (NOT settled — --expose-gc missing)'));
 if (info.hud) console.log(`   hud "${info.hud.slice(0, 70)}"`);
 if (info.bootError) console.log(`   boot error: ${info.bootError}`);
 
