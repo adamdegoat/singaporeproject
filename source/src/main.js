@@ -5225,16 +5225,56 @@ window.__arriving = () => ARRIVING;
 // rideBlocked is the test, not blocked(): it is the gate that actually governs
 // moving, and it knows a boardwalk deck over water is standable. Each ring is
 // rotated so a failed search does not always drift the player the same way.
+// STANDING SOMEWHERE IS NOT THE SAME AS BEING SOMEWHERE.
+//
+// The first version of this asked only whether the arrival POINT was clear, and
+// that took the stranded destinations from 46 to 0 by its own measure. The
+// owner then reported the defect it could not see: "i went to some teleport
+// locations and I cant even move." A point inside a sealed courtyard passes a
+// clearance test perfectly. Audited across all 95 destinations, four of them
+// dropped the player somewhere they could not walk out of — the Singapore
+// Oceanarium reached ZERO metres, and two luge trailheads were no better.
+//
+// So a landing spot now has to be somewhere you can LEAVE. The flood is small
+// and deliberately cheap: this runs once per journey, never per frame, and it
+// only has to tell a courtyard from the island.
+const CAN_MOVE_CELLS = 70;       // ~70 strides of open ground is not a pocket
+function canMoveFrom(sx, sz) {
+  const STEP = 1.5;
+  const seen = new Set(['0,0']);
+  const q = [[sx, sz]];
+  let n = 0;
+  while (q.length && n < CAN_MOVE_CELLS) {
+    const [x, z] = q.shift();
+    n++;
+    for (const [dx, dz] of [[STEP, 0], [-STEP, 0], [0, STEP], [0, -STEP]]) {
+      const nx = x + dx, nz = z + dz;
+      if (Math.hypot(nx - sx, nz - sz) > 30) continue;
+      const k = Math.round((nx - sx) / STEP) + ',' + Math.round((nz - sz) / STEP);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      if (rideBlocked(nx, nz)) continue;
+      q.push([nx, nz]);
+    }
+  }
+  return n >= CAN_MOVE_CELLS;
+}
+
 window.__landNear = (x, z, maxR = 40) => {
-  if (!rideBlocked(x, z)) return { x, z };
+  if (!rideBlocked(x, z) && canMoveFrom(x, z)) return { x, z };
+  let fallback = null;
   for (let r = 2; r <= maxR; r += 2) {
     for (let a = 0; a < 24; a++) {
       const th = a * (Math.PI / 12) + r * 0.37;
       const qx = x + Math.cos(th) * r, qz = z + Math.sin(th) * r;
-      if (!rideBlocked(qx, qz)) return { x: qx, z: qz };
+      if (rideBlocked(qx, qz)) continue;
+      // remember the first merely-clear spot, in case nothing open is found
+      if (!fallback) fallback = { x: qx, z: qz };
+      if (canMoveFrom(qx, qz)) return { x: qx, z: qz };
     }
   }
-  return { x, z };          // nowhere clear: go anyway rather than refuse to travel
+  // nothing open within reach: somewhere you can stand beats refusing to travel
+  return fallback || { x, z };
 };
 
 window.__teleport = (x, z, heading) => {
