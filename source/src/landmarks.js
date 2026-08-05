@@ -6292,12 +6292,16 @@ function beachArrivalPlaza(api, b) {
         // not the columns (now solid), not the mass (starts at CLEAR above), and
         // not this recipe's `white`, which is 0xeceee9 rather than pure white.
         //
-        // The strongest unproven candidate is an ATTRACTION ENTRANCE GATE
-        // (data/entrances.py builds 54 of them, and a gate belongs exactly here,
-        // on a footprint ring at an entrance). If that is what it is then the
-        // probe is right that you pass through it and WRONG that it is a defect
-        // — a gate is a thing you walk through. Confirm the identity before
-        // treating the 17 as a bug: name the mesh, do not infer it.
+        // An ATTRACTION ENTRANCE GATE was the obvious candidate and it is RULED
+        // OUT: none of the 54 in data.entrances is within 30m of any of the four
+        // sampled points. Guessing cost nothing here only because the test was
+        // one line — name the mesh, do not infer it.
+        //
+        // What is still known and not yet explained: white, 168 vertices, on the
+        // ring, 1.1m up, no userData, survives ?solo. The next cheap test is the
+        // existing build flags — ?noshops, ?nosg and friends — turning systems
+        // off one at a time until the hit disappears, which names the SYSTEM
+        // even though the merge has destroyed the mesh name.
       }
     }
     // the deck the depot sits on: dark soffit face, slightly oversailing
