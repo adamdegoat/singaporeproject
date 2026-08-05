@@ -5235,7 +5235,29 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
         if (window.__underCanopy && window.__underCanopy(jx, jz)) continue;
         // the expensive ones last: mapped ground of ANY kind keeps its own
         // character — a lawn stays a lawn, a fairway stays a fairway
-        if (TERRAIN.greenAt(jx, jz)) continue;
+        const _cover = TERRAIN.greenAt(jx, jz);
+        if (_cover && _cover !== 'golf') continue;
+        // ...EXCEPT THE EDGE OF A GOLF COURSE, WHICH IS TREES.
+        //
+        // Measured island-wide: golf is the SECOND largest land cover here —
+        // 1,351 sampled cells against 2,443 unmapped and 837 of mapped wood —
+        // and only 22% of it carried a tree, so from any distance a fifth of
+        // the island read as flat empty green. A fairway genuinely is open and
+        // must stay open; what is missing is the belt between holes and along
+        // the course boundary, which on Serapong and Tanjong is continuous
+        // planting and is most of what you actually SEE of a course from
+        // outside it.
+        //
+        // So: plant golf ground only where it is within about 25m of something
+        // that is not golf. That is the boundary and the gaps between holes by
+        // construction, and it cannot touch the middle of a fairway.
+        if (_cover === 'golf') {
+          let edge = false;
+          for (const [ex, ez] of [[25, 0], [-25, 0], [0, 25], [0, -25]]) {
+            if (TERRAIN.greenAt(jx + ex, jz + ez) !== 'golf') { edge = true; break; }
+          }
+          if (!edge) continue;
+        }
         // CLOSURE, NOT COUNT. Doubling the trunks doubles the memory; raising
         // the crowns closes the canopy for nothing. The floor of the range
         // matters more than the ceiling — 0.5 left gaps of bare paint between
