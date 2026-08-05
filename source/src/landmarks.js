@@ -6292,16 +6292,31 @@ function beachArrivalPlaza(api, b) {
         // not the columns (now solid), not the mass (starts at CLEAR above), and
         // not this recipe's `white`, which is 0xeceee9 rather than pure white.
         //
-        // An ATTRACTION ENTRANCE GATE was the obvious candidate and it is RULED
-        // OUT: none of the 54 in data.entrances is within 30m of any of the four
-        // sampled points. Guessing cost nothing here only because the test was
-        // one line — name the mesh, do not infer it.
+        // WHAT IS ESTABLISHED ABOUT THE REMAINING 17, so the next session starts
+        // from evidence instead of from my guesses. Sample point -1674,12719.7,
+        // hit at y=14.81, ground there 13.70:
         //
-        // What is still known and not yet explained: white, 168 vertices, on the
-        // ring, 1.1m up, no userData, survives ?solo. The next cheap test is the
-        // existing build flags — ?noshops, ?nosg and friends — turning systems
-        // off one at a time until the hit disappears, which names the SYSTEM
-        // even though the merge has destroyed the mesh name.
+        //   ?nobuild        hit VANISHES      -> it is building fabric
+        //   ?solo=Beach Arrival Plaza  hit REMAINS -> it is one of these two
+        //   nearest published column   9.01m away, and that column IS solid
+        //   entrance gates             none within 30m — ruled out
+        //   deck soffit                starts at 16.69 / 16.93 — too high
+        //   material                   pure #ffffff, 168 verts alone (7 boxes)
+        //
+        // NOTE THE NAME IS SHARED: there are TWO "Beach Arrival Plaza"
+        // footprints, 3,632 m2 (this branch) and 1,086 m2 (the branch below),
+        // with seats 11.09 and 10.73. ?solo keeps BOTH, so a hit under ?solo
+        // does not say which one drew it. That is the first thing to separate.
+        //
+        // TWO OF MY INFERENCES WERE WRONG AND ARE RECORDED SO THEY ARE NOT
+        // REPEATED: an entrance gate (ruled out by distance), and "hitY equals
+        // rayY means the ray is grazing a horizontal surface" — it does not, a
+        // horizontal ray hits a vertical wall at its own height too.
+        //
+        // No player impact has been demonstrated. The owner's original report
+        // is explained by the open ground storey, which is DELIBERATE: Siloso
+        // Beach Walk runs under this building in life. Establish that these 17
+        // are something a player would notice before treating them as a bug.
       }
     }
     // the deck the depot sits on: dark soffit face, slightly oversailing
@@ -6345,6 +6360,20 @@ function beachArrivalPlaza(api, b) {
         const col = new THREE.BoxGeometry(0.5, PLAT, 0.5);
         col.translate(x, g0 + PLAT / 2, z);
         api.merge(col, white, ob.cx, ob.cz);
+        // AND THIS BRANCH'S COLUMNS TOO — which is where the probe's 17 were.
+        //
+        // TWO buildings carry the name "Beach Arrival Plaza": a 3,632 m2
+        // terminal that takes the branch above, and a 1,086 m2 station hall
+        // that takes this one. Publishing only the terminal's columns looked
+        // like a complete fix and moved the count by exactly zero, because the
+        // fabric the owner walked through belongs to the SMALLER building.
+        //
+        // Named the hard way after three wrong guesses: ?nobuild made the hit
+        // vanish (so, building fabric), ?solo kept it (so, this building), the
+        // nearest published column was 9m away (so, not a column I had), and
+        // the hit sat 4.08m above the seat inside this branch's 6.2m platform
+        // columns. A vertex count of 168 is what set it off — seven boxes.
+        (window.__ogCols || (window.__ogCols = [])).push([x, z]);
       }
     }
     api.merge(api.extrudeGeo(api.grow(b.p, 1.01), 1.4, PLAT), beige, ob.cx, ob.cz);
