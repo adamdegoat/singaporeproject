@@ -2571,6 +2571,110 @@ async function streamRest(rest) {
     await new Promise((r) => setTimeout(r, 1500));
   }
 }
+// SMOOTH THE MAPPED LINES ONCE, BEFORE ANYTHING READS THEM.
+//
+// The owner, 2026-08-05: "alot of walking paths or roads maybe the kerbs not
+// even smooth all jagged", with a frame of the Siloso boardwalk zigzagging
+// under his feet.
+//
+// The ribbon builder was not the bug — it mitres its joints correctly and has
+// done since it was written. It was tracing a jagged line faithfully. OSM
+// digitises a kerb by clicking along an aerial photo, so a gently curving path
+// arrives as a run of one-to-three metre segments each a few degrees off its
+// neighbour, and at walking height that reads as a sawtooth.
+//
+// This belongs HERE and not inside ribbon(), because the road surface is not
+// the only thing that follows the line: the kerbs, lamps, markings, furniture
+// and the collision grid all read `r.p` independently. Smoothing inside the
+// ribbon would have floated a smooth road inside its own jagged kerbs, which
+// is worse than the defect. One line, smoothed once, and everything downstream
+// agrees by construction.
+//
+// SENTOSA.md allows this explicitly and bounds it: "the curve between them may
+// be smoothed ... up to 8m lateral. Past that it is a re-route." The cut is at
+// most 6m even for the rail line, and the corner is replaced with a quadratic
+// through it, so the curve never leaves the triangle of the corner it rounds.
+//
+// ENDPOINTS ARE NEVER MOVED. Junctions are endpoint-to-endpoint in this data
+// and navcheck's whole reachability model rests on them, so the first and last
+// point of every way come through untouched.
+function smoothLine(p, maxCut) {
+  if (!p || p.length < 3) return null;
+  const out = [p[0]], src = [0];
+  for (let i = 1; i < p.length - 1; i++) {
+    const a = p[i - 1], v = p[i], c = p[i + 1];
+    let ax = v[0] - a[0], az = v[1] - a[1];
+    let cx = c[0] - v[0], cz = c[1] - v[1];
+    const la = Math.hypot(ax, az), lc = Math.hypot(cx, cz);
+    if (la < 0.05 || lc < 0.05) { out.push(v); src.push(i); continue; }
+    ax /= la; az /= la; cx /= lc; cz /= lc;
+    const dot = Math.max(-1, Math.min(1, ax * cx + az * cz));
+    const turn = Math.acos(dot);
+    // under about four degrees there is nothing to round, and rounding it
+    // would only cost vertices
+    if (turn < 0.07) { out.push(v); src.push(i); continue; }
+    // never eat more than 40% of either neighbouring segment, so two corners
+    // in a row cannot consume the straight between them
+    const t = Math.min(maxCut, la * 0.4, lc * 0.4);
+    const A = [v[0] - ax * t, v[1] - az * t], sA = i - t / la;
+    const B = [v[0] + cx * t, v[1] + cz * t], sB = i + t / lc;
+    const N = turn > 1.2 ? 6 : turn > 0.5 ? 4 : 3;
+    out.push(A); src.push(sA);
+    for (let k = 1; k < N; k++) {
+      const s = k / N, u = 1 - s;
+      out.push([u * u * A[0] + 2 * u * s * v[0] + s * s * B[0],
+                u * u * A[1] + 2 * u * s * v[1] + s * s * B[1]]);
+      src.push(sA + (sB - sA) * s);
+    }
+    out.push(B); src.push(sB);
+  }
+  out.push(p[p.length - 1]); src.push(p.length - 1);
+  return { p: out, src };
+}
+
+// Resample a per-vertex array (the monorail's fitted height profile) onto the
+// smoothed line, so a smoothed way cannot part company with its own heights.
+function resampleAt(vals, src) {
+  return src.map((s) => {
+    const i = Math.max(0, Math.min(vals.length - 2, Math.floor(s)));
+    const f = Math.max(0, Math.min(1, s - i));
+    return vals[i] + (vals[i + 1] - vals[i]) * f;
+  });
+}
+
+function smoothWays(data) {
+  const len = (p) => {
+    let L = 0;
+    for (let i = 0; i < p.length - 1; i++) L += Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]);
+    return L;
+  };
+  let ways = 0, before = 0, after = 0;
+  for (const r of (data.roads || [])) {
+    if (!r.p || r.p.length < 3) continue;
+    // A footway turns tighter than a carriageway and a flight of steps is
+    // meant to be angular, so the allowance follows what the way IS.
+    const cut = r.k === 'steps' ? 0
+      : (r.k === 'footway' || r.k === 'pedestrian') ? 1.6
+      : Math.min(3.0, Math.max(1.2, (r.w || 7) * 0.35));
+    if (!cut) continue;
+    const s = smoothLine(r.p, cut);
+    if (!s) continue;
+    before += len(r.p); after += len(s.p);
+    r.p = s.p; ways++;
+  }
+  // The rail line takes the widest allowance it is allowed: a monorail has the
+  // largest turning radius of anything on the island, and its guideway is the
+  // one structure a player sees end to end from a distance.
+  for (const seg of (data.monorail || [])) {
+    if (!seg.p || seg.p.length < 3) continue;
+    const s = smoothLine(seg.p, 6);
+    if (!s) continue;
+    if (Array.isArray(seg.ys) && seg.ys.length === seg.p.length) seg.ys = resampleAt(seg.ys, s.src);
+    seg.p = s.p; ways++;
+  }
+  return { ways, lengthDelta: before ? +((after - before) / before * 100).toFixed(2) : 0 };
+}
+
 async function buildRegion(data, opts = {}) {
   // A FRESH SIGN ATLAS PER REGION BUILD. The shared atlas hands out materials
   // that belong to THIS scene's textures; carrying them into a second build
@@ -2594,6 +2698,11 @@ async function buildRegion(data, opts = {}) {
   if (!window.__districts && data.axes && data.axes.length) {
     window.__districts = data.axes.filter((ax) => ax && ax.p).map((ax) => ({
       id: ax.n || 'street', name: ax.n || 'street', ...axisMidPose(ax) }));
+  }
+  // Before terrain.carve, before the ribbons, before the kerbs — see smoothWays.
+  if (!P.has('nosmooth')) {
+    const sm = smoothWays(data);
+    window.__smoothStats = sm;
   }
   BOOTT.push(['module-init+fetch', Math.round(performance.now())]);
   _bt = performance.now();
