@@ -218,12 +218,34 @@ console.log(`   land ${out.landM2.toLocaleString()} m2, `
             + `solid ${out.solidM2.toLocaleString()} m2 `
             + `(${out.ghostM2.toLocaleString()} m2 of it with no mapped building)`);
 console.log(`   main rideable body ${out.mainM2.toLocaleString()} m2`);
-const walled = out.pockets.filter((p) => p.sealPct >= 60);
+const walled = out.pockets.filter((p) => p.sealPct >= 60
+  && !(p.m2 <= 120 && p.ghostPct <= 30));
 const bywater = out.pockets.filter((p) => p.sealPct < 60);
+// A COURTYARD IS NOT AN INVISIBLE WALL.
+//
+// This has printed FAIL on every deploy for the whole session, which is the
+// state where a check stops being read. Looked at rather than silenced: all
+// nine are 40-60 m2, and the check's OWN ghost measure says 0% to 29% of each
+// enclosing edge has no building behind it — so they are ringed by REAL mapped
+// buildings, four of them entirely. Six sit inside Sentosa Cove's villa plots.
+//
+// That is a private courtyard between houses, and this file's own opening
+// argument is the test: "a pocket walled mostly by GHOSTS is geometry WE
+// invented sealing ground the map says is open, and that is always our bug
+// rather than the map's." Ghost-walled stays a defect and still fails. Small
+// ground ringed by the map's own buildings is the map being right.
+//
+// Bounded deliberately: under 120 m2 AND at most 30% ghost. A courtyard you
+// could hold a wedding in, or one whose walls we invented, still reports.
+const COURTYARD_M2 = 120, COURTYARD_GHOST_PCT = 30;
+const courtyards = out.pockets.filter((p) => p.sealPct >= 60
+  && p.m2 <= COURTYARD_M2 && p.ghostPct <= COURTYARD_GHOST_PCT);
 console.log(`   sealed by GEOMETRY: ${walled.length}`
             + `   (${walled.reduce((s, p) => s + p.m2, 0).toLocaleString()} m2)`);
 console.log(`   separated by water: ${bywater.length}`
-            + `   (${bywater.reduce((s, p) => s + p.m2, 0).toLocaleString()} m2, not a defect)\n`);
+            + `   (${bywater.reduce((s, p) => s + p.m2, 0).toLocaleString()} m2, not a defect)`);
+console.log(`   courtyards between real buildings: ${courtyards.length}`
+            + `   (under ${COURTYARD_M2} m2 and at most ${COURTYARD_GHOST_PCT}% ghost, not a defect)\n`);
 for (const p of walled.slice(0, 20)) {
   console.log(`   ${String(p.m2).padStart(6)} m2  at ${p.at[0]},${p.at[1]}  ${p.where}`
               + `   ${p.sealPct}% of its edge is geometry (${p.wall} solid / ${p.sea} sea), ${p.ghostPct}% of that with no building behind`);
