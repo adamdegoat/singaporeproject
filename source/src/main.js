@@ -2808,6 +2808,15 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   if (!P.has('notowers')) statAdd(buildTowers(world, data, null));
   if (!P.has('notowers')) buildCranes(world, data);
   const surveyed = P.has('nofoliage') ? { surveyedTrees: 0 } : await plantSurveyed(world, data, place);
+  // NOW SHADE THE FLOOR. The ground mesh was coloured before any of this ran, so
+  // its canopy could only ever see `data.trees` — the surveyed ones — while
+  // city.js invents thousands more. terrain.build() left the shade unapplied and
+  // recorded each vertex's class; this is where it lands, with the full canopy.
+  {
+    const invented = window.__plantedTrees || [];
+    const shaded = terrain.applyCanopy(invented);
+    statAdd({ canopyInvented: invented.length, canopyShadedVerts: shaded });
+  }
   const surround = P.has('nosurround') ? 0 : buildSurround(world, opts.regionData || data);
   bmark('surround');
 

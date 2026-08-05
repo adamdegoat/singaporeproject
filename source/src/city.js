@@ -4540,6 +4540,13 @@ function mergeGeos(geos) {
 // inside the axis loop a two-axis district would grow two trees per node. Same
 // trap as buildParkedCars.
 export async function plantSurveyed(world, data, blocked, Y = null) {
+  // EVERY TREE THIS PASS INVENTS, reported so the GROUND can be shaded by them.
+  // terrain.applyCanopy() runs after planting and needs the fill's positions:
+  // the ground mesh is coloured BEFORE this function runs, so the floor under
+  // Imbiah was lawn-green until these were counted. Declared at the top of the
+  // function because the first fill that uses it is 300 lines below and a
+  // const declared beside it sat in its own temporal dead zone.
+  const PLANTED = (window.__plantedTrees = window.__plantedTrees || []);
   const list = data.trees || [];
   const f = new TreeField();
   let surveyed = 0;
@@ -4776,6 +4783,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
         // deploy on it. The understorey is what the canopy needed anyway — the
         // gain is at the BOTTOM of this range, not the top.
         f.add(jx, jz, 0.55 + ((jx * 7.3 + jz * 3.1) % 100) / 120);
+        PLANTED.push([jx, jz]);
         jungle++;
       }
     }
@@ -4857,6 +4865,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
           if (onTrail(jx, jz)) continue;
           if (window.__underCanopy && window.__underCanopy(jx, jz)) continue;
           f.add(jx, jz, 0.5 + ((jx * 7.3 + jz * 3.1) % 100) / 140);
+          PLANTED.push([jx, jz]);
           halo++;
         }
       }
@@ -4914,6 +4923,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
             if (window.__underCanopy && window.__underCanopy(jx, jz)) continue;
             if (window.__inFootprint && window.__inFootprint(jx, jz)) continue;
             f.add(jx, jz, 0.5 + ((jx * 7.3 + jz * 3.1) % 100) / 150);
+            PLANTED.push([jx, jz]);
             halo++;
           }
         }

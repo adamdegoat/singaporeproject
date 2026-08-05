@@ -490,7 +490,66 @@ export class Terrain {
   }
 
   // the visible ground mesh
+  // THE FLOOR UNDER THE FOREST, applied after the forest exists.
+  //
+  // build() records each ground vertex's canopy class and leaves it unshaded;
+  // this darkens it once city.js has planted, so the ~6,600 trees the forest
+  // fill invents count toward the shade exactly as the surveyed ones do. Call
+  // it ONCE, after plantSurveyed. If it is never called the ground is simply
+  // not shaded, which is loud rather than subtle — the golden frames catch it.
+  applyCanopy(extraTrees) {
+    if (extraTrees && extraTrees.length) this.addCanopy(extraTrees);
+    if (!this.tiles || !this.tiles.length) return 0;
+    const LITTER = [0.098, 0.090, 0.058];
+    let shaded = 0;
+    for (const t of this.tiles) {
+      const pos = t.geo.attributes.position.array;
+      const col = t.geo.attributes.color.array;
+      const cls = t.cls;
+      let touched = false;
+      for (let v = 0; v < cls.length; v++) {
+        const code = cls[v];
+        if (code === 255) continue;                 // paving, sand, water: never
+        const x = pos[v * 3], z = pos[v * 3 + 2];
+        // 0.85, not the 0.5 this rule was written with. That discount existed
+        // because canopyAt could only ever see `data.trees` — 3,713 surveyed
+        // trees over the whole island, one per ~2,150 m2 — so a full reading
+        // meant "a clump of specimen trees", not "closed canopy", and shading
+        // it like a mapped wood would have been a lie. With the forest fill
+        // counted the grid holds 15,823 trees and a reading of 1.0 IS closed
+        // canopy: the unmapped slopes at Fort Siloso and Imbiah are jungle in
+        // life and OSM simply never classified them. A lone clump still reads
+        // low and still shades only a little.
+        const cn = Math.min(1, (code === 2 ? 1 : code === 1 ? 0.45 : 0)
+          + this.canopyAt(x, z) * 0.85);
+        if (cn <= 0.02) continue;
+        const f = cn * 0.62;                        // never all the way to black
+        const i0 = v * 3;
+        for (let ci = 0; ci < 3; ci++) col[i0 + ci] = col[i0 + ci] * (1 - f) + LITTER[ci] * f;
+        touched = true;
+        shaded++;
+      }
+      if (touched) t.geo.attributes.color.needsUpdate = true;
+    }
+    return shaded;
+  }
+
+  // add trees to the canopy density grid without rebuilding it
+  addCanopy(trees) {
+    if (!this.cGrid) { this.cGrid = new Map(); this.canopyN = 0; }
+    for (const t of trees) {
+      const x = Array.isArray(t) ? t[0] : (t && t.p ? t.p[0] : null);
+      const z = Array.isArray(t) ? t[1] : (t && t.p ? t.p[1] : null);
+      if (x === null || z === null || !isFinite(x) || !isFinite(z)) continue;
+      const k = Math.floor(x / this.cCell) + ',' + Math.floor(z / this.cCell);
+      this.cGrid.set(k, (this.cGrid.get(k) || 0) + 1);
+      this.canopyN++;
+    }
+    return this.canopyN;
+  }
+
   build(material) {
+    this.tiles = [];
     const g = this.g;
     if (!g) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(2600, 2600), material);
@@ -515,6 +574,7 @@ export class Terrain {
       for (let ti = 0; ti < g.nx - 1; ti += TILE) {
         const verts = new Map();   // "qx,qz" -> index within THIS tile
         const pos = [], idx = [], col = [];
+        const clsOf = [];          // canopy class per vertex, for applyCanopy()
         // one tint per green kind; white leaves the ground material untouched
         // Green reads as green; the built-up kinds only shift the sand a little,
         // because the point is to stop a condo garden, a car-park apron and a
@@ -769,8 +829,26 @@ export class Terrain {
             // ground ONLY: street trees line half the roads on this island and
             // shading by tree count alone turned pavements, plazas and the
             // beach itself into mud.
+            // DEFERRED, AND HERE IS WHY (2026-08-05). The darkening below is
+            // applied at BUILD time, and the ground mesh is built BEFORE
+            // plantSurveyed runs — so `canopyAt` can only ever see the trees
+            // that exist yet, which is `data.trees`, the SURVEYED ones.
+            // city.js then invents about 6,600 more (the wood-edge halo and the
+            // unmapped-slope fill) and the floor never hears about them. At
+            // Imbiah, where the slopes are unmapped and almost every tree IS the
+            // fill, canopyAt read ~0 and a closed jungle floor was painted
+            // lawn-green. The owner saw it; so did every render.
+            //
+            // So the class is REMEMBERED here (one byte a vertex) and the shade
+            // is applied by applyCanopy() after the planting, when the canopy
+            // grid is complete. Storing the class rather than re-asking greenAt
+            // matters: greenAt walks candidate rings and is already the
+            // expensive call in this loop; asking it twice would put seconds on
+            // the boot.
             const cls = this.gGrid ? this.greenAt(x, z) : null;
-            if (!cls || CANOPYABLE.has(cls)) {
+            clsOf.push(cls === 'wood' ? 2 : cls === 'scrub' ? 1
+              : (!cls || CANOPYABLE.has(cls)) ? 0 : 255);
+            if (false) {
               // THE CANOPY IS THE WOOD POLYGON, NOT THE SURVEYED TREES.
               //
               // First attempt counted `data.trees` — 3,713 of them, one per
@@ -820,6 +898,8 @@ export class Terrain {
         geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
         geo.setIndex(idx);
         geo.computeVertexNormals();
+        // kept so applyCanopy() can shade this tile once the forest exists
+        this.tiles.push({ geo, cls: Uint8Array.from(clsOf) });
         const mesh = new THREE.Mesh(geo, material);
         // Every tile keeps the NAME, because the audit identifies the ground by
         // it. P1b was reporting the heightfield as "structure in a carriageway"
