@@ -2665,6 +2665,8 @@ export async function buildWalkable(world, data, Y = null) {
     }),
     play: new THREE.MeshStandardMaterial({ color: 0xc4603f, roughness: 0.8 }),
     roof: new THREE.MeshStandardMaterial({ color: 0x7d8a7a, roughness: 0.8 }),
+    // PUBLIC ART IS NOT A BLACK ROCK. See the artwork branch below.
+    art: new THREE.MeshStandardMaterial({ color: 0x9a8f6d, roughness: 0.42, metalness: 0.35 }),
   };
   for (const f of data.parkfurn || []) {
     await YW();
@@ -2733,12 +2735,48 @@ export async function buildWalkable(world, data, Y = null) {
       col.rotateY(ang); col.translate(px, y + 1.5, pz);
       merger.add(col, PF.stone, px, pz);
     } else if (f.k === 'artwork') {
-      const plinth = new THREE.CylinderGeometry(0.7, 0.85, 0.6, 12);
-      plinth.translate(px, y + 0.3, pz);
+      // EVERY PIECE OF PUBLIC ART ON THE ISLAND WAS THE SAME BLACK ROCK.
+      //
+      // A 20-face icosahedron of radius 0.95 in MAT.metal, on a pale cone, for
+      // every mapped artwork — and one of them stands in the middle of the
+      // arrival plaza where it reads as an untextured error rather than as a
+      // sculpture. The owner, 2026-08-05: "if jagged like blocks all abit like
+      // weak game right". He is right, and this is the clearest single example.
+      //
+      // The map knows an artwork is HERE and nothing else about it, so the form
+      // is Layer 2 — authored, judged by eye (SENTOSA.md). Three plausible
+      // civic-sculpture forms in a warm patinated alloy, and a smooth one is
+      // actually smooth: detail 2 is 320 faces, which at three metres reads as
+      // a curve instead of a die.
+      //
+      // THE FORM IS CHOSEN BY A HASH OF THE POSITION, NOT BY R(). Taking a draw
+      // from the placement stream here would shift every later draw and move
+      // every tree on the island, which is the "golden diffs that are
+      // everything" trap in the handover. A position hash is deterministic,
+      // costs no draw, and gives the same piece the same form every build.
+      const hsh = Math.abs(Math.round(px * 7.13 + pz * 3.71)) % 3;
+      const plinth = new THREE.CylinderGeometry(0.62, 0.8, 0.55, 16);
+      plinth.translate(px, y + 0.275, pz);
       merger.add(plinth, PF.stone, px, pz);
-      const form = new THREE.IcosahedronGeometry(0.95, 0);
-      form.rotateY(ang); form.translate(px, y + 1.5, pz);
-      merger.add(form, MAT.metal, px, pz);
+      if (hsh === 0) {
+        // a polished orb
+        const form = new THREE.IcosahedronGeometry(0.92, 2);
+        form.rotateY(ang); form.translate(px, y + 1.45, pz);
+        merger.add(form, PF.art, px, pz);
+      } else if (hsh === 1) {
+        // a standing stele, tapered and slightly turned off the path axis
+        const form = new THREE.CylinderGeometry(0.16, 0.34, 3.1, 8);
+        form.rotateZ(0.05); form.rotateY(ang + 0.6);
+        form.translate(px, y + 2.1, pz);
+        merger.add(form, PF.art, px, pz);
+      } else {
+        // an open ring on edge, which is the commonest civic-sculpture shape
+        // there is and reads from much further away than a solid mass
+        const form = new THREE.TorusGeometry(1.05, 0.17, 10, 28);
+        form.rotateY(ang + 0.35);
+        form.translate(px, y + 1.65, pz);
+        merger.add(form, PF.art, px, pz);
+      }
     } else {
       continue;
     }
@@ -2834,15 +2872,85 @@ export async function buildTransit(world, data, Y = null) {
         for (let i = 1; i < hs.length - 1; i++) hs[i] = (hs[i - 1] + hs[i] + hs[i + 1]) / 3;
       }
     }
+    // ONE SWEPT BEAM, NOT A CHAIN OF BOXES.
+    //
+    // The owner, 2026-08-05: "monorail or the boardwalk at arrival why still
+    // not like a track but still jagged?" Each segment used to bake its own
+    // BoxGeometry, rotated to its own heading and overlapped 0.4m into its
+    // neighbour. Two boxes meeting at an angle cannot make a curve: the outer
+    // edge gaps and the inner edge crosses, so every bend was a visible facet
+    // and a 0.4m overlap of doubled surface. Smoothing the line (see
+    // smoothWays) made the bends gentle; it could not make them continuous.
+    //
+    // This sweeps ONE mitred profile along the whole chain, so the beam has a
+    // single unbroken top edge from end to end. The mitre is the same bisector
+    // ribbon() uses, clamped so a hairpin cannot throw a corner to infinity.
+    //
+    // The section is narrower and shallower than the old 2.2 x 1.4 slab. A real
+    // straddle-beam guideway is about 0.85m wide; at that width with no train on
+    // it the thing reads as a wire, so this is authored at 1.3m — wide enough to
+    // carry its own piers visually, narrow enough to read as a track rather
+    // than a bridge deck. A plausibility value, like the rest of this file's
+    // offsets, and said so rather than laundered as a measurement.
+    const BW = 1.3, BH = 1.15;
+    {
+      const P = [], hw = BW / 2;
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[Math.max(0, i - 1)], c = pts[Math.min(pts.length - 1, i + 1)];
+        let dx = c[0] - a[0], dz = c[1] - a[1];
+        const L2 = Math.hypot(dx, dz) || 1;
+        dx /= L2; dz /= L2;
+        // lateral normal, and the mitre stretch on a bend
+        let nx = -dz, nz = dx;
+        if (i > 0 && i < pts.length - 1) {
+          const pa = pts[i - 1], pv = pts[i], pc = pts[i + 1];
+          let ax = pv[0] - pa[0], az = pv[1] - pa[1];
+          let cx2 = pc[0] - pv[0], cz2 = pc[1] - pv[1];
+          const la = Math.hypot(ax, az) || 1, lc = Math.hypot(cx2, cz2) || 1;
+          ax /= la; az /= la; cx2 /= lc; cz2 /= lc;
+          let mx = -(az + cz2), mz = ax + cx2;
+          const mL = Math.hypot(mx, mz);
+          if (mL > 1e-4) {
+            mx /= mL; mz /= mL;
+            const cosHalf = Math.max(0.4, Math.abs(mx * -cz2 + mz * cx2));
+            nx = mx / cosHalf; nz = mz / cosHalf;
+          }
+        }
+        P.push({ x: pts[i][0], z: pts[i][1], y: hs[i], nx: nx * hw, nz: nz * hw });
+      }
+      const pos = [], uv = [];
+      const quad = (a, b, c2, d) => {
+        pos.push(...a, ...b, ...c2, ...a, ...c2, ...d);
+        uv.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+      };
+      for (let i = 0; i < P.length - 1; i++) {
+        const q = P[i], r = P[i + 1];
+        if (Math.hypot(r.x - q.x, r.z - q.z) < 0.05) continue;
+        const qL = [q.x + q.nx, q.y, q.z + q.nz], qR = [q.x - q.nx, q.y, q.z - q.nz];
+        const rL = [r.x + r.nx, r.y, r.z + r.nz], rR = [r.x - r.nx, r.y, r.z - r.nz];
+        const qLb = [qL[0], q.y - BH, qL[2]], qRb = [qR[0], q.y - BH, qR[2]];
+        const rLb = [rL[0], r.y - BH, rL[2]], rRb = [rR[0], r.y - BH, rR[2]];
+        quad(qL, rL, rR, qR);          // running surface, normal up
+        quad(qLb, qRb, rRb, rLb);      // soffit, normal down
+        quad(qL, qLb, rLb, rL);        // outer web
+        quad(qR, rR, rRb, qRb);        // inner web
+      }
+      if (pos.length) {
+        const gb = new THREE.BufferGeometry();
+        gb.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        gb.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        gb.computeVertexNormals();
+        merger.add(gb, beamMat, pts[0][0], pts[0][1]);
+      }
+    }
     let pierAcc = 13;          // arc-length to the next pier, carried ACROSS segments
     for (let i = 0; i < pts.length - 1; i++) {
       const [x0, z0] = pts[i], [x1, z1] = pts[i + 1];
       const L = Math.hypot(x1 - x0, z1 - z0);
       if (L < 0.5) continue;
-      const ang = Math.atan2(x1 - x0, z1 - z0);
+      // the deck heights this span runs between: the beam is swept above, but
+      // a pier still has to reach the underside of its own point on it
       const y0 = hs[i], y1 = hs[i + 1];
-      bake(new THREE.BoxGeometry(2.2, 1.4, L + 0.4), beamMat, merger,
-           (x0 + x1) / 2, (y0 + y1) / 2 - 0.7, (z0 + z1) / 2, ang, Math.atan2(y1 - y0, L));
       // PIERS EVERY ~26M OF RUN, NOT OF SEGMENT. The owner walked out of
       // arrival and photographed the guideway flying unsupported down
       // Gateway Avenue (2026-08-04) — 32 of 54 elevated samples had nothing
