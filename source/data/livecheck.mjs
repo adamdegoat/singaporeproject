@@ -102,6 +102,24 @@ try {
   // settled reads agree exactly, so a high one means the collection had not
   // finished. If the flag is ever missing the raw value is used and says so,
   // rather than silently reporting a different quantity than the budget means.
+  // LET THE BOOT FINISH BEFORE MEASURING IT.
+  //
+  // This sampled the instant __ready flipped, and __ready is not the end of the
+  // work — the warm spin, the shader compile and the sim pre-roll are still
+  // running. How far through them the page happened to be decided the number,
+  // which is why this gate read 307, 326, 347, 391 and 415 MB on worlds whose
+  // triangle and draw counts were identical, and refused two deploys on the
+  // strength of it.
+  //
+  // Measured 2026-08-06 with a settle wait and the SAME forced collection:
+  // 228 / 228 / 228 MB, three runs, real GPU (ANGLE Metal) confirmed active —
+  // and 228 again on software raster. The world was never varying; the
+  // measurement was taken mid-boot.
+  //
+  // NOTE FOR WHOEVER READS THE OLD NOTE: --use-gl=angle was blamed for this and
+  // that was WRONG. It was tested directly afterwards and the GPU path gives
+  // the same stable 228. Timing, not the renderer.
+  await page.waitForTimeout(2500);
   info = await page.evaluate(async () => {
     let mem = null, settled = false;
     if (performance.memory) {

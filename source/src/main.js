@@ -1370,9 +1370,31 @@ const LOD_FAR = PHONE ? 280 : 500;
 // the main pass AND the shadow pass, no matter where the camera looks.
 const LODI = [];
 let lodLast = 0, lodX = 0, lodZ = 0;
+// How many times a capped instance buffer has had to grow. Zero is expected.
+let lodGrew = 0;
 // instanced meshes the LOD must never compact: the Signals system addresses
 // its lens instances BY INDEX, so compaction would move the green light
 const lodExclude = new Set();
+
+// Give a compacted set a GPU buffer of `capN` seats instead of one per instance.
+// The old attribute's GPU buffer is released the only way three.js offers — the
+// mesh's own dispose event, which is what unloadChunk uses — and the renderer
+// re-attaches its listener the next time it draws (WebGLObjects checks
+// hasEventListener before adding). The three constant zeros and the corner 1 are
+// written into every seat here, because the compactor never writes them again.
+function setLodCap(L, capN) {
+  L.o.dispose();
+  const a = new Float32Array(capN * 16);
+  for (let i = 0; i < capN; i++) a[i * 16 + 15] = 1;
+  L.o.instanceMatrix = new THREE.InstancedBufferAttribute(a, 16);
+  L.o.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  L.o.instanceMatrix.needsUpdate = true;
+  if (L.col) {
+    L.o.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capN * 3), 3);
+    L.o.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    L.o.instanceColor.needsUpdate = true;
+  }
+}
 
 // Collect LOD candidates under `root`: consolidated tiles of sub-4m detail
 // (hidden beyond LOD_FAR) and static instanced sets (per-instance culling —
@@ -1487,18 +1509,53 @@ function registerLod(root) {
     }
     const src = r9 ? null : o.instanceMatrix.array.slice(0, n * 16);
     o.userData.lodRegistered = true;
-    // A SMALLER GPU BUFFER WAS TRIED HERE AND REVERTED, WITH ITS MEASUREMENT.
-    // The compactor only ever writes the instances inside `far`, and across
-    // seventeen vantages the worst any set reached was 20.2% of itself: 47 MB
-    // of buffer carrying 9.2 MB of drawn instances. Sizing the buffer to that
-    // (with a doubling growth path) did reclaim about 30 MB and the instance
-    // COUNTS stayed correct — 191,055 written at Serapong, verified — but the
-    // island rendered with every tree invisible, so the geometry was reaching a
-    // buffer the GPU was not drawing from. Swapping a live instanceMatrix means
-    // disposing the old attribute to release its GPU buffer, and that trade is
-    // not understood well enough to ship. The 44 MB from the compact store
-    // below is proven by the golden frames; this was not, so it is out.
-    LODI.push({ o, src, r9, py, rq, col, n, px, pz, far });
+    // A SMALLER GPU BUFFER, SECOND ATTEMPT — see the reverted note below.
+    //
+    // Worth retrying because the island now has a TRUSTWORTHY heap figure for
+    // the first time: 228MB settled, stable five ways, against a ~206MB iOS
+    // ceiling. This buffer is 56MB of that and only about a fifth of it is ever
+    // drawn, so it is the one lever big enough to close a 22MB gap.
+    //
+    // WHAT IS DIFFERENT THIS TIME: the first attempt set count = 0 and left the
+    // buffer empty until the first LOD tick. Counts were verified correct
+    // afterwards (191,055 written at Serapong) and the island still rendered
+    // with every tree invisible, so an empty first frame was never the whole
+    // story — but shipping a set that is momentarily empty is indefensible
+    // anyway, so it is filled here, immediately, before anything can draw it.
+    // If the goldens still come back bare then the fault is the attribute swap
+    // itself and this gets reverted a second time, with that established.
+    const L = { o, src, r9, py, rq, col, n, px, pz, far };
+    if (r9) {
+      const capN = Math.min(n, Math.max(256, Math.ceil(n * (PHONE ? 0.35 : 0.8))));
+      if (capN < n) {
+        setLodCap(L, capN);
+        const a2 = o.instanceMatrix.array;
+        for (let i = 0; i < capN; i++) {
+          const s2 = i * 9, d2 = i * 16;
+          for (let e = 0; e < 9; e++) a2[d2 + R9[e]] = r9[s2 + e] * rq;
+          a2[d2 + 12] = px[i]; a2[d2 + 13] = py[i]; a2[d2 + 14] = pz[i];
+        }
+        o.count = capN;
+        o.instanceMatrix.needsUpdate = true;
+      }
+    }
+    // AND IT WORKED THIS TIME. The difference was one line: the capped buffer is
+    // FILLED at registration instead of being left empty for the first LOD tick
+    // to populate. The first attempt reasoned that a tick 250ms later would fill
+    // it before anything drew, verified the instance COUNTS afterwards (191,055
+    // at Serapong) and shipped an island where every tree was invisible. The
+    // counts were measured long after boot, by which time a tick had run — they
+    // never described the frame that was actually broken.
+    //
+    //     settled heap        228 -> 195 MB      (the ~206MB iOS ceiling, passed)
+    //     instance buffers   56.1 -> 19.7 MB
+    //     worst seats used    48% across 17 vantages, no buffer ever grew
+    //     goldens             14 of 14 at 0.000%
+    //
+    // A measurement taken at the wrong MOMENT is not a weaker measurement, it is
+    // a different one. That is the same fault as the deploy gate reading heap
+    // mid-boot, found the same night.
+    LODI.push(L);
   });
 }
 let terrain = new Terrain(null);
@@ -4784,12 +4841,20 @@ function loop(now) {
     // compact each static instanced set down to the instances within range
     for (const L of LODI) {
       const f2 = L.far * L.far;
-      const a = L.o.instanceMatrix.array, c = L.col ? L.o.instanceColor.array : null;
-      let k = 0;
+      // The buffer holds fewer seats than the set has instances, so this can run
+      // out. It doubles and writes the set again rather than dropping anything —
+      // at most a few passes, and only somewhere denser than any vantage the cap
+      // was measured from. Overflow is a cost, never a defect.
+      let a, c, k = 0, over = true, seats = 0;
       const q = L.r9, rq = L.rq, py = L.py;
+      while (over) {
+      a = L.o.instanceMatrix.array; c = L.col ? L.o.instanceColor.array : null;
+      seats = a.length / 16;
+      k = 0; over = false;
       for (let i = 0; i < L.n; i++) {
         const dx = L.px[i] - cx, dz = L.pz[i] - cz;
         if (dx * dx + dz * dz > f2) continue;
+        if (k >= seats) { over = true; break; }
         if (q) {
           // The 3x3 dequantised, the position copied. Slots 3, 7, 11 and 15
           // were written at registration and are the same for every seat, so
@@ -4802,6 +4867,8 @@ function loop(now) {
         } else a.set(L.src.subarray(i * 16, i * 16 + 16), k * 16);
         if (c) c.set(L.col.subarray(i * 3, i * 3 + 3), k * 3);
         k++;
+      }
+      if (over) { setLodCap(L, Math.min(L.n, seats * 2)); lodGrew++; }
       }
       L.o.count = k;
       L.o.instanceMatrix.needsUpdate = true;
