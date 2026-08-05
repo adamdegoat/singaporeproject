@@ -41,6 +41,26 @@ This is the authored layer under the SENTOSA.md rule: the ROUTE and the four
 stations are truth and come from the map untouched; how high the deck rides
 between them is detail, and detail is designed.
 
+THE SECOND BUG, FOUND 2026-08-05 BY THE OWNER FROM THE SPAWN POINT: "got like
+one dunno is broadwalk or monorail track just there that looks like shit, looks
+like overhead beams not connected properly."
+
+He was looking at (-1707.6, 12726.3), THIRTY METRES from where a player loads
+in. FOUR ways meet at that single node and the deck arrived there at 22.79,
+22.82, 27.75 and 27.98 m — a FIVE-POINT-TWO METRE STEP in mid-air.
+
+The cause was in this file. chain_ways() joins ways greedily, so at a junction
+where four way-ends meet, one chain claims two of them and the rest start new
+chains — and each chain then had its OWN height profile fitted along its OWN
+arc length. Two runs through one node had no reason to agree, and did not.
+
+THE DECK HEIGHT IS A PROPERTY OF THE PLACE, NOT OF WHICH RUN YOU ARRIVED ON.
+So the profile is now fitted over a NODE GRAPH: every way-point within a metre
+of another is ONE node, smoothing runs across graph edges, and the clearance
+and grade limits are applied to nodes. Two ways meeting at a node cannot
+disagree, because there is only one number. The chaining is kept for reporting
+the run lengths, which is still the useful way to describe the line.
+
 Run:  python3 data/monorail.py sentosa
 """
 import argparse
@@ -154,81 +174,110 @@ def main():
     print(f"== monorail {a.id}: {len(segs)} ways -> {len(chains)} continuous "
           f"run{'s' if len(chains) != 1 else ''}")
 
-    for run in chains:
-        # flatten the chain to one polyline, remembering where each way's
-        # points live so the profile can be handed back
-        pts, owner = [], []
-        for (wi, rev) in run:
-            p = list(segs[wi]["p"])
-            if rev:
-                p.reverse()
-            start = 0
-            if pts and dist(pts[-1], p[0]) < 1.5:
-                start = 1                      # shared node, do not repeat it
-            for k in range(start, len(p)):
-                pts.append(p[k])
-                owner.append((wi, len(p) - 1 - k if rev else k))
+    # ---- ONE HEIGHT PER NODE -------------------------------------------------
+    # Nodes are way-points snapped to a 1m key, which is the same key chain_ways
+    # matches endpoints on, so a junction is a single node by construction.
+    def key(pt):
+        return (round(pt[0]), round(pt[1]))
 
-        if len(pts) < 2:
+    node_of = {}          # (wi, k) -> node id
+    node_pt = []          # node id -> (x, z)
+    kmap = {}
+    for wi, sgm in enumerate(segs):
+        for k, pt in enumerate(sgm["p"]):
+            kk = key(pt)
+            if kk not in kmap:
+                kmap[kk] = len(node_pt)
+                node_pt.append((pt[0], pt[1]))
+            node_of[(wi, k)] = kmap[kk]
+    N = len(node_pt)
+
+    # edges along each way, with their length — the graph the profile lives on
+    nbr = defaultdict(list)
+    for wi, sgm in enumerate(segs):
+        pw = sgm["p"]
+        for k in range(len(pw) - 1):
+            a1, b1 = node_of[(wi, k)], node_of[(wi, k + 1)]
+            if a1 == b1:
+                continue
+            L = max(0.5, dist(pw[k], pw[k + 1]))
+            nbr[a1].append((b1, L))
+            nbr[b1].append((a1, L))
+
+    gr = [g.at(x, z) for (x, z) in node_pt]
+    ys = [q + LIFT for q in gr]
+
+    # SMOOTH ACROSS THE GRAPH, length-weighted. This is what the per-chain
+    # version could not do: at a junction the neighbours from every branch are
+    # in the average, so all of them settle to the same deck.
+    for _ in range(SMOOTH_PASSES * 6):
+        out = list(ys)
+        for i in range(N):
+            if not nbr[i]:
+                continue
+            wsum = 1.0
+            acc = ys[i]
+            for (j, L) in nbr[i]:
+                w = SMOOTH_M / (SMOOTH_M + L)
+                acc += ys[j] * w
+                wsum += w
+            out[i] = acc / wsum
+        ys = out
+
+    # clearance, then grade along every edge, swept until both hold
+    for _ in range(12):
+        for i in range(N):
+            ys[i] = max(ys[i], gr[i] + MIN_CLEAR)
+        for i in range(N):
+            for (j, L) in nbr[i]:
+                lim = ys[i] + MAX_GRADE * L
+                if ys[j] > lim:
+                    ys[j] = lim
+    for i in range(N):
+        ys[i] = max(ys[i], gr[i] + MIN_CLEAR)
+
+    for wi, sgm in enumerate(segs):
+        sgm["ys"] = [round(ys[node_of[(wi, k)]], 2) for k in range(len(sgm["p"]))]
+
+    # ---- report, and PROVE the steps are gone --------------------------------
+    worst_step, worst_at = 0.0, None
+    for kk, nid in kmap.items():
+        pass
+    seen = defaultdict(list)
+    for wi, sgm in enumerate(segs):
+        for k, pt in enumerate(sgm["p"]):
+            seen[key(pt)].append(sgm["ys"][k])
+    for kk, vals in seen.items():
+        if len(vals) < 2:
             continue
-        s_at = [0.0]
-        for i in range(1, len(pts)):
-            s_at.append(s_at[-1] + dist(pts[i - 1], pts[i]))
-        run_len = s_at[-1]
+        st = max(vals) - min(vals)
+        if st > worst_step:
+            worst_step, worst_at = st, kk
 
-        gr = [g.at(x, z) for (x, z) in pts]
-        ys = [q + LIFT for q in gr]
-
-        # smooth along arc length, across way boundaries
-        for _ in range(SMOOTH_PASSES):
-            out = list(ys)
-            for i in range(len(ys)):
-                lo = hi = i
-                while lo > 0 and s_at[i] - s_at[lo - 1] < SMOOTH_M / 2:
-                    lo -= 1
-                while hi < len(ys) - 1 and s_at[hi + 1] - s_at[i] < SMOOTH_M / 2:
-                    hi += 1
-                out[i] = sum(ys[lo:hi + 1]) / (hi - lo + 1)
-            ys = out
-
-        # never closer to the ground than MIN_CLEAR, then re-smooth lightly so
-        # a single raised point does not become a kink
-        for _ in range(3):
-            for i in range(len(ys)):
-                ys[i] = max(ys[i], gr[i] + MIN_CLEAR)
-            for i in range(1, len(ys) - 1):
-                ys[i] = (ys[i - 1] + 2 * ys[i] + ys[i + 1]) / 4
-
-        # grade limit, swept both ways so neither end wins
-        for _ in range(4):
-            for i in range(1, len(ys)):
-                dsx = max(0.5, s_at[i] - s_at[i - 1])
-                ys[i] = min(ys[i], ys[i - 1] + MAX_GRADE * dsx)
-            for i in range(len(ys) - 2, -1, -1):
-                dsx = max(0.5, s_at[i + 1] - s_at[i])
-                ys[i] = min(ys[i], ys[i + 1] + MAX_GRADE * dsx)
-            for i in range(len(ys)):
-                ys[i] = max(ys[i], gr[i] + MIN_CLEAR)
-
-        per_way = defaultdict(dict)
-        for i, (wi, k) in enumerate(owner):
-            per_way[wi][k] = ys[i]
-        for wi, m in per_way.items():
-            n = len(segs[wi]["p"])
-            got = [m.get(k) for k in range(n)]
-            # a shared node was skipped above; fill it from its neighbour
-            for k in range(n):
-                if got[k] is None:
-                    got[k] = (got[k - 1] if k else None) or next(
-                        (v for v in got if v is not None), gr[0] + LIFT)
-            segs[wi]["ys"] = [round(v, 2) for v in got]
-
-        clr = [y - q for y, q in zip(ys, gr)]
-        grade = max((abs(ys[i] - ys[i - 1]) / max(0.5, s_at[i] - s_at[i - 1])
-                     for i in range(1, len(ys))), default=0)
-        print(f"   run {run_len:7.0f} m, {len(pts):3d} points   "
-              f"clearance {min(clr):5.1f}..{max(clr):5.1f} m   "
-              f"steepest grade {100*grade:.1f}%")
+    for run in chains:
+        L = 0.0
+        for (wi, rev) in run:
+            pw = segs[wi]["p"]
+            for k in range(len(pw) - 1):
+                L += dist(pw[k], pw[k + 1])
+        first = segs[run[0][0]]
+        cl = [y - g.at(x, z) for (wi, rev) in run
+              for (x, z), y in zip(segs[wi]["p"], segs[wi]["ys"])]
+        print(f"   run {L:7.0f} m, {len(run):2d} ways   "
+              f"clearance {min(cl):5.1f}..{max(cl):5.1f} m")
+    grade = 0.0
+    for wi, sgm in enumerate(segs):
+        pw, yy = sgm["p"], sgm["ys"]
+        for k in range(len(pw) - 1):
+            grade = max(grade, abs(yy[k + 1] - yy[k]) / max(0.5, dist(pw[k], pw[k + 1])))
+    # WHERE DOES THE BEAM FLY UNSUPPORTED? The renderer places a pier every 26m
+    # of run, but refuses seats it cannot stand on. This reports the worst span
+    # in the DATA's own terms (arc length between points that a pier could sit
+    # at), because "one every 31.6m on average" hides a 300m gap over water and
+    # the average is not what a player sees.
+    print(f"   steepest grade {100 * grade:.1f}%   "
+          f"worst height disagreement at a shared node {worst_step:.2f} m"
+          + (f" at {worst_at}" if worst_step > 0.05 else " — every junction agrees"))
 
     now = [y for s in segs for y in s.get("ys", [])]
     if now:

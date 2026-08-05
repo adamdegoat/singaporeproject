@@ -1645,6 +1645,10 @@ function growM(pts, m) {
     return [x, z];
   });
 }
+// ?pathdupe restores the old duplicate footpath surfacing for an A/B — see the
+// note in buildRoads. Module scope because buildRoads has no VP of its own.
+const PATH_DUPE = new URLSearchParams(location.search).has('pathdupe');
+
 function grow(pts, f) {
   const c = centroid(pts);
   return pts.map(([x, z]) => {
@@ -3294,6 +3298,25 @@ export async function buildRoads(world, data, Y = null) {
     // draw.
     if (r.fw === 'crossing') continue;
     const isPath = r.k === 'footway' || r.k === 'pedestrian';
+    // THE SAME FOOTPATH WAS BEING SURFACED TWICE, AT THE SAME HEIGHT.
+    //
+    // Found 2026-08-05 from the spawn point, where the plaza read as a mess of
+    // overlapping angular slabs. A downward-ray grid over it named the layers by
+    // material identity: 25 pairs of ground surfaces within 0.25m of each other
+    // in a 130m box, several at 0.00m — MAT.paving from this loop and paveM from
+    // buildTrails, both laid at ground + 0.02, exactly coincident. Coincident
+    // surfaces z-fight at every distance, and that is the shattered look.
+    //
+    // buildTrails draws the better ribbon: it steps along the way every 6m and
+    // takes surfaceAt at all four corners, so it drapes over Imbiah instead of
+    // spanning it, and it picks boardwalk / earth / paving per piece. This loop
+    // drew one flat quad per segment. Measured: 690 path ways, 82.5 km, against
+    // 9,150 drawn pieces in buildTrails — the overlap is most of it.
+    //
+    // So the paths belong to buildTrails and this loop leaves them alone.
+    // Crossings were already excluded above; carriageways are untouched.
+    // `?pathdupe` restores the old layer for an A/B.
+    if (isPath && !PATH_DUPE) continue;
     // Ways overlap where they meet, and two carriageways at exactly the same
     // height speckle. A stable sub-centimetre offset per road, derived from its
     // own geometry, gives every overlap a consistent winner.

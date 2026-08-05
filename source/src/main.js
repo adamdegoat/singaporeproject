@@ -6,6 +6,7 @@ import { dedupeMaterials, lambertise, consolidate, trimShadowCasters, pruneCarri
 import { buildRoadIndex, claim } from './roads.js';
 import { Solid } from './solid.js';
 import { buildVespa, buildRider, buildCar, buildSkate, buildSkater, SKATE_WHEEL_X as SK_WHEEL_X, newState, step, RIDE, CAR, SKATE, SURFACES, SURF_ROAD } from './vespa.js';
+import { SkidMarks } from './skid.js';
 import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
 import { Net } from './net.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
@@ -1119,6 +1120,9 @@ scene.add(bike);
 let S = newState(0, 0, 0);
 let ready = false, stats = {};
 let crowdSys = null, trafficSys = null, wayfinder = null, signals = null;
+// The skid-mark ribbon. Created once the world exists; `?noskid` disables it,
+// which is also how its cost gets A/B'd on the phone profile.
+let SKID = null;
 // Signals instances for streamed-in districts; the boot one stays `signals`
 const extraSignals = [];
 // Crowds for streamed-in districts — the boot crowd walks only the spawn
@@ -2526,6 +2530,10 @@ async function buildRegion(data, opts = {}) {
   terrain.carve(opts.carveRoads || data.roads || []);
   setTerrain(terrain);
   window.__terrain = terrain;
+  if (!SKID && !P.has('noskid')) {
+    SKID = new SkidMarks(THREE, scene);
+    window.__skid = SKID;
+  }
   // the audit needs the same notion of 'ground' the world uses: on a bridge
   // that is the DECK, not the seabed under it
   window.__bridgeDeckAt = bridgeDeckAt;
@@ -4533,6 +4541,12 @@ function loop(now) {
         step(S, slice, inp.throttle, inp.brake, inp.steer, rideParams, SF);
         realDt -= slice;
       }
+      // SKID MARKS, hung off the drift state the physics just produced rather
+      // than off speed — cruising leaves nothing and a committed slide leaves a
+      // pair of lines. Built here because this is the one place that has the
+      // ride state and the surface classification in the same breath. One mesh,
+      // one draw call, a fixed ring buffer; see src/skid.js. `?noskid` off.
+      if (SKID) SKID.update(S, window.__surface().kind, surfaceAt, dt);
     }
     // you cannot ride through a bus — but a SIDE graze slides along it
     // like walls do. The old response reverted the whole move and killed
