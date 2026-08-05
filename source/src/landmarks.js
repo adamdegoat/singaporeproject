@@ -6151,33 +6151,60 @@ function coastesBar(api, b) {
 // OLA BEACH CLUB — two storeys + open roof deck: weathered grey vertical
 // timber below, a navy louvre band the length of the upper level, external
 // beach stair, white rail on the deck.
+// How far the ground climbs above a footprint's seat. footingY takes the
+// MINIMUM under the ring, so on a slope everything seated at the seat is buried
+// by this much on the high side. Measured on the beach venues: 1.3m at Bora
+// Bora, 4.0m at Coastes, 8.4m at Ola Beach Club.
+function riseAbove(api, pts) {
+  const seat = api.footingY(pts);
+  let hi = -Infinity;
+  for (const [x, z] of pts) { const g = api.groundAt(x, z); if (g > hi) hi = g; }
+  // and the middle, in case a long edge climbs between its ends
+  let cx = 0, cz = 0;
+  for (const [x, z] of pts) { cx += x; cz += z; }
+  const gm = api.groundAt(cx / pts.length, cz / pts.length);
+  if (gm > hi) hi = gm;
+  return Math.max(0, hi - seat);
+}
+
 function olaBeachClub(api, b) {
   const ob = orientedBox(b.p);
   const g0 = api.footingY(b.p);
+  // FIVE METRES OF THIS BUILDING WERE UNDERGROUND. Its lowest mass is 3.1m and
+  // seated at the footing, which is the MINIMUM ground under the ring — and the
+  // ground climbs 8.36m across this footprint. From the sea, where this recipe
+  // has always been rendered, it looked right. From the land it was a 3m box
+  // with most of itself buried. Everything above the base now clears the rise.
+  const lift = riseAbove(api, b.p);
   const [sx, sz] = SEAWARD(ob);
   const grey = new THREE.MeshStandardMaterial({ color: 0xa7a49b, roughness: 0.85 });
   const navy = new THREE.MeshStandardMaterial({ color: 0x22334e, roughness: 0.7 });
   const white = new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.6 });
-  api.merge(api.extrudeGeo(b.p, 3.1, 0), grey, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(b.p, 3.1 + lift, 0), grey, ob.cx, ob.cz);
   // navy louvre band, slightly oversailing
-  api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 2.1, 3.1), navy, ob.cx, ob.cz);
-  api.merge(api.extrudeGeo(b.p, 0.25, 5.2), grey, ob.cx, ob.cz);   // deck slab
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 2.1, 3.1 + lift), navy, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(b.p, 0.25, 5.2 + lift), grey, ob.cx, ob.cz);   // deck slab
   // white deck rail
-  api.merge(api.extrudeGeo(api.grow(b.p, 1.0), 0.08, 6.25), white, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.0), 0.08, 6.25 + lift), white, ob.cx, ob.cz);
   const per = perimeterOf(b.p);
   const np = Math.max(10, Math.round(per / 2.2));
   for (let i = 0; i < np; i++) {
     const p2 = alongRing(b.p, (i + 0.5) / np, 1.0, ob);
     if (!p2) continue;
     const post = new THREE.BoxGeometry(0.07, 0.85, 0.07);
-    post.translate(p2[0], g0 + 5.45 + 0.42, p2[1]);
+    post.translate(p2[0], g0 + lift + 5.45 + 0.42, p2[1]);
     api.merge(post, white, ob.cx, ob.cz);
   }
   // external stair block on the beach side
-  const stair = new THREE.BoxGeometry(1.6, 3.1, 3.4);
+  // the stair stands OUTSIDE the footprint, so it takes the ground where it
+  // actually is rather than the ring's minimum — otherwise it floats or sinks
+  // by the full rise the moment the building is on a grade
+  const stx = ob.bx + sx * (ob.halfShort + 0.9), stz = ob.bz + sz * (ob.halfShort + 0.9);
+  const stg = api.groundAt(stx, stz);
+  const stH = Math.max(2.2, g0 + lift + 3.1 - stg);
+  const stair = new THREE.BoxGeometry(1.6, stH, 3.4);
   stair.rotateY(Math.atan2(sx, sz));
-  stair.translate(ob.cx + sx * (ob.halfShort + 0.9), g0 + 1.55,
-                  ob.cz + sz * (ob.halfShort + 0.9));
+  stair.translate(stx, stg + stH / 2, stz);
   api.merge(stair, grey, ob.cx, ob.cz);
 }
 
@@ -6424,31 +6451,100 @@ function festiveWalkCanopy(api, b) {
 // api.footingY returns relative to local ground, and what the third argument to
 // api.extrudeGeo is measured FROM, were both assumed rather than read.
 //
-// AND THEN THE ANSWER WAS READ RATHER THAN GUESSED, so the next attempt does
-// not have to rediscover it:
+// AND THEN IT WAS MEASURED, WHICH CORRECTED THE DIAGNOSIS ABOVE.
 //
-//   extrudeGeo(pts, h, y0) puts the slab between foot+y0 and foot+y0+h, where
-//     foot = FOOT !== null ? FOOT : (h <= 16 ? streetFootingY(pts) : footingY(pts))
+// The first reading of this was that extrudeGeo and api.footingY use DIFFERENT
+// bases. That is wrong and should not be repeated: while a building is being
+// built FOOT is set, and both resolve to it. They agree.
 //
-// The composition was never the problem. THE TWO BASES ARE DIFFERENT. Every
-// slab in a recipe is seated on the module's FOOT, and every hand-placed piece
-// — a post, a rail, a counter — is seated on `api.footingY(b.p)`, which is a
-// DIFFERENT function. Where those disagree, and on a sloping beach edge they
-// disagree by metres, the slabs sit at one height and the posts at another and
-// the thing comes apart exactly the way the frames showed.
+// The real fault is what FOOT IS. footingY walks the perimeter and takes the
+// MINIMUM ground under the ring — one building, one seat, which is the right
+// rule and exists because sampling grown and inset rings separately once left
+// parapets in the sky. On Sentosa's beach edges the ground then rises a long
+// way above that seat. Measured across the venues:
 //
-// Worse, `foot` depends on h: a 0.42m roof plate is scored by streetFootingY
-// and a 20m mass by footingY, so two pieces of the SAME building can take
-// different bases purely because of their thickness.
+//     Bora Bora Beach Bar   seat 5.29   highest ground 6.57   rise 1.28 m
+//     Coastes               seat 22.55  highest ground 26.59  rise 4.03 m
+//     Ola Beach Club        seat 11.66  highest ground 20.02  rise 8.36 m
 //
-// So the next attempt seats everything on ONE base. Either put every piece
-// through extrudeGeo, or get the base extrudeGeo would use and pass that same
-// number to every translate — do not mix the two. That is also worth checking
-// in olaBeachClub, which mixes them today and only looks right by luck.
+// A 0.45m timber deck seated at the minimum is therefore BURIED by up to 0.83m
+// at Bora Bora, which is exactly what the frames showed: no deck, posts
+// apparently hanging, and the roof left reading as a plate in the air.
+//
+// TWO THINGS FOLLOW. First, a thin element cannot be seated at the footing on
+// sloping ground — it needs its own local ground (api.groundAt at the piece's
+// own x,z) or enough thickness to clear the rise. Second, and worth checking
+// before trusting it, OLA BEACH CLUB HAS THIS BUG TODAY: its lowest mass is
+// 3.1m against an 8.36m rise, so five metres of it are underground on the high
+// side. It looks right from the sea and has never been rendered from the land.
+// A BEACH BAR IS AN OPEN PAVILION, NOT A BOX WITH A DOOR.
+//
+// The owner, 2026-08-05: "siloso beach the beach bars all like generics all can
+// it be like beach clubs that i can explore inside?" Coastes and Ola Beach Club
+// had recipes; Bora Bora Beach Bar, Rock Bar and Two Chefs Bar came out of the
+// generic family as sealed masses on the sand.
+//
+// SEATED ON THE RISE, NOT ON THE FOOTING — this is the second attempt and the
+// first one failed exactly there. footingY is the MINIMUM ground under the ring
+// and the sand climbs 1.3m across Bora Bora's footprint, so a 0.45m deck seated
+// at the footing was buried and everything above it read as plates hanging in
+// the air. Every horizontal here starts at `lift` and every hand-placed upright
+// takes the ground at its OWN x,z.
+//
+// THE OPENNESS IS THE FEATURE, AND IT IS ALSO WHAT MAKES IT EXPLORABLE. The
+// collision grid is rasterised from the geometry that is actually drawn, so a
+// pavilion with posts instead of walls is walkable between the posts without
+// any carve, any flag, or any special case. Building it honestly is what lets
+// you walk in.
+function beachVenue(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const lift = riseAbove(api, b.p);
+  const [sx, sz] = SEAWARD(ob);
+  const timber = new THREE.MeshStandardMaterial({ color: 0x9a7550, roughness: 0.88 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x4b3a2a, roughness: 0.9 });
+  const thatch = new THREE.MeshStandardMaterial({ color: 0xb59a63, roughness: 0.95 });
+  const counter = new THREE.MeshStandardMaterial({ color: 0x2f4a44, roughness: 0.7 });
+
+  const DECK = 0.5, EAVE = 3.6;
+  const deckTop = g0 + lift + DECK;
+
+  // the deck, sitting just clear of the highest ground it covers
+  api.merge(api.extrudeGeo(b.p, DECK, lift), timber, ob.cx, ob.cz);
+
+  // posts, each standing on its own ground and reaching the ring beam
+  const per = perimeterOf(b.p);
+  const np = Math.max(6, Math.round(per / 3.6));
+  for (let i = 0; i < np; i++) {
+    const p2 = alongRing(b.p, (i + 0.5) / np, 0.35, ob);
+    if (!p2) continue;
+    const pg = api.groundAt(p2[0], p2[1]);
+    const top = deckTop + EAVE;
+    const hgt = Math.max(1.2, top - pg);
+    const post = new THREE.BoxGeometry(0.22, hgt, 0.22);
+    post.translate(p2[0], pg + hgt / 2, p2[1]);
+    api.merge(post, dark, ob.cx, ob.cz);
+  }
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.02), 0.26, lift + DECK + EAVE - 0.26), dark, ob.cx, ob.cz);
+
+  // one roof, sitting ON the posts, with an eave rather than a shelf
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.05), 0.42, lift + DECK + EAVE), thatch, ob.cx, ob.cz);
+
+  // the bar, on the deck, set back so the sea side stays open. bx,bz is the BOX
+  // centre — ob.cx/cz is the vertex mean and on an L-shaped ring the two are
+  // metres apart, which is how a dome once ended up over open ground.
+  const bar = new THREE.BoxGeometry(Math.min(9, ob.halfLong * 1.1), 1.15, 0.8);
+  bar.rotateY(Math.atan2(sx, sz));
+  bar.translate(ob.bx - sx * ob.halfShort * 0.5, deckTop + 0.575,
+                ob.bz - sz * ob.halfShort * 0.5);
+  api.merge(bar, counter, ob.cx, ob.cz);
+}
+
 export const RECIPES = [
   [/^emerald pavilion/i, emeraldPavilion],
   [/^coastes/i, coastesBar],
   [/^ola beach club/i, olaBeachClub],
+  [/^bora bora beach bar|^rock bar$|^two chefs bar|^tanjong beach club|^foc sentosa/i, beachVenue],
   [/^trapizza/i, trapizza],
   [/^beach arrival plaza/i, beachArrivalPlaza],
   [/^aj hackett/i, bungyTower],
