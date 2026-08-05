@@ -69,7 +69,21 @@ const res = await page.evaluate((limit) => {
   }
 
   for (const [x, z] of pts) {
-    const s = window.__surfaceAt(x, z);
+    // ASKED THE WAY A PLAYER ASKS IT. __surfaceAt with no height answers with
+    // the HIGHEST registered surface at that point whatever the walker is
+    // standing on, so the moment the island grew raised decks — the cable car
+    // station platforms, 12m up — this reported the deck as the ground under
+    // the footway running beneath it. Two of the worst offenders were exactly
+    // that: 12.15m of "hover" at Siloso Point and 11.91m at Sentosa station.
+    //
+    // No player can reach those: walkSurfaceAt is height-aware and refuses a
+    // surface that is not within a step of where the walker already is. So ask
+    // from the LOGICAL GROUND here, which is where a player on this way is.
+    // Same fix trailcheck's N3 got, for the same reason, on the same day.
+    const g0 = window.__terrain ? window.__terrain.at(x, z) : null;
+    const s = window.__surfaceAtFrom && g0 != null
+      ? window.__surfaceAtFrom(x, z, g0)
+      : window.__surfaceAt(x, z);
     if (!Number.isFinite(s)) continue;
     // A DECK IS ALLOWED TO BE ABOVE THE GROUND — that is what a deck is. Only
     // ask the question where the player is standing on the ground itself.
