@@ -3375,6 +3375,19 @@ export async function buildTransit(world, data, Y = null) {
           }
         }
       }
+      // ...and its own point-in-ring, for the same reason. `inRing` belongs to
+      // buildSgDetail; buildTransit has never had one, and this is the FOURTH
+      // time a helper assumed into this scope has taken the boot down (atlas,
+      // gateSigns, onAnyRoadT, now this). If you add anything here, check that
+      // every name you use is declared IN buildTransit.
+      const inWorks = (x, z, pts) => {
+        let c = false;
+        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+          const xi = pts[i][0], zi = pts[i][1], xj = pts[j][0], zj = pts[j][1];
+          if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+        }
+        return c;
+      };
       const nearWay = (x, z, margin) => {
         const l = _wGrid.get(Math.floor(x / _WCELL) + ',' + Math.floor(z / _WCELL));
         if (!l) return false;
@@ -3468,6 +3481,101 @@ export async function buildTransit(world, data, Y = null) {
       }
       out.worksHoarding = panels;
       out.worksCranes = cranes;
+
+      // WHAT IS ACTUALLY ON THE SITE. With hoarding and two cranes the parcel
+      // read as a fenced empty field; a worksite is a yard. Research §6.5, off
+      // 2026 drone stills, in the order it lists them: stacks of
+      // large-diameter steel PILE CASINGS (some rusty bare steel, some painted
+      // green, some black), red-oxide walers and I-beams, timber crane mats,
+      // BLUE CONTAINERS and a white site office, and orange cones.
+      //
+      // Placed on a deterministic lattice from the parcel's own bounding box —
+      // no rand(), because a draw here would shift the island's placement
+      // stream, which is the trap the canopy-blob rotation documents. Every
+      // piece asks nearWay() and __blocked() first, so nothing lands on a haul
+      // road or inside something else.
+      const casingRust = new THREE.MeshLambertMaterial({ color: 0x8a5a3c });
+      const casingGreen = new THREE.MeshLambertMaterial({ color: 0x4f6b45 });
+      const oxide = new THREE.MeshLambertMaterial({ color: 0x9c4a2c });
+      const boxBlue = new THREE.MeshLambertMaterial({ color: 0x2a5f86 });
+      const officeWhite = new THREE.MeshLambertMaterial({ color: 0xdfe1dc });
+      const matTimber = new THREE.MeshLambertMaterial({ color: 0x6f5a3e });
+      let kit = 0;
+      for (const parcel of works) {
+        const p = parcel.p;
+        let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+        for (const [x2, z2] of p) {
+          if (x2 < mnx) mnx = x2; if (x2 > mxx) mxx = x2;
+          if (z2 < mnz) mnz = z2; if (z2 > mxz) mxz = z2;
+        }
+        const W = mxx - mnx, D = mxz - mnz;
+        if (W < 40 || D < 40) continue;
+        // a 7x7 lattice inset from the fence, so nothing sits on the hoarding
+        for (let gi = 1; gi < 7; gi++) {
+          for (let gj = 1; gj < 7; gj++) {
+            const fx4 = gi / 7, fz4 = gj / 7;
+            const x = mnx + W * fx4, z = mnz + D * fz4;
+            if (!inWorks(x, z, p)) continue;
+            if (nearWay(x, z, 5)) continue;
+            if (window.__blocked && window.__blocked(x, z)) continue;
+            const gy = surfaceAt(x, z);
+            // a stable pick from the lattice cell, not from a random stream
+            const pick = (gi * 7 + gj * 3) % 6;
+            const yaw = ((gi * 11 + gj * 5) % 8) * 0.39;
+            if (pick === 0 || pick === 1) {
+              // a stack of pile casings, lying down
+              const mat = pick === 0 ? casingRust : casingGreen;
+              for (let r2 = 0; r2 < 3; r2++) {
+                for (let c2 = 0; c2 < 3 - r2; c2++) {
+                  const cyl = new THREE.CylinderGeometry(0.55, 0.55, 11, 8);
+                  cyl.rotateX(Math.PI / 2);
+                  cyl.rotateY(yaw);
+                  const off = (c2 - (2 - r2) / 2) * 1.2 + r2 * 0.6;
+                  cyl.translate(x + Math.cos(yaw) * off, gy + 0.55 + r2 * 1.0,
+                                z - Math.sin(yaw) * off);
+                  merger.add(cyl, mat, x, z);
+                }
+              }
+              kit++;
+            } else if (pick === 2) {
+              // red-oxide I-beams, stacked flat
+              for (let r2 = 0; r2 < 4; r2++) {
+                const bm = new THREE.BoxGeometry(0.9, 0.34, 9);
+                bm.rotateY(yaw);
+                bm.translate(x, gy + 0.17 + r2 * 0.36, z);
+                merger.add(bm, oxide, x, z);
+              }
+              kit++;
+            } else if (pick === 3) {
+              // a pair of containers, one stacked
+              for (let r2 = 0; r2 < 2; r2++) {
+                const bx3 = new THREE.BoxGeometry(2.5, 2.6, 6.1);
+                bx3.rotateY(yaw);
+                bx3.translate(x + r2 * 0.2, gy + 1.3 + r2 * 2.6, z);
+                merger.add(bx3, boxBlue, x, z);
+              }
+              kit++;
+            } else if (pick === 4) {
+              // timber crane mats, a low flat stack
+              for (let r2 = 0; r2 < 3; r2++) {
+                const mt = new THREE.BoxGeometry(4.2, 0.22, 2.6);
+                mt.rotateY(yaw);
+                mt.translate(x, gy + 0.11 + r2 * 0.24, z);
+                merger.add(mt, matTimber, x, z);
+              }
+              kit++;
+            } else if (gi === 3 && gj === 2) {
+              // one white site office, once
+              const of = new THREE.BoxGeometry(3.2, 2.9, 9.0);
+              of.rotateY(yaw);
+              of.translate(x, gy + 1.45, z);
+              merger.add(of, officeWhite, x, z);
+              kit++;
+            }
+          }
+        }
+      }
+      out.worksKit = kit;
     }
   }
 
