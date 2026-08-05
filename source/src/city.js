@@ -2594,6 +2594,21 @@ export async function buildBuildings(world, data, Y = null) {
           const col = new THREE.CylinderGeometry(0.34, 0.38, top - gy, 8);
           col.translate(px, gy + (top - gy) / 2, pz);
           merger.add(col, MAT.conc, px, pz);
+          // A COLUMN IS THE ONE THING UNDER HERE THAT IS NOT OPEN.
+          //
+          // The owner walked into this plaza and asked "why the building can
+          // pass thru?". The ground storey being open is correct and deliberate
+          // — Siloso Beach Walk really does run under it — but the arcade carve
+          // opens a CORRIDOR through the collision grid, and it cannot tell a
+          // column from the wall it was written to remove. Probed on the ring,
+          // 43 samples stopped on something solid and 17 hit drawn fabric with
+          // no collision behind it at all.
+          //
+          // Published so the grid can put them back after it is carved. Doing it
+          // the other way round — teaching the carve to avoid them — was the
+          // wrong shape: the carve runs on data, the columns are decided here,
+          // and the last thing to touch the grid should be the thing that knows.
+          (window.__ogCols || (window.__ogCols = [])).push([px, pz]);
         }
       }
       stats.count++;

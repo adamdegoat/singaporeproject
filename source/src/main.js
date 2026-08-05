@@ -3008,7 +3008,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     terrain.setCanopy(data.trees || []);
     // the coastline, so vertexY can tell a sloppy water-polygon edge on the
     // island from genuine open sea — see the guard in terrain.js vertexY
-    terrain.setIsland(data.islandRing || null, data.roads);
+    terrain.setIsland(data.islandRing || null, data.roads, data.green, data.land);
   }
   world.add(terrain.build(groundMat));
   bmark('terrain');
@@ -3328,6 +3328,26 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     stats.selfCarveCells = self.arcs.length ? SOLID.carve(self.arcs) : 0;
     stats.selfCarveRuns = self.kept;
     stats.selfCarveTooLong = self.tooLong;
+    // ...AND THEN PUT THE COLUMNS BACK. Both carves above open corridors
+    // through the grid, and neither can tell a column holding a building up
+    // from a wall standing in a mapped route. The owner walked through one:
+    // "at the initial load game place i go front why the building can pass
+    // thru?" — under the Beach Arrival Plaza, whose ground storey is open on
+    // purpose because Siloso Beach Walk runs beneath it.
+    //
+    // This is the honest fix rather than sealing the corridor, which is the
+    // same call the bus-shelter blockages got: furniture may stand on a
+    // pavement, but you must not walk through it. A column is 0.76m across and
+    // the grid cell is 0.75m, so the centre plus its four sides is the whole
+    // of it and nothing wider gets closed.
+    let ogBack = 0;
+    for (const [cx2, cz2] of (window.__ogCols || [])) {
+      for (const [dx2, dz2] of [[0, 0], [0.38, 0], [-0.38, 0], [0, 0.38], [0, -0.38]]) {
+        if (!SOLID.at(cx2 + dx2, cz2 + dz2)) ogBack++;
+        SOLID.mark(cx2 + dx2, cz2 + dz2);
+      }
+    }
+    stats.ogColumnsRestored = ogBack;
     stats.solidCells = SOLID.n; stats.solidWalls = st.walls;
     stats.solidMs = Math.round(solidMs0 + (performance.now() - t0));
     window.__solid = (x, z) => SOLID.at(x, z);

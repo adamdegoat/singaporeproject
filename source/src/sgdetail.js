@@ -3014,8 +3014,41 @@ export async function buildTransit(world, data, Y = null) {
   const cw = data.cableway || {};
   const lines = cw.lines || [];
   const RIDE_H = { gondola: 32, cable_car: 32, chair_lift: 9 };  // plausibility
+  // THE WIRE HAS TO COME DOWN WHERE THE STATION IS.
+  //
+  // The profile was ground + 32m along the whole line including THROUGH the
+  // stations, so a cabin arrived at Siloso Point thirty metres over the roof
+  // and kept going. A cable car descends to its platform — that is what a
+  // station is — and until it does there is nothing for a station building to
+  // meet. The owner: "cable car station all ppl explore must be like a station
+  // ppl can walk and go up and board all like the full experience".
+  //
+  // STATION_H is authored, not published. Searched: the sources give the line
+  // length (880m) and the spans (240m Merlion to Imbiah, 640m Imbiah to Siloso
+  // Point) and describe the stations only as "rather compact". 12m puts the
+  // platform a storey and a half up, which is what the photographs show and
+  // what a stair can reach without becoming the building.
+  const STATION_H = 12;
+  const stationList = cw.stations || [];
+  const nearStation = (x, z) => {
+    let bd = 1e9;
+    for (const st of stationList) {
+      const d = Math.hypot(st.p[0] - x, st.p[1] - z);
+      if (d < bd) bd = d;
+    }
+    return bd;
+  };
   const profiles = lines.map((ln) => {
-    const hs = ln.p.map(([x, z]) => groundAt(x, z) + (RIDE_H[ln.k] || 20));
+    const hs = ln.p.map(([x, z]) => {
+      const g0 = groundAt(x, z);
+      const d = nearStation(x, z);
+      // inside 22m it IS the platform; out to 90m it eases back to line height,
+      // which is roughly the run a real cable takes to climb away from a station
+      if (d > 90) return g0 + (RIDE_H[ln.k] || 20);
+      const t = d <= 22 ? 0 : (d - 22) / 68;
+      const ease = t * t * (3 - 2 * t);
+      return g0 + STATION_H + ((RIDE_H[ln.k] || 20) - STATION_H) * ease;
+    });
     for (let pass = 0; pass < 3; pass++) {
       for (let i = 1; i < hs.length - 1; i++) hs[i] = (hs[i - 1] + hs[i] + hs[i + 1]) / 3;
     }
@@ -3043,6 +3076,122 @@ export async function buildTransit(world, data, Y = null) {
     });
     return bd < 90 * 90 ? best : null;
   };
+  // THE STATIONS, WHICH WERE NOT BUILT AT ALL.
+  //
+  // data.cableway.stations holds all five with their surveyed positions, and
+  // the only thing that ever read them was window.__cableways, for the ride.
+  // Nothing was ever DRAWN: you could stand at Siloso Point and see a wire
+  // going overhead and no station under it.
+  //
+  // POSITION IS TRUTH (the OSM node). EVERYTHING ELSE IS AUTHORED, and it says
+  // so: searched, and the published sources give the line length and the spans
+  // and then describe the buildings only as "rather compact, probably due to
+  // the limited footprint on the already land-scarce island". No plan, no
+  // elevation, no dimension. So this is a recipe for the KIND of building a
+  // compact cable car station is, not a copy of any one of them.
+  //
+  // What it has to be, from the owner: something you walk into, go up inside,
+  // and board from. So: an open ground hall you can walk through in any
+  // direction, a stair up one side, a platform deck at the wire's own station
+  // height, and a shallow roof over it. The deck is a floor you stand on, so it
+  // is drawn as a slab with a parapet rather than as a solid mass.
+  // THE PLATFORM GOES BESIDE THE STATION BUILDING, NOT THROUGH IT.
+  //
+  // Measured before building anything a second time: all five station nodes sit
+  // INSIDE a mapped building — "Singapore Cable Car Station" at Sentosa, and a
+  // 20 to 27m mass at each of the others. The first version of this stood its
+  // own hall on the same spot and the two interpenetrated, which a render
+  // showed immediately and no counter would ever have caught.
+  //
+  // So the building stays the station's shell, and what gets built is the part
+  // that was missing and that the owner actually asked for: a boarding deck you
+  // can walk up to. It steps out along the wire until it is clear of every
+  // footprint, which is also where a real platform goes — out from under the
+  // building, under the cable.
+  const inAnyFootprint = (x, z) => {
+    for (const b of (data.buildings || [])) {
+      const p = b.p;
+      if (!p || p.length < 3) continue;
+      let c = false;
+      for (let a = 0, b2 = p.length - 1; a < p.length; b2 = a++) {
+        const xi = p[a][0], zi = p[a][1], xj = p[b2][0], zj = p[b2][1];
+        if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+      }
+      if (c) return true;
+    }
+    return false;
+  };
+  for (const st of stationList) {
+    await YY();
+    let [sx, sz] = st.p;
+    const gy0 = groundAt(sx, sz);
+    if (gy0 < 0.8) continue;              // the harbour terminal has no dry footing here
+    // face the platform along the wire, so cabins run through it rather than
+    // across it — taken from the nearest line segment, never invented
+    let ang = 0, bd = 1e9;
+    for (const ln of lines) {
+      for (let i = 0; i < ln.p.length - 1; i++) {
+        const mx = (ln.p[i][0] + ln.p[i + 1][0]) / 2, mz = (ln.p[i][1] + ln.p[i + 1][1]) / 2;
+        const d = (mx - sx) ** 2 + (mz - sz) ** 2;
+        if (d < bd) { bd = d; ang = Math.atan2(ln.p[i + 1][0] - ln.p[i][0], ln.p[i + 1][1] - ln.p[i][1]); }
+      }
+    }
+    // step out along the wire, both ways, for the first clear dry spot
+    {
+      const ux = Math.sin(ang), uz = Math.cos(ang);
+      let found = false;
+      for (let r = 16; r <= 70 && !found; r += 4) {
+        for (const sgn of [1, -1]) {
+          const qx = st.p[0] + ux * r * sgn, qz = st.p[1] + uz * r * sgn;
+          if (inAnyFootprint(qx, qz)) continue;
+          if (groundAt(qx, qz) < 0.8) continue;
+          sx = qx; sz = qz; found = true; break;
+        }
+      }
+      if (!found) continue;               // no room beside it: refuse rather than overlap
+    }
+    const gy = groundAt(sx, sz);
+    const deck = gy + STATION_H;
+    const HW = 6.5, HL = 11;              // half width across, half length along the wire
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const put = (u, v) => [sx + u * ca + v * sa, sz - u * sa + v * ca];
+    // eight columns carrying the deck, clear of the middle so the hall is open
+    for (const u of [-HW + 0.9, HW - 0.9]) {
+      for (const v of [-HL + 1.2, -HL / 3, HL / 3, HL - 1.2]) {
+        const [cx2, cz2] = put(u, v);
+        const cg = groundAt(cx2, cz2);
+        bake(new THREE.BoxGeometry(0.8, deck - cg, 0.8), pylonMat, merger,
+             cx2, cg + (deck - cg) / 2, cz2, ang);
+      }
+    }
+    // the platform slab, and a parapet so the edge reads as an edge
+    bake(new THREE.BoxGeometry(HW * 2, 0.55, HL * 2), MAT.conc, merger, sx, deck - 0.27, sz, ang);
+    for (const u of [-HW + 0.15, HW - 0.15]) {
+      const [px2, pz2] = put(u, 0);
+      bake(new THREE.BoxGeometry(0.25, 1.15, HL * 2), MAT.conc, merger, px2, deck + 0.57, pz2, ang);
+    }
+    // the roof: a shallow canopy on four posts, high enough to clear a cabin
+    for (const u of [-HW + 1.1, HW - 1.1]) {
+      for (const v of [-HL + 2, HL - 2]) {
+        const [px2, pz2] = put(u, v);
+        bake(new THREE.BoxGeometry(0.34, 4.6, 0.34), steelMat, merger, px2, deck + 2.3, pz2, ang);
+      }
+    }
+    bake(new THREE.BoxGeometry(HW * 2 + 1.6, 0.4, HL * 2 + 1.2), MAT.soffit || MAT.conc, merger,
+         sx, deck + 4.8, sz, ang);
+    // THE STAIR, which is the whole point: you go UP inside the building.
+    // A run of treads along one flank, from the ground to the deck.
+    const steps = Math.max(12, Math.round(STATION_H / 0.19));
+    const rise = STATION_H / steps, tread = 0.29;
+    for (let i2 = 0; i2 < steps; i2++) {
+      const v = -HL + 1.4 + i2 * tread;
+      const [px2, pz2] = put(HW - 1.6, v);
+      bake(new THREE.BoxGeometry(2.6, rise + 0.06, tread + 0.02), MAT.conc, merger,
+           px2, gy + rise * (i2 + 0.5), pz2, ang);
+    }
+    out.cableStations = (out.cableStations || 0) + 1;
+  }
+
   // pylons: a tapered steel tower up to the cable it carries
   for (const py of (cw.pylons || [])) {
     await YY();

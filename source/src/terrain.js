@@ -443,7 +443,7 @@ export class Terrain {
   // out of the question. Rasterised once into one byte a cell, it is a lookup.
   // The ring is the same stitched coastline data/islandring.py publishes and
   // island.py clips every playable layer to.
-  setIsland(ring, roads) {
+  setIsland(ring, roads, areas, landuse) {
     this.isle = null;
     if (!ring || ring.length < 8 || !this.g) return 0;
     const g = this.g;
@@ -521,6 +521,46 @@ export class Terrain {
                 if (!grown[jj * g.nx + ii]) { grown[jj * g.nx + ii] = 1; n++; }
               }
             }
+          }
+        }
+      }
+    }
+    // LANDUSE IS THE LAND SOURCE THAT WORKS, AND IT WORKS FOR THE REASON THE
+    // BUILDING ONE DID NOT.
+    //
+    // A park, a wood, a golf course, a car park, a plaza, a beach: these are
+    // areal land COVER. Nothing maps a pier as a golf course, so the failure
+    // mode that killed the building attempt below cannot arise. A pool is the
+    // one exception in the layer and is excluded by name.
+    //
+    // Cells are tested by their own centre against the closed ring, with NO
+    // dilation — the roads above are a corridor and need their margin, this is
+    // an area and does not, and every cell of slack here is a cell of sea that
+    // could be refused its sink.
+    for (const src of [areas, landuse]) {
+      for (const q of (src || [])) {
+        const p = q.p;
+        if (!p || p.length < 3 || q.k === 'pool') continue;
+        let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+        for (const v of p) {
+          if (v[0] < mnx) mnx = v[0]; if (v[0] > mxx) mxx = v[0];
+          if (v[1] < mnz) mnz = v[1]; if (v[1] > mxz) mxz = v[1];
+        }
+        const i0 = Math.max(0, Math.floor((mnx - g.x0) / g.cell));
+        const i1 = Math.min(g.nx - 1, Math.ceil((mxx - g.x0) / g.cell));
+        const j0 = Math.max(0, Math.floor((mnz - g.z0) / g.cell));
+        const j1 = Math.min(g.nz - 1, Math.ceil((mxz - g.z0) / g.cell));
+        for (let jj = j0; jj <= j1; jj++) {
+          const z = g.z0 + jj * g.cell;
+          for (let ii = i0; ii <= i1; ii++) {
+            if (grown[jj * g.nx + ii]) continue;
+            const x = g.x0 + ii * g.cell;
+            let c = false;
+            for (let a = 0, b2 = p.length - 1; a < p.length; b2 = a++) {
+              const xi = p[a][0], zi = p[a][1], xj = p[b2][0], zj = p[b2][1];
+              if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+            }
+            if (c) { grown[jj * g.nx + ii] = 1; n++; }
           }
         }
       }

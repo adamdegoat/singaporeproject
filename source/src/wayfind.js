@@ -493,6 +493,38 @@ function ridePins(rides, startId) {
   return out;
 }
 
+// A TRAIL YOU CANNOT FIND IS A TRAIL THAT IS NOT THERE.
+//
+// The owner, 2026-08-05: "sentosa got walking trails all in the forest we need
+// to also have those walking trails that ppl can find and explore." They were
+// already built — 13,405 trail pieces, Imbiah Trail is one of the fourteen
+// golden frames, trailcheck exists to prove you can walk them. What was missing
+// is that NOTHING on the map said where they start, so finding one was luck.
+//
+// The island has only eight named walkable ways, so this is a short and honest
+// list rather than a pin per footpath: the trailhead goes where the way itself
+// begins, which is the end a walker arrives at.
+function trailPins(data, startId) {
+  const out = [];
+  const seen = new Set();
+  for (const r of (data.roads || [])) {
+    if (!r.n || !r.p || r.p.length < 2) continue;
+    if (r.k !== 'path' && r.k !== 'track' && r.k !== 'footway') continue;
+    const key = r.n.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    let L = 0;
+    for (let i = 0; i < r.p.length - 1; i++) L += Math.hypot(r.p[i + 1][0] - r.p[i][0], r.p[i + 1][1] - r.p[i][1]);
+    out.push({
+      id: startId + out.length, n: r.n, cat: 'nature', kind: 'trail',
+      x: r.p[0][0], z: r.p[0][1], major: false, trail: true,
+      // the length is measured off the way we actually built, not asserted
+      t: `A walking route, about ${Math.round(L / 10) * 10} m from this end.`,
+    });
+  }
+  return out;
+}
+
 function buildPins(data) {
   const byName = new Map();
   for (const e of (data.entrances || [])) {
@@ -688,7 +720,8 @@ export class Wayfinder {
       const rs = (window.__rides && window.__rides()) || [];
       if (rs.length) this._ridePins = ridePins(rs, this._pins.length);
     }
-    return this._ridePins ? this._pins.concat(this._ridePins) : this._pins;
+    if (!this._trailPins) this._trailPins = trailPins(this.data, this._pins.length + 900);
+    return this._pins.concat(this._ridePins || [], this._trailPins);
   }
 
   _near(x, z, reach) {
@@ -831,7 +864,7 @@ export class Wayfinder {
     if (card) card.classList.toggle('on', !!pin);
     if (pin) {
       const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-      set('mapcardk', pin.play ? 'you can ride this' : (PIN_LABEL[pin.cat] || 'place'));
+      set('mapcardk', pin.play ? 'you can ride this' : pin.trail ? 'walking trail' : (PIN_LABEL[pin.cat] || 'place'));
       set('mapcardn', pin.n);
       // NO INVENTED COPY. If research never produced a line for this place the
       // card says what KIND of place it is and stops. Making something up here
