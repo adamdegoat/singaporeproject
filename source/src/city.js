@@ -4180,11 +4180,34 @@ export class TreeField {
     {
       // total height and crown radius. A mature roadside Angsana is about as
       // wide as it is tall, which is what makes the avenue meet overhead.
-      let h = rand(13.0, 17.5) * scale;
-      const rad = rand(8.0, 12.0) * scale;
+      // SPECIES, EXPRESSED AS PROPORTION — which costs nothing.
+      //
+      // The owner, 2026-08-06: "double check vegetations all again those kind".
+      // Every tree on the island was ONE rule: the Angsana dome, as wide as it
+      // is tall. Sizes varied and shapes did not, so a hillside read as one
+      // tree stamped out five thousand times, which is exactly what makes a
+      // forest look flat however many trunks are in it.
+      //
+      // A real species dimension would mean new geometry per kind, and the
+      // planting sets are already 883,000 instances — the wrong place to spend
+      // memory. But most of what the eye reads as "different tree" at fifty
+      // metres is SILHOUETTE: how tall against how wide, and how far up the
+      // bole the crown starts. Those are three multipliers on numbers this
+      // function already computes, so the variety is free.
+      //
+      // Proportions are authored (SENTOSA.md Layer 2), and chosen to span what
+      // actually grows on the island: the broad roadside Angsana, the slender
+      // emergents that stand above the canopy on Imbiah and Serapong, and the
+      // low spreading sea almond and seagrape along the shore.
+      const _sp = rand(0, 1);
+      const _radK = _sp < 0.55 ? 1 : _sp < 0.80 ? 0.62 : 1.18;
+      const _hK   = _sp < 0.55 ? 1 : _sp < 0.80 ? 1.18 : 0.82;
+      const _baseK = _sp < 0.55 ? 1 : _sp < 0.80 ? 1.15 : 0.85;
+      let h = rand(13.0, 17.5) * scale * _hK;
+      const rad = rand(8.0, 12.0) * scale * _radK;
       const gy = TERRAIN.at(x, z);
       // where the crown starts, and how deep the dome is from top to rim
-      let crownBase = h * rand(0.50, 0.60);
+      let crownBase = h * rand(0.50, 0.60) * _baseK;
       // Lift the crown clear of the traffic envelope. A crown eight to twelve
       // metres across reaches well past the kerb, so on a smaller side-street
       // tree the limbs came down to about four metres over a live lane, which a
