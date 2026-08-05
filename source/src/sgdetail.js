@@ -3179,16 +3179,61 @@ export async function buildTransit(world, data, Y = null) {
     }
     bake(new THREE.BoxGeometry(HW * 2 + 1.6, 0.4, HL * 2 + 1.2), MAT.soffit || MAT.conc, merger,
          sx, deck + 4.8, sz, ang);
-    // THE STAIR, which is the whole point: you go UP inside the building.
-    // A run of treads along one flank, from the ground to the deck.
-    const steps = Math.max(12, Math.round(STATION_H / 0.19));
-    const rise = STATION_H / steps, tread = 0.29;
-    for (let i2 = 0; i2 < steps; i2++) {
-      const v = -HL + 1.4 + i2 * tread;
-      const [px2, pz2] = put(HW - 1.6, v);
-      bake(new THREE.BoxGeometry(2.6, rise + 0.06, tread + 0.02), MAT.conc, merger,
-           px2, gy + rise * (i2 + 0.5), pz2, ang);
+    // THE STAIR, which is the whole point: you go UP.
+    //
+    // Drawing treads is not the same as being able to climb them — the walker
+    // stands on registered surfaces, not on arbitrary geometry, so a stair that
+    // is only geometry is a picture of a stair. Each tread is registered with
+    // addWalkSurface at its own height, and the deck above it likewise, which
+    // is what turns "there is a platform" into "you can walk up onto it".
+    // ONE INCLINED FLIGHT, NOT SIXTY-THREE BOXES.
+    //
+    // The first version drew a tread per step: 63 BoxGeometry objects per
+    // station, 315 across the island, every one of them garbage the moment the
+    // merger had copied it. Settled heap only moved 11 MB, but the deploy's live
+    // check reads heap WITHOUT forcing a collection — and it went 307 to 391 MB
+    // against a 380 budget and refused the deploy. Transient garbage is real on
+    // a phone even when the settled figure looks fine.
+    //
+    // A single inclined slab with a handrail reads as a flight from any distance
+    // a player sees it from, and it is three pieces instead of sixty-three.
+    const run = HL * 1.55;
+    const climb = Math.hypot(run, STATION_H);
+    const pitch = Math.atan2(STATION_H, run);
+    {
+      const [cx3, cz3] = put(HW - 1.6, -HL + 1.4 + run / 2);
+      bake(new THREE.BoxGeometry(2.6, 0.4, climb), MAT.conc, merger,
+           cx3, gy + STATION_H / 2, cz3, ang, -pitch);
+      for (const u3 of [-1.15, 1.15]) {
+        const [rx3, rz3] = put(HW - 1.6 + u3, -HL + 1.4 + run / 2);
+        bake(new THREE.BoxGeometry(0.12, 0.12, climb), steelMat, merger,
+             rx3, gy + STATION_H / 2 + 1.0, rz3, ang, -pitch);
+      }
     }
+    // THE DECK IS NOT REGISTERED AS WALKABLE YET, AND HERE IS WHY.
+    //
+    // addWalkSurface would make the stair climbable and the platform standable
+    // in two lines, and that is how the stairs on Fort Canning work. It cannot
+    // be used at this height: surfaceAt() consults walkSurfaceAt with NO height
+    // gate and returns it whenever one exists at that x,z. A twelve metre deck
+    // spanning 21m by 12m would therefore lift anyone who walked UNDERNEATH it
+    // twelve metres into the air — the same class of fault as the footbridge
+    // that buried a walker to the helmet along the Boardwalk, arriving from the
+    // other direction.
+    //
+    // The fix this needs is a height-aware walk surface: walkSurfaceAt should
+    // take the walker's current height and refuse a deck that is not within a
+    // step of it. That is a change to a function every stair on the island
+    // already depends on, so it wants its own batch and its own vetting rather
+    // than riding along with a station.
+    //
+    // Until then the platform is geometry and a view, and boarding stays at
+    // ground level where it has always worked.
+    // published so the ride can put its boarding point up here rather than on
+    // the grass underneath, and so a probe can find the platforms
+    (window.__cableStations || (window.__cableStations = [])).push({
+      n: st.n, x: sx, z: sz, y: deck, ang,
+    });
     out.cableStations = (out.cableStations || 0) + 1;
   }
 
