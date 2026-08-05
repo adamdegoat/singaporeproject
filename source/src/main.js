@@ -2791,6 +2791,9 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     // and what is growing over it, so the floor under the jungle is painted as
     // jungle rather than as the lawn the landuse fallback assumes
     terrain.setCanopy(data.trees || []);
+    // the coastline, so vertexY can tell a sloppy water-polygon edge on the
+    // island from genuine open sea — see the guard in terrain.js vertexY
+    terrain.setIsland(data.islandRing || null);
   }
   world.add(terrain.build(groundMat));
   bmark('terrain');

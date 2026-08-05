@@ -243,6 +243,34 @@ export class Terrain {
     // rightly kept those cells as land. Rivers and quays sink 2-6m and are
     // untouched by this gate.
     if (y - bed > 7) return y;
+    // ...AND THE TEST BELONGS ON THE LAND, NOT ON THE DROP.
+    //
+    // The rule above catches a sloppy ring edge only when it sinks firm ground
+    // by more than SEVEN metres. Measured 2026-08-05 along three beach
+    // transects, the same fault at a smaller scale is what makes every beach
+    // meet the sea in a wall:
+    //
+    //   siloso    heightfield step 1.14 m   DRAWN step 6.54 m
+    //   tanjong   heightfield step 0.16 m   DRAWN step 4.40 m
+    //   palawan   heightfield step 0.10 m   DRAWN step 5.50 m
+    //
+    // The ground DATA is smooth. The drawn skin plunges to the seabed wherever
+    // the water polygon reaches, and at Tanjong it cuts a trench through the
+    // MIDDLE of the beach — 37 to 65 m along, where at() says 2.2 to 2.6 m of
+    // dry land. Every one of those drops is under 7 m, so the guard let them
+    // through.
+    //
+    // This file's own note says why that is wrong: "the grid's own data-side
+    // passes already sank every genuine water cell". So if the heightfield
+    // still says firm land HERE, the polygon is over-reaching, whatever the
+    // size of the drop. A river or a quay is sunk in the data and reads below
+    // this line, so those still sink exactly as before.
+    // ON THE ISLAND ONLY. A bare height test was measured too permissive:
+    // 2,465 sample points of OPEN SEA outside the coastline would have been
+    // drawn as land, almost all of them at the far corner of the bbox where the
+    // heightfield has no data and clamps to its edge values. The island's own
+    // coastline says which is which.
+    if (y > 1.2 && this.onIsland(x, z)) return y;
     return Math.min(y, bed);
   }
 
@@ -406,6 +434,62 @@ export class Terrain {
     // little below that so the deep jungle is uniformly dark rather than
     // shading right up to its own maximum
     return Math.min(1, n / 11);
+  }
+
+  // THE ISLAND, AS A MASK ON THE HEIGHTFIELD GRID.
+  //
+  // vertexY needs to know "is this point on the island?" per DRAWN VERTEX, and
+  // there are hundreds of thousands of those — a 462-point ring test each is
+  // out of the question. Rasterised once into one byte a cell, it is a lookup.
+  // The ring is the same stitched coastline data/islandring.py publishes and
+  // island.py clips every playable layer to.
+  setIsland(ring) {
+    this.isle = null;
+    if (!ring || ring.length < 8 || !this.g) return 0;
+    const g = this.g;
+    const mask = new Uint8Array(g.nx * g.nz);
+    let n = 0;
+    for (let j = 0; j < g.nz; j++) {
+      const z = g.z0 + j * g.cell;
+      for (let i = 0; i < g.nx; i++) {
+        const x = g.x0 + i * g.cell;
+        let c = false;
+        for (let a = 0, b2 = ring.length - 1; a < ring.length; b2 = a++) {
+          const xi = ring[a][0], zi = ring[a][1], xj = ring[b2][0], zj = ring[b2][1];
+          if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+        }
+        if (c) { mask[j * g.nx + i] = 1; n++; }
+      }
+    }
+    // GROWN BY TWO CELLS. The coastline ring is the HIGH-WATER line, so the
+    // sand sits just OUTSIDE it — measured, Siloso and Tanjong both fell out of
+    // the raw mask and the guard never fired where it was needed. 70m of dilation
+    // takes in the beach and the rock revetments and stops a very long way short
+    // of the open sea at the corner of the bbox, which is the case it exists to
+    // exclude.
+    const grown = Uint8Array.from(mask);
+    for (let pass = 0; pass < 2; pass++) {
+      const src = Uint8Array.from(grown);
+      for (let j = 0; j < g.nz; j++) {
+        for (let i = 0; i < g.nx; i++) {
+          if (src[j * g.nx + i]) continue;
+          if ((i > 0 && src[j * g.nx + i - 1]) || (i < g.nx - 1 && src[j * g.nx + i + 1])
+            || (j > 0 && src[(j - 1) * g.nx + i]) || (j < g.nz - 1 && src[(j + 1) * g.nx + i])) {
+            grown[j * g.nx + i] = 1; n++;
+          }
+        }
+      }
+    }
+    this.isle = grown;
+    return n;
+  }
+
+  onIsland(x, z) {
+    if (!this.isle) return false;
+    const g = this.g;
+    const i = Math.round((x - g.x0) / g.cell), j = Math.round((z - g.z0) / g.cell);
+    if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return false;
+    return this.isle[j * g.nx + i] === 1;
   }
 
   setGreen(list) {
