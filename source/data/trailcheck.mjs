@@ -42,6 +42,7 @@ const out = await page.evaluate(() => {
     let prev = null;
     const trend = [];
     let blockRun = 0, runX = 0, runZ = 0;
+    let walkY = null;      // the height the walker is carrying along this way
     for (let i = 0; i < p.length - 1; i++) {
       const [ax, az] = p[i], [bx, bz] = p[i + 1];
       const L = Math.hypot(bx - ax, bz - az);
@@ -51,8 +52,24 @@ const out = await page.evaluate(() => {
         const x = ax + (bx - ax) * t, z = az + (bz - az) * t;
         res.pts++;
         const g = window.__terrain.at(x, z);
-        // what does a walker stand on here?
-        const surf = window.__surfaceAt ? window.__surfaceAt(x, z) : g;
+        // WHAT DOES A WALKER STAND ON HERE — asked the way a walker asks it.
+        //
+        // This called __surfaceAt(x, z), which answers with the HIGHEST
+        // registered surface at that point whatever height you are at. The
+        // moment the island grew a raised deck — the cable car station
+        // platforms, 12m up — the check started reporting the deck as the
+        // surface of the footway running underneath it, and N3 went 25 to 30
+        // with five ±12m "steps" at Sentosa station and Siloso Point. No player
+        // can reach those: walkSurfaceAt is height-aware now and refuses a deck
+        // that is not within a step of where the walker already is.
+        //
+        // So the check walks the path the way a person does, carrying its own
+        // height from the previous sample. Teaching the check, not loosening
+        // it — the same call the D2 kerb and D9 rider-width findings got.
+        const surf = window.__surfaceAtFrom
+          ? window.__surfaceAtFrom(x, z, walkY == null ? g : walkY)
+          : (window.__surfaceAt ? window.__surfaceAt(x, z) : g);
+        walkY = surf;
         // N3 — A STEP IS A DISCONTINUITY, NOT A SLOPE.
         //
         // This used to flag every |delta| over 0.45m between samples 3m apart,

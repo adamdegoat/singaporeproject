@@ -6424,10 +6424,27 @@ function festiveWalkCanopy(api, b) {
 // api.footingY returns relative to local ground, and what the third argument to
 // api.extrudeGeo is measured FROM, were both assumed rather than read.
 //
-// NEXT ATTEMPT STARTS THERE: take one existing recipe that is known to sit
-// correctly (olaBeachClub is a good one, same kind of site), establish what
-// each of those two numbers actually means by rendering a single slab at a
-// known offset, and only then compose. A generic box beats a floating plate.
+// AND THEN THE ANSWER WAS READ RATHER THAN GUESSED, so the next attempt does
+// not have to rediscover it:
+//
+//   extrudeGeo(pts, h, y0) puts the slab between foot+y0 and foot+y0+h, where
+//     foot = FOOT !== null ? FOOT : (h <= 16 ? streetFootingY(pts) : footingY(pts))
+//
+// The composition was never the problem. THE TWO BASES ARE DIFFERENT. Every
+// slab in a recipe is seated on the module's FOOT, and every hand-placed piece
+// — a post, a rail, a counter — is seated on `api.footingY(b.p)`, which is a
+// DIFFERENT function. Where those disagree, and on a sloping beach edge they
+// disagree by metres, the slabs sit at one height and the posts at another and
+// the thing comes apart exactly the way the frames showed.
+//
+// Worse, `foot` depends on h: a 0.42m roof plate is scored by streetFootingY
+// and a 20m mass by footingY, so two pieces of the SAME building can take
+// different bases purely because of their thickness.
+//
+// So the next attempt seats everything on ONE base. Either put every piece
+// through extrudeGeo, or get the base extrudeGeo would use and pass that same
+// number to every translate — do not mix the two. That is also worth checking
+// in olaBeachClub, which mixes them today and only looks right by luck.
 export const RECIPES = [
   [/^emerald pavilion/i, emeraldPavilion],
   [/^coastes/i, coastesBar],
