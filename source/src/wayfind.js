@@ -525,6 +525,48 @@ function trailPins(data, startId) {
   return out;
 }
 
+// A LIST YOU SCROLL PAST IS WORSE THAN A SHORTER ONE YOU TRUST.
+//
+// The owner, 2026-08-05: "check if all the teleport locations are useful and
+// which are not." Audited, 95 destinations carried eight duplicated names and
+// four pairs sitting on top of each other:
+//
+//   Luge Trail            x4, spread 286 m   (one pin per mapped luge WAY)
+//   Luge Jungle Trail     x4, spread  67 m
+//   Scented Sphere        x2, spread   6 m   (once as a place, once as a path)
+//   SkyRide <-> Luge Trail        0 m apart
+//   Resort World Sentosa <-> World Sentosa   5 m apart
+//
+// None of that is wrong in the DATA — the luge really is four mapped ways and
+// Sensoryscape's gardens really are both a place and a path. It is wrong in a
+// TRAVEL LIST, where four entries with one name are four coin flips.
+//
+// So: one entry per name, and where two differently-named pins sit within 12m
+// and one name contains the other, the longer name wins — "Resort World
+// Sentosa" over "World Sentosa". Nothing is renamed and nothing is invented;
+// the duplicates are simply not offered twice.
+function tidyPins(list) {
+  const out = [];
+  const seen = new Set();
+  for (const p of list) {
+    const key = (p.n || '').toLowerCase().trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(p);
+  }
+  const drop = new Set();
+  for (let i = 0; i < out.length; i++) {
+    for (let j = i + 1; j < out.length; j++) {
+      if (drop.has(i) || drop.has(j)) continue;
+      if (Math.hypot(out[i].x - out[j].x, out[i].z - out[j].z) > 12) continue;
+      const a = out[i].n.toLowerCase(), b = out[j].n.toLowerCase();
+      if (a.includes(b)) drop.add(j);
+      else if (b.includes(a)) drop.add(i);
+    }
+  }
+  return out.filter((_, i) => !drop.has(i));
+}
+
 function buildPins(data) {
   const byName = new Map();
   for (const e of (data.entrances || [])) {
@@ -721,7 +763,8 @@ export class Wayfinder {
       if (rs.length) this._ridePins = ridePins(rs, this._pins.length);
     }
     if (!this._trailPins) this._trailPins = trailPins(this.data, this._pins.length + 900);
-    return this._pins.concat(this._ridePins || [], this._trailPins);
+    if (!this._all) this._all = tidyPins(this._pins.concat(this._ridePins || [], this._trailPins));
+    return this._all;
   }
 
   _near(x, z, reach) {
