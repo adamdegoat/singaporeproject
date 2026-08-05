@@ -443,7 +443,7 @@ export class Terrain {
   // out of the question. Rasterised once into one byte a cell, it is a lookup.
   // The ring is the same stitched coastline data/islandring.py publishes and
   // island.py clips every playable layer to.
-  setIsland(ring) {
+  setIsland(ring, roads) {
     this.isle = null;
     if (!ring || ring.length < 8 || !this.g) return 0;
     const g = this.g;
@@ -480,6 +480,70 @@ export class Terrain {
         }
       }
     }
+    // AND THE CAUSEWAY IS NOT ON THE ISLAND, WHICH IS THE WHOLE PROBLEM.
+    //
+    // The owner, 2026-08-05, on the arrival road: "why still not like a track
+    // but still jagged". Measured across that edge, forty samples at four metre
+    // spacing: at() says 1.6 to 2.1 m of DRY LAND the whole way, and atDrawn()
+    // says -1.75 m for every one of them. The strip is not low resolution, it
+    // is sunk to the seabed, and the road ribbon draws over the top of it — so
+    // the tarmac is a grey band with jagged teal on both sides, which is
+    // exactly the frame he sent.
+    //
+    // The guard above already refuses this, and refuses it only ON THE ISLAND,
+    // because a bare height test drew 2,465 points of open sea as land at the
+    // bbox corner where the heightfield clamps. The link road to the mainland
+    // is outside the coastline ring by definition, so the guard could never
+    // fire on it.
+    //
+    // A MAPPED CARRIAGEWAY IS THE OTHER THING THAT KNOWS WHERE LAND IS. If the
+    // map runs a road here and the heightfield says the ground is above water,
+    // it is not seabed. This stays bounded by the map rather than by height —
+    // the bbox corner has no roads on it, which is the case the island test
+    // exists to exclude — and a road on a BRIDGE is unaffected, because the
+    // heightfield under it is genuinely water and the guard needs both.
+    if (roads) {
+      for (const r of roads) {
+        const p = r.p;
+        if (!p || p.length < 2) continue;
+        for (let i = 0; i < p.length - 1; i++) {
+          const x0 = p[i][0], z0 = p[i][1], x1 = p[i + 1][0], z1 = p[i + 1][1];
+          const L = Math.hypot(x1 - x0, z1 - z0);
+          const steps = Math.max(1, Math.ceil(L / 8));
+          for (let k = 0; k <= steps; k++) {
+            const t = k / steps;
+            const x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t;
+            const ci = Math.round((x - g.x0) / g.cell), cj = Math.round((z - g.z0) / g.cell);
+            for (let dj = -1; dj <= 1; dj++) {
+              for (let di = -1; di <= 1; di++) {
+                const ii = ci + di, jj = cj + dj;
+                if (ii < 0 || jj < 0 || ii >= g.nx || jj >= g.nz) continue;
+                if (!grown[jj * g.nx + ii]) { grown[jj * g.nx + ii] = 1; n++; }
+              }
+            }
+          }
+        }
+      }
+    }
+    // A BUILDING FOOTPRINT WAS TRIED AS LAND EVIDENCE HERE AND REVERTED.
+    //
+    // The reasoning was the same as the road corridor above — a closed ring, the
+    // map stating plainly that this is dry ground — and it worked on the
+    // numbers: the island-wide sweep for firm land drawn below itself fell from
+    // 5,124 samples to 1,749, a two thirds cut across 167 clusters.
+    //
+    // It also drew the SEA AS LAND. The groyne-islet golden went from open
+    // water to a khaki plateau across the whole bay, 26.6% of the frame, because
+    // Sentosa's over-water structures — piers, jetties, the boardwalk pavilions
+    // — are mapped as buildings, and marking their cells let the guard refuse
+    // the water sink around them. This is precisely the failure the island test
+    // was written to prevent, arriving by a different door.
+    //
+    // A road is different in kind and that is why it stayed: a carriageway over
+    // water is a bridge, and the heightfield under a bridge is genuinely water,
+    // so the guard needs both conditions and never fires. A building over water
+    // sits on ground the heightfield still calls land. The numbers were real;
+    // the picture was wrong, and the picture decides.
     this.isle = grown;
     return n;
   }
