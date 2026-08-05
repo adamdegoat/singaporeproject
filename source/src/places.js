@@ -115,7 +115,10 @@ export function buildPlaceLabels(THREE, data, world, surfaceAt) {
   // lay each name into the shared atlas and build one quad per name
   const byPage = new Map();
   for (const p of places) {
-    const slot = atlas.add(p.name, '#12181c', '#f4f7f8');
+    // null background: a name hanging in the air is TEXT, not a plaque. See the
+    // note in SignAtlas.add — the dark panel read as a black rectangle floating
+    // over the lagoon at Tanjong.
+    const slot = atlas.add(p.name, null, '#ffffff');
     if (!slot || !slot.mat) continue;
     let list = byPage.get(slot.mat);
     if (!list) { list = []; byPage.set(slot.mat, list); }
@@ -132,6 +135,11 @@ export function buildPlaceLabels(THREE, data, world, surfaceAt) {
     p.aspect = (slot.u1 - slot.u0) / Math.max(1e-6, (slot.v1 - slot.v0));
     list.push(p);
   }
+
+  // and upload what we just drew — see the note in SignAtlas.add. add() marks
+  // the page dirty on its own now, so this is belt and braces rather than the
+  // only thing holding it up.
+  if (atlas.finish) atlas.finish();
 
   const group = new THREE.Group();
   group.name = 'placeLabels';

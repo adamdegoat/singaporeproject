@@ -5338,6 +5338,42 @@ export function buildSurround(world, data, reach = 470) {
     }
     return { ring: w.p, a, b, c, d };
   });
+  // ...AND OFF THE ISLAND ENTIRELY.
+  //
+  // This is a HORIZON: grey massing standing in for a city that continues past
+  // the district edge, which is true of Chinatown and Orchard and is not true
+  // of Sentosa. The keep-out rules above are `inCore` (within 70m of a real
+  // building) and `inWater` — and on an island neither catches the middle of
+  // the place. The Tanjong golf course and the Cove's fairways have no
+  // buildings within 70m and are not water, so the rule read them as "empty
+  // ground past the last building" and stood 20-45m featureless grey blocks on
+  // them. Found 2026-08-05 from the air: raycast, they carry no building in
+  // the data within 40m, because they are not buildings.
+  //
+  // The island's own coastline ring is published by data/islandring.py — the
+  // same stitched ring island.py clips every playable layer to, 4.89 km2
+  // against Sentosa's real ~5. A district with no islandRing (every mainland
+  // one) gets the old behaviour exactly.
+  const _isle = data.islandRing && data.islandRing.length > 8 ? data.islandRing : null;
+  let _isleBB = null;
+  if (_isle) {
+    let a = 1e9, b = 1e9, c = -1e9, d = -1e9;
+    for (const [x, z] of _isle) {
+      if (x < a) a = x; if (x > c) c = x;
+      if (z < b) b = z; if (z > d) d = z;
+    }
+    _isleBB = [a, b, c, d];
+  }
+  const onIsland = (x, z) => {
+    if (!_isle) return false;
+    if (x < _isleBB[0] || x > _isleBB[2] || z < _isleBB[1] || z > _isleBB[3]) return false;
+    let hit = false;
+    for (let i = 0, j = _isle.length - 1; i < _isle.length; j = i++) {
+      const xi = _isle[i][0], zi = _isle[i][1], xj = _isle[j][0], zj = _isle[j][1];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) hit = !hit;
+    }
+    return hit;
+  };
   const inWater = (x, z) => {
     for (const { ring, a, b, c, d } of wetRings) {
       if (x < a || x > c || z < b || z > d) continue;
@@ -5353,6 +5389,7 @@ export function buildSurround(world, data, reach = 470) {
 
   const rnd = rng(20260727);
   const put = [];
+  let onIsleSkipped = 0;
   const CELL = 78;
   // INDEX THE BUILT BOXES, because this tested every cell against every
   // building. Chinatown has 2,294 buildings and the surround grid spans the
@@ -5421,9 +5458,28 @@ export function buildSurround(world, data, reach = 470) {
             if (inWater(jx + ox, jz + oz)) wet = true;
         if (wet) continue;
       }
-      put.push([jx, jz, 16 + rnd() * 62 * fade, bw, bd, rnd() * Math.PI]);
+      // THE DRAWS HAPPEN FIRST, THEN THE DECISION. This function's own note
+      // says rnd() is called only after the keep-out tests "so a different set
+      // of surviving cells would shift the whole placement RNG stream". The
+      // island test below drops blocks, so its draws are taken BEFORE it: every
+      // block that survives is bit-identical to before, and only the ones
+      // standing on Sentosa disappear.
+      const _bh = 16 + rnd() * 62 * fade, _byaw = rnd() * Math.PI;
+      // the island is the played world; a horizon may not stand in it. Tested
+      // at the block's own corners as well as its centre, for the same reason
+      // the water test is: a 48m block on a dry point can still overhang the
+      // coast.
+      if (_isle) {
+        let ashore = false;
+        for (const ox of [-bw / 2, 0, bw / 2])
+          for (const oz of [-bd / 2, 0, bd / 2])
+            if (onIsland(jx + ox, jz + oz)) ashore = true;
+        if (ashore) { onIsleSkipped++; continue; }
+      }
+      put.push([jx, jz, _bh, bw, bd, _byaw]);
     }
   }
+  if (onIsleSkipped) console.log(`  surround: ${onIsleSkipped} backdrop blocks refused — on the island`);
   if (!put.length) return 0;
 
   const geo = new THREE.BoxGeometry(1, 1, 1);

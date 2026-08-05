@@ -827,8 +827,13 @@ export class SignAtlas {
   _newPage() {
     const c = document.createElement('canvas');
     c.width = PAGE; c.height = PAGE;
-    const x = c.getContext('2d');
-    x.fillStyle = '#101010'; x.fillRect(0, 0, PAGE, PAGE);
+    // willReadFrequently: the label audit reads these cells back to check the
+    // text was actually drawn, and Chrome warns (and slows) without it.
+    const x = c.getContext('2d', { willReadFrequently: true });
+    // The page used to be filled #101010. It is left TRANSPARENT now: every
+    // signed cell paints its own opaque background, and a cell that wants no
+    // plaque (see add()) needs the page under it to be clear rather than black.
+    x.clearRect(0, 0, PAGE, PAGE);
     const t = new this.THREE.CanvasTexture(c);
     t.colorSpace = this.THREE.SRGBColorSpace;
     t.anisotropy = 4;
@@ -853,9 +858,38 @@ export class SignAtlas {
     const x = page.x;
     x.save();
     x.beginPath(); x.rect(cx, cy, CELL_W, CELL_H); x.clip();
-    x.fillStyle = bg; x.fillRect(cx, cy, CELL_W, CELL_H);
-    x.fillStyle = 'rgba(255,255,255,0.10)'; x.fillRect(cx, cy, CELL_W, 3);
-    x.fillStyle = fg;
+    // A NULL BACKGROUND MEANS NO PLAQUE — text only, on transparency.
+    //
+    // The floating place names were drawn on a #12181c panel, which is right
+    // for a sign bolted to a facade and wrong for a name hanging in the air:
+    // from 87m the text is 6-16% of the cell's pixels, so a beach label read as
+    // a SOLID BLACK RECTANGLE floating over Tanjong's lagoon. Measured, not
+    // assumed — the atlas cells were read back pixel by pixel and all 67 have
+    // their text; the plaque was simply swallowing it at distance.
+    //
+    // Text alone needs its own legibility, because it now sits over sky, sea
+    // and sand in turn: a dark stroke under the fill gives it an edge on any of
+    // them, which is what every map label in the world does.
+    if (bg) {
+      x.fillStyle = bg; x.fillRect(cx, cy, CELL_W, CELL_H);
+      x.fillStyle = 'rgba(255,255,255,0.10)'; x.fillRect(cx, cy, CELL_W, 3);
+    } else {
+      // a soft rounded pill, not a plaque and not nothing. Text alone vanishes
+      // against a bright sky at range; a 55%-opaque pill holds the name legible
+      // without punching a hole in the view. The corners are rounded because a
+      // hard rectangle in the air is what read as a slab in the first place.
+      x.clearRect(cx, cy, CELL_W, CELL_H);
+      const r = 13, ix = cx + 5, iy = cy + 7, iw = CELL_W - 10, ih = CELL_H - 14;
+      x.beginPath();
+      x.moveTo(ix + r, iy);
+      x.lineTo(ix + iw - r, iy); x.quadraticCurveTo(ix + iw, iy, ix + iw, iy + r);
+      x.lineTo(ix + iw, iy + ih - r); x.quadraticCurveTo(ix + iw, iy + ih, ix + iw - r, iy + ih);
+      x.lineTo(ix + r, iy + ih); x.quadraticCurveTo(ix, iy + ih, ix, iy + ih - r);
+      x.lineTo(ix, iy + r); x.quadraticCurveTo(ix, iy, ix + r, iy);
+      x.closePath();
+      x.fillStyle = 'rgba(16,20,26,0.55)';
+      x.fill();
+    }
     x.textAlign = 'center'; x.textBaseline = 'middle';
     let size = 31;
     const text = label.toUpperCase();
@@ -863,6 +897,13 @@ export class SignAtlas {
       x.font = `600 ${size}px ui-sans-serif, system-ui, -apple-system, Helvetica, Arial`;
       size -= 2;
     } while (x.measureText(text).width > CELL_W - 22 && size > 8);
+    if (!bg) {
+      x.lineJoin = 'round';
+      x.lineWidth = Math.max(3, size * 0.22);
+      x.strokeStyle = 'rgba(14,18,22,0.85)';
+      x.strokeText(text, cx + CELL_W / 2, cy + CELL_H / 2 + 2);
+    }
+    x.fillStyle = fg;
     x.fillText(text, cx + CELL_W / 2, cy + CELL_H / 2 + 2);
     x.restore();
 
@@ -874,6 +915,17 @@ export class SignAtlas {
       // canvas y runs down, texture v runs up
       v0: 1 - (cy + CELL_H) / PAGE + pad, v1: 1 - cy / PAGE - pad,
     };
+    // THE PAGE IS DIRTY THE MOMENT A LABEL IS DRAWN ON IT.
+    //
+    // This used to rely on the consumer calling finish(). shopfront.js and
+    // sgdetail.js do; places.js — the floating place names — never did, and it
+    // adds its labels AFTER those two have already uploaded the page. So every
+    // floating name sampled a texture that predated its own text and showed the
+    // page's blank fill instead: a SOLID BLACK RECTANGLE hanging over Tanjong's
+    // lagoon, which is how this was found. Marking it here makes the mistake
+    // impossible to repeat. It costs one upload, not one per label: nothing
+    // renders between adds during a build, and three.js coalesces needsUpdate.
+    page.t.needsUpdate = true;
     this.map.set(key, uv);
     return uv;
   }
