@@ -2774,6 +2774,9 @@ async function buildRegion(data, opts = {}) {
     return best;
   };
   window.__surfaceAt = (x, z) => surfaceAt(x, z);
+  // the same question asked from a stated height, which is the only way to see
+  // whether a raised deck is being offered to someone who could not reach it
+  window.__surfaceAtFrom = (x, z, fromY) => surfaceAt(x, z, fromY);
   window.__inFootprint = (x, z) => inFootprint(x, z);
   // the solidity test the ride and the walker actually use, so a check can ask
   // the same question they do rather than a lookalike
@@ -3943,7 +3946,7 @@ function toggleMode() {
     const nx = Math.cos(S.heading), nz = -Math.sin(S.heading);
     let wx = S.x + nx * 1.2, wz = S.z + nz * 1.2;
     if (blocked(wx, wz)) { wx = S.x - nx * 1.2; wz = S.z - nz * 1.2; }
-    walker.x = wx; walker.z = wz; walker.heading = S.heading; walker.speed = 0;
+    walker.x = wx; walker.z = wz; walker.heading = S.heading; walker.speed = 0; walker.y = null;
     S.speed = 0; S.reversing = false;
     camYaw = S.heading; camPitch = 0.16;
     walkerRig.group.visible = true;
@@ -4032,7 +4035,16 @@ function nearestRide() {
   if (!RIDES || mode === 'onride') return null;
   const x = mode === 'walk' ? walker.x : S.x;
   const z = mode === 'walk' ? walker.z : S.z;
-  return RIDES.nearest(x, z, BOARD_REACH);
+  const hit = RIDES.nearest(x, z, BOARD_REACH);
+  // A PLATFORM BOARDING POINT HAS TO BE CLIMBED TO. `nearest` is a horizontal
+  // test, so without this you could stand on the grass twelve metres below the
+  // deck and board out of thin air — which would make the ramp pointless and
+  // the platform a decoration. Anything not on a platform is unaffected.
+  if (hit && hit.board && hit.board.platform) {
+    const y = mode === 'walk' && walker.y != null ? walker.y : surfaceAt(x, z);
+    if (Math.abs(y - hit.board.y) > 3.5) return null;
+  }
+  return hit;
 }
 
 function boardRide(hit) {
@@ -4061,7 +4073,7 @@ function alightRide() {
     const home = r.boards[0];
     wx = home.x; wz = home.z;
   }
-  walker.x = wx; walker.z = wz; walker.speed = 0;
+  walker.x = wx; walker.z = wz; walker.speed = 0; walker.y = null;
   walkerRig.group.visible = true;
   onRide = null;
   mode = 'walk';
@@ -4078,7 +4090,7 @@ function rideStep(dt) {
   // the walker rides along invisibly under the seat: crowd, traffic, streaming
   // and the wayfinder all key off walker.x/z, and a frozen walker would freeze
   // the island around a moving player
-  walker.x = p.x; walker.z = p.z;
+  walker.x = p.x; walker.z = p.z; walker.y = null;
   const yaw = Math.atan2(p.dir.x * onRide.dir, p.dir.z * onRide.dir);
   r.carrier.position.set(p.x, p.y - (r.hang || 0), p.z);
   r.carrier.rotation.set(0, yaw, 0);
@@ -4864,7 +4876,14 @@ function loop(now) {
       if (knobEl) {
         knobEl.style.transform = `translate(${input.stickDX.toFixed(1)}px, ${input.stickDY.toFixed(1)}px)`;
       }
-      walkerRig.group.position.set(walker.x, surfaceAt(walker.x, walker.z), walker.z);
+      // THE WALKER'S OWN HEIGHT DECIDES WHICH SURFACE THEY ARE ON. Passing it
+      // is what lets a raised deck exist at all: without it surfaceAt returns
+      // the highest registered surface and standing under a platform puts you
+      // on top of it. Seeded from the terrain on the first frame so an arrival
+      // never begins by picking a deck out of the air.
+      if (walker.y == null) walker.y = terrain.at(walker.x, walker.z);
+      walker.y = surfaceAt(walker.x, walker.z, walker.y);
+      walkerRig.group.position.set(walker.x, walker.y, walker.z);
       walkerRig.group.rotation.y = walker.heading;
       walkerRig.pose(walker.phase, walker.speed);
       const wgy = terrain.at(walker.x, walker.z);

@@ -102,6 +102,30 @@ export function buildRides(THREE, data, world, surfaceAt) {
     });
   }
 
+  // ...AND A WIRE RIDE WITH A PLATFORM BOARDS FROM THE PLATFORM.
+  //
+  // A boarding point on the grass under the wire makes the deck scenery: you
+  // would climb it for the view and walk back down to get on, which is the
+  // opposite of a station. This only moves the ENDS, and only onto a platform
+  // within 70m of where the ride already boarded, so a ride with no station
+  // near it is untouched.
+  //
+  // Safe only because walkSurfaceAt is height-aware now — the deck can be
+  // reached by walking up the ramp, and cannot be reached by standing under it.
+  for (const r of rides) {
+    if (r.kind !== 'gondola' && r.kind !== 'chair_lift') continue;
+    for (const b of r.boards) {
+      let best = null, bd = 70 * 70;
+      for (const st of (window.__cableStations || [])) {
+        const d = (st.x - b.x) ** 2 + (st.z - b.z) ** 2;
+        if (d < bd) { bd = d; best = st; }
+      }
+      if (!best) continue;
+      b.x = best.x; b.z = best.z; b.y = best.y + 0.9;
+      b.platform = true;
+    }
+  }
+
   // ---- the luge runs, on the track surface -------------------------------
   for (const a of (data.attractions || [])) {
     if (a.k !== LUGE_KIND || !a.g || a.g.length < 3) continue;

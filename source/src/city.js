@@ -785,7 +785,22 @@ export function addWalkSurface(x1, z1, x2, z2, half, y) {
   }
 }
 
-export function walkSurfaceAt(x, z) {
+// A WALK SURFACE YOU CAN ONLY BE ON IF YOU COULD HAVE GOT THERE.
+//
+// This returned the HIGHEST registered surface at x,z, full stop, and surfaceAt
+// hands that straight to the walker. For a flight of steps that is right — the
+// treads are the only thing there. For anything with air under it, it is the
+// bug that stopped the cable car station being built: a 12m boarding deck would
+// have picked up anyone who walked UNDERNEATH it and stood them on the roof.
+// Same class as the footbridge that buried a walker to the helmet along the
+// Boardwalk, arriving from the opposite direction.
+//
+// So it takes the height the walker is ALREADY at, when the caller knows it,
+// and answers with the surface they could actually step onto: up to STEP_UP
+// above (a stair riser, a kerb) or a drop they could take. Without fromY the
+// old highest-wins behaviour stands, so every existing caller is unchanged.
+const STEP_UP = 1.35, STEP_DOWN = 3.2;
+export function walkSurfaceAt(x, z, fromY) {
   const l = WALKS.cells.get(Math.floor(x / BR_CELL) + ',' + Math.floor(z / BR_CELL));
   if (!l) return null;
   let best = null;
@@ -796,7 +811,14 @@ export function walkSurfaceAt(x, z) {
     let t = ((x - s[0]) * vx + (z - s[1]) * vz) / l2;
     t = t < 0 ? 0 : t > 1 ? 1 : t;
     const dx = x - (s[0] + vx * t), dz = z - (s[1] + vz * t);
-    if (dx * dx + dz * dz <= s[4] * s[4] && (best === null || s[5] > best)) best = s[5];
+    if (dx * dx + dz * dz > s[4] * s[4]) continue;
+    const y = s[5];
+    if (fromY != null) {
+      // out of reach in either direction: not a surface this walker is on
+      if (y - fromY > STEP_UP || fromY - y > STEP_DOWN) continue;
+      // among those reachable, the nearest to where they already are
+      if (best === null || Math.abs(y - fromY) < Math.abs(best - fromY)) best = y;
+    } else if (best === null || y > best) best = y;
   }
   return best;
 }
@@ -1109,7 +1131,7 @@ export function standable(x, z) {
   return bridgeDeckAt(x, z) !== null;
 }
 
-export function surfaceAt(x, z) {
+export function surfaceAt(x, z, fromY) {
   const deck = bridgeDeckAt(x, z);
   if (deck !== null) return deck + SURFACE_ROAD;
   // A STAIR TREAD IS GROUND WHEN YOU ARE ON IT. Checked after the deck so a
@@ -1118,7 +1140,7 @@ export function surfaceAt(x, z) {
   // instead of walking through them. main.js seats the walker with exactly
   // this function (`walkerRig.group.position.set(walker.x, surfaceAt(...))`),
   // which is why the stairs were drawn but not climbable until now.
-  const step = walkSurfaceAt(x, z);
+  const step = walkSurfaceAt(x, z, fromY);
   if (step !== null) return step;
   const g = TERRAIN.at(x, z);
   // A LOW FOOTBRIDGE IS A BOARDWALK YOU STAND ON. Footbridge decks were kept

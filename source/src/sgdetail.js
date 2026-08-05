@@ -3210,25 +3210,33 @@ export async function buildTransit(world, data, Y = null) {
              rx3, gy + STATION_H / 2 + 1.0, rz3, ang, -pitch);
       }
     }
-    // THE DECK IS NOT REGISTERED AS WALKABLE YET, AND HERE IS WHY.
+    // AND NOW IT IS WALKABLE, BECAUSE THE SURFACE TEST CAN TELL WHO IS ON IT.
     //
-    // addWalkSurface would make the stair climbable and the platform standable
-    // in two lines, and that is how the stairs on Fort Canning work. It cannot
-    // be used at this height: surfaceAt() consults walkSurfaceAt with NO height
-    // gate and returns it whenever one exists at that x,z. A twelve metre deck
-    // spanning 21m by 12m would therefore lift anyone who walked UNDERNEATH it
-    // twelve metres into the air — the same class of fault as the footbridge
-    // that buried a walker to the helmet along the Boardwalk, arriving from the
-    // other direction.
+    // This was written, reverted, and written again in one session, and the
+    // revert is the useful part: addWalkSurface alone would have made the deck
+    // standable AND picked up anyone who walked underneath it, because
+    // surfaceAt returned the highest registered surface at an x,z whatever
+    // height the walker was at. A twelve metre platform would have stood them
+    // on the roof. walkSurfaceAt now takes the walker's own height and only
+    // offers a surface within a step of it, so the deck exists for people on
+    // the ramp and does not exist for people on the grass below.
     //
-    // The fix this needs is a height-aware walk surface: walkSurfaceAt should
-    // take the walker's current height and refuse a deck that is not within a
-    // step of it. That is a change to a function every stair on the island
-    // already depends on, so it wants its own batch and its own vetting rather
-    // than riding along with a station.
-    //
-    // Until then the platform is geometry and a view, and boarding stays at
-    // ground level where it has always worked.
+    // The ramp is registered as a run of short segments rather than one, because
+    // a walk surface stores ONE height per segment: a single 20m segment would
+    // be a flat shelf at its own height instead of a climb.
+    {
+      const RN = 14;
+      for (let i2 = 0; i2 < RN; i2++) {
+        const v0 = -HL + 1.4 + run * (i2 / RN), v1 = -HL + 1.4 + run * ((i2 + 1) / RN);
+        const [ax2, az2] = put(HW - 1.6, v0);
+        const [bx2, bz2] = put(HW - 1.6, v1);
+        const y0 = gy + STATION_H * ((i2 + 0.5) / RN);
+        addWalkSurface(ax2, az2, bx2, bz2, 1.25, y0);
+      }
+      const [dx3, dz3] = put(0, -HL + 0.6);
+      const [ex3, ez3] = put(0, HL - 0.6);
+      addWalkSurface(dx3, dz3, ex3, ez3, HW - 0.4, deck);
+    }
     // published so the ride can put its boarding point up here rather than on
     // the grass underneath, and so a probe can find the platforms
     (window.__cableStations || (window.__cableStations = [])).push({
