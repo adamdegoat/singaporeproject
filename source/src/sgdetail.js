@@ -3111,6 +3111,277 @@ export async function buildTransit(world, data, Y = null) {
     out.ussGate = 1;
   }
 
+  // -- THE BULL RING, the parasol over the Universal Studios plaza ----------
+  //
+  // A giant metal parasol: a flared, waisted trumpet column rising from a
+  // splayed skirt through a narrow waist to a glazed lantern drum, with struts
+  // fanning out from the waist to carry a wide low ELLIPTICAL disc canopy of
+  // radiating petals. Research §5.2; sizes and provenance in data/bullring.py.
+  //
+  // THE CANOPY IS AN ELLIPSE AND THAT MATTERS: 62m x 31m. The research says in
+  // as many words that building it as a 60m circle "would be twice as big as it
+  // is in one direction", which is exactly the kind of plausible-looking error
+  // this project keeps paying for. Every radius below is scaled per-petal from
+  // the ellipse, never from one radius.
+  const br = data.bullring;
+  if (br && br.p) {
+    await YY();
+    const [bx, bz] = br.p;
+    const by = surfaceAt(bx, bz);
+    // Celadon and bronze, from the research: "pale duck-egg / celadon
+    // blue-green with dark bronze-brown steel ribs and white or cream
+    // fabric/metal panels between them". It goes silver in low light on its
+    // own — a silver material would be the dusk photograph, not the building.
+    const celadon = new THREE.MeshStandardMaterial({
+      color: 0x9dc3bd, roughness: 0.45, metalness: 0.35 });
+    const bronze = new THREE.MeshStandardMaterial({
+      color: 0x6b533a, roughness: 0.5, metalness: 0.5 });
+    // THE UNDERSIDE IS WHAT THE PLAZA SEES, and an unlit one reads as a muddy
+    // brown ceiling — this world already learned that under the lifted podium
+    // at the Universal forecourt, where the fix was a pale lit soffit. A canopy
+    // has the same problem and the same answer: a modest emissive so the
+    // shaded face stays pale, which is also true to the louvred panels the
+    // research describes on this canopy's underside.
+    const petalMat = new THREE.MeshStandardMaterial({
+      color: 0xf0ece1, roughness: 0.62, side: THREE.DoubleSide,
+      emissive: 0x6d6a63, emissiveIntensity: 0.42 });
+    const lantern = new THREE.MeshStandardMaterial({
+      color: 0xcfe4e0, roughness: 0.22, metalness: 0.25,
+      emissive: 0x2c4a48, emissiveIntensity: 0.5 });
+    const plinth = new THREE.MeshStandardMaterial({ color: 0x3c3a36, roughness: 0.9 });
+    const ca = Math.cos(br.ang), sa = Math.sin(br.ang);
+    // ellipse point at parameter t, radius factor k — long axis along `ang`
+    const ell = (t, k) => {
+      const u = Math.cos(t) * (br.long / 2) * k, v = Math.sin(t) * (br.short / 2) * k;
+      return [bx + u * sa + v * ca, bz + u * ca - v * sa];
+    };
+    // the dark platform ring the whole thing stands on
+    const plat = new THREE.CylinderGeometry(br.platform / 2, br.platform / 2, 0.42, 26);
+    plat.translate(bx, by + 0.21, bz);
+    merger.add(plat, plinth, bx, bz);
+    // THE TRUMPET COLUMN — splayed skirt, narrow waist, then flaring again to
+    // the lantern. Three stacked frusta, because that IS the profile: a single
+    // cone reads as a lamp post and loses the whole silhouette.
+    const WAIST_Y = br.canopyY * 0.62, WAIST_R = br.drum * 0.28;
+    const skirt = new THREE.CylinderGeometry(WAIST_R, br.drum * 0.92, WAIST_Y, 20, 1, true);
+    skirt.translate(bx, by + WAIST_Y / 2 + 0.4, bz);
+    merger.add(skirt, celadon, bx, bz);
+    const throat = new THREE.CylinderGeometry(br.drum * 0.46, WAIST_R,
+      br.top - 4.2 - WAIST_Y, 20, 1, true);
+    throat.translate(bx, by + WAIST_Y + (br.top - 4.2 - WAIST_Y) / 2 + 0.4, bz);
+    merger.add(throat, celadon, bx, bz);
+    // the glazed cylindrical lantern drum at the top, and its cap
+    const drum2 = new THREE.CylinderGeometry(br.drum / 2, br.drum / 2, 4.2, 20);
+    drum2.translate(bx, by + br.top - 2.1, bz);
+    merger.add(drum2, lantern, bx, bz);
+    const cap = new THREE.CylinderGeometry(br.drum * 0.58, br.drum * 0.52, 0.5, 20);
+    cap.translate(bx, by + br.top + 0.25, bz);
+    merger.add(cap, bronze, bx, bz);
+    // THE PETAL FAN. Each petal is a shallow triangular blade from the waist
+    // out to the ellipse rim, dropping slightly at the tip so the disc reads as
+    // a low dish rather than a flat plate — the same mistake the canopy blobs
+    // made before they were rotated.
+    // Each petal is ONE QUAD from the hub ring out to the ellipse rim, drooping
+    // at the tip so the disc reads as a shallow dish. The first version drew a
+    // second triangle back across the same petal to "fill" the middle, and the
+    // two overlapped: from the plaza the fan crumpled into a broken umbrella.
+    // A petal is a quad. Two triangles, four corners, no third point.
+    const RIM_DROP = 1.35, HUB = 0.14;
+    const hy = by + br.canopyY;
+    for (let k = 0; k < br.petals; k++) {
+      const t0 = (k / br.petals) * Math.PI * 2;
+      const t1 = ((k + 0.9) / br.petals) * Math.PI * 2;
+      const [ix, iz] = ell(t0, HUB), [jx, jz] = ell(t1, HUB);
+      const [ax2, az2] = ell(t0, 1), [bx2, bz2] = ell(t1, 1);
+      const g2 = new THREE.BufferGeometry();
+      g2.setAttribute('position', new THREE.Float32BufferAttribute([
+        ix, hy + 0.9, iz, ax2, hy - RIM_DROP, az2, bx2, hy - RIM_DROP, bz2,
+        ix, hy + 0.9, iz, bx2, hy - RIM_DROP, bz2, jx, hy + 0.9, jz,
+      ], 3));
+      g2.setAttribute('uv', new THREE.Float32BufferAttribute(
+        [0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1], 2));
+      g2.computeVertexNormals();
+      merger.add(g2, petalMat, bx, bz);
+      // a bronze rib UNDER the petal's leading edge — the ribbed underside is
+      // what the canopy is recognised by from the plaza. It stops at the rim:
+      // a rib longer than its petal reads as a spike.
+      const rdx = ax2 - ix, rdz = az2 - iz;
+      const rl = Math.hypot(rdx, rdz);
+      const rib = new THREE.BoxGeometry(0.24, 0.3, rl);
+      rib.rotateY(Math.atan2(rdx, rdz));
+      rib.translate(ix + rdx / 2, hy - RIM_DROP / 2 - 0.24, iz + rdz / 2);
+      merger.add(rib, bronze, bx, bz);
+    }
+    // the splayed struts from the waist out to the rim, every third petal
+    for (let k = 0; k < br.petals; k += 3) {
+      const [sx, sz] = ell((k / br.petals) * Math.PI * 2, 0.92);
+      const dx2 = sx - bx, dz2 = sz - bz;
+      const run = Math.hypot(dx2, dz2), rise = br.canopyY - WAIST_Y - 1.1;
+      const len = Math.hypot(run, rise);
+      // A cylinder is born along +Y. rotateX(PI/2 - pitch) lands its axis on
+      // (0, sin pitch, cos pitch) — up and along +Z — and rotateY(heading)
+      // swings that onto the strut's own bearing. Written as two arithmetic
+      // rotations on purpose: composing an axis-angle Matrix4 here is how the
+      // Emerald Pavilion vault ended up as a floating plane and then a vertical
+      // fin, twice, and the fix both times was to stop composing rotations.
+      const pitch = Math.atan2(rise, run);
+      const strut = new THREE.CylinderGeometry(0.2, 0.2, len, 6);
+      strut.rotateX(Math.PI / 2 - pitch);
+      strut.rotateY(Math.atan2(dx2, dz2));
+      strut.translate(bx + dx2 / 2, by + WAIST_Y + 1.1 + rise / 2, bz + dz2 / 2);
+      merger.add(strut, bronze, bx, bz);
+    }
+    out.bullRing = 1;
+  }
+
+  // -- THE WORKSITE. RWS in 2026 IS a construction site, and this is honest ---
+  //
+  // Research §6.1, one sentence: "RWS in 2026 is one very large construction
+  // site in exactly one place, plus a second smaller one, and nowhere else."
+  // The mapped `works` parcel on the arrival plain is that place — 4.7 ha of
+  // bare khaki ground that has read as UNFINISHED GAME since the day it was
+  // built, and was diagnosed as exactly that in the 2026-08-04 handover.
+  // It is not unfinished. It is a worksite, and a worksite has a hoarding.
+  //
+  // WHAT IS BUILT AND WHY, from §6.5 (EST-PHOTO off 2026 drone stills):
+  //   * mid-blue corrugated steel hoarding, 2-2.5 m, pale grey capping rail —
+  //     "the standard Singapore construction blue and it dominates the site"
+  //   * tower cranes, 2-3 in frame, YELLOW jib and counter-jib on a RED-ORANGE
+  //     lattice mast. The livery is consistent across January and May 2026.
+  //
+  // NOT BUILT, DELIBERATELY: any hoarding graphic. The research carries a
+  // warning in bold — no photograph found shows branded hoarding on this site,
+  // so a Heatherwick render or an RWS logo there would be invention. Plain blue
+  // is the honest model.
+  //
+  // THE HOARDING MUST NOT SEAL THE ISLAND. Merged geometry rasterises into the
+  // collision grid, so a continuous ring round 4.7 ha would wall off every
+  // route that crosses it — the exact class of bug the opencheck sweep exists
+  // to catch. Every panel asks nearWay() first and leaves the crossings open,
+  // which is also what a real site does: the haul road has a gate, not a wall.
+  {
+    const works = (data.land || []).filter((l2) => l2.k === 'works'
+      && l2.p && l2.p.length >= 4);
+    if (works.length) {
+      await YY();
+      // ITS OWN ROAD TEST, and this is the scope trap this file already carries
+      // twice. `onAnyRoadT` belongs to buildSgDetail; buildTransit has no such
+      // binding, and the first version of this block took the whole boot down
+      // with "onAnyRoadT is not defined" — exactly how the entrance gates and
+      // the USS arch each broke once. window.__onRoad answers for CARRIAGEWAYS
+      // only (ROADIX is built without paths), and a hoarding that sealed a
+      // footway would be worse than one that sealed a road, so the index below
+      // includes footways, pedestrian streets and steps.
+      const _WCELL = 20;
+      const _wGrid = new Map();
+      for (const r of (data.roads || [])) {
+        const half = (r.w || (r.k === 'footway' || r.k === 'pedestrian'
+          || r.k === 'steps' ? 2.4 : 6)) / 2;
+        for (let i = 0; i + 1 < (r.p || []).length; i++) {
+          const seg = [r.p[i][0], r.p[i][1], r.p[i + 1][0], r.p[i + 1][1], half];
+          const pad = half + 6;
+          const x0 = Math.min(seg[0], seg[2]) - pad, x1 = Math.max(seg[0], seg[2]) + pad;
+          const z0 = Math.min(seg[1], seg[3]) - pad, z1 = Math.max(seg[1], seg[3]) + pad;
+          for (let gx = Math.floor(x0 / _WCELL); gx <= Math.floor(x1 / _WCELL); gx++) {
+            for (let gz = Math.floor(z0 / _WCELL); gz <= Math.floor(z1 / _WCELL); gz++) {
+              const k = gx + ',' + gz;
+              let l = _wGrid.get(k);
+              if (!l) { l = []; _wGrid.set(k, l); }
+              l.push(seg);
+            }
+          }
+        }
+      }
+      const nearWay = (x, z, margin) => {
+        const l = _wGrid.get(Math.floor(x / _WCELL) + ',' + Math.floor(z / _WCELL));
+        if (!l) return false;
+        for (const [ax2, az2, bx2, bz2, half] of l) {
+          const vx = bx2 - ax2, vz = bz2 - az2;
+          const L2 = vx * vx + vz * vz || 1;
+          let t = ((x - ax2) * vx + (z - az2) * vz) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const dx = x - (ax2 + vx * t), dz = z - (az2 + vz * t);
+          const reach = half + margin;
+          if (dx * dx + dz * dz < reach * reach) return true;
+        }
+        return false;
+      };
+      const hoardBlue = new THREE.MeshStandardMaterial({ color: 0x2f6ea8, roughness: 0.7 });
+      const capRail = new THREE.MeshStandardMaterial({ color: 0xd6d8d5, roughness: 0.75 });
+      const craneYellow = new THREE.MeshStandardMaterial({ color: 0xd9a318, roughness: 0.6, metalness: 0.3 });
+      const craneMast = new THREE.MeshStandardMaterial({ color: 0xb4491f, roughness: 0.62, metalness: 0.3 });
+      const PANEL = 4.0, HOARD_H = 2.4;
+      let panels = 0, cranes = 0;
+      for (const parcel of works) {
+        const p = parcel.p;
+        let area = 0;
+        for (let i = 0; i < p.length; i++) {
+          const [x1, z1] = p[i], [x2, z2] = p[(i + 1) % p.length];
+          area += x1 * z2 - x2 * z1;
+        }
+        area = Math.abs(area) / 2;
+        if (area < 3000) continue;             // a yard, not a site
+        for (let i = 0; i < p.length; i++) {
+          const [ax2, az2] = p[i], [bx2, bz2] = p[(i + 1) % p.length];
+          const L = Math.hypot(bx2 - ax2, bz2 - az2);
+          if (L < PANEL) continue;
+          const ang = Math.atan2(bx2 - ax2, bz2 - az2);
+          const n2 = Math.floor(L / PANEL);
+          for (let k = 0; k < n2; k++) {
+            const t = (k + 0.5) / n2;
+            const px = ax2 + (bx2 - ax2) * t, pz = az2 + (bz2 - az2) * t;
+            // leave every crossing open — a haul road has a gate, not a wall
+            if (nearWay(px, pz, 3.2)) continue;
+            if (window.__blocked && window.__blocked(px, pz)) continue;
+            const gy6 = surfaceAt(px, pz);
+            const pan = new THREE.BoxGeometry(0.14, HOARD_H, L / n2);
+            pan.rotateY(ang);
+            pan.translate(px, gy6 + HOARD_H / 2, pz);
+            merger.add(pan, hoardBlue, px, pz);
+            const rail = new THREE.BoxGeometry(0.3, 0.16, L / n2);
+            rail.rotateY(ang);
+            rail.translate(px, gy6 + HOARD_H + 0.08, pz);
+            merger.add(rail, capRail, px, pz);
+            panels++;
+          }
+        }
+        // TWO TOWER CRANES, placed inside the parcel at fixed fractions of its
+        // own bounding box so they are deterministic — rand() here would draw
+        // from the placement stream and reshuffle the island, the same trap the
+        // canopy-blob rotation documents.
+        let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+        for (const [x2, z2] of p) {
+          if (x2 < mnx) mnx = x2; if (x2 > mxx) mxx = x2;
+          if (z2 < mnz) mnz = z2; if (z2 > mxz) mxz = z2;
+        }
+        for (const [fx3, fz3, mastH, jib] of [[0.36, 0.42, 48, 42], [0.66, 0.63, 38, 34]]) {
+          const cx3 = mnx + (mxx - mnx) * fx3, cz3 = mnz + (mxz - mnz) * fz3;
+          if (window.__blocked && window.__blocked(cx3, cz3)) continue;
+          if (nearWay(cx3, cz3, 6)) continue;
+          const gy7 = surfaceAt(cx3, cz3);
+          const mast = new THREE.BoxGeometry(2.2, mastH, 2.2);
+          mast.translate(cx3, gy7 + mastH / 2, cz3);
+          merger.add(mast, craneMast, cx3, cz3);
+          // jib and counter-jib, on the parcel's own long axis so the two
+          // cranes do not point the same way as each other by accident
+          const ja = Math.atan2(mxx - mnx, mxz - mnz) + (fx3 > 0.5 ? 1.1 : 0);
+          const arm = new THREE.BoxGeometry(1.5, 1.5, jib);
+          arm.rotateY(ja);
+          arm.translate(cx3 + Math.sin(ja) * (jib / 2 - 8), gy7 + mastH + 1.6,
+                        cz3 + Math.cos(ja) * (jib / 2 - 8));
+          merger.add(arm, craneYellow, cx3, cz3);
+          const cab = new THREE.BoxGeometry(2.4, 2.2, 3.0);
+          cab.rotateY(ja);
+          cab.translate(cx3, gy7 + mastH + 1.0, cz3);
+          merger.add(cab, craneYellow, cx3, cz3);
+          cranes++;
+        }
+      }
+      out.worksHoarding = panels;
+      out.worksCranes = cranes;
+    }
+  }
+
   // -- BOARDWALKS over the water crossings ---------------------------------
   //
   // data/arcade.py marks mapped footways that run across water with no bridge

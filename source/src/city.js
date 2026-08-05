@@ -1595,6 +1595,56 @@ function extrude(pts, h, mat, y0 = 0) {
 // concern is real and unmeasured: a factor of 1.14 is a 0.8m eave on a 12m
 // shophouse and an 11m eave on a 160m wing, so a roof recipe reaching a large
 // footprint would throw an overhang nobody intended. Find one first.
+//
+// FOUND ONE, 2026-08-05, and it is photographed. The Equarius Hotel is 69 x
+// 165 m and `equariusHotel` drew a timber awning at EVERY floor with
+// grow(1.07) — 7% of an 82m half-length is a 5.8m shelf, at seven levels. From
+// the ESPA lawn the hotel read as a stack of enormous flat plates, like
+// shelving, and the research it was built from says "timber louvred awnings
+// over every window", which is under a metre. Same shape at hotelOra (1.14 on
+// a 112 x 95m block) and theLaurus (1.06 on 166 x 115m).
+//
+// So AN EAVE IS A DISTANCE, NOT A PERCENTAGE. growM below offsets the ring by
+// a fixed number of METRES along each vertex's mitred normal, which gives the
+// same 0.9m awning on a beach hut and on a 165m wing. `grow` stays for the
+// cases that genuinely are proportional (a band inset as a fraction of the
+// plan, a hip roof stepping in toward its own centre); anything a person would
+// describe in metres — eaves, awnings, cornices, canopies — uses growM.
+function growM(pts, m) {
+  const n = pts.length;
+  const c = centroid(pts);
+  // outward normal of each edge, taking the ring's own winding from the
+  // centroid rather than assuming one: these footprints come from OSM and
+  // arrive in both windings.
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const [ax, az] = pts[i], [bx, bz] = pts[(i + 1) % n];
+    const ex = bx - ax, ez = bz - az;
+    const L = Math.hypot(ex, ez) || 1;
+    let nx = ez / L, nz = -ex / L;
+    const mx = (ax + bx) / 2 - c[0], mz = (az + bz) / 2 - c[1];
+    if (nx * mx + nz * mz < 0) { nx = -nx; nz = -nz; }
+    out.push([nx, nz]);
+  }
+  return pts.map(([x, z], i) => {
+    // mitre: average the normals of the two edges meeting at this vertex, and
+    // lengthen by 1/cos(half-angle) so the offset edge really is m metres out
+    const p = out[(i - 1 + n) % n], q = out[i];
+    let nx = p[0] + q[0], nz = p[1] + q[1];
+    const L = Math.hypot(nx, nz) || 1;
+    nx /= L; nz /= L;
+    const cosHalf = Math.max(0.34, nx * q[0] + nz * q[1]);
+    const d = m / cosHalf;
+    let gx = x + nx * d, gz = z + nz * d;
+    if (!onCarriageway(gx, gz, 0.2)) return [gx, gz];
+    // same walk-back as grow: an eave may not reach into a carriageway
+    for (let t = d; t > 0; t -= Math.max(0.05, d / 20)) {
+      gx = x + nx * t; gz = z + nz * t;
+      if (!onCarriageway(gx, gz, 0.2)) return [gx, gz];
+    }
+    return [x, z];
+  });
+}
 function grow(pts, f) {
   const c = centroid(pts);
   return pts.map(([x, z]) => {
@@ -1851,7 +1901,7 @@ export async function buildBuildings(world, data, Y = null) {
     // applied by autoUV unless the recipe already stated a researched size.
     // See the UV RULE above; recipes were the last path still mapping windows
     // at whatever size the geometry happened to be.
-    world, grow, axis: data.axis || null,
+    world, grow, growM, axis: data.axis || null,
     // walkable ways too, for frontages on pedestrianised streets (Emerald
     // Hill since 1981) where the road index has nothing to point at
     walkways: (data.roads || []).filter((r) => r.k === 'pedestrian' || r.k === 'footway'),
@@ -1906,6 +1956,63 @@ export async function buildBuildings(world, data, Y = null) {
   // Checking the clock bounds a stall to the budget whatever lands in it, which
   // is the property a count can never have. 8ms leaves room for the frame
   // itself inside a 16ms slot.
+  // A BUILDING PART MUST NOT FLOAT, AND MUST NOT ARGUE WITH A RECIPE.
+  //
+  // Found 2026-08-05 by rendering RWS: four near-black slabs hung in the sky
+  // over Hotel Michael, 40m clear of its roof. They are OSM `building:part=yes`
+  // polygons — SEVEN of them along the hotel's curve, tagged
+  // `building:levels=20, building:min_level=12, building:colour=#90a29e,
+  // roof:shape=round` — which is the mapper's description of Hotel Michael's
+  // OWN ROOF VAULTS. Read as levels at 3.4m they became a mass from 40.8m to
+  // 68m, on a hotel whose published storey count is ELEVEN and whose surveyed
+  // height is 37.4m. Two of the seven are worse than floating: h=36.6 with
+  // mh=40.8, a mass whose top is below its own base.
+  //
+  // Two rules, and the first is the one that matters here:
+  //
+  // 1. A NAMED RECIPE OWNS ITS BUILDING'S WHOLE FORM. hotelMichael already
+  //    builds this exact vault run from the research. A part inside a
+  //    recipe-built footprint is the same building described twice, so it is
+  //    skipped. Same rule as "a named recipe outranks the generic roof slab",
+  //    one level down.
+  // 2. Otherwise, a part whose base stands clear above everything under it is
+  //    SEATED on the tallest mass it sits inside, rather than left in the air.
+  //    Refusing to draw it would lose a real roof form; leaving it floating is
+  //    the "road in the sky" class the owner has reported three times.
+  //
+  // Both are measured, not guessed: island-wide there are 20 parts, 7 of them
+  // over Hotel Michael and no other floater on Sentosa.
+  const _parts = data.buildings.filter((q) => q.mh && q.mh > 1 && q.p && q.p.length >= 3);
+  const _partHost = new Map();
+  if (_parts.length) {
+    const _inRing = (x, z, pp) => {
+      let c = false;
+      for (let i = 0, j = pp.length - 1; i < pp.length; j = i++) {
+        const [xi, zi] = pp[i], [xj, zj] = pp[j];
+        if ((zi > z) !== (zj > z)
+          && x < ((xj - xi) * (z - zi)) / ((zj - zi) || 1e-9) + xi) c = !c;
+      }
+      return c;
+    };
+    const _hosts = data.buildings.filter((q) => !(q.mh && q.mh > 1)
+      && q.p && q.p.length >= 4);
+    for (const part of _parts) {
+      const c = centroid(part.p);
+      let best = null, recipeHost = false;
+      for (const q of _hosts) {
+        if (!_inRing(c[0], c[1], q.p)) continue;
+        if (!NORECIPE && q.n && recipeFor(q.n)) recipeHost = true;
+        if (!best || (q.h || 0) > (best.h || 0)) best = q;
+      }
+      _partHost.set(part, { recipeHost, top: best ? (best.h || 0) : null,
+        host: best ? (best.n || null) : null });
+    }
+    const _skipped = [..._partHost.values()].filter((v) => v.recipeHost).length;
+    const _seated = [..._partHost.values()].filter(
+      (v) => !v.recipeHost && v.top !== null).length;
+    if (_skipped || _seated) stats.partsFixed = _skipped;
+  }
+
   let _yt = performance.now();
   for (const b of data.buildings) {
     // cooperative yield for the runtime streamer; null during boot
@@ -1913,6 +2020,8 @@ export async function buildBuildings(world, data, Y = null) {
     const pts = b.p;
     if (pts.length < 3) continue;
     if (SOLO && !((b.n || '').toLowerCase().includes(SOLO))) continue;
+    // rule 1: the recipe already drew this building's whole form
+    if (_partHost.has(b) && _partHost.get(b).recipeHost) continue;
 
     // A building=roof IS A CANOPY: a roof held up by columns, open and
     // walkable underneath — RWS's covered walkways ("The Forum"/WEAVE), bus
@@ -2368,8 +2477,15 @@ export async function buildBuildings(world, data, Y = null) {
     // towers. SkyPark is min_height 193 of height 207, so read as a plain
     // height it is a solid 207m block standing exactly where Marina Bay Sands'
     // atrium is. Built from its own base, it is the 14m deck everyone knows.
-    if (b.mh && b.mh > 1 && b.mh < h - 0.5) {
-      const lift = extrude(pts, h - b.mh, mat, b.mh);
+    // rule 2 (see the note above the loop): a part whose base stands clear of
+    // everything under it is seated on its host's top instead of in the air.
+    let _mh = b.mh;
+    if (_mh && _mh > 1 && _partHost.has(b)) {
+      const hs = _partHost.get(b);
+      if (hs.top !== null && _mh > hs.top + 0.5) _mh = hs.top;
+    }
+    if (_mh && _mh > 1 && _mh < h - 0.5) {
+      const lift = extrude(pts, h - _mh, mat, _mh);
       lift.castShadow = true; lift.receiveShadow = true;
       world.add(lift);
       // AN OPEN GROUND STOREY NEEDS SOMETHING TO STAND ON.
@@ -2398,7 +2514,7 @@ export async function buildBuildings(world, data, Y = null) {
         // soffit, so build one: a thin cap at the underside, in its own light
         // material, which also hides the mass's own open bottom face.
         const soffit = extrudeGeo(pts, 0.38, 0);
-        soffit.translate(0, b.mh - 0.38, 0);
+        soffit.translate(0, _mh - 0.38, 0);
         merger.add(soffit, MAT.soffit || MAT.conc, pts[0][0], pts[0][1]);
         const cols = [];
         let acc = 0;
@@ -2416,7 +2532,7 @@ export async function buildBuildings(world, data, Y = null) {
           acc = (acc + L2) % 9;
         }
         for (const [px, pz, gy] of cols) {
-          const top = FOOT + b.mh;
+          const top = FOOT + _mh;
           if (top - gy < 2.2) continue;
           const col = new THREE.CylinderGeometry(0.34, 0.38, top - gy, 8);
           col.translate(px, gy + (top - gy) / 2, pz);

@@ -98,8 +98,10 @@ const bPosOnA = async () => {
 const p0 = await bPosOnA();
 const b0 = await B.evaluate(() => ({ ...window.__net.deps.getState() }));
 for (let i = 0; i < 3; i++) {
+  // __drive resolves when the throttle lifts, so awaiting the evaluate IS the
+  // wait; only a short settle is needed for the net tick to carry the move.
   await B.evaluate(() => window.__drive && window.__drive(1.0, 0, 2.4));
-  await B.waitForTimeout(2300);
+  await B.waitForTimeout(300);
 }
 const b1 = await B.evaluate(() => ({ ...window.__net.deps.getState() }));
 const bMoved = Math.hypot(b1.x - b0.x, b1.z - b0.z);
@@ -119,7 +121,7 @@ await B.evaluate(() => document.getElementById('modebtn').click());
 await B.waitForTimeout(600);
 for (let i = 0; i < 3; i++) {
   await B.evaluate(() => window.__drive && window.__drive(1.0, 0.15, 2.4));
-  await B.waitForTimeout(2300);
+  await B.waitForTimeout(300);
 }
 const pr = await bPosOnA();
 const rode = pw && pr ? Math.hypot(pr.x - pw.x, pr.z - pw.z) : 0;

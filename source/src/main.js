@@ -4706,10 +4706,20 @@ function reportHud(now) {
 }
 requestAnimationFrame(loop);
 
-// let the vet harness drive without touching the screen
+// let the vet harness drive without touching the screen.
+//
+// IT RETURNS A PROMISE THAT RESOLVES WHEN THE THROTTLE LIFTS, and that is not a
+// convenience. It used to return undefined, so `await window.__drive(1,0,1)` in
+// a loop passed ZERO milliseconds — every sample in stuckcheck's ten-second
+// drive was taken in the same instant, 260ms after the teleport. Whether a
+// stretch "stalled" then depended on whether one rAF frame had happened to land
+// in that settle, which is how Paradise Island spent a session on the open list
+// as a rider stall that does not exist (measured 2026-08-05: it accelerates to
+// 28 km/h like anywhere else). A harness that awaits this now waits.
 window.__drive = (throttle, steer, seconds) => {
   window.__force = { throttle, steer, brake: 0 };
-  setTimeout(() => { window.__force = null; }, seconds * 1000);
+  return new Promise((res) => setTimeout(() => { window.__force = null; res(); },
+    seconds * 1000));
 };
 // Put the ride at a point, facing a heading. The coverage sweep uses this to
 // visit every street in the district without reloading the world 300 times.

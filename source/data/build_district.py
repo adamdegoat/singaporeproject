@@ -444,6 +444,9 @@ def main():
     subprocess.run([sys.executable, os.path.join(HERE, "sensoryscape.py"), d["id"]], check=False)
     # The USS entrance arch is not in OSM either. See data/ussgate.py.
     subprocess.run([sys.executable, os.path.join(HERE, "ussgate.py"), d["id"]], check=False)
+    # Nor is the Bull Ring, the parasol over the Universal plaza — a published
+    # lat/lon and a satellite-measured ellipse. See data/bullring.py.
+    subprocess.run([sys.executable, os.path.join(HERE, "bullring.py"), d["id"]], check=False)
     # The Fort Siloso Skywalk is not in OSM either. See data/skywalk.py.
     subprocess.run([sys.executable, os.path.join(HERE, "skywalk.py"), d["id"]], check=False)
     # MegaZip is not in OSM — authored from measured endpoints against

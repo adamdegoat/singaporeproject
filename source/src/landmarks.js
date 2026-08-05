@@ -1302,7 +1302,10 @@ function hotel(api, b) {
   const stone = api.mat.paleStone, warm = api.mat.warmStone, glass = api.mat.towerGlass;
   const podium = Math.min(14, b.h * 0.24);
   api.world.add(api.extrude(b.p, podium, warm));
-  api.world.add(api.extrude(api.grow(b.p, 1.03), 0.9, stone, podium - 0.9));
+  // the podium cap, in METRES. As a factor this was 1.03, which is a 0.5m band
+  // on a normal hotel and a 3.5m ledge on Village Hotel @ Sentosa's 233 x 170m
+  // plan — the same percentage-versus-distance bug the Equarius shelves were.
+  api.world.add(api.extrude(api.growM(b.p, 0.6), 0.9, stone, podium - 0.9));
 
   // the room tower: narrow, long, set back from the podium edge
   const tw = Math.min(20, ob.halfShort * 0.78);
@@ -1890,8 +1893,9 @@ function civicDome(api, b, opts = {}) {
   const stone = new THREE.MeshStandardMaterial({ color: 0xe0dacb, roughness: 0.82 });
   const h = Math.max(14, Math.min(b.h, 26));
   api.merge(api.extrudeGeo(b.p, h), stone, cx0, cz0);
-  // cornice
-  api.merge(api.extrudeGeo(api.grow(b.p, 1.1), 0.9, h - 1.2), api.mat.trim, cx0, cz0);
+  // cornice — in METRES. As a factor this was 1.1, which is a 0.6m cornice on
+  // a small hotel and a 3.5m one on Village Hotel's 233m plan.
+  api.merge(api.extrudeGeo(api.growM(b.p, 0.75), 0.9, h - 1.2), api.mat.trim, cx0, cz0);
 
   // the colonnade along the street frontage
   const sw = streetward(api, ob);
@@ -5539,7 +5543,7 @@ function hotelMichael(api, b) {
   const H = Math.max(8, b.h || 55);
   api.world.add(api.extrude(b.p, H, RWS_WALL));
   // a shallow cornice band, the "regular, evenly spaced elements" reading
-  api.merge(api.extrudeGeo(api.grow(b.p, 1.02), 0.5, H - 0.5), RWS_FRAME, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.growM(b.p, 0.7), 0.5, H - 0.5), RWS_FRAME, ob.cx, ob.cz);
   const span = ob.halfLong * 2, rad = Math.min(ob.halfShort * 0.92, 9);
   const n = Math.max(1, Math.min(6, Math.round(span / Math.max(12, rad * 2.2))));
   for (let i = 0; i < n; i++) {
@@ -5725,7 +5729,7 @@ function cableCarStation(api, b) {
   const pale = api.mat.paleStone, tile = api.mat.clayTile;
   api.world.add(api.extrude(b.p, H, pale));
   // the pantile roof, oversailing
-  api.merge(api.extrudeGeo(api.grow(b.p, 1.10), 0.45, H), tile, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.growM(b.p, 1.8), 0.45, H), tile, ob.cx, ob.cz);
   api.merge(api.extrudeGeo(api.grow(b.p, 0.86), 1.7, H + 0.45), tile, ob.cx, ob.cz);
   // the portico: four fat columns on the long face, carrying a pediment
   const fx = ob.bx - ob.uz * ob.halfShort * 1.16;
@@ -5754,19 +5758,40 @@ function cableCarStation(api, b) {
 // the west zone. Its published reading is WARM TIMBER-TONED HORIZONTAL BANDS,
 // which is the opposite of the rest of the resort's masonry: a stack of
 // balcony decks with timber soffits, not a punched wall.
+// REWRITTEN 2026-08-05, from the ESPA lawn. The old recipe ran a timber band
+// round the WHOLE perimeter at EVERY floor — seven of them on a 21m footprint —
+// and the hotel read as a stack of shelves, or a filing cabinet, from every
+// angle. It also never built the thing the research names first.
+//
+// Research §1.6, and the order matters: "a run of about TEN DARK RED-BROWN
+// PYRAMIDAL HIP ROOFS" is the defining element; below them "floor-to-ceiling
+// glazing, warm timber LOUVRES and screens and soft earth tones". Louvres are
+// VERTICAL fins on a facade, not horizontal ledges round a building. So: one
+// deep eave at the top, a hip roof over it, and vertical timber louvres down
+// the long faces. PUBLISHED: 7 storeys, 172 rooms, on the fringe of a 2.9ha
+// natural forest, with 4,000 trees planted in and around it.
 function equariusHotel(api, b) {
   const ob = orientedBox(b.p);
   const g0 = api.footingY(b.p);
   const H = Math.max(6, b.h || 24);
-  const FLOORS = Math.max(2, Math.round(H / 3.4));
-  api.world.add(api.extrude(b.p, H, RWS_WALL));
   const timber = new THREE.MeshStandardMaterial({ color: 0x8a6a49, roughness: 0.78 });
-  for (let k = 1; k <= FLOORS; k++) {
-    const y = (k / FLOORS) * H - 0.35;
-    if (y <= 0.5) continue;
-    api.merge(api.extrudeGeo(api.grow(b.p, 1.07), 0.26, y), timber, ob.cx, ob.cz);
-    api.merge(api.extrudeGeo(api.grow(b.p, 1.065), 0.1, y + 0.95), timber, ob.cx, ob.cz);
+  const roofRed = new THREE.MeshStandardMaterial({ color: 0x7d4630, roughness: 0.8 });
+  api.world.add(api.extrude(b.p, H, RWS_WALL));
+  // vertical timber louvres down the elevation — the west zone's material
+  // signature, and the reading the research actually gives
+  const per = perimeterOf(b.p);
+  const n = Math.max(6, Math.round(per / 4.2));
+  for (let i = 0; i < n; i++) {
+    const p2 = alongRing(b.p, (i + 0.5) / n, 1.0, ob);
+    if (!p2) continue;
+    const fin = new THREE.BoxGeometry(0.34, H * 0.72, 0.42);
+    fin.rotateY(-ob.ang);
+    fin.translate(p2[0], g0 + H * 0.42, p2[1]);
+    api.merge(fin, timber, ob.cx, ob.cz);
   }
+  // ONE deep eave, then the pyramidal hip roof that is the whole silhouette
+  api.merge(api.extrudeGeo(api.growM(b.p, 1.6), 0.34, H), roofRed, ob.cx, ob.cz);
+  hipRoof(api, b.p, ob, H + 0.34, Math.min(5.2, ob.halfShort * 0.5), roofRed);
 }
 
 // WEAVE — 3 levels, over 20,000 m2, on the site of the old Forum. Published
@@ -5788,7 +5813,7 @@ function weave(api, b) {
   const bands = Math.max(3, Math.round(H / 1.6));
   for (let k = 0; k < bands; k++) {
     const y = (k / bands) * H;
-    api.merge(api.extrudeGeo(api.grow(b.p, 1.02), H / bands * 0.45, y),
+    api.merge(api.extrudeGeo(api.growM(b.p, 0.3), H / bands * 0.45, y),
       k % 2 ? WEAVE_OCHRE : WEAVE_ROCK, ob.cx, ob.cz);
   }
   // the ETFE pillow canopy above it, a shallow inflated dome per bay
@@ -5839,7 +5864,7 @@ function theLaurus(api, b) {
     api.merge(pier, vermilion, ob.cx, ob.cz);
   }
   // grey pitched roof with red-orange monitors along the ridge
-  api.merge(api.extrudeGeo(api.grow(b.p, 1.06), 0.4, H), grey, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.growM(b.p, 1.6), 0.4, H), grey, ob.cx, ob.cz);
   api.merge(api.extrudeGeo(api.grow(b.p, 0.8), 1.6, H + 0.4), grey, ob.cx, ob.cz);
   const span = ob.halfLong * 2;
   const m = Math.max(2, Math.min(6, Math.round(span / 16)));
@@ -5862,7 +5887,7 @@ function hotelOra(api, b) {
   const grey = new THREE.MeshStandardMaterial({ color: 0x8d9095, roughness: 0.7 });
   api.world.add(api.extrude(b.p, H, RWS_WALL));
   // deep eaves: the overhang is the whole character, so it oversails hard
-  api.merge(api.extrudeGeo(api.grow(b.p, 1.14), 0.38, H), grey, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(api.growM(b.p, 2.4), 0.38, H), grey, ob.cx, ob.cz);
   api.merge(api.extrudeGeo(api.grow(b.p, 0.84), 1.9, H + 0.38), grey, ob.cx, ob.cz);
   const span = ob.halfLong * 2;
   const m = Math.max(2, Math.min(5, Math.round(span / 18)));
@@ -5872,6 +5897,148 @@ function hotelOra(api, b) {
     mon.rotateY(-ob.ang);
     mon.translate(ob.bx + u * ob.ux, g0 + H + 2.4, ob.bz + u * ob.uz);
     api.merge(mon, api.mat.clayTile, ob.cx, ob.cz);
+  }
+}
+
+// THE GALLERIA — the luxury-brand arcade under the ETFE canopy, 29 x 98 m
+// (DERIVED). Research §1.10 is unusually blunt about what it is NOT: "there is
+// no Galleria 'building' to silhouette". It is a shopfront ribbon of one to two
+// storeys — buff stone piers, full-height glazed brand fronts between them, a
+// continuous shading canopy above, and Hotel Michael's vaults running over the
+// top. OSM tags it h=22, which is the RWS block tag and would put a seven-storey
+// slab against Crockfords' foot where a two-storey arcade belongs.
+//
+// NO GFA AND NO HEIGHT IS PUBLISHED for it — searched, §1.10 says so. Two
+// retail storeys at 4.2m is an ASSUMPTION, stated here the same way The Laurus
+// states its 3.4m, so nobody later reads 8.4 as surveyed.
+function theGalleria(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = 8.4;                          // ASSUMPTION: 2 retail storeys @ 4.2m
+  const buff = new THREE.MeshStandardMaterial({ color: 0xd6c6a6, roughness: 0.86 });
+  const glazing = new THREE.MeshStandardMaterial({
+    color: 0x2b3238, roughness: 0.18, metalness: 0.5 });
+  // AN ARCADE IS SOMETHING YOU WALK THROUGH, AND THIS ONE IS MAPPED THAT WAY:
+  // a 3.4m footway runs 6 of its 13 points inside this footprint, and
+  // openground.py has already flagged the ground storey open (og=8.5). A solid
+  // glazed wall round the ring would stand across that walk — the same mistake
+  // as sealing a haul road with hoarding. So the ground storey is a COLONNADE:
+  // piers on the ring, glazed brand fronts between them, and NO panel where a
+  // mapped walking route passes. That is also what the building is in life —
+  // you walk in off Festive Walk between the shopfronts.
+  if (api.openGround) api.openGround(b.p);
+  const walkNear = (x, z, m) => {
+    for (const w of (api.walkways || [])) {
+      const pts = w.p || [];
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
+        const vx = bx - ax, vz = bz - az;
+        const L2 = vx * vx + vz * vz || 1;
+        let t = ((x - ax) * vx + (z - az) * vz) / L2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+        const reach = (w.w || 3.4) / 2 + m;
+        if (dx * dx + dz * dz < reach * reach) return true;
+      }
+    }
+    return false;
+  };
+  const per = perimeterOf(b.p);
+  const n = Math.max(10, Math.round(per / 8.5));
+  const piers = [];
+  for (let i = 0; i < n; i++) {
+    const p2 = alongRing(b.p, (i + 0.5) / n, 1.0, ob);
+    if (!p2) continue;
+    piers.push(p2);
+    const pier = new THREE.BoxGeometry(1.5, H, 1.0);
+    pier.rotateY(-ob.ang);
+    pier.translate(p2[0], g0 + H / 2, p2[1]);
+    api.merge(pier, buff, ob.cx, ob.cz);
+  }
+  // the glazed brand fronts, one bay between each pair of piers, skipped where
+  // a mapped walk goes through
+  for (let i = 0; i < piers.length; i++) {
+    const a = piers[i], c = piers[(i + 1) % piers.length];
+    const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+    if (L < 1.6 || L > 14) continue;      // the wrap-around edge is not a bay
+    const mx = (a[0] + c[0]) / 2, mz = (a[1] + c[1]) / 2;
+    if (walkNear(mx, mz, 1.4)) continue;
+    const bay = new THREE.BoxGeometry(0.35, H * 0.82, L - 1.5);
+    bay.rotateY(Math.atan2(c[0] - a[0], c[1] - a[1]));
+    bay.translate(mx, g0 + H * 0.41, mz);
+    api.merge(bay, glazing, ob.cx, ob.cz);
+  }
+  // the continuous shading canopy, oversailing the shopfront line
+  api.merge(api.extrudeGeo(api.growM(b.p, 2.2), 0.55, H), buff, ob.cx, ob.cz);
+  // and a shallow attic band, so the ribbon has a top edge rather than stopping
+  api.merge(api.extrudeGeo(api.growM(b.p, -1.4), 1.1, H + 0.55), buff, ob.cx, ob.cz);
+}
+
+// A HIPPED TILE ROOF as a short taper of shrinking extrusions. Deliberately NOT
+// a rotated-and-scaled frustum: this file already carries the South Bridge Road
+// lesson that a 4-gon frustum rotated 45 degrees SHEARS when it is then scaled
+// non-uniformly at the mesh level. Shrinking the ring is arithmetic on the plan
+// and cannot shear.
+function hipRoof(api, p, ob, base, rise, mat, steps = 4) {
+  for (let i = 0; i < steps; i++) {
+    const k0 = 1 - (i / steps) * 0.88, k1 = 1 - ((i + 1) / steps) * 0.88;
+    api.merge(api.extrudeGeo(api.grow(p, Math.max(0.08, k0)), rise / steps,
+      base + (rise * i) / steps), mat, ob.cx, ob.cz);
+    if (k1 < 0.12) break;
+  }
+}
+
+// EQUARIUS VILLAS (ex Beach Villas) — 22 low villas, opened 16 February 2012,
+// scattered across a 342 x 166 m landscaped site (all PUBLISHED / DERIVED,
+// §1.7). On the June-2025 satellite they read as individual BRIGHT TERRACOTTA
+// pyramidal tile roofs in dense jungle, each with its own pool. That terracotta
+// is the west zone's signature colour and it is unlike anything on the central
+// spine — from a rider's path this is a green edge with red roof fragments
+// glimpsed through trees, which is exactly what makes the west read as a
+// different place from RWS proper.
+//
+// The mapped heights (3.5 and 6.8) are kept: they are low and they are right.
+// The roof is the whole recipe.
+function equariusVillas(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = Math.max(3.2, Math.min(b.h || 6.8, 7.5));
+  const terracotta = new THREE.MeshStandardMaterial({ color: 0xb15733, roughness: 0.78 });
+  const wall = new THREE.MeshStandardMaterial({ color: 0xe6ddc9, roughness: 0.85 });
+  api.world.add(api.extrude(b.p, H, wall));
+  // deep eaves first — a villa roof in the tropics oversails hard, and the
+  // shadow line under it is most of what reads from a distance
+  api.merge(api.extrudeGeo(api.growM(b.p, 1.1), 0.34, H), terracotta, ob.cx, ob.cz);
+  hipRoof(api, b.p, ob, H + 0.34, Math.min(3.4, ob.halfShort * 0.55), terracotta);
+}
+
+// ESPA — the spa, next to the villas: a cluster of DARK BROWN pyramidal-roofed
+// pavilions round a green lagoon pool, with white tensile petal parasols over
+// the garden (§1.7). The mapped 20.4m is a calibrated GUESS (hs="calib") and it
+// is wrong in kind for pavilions — a six-storey spa block is not what stands
+// there. Capped at two low storeys and given its roof.
+function espa(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = 7.0;                          // ASSUMPTION: low pavilions, not 20.4
+  const darkTimber = new THREE.MeshStandardMaterial({ color: 0x60482f, roughness: 0.8 });
+  const stone = new THREE.MeshStandardMaterial({ color: 0xd8cfbc, roughness: 0.88 });
+  api.world.add(api.extrude(b.p, H, stone));
+  api.merge(api.extrudeGeo(api.growM(b.p, 1.3), 0.34, H), darkTimber, ob.cx, ob.cz);
+  hipRoof(api, b.p, ob, H + 0.34, Math.min(4.6, ob.halfShort * 0.7), darkTimber);
+  // the white tensile petal parasols over the garden, on the long side
+  const petal = new THREE.MeshStandardMaterial({
+    color: 0xf2eee5, roughness: 0.6, side: THREE.DoubleSide });
+  for (let i = 0; i < 3; i++) {
+    const u = ((i + 0.5) / 3 - 0.5) * ob.halfLong * 1.5;
+    const px = ob.bx + u * ob.ux - ob.uz * (ob.halfShort + 7);
+    const pz = ob.bz + u * ob.uz + ob.ux * (ob.halfShort + 7);
+    const mast = new THREE.CylinderGeometry(0.16, 0.16, 4.4, 6);
+    mast.translate(px, g0 + 2.2, pz);
+    api.merge(mast, darkTimber, ob.cx, ob.cz);
+    const shade = new THREE.ConeGeometry(3.4, 1.5, 8);
+    shade.translate(px, g0 + 5.0, pz);
+    api.merge(shade, petal, ob.cx, ob.cz);
   }
 }
 
@@ -6254,6 +6421,9 @@ export const RECIPES = [
   [/^hotel michael/i, hotelMichael],
   [/^crockfords tower/i, crockfordsTower],
   [/^singapore oceanarium/i, oceanarium],
+  [/^the galleria$/i, theGalleria],
+  [/^equarius villas|^beach villas/i, equariusVillas],
+  [/^espa$/i, espa],
   [/^battlestar galactica/i, battlestar],
   [/^skyhelix/i, skyHelix],
   // River Valley Road's western frontage. RV Residences is six blocks under one
