@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance, resetSignAtlas } from './tex.js';
-import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, plantSurveyed, openGroundAt } from './city.js';
+import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, plantSurveyed, openGroundAt, openGroundPolys } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, lambertise, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
@@ -1416,12 +1416,89 @@ function registerLod(root) {
     const r = o.geometry.boundingSphere.radius;
     const far = (r < 0.5 ? 300 : r < 2 ? 450 : 600) * (PHONE ? 0.68 : 1);
     const n = o.count;
-    const src = o.instanceMatrix.array.slice(0, n * 16);
+    const M = o.instanceMatrix.array;
     const col = o.instanceColor ? o.instanceColor.array.slice(0, n * 3) : null;
     const px = new Float32Array(n), pz = new Float32Array(n);
-    for (let i = 0; i < n; i++) { px[i] = src[i * 16 + 12]; pz[i] = src[i * 16 + 14]; }
+    for (let i = 0; i < n; i++) { px[i] = M[i * 16 + 12]; pz[i] = M[i * 16 + 14]; }
+    // THE SOURCE MATRICES ARE STORED IN 30 BYTES, NOT 64 — measured, and it was
+    // the biggest single allocation on the island. `src` used to be a FULL
+    // duplicate of instanceMatrix; at 769,440 instances that duplicate plus
+    // px/pz was 52.8 MB, and no memory breakdown had ever counted it, because
+    // LODI is not in the scene graph and every previous probe walked the scene.
+    //
+    // An instance matrix is a 3x3 of rotation-times-scale, a position, and five
+    // constants — three zeros in the last row and a 1 in the corner — that are
+    // the same for every instance ever written. So the constants are written
+    // into the GPU buffer ONCE at registration and never touched again, the
+    // position stays Float32 (world coordinates reach 5 km; 16-bit here would
+    // be metres of error), and the 3x3 is quantised to Int16 against the set's
+    // own largest term.
+    //
+    // WHY THE 3x3 CAN BE QUANTISED AND THE POSITION CANNOT: measured on this
+    // island, the largest term across the big sets is about 5.3, so a step is
+    // 5.3/32767 = 1.6e-4. On a five-metre leaf card that is 0.2 mm at the
+    // corner. On a position it would be 8 cm at the far end of the map.
+    //
+    // The first version of this assumed a Y-only rotation and caught 24,597 of
+    // 769,440 instances: EVERY big set failed, because a tree's leaf cards are
+    // tilted in all three axes and its trunks lean. The sample that settled it
+    // is in the scratchpad probe — full 3x3, no zeros anywhere. Guessing the
+    // shape of the data cost a round trip; reading four real matrices ended it.
+    //
+    // A set whose last row is not [0,0,0,1], or that holds a non-finite number,
+    // keeps the full 16 floats and behaves exactly as before.
+    const R9 = [0, 1, 2, 4, 5, 6, 8, 9, 10];
+    let r9 = null, py = null, rq = 0;
+    let ok = true, mx = 0;
+    for (let i = 0; i < n && ok; i++) {
+      const j = i * 16;
+      if (M[j + 3] !== 0 || M[j + 7] !== 0 || M[j + 11] !== 0 || M[j + 15] !== 1) { ok = false; break; }
+      if (!Number.isFinite(M[j + 12]) || !Number.isFinite(M[j + 13]) || !Number.isFinite(M[j + 14])) { ok = false; break; }
+      for (let e = 0; e < 9; e++) {
+        const v = M[j + R9[e]];
+        if (!Number.isFinite(v)) { ok = false; break; }
+        const av = v < 0 ? -v : v;
+        if (av > mx) mx = av;
+      }
+    }
+    if (ok && mx > 0) {
+      rq = mx / 32767;
+      r9 = new Int16Array(n * 9);
+      py = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const j = i * 16, s = i * 9;
+        for (let e = 0; e < 9; e++) r9[s + e] = Math.round(M[j + R9[e]] / rq);
+        py[i] = M[j + 13];
+      }
+      // The constants, written once for every seat the compactor can use, and
+      // then the set rebuilt in place from its own compact form. The rebuild is
+      // not optional: the compactor does not run until the first LOD tick, and
+      // a buffer left zeroed renders every tree as a point. It also means what
+      // renders before the first tick is what the compactor writes after it —
+      // one encoding, no seam — and it round-trips the quantiser once, on the
+      // real data, at boot.
+      M.fill(0);
+      for (let i = 0; i < n; i++) {
+        const j = i * 16, s = i * 9;
+        for (let e = 0; e < 9; e++) M[j + R9[e]] = r9[s + e] * rq;
+        M[j + 12] = px[i]; M[j + 13] = py[i]; M[j + 14] = pz[i]; M[j + 15] = 1;
+      }
+      o.instanceMatrix.needsUpdate = true;
+    }
+    const src = r9 ? null : o.instanceMatrix.array.slice(0, n * 16);
     o.userData.lodRegistered = true;
-    LODI.push({ o, src, col, n, px, pz, far });
+    // A SMALLER GPU BUFFER WAS TRIED HERE AND REVERTED, WITH ITS MEASUREMENT.
+    // The compactor only ever writes the instances inside `far`, and across
+    // seventeen vantages the worst any set reached was 20.2% of itself: 47 MB
+    // of buffer carrying 9.2 MB of drawn instances. Sizing the buffer to that
+    // (with a doubling growth path) did reclaim about 30 MB and the instance
+    // COUNTS stayed correct — 191,055 written at Serapong, verified — but the
+    // island rendered with every tree invisible, so the geometry was reaching a
+    // buffer the GPU was not drawing from. Swapping a live instanceMatrix means
+    // disposing the old attribute to release its GPU buffer, and that trade is
+    // not understood well enough to ship. The 44 MB from the compact store
+    // below is proven by the golden frames; this was not, so it is out.
+    LODI.push({ o, src, r9, py, rq, col, n, px, pz, far });
   });
 }
 let terrain = new Terrain(null);
@@ -2604,6 +2681,27 @@ window.__blockedAt = (x, z) => blocked(x, z);
 // on every causeway, groyne and pier on the island. Asking them shortened the
 // boom at four of the thirteen golden spots for nothing (measured 2026-08-05).
 window.__solidAt = (x, z) => (SOLID ? SOLID.at(x, z) : false);
+// Which cells the open-ground-storey carve has opened. A probe needs this to
+// tell "we deliberately opened this footprint" from "this wall was never
+// registered as solid at all" — two different bugs with one symptom.
+window.__openGroundAt = (x, z) => openGroundAt(x, z);
+window.__openGroundPolys = () => openGroundPolys();
+// The RAW TERRAIN height, which is what the collision grid measures its
+// waist-height band against — as distinct from __surfaceAt, which is the
+// surface a player actually stands on (a deck, a podium, a bridge). A probe
+// needs both to see where those two disagree.
+window.__terrainAt = (x, z) => terrain.at(x, z);
+// The root the collision grid is built from. A drawn mesh that is not under
+// this is scenery no matter how solid it looks.
+window.__world = world;
+// Rebuild the collision grid on demand. A probe uses this to tell a grid that
+// was built BEFORE some geometry existed from a grid that saw the geometry and
+// failed to register it — two very different bugs with one symptom.
+window.__rebuildSolid = async () => {
+  if (!SOLID) return null;
+  SOLID.g.clear();
+  return await SOLID.build(world, (x, z) => terrain.at(x, z));
+};
 // THE MATERIAL TABLE, for probes that need to tell one merged layer from
 // another. consolidate re-merges the named layers into tileBatch meshes and
 // the NAME does not survive — so a check written against mesh.name reports a
@@ -2648,7 +2746,15 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // AltitudeX and the owner spawned pinned by its collision — "load alr
   // cannot even move"): this one probes 12/12 open directions at 6m, on the
   // beach walk with sand on one side and the strip on the other.
-  const SPAWNS = { sentosa: [-1737, 12718] };
+  // PALAWAN BEACH WALK, not Siloso (owner, 2026-08-05: "can we start at like
+  // palawan beach when the game load in?"). Same bar the Siloso point was held
+  // to and for the same reason — a spawn chosen by eye once landed against
+  // AltitudeX's collision and he could not move at all. This one is measured:
+  // it snaps to Palawan Beach Walk, a real 3.5m+ carriageway, probes 12/12 open
+  // directions at 6m, and the heading the road gives it looks down an avenue of
+  // palms with the sea ahead. The other way along the same road faces inland
+  // service buildings, which is why the direction is not left to chance.
+  const SPAWNS = { sentosa: [-1241.7, 12973] };
   let spawnDone = false;
   const want = SPAWNS[SCENE];
   if (want && Array.isArray(data.roads)) {
@@ -3158,6 +3264,14 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     registerLod(world);
     stats.lodTiles = LODT.length;
     stats.lodSets = LODI.length;
+    // What the compact instance store actually caught. A set that keeps `src`
+    // is 64 bytes an instance instead of 16, so this is the number to read
+    // when the heap does not move as far as the arithmetic said it would.
+    let cN = 0, cI = 0, fI = 0;
+    for (const L of LODI) { if (L.r9) { cN++; cI += L.n; } else fI += L.n; }
+    stats.lodCompactSets = cN;
+    stats.lodCompactInst = cI;
+    stats.lodFullInst = fI;
   }
 
   window.__scene = scene; window.__camera = camera; window.__THREE = THREE;
@@ -3351,6 +3465,22 @@ window.__placeBlocked = (x, z) => blocked(x, z);
       window.__canvasFreedN = n;
       bmark('canvas-release');
     }
+    // THE UV AND NORMAL BUFFERS CANNOT BE FREED, and this is the measurement so
+    // nobody tries it again. Geometry on the phone profile is
+    //
+    //     position 36.4   instanceMatrix 46.9   uv 24.3   normal 10.3   colour 7.9
+    //
+    // and uv + normal looked like a free 34.6 MB: nothing in this codebase reads
+    // either after upload, unlike position (every raycast, and this project
+    // diagnoses by raycast), colour (terrain.applyCanopy writes it after
+    // planting) or instanceMatrix (the LOD system REWRITES it at runtime, at
+    // main.js 4463 — which is why the handover's "needs a visual trade, not a
+    // packing tweak" is right, and now right for a stated reason).
+    //
+    // Replaced with empty arrays after the warm spin, SEVEN of fourteen golden
+    // frames changed: three.js re-uploads geometry after this point, so the
+    // buffers are not dead weight at all. Reverted.
+
     // SIM PRE-ROLL: two seconds of crowd + traffic + signal ticks behind the
     // loading bar. Their first real ticks lazily build clear-masks and
     // spacing structures — CPU spikes that used to land in the player's
@@ -3501,28 +3631,81 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // Solo: one tap creates a room and reloads into it. In a room: shows the
   // shareable link and copies it — send it on WhatsApp, friends tap, they
   // spawn beside you.
+  //
+  // A ROOM IS A PLACE YOU CAN LEAVE. The owner, 2026-08-05: "i realise cannot
+  // close room after i create? the players uiux need to make sense please."
+  // He was right and it was not a bug in the relay — the button had exactly two
+  // behaviours, create and copy-the-link-forever, so once the address bar said
+  // ?room=ABCD the only way out was to edit the URL by hand. Every state a
+  // player can enter needs a door out of it, and the button was the whole
+  // interface, so it could not offer one.
+  //
+  // Now the button opens a panel that says which state you are in and gives
+  // you every move available from it: solo, create; in a room, copy the invite
+  // or leave. Leaving strips ?room and reloads, which is the same trip a join
+  // link makes in reverse.
   {
     const fb = document.getElementById('friendsbtn');
-    if (fb) {
-      if (P.get('room')) fb.textContent = P.get('room').toUpperCase();
-      const tap = async (e) => {
-        e.preventDefault(); e.stopPropagation();
-        if (P.get('room')) {
-          const link = location.origin + location.pathname + '?room=' + P.get('room').toUpperCase();
-          try { await navigator.clipboard.writeText(link); fb.textContent = 'LINK COPIED'; }
-          catch { fb.textContent = link.slice(-14); }
-          setTimeout(() => { fb.textContent = P.get('room').toUpperCase(); }, 1800);
+    const panel = document.getElementById('roompanel');
+    const $ = (id) => document.getElementById(id);
+    const roomOf = () => (P.get('room') || '').toUpperCase();
+    if (fb && panel) {
+      const setOpen = (v) => panel.classList.toggle('on', !!v);
+      const paint = () => {
+        const room = roomOf();
+        const n = (NET && NET.roster && NET.roster.length) || 0;
+        $('roomk').textContent = room ? 'Room ' + room : 'Play with friends';
+        $('roomn').textContent = room
+          ? (n ? 'You and ' + n + (n === 1 ? ' other' : ' others') + ' on the island' : 'Waiting for someone to join')
+          : 'Skate Sentosa together';
+        $('roomt').textContent = room
+          ? 'Send the invite link. Whoever opens it lands beside you.'
+          : 'Create a room and send the link. Whoever opens it lands beside you.';
+        $('roomgo').textContent = room ? 'Copy invite link' : 'Create a room';
+        $('roomleave').style.display = room ? '' : 'none';
+      };
+      if (roomOf()) fb.textContent = roomOf();
+      const tap = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        paint();
+        setOpen(!panel.classList.contains('on'));
+      };
+      fb.addEventListener('click', tap);
+      fb.addEventListener('touchstart', tap, { passive: false });
+
+      const shut = (e) => { if (e) { e.preventDefault(); e.stopPropagation(); } setOpen(false); };
+      for (const ev of ['click', 'touchend']) $('roomx').addEventListener(ev, shut, { passive: false });
+
+      const go = async (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        const room = roomOf();
+        if (room) {
+          const link = location.origin + location.pathname + '?room=' + room;
+          try { await navigator.clipboard.writeText(link); $('roomgo').textContent = 'Link copied'; }
+          catch { $('roomgo').textContent = link.slice(-16); }
+          setTimeout(paint, 1800);
         } else {
-          fb.textContent = '...';
+          $('roomgo').textContent = 'Creating...';
           try {
             const r = await fetch(SG_RELAY_URL + '/create');
             const { code } = await r.json();
             if (code) location.search = (location.search ? location.search + '&' : '?') + 'room=' + code;
-          } catch { fb.textContent = 'Friends'; }
+            else paint();
+          } catch { $('roomgo').textContent = 'Could not reach the server'; setTimeout(paint, 2200); }
         }
       };
-      fb.addEventListener('click', tap);
-      fb.addEventListener('touchstart', tap, { passive: false });
+      for (const ev of ['click', 'touchend']) $('roomgo').addEventListener(ev, go, { passive: false });
+
+      // THE DOOR OUT. Drop ?room and keep every other flag, so leaving a room
+      // does not also silently drop ?people or a debug flag someone is using.
+      const leave = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        const q = new URLSearchParams(location.search);
+        q.delete('room');
+        const s2 = q.toString();
+        location.href = location.origin + location.pathname + (s2 ? '?' + s2 : '');
+      };
+      for (const ev of ['click', 'touchend']) $('roomleave').addEventListener(ev, leave, { passive: false });
     }
   }
   // Chunks that streamed in during boot accumulated their counters in
@@ -4462,10 +4645,20 @@ function loop(now) {
       const f2 = L.far * L.far;
       const a = L.o.instanceMatrix.array, c = L.col ? L.o.instanceColor.array : null;
       let k = 0;
+      const q = L.r9, rq = L.rq, py = L.py;
       for (let i = 0; i < L.n; i++) {
         const dx = L.px[i] - cx, dz = L.pz[i] - cz;
         if (dx * dx + dz * dz > f2) continue;
-        a.set(L.src.subarray(i * 16, i * 16 + 16), k * 16);
+        if (q) {
+          // The 3x3 dequantised, the position copied. Slots 3, 7, 11 and 15
+          // were written at registration and are the same for every seat, so
+          // this writes 12 floats where the full path writes 16.
+          const s = i * 9, d = k * 16;
+          a[d] = q[s] * rq; a[d + 1] = q[s + 1] * rq; a[d + 2] = q[s + 2] * rq;
+          a[d + 4] = q[s + 3] * rq; a[d + 5] = q[s + 4] * rq; a[d + 6] = q[s + 5] * rq;
+          a[d + 8] = q[s + 6] * rq; a[d + 9] = q[s + 7] * rq; a[d + 10] = q[s + 8] * rq;
+          a[d + 12] = L.px[i]; a[d + 13] = py[i]; a[d + 14] = L.pz[i];
+        } else a.set(L.src.subarray(i * 16, i * 16 + 16), k * 16);
         if (c) c.set(L.col.subarray(i * 3, i * 3 + 3), k * 3);
         k++;
       }
@@ -4864,6 +5057,37 @@ window.__arriveWait = async (x, z) => {
   arriveShow(false);
 };
 window.__arriving = () => ARRIVING;
+
+// WHERE A PLAYER CAN ACTUALLY STAND, NEAR WHERE THEY ASKED TO GO.
+//
+// The owner, 2026-08-05: "once i teleport to palawan beach my avatar stuck".
+// It is not Palawan. A map pin carries the attraction's OWN coordinate — a
+// building centroid, a beach ring's centre — and __teleport sets the position
+// and nothing else. Measured across all 78 pins: 46 of them land inside solid
+// geometry. Palawan Beach's centre is 24m inside; the worst, Revenge of the
+// Mummy, is 34m. Every single one has clear ground within 34m, which is why a
+// short outward search is the whole fix.
+//
+// THIS IS NOT IN __teleport ITSELF, deliberately. The golden frames place
+// their cameras with __teleport and several of those vantages are inside
+// geometry on purpose; nudging them would move all fourteen baselines and
+// spend the regression net to fix a travel bug. Travel calls this, probes do
+// not.
+//
+// rideBlocked is the test, not blocked(): it is the gate that actually governs
+// moving, and it knows a boardwalk deck over water is standable. Each ring is
+// rotated so a failed search does not always drift the player the same way.
+window.__landNear = (x, z, maxR = 40) => {
+  if (!rideBlocked(x, z)) return { x, z };
+  for (let r = 2; r <= maxR; r += 2) {
+    for (let a = 0; a < 24; a++) {
+      const th = a * (Math.PI / 12) + r * 0.37;
+      const qx = x + Math.cos(th) * r, qz = z + Math.sin(th) * r;
+      if (!rideBlocked(qx, qz)) return { x: qx, z: qz };
+    }
+  }
+  return { x, z };          // nowhere clear: go anyway rather than refuse to travel
+};
 
 window.__teleport = (x, z, heading) => {
   S = newState(x, z, heading == null ? S.heading : heading);

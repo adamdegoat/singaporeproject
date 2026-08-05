@@ -752,6 +752,10 @@ export function addOpenGround(poly) {
     }
   }
 }
+// The registered open-ground footprints themselves. A probe needs the RINGS,
+// not just a point test: the defect this exposes lives on the perimeter, where
+// a recipe drew a wall the collision grid never heard about.
+export function openGroundPolys() { return OPENGROUND.polys; }
 export function openGroundAt(x, z) {
   const l = OPENGROUND.cells.get(Math.floor(x / 12) + ',' + Math.floor(z / 12));
   if (!l) return false;

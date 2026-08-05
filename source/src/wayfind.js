@@ -458,6 +458,41 @@ function drawGlyph(g, kind, cx, cy, r, col) {
 // be the most visible thing on the screen.
 const NAME_FIX = { 'Palavan Beach': 'Palawan Beach' };
 
+// THE THINGS YOU CAN ACTUALLY GET ON, AS PLACES YOU CAN TRAVEL TO.
+//
+// The owner, 2026-08-05: "where can travel can make it like can go all the
+// attractions that can play games also." The map pinned the island's mapped
+// attractions and nothing else, so the cable car, the SkyRide, the eight luge
+// runs and MegaZip — the only things in the world you actually get IN — could
+// not be travelled to at all. You had to already know where they board.
+//
+// The position is the ride's OWN boarding point, taken from the built ride
+// rather than from the map, so a pin cannot drift from the seat it belongs to.
+// Deduplicated by name within 120m: the eight luge ways share one start and
+// would otherwise stack eight pins on one spot, while the cable car's separate
+// stations are far enough apart to stay separate.
+function ridePins(rides, startId) {
+  const out = [];
+  const seen = [];
+  for (const r of rides) {
+    const b = (r.boards || [])[0];
+    if (!b) continue;
+    const [x, z] = b;
+    if (seen.some((q) => q.n === r.name && Math.hypot(q.x - x, q.z - z) < 120)) continue;
+    seen.push({ n: r.name, x, z });
+    out.push({
+      id: startId + out.length, n: r.name, cat: 'ride', kind: r.kind,
+      x, z, major: true, play: true,
+      // Not invented copy: it is a statement about what the player can do here.
+      t: r.kind === 'luge' ? 'You can ride the luge down from here.'
+        : r.kind === 'zip' ? 'You can ride the zipline from here.'
+        : r.kind === 'chair_lift' ? 'You can ride the SkyRide from here.'
+        : 'You can ride the cable car from here.',
+    });
+  }
+  return out;
+}
+
 function buildPins(data) {
   const byName = new Map();
   for (const e of (data.entrances || [])) {
@@ -617,6 +652,45 @@ export class Wayfinder {
     return g;
   }
 
+  // Coast, landuse and water with a bounding box each, built once. The road
+  // and building grid does not hold these — they are a handful of very large
+  // rings rather than thousands of small ones, so a box test per ring is
+  // cheaper than bucketing them, and the minimap redraws every refresh.
+  _polyIndex() {
+    if (this._poly) return this._poly;
+    const box = (p) => {
+      let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+      for (const [x, z] of p) {
+        if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+        if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+      }
+      return { mnx, mxx, mnz, mxz };
+    };
+    const take = (list, min) => (list || [])
+      .filter((q) => q.p && q.p.length > min)
+      .map((q) => ({ q: q.p, k: q.k, bb: box(q.p) }));
+    const water = take(this.data.water, 2);
+    for (const w of water) {
+      // same rule the big map uses: the sea sheet spans the extract and is not
+      // a lagoon, so it takes the sea colour it already sits on
+      w.big = (w.bb.mxx - w.bb.mnx) > 900 || (w.bb.mxz - w.bb.mnz) > 900;
+    }
+    this._poly = { coast: take(this.data.coast, 2), green: take(this.data.green, 2), water };
+    return this._poly;
+  }
+
+  // Every place you can travel to. The rides are added as soon as they exist:
+  // the wayfinder is created before buildRides runs, and the minimap draws
+  // before that, so asking once at construction would permanently miss them.
+  _travelPins() {
+    if (!this._pins) this._pins = buildPins(this.data);
+    if (!this._ridePins) {
+      const rs = (window.__rides && window.__rides()) || [];
+      if (rs.length) this._ridePins = ridePins(rs, this._pins.length);
+    }
+    return this._ridePins ? this._pins.concat(this._ridePins) : this._pins;
+  }
+
   _near(x, z, reach) {
     const C = this._C, out = { b: new Set(), r: new Set() };
     const n = Math.ceil(reach / C);
@@ -757,7 +831,7 @@ export class Wayfinder {
     if (card) card.classList.toggle('on', !!pin);
     if (pin) {
       const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-      set('mapcardk', PIN_LABEL[pin.cat] || 'place');
+      set('mapcardk', pin.play ? 'you can ride this' : (PIN_LABEL[pin.cat] || 'place'));
       set('mapcardn', pin.n);
       // NO INVENTED COPY. If research never produced a line for this place the
       // card says what KIND of place it is and stops. Making something up here
@@ -781,7 +855,11 @@ export class Wayfinder {
       // Face the way you were already facing; arriving spun round to face
       // north for no reason is disorienting.
       const h = this._last ? this._last.heading : 0;
-      if (window.__teleport) window.__teleport(p.x, p.z, h);
+      // A pin is a place, not a doorstep: 46 of the 78 sit inside their own
+      // building or beach ring. Land on the nearest ground the player can move
+      // on — see __landNear.
+      const q = window.__landNear ? window.__landNear(p.x, p.z) : p;
+      if (window.__teleport) window.__teleport(q.x, q.z, h);
       this._select(null);
       this.setOpen(false);
     };
@@ -847,9 +925,22 @@ export class Wayfinder {
     const g = this.mapCtx, W = this.map.width;
     const REACH = 130;                          // metres from the centre to an edge
     const k = (W / 2) / REACH;                  // pixels per metre
+    // ONE MAP, TWO ZOOMS. The owner, 2026-08-05: "the minimap display why not
+    // updated. Only click in then new design." He was right and it was exactly
+    // that — the island map he asked for landed in _drawBig and this corner
+    // canvas kept the old dark street diagram, so opening the map changed
+    // not just the scale but the entire visual language, and the corner
+    // stopped looking like a piece of the thing it is a piece of.
+    //
+    // So this draws the SAME layers in the SAME palette as _drawBig — sea,
+    // land, the green mass, sand, roads with a casing, quiet buildings — just
+    // turned heading-up and cropped to 130m. The only things that stay dark
+    // are the marker outline and the compass, because they sit ON the paper
+    // and have to read against it.
+    const C = MAPCOL;
     g.save();
     g.clearRect(0, 0, W, W);
-    g.fillStyle = '#0d1114'; g.fillRect(0, 0, W, W);
+    g.fillStyle = C.sea; g.fillRect(0, 0, W, W);
 
     g.translate(W / 2, W / 2);
     // turn the map so the way you are facing is up
@@ -857,36 +948,86 @@ export class Wayfinder {
     g.scale(k, k);
     g.translate(-S.x, -S.z);
 
+    // The window is rotated, so the polygons that can reach it are the ones
+    // within the CORNER radius, not the edge distance.
+    const R = REACH * 1.45;
     const near = this._near(S.x, S.z, REACH * 1.6);
+    const polys = this._polyIndex();
+    const ring = (pts) => {
+      g.beginPath();
+      pts.forEach(([x, z], i) => (i ? g.lineTo(x, z) : g.moveTo(x, z)));
+      g.closePath();
+    };
+    const hits = (bb) => bb.mnx < S.x + R && bb.mxx > S.x - R && bb.mnz < S.z + R && bb.mxz > S.z - R;
+
+    /* ---- the island, then what it is made of ---- */
+    g.fillStyle = C.land;
+    for (const c of polys.coast) if (hits(c.bb)) { ring(c.q); g.fill(); }
+    for (const q of polys.green) {
+      if (!hits(q.bb)) continue;
+      const col = C.green[q.k];
+      if (!col) continue;
+      g.fillStyle = col; ring(q.q); g.fill();
+    }
+    for (const w of polys.water) {
+      if (!hits(w.bb)) continue;
+      g.fillStyle = w.big ? C.sea : C.lagoon;
+      ring(w.q); g.fill();
+    }
+
     // roads as ribbons at their real width, so a junction reads as a junction
     g.lineCap = 'round'; g.lineJoin = 'round';
-    // Roads DARK, buildings light. The first pass had both in mid grey and at a
-    // junction, where the carriageways are widest, the whole tile turned into
-    // one flat smudge: you could not tell road from block, which is the only
-    // thing a street map has to do.
-    for (const r of near.r) {
-      const isAxis = (r.n || '').toLowerCase() === (this.axis.n || '').toLowerCase();
-      g.strokeStyle = isAxis ? '#3b342a' : '#232a30';
-      g.lineWidth = Math.max(3 / k, r.w || 7);
+    // Two passes, casing then fill — one pass per road draws each road's
+    // casing over its neighbour's fill and the junctions come apart. Same
+    // reason as the big map.
+    const line = (r) => {
       g.beginPath();
       r.p.forEach(([x, z], i) => (i ? g.lineTo(x, z) : g.moveTo(x, z)));
       g.stroke();
+    };
+    const drive = [...near.r].filter((r) => r.k !== 'footway' && r.k !== 'pedestrian' && r.k !== 'steps');
+    g.strokeStyle = C.roadCase;
+    for (const r of drive) { g.lineWidth = Math.max(3 / k, r.w || 7) + 2.2 / k; line(r); }
+    g.strokeStyle = C.road;
+    for (const r of drive) { g.lineWidth = Math.max(3 / k, r.w || 7); line(r); }
+    // footpaths: at 130m across they are most of how you actually move, and
+    // the big map only earns the right to hide them because it is zoomed out
+    g.save();
+    g.strokeStyle = C.path; g.lineWidth = 1.6 / k;
+    g.setLineDash([4 / k, 4 / k]);
+    for (const r of near.r) {
+      if (r.k !== 'footway' && r.k !== 'pedestrian') continue;
+      line(r);
     }
-    // outlined, or a terrace of six shops merges into one pale slab
-    g.strokeStyle = 'rgba(13,17,20,0.85)';
-    g.lineWidth = 1.1 / k;
-    for (const b of near.b) {
-      g.fillStyle = b.n ? 'rgba(214,222,230,0.85)' : 'rgba(150,163,175,0.60)';
-      g.beginPath();
-      b.p.forEach(([x, z], i) => (i ? g.lineTo(x, z) : g.moveTo(x, z)));
-      g.closePath(); g.fill(); g.stroke();
-    }
+    g.restore();
+
+    // buildings, quiet on purpose — the same call the big map makes
+    g.fillStyle = C.bld;
+    for (const b of near.b) { ring(b.p); g.fill(); }
+
     // NO street highlights. There used to be amber lines over the main
     // streets (first one, then all of them with "the one you are on"
     // thicker) and the user read the thick one as an unexplained glitch —
     // twice, in two different designs. A real map tracks YOU; the streets
-    // are already legible as dark lines. The marker and its facing cone
-    // below are the only amber left. (User decision, 2026-07-30.)
+    // are already legible. The marker and its facing cone below are the only
+    // amber left. (User decision, 2026-07-30.)
+    g.restore();
+
+    // The places you can travel to, as the same coloured dots the big map
+    // pins them with — so the corner answers "is there anything near me"
+    // and the big map answers "what is it". Unlabelled: at this size a name
+    // is unreadable and covers the map it is drawn on.
+    g.save();
+    g.translate(W / 2, W / 2);
+    g.rotate(-Math.atan2(Math.sin(S.heading), -Math.cos(S.heading)));
+    for (const p of this._travelPins()) {
+      const dx = p.x - S.x, dz = p.z - S.z;
+      if (Math.abs(dx) > R || Math.abs(dz) > R) continue;
+      const cat = PIN_CAT[p.cat] || PIN_CAT.other;
+      g.beginPath(); g.arc(dx * k, dz * k, p.major ? 4.2 : 3.2, 0, Math.PI * 2);
+      g.fillStyle = (cat && cat.c) || '#8a7a5e'; g.fill();
+      g.strokeStyle = 'rgba(255,250,240,0.9)'; g.lineWidth = 1.4; g.stroke();
+    }
     g.restore();
 
     // you, always dead centre and always pointing up
@@ -902,26 +1043,29 @@ export class Wayfinder {
     g.strokeStyle = 'rgba(11,15,19,0.95)'; g.lineWidth = 2; g.stroke();
     g.restore();
 
-    // north, which a turning map otherwise loses completely
+    // north, which a turning map otherwise loses completely. INK, not cream:
+    // these used to be pale because the tile was near-black, and on the paper
+    // background they would now be drawn in almost exactly the land colour.
     const nAng = -Math.atan2(Math.sin(S.heading), -Math.cos(S.heading));
     g.save();
     g.translate(W - 26, 26); g.rotate(nAng);
-    g.strokeStyle = 'rgba(240,235,222,0.75)'; g.lineWidth = 2;
+    g.strokeStyle = 'rgba(58,48,34,0.75)'; g.lineWidth = 2;
     g.beginPath(); g.moveTo(0, 8); g.lineTo(0, -8); g.stroke();
     g.beginPath(); g.moveTo(0, -11); g.lineTo(4, -5); g.lineTo(-4, -5); g.closePath();
-    g.fillStyle = 'rgba(240,235,222,0.85)'; g.fill();
+    g.fillStyle = 'rgba(58,48,34,0.9)'; g.fill();
     g.restore();
-    g.fillStyle = 'rgba(240,235,222,0.85)';
+    g.fillStyle = 'rgba(58,48,34,0.9)';
     g.font = '600 13px ui-sans-serif,system-ui,Helvetica,Arial';
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText('N', W - 26 + Math.sin(nAng) * 20, 26 - Math.cos(nAng) * 20);
 
     // scale bar: without one, a map that zooms tells you nothing about distance
-    g.strokeStyle = 'rgba(240,235,222,0.6)'; g.lineWidth = 2;
+    g.strokeStyle = 'rgba(58,48,34,0.6)'; g.lineWidth = 2;
     const bar = 50 * k;
     g.beginPath(); g.moveTo(12, W - 16); g.lineTo(12 + bar, W - 16); g.stroke();
     g.font = '500 11px ui-sans-serif,system-ui,Helvetica,Arial';
     g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    g.fillStyle = 'rgba(58,48,34,0.9)';
     g.fillText('scale 50 m', 12, W - 22);
   }
 
@@ -1082,7 +1226,7 @@ export class Wayfinder {
     /* ---- the pins ---- */
     // Built once (they do not move), hit-tested by the tap handler against the
     // same projection this draw used.
-    const pins = this._pins || (this._pins = buildPins(this.data));
+    const pins = this._travelPins();
     // Cluster by dropping pins that would land on top of one another at this
     // zoom: at island scale 54 pins is pin soup and nothing is readable. The
     // SELECTED pin always survives, or tapping one would make it vanish.

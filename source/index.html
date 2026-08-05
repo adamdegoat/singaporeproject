@@ -53,8 +53,11 @@
   #maphint{position:fixed;right:calc(10px + env(safe-area-inset-right));top:112px;
     width:124px;text-align:center;
     font:600 9px/1 ui-sans-serif,system-ui,Helvetica,Arial;letter-spacing:.1em;
-    text-transform:uppercase;color:rgba(240,235,222,.62);pointer-events:none;
-    text-shadow:0 1px 3px rgba(0,0,0,.9)}
+    text-transform:uppercase;color:rgba(58,48,34,.72);pointer-events:none;
+    /* INK ON PAPER. This was pale with a black shadow because the minimap tile
+       was near-black; the tile is now the same printed map as the full one, and
+       cream-on-cream read as a smudge lying across the island. */
+    text-shadow:0 1px 2px rgba(255,250,240,.85)}
   /* the expanded map: the whole street, named, with you on it */
   #big{position:fixed;inset:0;z-index:40;display:none;background:#0b0e11}
   #big.on{display:block}
@@ -111,6 +114,33 @@
   #mapcard .mx{position:absolute;right:8px;top:8px;width:32px;height:32px;
     background:none;color:#8a8f96;padding:0;border-radius:16px;font-size:17px}
   #mapcard .mx:active{background:rgba(0,0,0,.07);color:#20262c}
+  /* THE ROOM PANEL. Same card as #mapcard on purpose: a second visual
+     language for the second thing you can open is how an interface starts
+     feeling assembled rather than designed. */
+  #roompanel{position:fixed;left:50%;transform:translateX(-50%) translateY(120%);
+    bottom:calc(14px + env(safe-area-inset-bottom));z-index:44;
+    width:min(430px,calc(100vw - 28px));
+    background:#f7efdd;border-radius:16px;padding:14px 16px 13px;
+    box-shadow:0 10px 34px rgba(0,0,0,.42);
+    transition:transform .18s cubic-bezier(.22,.9,.3,1),opacity .18s;
+    opacity:0;pointer-events:none}
+  #roompanel.on{transform:translateX(-50%) translateY(0);opacity:1;pointer-events:auto}
+  #roompanel .rk{font:600 10px/1 ui-sans-serif,system-ui,Helvetica,Arial;
+    letter-spacing:.11em;text-transform:uppercase;color:#8a6a4a}
+  #roompanel .rn{font:650 19px/1.22 ui-sans-serif,system-ui,Helvetica,Arial;
+    color:#20262c;margin:5px 0 4px}
+  #roompanel .rt{font:400 13px/1.45 ui-sans-serif,system-ui,Helvetica,Arial;
+    color:#4d5560}
+  #roompanel .rrow{display:flex;align-items:center;gap:10px;margin-top:12px}
+  #roompanel button{font:650 13px/1 ui-sans-serif,system-ui,Helvetica,Arial;
+    color:#f7efdd;background:#1f6f5c;border:0;padding:12px 20px;border-radius:22px}
+  #roompanel button:active{background:#17594a}
+  #roompanel button.alt{color:#20262c;background:#e3d9c2}
+  #roompanel button.alt:active{background:#d2c7ac}
+  #roompanel .rx{position:absolute;right:8px;top:8px;width:32px;height:32px;
+    background:none;color:#8a8f96;padding:0;border-radius:16px;font-size:17px}
+  #roompanel .rx:active{background:rgba(0,0,0,.07);color:#20262c}
+  body.mapopen #roompanel{display:none}
   #vehiclebtn{position:fixed;right:calc(10px + env(safe-area-inset-right));
     bottom:calc(52px + env(safe-area-inset-bottom));
     font:600 11px/1 ui-sans-serif,-apple-system,Helvetica,Arial;
@@ -238,10 +268,10 @@
     <button id="zoomout" type="button">&minus;</button>
   </div>
 </div>
-<div id="hud">loading Singapore…</div>
+<div id="hud">loading Sentosa&hellip;</div>
 <div id="boot"><div class="bwrap">
-  <div id="bootword">Singapore</div>
-  <div id="bootsub">seven districts of the real Singapore</div>
+  <div id="bootword">Sentosa</div>
+  <div id="bootsub">the real island, built street by street from its own map</div>
   <div id="bootbar"><i id="bootfill"></i></div>
   <div id="bootrow"><span id="bootlab">reading the map&hellip;</span><span id="bootpct"></span></div>
 </div></div>
@@ -254,5 +284,15 @@
 <div id="lookhint">drag to look</div>
 <button id="vehiclebtn" type="button">Car</button>
 <button id="friendsbtn" type="button">Friends</button>
+<div id="roompanel">
+  <button class="rx" id="roomx" type="button">&times;</button>
+  <div class="rk" id="roomk"></div>
+  <div class="rn" id="roomn"></div>
+  <div class="rt" id="roomt"></div>
+  <div class="rrow">
+    <button id="roomgo" type="button"></button>
+    <button id="roomleave" class="alt" type="button">Leave room</button>
+  </div>
+</div>
 <button id="modebtn" type="button">Get off</button>
 <script type="module" src="./src/main.js"></script>
