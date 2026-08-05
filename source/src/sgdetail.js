@@ -2792,43 +2792,38 @@ export async function buildTransit(world, data, Y = null) {
       for (; pierAcc < L; pierAcc += 26) {
         const t = pierAcc;
         const bx2 = x0 + (x1 - x0) * (t / L), bz2 = z0 + (z1 - z0) * (t / L);
-        let seat = null;
-        let why = 'road';
-        // REACH FURTHER SIDEWAYS. The offsets stopped at 5.5m, and Sentosa
-        // Beach Walk and Gateway Avenue are wider than 11m kerb to kerb, so a
-        // beam running PARALLEL above them had every candidate seat land in the
-        // carriageway and placed no pier at all for hundreds of metres. The
-        // real Sentosa Express stands its columns in the median and on the
-        // verge; 9m reaches both. Ordered nearest-first so a pier only strays
-        // as far as it must.
+        // ONE SEARCH, ONE AUTHORITY ON WATER.
+        //
+        // This used to reject a candidate on `__inWater` — the mapped water
+        // POLYGONS — and separately on `groundAt < 0.8`. Instrumented, the two
+        // disagree constantly: of 279 candidates across the 31 sites that placed
+        // no pier, 138 were refused as water by the polygons while the
+        // HEIGHTFIELD says they are dry land. This loop's own comment already
+        // settled which is right: "DRY LAND BY THE HEIGHTFIELD, not the water
+        // polygons: the mapped sea covers only part of the bbox". So the
+        // polygons are gone from the test and the terrain decides.
+        //
+        // Dry ground takes a pier. Genuine water takes a PILE at sea level,
+        // because the channel crossing is a viaduct on piles in life and
+        // refusing them left the beam flying over the harbour on nothing. But a
+        // pile may not stand in a WALKWAY: the crossing runs alongside the
+        // Sentosa Boardwalk, and the first version of this seated piles on the
+        // centreline with no test, which the deploy ledger caught as blocked
+        // walking runs 0 -> 1. __onPath, not __blocked — `blocked()` is the
+        // MOVEMENT predicate and it calls open water a wall, so asking it here
+        // refused every pile on the crossing.
+        let seat = null, marine = null;
         for (const off of [0, 3.5, -3.5, 5.5, -5.5, 7.5, -7.5, 9, -9]) {
           const px = bx2 + nx2 * off, pz = bz2 + nz2 * off;
           if (window.__onRoad && window.__onRoad(px, pz, 1.2)) continue;
-          if (window.__inWater && window.__inWater(px, pz)) { why = 'water'; continue; }
+          if (window.__onPath && window.__onPath(px, pz, 1.6)) continue;
           const gy = groundAt(px, pz);
-          // DRY LAND BY THE HEIGHTFIELD, not the water polygons: the mapped
-          // sea covers only part of the bbox, so __inWater said "dry" over
-          // open harbour and piers stood in the sea. The terrain knows the
-          // water everywhere. Where it is not land, the beam spans — same
-          // refusal the road bridges make.
-          if (gy < 0.8) { why = 'wet'; continue; }
+          if (gy < 0.8) { if (!marine) marine = [px, pz, 0]; continue; }
           seat = [px, pz, gy];
           break;
         }
-        // A MARINE VIADUCT HAS PILES IN THE WATER. 31 of 91 piers were being
-        // refused for standing in water, and they are all on the channel
-        // crossing — which in life is a viaduct on piles, not a 500m
-        // unsupported span. Refusing them is what left a beam flying over the
-        // harbour with nothing under it. Seated at sea level, which is where a
-        // pile cap sits; the beam above is unchanged.
-        if (!seat) {
-          const gy2 = groundAt(bx2, bz2);
-          if (why === 'wet' || why === 'water' || gy2 < 0.8) {
-            seat = [bx2, bz2, 0];
-            out.pierMarine = (out.pierMarine || 0) + 1;
-          }
-        }
-        if (!seat) { out['pierNo_' + why] = (out['pierNo_' + why] || 0) + 1; continue; }
+        if (!seat && marine) { seat = marine; out.pierMarine = (out.pierMarine || 0) + 1; }
+        if (!seat) { out.pierNoSeat = (out.pierNoSeat || 0) + 1; continue; }
         const py = y0 + (y1 - y0) * (t / L) - 1.4;
         if (py - seat[2] < 2.5) { out.pierTooShort = (out.pierTooShort || 0) + 1; continue; }
         bake(new THREE.CylinderGeometry(0.55, 0.65, py - seat[2], 8), pierMat, merger,

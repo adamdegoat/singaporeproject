@@ -3313,10 +3313,14 @@ export async function buildRoads(world, data, Y = null) {
     // drew one flat quad per segment. Measured: 690 path ways, 82.5 km, against
     // 9,150 drawn pieces in buildTrails — the overlap is most of it.
     //
-    // So the paths belong to buildTrails and this loop leaves them alone.
-    // Crossings were already excluded above; carriageways are untouched.
-    // `?pathdupe` restores the old layer for an A/B.
-    if (isPath && !PATH_DUPE) continue;
+    // So the paths belong to buildTrails and this loop leaves them alone —
+    // but ONLY THE DRAWING. The first version skipped the whole iteration here,
+    // and everything between this point and the ribbon is load-bearing: the
+    // FOOTBRIDGE REGISTRATION and the causeway walked-deck registration both
+    // live below, and they are what tell a walker that a footbridge deck is
+    // something to stand on. Skipping them took the deploy ledger's blocked
+    // walking runs from 0 to 1 — caught by the ledger, invisible in a frame.
+    // The skip is now at the ribbon itself. `?pathdupe` restores the old layer.
     // Ways overlap where they meet, and two carriageways at exactly the same
     // height speckle. A stable sub-centimetre offset per road, derived from its
     // own geometry, gives every overlap a consistent winner.
@@ -3357,6 +3361,9 @@ export async function buildRoads(world, data, Y = null) {
       // independently, and a third copy of that rule is a third thing to drift.
       bridgeFabric(r.p, r.w, addBridgeWay(r.p, r.w, BRDECK.get(r)), bridgeGeos, pierGeos, r.n);
     }
+    // ...and here is where a footpath stops: registered above, drawn by
+    // buildTrails, not surfaced twice.
+    if (isPath && !PATH_DUPE) continue;
     const g = ribbon(r.p, r.w, y, r.bridge ? (BRDECK.get(r) ?? true) : false);
     if (!g.attributes.position || g.attributes.position.count === 0) continue;
     // WHAT IT IS MADE OF, from the map. `surface` is on 61% of ways here and
