@@ -1986,6 +1986,44 @@ export async function buildBuildings(world, data, Y = null) {
   //
   // Both are measured, not guessed: island-wide there are 20 parts, 7 of them
   // over Hotel Michael and no other floater on Sentosa.
+  // A THEME PARK IS NOT AN OFFICE PARK.
+  //
+  // Universal Studios is 53 buildings inside its own mapped ring, 22 of them
+  // named rides — Revenge of the Mummy, TRANSFORMERS, WaterWorld, Lord
+  // Farquaad's Castle — and every one was drawn by the generic city family:
+  // glazed shopfront band at the bottom, punched office windows above. Shot
+  // from each attraction's own approach point they are indistinguishable pale
+  // office blocks, in the most recognisable place on the island.
+  //
+  // WHAT THIS DOES AND DOES NOT DO. The research (§2.5) is explicit that almost
+  // nothing of the park is visible from outside and does not survey the
+  // interior, so inventing Hollywood, Egyptian and Jurassic facades would be
+  // exactly the kind of invention this project refuses. A ride building IS a
+  // painted shed with a themed front, so it is drawn as a painted shed: no
+  // glazing band, no window grid, warm varied render. That REMOVES a wrong
+  // reading rather than inventing a right one, which is the only honest move
+  // available with the research we have.
+  const _ussRing = ((data.attractions || []).find(
+    (a) => a && a.n === 'Universal Studios Singapore' && a.g && a.g.length > 8) || {}).g || null;
+  const _inUss = (x, z) => {
+    if (!_ussRing) return false;
+    let c = false;
+    for (let i = 0, j = _ussRing.length - 1; i < _ussRing.length; j = i++) {
+      const xi = _ussRing[i][0], zi = _ussRing[i][1];
+      const xj = _ussRing[j][0], zj = _ussRing[j][1];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+    }
+    return c;
+  };
+  const _uss = new Set();
+  if (_ussRing) {
+    for (const q of data.buildings) {
+      if (!q.p || q.p.length < 3) continue;
+      const c = centroid(q.p);
+      if (_inUss(c[0], c[1])) _uss.add(q);
+    }
+  }
+
   const _parts = data.buildings.filter((q) => q.mh && q.mh > 1 && q.p && q.p.length >= 3);
   const _partHost = new Map();
   if (_parts.length) {
@@ -2467,7 +2505,18 @@ export async function buildBuildings(world, data, Y = null) {
     const _isVilla = _isCove && (b.h || 0) <= 20 && !b.roof;
     // the garrison stock is painted render, like the villas and the beach bars
     const _isHeritage = !!b.cons && (b.h || 0) <= 14 && !b.roof;
+    // a show building's paint, picked by a POSITION HASH so a row of them is
+    // varied and stable rather than one flat colour — the same trick the Cove
+    // villas use for their roofs. Warm scenic paint, nothing branded.
+    const _isShow = _uss.has(b) && !b.roof;
+    let _showTint = 0xd8cbb6;
+    if (_isShow) {
+      let _sh = 0;
+      for (const [x, z] of b.p) _sh = (_sh * 31 + ((x * 3) | 0) + ((z * 7) | 0)) | 0;
+      _showTint = [0xd8cbb6, 0xcdb79c, 0xc9c3b2, 0xd9c3a8, 0xc2b6a4][Math.abs(_sh) % 5];
+    }
     const mat = b.col ? tintedMat(wallTex, fam.rough, fam.metal, b.col)
+      : _isShow ? renderMat(_showTint)
       : _isVilla ? renderMat(_coveTint)
       : _isHeritage ? renderMat(0xf4efe4, true)
       : _isSmallBeach ? renderMat(_beachTint)
@@ -2634,7 +2683,18 @@ export async function buildBuildings(world, data, Y = null) {
       }
     }
 
-    addShopfront(world, b, per, merger, clearance);
+    // A RIDE BUILDING HAS NO GLAZED RETAIL FRONTAGE. Skipping the call outright
+    // moved THIRTEEN of fourteen golden frames: addShopfront draws exactly one
+    // `pick(SHOPS)`, and not drawing it for 53 buildings shifts the shared
+    // placement stream and reshuffles the whole island. So the draw is taken
+    // and thrown away, which is the same discipline surroundBlocks needed for
+    // its island test. Only when the call would have got past its own early
+    // return, or the stream would drift the other way.
+    if (_isShow) {
+      if (b.a > 600 && b.h > 7) pick(SHOPS);
+    } else {
+      addShopfront(world, b, per, merger, clearance);
+    }
 
     // rooftop plant on the bigger flat roofs: plant boxes, a stair housing,
     // water tanks and a run of ducting, so no two roofs read the same.
