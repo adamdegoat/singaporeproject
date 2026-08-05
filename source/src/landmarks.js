@@ -6305,8 +6305,15 @@ function beachArrivalPlaza(api, b) {
         //
         // NOTE THE NAME IS SHARED: there are TWO "Beach Arrival Plaza"
         // footprints, 3,632 m2 (this branch) and 1,086 m2 (the branch below),
-        // with seats 11.09 and 10.73. ?solo keeps BOTH, so a hit under ?solo
-        // does not say which one drew it. That is the first thing to separate.
+        // with seats 11.09 and 10.73. ?solo keeps BOTH.
+        //
+        // SEPARATED BY POINT-IN-RING: the 3,632 terminal owns the main hit and
+        // the 1,086 hall owns none of them. So the fabric is 3.72m above THIS
+        // branch's seat, inside its 5.6m column zone — and the sample sits at
+        // the footprint CORNER (x = -1674 is the ring's own minimum), which is
+        // exactly where a 7.5m column grid starting at -halfLong + step/2 puts
+        // nothing. A corner with no column and something drawn across it is the
+        // shape of the answer; what that something IS remains unnamed.
         //
         // TWO OF MY INFERENCES WERE WRONG AND ARE RECORDED SO THEY ARE NOT
         // REPEATED: an entrance gate (ruled out by distance), and "hitY equals
