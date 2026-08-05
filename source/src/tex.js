@@ -837,6 +837,13 @@ export class SignAtlas {
     const t = new this.THREE.CanvasTexture(c);
     t.colorSpace = this.THREE.SRGBColorSpace;
     t.anisotropy = 4;
+    // KEEP THIS CANVAS. main.js frees every texture's 2D backing store after
+    // the warm spin, which is safe for a texture that is uploaded once — and
+    // NOT for this one: an atlas page is written to by add() at any point in
+    // the build and re-uploaded, so a freed page comes back as a 1x1 blank.
+    // Measured 2026-08-05: releasing it made "DRAGON'S TEETH GATE VIEWPOINT"
+    // disappear from the headland golden frame entirely.
+    t.userData.keepCanvas = true;
     const mat = new this.THREE.MeshStandardMaterial({
       map: t, roughness: 0.5, emissive: 0x191919, emissiveIntensity: 0.4,
     });

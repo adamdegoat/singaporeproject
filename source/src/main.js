@@ -3309,6 +3309,48 @@ window.__placeBlocked = (x, z) => blocked(x, z);
       driveCamera(0.016);
     }
     bmark('warmup-spin');
+    // RELEASE THE CANVAS BACKING STORES.
+    //
+    // Every texture in this world is drawn on a 2D canvas — facades, paving,
+    // the sign atlas pages — and once WebGL has uploaded one, the canvas is
+    // dead weight that JS still holds. Measured on the phone profile:
+    //
+    //     heap 331 MB   geometry 125.9   RETAINED CANVAS 59.1   gpu tex ~78.6
+    //
+    // and 32 MB of that 59 is the two 2048x2048 sign-atlas pages. The handover
+    // has carried "the canvas backing stores are still never released" as the
+    // first thing to measure since 2026-08-03; this is it.
+    //
+    // SAFE ONLY HERE, and that is the whole argument: this runs AFTER the warm
+    // spin above, which has rendered every material at least once, so every
+    // texture is on the GPU. Zeroing a canvas frees its pixels while leaving
+    // the object three.js holds — the texture keeps drawing from the GPU copy.
+    // A texture that is re-uploaded later WOULD come back blank, so anything
+    // that sets needsUpdate after boot must not be released: the sign atlas is
+    // the one that does, and it is finished by places.js before this point.
+    {
+      const seen = new Set();
+      let freed = 0, n = 0;
+      scene.traverse((o) => {
+        const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+        for (const m of ms) {
+          for (const k of ['map', 'normalMap', 'roughnessMap', 'emissiveMap', 'alphaMap']) {
+            const t = m && m[k];
+            if (!t || seen.has(t.uuid)) continue;
+            seen.add(t.uuid);
+            const im = t.image || (t.source && t.source.data);
+            if (t.userData && t.userData.keepCanvas) continue;   // see SignAtlas
+            if (!im || !im.getContext || !im.width) continue;   // not a canvas
+            freed += im.width * im.height * 4;
+            im.width = 1; im.height = 1;                        // frees the pixels
+            n++;
+          }
+        }
+      });
+      window.__canvasFreedMB = +(freed / 1048576).toFixed(1);
+      window.__canvasFreedN = n;
+      bmark('canvas-release');
+    }
     // SIM PRE-ROLL: two seconds of crowd + traffic + signal ticks behind the
     // loading bar. Their first real ticks lazily build clear-masks and
     // spacing structures — CPU spikes that used to land in the player's
