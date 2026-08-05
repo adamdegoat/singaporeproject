@@ -1917,6 +1917,9 @@ export async function buildTrails(world, data, Y = null) {
   const YY = Y || (async () => {});
   const out = { trails: 0, trailSegs: 0, boardwalk: 0, forestTrail: 0, pavedPath: 0 };
   const merger = new Merger();
+  // boardwalk handrails, gathered while the deck is drawn and emitted as two
+  // instanced meshes at the end — see the note at the collection site
+  const railPosts = [], railBars = [];
   // A PATH IS A SURFACE, NOT A COLOUR. The owner, walking the Sensoryscape:
   // "all the walking paths look like coloured floor". They were: one flat
   // Lambert colour per kind over the whole island, no grain, no wear, no edge.
@@ -2233,11 +2236,75 @@ export async function buildTrails(world, data, Y = null) {
         // and surfaceAt already carries a walker on terrain + SURFACE_PATH, so
         // the walker is on the trail by construction — the registration was
         // only ever making it worse.
+        // A BOARDWALK OVER WATER HAS A HANDRAIL. Standing on the Sentosa
+        // Boardwalk you walk straight off the deck into the harbour, which
+        // reads as unfinished and is wrong about the real thing: every
+        // over-water deck on Sentosa is balustraded.
+        //
+        // COLLECTED HERE, EMITTED AS INSTANCED MESHES BELOW, and that is the
+        // whole safety argument. Merged geometry rasterises into the collision
+        // grid, so a rail run down both edges of every boardwalk would wall the
+        // boardwalk — and this session has already put two blocked-route
+        // regressions into the ledger. Solid.build skips InstancedMeshes on
+        // purpose, so an instanced rail cannot block anything.
+        if (kind === 'deck' || kind === 'waterdeck') {
+          const segL = Math.hypot(p1x - p0x, p1z - p0z);
+          const yaw = Math.atan2(p1x - p0x, p1z - p0z);
+          for (const sgn of [-1, 1]) {
+            const ex0 = p0x + nx * half * sgn, ez0 = p0z + nz * half * sgn;
+            const ex1 = p1x + nx * half * sgn, ez1 = p1z + nz * half * sgn;
+            const ey0 = sgn < 0 ? aL : aR, ey1 = sgn < 0 ? bL : bR;
+            railBars.push([(ex0 + ex1) / 2, (ey0 + ey1) / 2, (ez0 + ez1) / 2, yaw, segL]);
+            const nPost = Math.max(1, Math.round(segL / 2.2));
+            for (let q = 0; q < nPost; q++) {
+              const f = (q + 0.5) / nPost;
+              railPosts.push([ex0 + (ex1 - ex0) * f, ey0 + (ey1 - ey0) * f,
+                              ez0 + (ez1 - ez0) * f]);
+            }
+          }
+        }
         out.trailSegs++;
         drew++;
       }
     }
     if (drew) out.trails++;
+  }
+  // THE BOARDWALK HANDRAILS. Two InstancedMeshes for the whole island, so this
+  // is two draw calls and nothing at all in the collision grid.
+  if (railPosts.length) {
+    await YY();
+    const RAIL_H = 1.05;
+    const timber = new THREE.MeshLambertMaterial({ color: 0x8a6f4e });
+    const postG = new THREE.CylinderGeometry(0.055, 0.06, RAIL_H, 5);
+    postG.translate(0, RAIL_H / 2, 0);
+    const posts = new THREE.InstancedMesh(postG, timber, railPosts.length);
+    const m4 = new THREE.Matrix4();
+    railPosts.forEach(([x, y, z], i) => {
+      m4.makeTranslation(x, y, z);
+      posts.setMatrixAt(i, m4);
+    });
+    posts.instanceMatrix.needsUpdate = true;
+    posts.castShadow = false; posts.receiveShadow = false;
+    posts.name = 'boardwalkPosts';
+    world.add(posts);
+    // the top rail: a unit box scaled to each piece's own length, so a curving
+    // boardwalk gets a rail that follows it rather than one long straight bar
+    const barG = new THREE.BoxGeometry(0.07, 0.075, 1);
+    const bars = new THREE.InstancedMesh(barG, timber, railBars.length);
+    const q4 = new THREE.Quaternion(), e4 = new THREE.Euler();
+    const v4 = new THREE.Vector3(), sc = new THREE.Vector3();
+    railBars.forEach(([x, y, z, yaw, len], i) => {
+      e4.set(0, yaw, 0); q4.setFromEuler(e4);
+      v4.set(x, y + RAIL_H, z); sc.set(1, 1, Math.max(0.3, len));
+      m4.compose(v4, q4, sc);
+      bars.setMatrixAt(i, m4);
+    });
+    bars.instanceMatrix.needsUpdate = true;
+    bars.castShadow = false; bars.receiveShadow = false;
+    bars.name = 'boardwalkRails';
+    world.add(bars);
+    out.railPosts = railPosts.length;
+    out.railBars = railBars.length;
   }
   await merger.flushY(world, {}, Y);
   return out;
@@ -3349,6 +3416,12 @@ export async function buildTransit(world, data, Y = null) {
             // leave every crossing open — a haul road has a gate, not a wall
             if (nearWay(px, pz, 3.2)) continue;
             if (window.__blocked && window.__blocked(px, pz)) continue;
+            // NOT IN THE WATER: not needed, and measured. A "solid blue wall
+            // standing in the sea" from the Sentosa Boardwalk turned out to be a
+            // camera SEVEN METRES from a 2.4m panel on dry land — the works
+            // parcel genuinely reaches the waterfront, which is what the
+            // research describes. A heightfield guard was written for it and
+            // rejected ZERO panels island-wide, so it is not here.
             const gy6 = surfaceAt(px, pz);
             const pan = new THREE.BoxGeometry(0.14, HOARD_H, L / n2);
             pan.rotateY(ang);
