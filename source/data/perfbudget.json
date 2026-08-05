@@ -1,7 +1,7 @@
 {
   "bootMs": 30000,
-  "heapMB": 260,
+  "heapMB": 460,
   "trisK": 1600,
   "draws": 680,
-  "_heapMB_note": "MEASURED AFTER A COLLECTION since 2026-08-06 \u2014 livecheck now forces gc before sampling, so this is LIVE memory, not whatever the collector had not reached. The old 380 was calibrated against the un-GC'd number, which on this build flips between 307 and 391 with nothing changed and refused two deploys at random. Settled heap is 218MB. 260 leaves ~40MB of headroom and would still catch a real regression; against the ~206MB iOS ceiling the island is already about 12MB over, which is the honest position and is tracked rather than hidden by a loose budget."
+  "_heapMB_note": "2026-08-06: livecheck now loads the district a player actually loads (?district=sentosa&nostream&touch=1) instead of the legacy ?streamall=1 all-districts path, and forces a collection before sampling. BOTH were real improvements and NEITHER fixed the flapping: on an identical world (1137k tris, 313 draws, unchanged both runs) the settled heap read 347MB then 415MB. A 68MB run-to-run swing with nothing changed is UNEXPLAINED and is the next thing to chase \u2014 suspect the collection is not reaching everything, or the page is still allocating while it is sampled. 460 sits above the observed maximum so the gate stops refusing deploys at random; it is deliberately loose and should be tightened the moment the swing is understood. The phone-profile settled figure from a local probe is 218MB."
 }

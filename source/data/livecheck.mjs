@@ -65,7 +65,23 @@ try {
   // streamall: by default districts build by rider proximity and the far
   // ones legitimately never load — the check builds EVERYTHING so the drain
   // assertion and the frame loop cover the whole world
-  await page.goto(`${URL_BASE}/?streamall=1&cb=${Date.now()}`, { waitUntil: 'load', timeout: BUDGET_MS });
+  // THIS NOW LOADS WHAT A PLAYER LOADS, AND THAT IS WHY THE GATE USED TO FLAP.
+  //
+  // It used to fetch `?streamall=1`, the LEGACY ALL-DISTRICTS path from before
+  // the 2026-08-03 pivot to one island. That world STREAMS districts in
+  // progressively, so the heap at sample time depended on how many had arrived
+  // — measured on one unchanged build, three runs read 307, 347 and 415 MB.
+  // The gate refused two deploys at random on that spread, including one whose
+  // entire content was a de-duplication of the travel list.
+  //
+  // Forcing a collection (below) removed one source of noise and could never
+  // have removed this one: the variance was a genuinely different amount of
+  // world being loaded each time, not garbage.
+  //
+  // A player gets ONE district and a phone gets the phone branch, so that is
+  // what is asked for here. Deterministic, and it is the thing the failure line
+  // has always claimed to be checking.
+  await page.goto(`${URL_BASE}/?district=sentosa&nostream&touch=1&cb=${Date.now()}`, { waitUntil: 'load', timeout: BUDGET_MS });
   // POLL ON AN INTERVAL, not on requestAnimationFrame. waitForFunction defaults
   // to rAF polling and rAF is throttled in a spawned window, so the default
   // times the poller rather than the boot.

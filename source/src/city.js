@@ -2592,7 +2592,38 @@ export async function buildBuildings(world, data, Y = null) {
       : _isBeach ? tintedMat(wallTex, fam.rough, fam.metal, _beachTint)
                       : sharedMat(wallTex, fam.rough, fam.metal);
     const per = perimeter(pts);
-    const h = b.h;
+    // A BUILDING CANNOT BE SHORTER THAN THE HILL IT STANDS ON.
+    //
+    // The owner, 2026-08-06, on the Tanjong Rimau slope: "the building there
+    // also floating". Measured, Shangri-La's Rasa Sentosa Resort:
+    //
+    //     seat (lowest ground under the ring)   10.1 m
+    //     ground rises across its own footprint to 42.1 m   (a 32 m rise)
+    //     mapped height                         20.4 m
+    //     so the roof sits 11.6 m BELOW its own hillside
+    //
+    // seatY takes the LOWEST ground under the footprint — the right rule, and
+    // the reason the skirt above exists — but a mass extruded `h` from there
+    // is swallowed by the slope at the top end while standing 20m proud at the
+    // bottom. From uphill the resort is a roof in the grass; from downhill it
+    // is a wall with a hillside apparently balanced on it.
+    //
+    // OSM `height` is measured from the ground the building stands on, and on
+    // a slope the honest reading of that is the UPPER ground, not the lowest
+    // corner. So a mass that would be buried grows to clear the high side by
+    // one storey. This is a real trade and it is bounded on purpose: it fires
+    // only where the rise genuinely swallows the building (over half its
+    // height and over 6m), so a normal building on a normal grade is untouched
+    // and the skyline does not move. What it cannot do is STEP down the slope
+    // the way the real resort does — that wants a terraced recipe, and this is
+    // the honest single-mass answer until one exists.
+    let h = b.h;
+    if (!(b.mh && b.mh > 1) && !b.con && h > 0 && pts.length > 2) {
+      let hiG = -Infinity;
+      for (const [_x, _z] of pts) { const _g = TERRAIN.at(_x, _z); if (_g > hiG) hiG = _g; }
+      const buried = hiG - (FOOT + h);
+      if (buried > 0 && (hiG - FOOT) > h * 0.5 && (hiG - FOOT) > 6) h = hiG - FOOT + 3;
+    }
     // A MASS THAT STARTS IN THE AIR. `min_height` says the building begins
     // above the ground -- a sky bridge, a deck, a canopy spanning between
     // towers. SkyPark is min_height 193 of height 207, so read as a plain
@@ -5132,9 +5163,71 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
       }
     }
   }
-  if (!surveyed && !jungle && !halo && !shrubs) return { surveyedTrees: 0, jungleTrees: 0, haloTrees: 0, shrubClumps: 0 };
+  // AND THE GROUND THE TERRAIN ALREADY PAINTS AS JUNGLE GETS PLANTED TOO.
+  //
+  // The owner, 2026-08-06, on the Tanjong Rimau headland: "wtf so empty".
+  // Measured, trees per km2 on the same island:
+  //
+  //     Tanjong Rimau headland     7,624
+  //     Fort Siloso hill          41,411
+  //     Imbiah ridge             184,525
+  //     Mount Serapong           193,492
+  //
+  // A twenty-fourth of Imbiah. The cause is not a planting bug, it is a
+  // DISAGREEMENT BETWEEN TWO AUTHORITIES — the same shape as greenFrac counting
+  // the sea, and as the monorail's two heights. terrain.js already decided this
+  // ground is vegetation and paints it dark green ("ON A GREEN ISLAND, UNKNOWN
+  // GROUND IS VEGETATION"), while the planting only ever fills MAPPED wood
+  // polygons and a 25m halo. Where OSM traced no wood — the Rimau headland, the
+  // Fort Siloso slopes — the floor is painted jungle and nothing stands on it.
+  //
+  // So the fill now asks the SAME question the paint asks: unmapped ground on a
+  // green island is jungle. Sparser than a mapped wood on purpose (14m against
+  // 11m) — the survey says a wood is full of trees and that is reporting it,
+  // whereas this is inference and should read as secondary growth, not as
+  // primary forest.
+  //
+  // ORDERED CHEAPEST TEST FIRST. greenAt walks candidate rings and is the
+  // expensive call; the island mask is an array lookup. Getting that order
+  // wrong is what put 120,000 full table scans in the boot once already.
+  let wild = 0;
+  if (TERRAIN && TERRAIN.g && TERRAIN.greenFrac > 0.35) {
+    const g2 = TERRAIN.g;
+    const x0 = g2.x0, z0 = g2.z0;
+    const x1 = x0 + (g2.nx - 1) * g2.cell, z1 = z0 + (g2.nz - 1) * g2.cell;
+    // what the two fills above already planted, on a coarse hash
+    const taken = new Set();
+    for (const [px, pz] of PLANTED) taken.add(Math.round(px / 12) + ',' + Math.round(pz / 12));
+    for (let gx = Math.ceil(x0 / 14) * 14; gx < x1; gx += 14) {
+      for (let gz = Math.ceil(z0 / 14) * 14; gz < z1; gz += 14) {
+        const jx = gx + (((gx * 9.1 + gz * 6.7) % 11) - 5.5);
+        const jz = gz + (((gx * 4.3 + gz * 12.7) % 11) - 5.5);
+        if (!TERRAIN.onIsland(jx, jz)) continue;          // array lookup
+        if (TERRAIN.at(jx, jz) < 1.4) continue;           // shore and below is not forest
+        if (taken.has(Math.round(jx / 12) + ',' + Math.round(jz / 12))) continue;
+        if (blocked && blocked(jx, jz)) continue;
+        if (inClearing(jx, jz)) continue;
+        if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz)) continue;
+        if (onTrail(jx, jz)) continue;
+        if (window.__underCanopy && window.__underCanopy(jx, jz)) continue;
+        // the expensive ones last: mapped ground of ANY kind keeps its own
+        // character — a lawn stays a lawn, a fairway stays a fairway
+        if (TERRAIN.greenAt(jx, jz)) continue;
+        // CLOSURE, NOT COUNT. Doubling the trunks doubles the memory; raising
+        // the crowns closes the canopy for nothing. The floor of the range
+        // matters more than the ceiling — 0.5 left gaps of bare paint between
+        // crowns, which is what reads as "empty". Held under 1.4 because at 1.5
+        // a crown put a leaf card 19.6m up and P3 refused a deploy on it.
+        f.add(jx, jz, 0.7 + ((jx * 6.1 + jz * 4.7) % 100) / 145);
+        PLANTED.push([jx, jz]);
+        wild++;
+      }
+    }
+  }
+
+  if (!surveyed && !jungle && !halo && !shrubs && !wild) return { surveyedTrees: 0, jungleTrees: 0, haloTrees: 0, shrubClumps: 0, wildTrees: 0 };
   const built = await f.buildY(world, Y);
-  return { surveyedTrees: built - jungle - halo - shrubs, jungleTrees: jungle, haloTrees: halo, shrubClumps: shrubs };
+  return { surveyedTrees: built - jungle - halo - shrubs - wild, jungleTrees: jungle, haloTrees: halo, shrubClumps: shrubs, wildTrees: wild };
 }
 
 // THE KEPPEL QUAY CRANES — the district's horizon, and it was empty sky.

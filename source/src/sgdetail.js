@@ -3974,8 +3974,16 @@ export async function buildTransit(world, data, Y = null) {
         merger.add(up, steelSW, ax, az);
       }
     }
-    // piers down to the ground, skipped where they would stand in water
-    for (let t = 14; t < L - 6; t += 26) {
+    // PIERS EVERY 18m, NOT 26. The owner, 2026-08-06: "the building there also
+    // floating". Measured, the deck is entirely over dry land and stands 20 to
+    // 23m above it on a levelled height — which is CORRECT for a treetop walk
+    // and read as floating for two reasons that are both fixable. One was that
+    // the headland under it had a twenty-fourth of Imbiah's planting, so there
+    // were no treetops to walk above; that is fixed in city.js. The other is
+    // this: seven columns under 181m of deck is a viaduct pretending to be a
+    // walkway. Every 18m gives eleven, which is what the real structure looks
+    // like from below.
+    for (let t = 10; t < L - 6; t += 18) {
       const px = ax + (bx - ax) * (t / L), pz = az + (bz - az) * (t / L);
       const gy = groundAt(px, pz);
       if (gy < 0.8) continue;
