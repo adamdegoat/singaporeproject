@@ -24,6 +24,21 @@ ID = sys.argv[1] if len(sys.argv) > 1 else "sentosa"
 d = json.load(open(os.path.join(HERE, f"{ID}.json")))
 B = [b for b in d.get("buildings", []) if b.get("p") and len(b["p"]) >= 3]
 
+
+def ring(p):
+    """The ring WITHOUT its closing duplicate.
+
+    Some footprints repeat the first vertex as the last and some do not. The
+    first cut of the self-crossing test did not care, so the zero-length
+    closing segment registered against its own neighbour and Capella Colonial
+    Block — an ordinary parallelogram, checked by hand — was reported as a
+    self-crossing ring. A check's first finding is the one most likely to be
+    the check's own bug.
+    """
+    if len(p) > 3 and abs(p[0][0] - p[-1][0]) < 1e-6 and abs(p[0][1] - p[-1][1]) < 1e-6:
+        return p[:-1]
+    return p
+
 # The island's own surveyed median is 6.8m and its tallest surveyed stock is
 # about 68m. A mass far outside that is either a bad tag or a bad assumption.
 TALL = 80.0
@@ -108,14 +123,15 @@ for b in B:
 
     # a self-crossing ring extrudes into a bow tie; the repo has repaired 16 of
     # these before, so it is worth naming when a new one arrives
-    m = len(p)
+    q = ring(p)
+    m = len(q)
     if 4 <= m <= 40:
         crossed = False
         for i in range(m):
             for j in range(i + 2, m):
                 if i == 0 and j == m - 1:
                     continue
-                if seg_hit(p[i], p[(i + 1) % m], p[j], p[(j + 1) % m]):
+                if seg_hit(q[i], q[(i + 1) % m], q[j], q[(j + 1) % m]):
                     crossed = True
                     break
             if crossed:

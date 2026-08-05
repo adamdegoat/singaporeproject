@@ -4118,16 +4118,101 @@ export async function buildBeachLife(world, data, Y = null) {
       let dx = sx - bx, dz = sz - bz;
       const dl = Math.hypot(dx, dz) || 1;
       dx /= dl; dz /= dl;
+      // OPEN SAND ONLY, AND THE GROUND ALREADY KNOWS WHERE THAT IS.
+      //
+      // Found 2026-08-05 by standing on Siloso: parasols and loungers on GREEN
+      // ground. Neither the sand tint nor the sand polygon was wrong. OSM's
+      // beach polygons on Sentosa run 100m+ inland — Siloso's reaches up the
+      // slope — and terrain.js DELIBERATELY blends everything more than 45m
+      // from the water back to lawn, because in every reference frame the open
+      // sand is a ~40m band at the waterline and behind it is planting. That
+      // is right, and this emitter was the one thing not following it: it
+      // tested inRing alone, so it furnished the back-beach lawn.
+      //
+      // Same threshold, same source. seaDistAt is terrain's own BFS out from
+      // open water — the module comment there says in as many words that
+      // absolute elevation can never find a waterline, so do not substitute a
+      // height test for this.
+      // Falls back to 0 (everything passes) if terrain is not published yet,
+      // because losing the furniture entirely would be worse than leaving it
+      // where it was — but that would then be a SILENT no-op, and this project
+      // has had four checks pass by measuring nothing. `out.backBeachSkipped`
+      // is how you tell the difference: zero skips on Sentosa means the rule
+      // never ran, not that the beaches are clean.
+      const seaD = (x, z) => (window.__terrain && window.__terrain.seaDistAt
+        ? window.__terrain.seaDistAt(x, z) : 0);
+      // 58, not terrain's own 45: the tint blends over 45..85m, so at 58 the
+      // ground is still only a fifth of the way to lawn and reads as sand. The
+      // strict 45 left only 30 of 130 clusters placeable, because the band that
+      // is BOTH inside the mapped ring AND above the waterline is narrow.
+      const OPEN_SAND = 58;
+      // ...AND THE JOB IS TO MOVE THE CLUSTER, NOT TO DELETE IT.
+      //
+      // Measured both ways. The mapped-ring rule alone put 130 parasols and 260
+      // loungers on the island, and 83% of them stood on the back-beach LAWN.
+      // Adding the open-sand test to the old 70m walk cut it to 11 parasols,
+      // because a beach bar sits BEHIND the beach — the venue at
+      // (-2100,12500) measures 105m from the water — so 70m of walking toward
+      // the sand's centroid never arrives at open sand at all.
+      //
+      // So walk toward the WATER, which is a direction seaDistAt already knows,
+      // and only fall back to giving up. The centroid line is tried first
+      // because it is one cheap ray and it works for the venues that face the
+      // sea squarely; the bearing fan catches the rest.
       let fx = null, fz = null;
-      for (let step = 6; step <= 70; step += 4) {
+      const usable = (px, pz) => {
+        if (!inRing(px, pz, host.p)) return false;
+        if (window.__onRoad && window.__onRoad(px, pz, 2)) return false;
+        if (window.__blocked && window.__blocked(px, pz)) return false;
+        // 0.3, not 0.9: seaDistAt now does the "past the waterline" job
+        // properly, and a 0.9m floor threw away most of the dry beach — the
+        // sand between the water and the back-beach slopes gently.
+        if (groundAt(px, pz) < 0.3) return false;
+        if (seaD(px, pz) > OPEN_SAND) {               // back-beach: lawn
+          out.backBeachSkipped = (out.backBeachSkipped || 0) + 1;
+          return false;
+        }
+        return true;
+      };
+      for (let step = 6; step <= 170 && fx === null; step += 4) {
         const px = bx + dx * step, pz = bz + dz * step;
-        if (!inRing(px, pz, host.p)) continue;
-        if (window.__onRoad && window.__onRoad(px, pz, 2)) continue;
-        if (window.__blocked && window.__blocked(px, pz)) continue;
-        if (groundAt(px, pz) < 0.9) break;      // past the waterline; stop
-        fx = px; fz = pz; break;
+        if (usable(px, pz)) { fx = px; fz = pz; }
       }
-      if (fx === null) continue;
+      out.beachVenues = (out.beachVenues || 0) + 1;
+      if (fx === null) {
+        // AIM AT THE BEACH'S OWN SEAWARD EDGE, not at its centroid.
+        //
+        // Instrumented, because the fan and the walk both failed the same way
+        // and two threshold changes moved NOTHING: of the samples they took,
+        // 22,441 fell OUTSIDE the sand ring and zero failed on height or road.
+        // These beaches are long thin crescents — Siloso's ring spans 786 x
+        // 587m — so the polygon's centroid is not on the sand at all, and
+        // every ray aimed at it leaves the beach.
+        //
+        // The ring already knows where the water is: its own vertices run
+        // along the waterline. Take the nearest vertex that is inside the open
+        // sand band and step in from it, which puts the cluster on the beach
+        // in front of its own venue instead of anywhere.
+        let best = Infinity, bvx = 0, bvz = 0;
+        for (const [vx2, vz2] of host.p) {
+          if (seaD(vx2, vz2) > OPEN_SAND) continue;
+          const dd = (vx2 - bx) * (vx2 - bx) + (vz2 - bz) * (vz2 - bz);
+          if (dd < best) { best = dd; bvx = vx2; bvz = vz2; }
+        }
+        if (best === Infinity) out.beachNoWaterline = (out.beachNoWaterline || 0) + 1;
+        if (best < Infinity) {
+          // step in from the edge, toward the ring's interior, until usable
+          let ix = sx - bvx, iz = sz - bvz;
+          const il = Math.hypot(ix, iz) || 1;
+          ix /= il; iz /= il;
+          for (let inw = 2; inw <= 34 && fx === null; inw += 2) {
+            const px = bvx + ix * inw, pz = bvz + iz * inw;
+            if (usable(px, pz)) { fx = px; fz = pz; }
+          }
+          if (fx === null) out.beachEdgeBlocked = (out.beachEdgeBlocked || 0) + 1;
+        }
+      }
+      if (fx === null) { out.beachNoSpot = (out.beachNoSpot || 0) + 1; continue; }
       // a short row along the shore, deterministic from position
       const along = ((bx * 3.1 + bz * 1.7) % 1) * Math.PI;
       const ax2 = Math.cos(along), az2 = Math.sin(along);
@@ -4137,6 +4222,10 @@ export async function buildBeachLife(world, data, Y = null) {
         const px = fx + ax2 * o, pz = fz + az2 * o;
         if (!inRing(px, pz, host.p)) continue;
         if (window.__onRoad && window.__onRoad(px, pz, 2)) continue;
+        if (seaD(px, pz) > OPEN_SAND) {           // same rule along the row
+          out.backBeachSkipped = (out.backBeachSkipped || 0) + 1;
+          continue;
+        }
         const gy = groundAt(px, pz);
         if (gy < 0.9) continue;
         // parasol: a pole and a shallow cone
