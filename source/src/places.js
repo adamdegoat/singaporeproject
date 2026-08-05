@@ -177,9 +177,22 @@ export function buildPlaceLabels(THREE, data, world, surfaceAt) {
   world.add(group);
 
   const right = new THREE.Vector3(), up = new THREE.Vector3();
+  // ONE NAME PER PIECE OF SKY. Two labels whose worlds are far apart can sit on
+  // top of each other on SCREEN — at Siloso "AJ HACKETT SENTOSA" was printed
+  // through "SILOSO BEACH" and neither could be read. Whichever is NEARER wins
+  // and the other is hidden until you move; that is what every map does.
+  //
+  // Tested in ANGULAR space rather than by projecting: apparent size here is
+  // constant by design (SCREEN_K), so a label's half-width in radians is just
+  // (w/2)/distance, and its screen position is the view vector's component
+  // along the camera's own right and up axes. No projection matrix, no
+  // per-frame allocation, and the pass is over VISIBLE labels only — typically
+  // a dozen, never the whole 67.
+  const vis = [];
   const update = (camera) => {
     camera.matrixWorld.extractBasis(right, up, new THREE.Vector3());
     const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+    vis.length = 0;
     for (const b of batches) {
       const pos = b.pos;
       b.list.forEach((p, i) => {
@@ -196,6 +209,15 @@ export function buildPlaceLabels(THREE, data, world, surfaceAt) {
         // name reads the same whether you are beside it or across the island.
         const h = Math.max(MIN_H, Math.min(MAX_H, d * SCREEN_K * TIER[p.tier]));
         const w = h * p.aspect;
+        {
+          const by0 = p.baseY + Math.min(14, d * 0.03);
+          const vx = p.x - cx, vy = by0 - cy, vz = p.z - cz;
+          const len = Math.hypot(vx, vy, vz) || 1;
+          vis.push({ b, i, d: len,
+            ar: (vx * right.x + vy * right.y + vz * right.z) / len,
+            au: (vx * up.x + vy * up.y + vz * up.z) / len,
+            hw: (w * 0.5) / len, hh: (h * 0.5) / len });
+        }
         const o = i * 12;
         const bx = p.x, by = p.baseY + Math.min(14, d * 0.03), bz = p.z;
         const rx = right.x * w * 0.5, ry = right.y * w * 0.5, rz = right.z * w * 0.5;
@@ -206,6 +228,24 @@ export function buildPlaceLabels(THREE, data, world, surfaceAt) {
         pos[o + 9] = bx - rx + ux; pos[o + 10] = by - ry + uy; pos[o + 11] = bz - rz + uz;
       });
       b.mesh.geometry.attributes.position.needsUpdate = true;
+    }
+    // ...then drop the ones printed through each other. Nearest first, so the
+    // survivor is stable as you move and a label does not flicker between two
+    // states while you stand still.
+    if (vis.length > 1) {
+      vis.sort((a, c) => a.d - c.d);
+      const kept = [];
+      for (const q of vis) {
+        let hidden = false;
+        for (const k of kept) {
+          if (Math.abs(q.ar - k.ar) < (q.hw + k.hw) * 0.9
+              && Math.abs(q.au - k.au) < (q.hh + k.hh) * 0.9) { hidden = true; break; }
+        }
+        if (!hidden) { kept.push(q); continue; }
+        const pos = q.b.pos, o = q.i * 12;
+        for (let k = 0; k < 12; k++) pos[o + k] = 0;
+        q.b.mesh.geometry.attributes.position.needsUpdate = true;
+      }
     }
   };
 
