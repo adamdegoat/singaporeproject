@@ -6402,6 +6402,32 @@ function festiveWalkCanopy(api, b) {
   return true;
 }
 
+// A BEACH-VENUE RECIPE WAS WRITTEN HERE AND REVERTED, WITH ITS FRAMES.
+//
+// The owner, 2026-08-05: "siloso beach the beach bars all like generics all can
+// it be like beach clubs that i can explore inside?" He is right about the gap:
+// Coastes and Ola Beach Club have recipes, but Bora Bora Beach Bar, Rock Bar
+// and Two Chefs Bar come out of the generic family as sealed masses on sand.
+//
+// What was tried: a raised timber deck, posts on the ring, a thatched roof, a
+// landward screen wall and a bar counter — deliberately open-sided, because the
+// collision grid is rasterised from drawn geometry and a pavilion with posts
+// instead of walls is walkable between them with no carve and no flag. The idea
+// is sound and worth doing.
+//
+// Why it is not here: rendered twice at Bora Bora (shots/street/borabora*.jpg)
+// it read as two enormous tan plates hovering over a few short sticks, with the
+// deck slab buried in the sand and the screen wall standing detached several
+// metres off the footprint. Narrowing the eave and adding the wall did not fix
+// it, which is the tell — the fault is not the composition, it is that this
+// recipe's assumptions about the api are wrong. Specifically: what
+// api.footingY returns relative to local ground, and what the third argument to
+// api.extrudeGeo is measured FROM, were both assumed rather than read.
+//
+// NEXT ATTEMPT STARTS THERE: take one existing recipe that is known to sit
+// correctly (olaBeachClub is a good one, same kind of site), establish what
+// each of those two numbers actually means by rendering a single slab at a
+// known offset, and only then compose. A generic box beats a floating plate.
 export const RECIPES = [
   [/^emerald pavilion/i, emeraldPavilion],
   [/^coastes/i, coastesBar],

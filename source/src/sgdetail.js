@@ -3225,7 +3225,15 @@ export async function buildTransit(world, data, Y = null) {
     // a walk surface stores ONE height per segment: a single 20m segment would
     // be a flat shelf at its own height instead of a climb.
     {
-      const RN = 14;
+      // ENOUGH SEGMENTS THAT IT IS A RAMP AND NOT A STAIRCASE.
+      //
+      // A walk surface stores ONE height per segment, so the climb is a run of
+      // flat shelves and the number of them IS the step size. At 14 segments a
+      // 12m climb is 0.86m a step — over the 0.45m the surface check calls a
+      // spike, and the gate said so immediately: N3 went 25 to 30 on the first
+      // deploy that carried this. 34 segments puts it at 0.35m, which is a
+      // kerb, not a step.
+      const RN = Math.max(8, Math.ceil(STATION_H / 0.35));
       for (let i2 = 0; i2 < RN; i2++) {
         const v0 = -HL + 1.4 + run * (i2 / RN), v1 = -HL + 1.4 + run * ((i2 + 1) / RN);
         const [ax2, az2] = put(HW - 1.6, v0);
