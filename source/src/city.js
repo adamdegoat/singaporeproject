@@ -5233,6 +5233,15 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
         if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz)) continue;
         if (onTrail(jx, jz)) continue;
         if (window.__underCanopy && window.__underCanopy(jx, jz)) continue;
+        // A KNOWN TRADE, stated rather than discovered later: this treats ALL
+        // unmapped island ground as jungle, including the gaps between houses at
+        // Sentosa Cove. Rendered from above the Cove it reads as a leafy resort
+        // suburb, which is defensible and is a great deal better than the bare
+        // khaki it replaced — but the real Cove is manicured lawn and pool, not
+        // closed canopy. If it ever reads as too much, the fix is to exclude
+        // ground within N metres of a `resi` polygon rather than to weaken the
+        // rule everywhere.
+        //
         // the expensive ones last: mapped ground of ANY kind keeps its own
         // character — a lawn stays a lawn, a fairway stays a fairway
         const _cover = TERRAIN.greenAt(jx, jz);
