@@ -4959,7 +4959,11 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
   // battery has one by definition, a viewpoint has a view by definition, and a
   // ruin is a thing you come to look at. Only fort, ruins and viewpoint, and
   // only within their own radius — the wood closes in again immediately beyond.
-  const KEEP_CLEAR = { fort: 30, ruins: 20, viewpoint: 26 };
+  // `attraction` joins them: those 19 nodes are rides and water-park features —
+  // Adventure Cove's slide towers among them — and a ride stands on open ground
+  // by definition. Rendered before this, the slides built at Tidal Twister were
+  // completely hidden by canopy the fill had put around them.
+  const KEEP_CLEAR = { fort: 30, ruins: 20, viewpoint: 26, attraction: 18 };
   const seeClear = [];
   for (const a of (data.attractions || [])) {
     const r = KEEP_CLEAR[a.k];
@@ -5038,6 +5042,8 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
   const CLEARING_R = {
     cannon: 26, fort: 34, viewpoint: 32, ruins: 20,
     castle: 22, museum: 20, artwork: 14, city_gate: 18,
+    // a ride stands on open ground; see KEEP_CLEAR above for the same argument
+    attraction: 18,
   };
   const clearings = [];
   for (const a of (data.attractions || [])) {
