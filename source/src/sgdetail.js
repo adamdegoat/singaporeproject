@@ -3725,7 +3725,25 @@ export async function buildTransit(world, data, Y = null) {
         const sp = ss.spine;
         for (let i = 0; i < sp.length - 1; i++) push(sp[i][0], sp[i][1], sp[i + 1][0], sp[i + 1][1]);
       }
-      const OPEN_W2 = 3.4 * 3.4;
+      // 5.4m, NOT 3.4m — THE DOORWAY MUST BE AS WIDE AS THE PATH WE DREW.
+      //
+      // The owner, 2026-08-06: "walking up all the sensory scape attractions
+      // got like stairs look thing in the middle of the path and will stuck
+      // when i try to walk there."
+      //
+      // 3.4m is city.js's "this is on a trail" half-width, taken from OSM's
+      // footway width — and the Sensoryscape promenade is NOT an OSM footway.
+      // sgdetail draws it 9.2m wide (HALF = 4.6) because the real thing is a
+      // broad landscaped deck. So the doorway cleared 6.8m through a 9.2m
+      // path, leaving a 1.2m band of ribs, scoops, hung planters and water
+      // pails standing along BOTH EDGES of the boardwalk — a row of solid
+      // objects stepping up the shell, which is exactly "stairs look thing in
+      // the middle of the path".
+      //
+      // AND NO GATE COULD SEE IT. data/trailcheck.mjs walks the mapped footway
+      // centreline at 3.4m, so it never samples the outer band of a path we
+      // drew wider than the map's. It reported 0 blocked runs the whole time.
+      const OPEN_W2 = 5.4 * 5.4;
       const onAxis = (p) => {
         for (let i = 0; i < walkSegs.length; i++) {
           const s = walkSegs[i];
@@ -4108,6 +4126,30 @@ export async function buildTransit(world, data, Y = null) {
         for (let t = step / 2; t < L; t += step) {
           const cx6 = ax + (bx6 - ax) * (t / L), cz6 = az + (bz6 - az) * (t / L);
           if (window.__onRoad && window.__onRoad(cx6, cz6, 0)) continue;
+          // ...AND NOT ON THE BOARDWALK EITHER.
+          //
+          // A column skipped only for `__onRoad` lands happily on the
+          // Sensoryscape promenade, because that boardwalk is NOT a road — it
+          // is drawn from `ss.spine` at 9.2m wide. The owner walked into them:
+          // "will stuck when i try to walk there", measured as a 3m blocked
+          // run at -1598,12442, right under the loop's own ramps.
+          //
+          // Same mistake as the vessel doorways twenty lines up, in a second
+          // place: testing the MAP's idea of a path instead of the one this
+          // file actually drew.
+          if (ss && ss.spine) {
+            let onWalk = false;
+            for (let q = 0; q < ss.spine.length - 1 && !onWalk; q++) {
+              const [ax9, az9] = ss.spine[q];
+              const wx9 = ss.spine[q + 1][0] - ax9, wz9 = ss.spine[q + 1][1] - az9;
+              const l9 = wx9 * wx9 + wz9 * wz9 || 1;
+              let t9 = ((cx6 - ax9) * wx9 + (cz6 - az9) * wz9) / l9;
+              t9 = t9 < 0 ? 0 : t9 > 1 ? 1 : t9;
+              const dx9 = cx6 - (ax9 + wx9 * t9), dz9 = cz6 - (az9 + wz9 * t9);
+              if (dx9 * dx9 + dz9 * dz9 < 5.4 * 5.4) onWalk = true;
+            }
+            if (onWalk) continue;
+          }
           if (!standable(cx6, cz6)) continue;
           const g = groundAt(cx6, cz6);
           const h = (yA + (yB - yA) * (t / L)) - 0.17 - g;

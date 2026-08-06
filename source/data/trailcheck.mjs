@@ -112,7 +112,33 @@ const out = await page.evaluate(() => {
         // building corner, which a walker simply steps around. What the owner
         // means by "halfway will stuck" is a LONG run, and there are 21 of
         // those over 20m. One number hid the other completely.
-        if (window.__blocked && window.__blocked(x, z)) {
+        // ASK THE WALKER'S OWN TEST, ACROSS THE PATH WE ACTUALLY DREW.
+        //
+        // Two faults here let a real stuck-bug through on 2026-08-06 — the
+        // owner walked into it at the Sensoryscape and reported it himself:
+        //
+        //   1. `window.__blocked` is `rideBlocked`, the RIDE's test. A person
+        //      on foot is governed by `moveBlocked`, which was not even
+        //      exposed. This gate has been asking the wrong function.
+        //   2. it sampled the CENTRELINE only. sgdetail draws some routes far
+        //      wider than OSM's width — the Sensoryscape promenade is 9.2m
+        //      against a 3.4m footway tag — so a 1.2m band of scoops, planters
+        //      and columns stood on both edges of the path and every sample
+        //      missed them.
+        //
+        // A point counts as blocked only if the walker is blocked ACROSS THE
+        // WHOLE drawn width, so a bollard in the middle is not a wall but a
+        // row of them is.
+        const _hw = Math.max(1.7, (r.w || 3.4) / 2);
+        const _ux = (bx - ax) / (L || 1), _uz = (bz - az) / (L || 1);
+        const _hit = (qx, qz) => (window.__moveBlocked
+          ? window.__moveBlocked(qx, qz)
+          : (window.__blocked ? window.__blocked(qx, qz) : false));
+        let _clear = false;
+        for (let o = -_hw; o <= _hw + 1e-6 && !_clear; o += 0.6) {
+          if (!_hit(x + -_uz * o, z + _ux * o)) _clear = true;
+        }
+        if (!_clear) {
           res.noSurface++;
           if (!blockRun) { runX = x; runZ = z; }
           blockRun++;

@@ -2839,6 +2839,19 @@ async function buildRegion(data, opts = {}) {
   // the same question they do rather than a lookalike
   // D9 asks whether the RIDE can get down the street, so it gets the ride question
 window.__blocked = (x, z) => rideBlocked(x, z);   // movement, arcades open
+// THE WALKER DOES NOT USE `__blocked`, AND EVERY CHECK ASSUMED IT DID.
+//
+// The owner, 2026-08-06: "sensory scape there got things in the middle of the
+// road blocking and i stuck inside. bro how come so obvious defects and bugs u
+// never catch?" — because `window.__blocked` is `rideBlocked`, the RIDE's
+// test, and a person on foot is governed by `moveBlocked`, which was not
+// exposed at all. Every probe run that day, and data/trailcheck.mjs itself,
+// asked the wrong function and got a clean answer.
+//
+// The two differ exactly where he got stuck: moveBlocked opens ARCADES and
+// treats open-ground storeys via SOLID, so a walker and a ride disagree about
+// what is solid. A gate that cannot see what the player sees is not a gate.
+window.__moveBlocked = (x, z) => moveBlocked(x, z);
 // open-sided ground storeys (Beach Arrival Plaza), for B5's exemption
 window.__openGround = (x, z) => openGroundAt(x, z);
 // building footprints only, for the occlusion-ceiling measurement

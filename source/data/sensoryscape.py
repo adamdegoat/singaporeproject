@@ -235,6 +235,28 @@ def main():
                "which gardens carry one are authored (not published)",
     }
 
+    # THE PROMENADE MUST BE CARVED THROUGH WHATEVER IT CROSSES.
+    #
+    # The owner, 2026-08-06: "walking up all the sensory scape attractions...
+    # will stuck when i try to walk there." Measured: a 3m blocked run at
+    # -1598,12442 — which is INSIDE the cable-car station's 1,016 m2 footprint.
+    # The Sensoryscape boardwalk runs straight through that building, and you
+    # walk into a wall.
+    #
+    # data/arcade.py already solves this class: a mapped route that runs
+    # through a footprint is carved out of the collision grid so the arcade is
+    # walkable. It only ever considers `roads` — and the Sensoryscape spine is
+    # NOT a road, it is this file's own `spine`. So it was never a candidate.
+    #
+    # Emitted as an arcade record at the boardwalk's own drawn width (9.2m),
+    # which is the width sgdetail actually lays, not OSM's 3.4m footway idea.
+    arcs = d.setdefault("arcades", [])
+    arcs = [o for o in arcs if o.get("n") != "Sensoryscape promenade"]
+    arcs.append({"p": spine, "w": 9.2, "k": "walk",
+                 "n": "Sensoryscape promenade",
+                 "h": 4.6, "L": round(run, 1)})
+    d["arcades"] = arcs
+
     # PALATE PLAYGROUND IS NOT A PLAYGROUND, AND WE HAD IT ALL ALONG.
     #
     # This file printed "5 of 6 gardens mapped" for weeks and the sixth was
