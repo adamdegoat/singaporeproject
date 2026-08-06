@@ -2069,12 +2069,35 @@ export async function buildBuildings(world, data, Y = null) {
   // so a row is not one flat colour.
   const _ussZones = [];
   {
+    // SEVEN ZONES, NOT SIX — and two of the names here were wrong.
+    //
+    // The table listed six and the park has seven, so every show building in
+    // the dinosaur zone fell through `_zoneTint` to the neutral fallback and
+    // came out the same beige as everywhere else. That is half the "USS does
+    // not feel like USS" complaint: the zones ARE in our data, and the tint
+    // that expresses them simply had no row to match.
+    //
+    // The two name corrections come from research/rws-architecture.md 2.0 and
+    // are applied to the DATA by data/stale.py, so these keys are the corrected
+    // names. The stale OSM names are kept as aliases because a scene file built
+    // before that script existed still carries them, and a palette that
+    // silently stops matching is exactly the failure above:
+    //
+    //   Jurassic World -> The Lost World   "officially The Lost World, not
+    //                                       Jurassic Park or Jurassic World"
+    //   Madagascar     -> Minion Land      closed 2022-03, reopened 2025-02
     const want = { 'Hollywood': [0xe8dcc4, 0xdcc9a8, 0xe3d3bb],
                    'New York': [0x9d6b57, 0x8a5f4e, 0xa87a63],
                    'Sci-Fi City': [0x8f9aa6, 0x7d8894, 0x9caab6],
                    'Ancient Egypt': [0xd9bd86, 0xcaa970, 0xe0c894],
                    'Far Far Away': [0xbfa9cb, 0xa892b8, 0xcdb9d6],
-                   'Madagascar': [0x8fae76, 0x7d9b66, 0xa0bd88] };
+                   // the dinosaur zone: wet jungle greens over damp stone
+                   'The Lost World': [0x6f8a5e, 0x5f7a52, 0x7e9a6b],
+                   'Jurassic World': [0x6f8a5e, 0x5f7a52, 0x7e9a6b],
+                   // Minion Land is banana-yellow and Gru-lab grey, and it
+                   // replaced Madagascar's greens on the same ground
+                   'Minion Land': [0xd8c46a, 0xc7b25c, 0x9aa3ab],
+                   'Madagascar': [0xd8c46a, 0xc7b25c, 0x9aa3ab] };
     for (const a of (data.attractions || [])) {
       const pal = a && a.n && want[a.n];
       if (pal && a.p) _ussZones.push({ x: a.p[0], z: a.p[1], pal });
@@ -2195,6 +2218,28 @@ export async function buildBuildings(world, data, Y = null) {
         const slab = extrudeGeo(pts, 0.55, 0);
         slab.translate(0, topY - 0.55 - FOOT, 0);
         merger.add(slab, MAT.conc, pts[0][0], pts[0][1]);
+        // AND ITS UNDERSIDE IS A CEILING, NOT A CONCRETE BOTTOM FACE.
+        //
+        // The lifted-mass branch below already says this, in these words: the
+        // underside "read as a DARK BROWN SLAB filling the top half of the
+        // frame... it is the single most-looked-at ceiling on the island
+        // because the globe is under it." That fix was applied to `og`/`mh`
+        // masses and NEVER to `b.roof` canopies, which are the OTHER half of
+        // the covered space at Universal — so the USS entrance still stood
+        // under an unlit slab.
+        //
+        // Found by data/walksweep.mjs, standing at Hollywood: a 5,457 m2
+        // canopy at 5m clearance filling the sky, dark brown, on a forest of
+        // columns. The three largest on the island are WEAVE (9,050 m2),
+        // Festive Walk (7,677) and this one — the three biggest covered
+        // spaces in RWS and USS, all of them a dark ceiling.
+        //
+        // MAT.soffit is pale and slightly emissive precisely so it does not go
+        // black under something that blocks the sun. It IS the sky for anyone
+        // standing under it.
+        const soffit = extrudeGeo(pts, 0.30, 0);
+        soffit.translate(0, topY - 0.85 - FOOT, 0);
+        merger.add(soffit, MAT.soffit || MAT.conc, pts[0][0], pts[0][1]);
         for (const [px, pz, gy] of cols) {
           const col = new THREE.CylinderGeometry(0.22, 0.22, topY - 0.55 - gy, 6);
           col.translate(px, gy + (topY - 0.55 - gy) / 2, pz);
