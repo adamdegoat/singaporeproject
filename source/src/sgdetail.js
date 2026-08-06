@@ -3949,9 +3949,16 @@ export async function buildTransit(world, data, Y = null) {
           const len = Math.hypot(px3 - prev[0], py3 - prev[1], pz3 - prev[2]);
           if (len > 0.05) {
             const rod = new THREE.CylinderGeometry(0.11, 0.13, len, 5);
+            // A CYLINDER IS BORN ALONG Y AND EVERY OTHER MEMBER IN THIS FILE
+            // IS BUILT ALONG Z. rotateX(PI/2) lays it down onto Z first; only
+            // then do the same two rotations the rib bars use apply. The first
+            // cut of this cancelled that quarter turn against the pitch
+            // (`-pitch - PI/2` after a `+PI/2`, which composes to just
+            // `-pitch`) and every stalk would have stood upright instead of
+            // following its arc. Caught by reading, before it was ever drawn.
             rod.rotateX(Math.PI / 2);
             const run3 = Math.hypot(px3 - prev[0], pz3 - prev[2]);
-            rod.rotateX(-Math.atan2(py3 - prev[1], run3) - Math.PI / 2);
+            rod.rotateX(-Math.atan2(py3 - prev[1], run3));
             rod.rotateY(Math.atan2(px3 - prev[0], pz3 - prev[2]));
             rod.translate((px3 + prev[0]) / 2, (py3 + prev[1]) / 2, (pz3 + prev[2]) / 2);
             // colour from the POSITION, never from an RNG stream — a cosmetic
@@ -3962,8 +3969,13 @@ export async function buildTransit(world, data, Y = null) {
           prev = [px3, py3, pz3];
         }
         // the bud luminaire at the tip
-        const bud = new THREE.SphereGeometry(0.42, 7, 5);
-        bud.translate(prev[0], prev[1] + 0.2, prev[2]);
+        // 0.30 at 8x6, not 0.42 at 7x5: rendered, the first size read as a
+        // golf ball on a stick — big enough to become the object rather than
+        // the tip of one, and coarse enough that the facets showed at walking
+        // distance. It is a bud on a stalk, so it wants to be smaller than the
+        // arc that carries it.
+        const bud = new THREE.SphereGeometry(0.30, 8, 6);
+        bud.translate(prev[0], prev[1] + 0.16, prev[2]);
         merger.add(bud, budMat, gx5, gz5);
         stalks++; buds++;
       }
