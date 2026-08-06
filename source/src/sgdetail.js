@@ -1976,7 +1976,24 @@ export async function buildAttractions(world, data, Y = null) {
     if (a.k === 'summer_toboggan' && a.g && a.g.length >= 3) {
       lugeRun(a.g); out.attractions++; continue;
     }
-    if (a.k === 'ruins' || (a.k === 'fort' && /ruins/i.test(nm))) { ruinMass(x, z, nm); out.attractions++; continue; }
+    // A FORT SITE WITH NOTHING BUILT IS A FLOATING LABEL.
+    //
+    // This fired for k='ruins', and for k='fort' ONLY when the NAME contained
+    // "ruins" — so "Fort Serapong ruins" matched and "Fort Imbiah" did not.
+    // Found by data/walksweep.mjs: standing at Fort Imbiah is standing in
+    // jungle under a sign reading "A coastal fort", with 6 solid cells within
+    // 30m and no fort. "Imbiah Bunkers" is worse — tagged k='attraction', so
+    // nothing looked at it at all.
+    //
+    // Fort Siloso is excluded because it HAS a surveyed polygon and its own
+    // built form; this is only for the sites that have neither. The argument
+    // is 7b's, for Fort Serapong, in its own words: these kinds HAVE an honest
+    // form, and a record we can build honestly should not be left as a label.
+    // Both are ruined military works — broken walls and fallen blocks is what
+    // is actually on the ground at each.
+    if (a.k === 'ruins' || a.k === 'fort' || /\bbunkers?\b/i.test(nm)) {
+      ruinMass(x, z, nm); out.attractions++; continue;
+    }
     if (a.k === 'viewpoint') { lookout(x, z); out.attractions++; continue; }
     if (/tidal twister|whirlpool|pipeline plunge|spiral washout/i.test(nm)) {
       waterSlides(x, z, nm); out.attractions++; continue;
