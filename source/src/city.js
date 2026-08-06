@@ -4744,6 +4744,18 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
   // function because the first fill that uses it is 300 lines below and a
   // const declared beside it sat in its own temporal dead zone.
   const PLANTED = (window.__plantedTrees = window.__plantedTrees || []);
+  // PER-FILL TIMING. plantSurveyed is 4.29s of a 25s boot and the number was
+  // one lump, which is useless for choosing what to fix — the whole lesson of
+  // the 'surround' phase directly above it in the boot marks. Costs one
+  // performance.now() per fill and is read by data/probe.mjs.
+  const _pmT0 = (typeof performance !== 'undefined' ? performance.now() : 0);
+  let _pmLast = _pmT0;
+  const _pm = (window.__plantMarks = []);
+  const pmark = (name) => {
+    const t = (typeof performance !== 'undefined' ? performance.now() : 0);
+    _pm.push([name, Math.round(t - _pmLast)]);
+    _pmLast = t;
+  };
   const list = data.trees || [];
   const f = new TreeField();
   let surveyed = 0;
@@ -4985,6 +4997,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
   // determinism gates are untouched. blocked() keeps the fill off roads,
   // buildings and street trees; instanced leaf cards + LOD carry the cost
   // (phones cull past 280m and draw 24/40 cards).
+  pmark('surveyed');
   let jungle = 0;
   const inRing = (x, z, pts) => {
     let inside = false;
@@ -5075,6 +5088,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
   // within 25m of a wood ring, 12m jittered grid, same deterministic hash —
   // knits the woods into the continuous mass the satellite shows, without
   // planting a single tree on mapped lawns, golf, sand or anything built.
+  pmark('jungle');
   let halo = 0;
   // THE ATTRACTIONS KEEP THEIR CLEARING. The two fills below invent planting
   // on ground OSM never classified — which is the right default on a jungle
@@ -5206,15 +5220,57 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
         }
       }
       const nearWays = (x, z) => wayGrid.has(Math.floor(x / wayCell) + ',' + Math.floor(z / wayCell));
+      // INDEXED — THE FOURTH TIME THIS EXACT SHAPE HAS COST SECONDS OF BOOT.
+      //
+      // Both of these scanned EVERY polygon with a full ring test, per
+      // candidate, on a 15m grid across the whole island bbox. `greens` is all
+      // 193 green polygons and `lands` every mapped parcel, so this was on the
+      // order of a HUNDRED MILLION ring-edge solves inside the boot. Measured
+      // by per-fill marks (window.__plantMarks): the fill this sits in was
+      // 3,050ms of plantSurveyed's 4,286ms, which is 12% of the whole boot.
+      //
+      // Same exact fix as `inClaimed` above and `trailDist2` before it: bucket
+      // by BOUNDING BOX, because a polygon can only contain a point if its
+      // bbox covers that point's cell. The index is exact — the answers do not
+      // change, and the tree count is the proof.
+      //
+      // onAnyRoadT (10.3s), trailDist2 (~4s), inClaimed (0.56s), and now this.
+      // FOUR FOR FOUR: an unindexed linear scan inside a per-object loop.
+      const PCELL = 48;
+      const polyIndex = (polys) => {
+        const grid = new Map();
+        for (const g2 of polys) {
+          let mnx2 = Infinity, mxx2 = -Infinity, mnz2 = Infinity, mxz2 = -Infinity;
+          for (const [x, z] of g2.p) {
+            if (x < mnx2) mnx2 = x; if (x > mxx2) mxx2 = x;
+            if (z < mnz2) mnz2 = z; if (z > mxz2) mxz2 = z;
+          }
+          for (let gx = Math.floor(mnx2 / PCELL); gx <= Math.floor(mxx2 / PCELL); gx++) {
+            for (let gz = Math.floor(mnz2 / PCELL); gz <= Math.floor(mxz2 / PCELL); gz++) {
+              const k = gx + ',' + gz;
+              let l = grid.get(k);
+              if (!l) { l = []; grid.set(k, l); }
+              l.push(g2);
+            }
+          }
+        }
+        return (x, z) => grid.get(Math.floor(x / PCELL) + ',' + Math.floor(z / PCELL)) || null;
+      };
       const greens = (data.green || []).filter((g2) => g2.p && g2.p.length > 3);
+      const greensAt = polyIndex(greens);
       const inAnyGreen = (x, z) => {
-        for (const g2 of greens) if (inRing(x, z, g2.p)) return g2.k;
+        const l = greensAt(x, z);
+        if (!l) return null;
+        for (let i = 0; i < l.length; i++) if (inRing(x, z, l[i].p)) return l[i].k;
         return null;
       };
       // a mapped plaza, car park or works parcel is not forest either
       const lands = (data.land || []).filter((l2) => l2.p && l2.p.length > 3);
+      const landsAt = polyIndex(lands);
       const inLand = (x, z) => {
-        for (const l2 of lands) if (inRing(x, z, l2.p)) return true;
+        const l = landsAt(x, z);
+        if (!l) return false;
+        for (let i = 0; i < l.length; i++) if (inRing(x, z, l[i].p)) return true;
         return false;
       };
       let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
@@ -5253,6 +5309,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
   // masses) within 22m of a footway that passes through or beside a wood,
   // 9m jittered grid, same deterministic position-hash. Sentosa measured:
   // hundreds, not thousands.
+  pmark('halo');
   let shrubs = 0;
   {
     // ONE trail index for the whole function — the canopy fill needs it too,
@@ -5333,6 +5390,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
   // ORDERED CHEAPEST TEST FIRST. greenAt walks candidate rings and is the
   // expensive call; the island mask is an array lookup. Getting that order
   // wrong is what put 120,000 full table scans in the boot once already.
+  pmark('shrubs');
   let wild = 0;
   if (TERRAIN && TERRAIN.g && TERRAIN.greenFrac > 0.35) {
     const g2 = TERRAIN.g;
@@ -5399,6 +5457,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
     }
   }
 
+  pmark('wild');
   if (!surveyed && !jungle && !halo && !shrubs && !wild) return { surveyedTrees: 0, jungleTrees: 0, haloTrees: 0, shrubClumps: 0, wildTrees: 0 };
   const built = await f.buildY(world, Y);
   return { surveyedTrees: built - jungle - halo - shrubs - wild, jungleTrees: jungle, haloTrees: halo, shrubClumps: shrubs, wildTrees: wild };
