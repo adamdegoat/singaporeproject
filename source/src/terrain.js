@@ -275,7 +275,25 @@ export class Terrain {
     // drawn as land, almost all of them at the far corner of the bbox where the
     // heightfield has no data and clamps to its edge values. The island's own
     // coastline says which is which.
-    if (y > 1.2 && this.onIsland(x, z)) return y;
+    // ...AND THIS GUARD IS A BINARY OFF THE SAME 35 m MASK, so it cut the same
+    // notches. Above 1.2 m the drawn ground either stays as land or falls the
+    // whole way to the seabed, and the mask flips between those two answers
+    // across one cell. Rendered at Tanjong Rimau that is a triangular bite out
+    // of the shore — the lower ones came from the shelf and were fixed by
+    // fading it; these are the upper ones.
+    //
+    // Faded by the same weight. At w = 1 and w = 0 this returns exactly what it
+    // always returned, so the case the guard exists for — 2,465 points of open
+    // sea at the bbox corner, where the mask reads 0 — is untouched. Only the
+    // transition cell moves, which is the only place there was a step.
+    if (y > 1.2) {
+      const w1 = this.islandW(x, z);
+      if (w1 >= 1) return y;
+      if (w1 > 0) {
+        const sunk1 = Math.min(y, bed);
+        return sunk1 + w1 * (y - sunk1);
+      }
+    }
     // THE SEA IS SHELVED INTO, NOT STEPPED OFF. This is the owner's "all the
     // coast touching water are jagged", and it was never a resolution problem.
     //
@@ -349,9 +367,15 @@ export class Terrain {
     if (bed === null || bed >= 0.2) return null;
     if (!(y > SHELF_LO && y < SHELF_HI)) return null;
     if (y - bed > 7) return null;             // the sloppy-ring guard, above
-    if (!this.onIsland(x, z)) return null;
+    // FADED BY THE MASK, NOT GATED BY IT — see islandW for the 3.65 m notches
+    // that a yes/no read cut into the sand.
+    const w = this.islandW(x, z);
+    if (w <= 0) return null;
     const t = (y - SHELF_LO) / (SHELF_HI - SHELF_LO);
-    return bed + t * t * (3 - 2 * t) * (y - bed);
+    const shelf = bed + t * t * (3 - 2 * t) * (y - bed);
+    if (w >= 1) return shelf;
+    const sunk = Math.min(y, bed);            // what the point would be without it
+    return sunk + w * (shelf - sunk);
   }
 
   // bilinear height at a world point; 0 everywhere if the district has no grid
@@ -674,6 +698,34 @@ export class Terrain {
     const i = Math.round((x - g.x0) / g.cell), j = Math.round((z - g.z0) / g.cell);
     if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return false;
     return this.isle[j * g.nx + i] === 1;
+  }
+
+  // HOW ISLAND A POINT IS, 0 to 1 — the same mask read bilinearly instead of
+  // by nearest node.
+  //
+  // `onIsland` answers yes/no off a 35 m raster, which is fine for a guard but
+  // ruinous for anything CONTINUOUS: the shore shelf switched fully on and
+  // fully off across a 35 m step, and the drawn beach dropped 3.65 m to the
+  // seabed in one interval where it did. Measured along Sentosa's own coast:
+  // 231 points inside the shelf band sit on such a flip, and rendered at
+  // Tanjong Rimau they are triangular NOTCHES bitten out of the sand — the
+  // same staircase the shelf was built to remove, arriving through the mask
+  // instead of through the cliff.
+  //
+  // Bilinear weight lets the shelf FADE OUT rather than switch, so there is no
+  // step to see at any resolution. It costs three extra array reads and no
+  // memory, which is why this rather than a finer raster: a 4 m mask would move
+  // the step, and this removes it.
+  islandW(x, z) {
+    if (!this.isle) return 0;
+    const g = this.g;
+    const fx = (x - g.x0) / g.cell, fz = (z - g.z0) / g.cell;
+    let i = Math.floor(fx), j = Math.floor(fz);
+    if (i < 0 || j < 0 || i >= g.nx - 1 || j >= g.nz - 1) return this.onIsland(x, z) ? 1 : 0;
+    const tx = fx - i, tz = fz - j;
+    const a = this.isle[j * g.nx + i], b = this.isle[j * g.nx + i + 1];
+    const c = this.isle[(j + 1) * g.nx + i], d = this.isle[(j + 1) * g.nx + i + 1];
+    return (a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + d * tx) * tz;
   }
 
   setGreen(list) {
