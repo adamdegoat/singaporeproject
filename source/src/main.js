@@ -3443,7 +3443,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   window.__roadList = data.roads.filter((r) => r.k !== 'footway' && r.k !== 'pedestrian');
   const people = crowdSys ? crowdSys.people.length : 0;
 
-  stats = { surround, ...water, ...trees2, marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, egyptCrown: bs.egyptCrown || 0, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...surveyed, ...furniture, ...signage, ...shopf };
+  stats = { surround, ...water, ...trees2, marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, zoneCrown: bs.zoneCrown || 0, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...surveyed, ...furniture, ...signage, ...shopf };
   // one pass over the finished district: share identical materials, then batch
   // small static meshes per 110m tile. See consolidate.js.
   // Solidity is rasterised from the finished district and BEFORE the meshes are
@@ -3746,7 +3746,15 @@ window.__placeBlocked = (x, z) => blocked(x, z);
             // provably exists and freeing the pixels is sound on any GPU. It
             // also means the GATE now renders what a player renders: goldens
             // run on SwiftShader and were warming a different world.
-            try { renderer.initTexture(t); } catch (e) { continue; }
+            //
+            // ?notexinit skips the upload so the cost of this line can be
+            // A/B'd against the same build rather than argued about: it forces
+            // every canvas texture onto the GPU at boot, including ones a
+            // player might never look at. Without it the release is unsafe, so
+            // the flag is a MEASURING tool and not an option.
+            if (!P.has('notexinit')) {
+              try { renderer.initTexture(t); } catch (e) { continue; }
+            }
             freed += im.width * im.height * 4;
             im.width = 1; im.height = 1;                        // frees the pixels
             n++;

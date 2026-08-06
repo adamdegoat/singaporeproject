@@ -2855,23 +2855,51 @@ export async function buildBuildings(world, data, Y = null) {
       // crown; deciding what a thing is belongs to the data.
       if (_isShow && h > 6) {
         const _z = _zoneOf(pts);
-        if (_z && _z.n === 'Ancient Egypt') {
-          const trimMat = renderMat(0xc2a469, false, true);
-          // the cavetto, flaring outward as it climbs
-          for (const [out, thick, at] of [[0.35, 0.55, h - 2.30],
-                                          [0.80, 0.55, h - 1.75],
-                                          [1.25, 0.75, h - 1.20]]) {
+        // EVERY ZONE GETS A SILHOUETTE, NOT JUST A COLOUR.
+        //
+        // Ancient Egypt proved the recipe; this is the same move for the other
+        // six. Each entry is a list of [outset, thickness, heightAboveFoot]
+        // rings — offset outward along the mitred normal and stacked — which is
+        // enough to give a roofline a character from a hundred metres, and it
+        // is the SILHOUETTE that carries at that range, not any texture.
+        //
+        // ALL OF IT IS TOP-OF-WALL except Egypt's battered plinth, and that is
+        // deliberate: a ring at ground level grows the footprint and can seal a
+        // gap between two buildings or narrow a path. Egypt's is measured and
+        // gated (opencheck 0 pockets, trailcheck 0 blocked); the rest stay in
+        // the air, where they cost nothing but pixels.
+        //
+        // The forms are the ordinary architecture of each theme and nothing is
+        // branded: a stepped brick cornice on a New York block, a deep flat
+        // fascia band on a Sci-Fi hangar, battlements on Far Far Away, a heavy
+        // overhanging eave on the wet jungle sheds of The Lost World, and a
+        // fat rounded lip on Minion Land, which is a cartoon. Hollywood keeps
+        // a plain deep fascia because a boulevard show building IS a flat
+        // parapet with signage on it.
+        const CROWN = {
+          'Ancient Egypt': { col: 0xc2a469, top: [[0.35, 0.55, -2.30], [0.80, 0.55, -1.75],
+                                                  [1.25, 0.75, -1.20], [1.40, 0.45, -0.45]],
+                             foot: [[0.85, 0.55, 0.0], [0.55, 0.55, 0.55], [0.25, 0.55, 1.10]] },
+          'New York':     { col: 0x8a5f4e, top: [[0.30, 0.35, -1.90], [0.60, 0.35, -1.55],
+                                                 [0.85, 0.40, -1.20], [0.55, 0.80, -0.80]] },
+          'Sci-Fi City':  { col: 0x6f7a86, top: [[0.55, 1.30, -1.60], [0.20, 0.45, -0.30]] },
+          'Hollywood':    { col: 0xd2c1a2, top: [[0.45, 1.60, -1.90], [0.75, 0.40, -0.30]] },
+          'The Lost World': { col: 0x4e6644, top: [[1.30, 0.45, -1.30], [0.80, 0.55, -0.75]] },
+          'Jurassic World': { col: 0x4e6644, top: [[1.30, 0.45, -1.30], [0.80, 0.55, -0.75]] },
+          'Far Far Away': { col: 0x9c86ad, top: [[0.35, 1.10, -1.60], [0.70, 0.45, -0.50]] },
+          'Minion Land':  { col: 0xb99f4c, top: [[0.30, 0.50, -1.40], [0.75, 0.90, -0.90]] },
+          'Madagascar':   { col: 0xb99f4c, top: [[0.30, 0.50, -1.40], [0.75, 0.90, -0.90]] },
+        };
+        const _c = _z && CROWN[_z.n];
+        if (_c) {
+          const trimMat = renderMat(_c.col, false, true);
+          for (const [out, thick, at] of _c.top) {
+            merger.add(extrudeGeo(growM(pts, out), thick, h + at), trimMat, cB[0], cB[1]);
+          }
+          for (const [out, thick, at] of (_c.foot || [])) {
             merger.add(extrudeGeo(growM(pts, out), thick, at), trimMat, cB[0], cB[1]);
           }
-          // ...and the torus roll that caps it
-          merger.add(extrudeGeo(growM(pts, 1.40), 0.45, h - 0.45), trimMat, cB[0], cB[1]);
-          // the battered foot, widest at the ground
-          for (const [out, thick, at] of [[0.85, 0.55, 0.0],
-                                          [0.55, 0.55, 0.55],
-                                          [0.25, 0.55, 1.10]]) {
-            merger.add(extrudeGeo(growM(pts, out), thick, at), trimMat, cB[0], cB[1]);
-          }
-          stats.egyptCrown = (stats.egyptCrown || 0) + 1;
+          stats.zoneCrown = (stats.zoneCrown || 0) + 1;
         }
       }
       // A CONSERVED SHOPHOUSE HAS A PITCHED CLAY-TILE ROOF, and until now every
