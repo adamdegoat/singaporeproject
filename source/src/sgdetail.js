@@ -4054,8 +4054,22 @@ export async function buildTransit(world, data, Y = null) {
     // is carried down to ITS OWN ground: on a beach that falls across the site
     // a 0.45 m tread either floats or buries, and which one it does changes
     // along the row.
+    // THE STEPS MUST TOUCH THE DECK, and 0.56 did not.
+    //
+    // At FD = 24 the first tread sat centred on v = -13.44, spanning -14.54 to
+    // -12.34, against a deck edge at -12.00: a THIRTY-FOUR CENTIMETRE SLOT
+    // running the full 46 m width. Harmless while the treads were 0.45 m
+    // pucks; the moment they were carried down to their own ground they became
+    // walls, and the slot became a piece of beach with geometry all the way
+    // round it. data/opencheck.mjs refused the deploy and named it — "48 m2 at
+    // -2186,12468 Siloso Beach, 100% of its edge is geometry" — with the two
+    // material colours, which is how it was found in one read.
+    //
+    // Seated off HALF THE DECK plus half a tread, so tread 0 meets the deck
+    // edge exactly and each one after it meets the last. A fraction of a
+    // dimension is a guess; this is the arithmetic.
     for (let k = 0; k < 3; k++) {
-      const v = -FD * 0.56 - k * 2.2;
+      const v = -(FD / 2) - 1.1 - k * 2.2;
       const [tx, tz] = put7(0, v);
       const top = gy7 + 0.55 + k * 0.45;
       const bot = Math.min(groundAt(tx, tz), top - 0.45) - 0.3;

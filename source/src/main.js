@@ -403,8 +403,59 @@ function buildArcadeIndex(list) {
 function moveBlocked(x, z) {
   if (ARCADES && ARCADES.at(x, z)) return false;
   if (openGroundAt(x, z)) return SOLID ? SOLID.at(x, z) : false;
+  // THE BEACH REACHES THE WATER, AND UNTIL NOW YOU COULD NOT.
+  //
+  // What stops a walker is `inWater` — the surveyed water POLYGON — and that
+  // reaches inland of the drawn water's edge, so a player was halted on
+  // visible dry sand about six metres short of the sea. Measured over the
+  // Siloso stretch: 12,192 m2 of shore you can see and cannot stand on.
+  //
+  // THE RULE IS "IS THIS DRAWN AS LAND", NOT "IS THIS ON THE SHELF", and the
+  // first version got that wrong in a way worth keeping. Gating on the shelf
+  // alone produced BLOCK, BLOCK, walk, BLOCK along one transect — a
+  // disconnected island of walkable sand — because the band either side of it
+  // is drawn as land by a DIFFERENT rule (`y > 1.2 && onIsland`, the guard for
+  // a water polygon that over-reaches inland). That guard's territory has been
+  // visible-and-unreachable since it was written; the shelf just made it
+  // obvious by putting a walkable strip in the middle of it.
+  //
+  // So ask the mesh. Above the drawn sea plane and on the island means the
+  // ground under your feet is sand you can see, whichever rule drew it.
+  // SOLID is still asked, so a wall on the beach is still a wall.
+  //
+  // Deliberately NOT done in `blocked()`. That predicate also gates where the
+  // dressing may place things, and its own note records the last attempt:
+  // unblocking there took W2 from 32 to 706 things built in open water.
+  // `moveBlocked` is the walker's test and the right seam — it is what this
+  // function was split out for.
+  // AGAINST THAT BODY'S OWN SURFACE, NOT AGAINST SEA LEVEL. A fixed -0.30
+  // threshold reads correctly on the coast and catastrophically inland: a
+  // swimming pool up at twenty metres has a BED at eighteen, which clears any
+  // sea-level test, so every pool and lagoon on the island would have become
+  // walkable. setWaterRings puts each ring's floor 1.4 m under its own drawn
+  // surface, so that surface is the thing to compare with — and then the rule
+  // states itself: you may stand where the ground pokes out of the water.
+  // ...AND AT SEA LEVEL ONLY (`bed < 0.2`), which the surface test alone does
+  // NOT give you. Measured: comparing against each body's own surface, 344 of
+  // 362 sampled points inside the island's inland water came out walkable —
+  // every pool and lagoon. The cause is the `y > 1.2 && onIsland` guard in
+  // vertexY: inside an inland body the heightfield says 20 m, so the guard
+  // returns the LAND height and the drawn ground genuinely is above that
+  // pool's surface. That is a separate, older defect about how inland water is
+  // drawn; it is not this rule's business to act on it, and unblocking on the
+  // strength of it would put players walking across Adventure Cove. So this
+  // stays where it was measured: the coast.
+  if (terrain && terrain.onIsland && terrain.onIsland(x, z)) {
+    const bed = terrain.waterFloor(x, z);
+    if (bed !== null && bed < 0.2
+        && terrain.vertexY(x, z) > bed + WATER_DEPTH - 0.05) {
+      return SOLID ? SOLID.at(x, z) : false;
+    }
+  }
   return blocked(x, z);
 }
+// setWaterRings seats every bed this far below its own water surface
+const WATER_DEPTH = 1.4;
 
 function blocked(x, z) {
   if (SOLID && SOLID.at(x, z)) return true;

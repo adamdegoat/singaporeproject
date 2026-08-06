@@ -1144,6 +1144,16 @@ export function surfaceAt(x, z, fromY) {
   // which is why the stairs were drawn but not climbable until now.
   const step = walkSurfaceAt(x, z, fromY);
   if (step !== null) return step;
+  // ON THE SHORE SHELF, THE GROUND YOU STAND ON IS THE GROUND THAT IS DRAWN.
+  //
+  // `at()` is the heightfield and is deliberately never sunk — the drawn skin
+  // alone goes down at the coast. That is right everywhere except the shelf,
+  // where the drawn beach eases below at() by up to a metre on its way into
+  // the water: standing on at() there puts a walker, and anything seated with
+  // them, up to a metre above the sand they can see. Only the shelf band is
+  // affected; `shoreY` returns null everywhere else.
+  const sh = TERRAIN.shoreY ? TERRAIN.shoreY(x, z) : null;
+  if (sh !== null) return sh + SURFACE_PATH;
   const g = TERRAIN.at(x, z);
   // A LOW FOOTBRIDGE IS A BOARDWALK YOU STAND ON. Footbridge decks were kept
   // out of this function so a rider passing UNDER one is not lifted onto it

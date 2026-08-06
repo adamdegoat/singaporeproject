@@ -24,6 +24,11 @@ const TARGET = 0.015;
 // costing 51fps to 33 when building geometry was merged globally, and the same
 // trap caught the ground the moment subdivision made it big.
 const TILE = 3;                        // 3 x 35m cells ~ 105m, the merger's tile size
+// THE SHORE SHELF. The drawn ground eases into the seabed across this band of
+// land height instead of dropping off a cliff at the top of it — see the long
+// note in vertexY for the measurement that forced it, and Terrain.shoreY for
+// the three callers that must all read the same number.
+const SHELF_LO = 0.5, SHELF_HI = 1.2;
 
 export class Terrain {
   constructor(grid) {
@@ -319,12 +324,34 @@ export class Terrain {
     // plates floating at water level. A shelf is what a BEACH does. The same
     // mask the guard above uses draws the line, so the two rules agree about
     // what counts as the island.
-    const LOB = 0.5;
-    if (bed < 0.2 && y > LOB && y < 1.2 && this.onIsland(x, z)) {
-      const t = (y - LOB) / (1.2 - LOB);
-      return bed + t * t * (3 - 2 * t) * (y - bed);
-    }
+    const s = this.shoreY(x, z, y, bed);
+    if (s !== null) return s;
     return Math.min(y, bed);
+  }
+
+  // THE SHELF ITSELF, AS A QUESTION ANYONE CAN ASK.
+  //
+  // It has to be a shared query rather than four lines inside vertexY, because
+  // three different things need the same answer and they must not disagree:
+  // the drawn mesh (vertexY), what a walker stands on (city.js surfaceAt) and
+  // what stops them (main.js moveBlocked). The first version was inline, and
+  // the result was a beach you could SEE 6 m further than you could WALK —
+  // measured at 12,192 m2 of newly visible shore on the Siloso stretch alone.
+  // One authority, three readers.
+  //
+  // Returns the drawn height on the shelf, or null when the point is not on
+  // one — which is everywhere except the island's own coast at sea level.
+  // `y` and `bed` are passed in when the caller already has them, because
+  // vertexY calls this per drawn vertex.
+  shoreY(x, z, y, bed) {
+    if (y === undefined) y = this.at(x, z) - (this.inRoad(x, z) ? 0.51 : 0.06);
+    if (bed === undefined) bed = this.waterFloor(x, z);
+    if (bed === null || bed >= 0.2) return null;
+    if (!(y > SHELF_LO && y < SHELF_HI)) return null;
+    if (y - bed > 7) return null;             // the sloppy-ring guard, above
+    if (!this.onIsland(x, z)) return null;
+    const t = (y - SHELF_LO) / (SHELF_HI - SHELF_LO);
+    return bed + t * t * (3 - 2 * t) * (y - bed);
   }
 
   // bilinear height at a world point; 0 everywhere if the district has no grid
