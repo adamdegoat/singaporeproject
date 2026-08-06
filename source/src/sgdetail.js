@@ -3905,6 +3905,101 @@ export async function buildTransit(world, data, Y = null) {
     }
   }
 
+  // -- SURF COVE BY WAVE HOUSE: two standing waves you can ride ------------
+  //
+  // Authored, because the map has none of it — see data/wavehouse.py for what
+  // is PUBLISHED (the 6,503 m2 site, the two waves and their speeds) and what
+  // is authored (every dimension of the forms below).
+  //
+  // A sheet-wave venue is not a pool. It is a RAKED STAGE of moving water with
+  // spectator terracing looking down into it, under a roof, and that shape is
+  // the whole reason people stand around watching. Built as: the flow deck,
+  // the two waves, the terrace, and the roof over them.
+  const wh = data.wavehouse;
+  if (wh && wh.p) {
+    await YY();
+    const [wx, wz] = wh.p;
+    const ux7 = Math.sin(wh.a), uz7 = Math.cos(wh.a);      // along the beach walk
+    const nx7 = -uz7, nz7 = ux7;                            // toward the sea
+    const gy7 = surfaceAt(wx, wz);
+    const deckMat = new THREE.MeshLambertMaterial({ color: 0xcfc7b6 });
+    const terraceMat = new THREE.MeshLambertMaterial({ color: 0xbdb5a6 });
+    // the sheet: composite vinyl under fast water, so it reads bright and wet
+    const sheetMat = new THREE.MeshLambertMaterial({ color: 0x4fb4c9 });
+    const barrelMat = new THREE.MeshLambertMaterial({ color: 0x3d95ad });
+    const postMat = new THREE.MeshLambertMaterial({ color: 0xd8d3c8 });
+    const roofMat = new THREE.MeshLambertMaterial({ color: 0xe4e0d5 });
+    const put7 = (u, v) => [wx + ux7 * u + nx7 * v, wz + uz7 * u + nz7 * v];
+    const slab = (u, v, w, l, y, h, mat) => {
+      const [px, pz] = put7(u, v);
+      const g = new THREE.BoxGeometry(w, h, l);
+      g.rotateY(wh.a);
+      g.translate(px, y, pz);
+      merger.add(g, mat, px, pz);
+    };
+    // THE FLOW DECK, raised a step above the sand so the water has somewhere
+    // to fall back to — that step is why you can see the wave from the walk.
+    // THE ROOF AND DECK COVER THE FLOW AREA, NOT THE WHOLE SITE.
+    //
+    // The published 6,503 m2 is the VENUE — waves, restaurant, bars, retail
+    // and beach frontage. Sized to that, the roof came out 108 x 34m and read
+    // as a warehouse lid over the beach (rendered, and obvious from the air).
+    // The flow deck is the part with water on it: the two waves plus standing
+    // room, which is about 46 x 24m.
+    const FW = Math.min(wh.w * 0.42, 46), FD = Math.min(wh.d * 0.46, 24);
+    slab(0, 0, FW, FD, gy7 + 0.55, 1.1, deckMat);
+    // THE DOUBLE FLOWRIDER: one wide sheet, two riders abreast. Published as a
+    // non-curling endless sheet, so it is FLAT and raked, not a barrel.
+    const [rw, rl] = wh.rider;
+    slab(-FW * 0.26, 0, rw, rl, gy7 + 1.16, 0.22, sheetMat);
+    // the rake: the sheet climbs away from the rider, which is the shape that
+    // holds them on it
+    for (let k = 0; k < 5; k++) {
+      slab(-FW * 0.26, rl * 0.30 + k * 1.4, rw, 1.5,
+           gy7 + 1.22 + k * 0.34, 0.22, sheetMat);
+    }
+    // THE FLOWBARREL: 10 ft, and the only one in Asia with the FlowRider
+    // beside it. A curling wall, so it is built as a quarter-pipe of rings
+    // rather than as a flat sheet.
+    const br = wh.barrel;
+    for (let k = 0; k < 7; k++) {
+      const t = k / 6;
+      const rr = br * (1 - 0.12 * t);
+      const ring = new THREE.CylinderGeometry(rr, rr, 0.5, 18, 1, true,
+                                              Math.PI * 0.15, Math.PI * 0.9);
+      const [px, pz] = put7(FW * 0.30, 0);
+      ring.rotateY(wh.a);
+      ring.translate(px, gy7 + 1.2 + t * 3.0, pz);
+      merger.add(ring, barrelMat, px, pz);
+    }
+    // SPECTATOR TERRACING on the walk side — three steps looking down into the
+    // waves. This is what makes it a venue rather than a pool.
+    for (let k = 0; k < 3; k++) {
+      slab(0, -FD * 0.56 - k * 2.2, FW, 2.2,
+           gy7 + 0.55 + k * 0.45, 0.45, terraceMat);
+    }
+    // THE ROOF, on posts, over the whole flow deck. Kept clear of the walk so
+    // it cannot roof a mapped route.
+    let posts = 0;
+    for (const su of [-0.42, 0.42]) {
+      for (const sv of [-0.26, 0.26]) {
+        const [px, pz] = put7(FW * su * 1.15, FD * sv * 1.6);
+        if (window.__onRoad && window.__onRoad(px, pz, 0)) continue;
+        const post = new THREE.CylinderGeometry(0.28, 0.32, 7.4, 8);
+        post.translate(px, gy7 + 3.7, pz);
+        merger.add(post, postMat, px, pz);
+        posts++;
+      }
+    }
+    if (posts >= 3) {
+      slab(0, 0, FW * 1.12, FD * 1.05, gy7 + 7.6, 0.42, roofMat);
+      // and its underside is a ceiling, the lesson from the USS canopy
+      slab(0, 0, FW * 1.10, FD * 1.02, gy7 + 7.3, 0.26,
+           MAT.soffit || roofMat);
+    }
+    out.waveHouse = 1;
+  }
+
   // -- LOOKOUT LOOP: the north gate, and it was surveyed all along ---------
   //
   // A two-level elevated walkway loop over the Merlion Plaza, recovered by
