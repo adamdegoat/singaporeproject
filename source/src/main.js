@@ -3443,7 +3443,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   window.__roadList = data.roads.filter((r) => r.k !== 'footway' && r.k !== 'pedestrian');
   const people = crowdSys ? crowdSys.people.length : 0;
 
-  stats = { surround, ...water, ...trees2, marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...surveyed, ...furniture, ...signage, ...shopf };
+  stats = { surround, ...water, ...trees2, marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, egyptCrown: bs.egyptCrown || 0, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...surveyed, ...furniture, ...signage, ...shopf };
   // one pass over the finished district: share identical materials, then batch
   // small static meshes per 110m tile. See consolidate.js.
   // Solidity is rasterised from the finished district and BEFORE the meshes are
@@ -3723,6 +3723,30 @@ window.__placeBlocked = (x, z) => blocked(x, z);
             const im = t.image || (t.source && t.source.data);
             if (t.userData && t.userData.keepCanvas) continue;   // see SignAtlas
             if (!im || !im.getContext || !im.width) continue;   // not a canvas
+            // UPLOAD IT, DO NOT HOPE IT WAS UPLOADED. This is what made the
+            // block above SAFE rather than merely argued.
+            //
+            // Its claim was "the warm spin has rendered every material at least
+            // once, so every texture is on the GPU". The spin renders SIX
+            // directions from spawn plus four ride-out checkpoints — but only
+            // `if (!softGPU)`. On a software rasteriser it is ONE frame from
+            // spawn and no checkpoints, and anything outside that single
+            // frustum was released having never been uploaded. A texture whose
+            // canvas is 1x1 when it is finally uploaded is BLACK.
+            //
+            // That is the black-surface artefact this project has twice written
+            // off as flake: 15 of 16 goldens came back with black roads on
+            // 2026-08-06 and passed on a re-run, and Ancient Egypt's show
+            // buildings — the whole of Universal — rendered as a black
+            // silhouette from a new golden vantage and REPRODUCED exactly. It
+            // is not flake, it is a race, which is why re-running sometimes
+            // "fixes" it.
+            //
+            // `initTexture` uploads on demand, so after this line the GPU copy
+            // provably exists and freeing the pixels is sound on any GPU. It
+            // also means the GATE now renders what a player renders: goldens
+            // run on SwiftShader and were warming a different world.
+            try { renderer.initTexture(t); } catch (e) { continue; }
             freed += im.width * im.height * 4;
             im.width = 1; im.height = 1;                        // frees the pixels
             n++;

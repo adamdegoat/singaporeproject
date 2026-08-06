@@ -2110,10 +2110,13 @@ export async function buildBuildings(world, data, Y = null) {
                    'Madagascar': [0xd8c46a, 0xc7b25c, 0x9aa3ab] };
     for (const a of (data.attractions || [])) {
       const pal = a && a.n && want[a.n];
-      if (pal && a.p) _ussZones.push({ x: a.p[0], z: a.p[1], pal });
+      if (pal && a.p) _ussZones.push({ x: a.p[0], z: a.p[1], pal, n: a.n });
     }
   }
-  const _zoneTint = (pts, hash) => {
+  // the zone a footprint stands in, or null. `_zoneTint` answered a COLOUR and
+  // nothing could ask WHICH ZONE — which is why paint was the only thing a
+  // zone could change about a building.
+  const _zoneOf = (pts) => {
     if (!_ussZones.length) return null;
     const c = centroid(pts);
     let best = null, bd = Infinity;
@@ -2121,6 +2124,10 @@ export async function buildBuildings(world, data, Y = null) {
       const d = (q.x - c[0]) ** 2 + (q.z - c[1]) ** 2;
       if (d < bd) { bd = d; best = q; }
     }
+    return best;
+  };
+  const _zoneTint = (pts, hash) => {
+    const best = _zoneOf(pts);
     return best ? best.pal[Math.abs(hash) % best.pal.length] : null;
   };
 
@@ -2817,6 +2824,56 @@ export async function buildBuildings(world, data, Y = null) {
     } else {
       const cB = centroid(pts);
       merger.add(flattenRoofUV(scaleUV(extrudeGeo(pts, h), 1 / 26, 1 / 28)), mat, cB[0], cB[1]);
+      // ANCIENT EGYPT: A SHOW BUILDING IS NOT A PAINTED BOX.
+      //
+      // The zone tints landed on 2026-08-06 and gave the seven USS zones an
+      // identity in COLOUR. Rendered from the walk, the result was still a
+      // twenty-four metre blank gold cliff — Revenge of the Mummy is a 6,145 m2
+      // footprint at 23.8 m with no cornice, no opening and no entrance, so
+      // "USS does not feel like USS" survived the paint entirely. The zones
+      // were being expressed by the one property a zone could reach, because
+      // `_zoneTint` answered a colour and nothing could ask which zone.
+      //
+      // The two things that make a wall read as Egyptian are both silhouette,
+      // which is why they beat any amount of texture here:
+      //
+      //   CAVETTO CORNICE  a concave lip that FLARES OUT as it rises, capped by
+      //                    a torus roll. Drawn as stacked rings offset further
+      //                    out the higher they go — growM is metres along the
+      //                    mitred normal, so a 6,000 m2 shed and a 200 m2 kiosk
+      //                    get the same 1.4 m lip instead of one scaled to the
+      //                    plan (the eave lesson, in this file, above).
+      //   BATTERED PLINTH  the wall foot leans out. Stacked rings the other way
+      //                    round, widest at the ground.
+      //
+      // Every piece rides extrudeGeo, so they seat on the building's own FOOT
+      // exactly as the mass does and cannot drift off it on a slope — which is
+      // the parapet-in-the-sky bug this file already carries the fix for.
+      //
+      // GATED ON THE ZONE, NOT ON A NAME. Treasure Hunters and the unnamed show
+      // buildings beside the Mummy are the same architecture and get the same
+      // crown; deciding what a thing is belongs to the data.
+      if (_isShow && h > 6) {
+        const _z = _zoneOf(pts);
+        if (_z && _z.n === 'Ancient Egypt') {
+          const trimMat = renderMat(0xc2a469, false, true);
+          // the cavetto, flaring outward as it climbs
+          for (const [out, thick, at] of [[0.35, 0.55, h - 2.30],
+                                          [0.80, 0.55, h - 1.75],
+                                          [1.25, 0.75, h - 1.20]]) {
+            merger.add(extrudeGeo(growM(pts, out), thick, at), trimMat, cB[0], cB[1]);
+          }
+          // ...and the torus roll that caps it
+          merger.add(extrudeGeo(growM(pts, 1.40), 0.45, h - 0.45), trimMat, cB[0], cB[1]);
+          // the battered foot, widest at the ground
+          for (const [out, thick, at] of [[0.85, 0.55, 0.0],
+                                          [0.55, 0.55, 0.55],
+                                          [0.25, 0.55, 1.10]]) {
+            merger.add(extrudeGeo(growM(pts, out), thick, at), trimMat, cB[0], cB[1]);
+          }
+          stats.egyptCrown = (stats.egyptCrown || 0) + 1;
+        }
+      }
       // A CONSERVED SHOPHOUSE HAS A PITCHED CLAY-TILE ROOF, and until now every
       // one of them in this world had a flat concrete parapet like an office
       // block. That is the single most recognisable thing about Chinatown,

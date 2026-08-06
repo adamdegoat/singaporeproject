@@ -79,6 +79,19 @@ const SPOTS = [
   // means nothing about a thing none of them is looking at. This one stands on
   // Siloso and looks down the waterline, which is where the staircase was.
   ['waterline', -2240, 12455, -1.05],
+  // ...AND NOTHING COULD SEE UNIVERSAL'S SHOW BUILDINGS EITHER. Ancient Egypt
+  // got a cavetto cornice and a battered plinth on 2026-08-06 — seven crowned
+  // buildings, new geometry on the largest footprint in the park — and all
+  // seventeen frames stayed at 0.000%. `rws-globe` looks at the globe from the
+  // Waterfront and no camera stands inside the park. Written the same day as
+  // the waterline note above, which makes it the FOURTH time, so the habit is
+  // now: ship a frame WITH the pass, not after somebody notices.
+  // Stood 5 m from a 24 m wall on the first attempt and came back SOLID BLACK
+  // across two thirds of the frame — which is not a broken build, it is this
+  // file's own oldest trap: a surface closer than the near plane is a black
+  // wall, and main.js's _BOOM_MIN note records the 2025-08-05 RWS golden that
+  // taught it. A golden vantage has to stand where a VISITOR stands.
+  ['ancient-egypt', -1232, 12468, 0.86],
 ];
 
 mkdirSync(ACT, { recursive: true });
