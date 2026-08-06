@@ -4180,6 +4180,11 @@ export async function buildTransit(world, data, Y = null) {
   const guideShirt = new THREE.MeshLambertMaterial({ color: 0xc2452f });
   const guideTrou = new THREE.MeshLambertMaterial({ color: 0x2f3540 });
   const gatePost = new THREE.MeshLambertMaterial({ color: 0x6d5a46 });
+  // THE FORECOURT PALETTE. See the arrival note in the gate loop below.
+  const gateApron = new THREE.MeshLambertMaterial({ color: 0xbdb4a2 });
+  const gateTrim = new THREE.MeshLambertMaterial({ color: 0x8a7f6c });
+  const gatePlanter = new THREE.MeshLambertMaterial({ color: 0x7d6a52 });
+  const gateLeaf = new THREE.MeshLambertMaterial({ color: 0x4e7a45 });
   for (const e of (data.entrances || [])) {
     await YY();
     const [ex, ez] = e.p;
@@ -4240,6 +4245,50 @@ export async function buildTransit(world, data, Y = null) {
     const capg = new THREE.SphereGeometry(0.142, 10, 7, 0, Math.PI * 2, 0, Math.PI * 0.5);
     capg.translate(px, fy + 1.60, pz);
     merger.add(capg, guideShirt, bx, bz);
+    // ARRIVING SOMEWHERE SHOULD FEEL LIKE ARRIVING SOMEWHERE.
+    //
+    // The owner: "all the attractions we currently have must be like the full
+    // experience meaning ppl can walk to there and play the thing instead of
+    // only being able to teleport. It needs to make sense."
+    //
+    // A gate was two posts, a beam, a name and a guide. That is a SIGN. What
+    // makes a real entrance is the ground changing under your feet before you
+    // reach it — an apron of paving, a threshold, something flanking it. All 54
+    // get one, because 54 hand-authored forecourts is not a thing anyone will
+    // finish, and a rule applied everywhere is what makes the island feel of a
+    // piece.
+    //
+    // SAFETY FIRST, because this is furniture beside a mapped route and that is
+    // exactly the family that produced "i cant even move". The apron is FLAT —
+    // a slab at ground level is not a wall and cannot block anyone. Everything
+    // with height is placed only where __onRoad says the carriageway is not,
+    // and outside the gate's own opening, so the way through stays clear.
+    {
+      const apronW = HALF * 2 + 2.6, apronD = 6.2;
+      const ap = new THREE.BoxGeometry(apronW, 0.08, apronD);
+      ap.rotateY(yaw);
+      ap.translate(bx - fx * (apronD * 0.34), by + 0.04, bz - fz * (apronD * 0.34));
+      merger.add(ap, gateApron, bx, bz);
+      // a threshold band across the opening, so the gate reads as a doorway
+      const th = new THREE.BoxGeometry(apronW, 0.1, 0.55);
+      th.rotateY(yaw);
+      th.translate(bx, by + 0.06, bz);
+      merger.add(th, gateTrim, bx, bz);
+      // planters flanking, well outside the opening and never on a carriageway
+      for (const sgn of [-1, 1]) {
+        const qx = bx + Math.cos(yaw) * (HALF + 1.15) * sgn;
+        const qz = bz - Math.sin(yaw) * (HALF + 1.15) * sgn;
+        if (window.__onRoad && window.__onRoad(qx, qz, 0.8)) continue;
+        const qy = surfaceAt(qx, qz);
+        const tub = new THREE.BoxGeometry(1.05, 0.6, 1.05);
+        tub.rotateY(yaw);
+        tub.translate(qx, qy + 0.3, qz);
+        merger.add(tub, gatePlanter, bx, bz);
+        const bush = new THREE.IcosahedronGeometry(0.52, 1);
+        bush.translate(qx, qy + 0.92, qz);
+        merger.add(bush, gateLeaf, bx, bz);
+      }
+    }
     out.entrances = (out.entrances || 0) + 1;
   }
   if (data.entrances && data.entrances.length) await gateSigns.flushY(world, {}, Y);

@@ -6549,10 +6549,20 @@ function festiveWalkCanopy(api, b) {
 //
 // TWO THINGS FOLLOW. First, a thin element cannot be seated at the footing on
 // sloping ground — it needs its own local ground (api.groundAt at the piece's
-// own x,z) or enough thickness to clear the rise. Second, and worth checking
-// before trusting it, OLA BEACH CLUB HAS THIS BUG TODAY: its lowest mass is
-// 3.1m against an 8.36m rise, so five metres of it are underground on the high
-// side. It looks right from the sea and has never been rendered from the land.
+// own x,z) or enough thickness to clear the rise.
+//
+// Second, OLA BEACH CLUB HAD EXACTLY THIS FAULT and it is FIXED, same session:
+// its lowest mass was 3.1m against an 8.36m rise, so five metres of it stood
+// underground on the landward side. It looked right from the sea because that
+// is the only direction it had ever been rendered from. It now takes `lift`
+// from riseAbove() on every horizontal, and its external stair stands on its
+// OWN ground rather than the ring's minimum. Rendered from the land afterwards
+// to confirm — grey base, louvre band, deck rail, stair, all above ground.
+//
+// (An earlier draft of this note claimed the fault was that extrudeGeo and
+// api.footingY use DIFFERENT bases. That is wrong: while a building is being
+// built FOOT is set and both resolve to it. The fault was always what FOOT IS
+// — the minimum under the ring.)
 // A BEACH BAR IS AN OPEN PAVILION, NOT A BOX WITH A DOOR.
 //
 // The owner, 2026-08-05: "siloso beach the beach bars all like generics all can
