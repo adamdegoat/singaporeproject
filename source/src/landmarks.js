@@ -5,7 +5,7 @@
 // their real footprint, with the podium-and-tower arrangement each one has.
 // Architecture is approximated for silhouette; no brand marks are reproduced.
 import * as THREE from '../lib/three.module.js';
-import { rand, R } from './tex.js';
+import { rand, R, texPunched } from './tex.js';
 
 // Is this point inside a carriageway? Asked through the window rather than
 // imported from city.js, which already imports this module.
@@ -5515,6 +5515,28 @@ function nomadSingapore(api, b) {
 // FORM from the research, which is the division this file has always used.
 const VERDIGRIS = new THREE.MeshStandardMaterial({ color: 0x4e8f81, roughness: 0.52, metalness: 0.22 });
 const RWS_WALL = new THREE.MeshStandardMaterial({ color: 0xd9cdb4, roughness: 0.82 });
+// HOTEL MICHAEL AND CROCKFORDS HAVE WINDOWS, AND HAD NONE.
+//
+// RWS_WALL is a flat colour with no map, which is right for the Oceanarium's
+// blank aquarium shell and wrong for eleven storeys of hotel rooms: standing
+// on the Festive Walk side, Hotel Michael was a 172m blank taupe cliff with
+// vaults on top. Rendered 2026-08-06 once the trees in front of it came out —
+// the wall had always been blank, the forest had just been hiding it.
+//
+// The research is specific about both, and about what they are NOT:
+//   Hotel Michael  "a dense grid of small square punched windows in stacked
+//                   blocks", "projecting horizontal frames and ledges", and
+//                   explicitly "windows are small and square, NOT ribbon
+//                   glazing". The porthole reading in one 2026 source is
+//                   flagged UNCERTAIN there and is deliberately not built.
+//   Crockfords     "a regular grid of small punched windows between flat
+//                   pilaster strips"
+// texPunched is the family this project already uses for exactly that — plain
+// concrete with punched openings — so this is reaching for the existing
+// vocabulary rather than inventing a facade.
+const RWS_PUNCHED = new THREE.MeshStandardMaterial({
+  map: texPunched(0xd9cdb4), roughness: 0.82,
+});
 const RWS_FRAME = new THREE.MeshStandardMaterial({ color: 0x2f6b63, roughness: 0.6 });
 const COASTER_RED = new THREE.MeshStandardMaterial({ color: 0xb3241f, roughness: 0.5, metalness: 0.3 });
 const COASTER_GREY = new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.55, metalness: 0.35 });
@@ -5541,7 +5563,7 @@ function hotelMichael(api, b) {
   const ob = orientedBox(b.p);
   const g0 = api.footingY(b.p);
   const H = Math.max(8, b.h || 55);
-  api.world.add(api.extrude(b.p, H, RWS_WALL));
+  api.world.add(api.extrude(b.p, H, RWS_PUNCHED));
   // a shallow cornice band, the "regular, evenly spaced elements" reading
   api.merge(api.extrudeGeo(api.growM(b.p, 0.7), 0.5, H - 0.5), RWS_FRAME, ob.cx, ob.cz);
   const span = ob.halfLong * 2, rad = Math.min(ob.halfShort * 0.92, 9);
@@ -5568,7 +5590,7 @@ function crockfordsTower(api, b) {
   // the building is — not a smooth curtain-wall tube
   const drum = new THREE.CylinderGeometry(rad, rad * 1.04, H, 14);
   drum.translate(ob.bx, g0 + H / 2, ob.bz);
-  api.merge(drum, RWS_WALL, ob.cx, ob.cz);
+  api.merge(drum, RWS_PUNCHED, ob.cx, ob.cz);
   // the ribbed dome crown
   const dome = new THREE.SphereGeometry(rad * 1.02, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2);
   dome.translate(ob.bx, g0 + H, ob.bz);

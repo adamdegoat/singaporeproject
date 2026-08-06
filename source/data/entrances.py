@@ -63,13 +63,51 @@ LINES = [
     ("canopy flyer", "A suspended coaster over the lost world."),
     ("revenge of the mummy", "An indoor coaster in the dark."),
     ("puss in boots", "A family coaster over the roofs."),
-    ("crate adventure", "A boat ride through Madagascar."),
     ("wave house", "Standing waves for surfing, on Siloso Beach."),
     ("tanjong beach", "The quiet beach. The furthest one east."),
     ("palawan beach", "The family beach, with the suspension bridge."),
     ("siloso beach", "The busy beach: bars, volleyball and the beach walk."),
     ("cable car", "Two lines: across to HarbourFront, and along the island."),
     ("skyride", "The chairlift back up to the luge start."),
+
+    # THE SEVEN USS ZONES. Every one of these read "An attraction." until
+    # 2026-08-06, which is the line a player gets ON ARRIVAL — so walking into
+    # Sci-Fi City told you nothing about Sci-Fi City. The owner's standard:
+    # "USS needs to feel like USS when walking inside". Each line names only
+    # what is actually in that zone in our own data, so none of it is invented.
+    ("hollywood", "The entrance boulevard, and the way back out."),
+    ("new york", "Street sets and a soundstage, dressed as New York."),
+    ("sci-fi city", "Battlestar Galactica and TRANSFORMERS are both here."),
+    ("ancient egypt", "Revenge of the Mummy and Treasure Hunters."),
+    ("the lost world", "Dinosaurs, the rapids ride and the WaterWorld arena."),
+    ("far far away", "The castle on the hill, with two family coasters."),
+    ("minion land", "Opened 2025, on the old Madagascar site."),
+
+    # THE LUGE TRAILS. Five of them said "A luge run." and nothing else.
+    ("luge dragon", "The longest luge trail. The SkyRide takes you back up."),
+    ("luge expedition", "A luge trail down toward the beach."),
+    ("luge jungle", "The luge trail through the trees."),
+    ("luge kupu", "A luge trail down toward the beach."),
+    ("megazip", "MegaZip runs 450m from Imbiah Hill to the island off the beach."),
+
+    # ADVENTURE COVE, whose slides all read "An attraction."
+    ("riptide rocket", "A water coaster: it goes uphill as well as down."),
+    ("dueling racer", "Two mat slides, side by side."),
+    ("tidal twister", "Two of Adventure Cove's slides."),
+    ("whirlpool", "A slide that drops into a bowl."),
+    ("big bucket", "The tipping bucket, in the shallow end."),
+    ("wet maze", "The water-jet maze at Adventure Cove."),
+
+    # ...and the rest of the island's generics
+    ("accelerator", "The spinning ride in Sci-Fi City."),
+    ("dino-soarin", "A gentle flying ride in The Lost World."),
+    ("treasure hunters", "A drive-yourself jeep ride through Ancient Egypt."),
+    ("4d adventureland", "4D films and simulator rides."),
+    ("scentopia", "Make your own scent, on Siloso Beach."),
+    ("trickeye", "Optical illusions you stand inside."),
+    ("imbiah bunkers", "Wartime bunkers, dug into Imbiah."),
+    ("dragon's teeth gate", "Looks out over the strait, where Long Ya Men stood."),
+    ("southern ridges", "The mainland ridge walk, across the water."),
 ]
 DEFAULT_LINE = {
     "theme_park": "A theme park.",
