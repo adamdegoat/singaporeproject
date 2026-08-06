@@ -1051,6 +1051,62 @@ export function texFace() {
 //
 // Openings are few and large because that is what a villa and a beach bar
 // have; a curtain-wall grid here would read as an office block.
+// A SHOW BUILDING IS A PAINTED SHED, AND IT WAS WEARING A VILLA'S WINDOWS.
+//
+// texRender below is a 6x5 opening grid, and its own comment says what it was
+// sized for: "261 villas, 126 heritage, 877 small beach buildings". Universal's
+// show buildings were routed to renderMat LATER and silently inherited it —
+// so Revenge of the Mummy, a 6,145 m2 windowless ride shed, came out as a
+// cream office block with two rows of windows, in the most recognisable place
+// on the island. That is the "office park" reading the show-building pass was
+// written to remove, surviving inside the fix for it.
+//
+// The previous attempt at this went the other way — a flat colour with no map
+// at all — and was rejected, correctly, as "a blockout box". So this is not
+// that: a real ride building has panel joints, a plinth, roof plant and
+// service doors, and nothing else. Not blank, not fenestrated.
+export function texRenderShow() {
+  const r2 = rng(0x73686f77), rand = (a, b) => a + r2() * (b - a);
+  const S = 256, [c, x] = cvs(S);
+  x.fillStyle = '#ffffff'; x.fillRect(0, 0, S, S);
+  // PANEL JOINTS, the vertical rhythm a big clad shed actually has. Drawn on
+  // white for the same reason texRender is: white x tint IS the tint, so the
+  // zone colours keep working through the multiply.
+  const bays = 8;
+  for (let i = 1; i < bays; i++) {
+    x.fillStyle = 'rgba(150,146,138,0.22)';
+    x.fillRect(Math.round((i * S) / bays), 0, 1, S);
+  }
+  // two horizontal seams, high, where a shed's cladding changes course
+  for (const fy of [0.30, 0.58]) {
+    x.fillStyle = 'rgba(150,146,138,0.20)';
+    x.fillRect(0, Math.round(S * fy), S, 1);
+  }
+  // a plinth: the dark base course every show building has where the paint
+  // stops and the service level begins
+  x.fillStyle = 'rgba(120,116,108,0.28)';
+  x.fillRect(0, Math.round(S * 0.92), S, Math.round(S * 0.08));
+  // SERVICE DOORS, not windows — the only openings on a ride shed, at ground
+  // level, wide and few. This is what keeps it from reading as a blockout box.
+  for (const bx of [1, 4, 6]) {
+    const w = S / bays * 0.44, px = (bx * S) / bays + (S / bays - w) / 2;
+    const h = S * 0.055, py = S * 0.92 - h;
+    x.fillStyle = '#4a5158';
+    x.fillRect(px, py, w, h);
+    x.strokeStyle = 'rgba(255,255,255,0.85)';
+    x.lineWidth = 1.2;
+    x.strokeRect(px, py, w, h);
+  }
+  // the faintest dirt, same as texRender — a flat white wall is not flat
+  for (let i = 0; i < 420; i++) {
+    x.fillStyle = `rgba(214,210,202,${rand(0.05, 0.16)})`;
+    x.fillRect(rand(0, S), rand(0, S), rand(1, 3), rand(1, 2));
+  }
+  // [1,1], for the reason texRender's tail spells out: the facade UVs are not
+  // metres, and scaling this finer drops the detail below a pixel.
+  return finish(c, [1, 1]);
+}
+
 export function texRender(shutter = false) {
   const r2 = rng(0x726e6472 ^ (shutter ? 1 : 0)), rand = (a, b) => a + r2() * (b - a);
   const S = 256, [c, x] = cvs(S);

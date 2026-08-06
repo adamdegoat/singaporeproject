@@ -2,7 +2,7 @@
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
 import { TOUCH } from './input.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng } from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng } from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV,
          constructionSite } from './landmarks.js';
 
@@ -37,6 +37,8 @@ const BALCONY = [texBalcony(0xc6bda9), texBalcony(0xada596)];
 // for the villas and the Cove, and a greener shutter for the garrison stock.
 const RENDER_TEX = texRender(false);
 const RENDER_TEX_SHUTTER = texRender(true);
+// a painted ride shed: panel joints, plinth, service doors, no window grid
+const RENDER_TEX_SHOW = texRenderShow();
 // WHAT A BUILDING IS MADE OF, FROM THE MAP.
 //
 // This used to hash the footprint and pick a family from the remainder, which is
@@ -1694,8 +1696,8 @@ function grow(pts, f) {
 // with no masonry pattern on them at all, and every textured pool in this file
 // puts one there.
 const _RENDER = new Map();
-function renderMat(hex, shutter = false) {
-  const key = hex + (shutter ? '|s' : '');
+function renderMat(hex, shutter = false, show = false) {
+  const key = hex + (shutter ? '|s' : '') + (show ? '|w' : '');
   let m = _RENDER.get(key);
   if (!m) {
     // A WALL WITH NOTHING ON IT IS A BLOCKOUT BOX. This returned a flat colour
@@ -1705,7 +1707,8 @@ function renderMat(hex, shutter = false) {
     // tint, and the openings stay dark through the same multiply. That is the
     // failure the previous stone-map attempts hit, designed out.
     m = new THREE.MeshStandardMaterial({
-      map: shutter ? RENDER_TEX_SHUTTER : RENDER_TEX, roughness: 0.9,
+      map: show ? RENDER_TEX_SHOW : shutter ? RENDER_TEX_SHUTTER : RENDER_TEX,
+      roughness: 0.9,
     });
     m.color = new THREE.Color(hex);
     _RENDER.set(key, m);
@@ -2584,7 +2587,7 @@ export async function buildBuildings(world, data, Y = null) {
         || [0xd8cbb6, 0xcdb79c, 0xc9c3b2, 0xd9c3a8, 0xc2b6a4][Math.abs(_sh) % 5];
     }
     const mat = b.col ? tintedMat(wallTex, fam.rough, fam.metal, b.col)
-      : _isShow ? renderMat(_showTint)
+      : _isShow ? renderMat(_showTint, false, true)
       : _isVilla ? renderMat(_coveTint)
       : _isHeritage ? renderMat(0xf4efe4, true)
       : _isSmallBeach ? renderMat(_beachTint)
