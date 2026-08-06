@@ -127,6 +127,49 @@ DEFAULT_LINE = {
 # things that are scenery, not places you enter
 SKIP = {"artwork", "cannon", "bench", "picnic_table", "building", "city_gate"}
 
+# HOW TO RIDE IT — the second line, and the gap this file was written with.
+#
+# The owner, 2026-08-06: "walk into the attraction like really got entrance and
+# got avatar guide on how to play and all. U know like real places ya the
+# experience." The lines above tell you WHERE YOU ARE. For something you can
+# actually get on, that is half a guide.
+#
+# EVERY LINE HERE IS READ OFF src/rides.js AND NOTHING ELSE. Not off what the
+# real ride does, and not off what this world intends to build — the 2026-08-06
+# session found three features that were described in a comment and never once
+# executed (the cable-car platform remap, the monorail station pins, the mask
+# dilation in terrain.js), so a guide describing a ride the code does not
+# implement is the same class of lie as a label with nothing under it. What the
+# code does today:
+#
+#   * you board by standing near it and pressing Ride (the mode button, or E)
+#   * the carrier runs the path on its own; there is no steering on any ride
+#   * at the end it puts you down on the ground under the carrier
+#   * `boards` is [{s:0}] for the luge, MegaZip and both waves — ONE WAY, from
+#     one end only — and the cable car and SkyRide carry a stop at each station
+#
+# What is deliberately NOT said, because the code does not do it: that you can
+# choose a direction from an intermediate station (boarding anywhere past the
+# start always runs back toward the start), and that you can come off a wave
+# and get back on. Both would be reasonable to build; neither is built.
+RIDE_LINES = [
+    ("cable car", "Climb to the platform first, then press Ride."),
+    ("skyride", "Press Ride at either end and the chair carries you."),
+    ("luge", "Press Ride at the top. The cart runs the trail down on its own."),
+    ("mega adventure", "Press Ride at the tower. One way, out over the beach."),
+    ("megazip", "Press Ride at the tower. One way, out over the beach."),
+    ("surf cove", "Two lanes on the sheet, so take one each. Press Ride on the deck."),
+    ("wave house", "Two lanes on the sheet, so take one each. Press Ride on the deck."),
+]
+
+
+def ride_line(name):
+    low = (name or "").lower()
+    for (needle, txt) in RIDE_LINES:
+        if needle in low:
+            return txt
+    return ""
+
 
 def line_for(name, kind):
     low = (name or "").lower()
@@ -168,8 +211,42 @@ def main():
     for i, (x, y, w) in enumerate(approach):
         grid.setdefault((int(x // cell), int(y // cell)), []).append(i)
 
+    # THE CABLE-CAR STATIONS ARE PLACES YOU ARRIVE AT, AND THEY WERE NOT IN THE
+    # LIST. This loop read `attractions` and nothing else, and the five stations
+    # live in `cableway.stations` — so the island's signature ride had no gate,
+    # no forecourt and nobody to tell you how to get on it. Exactly the shape of
+    # the teleport-list bug found on 2026-08-06 ("cable-car stations were never
+    # a pin SOURCE"): one more layer holding places, and one loop that has never
+    # heard of it.
+    #
+    # They are ADDED to the sources rather than copied into `attractions`,
+    # because a station is not an attraction and the rest of the pipeline is
+    # entitled to keep telling them apart.
+    sources = list(d.get("attractions") or [])
+    cw = d.get("cableway") or {}
+    for st in (cw.get("stations") or []):
+        if not (st.get("n") and st.get("p")):
+            continue
+        # WHICH LINE IT IS ON COMES OUT OF THE WIRE, not out of a table someone
+        # has to keep. The substring guide lines would otherwise answer for it —
+        # "Sensoryscape" matched the GARDEN WALK and told a passenger standing
+        # on a cable-car platform about 350 m of planting.
+        sx, sz = st["p"]
+        on = []
+        for ln in (cw.get("lines") or []):
+            if ln.get("k") != "gondola" or not ln.get("p"):
+                continue
+            near = min(math.hypot(q[0] - sx, q[1] - sz) for q in ln["p"])
+            if near < 60 and ln.get("n") and ln["n"] not in on:
+                on.append(ln["n"])
+        sources.append({
+            "n": f"{st['n']} Cable Car", "k": "attraction", "p": st["p"],
+            "t": ("A station on the " + " and the ".join(on) + ".") if on
+                 else "A cable car station.",
+        })
+
     seen, out = set(), []
-    for at in (d.get("attractions") or []):
+    for at in sources:
         name = at.get("n")
         kind = at.get("k")
         if not name or kind in SKIP:
@@ -210,15 +287,26 @@ def main():
             # the board and the guide all face back down it
             "f": [round(vx / L, 3), round(vy / L, 3)],
             "d": round(dd, 1),
-            "t": line_for(name, kind),
+            # THE ATTRACTION'S OWN LINE WINS. Deciding what a thing IS belongs
+            # to the data layer — the same argument that retagged the Taste
+            # Garden rather than special-casing it in the renderer. Surf Cove
+            # is the case: data/wavehouse.py writes a line about its two waves
+            # and the substring table here was overwriting it with the older,
+            # vaguer "Standing waves for surfing, on Siloso Beach."
+            "t": (at.get("t") or "").strip() or line_for(name, kind),
             "w": 1 if walkable else 0,
         })
+        r = ride_line(name)
+        if r:
+            out[-1]["r"] = r
 
     out.sort(key=lambda o: o["n"])
     d["entrances"] = out
     withline = sum(1 for o in out if o["t"])
+    withride = sum(1 for o in out if o.get("r"))
     print(f"== entrances {a.id}")
-    print(f"   {len(out)} attraction entrance(s); {withline} with a guide line")
+    print(f"   {len(out)} attraction entrance(s); {withline} with a guide line, "
+          f"{withride} with a how-to-ride line")
     for o in out[:12]:
         print(f"     {o['d']:5.0f} m  {'walk' if o['w'] else 'road'}  {o['n'][:34]:<34} "
               f"{o['t'][:44]}")

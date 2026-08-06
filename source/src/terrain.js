@@ -271,6 +271,59 @@ export class Terrain {
     // heightfield has no data and clamps to its edge values. The island's own
     // coastline says which is which.
     if (y > 1.2 && this.onIsland(x, z)) return y;
+    // THE SEA IS SHELVED INTO, NOT STEPPED OFF. This is the owner's "all the
+    // coast touching water are jagged", and it was never a resolution problem.
+    //
+    // Everything above is a BINARY: keep the land height, or drop to the bed.
+    // So the drawn skin fell off a cliff at whatever contour the guard happened
+    // to cut — 1.2 m — and the waterline was that vertical face chopped into
+    // mesh triangles, which is a staircase from any distance. Measured on a
+    // transect walking off Siloso Beach into the strait:
+    //
+    //     ground at()   1.12  0.90  0.71  0.54  0.38  0.25  0.14  0.05  0.00
+    //     DRAWN        -1.75 -1.75 -1.75 -1.75 -1.75 -1.75 -1.75 -1.75 -1.75
+    //
+    // The LAND DATA IS A SMOOTH RAMP over sixty metres and every metre of it
+    // was being drawn as seabed. Subdividing the mesh finer only ever made the
+    // teeth smaller; it could not remove them, because two neighbouring
+    // vertices three metres apart in height cannot meet the water smoothly.
+    //
+    // So ease the last 1.2 m into the bed instead. Smoothstep, so it is C1 at
+    // BOTH ends — it leaves the guard's y exactly where the guard left it, and
+    // arrives at the bed flat rather than kinking. The waterline then falls on
+    // a contour of a smooth surface and is as smooth as that surface is.
+    //
+    // AT SEA LEVEL ONLY (`bed < 0.2`). An inland pool or a river wants the
+    // opposite — this file's own note above says the one-interval step "reads
+    // as a vertical quay wall, which is what the Singapore River actually
+    // has" — and their beds sit at their own local ground, well above zero. A
+    // beach shelves; a quay does not.
+    // THE BAND IS 0.5 TO 1.2 AND NOT 0 TO 1.2, AND THE REASON IS THE WALKER.
+    //
+    // What stops a person is `inWater` — the surveyed water POLYGON — and that
+    // has nothing to do with a height contour, so widening the shelf pushes the
+    // drawn water's edge seaward while the invisible wall stays put. Measured
+    // over the Siloso stretch with a 0-to-1.2 band: 19,568 m2 of newly visible
+    // shore that cannot be walked on, a strip about 13 m wide along 1.5 km.
+    // Half of that band buys nothing — the drop from the bed only becomes
+    // VISIBLE in its last few tenths — so the ramp is spent where it shows.
+    // The waterline lands about 6 m seaward of the wall instead of 13.
+    //
+    // The surface is smooth either way, because smoothness comes from the
+    // surface being CONTINUOUS, not from where it happens to cross sea level.
+    //
+    // ON THE ISLAND ONLY, and the golden frames are what said so. `groyne-islet`
+    // came back 4.35% changed while the other fifteen were pixel-identical: out
+    // in the strait the heightfield has flat shoals sitting at 0.5-1.2 m, and
+    // shelving them lifted two of them just clear of the sea as hard-edged tan
+    // plates floating at water level. A shelf is what a BEACH does. The same
+    // mask the guard above uses draws the line, so the two rules agree about
+    // what counts as the island.
+    const LOB = 0.5;
+    if (bed < 0.2 && y > LOB && y < 1.2 && this.onIsland(x, z)) {
+      const t = (y - LOB) / (1.2 - LOB);
+      return bed + t * t * (3 - 2 * t) * (y - bed);
+    }
     return Math.min(y, bed);
   }
 

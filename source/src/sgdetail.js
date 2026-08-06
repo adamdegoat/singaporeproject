@@ -3937,21 +3937,54 @@ export async function buildTransit(world, data, Y = null) {
   if (wh && wh.p) {
     await YY();
     const [wx, wz] = wh.p;
-    const ux7 = Math.sin(wh.a), uz7 = Math.cos(wh.a);      // along the beach walk
+    const ux7 = Math.sin(wh.a), uz7 = Math.cos(wh.a);      // along the shore
     const nx7 = -uz7, nz7 = ux7;                            // toward the sea
-    const gy7 = surfaceAt(wx, wz);
+    // A LEVEL DECK ON A BEACH SEATS ON THE HIGH GROUND AND SKIRTS TO THE LOW.
+    //
+    // This took `surfaceAt(centre)` and drew a level slab about it. When the
+    // venue was placed on a hillside that was ruinous — 21.9 m of ground under
+    // one end of the 46 m deck and 12.6 m under the other, so it was buried
+    // four metres at one end and floating five at the other. It is on the sand
+    // now and the beach still falls about 2.8 m across the deck, which is what
+    // a beach does. `ground` is measured by data/wavehouse.py over this exact
+    // footprint so the datum cannot disagree with the site test that accepted
+    // the site.
+    const gnd7 = wh.ground || [surfaceAt(wx, wz), surfaceAt(wx, wz)];
+    const gy7 = gnd7[1];                                    // the high side
+    const gLo7 = gnd7[0];                                   // and the low
     const deckMat = new THREE.MeshLambertMaterial({ color: 0xcfc7b6 });
     const terraceMat = new THREE.MeshLambertMaterial({ color: 0xbdb5a6 });
     // the sheet: composite vinyl under fast water, so it reads bright and wet
     const sheetMat = new THREE.MeshLambertMaterial({ color: 0x4fb4c9 });
     const barrelMat = new THREE.MeshLambertMaterial({ color: 0x3d95ad });
+    // aerated water: the crest of a sheet wave and the top of the barrel are
+    // white, not blue, and that is the whole difference between reading as
+    // water and reading as a painted mat
+    const foamMat = new THREE.MeshLambertMaterial({ color: 0xeef4f4 });
     const postMat = new THREE.MeshLambertMaterial({ color: 0xd8d3c8 });
     const roofMat = new THREE.MeshLambertMaterial({ color: 0xe4e0d5 });
     const put7 = (u, v) => [wx + ux7 * u + nx7 * v, wz + uz7 * u + nz7 * v];
+    // EVERY BOX HERE WAS A QUARTER-TURN OUT, AND IT WAS THE WHOLE VENUE.
+    //
+    // `put7` places a box's CENTRE in (along-shore, cross-shore) and every call
+    // below passes (w = along the shore, l = across it) — a 46 x 24 deck lying
+    // along the beach, a 46 x 2.2 terrace step, and so on. But rotateY(a) maps
+    // a BoxGeometry's local X to (cos a, -sin a), which is the CROSS-shore
+    // normal, and its local Z to the along-shore direction. So w and l came out
+    // swapped: the deck ran 46 m INTO THE SEA and 24 m along the beach, and the
+    // FlowRider sheet — correctly offset 12 m along the shore — landed hanging
+    // over the deck's edge, which is what a top-down render showed.
+    //
+    // rotateY(a - PI/2) maps local X to the along-shore direction and local Z
+    // to the seaward normal, which is what every call site already assumes.
+    // The centres were never wrong, so this moves no position — only the two
+    // dimensions of each box, which is why it survived being looked at from the
+    // ground twice.
+    const BOXA = wh.a - Math.PI / 2;
     const slab = (u, v, w, l, y, h, mat) => {
       const [px, pz] = put7(u, v);
       const g = new THREE.BoxGeometry(w, h, l);
-      g.rotateY(wh.a);
+      g.rotateY(BOXA);
       g.translate(px, y, pz);
       merger.add(g, mat, px, pz);
     };
@@ -3964,47 +3997,83 @@ export async function buildTransit(world, data, Y = null) {
     // as a warehouse lid over the beach (rendered, and obvious from the air).
     // The flow deck is the part with water on it: the two waves plus standing
     // room, which is about 46 x 24m.
-    const FW = Math.min(wh.w * 0.42, 46), FD = Math.min(wh.d * 0.46, 24);
-    slab(0, 0, FW, FD, gy7 + 0.55, 1.1, deckMat);
+    const [DW7, DD7] = wh.deck || [46, 24];
+    const FW = Math.min(wh.w * 0.42, DW7), FD = Math.min(wh.d * 0.46, DD7);
+    // ...and the deck is that plinth, not a floating tray: its top is level at
+    // gy7 + 1.1 and its base runs down past the lowest ground under it, so the
+    // seaward edge is a wall standing in the sand rather than a slab with a
+    // gap under it.
+    const topY7 = gy7 + 1.1, botY7 = gLo7 - 0.5;
+    slab(0, 0, FW, FD, (topY7 + botY7) / 2, topY7 - botY7, deckMat);
     // THE DOUBLE FLOWRIDER: one wide sheet, two riders abreast. Published as a
     // non-curling endless sheet, so it is FLAT and raked, not a barrel.
     const [rw, rl] = wh.rider;
     slab(-FW * 0.26, 0, rw, rl, gy7 + 1.16, 0.22, sheetMat);
-    // the rake: the sheet climbs away from the rider, which is the shape that
-    // holds them on it
+    // THE RAKE, AND THE THING THAT MAKES IT READ AS WATER RATHER THAN AS A MAT.
+    //
+    // The sheet climbs away from the rider — that curve is what holds them on
+    // it. Drawn as five treads it read as five steps, because five equal steps
+    // ARE a stair: the pitch has to open up as it climbs, and the top of it has
+    // to break white. On a sheet wave the whole crest is aerated, which is why
+    // the published description is "much like a trampoline" and why every
+    // photograph of one is a blue face under a white lip.
     for (let k = 0; k < 5; k++) {
+      const t = (k + 1) / 5;
       slab(-FW * 0.26, rl * 0.30 + k * 1.4, rw, 1.5,
-           gy7 + 1.22 + k * 0.34, 0.22, sheetMat);
+           gy7 + 1.20 + t * t * 1.9, 0.22, k >= 3 ? foamMat : sheetMat);
+    }
+    // the crest: a broken white lip along the top, and it is what you look at
+    slab(-FW * 0.26, rl * 0.30 + 4 * 1.4 + 0.8, rw, 0.9, gy7 + 3.25, 0.34, foamMat);
+    // and the spray the riders throw, as three streaks down the face
+    for (let k = -1; k <= 1; k++) {
+      slab(-FW * 0.26 + k * rw * 0.29, rl * 0.06, 0.5, rl * 0.5,
+           gy7 + 1.30, 0.06, foamMat);
     }
     // THE FLOWBARREL: 10 ft, and the only one in Asia with the FlowRider
     // beside it. A curling wall, so it is built as a quarter-pipe of rings
     // rather than as a flat sheet.
+    //
+    // The rings were 0.5 m tall at 0.5 m spacing, so the wall was a FAN OF
+    // SLATS with daylight between every pair of them — a louvre, not water.
+    // They overlap now, the radius pulls in harder as it climbs so the top
+    // OVERHANGS the base (that overhang is what "it barrels" means), and the
+    // last one breaks white like the sheet's crest does.
     const br = wh.barrel;
-    for (let k = 0; k < 7; k++) {
-      const t = k / 6;
-      const rr = br * (1 - 0.12 * t);
-      const ring = new THREE.CylinderGeometry(rr, rr, 0.5, 18, 1, true,
+    for (let k = 0; k < 9; k++) {
+      const t = k / 8;
+      const rr = br * (1 - 0.30 * t * t);
+      const ring = new THREE.CylinderGeometry(rr, rr, 0.62, 18, 1, true,
                                               Math.PI * 0.15, Math.PI * 0.9);
       const [px, pz] = put7(FW * 0.30, 0);
-      ring.rotateY(wh.a);
-      ring.translate(px, gy7 + 1.2 + t * 3.0, pz);
-      merger.add(ring, barrelMat, px, pz);
+      ring.rotateY(BOXA);
+      ring.translate(px, gy7 + 1.2 + t * 3.05, pz);
+      merger.add(ring, k === 8 ? foamMat : barrelMat, px, pz);
     }
-    // SPECTATOR TERRACING on the walk side — three steps looking down into the
-    // waves. This is what makes it a venue rather than a pool.
+    // SPECTATOR TERRACING on the landward side — three steps looking down into
+    // the waves. This is what makes it a venue rather than a pool. Each step
+    // is carried down to ITS OWN ground: on a beach that falls across the site
+    // a 0.45 m tread either floats or buries, and which one it does changes
+    // along the row.
     for (let k = 0; k < 3; k++) {
-      slab(0, -FD * 0.56 - k * 2.2, FW, 2.2,
-           gy7 + 0.55 + k * 0.45, 0.45, terraceMat);
+      const v = -FD * 0.56 - k * 2.2;
+      const [tx, tz] = put7(0, v);
+      const top = gy7 + 0.55 + k * 0.45;
+      const bot = Math.min(groundAt(tx, tz), top - 0.45) - 0.3;
+      slab(0, v, FW, 2.2, (top + bot) / 2, top - bot, terraceMat);
     }
     // THE ROOF, on posts, over the whole flow deck. Kept clear of the walk so
-    // it cannot roof a mapped route.
+    // it cannot roof a mapped route. Each post stands on the ground it is
+    // actually over — four posts of one length across a beach is three posts
+    // and one stilt.
     let posts = 0;
     for (const su of [-0.42, 0.42]) {
       for (const sv of [-0.26, 0.26]) {
         const [px, pz] = put7(FW * su * 1.15, FD * sv * 1.6);
         if (window.__onRoad && window.__onRoad(px, pz, 0)) continue;
-        const post = new THREE.CylinderGeometry(0.28, 0.32, 7.4, 8);
-        post.translate(px, gy7 + 3.7, pz);
+        const foot = Math.min(groundAt(px, pz), gy7) - 0.2;
+        const hgt = (gy7 + 7.4) - foot;
+        const post = new THREE.CylinderGeometry(0.28, 0.32, hgt, 8);
+        post.translate(px, foot + hgt / 2, pz);
         merger.add(post, postMat, px, pz);
         posts++;
       }

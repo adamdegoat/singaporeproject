@@ -63,6 +63,22 @@ const SPOTS = [
   // the south gate, looking back up the walk — same reason as the line above,
   // and it is the first thing a player coming up from Beach Station sees
   ['glow-garden', -1707, 12698, 2.80],
+  // NO FRAME COULD SEE THE WATERLINE, and the owner is the one who found that.
+  //
+  // 2026-08-06: "all the coast touching water are jagged?" — and he was right,
+  // and it had been that way for as long as the island had existed. The drawn
+  // skin fell off a 3 m cliff at the 1.2 m contour, so the sea met the land in
+  // a staircase of mesh triangles. Fixing it changed the look of every coast
+  // on the island and ALL SIXTEEN FRAMES ABOVE STAYED AT 0.000%: every one of
+  // them is a ground-level view pointed inland or along the shore, and not one
+  // of them has the water's edge in it.
+  //
+  // Third time this argument has been written in this file (beachwalk-grade,
+  // sensory-vessels, and now this), so it is worth stating as a rule: A GOLDEN
+  // SET IS ONLY AS GOOD AS WHAT ITS CAMERAS CAN SEE, and "all frames passed"
+  // means nothing about a thing none of them is looking at. This one stands on
+  // Siloso and looks down the waterline, which is where the staircase was.
+  ['waterline', -2240, 12455, -1.05],
 ];
 
 mkdirSync(ACT, { recursive: true });

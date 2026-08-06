@@ -56,8 +56,12 @@ const HANG = { gondola: 1.6, chair_lift: 0.9 };
 // the camera 0.55 ABOVE the carrier, which on a gondola is above the roof: you
 // rode the cable car sitting on top of the cabin. The cabin body hangs from
 // -2.2 to 0 under the attach point, so an occupant's eyeline is about -1.05.
+// A FLOW RIDER STANDS UP. Every other seat here is something you sit in, so
+// its eye is measured off the carrier; on a board the eye is a standing head
+// above your own feet, which is why these two are the largest numbers in the
+// table and not a mistake.
 export const EYE = { gondola: -1.05, chair_lift: -0.45, luge: 0.85, zip: -0.55,
-                     flowrider: 1.25, flowbarrel: 1.25 };
+                     flowrider: 1.55, flowbarrel: 1.55 };
 // board within this of an end
 export const BOARD_REACH = 14.0;
 
@@ -144,10 +148,20 @@ export function buildRides(THREE, data, world, surfaceAt) {
       const [wx, wz] = wh.p;
       const ux = Math.sin(wh.a), uz = Math.cos(wh.a);
       const nx = -uz, nz = ux;
-      const gy = surfaceAt(wx, wz);
+      // THE DECK'S DATUM COMES FROM THE DATA, NOT FROM A SAMPLE HERE.
+      //
+      // This read `surfaceAt(wx, wz)` — the surface at the venue centre — and
+      // that is circular: sgdetail.js has already BUILT the deck by the time
+      // this runs, so on a good day it returns the deck top and on a bad one
+      // the ground beside it. The deck is a level stage seated on the HIGHEST
+      // ground under itself; data/wavehouse.py measures that ground and writes
+      // it, so both files take the same number from the same place.
+      const gnd = wh.ground || [surfaceAt(wx, wz), surfaceAt(wx, wz)];
+      const gy = gnd[1];
       const put = (u, v) => ({ x: wx + ux * u + nx * v, z: wz + uz * u + nz * v });
       const [rw, rl] = wh.rider || [12, 18];
-      const FW = Math.min(wh.w * 0.42, 46);
+      const [DW] = wh.deck || [46, 24];
+      const FW = Math.min(wh.w * 0.42, DW);
       // TWO LANES, abreast, on the one sheet — this is the Double.
       for (const lane of [-1, 1]) {
         const u0 = -FW * 0.26 + lane * (rw * 0.26);
@@ -155,7 +169,10 @@ export function buildRides(THREE, data, world, surfaceAt) {
         // the carve: across the sheet and back, at the height of the deck
         for (const v of [-rl * 0.30, 0, rl * 0.30, 0, -rl * 0.30]) {
           const q = put(u0 + v * 0.18, v);
-          pts.push({ x: q.x, z: q.z, y: gy + 1.5 });
+          // ON the sheet: the deck top is gy+1.1 and the vinyl slab on it
+          // reaches gy+1.27, so this is a rider standing on the water, not
+          // wading through the stage.
+          pts.push({ x: q.x, z: q.z, y: gy + 1.35 });
         }
         const len = arcLength(pts);
         if (len < 4) continue;
@@ -286,6 +303,23 @@ export function buildRides(THREE, data, world, surfaceAt) {
         new THREE.MeshLambertMaterial({ color: 0xd8b44a }));
       strap.position.y = -0.6;
       g.add(bar, strap);
+    } else if (kind === 'flowrider' || kind === 'flowbarrel') {
+      // A FLOWBOARD, NOT A CART. Both flow kinds were falling through to the
+      // luge carrier below — a yellow shell with a black nose cone — so riding
+      // a standing wave put you in a toboggan. It is the same failure this
+      // world keeps finding: the generic form of the tag standing in for the
+      // thing. A flowboard is a short thick board you stand on, and you can
+      // see your own feet on it, so it is drawn UNDER the eye rather than
+      // around it.
+      const board = new THREE.Mesh(
+        new THREE.BoxGeometry(0.62, 0.09, 1.28),
+        new THREE.MeshLambertMaterial({ color: 0xe8e3d6 }));
+      board.position.y = -0.05;
+      const stripe = new THREE.Mesh(
+        new THREE.BoxGeometry(0.20, 0.10, 1.16),
+        new THREE.MeshLambertMaterial({ color: 0x2f7f96 }));
+      stripe.position.y = -0.04;
+      g.add(board, stripe);
     } else {
       const shell = new THREE.Mesh(
         new THREE.BoxGeometry(0.78, 0.34, 1.5),

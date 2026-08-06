@@ -1588,6 +1588,12 @@ function updateGuide(x, z, now) {
   if (!best) { el.classList.remove('on'); return; }
   nm.textContent = best.n;
   tx.textContent = best.t || '';
+  // AND HOW TO GET ON IT, when it is something you can get on. The guide used
+  // to say only where you were standing, which for a ride is half a guide —
+  // see the RIDE_LINES note in data/entrances.py for why every one of these is
+  // read off src/rides.js rather than off the real ride.
+  const hw = document.getElementById('guideHow');
+  if (hw) { hw.textContent = best.r || ''; hw.style.display = best.r ? '' : 'none'; }
   el.classList.add('on');
 }
 // The room server (see relay/); ?relay= overrides for local testing against
