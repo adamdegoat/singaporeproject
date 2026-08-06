@@ -60,6 +60,9 @@ const SPOTS = [
   // 'sensoryscape' spot looks down the AVENUE, 200m short of the first one.
   // Same argument, and the same wording, as beachwalk-grade directly above.
   ['sensory-vessels', -1629, 12541, -0.53],
+  // the south gate, looking back up the walk — same reason as the line above,
+  // and it is the first thing a player coming up from Beach Station sees
+  ['glow-garden', -1707, 12698, 2.80],
 ];
 
 mkdirSync(ACT, { recursive: true });

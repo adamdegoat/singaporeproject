@@ -235,6 +235,47 @@ def main():
                "which gardens carry one are authored (not published)",
     }
 
+    # PALATE PLAYGROUND IS NOT A PLAYGROUND, AND WE HAD IT ALL ALONG.
+    #
+    # This file printed "5 of 6 gardens mapped" for weeks and the sixth was
+    # written off as missing from the data. It is not missing. It is in
+    # `parkfurn` as k='playground', named, 4m from its published position,
+    # carrying a real measured radius of 14.0m (the other playgrounds on the
+    # island carry 10.8 and 11.4, so this is a number off our own polygon and
+    # not a default). It was never missing — it was in a LAYER THIS FILE DOES
+    # NOT READ, and "not found" was a statement about the search, not the data.
+    # That is the fifth time in this project that "no data exists" has been
+    # false, and the count is in data/attractions.py's header.
+    #
+    # And because the tag said playground, the renderer gave the TASTE GARDEN
+    # OF THE SENSORYSCAPE a swing frame, a crossbar and a slide.
+    #
+    # Same shape as every other bug today: a proxy stands in for the fact and
+    # the proxy is wrong. `building` made a cable-car station an office block;
+    # `leisure=playground` makes an edible garden a climbing frame. OSM's tag
+    # is not wrong — there is no better tag for it — but it is a tag about
+    # LAND USE and the renderer read it as a statement about FURNITURE.
+    #
+    # PUBLISHED (research/rws-architecture.md 4.3): "PALATE PLAYGROUND (taste).
+    # Not a vessel. An amoeba-shaped paved pocket EAST of the spine, 47 x 34 m
+    # DERIVED. Edible and aromatic planting; log seats cut from recycled
+    # Tembusu trees felled on the island — warm brown timber rounds on pale
+    # paving." At night an interactive floor projection reacts to footfall.
+    #
+    # The kind is retagged HERE rather than special-cased by name in the
+    # renderer, because the data layer's job is to say what a thing IS and the
+    # renderer's is to say how it looks. `r` is left exactly as fetched.
+    palate = 0
+    for f in (d.get("parkfurn") or []):
+        if str(f.get("n") or "").strip() == "Palate Playground":
+            f["k"] = "taste_garden"
+            # the published 47 x 34 bbox is a 1.38:1 proportion. Our own
+            # measured r stays the SIZE; the published figure supplies only the
+            # SHAPE, so the two sources are each used for what they actually
+            # know and neither is overridden by the other.
+            f["ar"] = 1.38
+            palate += 1
+
     # ...and it is not a 27m building.
     fixed = 0
     for b in (d.get("buildings") or []):
@@ -247,12 +288,25 @@ def main():
                 fixed += 1
 
     print(f"== sensoryscape {a.id}")
-    print(f"   {len(have)} of 6 gardens mapped: {', '.join(have)}")
+    # "5 of 6" was printed here for weeks and read as "one garden is missing
+    # from the data". It never was. The sixth is Palate Playground, which is in
+    # `parkfurn` and not on the spine (it is a pocket EAST of the walk), so it
+    # is correctly absent from `have` — `have` is the SPINE, not the garden
+    # count. Saying which is which stops the next person re-deriving it.
+    print(f"   {len(have)} gardens on the spine: {', '.join(have)}")
+    print(f"   6th is Palate Playground, off-spine in parkfurn "
+          f"({'retagged' if palate else 'NOT FOUND — check the parkfurn layer'})")
     print(f"   spine {run:.0f} m (published connector is 350 m, continuing into RWS)")
     print(f"   {len(vessels)} diagrid vessel(s) at: {', '.join(v['n'] for v in vessels)}")
     if fixed:
         print(f"   and the Sensoryscape 'building' dropped from a 27.2m block to 6m "
               f"— it is a landscape, not a tower")
+    if palate:
+        print(f"   Palate Playground retagged taste_garden — it is the sixth "
+              f"garden, it was in parkfurn all along, and it had a slide")
+    if glow:
+        print(f"   Glow Garden: {glow['stalks']} stalks a side, "
+              f"{glow['lo']:.0f}-{glow['hi']:.0f} m arcs (authored off published ranges)")
     if a.dry_run:
         print("   dry run — nothing written")
         return

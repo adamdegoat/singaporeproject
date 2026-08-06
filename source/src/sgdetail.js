@@ -2852,6 +2852,64 @@ export async function buildWalkable(world, data, Y = null) {
       slide.rotateX(-0.5);
       slide.translate(px, y + 0.85, pz + R * 0.45);
       merger.add(slide, MAT.metal, px, pz);
+    } else if (f.k === 'taste_garden') {
+      // PALATE PLAYGROUND — the sixth Sensoryscape garden, and it had a slide.
+      //
+      // OSM tags it leisure=playground, so it drew the generic frame-and-slide
+      // above. It is the TASTE garden: "an amoeba-shaped paved pocket east of
+      // the spine, edible and aromatic planting; log seats cut from recycled
+      // Tembusu trees felled on the island — warm brown timber rounds on pale
+      // paving" (research/rws-architecture.md 4.3). Retagged in
+      // data/sensoryscape.py, which is where a decision about WHAT A THING IS
+      // belongs; this is only about how it looks.
+      //
+      // Size is our own measured r; the published 47 x 34 supplies only the
+      // 1.38:1 proportion. The amoeba wobble is a position hash, never a draw
+      // from the placement stream — a cosmetic choice must not be able to move
+      // a bus stop.
+      const R0 = Math.max(4, r || 12);
+      const ar = f.ar || 1.3;
+      const arx = R0 * Math.sqrt(ar), arz = R0 / Math.sqrt(ar);
+      const wob = (t) => 1 + 0.10 * Math.sin(3 * t + px * 0.07) + 0.06 * Math.sin(5 * t + pz * 0.05);
+      const SEG = 26;
+      const pave = PF.stone;
+      for (let k = 0; k < SEG; k++) {
+        const t0 = (k / SEG) * Math.PI * 2, t1 = ((k + 1) / SEG) * Math.PI * 2;
+        const ax = px + Math.cos(t0) * arx * wob(t0), az = pz + Math.sin(t0) * arz * wob(t0);
+        const bx5 = px + Math.cos(t1) * arx * wob(t1), bz5 = pz + Math.sin(t1) * arz * wob(t1);
+        const yy = (x, z) => surfaceAt(x, z) + 0.03;
+        const g5 = new THREE.BufferGeometry();
+        g5.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+          px, yy(px, pz), pz, bx5, yy(bx5, bz5), bz5, ax, yy(ax, az), az,
+        ]), 3));
+        g5.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([
+          0, 1, 0, 0, 1, 0, 0, 1, 0,
+        ]), 3));
+        g5.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([
+          0.5, 0.5, 1, 0, 0, 0,
+        ]), 2));
+        merger.add(g5, pave, px, pz);
+      }
+      // THE LOG SEATS. Timber rounds, not benches — they are cut from Tembusu
+      // felled on this island, which is the detail worth having. Nothing here
+      // has enough height to wall a route in (0.45m is a seat, and a walker
+      // steps over it), but they are still kept off the carriageway, because
+      // furniture beside mapped routes is the family that produced "i cant
+      // even move".
+      let logs = 0;
+      for (let k = 0; k < 16; k++) {
+        const t = (k / 16) * Math.PI * 2;
+        // two loose rings, so it reads as scattered seating rather than a dial
+        const rr = (k % 2 ? 0.48 : 0.76) * wob(t);
+        const lx = px + Math.cos(t) * arx * rr, lz = pz + Math.sin(t) * arz * rr;
+        if (typeof __onRoad === 'function' && __onRoad(lx, lz)) continue;
+        const h5 = 0.38 + 0.16 * (((Math.abs((lx * 7.31 + lz * 3.17) | 0)) % 5) / 4);
+        const log = new THREE.CylinderGeometry(0.42, 0.46, h5, 8);
+        log.translate(lx, surfaceAt(lx, lz) + h5 / 2, lz);
+        merger.add(log, PF.seat, px, pz);
+        logs++;
+      }
+      out.tasteLogs = (out.tasteLogs || 0) + logs;
     } else if (f.k === 'memorial') {
       const base = new THREE.BoxGeometry(1.5, 0.3, 1.5);
       base.rotateY(ang); base.translate(px, y + 0.15, pz);
