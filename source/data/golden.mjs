@@ -53,6 +53,13 @@ const SPOTS = [
   // of the thirteen viewpoints above covered it and all thirteen passed while
   // it was broken.
   ['beachwalk-grade', -1580, 12729, 0.9],
+  // THE THREE VESSELS HAD NO GOLDEN AT ALL. They were rebuilt on 2026-08-06 —
+  // three distinct materials, profiles and infills replacing one tan basket
+  // repeated three times — and all fourteen frames above passed at 0.000%
+  // through every step of it, because not one of them can see a vessel. The
+  // 'sensoryscape' spot looks down the AVENUE, 200m short of the first one.
+  // Same argument, and the same wording, as beachwalk-grade directly above.
+  ['sensory-vessels', -1629, 12541, -0.53],
 ];
 
 mkdirSync(ACT, { recursive: true });

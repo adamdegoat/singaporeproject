@@ -4820,7 +4820,56 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
     }
     return best;
   };
-  const onTrail = (x, z) => trailDist2(x, z) < 3.4 * 3.4;
+  // THE SENSORYSCAPE PROMENADE IS A WALK, AND NOTHING KNEW IT WAS ONE.
+  //
+  // trailSegs above is built from data.roads — footway, pedestrian, path,
+  // steps. The Sensoryscape connector is not in data.roads: its centreline is
+  // `data.sensoryscape.spine`, surveyed from the garden nodes, and src/
+  // sgdetail.js draws a 9.2m boarded ribbon along it because the real thing is
+  // a broad landscaped deck and drawing it at OSM's 3.4m footway width made it
+  // read as a lawn with a stripe across it.
+  //
+  // So the fill planted straight through it. Measured on the live build:
+  // 4 trees standing INSIDE the 9.2m boardwalk, one of them dead centre of
+  // the frame in the new sensory-vessels golden.
+  //
+  // Two separate reasons this needed its own test rather than a line in
+  // trailSegs: the spine is not a road record, and 3.4m is the wrong radius
+  // for it — the ribbon's own half-width is 4.6m, so a tree cleared by the
+  // footway rule can still be standing on the planks. 5.6m is that half-width
+  // plus a metre of trunk.
+  //
+  // FOUR SEGMENTS, so it is not indexed and does not need to be — but it IS
+  // inside a per-plant loop, which is the shape that cost 14s of boot twice
+  // (buildTrails and plantSurveyed, 2026-08-04), so it takes a bbox reject
+  // first and never solves a distance it does not have to.
+  const promSegs = [];
+  {
+    const sp = (data.sensoryscape && data.sensoryscape.spine) || [];
+    for (let i = 0; i < sp.length - 1; i++) {
+      const [ax, az] = sp[i], [bx, bz] = sp[i + 1];
+      promSegs.push([ax, az, bx, bz,
+                     Math.min(ax, bx) - 5.6, Math.max(ax, bx) + 5.6,
+                     Math.min(az, bz) - 5.6, Math.max(az, bz) + 5.6]);
+    }
+  }
+  const PROM_CLEAR2 = 5.6 * 5.6;
+  const onPromenade = (x, z) => {
+    for (let i = 0; i < promSegs.length; i++) {
+      const s = promSegs[i];
+      if (x < s[4] || x > s[5] || z < s[6] || z > s[7]) continue;
+      const vx = s[2] - s[0], vz = s[3] - s[1];
+      const l2 = vx * vx + vz * vz || 1;
+      let t = ((x - s[0]) * vx + (z - s[1]) * vz) / l2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const dx = x - (s[0] + vx * t), dz = z - (s[1] + vz * t);
+      if (dx * dx + dz * dz < PROM_CLEAR2) return true;
+    }
+    return false;
+  };
+  // folded into onTrail so all seven planting call sites get it at once —
+  // adding it at one of them is how a rule ends up half-applied
+  const onTrail = (x, z) => trailDist2(x, z) < 3.4 * 3.4 || onPromenade(x, z);
 
   const zip = data.zipline;
   const ZIP_CLEAR = 15.0;

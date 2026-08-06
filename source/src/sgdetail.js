@@ -3526,12 +3526,147 @@ export async function buildTransit(world, data, Y = null) {
     out.sensoryPromenade = 1;
   }
   if (ss && ss.vessels && ss.vessels.length) {
-    const ribMat = new THREE.MeshLambertMaterial({ color: 0xb9a37e });
+    // THREE VESSELS, THREE MATERIALS — they were one tan basket repeated.
+    //
+    // Rendered from the promenade 2026-08-06: three identical wicker domes,
+    // one per garden, and nothing told you which sense you were standing in.
+    // The published descriptions differ in material, colour, profile AND
+    // infill (research/rws-architecture.md 4.4, with sources), so every one
+    // of those differences was being thrown away by a single shared rib.
+    //
+    // Colour key, straight out of the research:
+    //   Tactile Trellis   bone-white granolithic concrete, precast, visible
+    //                     aggregate, sand-blasted — reads as cast stone
+    //   Scented Sphere    pale sage / celadon AESS steel, matte eucalyptus,
+    //                     THE SAME green as the deck steel on purpose
+    //   Symphony Streams  cerulean/teal on the pails and inner faces over
+    //                     darker navy straps. The research is explicit:
+    //                     "Satellite and night photography make it look white
+    //                     or silver. It is not. Do not model it white."
+    const VMAT = {
+      saddle: new THREE.MeshLambertMaterial({ color: 0xe6e2d6 }),
+      ovoid: new THREE.MeshLambertMaterial({ color: 0x9dab8e }),
+      bowl: new THREE.MeshLambertMaterial({ color: 0x2a3f52 }),
+    };
+    // the infill each kind carries: concrete petal scoops, hung bowl planters,
+    // and the acoustic water pails
+    const scoopMat = new THREE.MeshLambertMaterial({ color: 0xdad5c6 });
+    const planterMat = new THREE.MeshLambertMaterial({ color: 0x7d8a6d });
+    const pailMat = new THREE.MeshLambertMaterial({ color: 0x2f8fae });
+    const poolMat = new THREE.MeshLambertMaterial({ color: 0x4f9cb4 });
+    // the chequerboard terrazzo the pool ring sits in — grey and white
+    const poolFloorMat = new THREE.MeshLambertMaterial({ color: 0xcfd0cb });
     for (const v of ss.vessels) {
       await YY();
       const [vx, vz] = v.p;
       const gy5 = surfaceAt(vx, vz);
-      const RIB = 14;
+      const kind = v.k || 'saddle';
+      const ribMat = VMAT[kind] || VMAT.saddle;
+      // THE PROFILE IS THE IDENTITY. r(u) is the radius as a fraction of the
+      // rim, u running 0 at the ground to 1 at the rim; rimY(t) is how high
+      // the rim stands at bearing t. Everything else is shared.
+      //
+      //   saddle  a hyperbolic rim that DIPS where the walkway crosses (the
+      //           two openings, at the spine bearing) and RISES at the flanks
+      //   ovoid   a basket WIDEST AT MID-HEIGHT, so it bulges then closes in
+      //   bowl    an inward-curving base under an outward-FLARING rim: the
+      //           most funnel-like of the three, resolving to the pool
+      const prof = (u) => (
+        kind === 'ovoid' ? 0.62 + 0.38 * Math.sin(Math.PI * (0.30 + 0.62 * u))
+          : kind === 'bowl' ? 0.34 + 0.66 * Math.pow(u, 1.7)
+            : 1 - 0.30 * u * u);
+      // the rim dip is a saddle's whole silhouette; the other two sit level
+      const rimAt = (t) => (kind === 'saddle'
+        ? v.h * (1 - 0.30 * Math.cos(2 * (t - v.a))) : v.h);
+      // THE VESSEL HAS DOORWAYS, AND WITHOUT THEM IT IS A FENCE.
+      //
+      // Seating the ribs on local ground (above) is right, and it closed the
+      // gaps that the old centre-height springing left on the downhill side —
+      // gaps a walker had been getting through by accident. The access gate
+      // caught it immediately and named it: `31x Symphony Streams (footway) at
+      // -1676,12620`, one walking route blocked for over 20m, deploy refused.
+      // The accidental gaps were load-bearing and nobody knew.
+      //
+      // The opening is not a workaround, it is the published detail. Serie:
+      // "double-strand arches forming COMPLETE UNINTERRUPTED OPENINGS where
+      // each vessel meets the double-deck walkway", and the walkway passes
+      // THROUGH the vessel on a chord. So the shell is cut where the spine
+      // crosses it, on both sides, and arches over the top.
+      //
+      // IT IS A DOORWAY, NOT A SLICE, and the difference is the whole thing.
+      //
+      // First cut of this removed everything within 6.6m of the spine below
+      // half height. On the Trellis and the Sphere that is a doorway, because
+      // their shells are wide all the way down. On the BOWL it deleted the
+      // entire base: Symphony Streams narrows to a 9m stem over its pool, so
+      // 6.6m either side of the centreline IS the stem, and the vessel
+      // rendered as a dish hanging in the air over the walkway with nothing
+      // holding it up. Rendered, seen, and that is the only reason it is not
+      // live.
+      //
+      // So the opening is ANGULAR — an arc of bearings about the vessel's own
+      // centre, on the walkway axis and its opposite. At the rim that is a
+      // 13m-wide arch; at the stem it is a slot through it; and the material
+      // to either side of the axis survives at every height, which is what
+      // holds the thing up.
+      //
+      // The axis comes from the nearest SPINE SEGMENT'S DIRECTION rather than
+      // from the vessel's own `a` parameter: the shell is rotated by `a` in
+      // one convention and `a` was measured in another, and a sign error there
+      // puts the doorway where there is no path. A dot product against a
+      // direction taken from the data cannot be got wrong.
+      const OPEN_U = 0.5;          // clear to half the rim — an arch, not a gap
+      // THE DOORWAY GOES WHERE THE PATH ACTUALLY GOES.
+      //
+      // Second wrong cut, and it is worth writing down because the reasoning
+      // sounded right: take the axis from the nearest SPINE segment and cut an
+      // arc of bearings about it. That assumes the walkway through a vessel
+      // runs along the spine. At Symphony Streams it does not — the mapped
+      // footway swings west of the garden-node polyline, so the arch was built
+      // over open grass and the gate named the same route again, this time at
+      // -1684,12616. Our spine is the line through the GARDEN NODES; the OSM
+      // footway is the line people walk. They are not the same line and only
+      // one of them is what `blocked()` cares about.
+      //
+      // So the opening is cut against the real walkable centrelines near this
+      // vessel — the surveyed footways AND the spine — at the same 3.4m
+      // half-width city.js already uses for "this is on a trail". Gathered
+      // once per vessel and bounded by the vessel's own radius, so this is not
+      // another unindexed scan in a per-object loop.
+      const walkSegs = [];
+      {
+        const reach = v.rx + 10;
+        const push = (ax, az, bx3, bz3) => {
+          if (Math.min(ax, bx3) - reach > vx || Math.max(ax, bx3) + reach < vx) return;
+          if (Math.min(az, bz3) - reach > vz || Math.max(az, bz3) + reach < vz) return;
+          walkSegs.push([ax, az, bx3, bz3]);
+        };
+        for (const r of (data.roads || [])) {
+          const kk = r.k || '';
+          if (kk !== 'footway' && kk !== 'pedestrian' && kk !== 'path' && kk !== 'steps') continue;
+          const rp = r.p || [];
+          for (let i = 0; i < rp.length - 1; i++) push(rp[i][0], rp[i][1], rp[i + 1][0], rp[i + 1][1]);
+        }
+        const sp = ss.spine;
+        for (let i = 0; i < sp.length - 1; i++) push(sp[i][0], sp[i][1], sp[i + 1][0], sp[i + 1][1]);
+      }
+      const OPEN_W2 = 3.4 * 3.4;
+      const onAxis = (p) => {
+        for (let i = 0; i < walkSegs.length; i++) {
+          const s = walkSegs[i];
+          const wx = s[2] - s[0], wz = s[3] - s[1];
+          const l2 = wx * wx + wz * wz || 1;
+          let t = ((p[0] - s[0]) * wx + (p[2] - s[1]) * wz) / l2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const dx = p[0] - (s[0] + wx * t), dz = p[2] - (s[1] + wz * t);
+          if (dx * dx + dz * dz < OPEN_W2) return true;
+        }
+        return false;
+      };
+      // BOTH ENDS, not the midpoint: a bar tested at its centre can have half
+      // of itself standing in the doorway.
+      const inOpening = (pA, pB, u) => u < OPEN_U && (onAxis(pA) || onAxis(pB));
+      const RIB = 16;
       for (const dir of [1, -1]) {
         for (let k = 0; k < RIB; k++) {
           const t0 = (k / RIB) * Math.PI * 2;
@@ -3542,26 +3677,299 @@ export async function buildTransit(world, data, Y = null) {
             const pA = ribPoint(t0, u0, dir), pB = ribPoint(t0, u1, dir);
             const len = Math.hypot(pB[0] - pA[0], pB[1] - pA[1], pB[2] - pA[2]);
             if (len < 0.05) continue;
-            const bar = new THREE.BoxGeometry(0.16, 0.16, len);
+            if (inOpening(pA, pB, u0)) continue;   // the walkway comes through
+            // A CONCRETE DIAGRID IS NOT A WICKER ROD. The Trellis is precast
+            // panels and the two steel ones are flat-plate straps, so the
+            // section is a strap on edge, not a 0.16 square stick.
+            const bar = new THREE.BoxGeometry(kind === 'saddle' ? 0.34 : 0.10,
+                                              kind === 'saddle' ? 0.40 : 0.30, len);
             const mx2 = (pA[0] + pB[0]) / 2, my2 = (pA[1] + pB[1]) / 2, mz2 = (pA[2] + pB[2]) / 2;
             const run2 = Math.hypot(pB[0] - pA[0], pB[2] - pA[2]);
             bar.rotateX(-Math.atan2(pB[1] - pA[1], run2));
             bar.rotateY(Math.atan2(pB[0] - pA[0], pB[2] - pA[2]));
             bar.translate(mx2, my2, mz2);
             merger.add(bar, ribMat, vx, vz);
+            // THE INFILL, which is what each vessel is FOR. Hung on the lower
+            // cells only: on all three the apertures are larger at the bottom
+            // and the top opens to sky, so a scoop at the rim would close the
+            // one thing every source agrees these are — open-topped.
+            if (sIdx % 2 === 0 && dir === 1 && u0 < 0.62) {
+              const um = (u0 + u1) / 2;
+              const p = ribPoint(t0, um, dir);
+              if (kind === 'saddle') {
+                // conical petal scoop, pointing DOWN and INWARD
+                const sc = new THREE.ConeGeometry(0.62, 1.0, 6);
+                sc.rotateX(Math.PI);
+                sc.translate(p[0], p[1] - 0.6, p[2]);
+                merger.add(sc, scoopMat, vx, vz);
+              } else if (kind === 'ovoid') {
+                // a cantilever reaching inward to a shallow hung bowl planter
+                const bowl = new THREE.CylinderGeometry(0.7, 0.42, 0.5, 7);
+                bowl.translate(p[0] * 0.82 + vx * 0.18, p[1] - 1.1, p[2] * 0.82 + vz * 0.18);
+                merger.add(bowl, planterMat, vx, vz);
+              } else {
+                // an acoustic pail: a scoop with a flat spout lip, one of the
+                // 200-odd that the water cascades down
+                const pail = new THREE.CylinderGeometry(0.42, 0.26, 0.52, 6);
+                pail.translate(p[0], p[1] - 0.4, p[2]);
+                merger.add(pail, pailMat, vx, vz);
+              }
+            }
           }
         }
       }
+      // THE RIM AND THE SILL, which is what stops it reading as loose sticks.
+      //
+      // Rendered without them: every rib ended in a raw cut face pointing at
+      // the sky and the three vessels read as bundles of splayed rods. A
+      // diagrid is a shell and a shell has an EDGE — Serie's own description
+      // is "double-strand arches forming complete uninterrupted openings"
+      // where the vessel meets the walkway, so the rim is a continuous member
+      // and drawing it is reporting the structure, not decorating it.
+      //
+      // Both rings ride shellPoint, so they land on the rib ends exactly.
+      for (const [u, sect] of [[1, 0.44], [0.02, 0.34]]) {
+        const RING = RIB * 3;
+        for (let k = 0; k < RING; k++) {
+          const tA = (k / RING) * Math.PI * 2, tB = ((k + 1) / RING) * Math.PI * 2;
+          const pA = shellPoint(tA, u), pB = shellPoint(tB, u);
+          const len = Math.hypot(pB[0] - pA[0], pB[1] - pA[1], pB[2] - pA[2]);
+          if (len < 0.05) continue;
+          // the SILL is the piece that actually walled the footway in — a
+          // continuous ring at ground level is a kerb all the way round
+          if (inOpening(pA, pB, u)) continue;
+          const bar = new THREE.BoxGeometry(kind === 'saddle' ? 0.40 : 0.16, sect, len * 1.04);
+          const run2 = Math.hypot(pB[0] - pA[0], pB[2] - pA[2]);
+          bar.rotateX(-Math.atan2(pB[1] - pA[1], run2));
+          bar.rotateY(Math.atan2(pB[0] - pA[0], pB[2] - pA[2]));
+          bar.translate((pA[0] + pB[0]) / 2, (pA[1] + pB[1]) / 2, (pA[2] + pB[2]) / 2);
+          merger.add(bar, ribMat, vx, vz);
+        }
+      }
+      // THE POOL AT THE BOTTOM OF SYMPHONY STREAMS. Published as a circular
+      // ring-shaped pool a visitor can wade to, on a chequerboard terrazzo
+      // disc. Laid flat at ground level: a disc IS the floor here, so it
+      // cannot be a wall, and nothing is registered as standable — you walk
+      // on the terrain exactly as you do on the promenade.
+      if (kind === 'bowl' && v.pool) {
+        // A FLAT DISC IS THE SLOPE CLASS FOR THE THIRD TIME TODAY. Drawn as
+        // one CylinderGeometry at gy5 it was half-buried on the uphill side
+        // and hanging over the grass on the downhill one, and read as a cyan
+        // teardrop spilling onto the boardwalk. It takes its height at every
+        // vertex, exactly as the promenade ribbon and the trail ribbons do.
+        //
+        // AND IT IS NOT ONE BLUE PLATE. Published: a grey-and-white
+        // chequerboard terrazzo disc with a SHALLOW WATER RING — so the floor
+        // is terrazzo and the water is an annulus at its edge, which is also
+        // why "a pool you can wade to" makes sense.
+        const SEGS = 28;
+        const ringY = (x, z) => surfaceAt(x, z) + 0.06;
+        for (let k = 0; k < SEGS; k++) {
+          const t0 = (k / SEGS) * Math.PI * 2, t1 = ((k + 1) / SEGS) * Math.PI * 2;
+          for (const [r0, r1, mat] of [[0, v.pool * 0.74, poolFloorMat],
+                                       [v.pool * 0.74, v.pool, poolMat]]) {
+            const ax = vx + Math.cos(t0) * r0, az = vz + Math.sin(t0) * r0;
+            const bx3 = vx + Math.cos(t1) * r0, bz3 = vz + Math.sin(t1) * r0;
+            const cx4 = vx + Math.cos(t1) * r1, cz4 = vz + Math.sin(t1) * r1;
+            const dx4 = vx + Math.cos(t0) * r1, dz4 = vz + Math.sin(t0) * r1;
+            const g3 = new THREE.BufferGeometry();
+            g3.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+              ax, ringY(ax, az), az, cx4, ringY(cx4, cz4), cz4, bx3, ringY(bx3, bz3), bz3,
+              ax, ringY(ax, az), az, dx4, ringY(dx4, dz4), dz4, cx4, ringY(cx4, cz4), cz4,
+            ]), 3));
+            g3.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([
+              0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0,
+            ]), 3));
+            g3.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([
+              0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1,
+            ]), 2));
+            merger.add(g3, mat, vx, vz);
+          }
+        }
+      }
+      // A POINT ON THE SHELL at bearing t and height fraction u. Split out of
+      // ribPoint so the rim and sill rings below can land on exactly the same
+      // surface the ribs do — a ring computed any other way meets the rib tops
+      // approximately, and approximately is a gap you can see.
+      function shellPoint(t, u) {
+        const r = prof(u);
+        const x = vx + Math.cos(t) * v.rx * r * Math.cos(v.a) - Math.sin(t) * v.rz * r * Math.sin(v.a);
+        const z = vz + Math.cos(t) * v.rx * r * Math.sin(v.a) + Math.sin(t) * v.rz * r * Math.cos(v.a);
+        // THE RIM HEIGHT IS TAKEN AT THE BEARING THE POINT IS ACTUALLY AT.
+        // It used to be taken at the rib's SPRINGING bearing, so on the saddle
+        // — the only kind whose rim varies — a rib that twists 1.15 rad as it
+        // climbs was given the height belonging to where it started, 66
+        // degrees away from where it ended. The dip landed in the wrong place
+        // and the rib tops disagreed with each other, which is what made the
+        // Trellis read as a pile of sticks rather than as one shell.
+        //
+        // AND IT SPRINGS FROM THE GROUND IT IS ACTUALLY STANDING ON.
+        //
+        // Every rib used to start at gy5 — the height at the CENTRE — however
+        // far the ground had moved by the time it got to the rim. Measured
+        // across the three footprints, the ground rises 3.5m at the Trellis,
+        // 4.6m at the Sphere and 5.9m at Symphony Streams, so the sill was up
+        // to three metres underground on the uphill side and three metres in
+        // the air on the downhill side. That is the same slope class that
+        // buried nineteen buildings on 2026-08-05, arriving in different
+        // clothes: one seat height standing in for a surface that moves.
+        //
+        // So the FOOT follows the terrain and the RIM stays level about the
+        // centre — which is how these are actually built, scooped into a
+        // hillside with a level rim, and it is what the published section
+        // implies. u=0 lands exactly on the ground, u=1 exactly on the rim.
+        const s = Math.sin(u * Math.PI * 0.5);
+        return [x, surfaceAt(x, z) * (1 - s) + (gy5 + rimAt(t)) * s, z];
+      }
       function ribPoint(t0, u, dir) {
-        // a hyperboloid-ish basket: the rib twists as it rises
-        const tw = t0 + dir * u * 1.15;
-        const r = 1 - 0.30 * u * u;
-        const x = vx + Math.cos(tw) * v.rx * r * Math.cos(v.a) - Math.sin(tw) * v.rz * r * Math.sin(v.a);
-        const z = vz + Math.cos(tw) * v.rx * r * Math.sin(v.a) + Math.sin(tw) * v.rz * r * Math.cos(v.a);
-        return [x, gy5 + Math.sin(u * Math.PI * 0.5) * v.h, z];
+        // the rib twists as it rises — that twist crossing its mirror is what
+        // makes a diagrid a WEAVE rather than a set of hoops
+        return shellPoint(t0 + dir * u * 1.15, u);
       }
       out.sensoryVessel = (out.sensoryVessel || 0) + 1;
     }
+  }
+
+  // -- GLOW GARDEN: the south gate of the Sensoryscape ---------------------
+  //
+  // It had a floating label and bare ground under it, and it is the FIRST
+  // thing a player walking up from Beach Station sees.
+  //
+  // Published form (research/rws-architecture.md 4.3, with sources): "a wide
+  // flight of steps plus stepped amphitheatre seating rising from Beach Plaza,
+  // flanked by TWO long arcing colonnades of tubular 'flower stalks' that
+  // curve inward over the space like giant grass blades, each tipped with a
+  // translucent white flower-bud luminaire." Stalks in pale mint/teal, dusty
+  // rose-pink and white — a deliberately sun-bleached pastel palette, and the
+  // research is explicit that the palette is the point.
+  //
+  // Every NUMBER is authored off a published RANGE and data/sensoryscape.py
+  // says which: the source's own words are "roughly 25-35 stalks per side,
+  // tallest arcs 8-14 m (+/-25%, perspective makes this unreliable — treat as
+  // a range, not a number)".
+  //
+  // NOT BUILT, ON PURPOSE: the Disney "Gallop into Spring" horse that appears
+  // in the most findable night photograph of this spot. It ran 30 Jan - 3 Mar
+  // 2026 and is gone. The research flags it precisely because it is the trap a
+  // photo-led build falls into.
+  const glow = ss && ss.glow;
+  if (glow && glow.p) {
+    await YY();
+    const [gx5, gz5] = glow.p;
+    // along the arrival axis, and across it
+    const ux5 = Math.sin(glow.a), uz5 = Math.cos(glow.a);
+    const nx5 = -uz5, nz5 = ux5;
+    // sun-bleached pastels, and NOT one repeated colour: the palette IS the
+    // published identity here
+    const STALK = [
+      new THREE.MeshLambertMaterial({ color: 0xbcd6cd }),   // pale mint/teal
+      new THREE.MeshLambertMaterial({ color: 0xd8b6bb }),   // dusty rose-pink
+      new THREE.MeshLambertMaterial({ color: 0xeae7e0 }),   // white
+    ];
+    // the flower-bud luminaire: translucent white, so it reads lit rather than
+    // as a painted ball
+    const budMat = new THREE.MeshLambertMaterial({
+      color: 0xf4f2ea, emissive: 0x6a6558, emissiveIntensity: 0.55,
+    });
+    const paveA = new THREE.MeshLambertMaterial({ color: 0xdedad0 });  // cream
+    const paveB = new THREE.MeshLambertMaterial({ color: 0xc6c6c2 });  // pale grey
+    // NOTHING WITH HEIGHT GOES ON A WALKABLE LINE. Same rule the vessels'
+    // doorways use and the same rule the 54 gate forecourts use — this is
+    // furniture beside mapped routes, which is the family that produced
+    // "i cant even move". The paving is flat and may go anywhere; a stalk is a
+    // post and may not.
+    const clearOfPath = (x, z) => {
+      for (const r of (data.roads || [])) {
+        const kk = r.k || '';
+        if (kk !== 'footway' && kk !== 'pedestrian' && kk !== 'path' && kk !== 'steps') continue;
+        const rp = r.p || [];
+        for (let i = 0; i < rp.length - 1; i++) {
+          const ax = rp[i][0], az = rp[i][1];
+          const wx = rp[i + 1][0] - ax, wz = rp[i + 1][1] - az;
+          if (Math.abs(ax - x) > 40 && Math.abs(rp[i + 1][0] - x) > 40) continue;
+          const l2 = wx * wx + wz * wz || 1;
+          let t = ((x - ax) * wx + (z - az) * wz) / l2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const dx = x - (ax + wx * t), dz = z - (az + wz * t);
+          if (dx * dx + dz * dz < 2.6 * 2.6) return false;
+        }
+      }
+      return !(typeof __onRoad === 'function' && __onRoad(x, z));
+    };
+    // THE BANDED TERRAZZO, laid flat and taking its height at every corner so
+    // it drapes on the grade instead of hovering — the trail-ribbon rule.
+    const HALFW = glow.half + 3.0;
+    const BANDS = Math.max(4, Math.round(glow.run / 3.0));
+    for (let b2 = 0; b2 < BANDS; b2++) {
+      const t0 = -0.5 + b2 / BANDS, t1 = -0.5 + (b2 + 1) / BANDS;
+      const c0x = gx5 + ux5 * glow.run * t0, c0z = gz5 + uz5 * glow.run * t0;
+      const c1x = gx5 + ux5 * glow.run * t1, c1z = gz5 + uz5 * glow.run * t1;
+      const q = [
+        [c0x - nx5 * HALFW, c0z - nz5 * HALFW], [c0x + nx5 * HALFW, c0z + nz5 * HALFW],
+        [c1x + nx5 * HALFW, c1z + nz5 * HALFW], [c1x - nx5 * HALFW, c1z - nz5 * HALFW],
+      ];
+      const y = q.map(([x, z]) => surfaceAt(x, z) + 0.03);
+      const g4 = new THREE.BufferGeometry();
+      g4.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+        q[0][0], y[0], q[0][1], q[2][0], y[2], q[2][1], q[1][0], y[1], q[1][1],
+        q[0][0], y[0], q[0][1], q[3][0], y[3], q[3][1], q[2][0], y[2], q[2][1],
+      ]), 3));
+      g4.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([
+        0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0,
+      ]), 3));
+      g4.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([
+        0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1,
+      ]), 2));
+      merger.add(g4, (b2 % 2) ? paveB : paveA, gx5, gz5);
+    }
+    // THE TWO COLONNADES. Each stalk springs from the flank and ARCS INWARD
+    // over the space, tallest at the middle of the run so the pair reads as a
+    // sweep rather than a fence.
+    let stalks = 0, buds = 0;
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < glow.stalks; k++) {
+        const f = glow.stalks < 2 ? 0.5 : k / (glow.stalks - 1);
+        const along = (f - 0.5) * glow.run;
+        const bx4 = gx5 + ux5 * along + nx5 * glow.half * side;
+        const bz4 = gz5 + uz5 * along + nz5 * glow.half * side;
+        if (!clearOfPath(bx4, bz4)) continue;
+        // tallest in the middle of the colonnade, lowest at its ends
+        const h4 = glow.lo + (glow.hi - glow.lo) * Math.sin(Math.PI * f);
+        const gyS = surfaceAt(bx4, bz4);
+        // the arc: it leans in over the space as it rises
+        const LEAN = glow.half * 0.62;
+        const SEG = 6;
+        let prev = [bx4, gyS, bz4];
+        for (let s3 = 1; s3 <= SEG; s3++) {
+          const u3 = s3 / SEG;
+          const lean = LEAN * u3 * u3;          // curving, not tilting
+          const px3 = bx4 - nx5 * lean * side;
+          const pz3 = bz4 - nz5 * lean * side;
+          const py3 = gyS + Math.sin(u3 * Math.PI * 0.5) * h4;
+          const len = Math.hypot(px3 - prev[0], py3 - prev[1], pz3 - prev[2]);
+          if (len > 0.05) {
+            const rod = new THREE.CylinderGeometry(0.11, 0.13, len, 5);
+            rod.rotateX(Math.PI / 2);
+            const run3 = Math.hypot(px3 - prev[0], pz3 - prev[2]);
+            rod.rotateX(-Math.atan2(py3 - prev[1], run3) - Math.PI / 2);
+            rod.rotateY(Math.atan2(px3 - prev[0], pz3 - prev[2]));
+            rod.translate((px3 + prev[0]) / 2, (py3 + prev[1]) / 2, (pz3 + prev[2]) / 2);
+            // colour from the POSITION, never from an RNG stream — a cosmetic
+            // choice must not be able to move a bus stop (city.js's rule)
+            const ci = Math.abs(((bx4 * 7.31 + bz4 * 3.17) | 0)) % STALK.length;
+            merger.add(rod, STALK[ci], gx5, gz5);
+          }
+          prev = [px3, py3, pz3];
+        }
+        // the bud luminaire at the tip
+        const bud = new THREE.SphereGeometry(0.42, 7, 5);
+        bud.translate(prev[0], prev[1] + 0.2, prev[2]);
+        merger.add(bud, budMat, gx5, gz5);
+        stalks++; buds++;
+      }
+    }
+    out.glowStalks = stalks;
+    out.glowBuds = buds;
   }
 
   // -- THE UNIVERSAL STUDIOS ENTRANCE ARCH ---------------------------------

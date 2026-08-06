@@ -48,11 +48,112 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # the gardens, north to south along the ridge
 ORDER = ["Lookout Loop", "Tactile Trellis", "Scented Sphere",
          "Symphony Streams", "Glow Garden"]
-# authored: which gardens are enclosed, and the basket's proportions
-VESSELS = ["Tactile Trellis", "Scented Sphere", "Symphony Streams"]
-VESSEL_RX = 11.0
-VESSEL_RZ = 7.5
-VESSEL_H = 9.0
+
+# THE SPINE IS CONFIRMED AGAINST PUBLISHED SPACINGS, 2026-08-06.
+#
+# research/rws-architecture.md 4.2 lists node-to-node distances measured off
+# the architects' plan. Ours, from the surveyed garden nodes, against theirs:
+#
+#     Lookout Loop    -> Tactile Trellis    78.4 m   published 79 m   -0.6
+#     Tactile Trellis -> Scented Sphere     57.4 m   published 58 m   -0.6
+#     Scented Sphere  -> Symphony Streams   60.5 m   published 61 m   -0.5
+#     Symphony Streams-> Glow Garden        52.5 m   published 53 m   -0.5
+#
+# Four independent agreements inside a metre. The POSITIONS are true, and
+# everything below is therefore only about FORM.
+
+# WHICH THREE GARDENS CARRY A VESSEL IS NOW PUBLISHED, not a guess.
+#
+# The original note here said "WHICH three gardens carry the diagrid vessels is
+# not published... they go on the three middle ones, which keeps them along the
+# spine". That guess was RIGHT, and it is no longer a guess: AECOM and Serie
+# both name them — touch, smell and sound — and research/rws-architecture.md
+# 4.4 carries the naming with sources. Palate Playground and Glow Garden are
+# explicitly NOT vessels and not diagrids.
+#
+# AND THEY WERE THREE COPIES OF ONE TAN BASKET. Rendered from the promenade,
+# 2026-08-06: three identical wicker domes in three different gardens, at
+# 22 x 15 m where the published pair of diameters is about 27 m, and carrying
+# none of the identity that makes each one the thing it is. The published
+# descriptions are specific, they differ from each other in material, colour,
+# profile and infill, and every one of those differences was being thrown away.
+#
+# DIAMETERS are DERIVED from satellite in the research file at +/-15%, so the
+# radii below are the midpoint of a stated range, not an invention. HEIGHTS are
+# EST-PHOTO for the Trellis (8-12 m, so 10) and UNPUBLISHED for the other two,
+# where the Trellis's rim is taken as the family's scale — the three read as
+# one system in every photograph, which is the point of the sage steel being
+# shared with the deck.
+#
+# `kind` is what the renderer switches on. Each is a bowl or basket OPEN TO THE
+# SKY -- not a dome, not a tunnel, not a tower -- scooped into the hillside,
+# with the walkway passing THROUGH it on a chord.
+VESSEL_SPEC = {
+    # AESS steel grid shell, ovoid, WIDEST AT MID-HEIGHT, with cantilevered
+    # stalks reaching inward that end in hung bowl planters. Pale sage/celadon
+    # -- deliberately the same green as the deck steel, so vessel and walkway
+    # read as one system.
+    "Scented Sphere": {"kind": "ovoid", "r": 13.5, "h": 10.0},
+    # 3D-curved reinforced granolithic CONCRETE diagrid, saddle/hyperbolic:
+    # the rim DIPS where the walkway crosses and RISES at the flanks. Bone
+    # white. Each cell holds a conical petal scoop pointing down and inward;
+    # toward the top the scoops fall away and the cells open to sky.
+    "Tactile Trellis": {"kind": "saddle", "r": 13.75, "h": 10.0},
+    # Steel bowl: an outward-FLARING rim over an inward-curving base, resolving
+    # to a ring-shaped POOL at the bottom you can wade to. Cerulean/teal on the
+    # pails and inner faces with darker navy straps behind.
+    #
+    # "Satellite and night photography make it look white or silver. It is not.
+    # Do not model it white." -- research/rws-architecture.md 4.4. The old tan
+    # basket was the closest thing this world had to that mistake.
+    "Symphony Streams": {"kind": "bowl", "r": 13.25, "h": 10.0,
+                         # central pool disc, DERIVED 9-10 m +/-20%
+                         "pool": 4.75},
+}
+# north to south along the spine, whatever order the table above is written in
+VESSELS = [n for n in ORDER if n in VESSEL_SPEC]
+
+# GLOW GARDEN — the south terminus, and NOT a vessel or a diagrid.
+#
+# It had a floating label and bare ground under it. It is the gate you arrive
+# through from Beach Station, so it is the first thing a player walking up from
+# the beaches sees, and it was nothing.
+#
+# research/rws-architecture.md 4.3, with sources: "a wide flight of steps plus
+# stepped amphitheatre seating rising from Beach Plaza, flanked by TWO long
+# arcing colonnades of tubular 'flower stalks' that curve inward over the space
+# like giant grass blades, each tipped with a translucent white flower-bud
+# luminaire." Stalks in pale mint/teal, dusty rose-pink and white — a
+# deliberately sun-bleached pastel palette. Paving cream and pale-grey banded
+# terrazzo.
+#
+# WHAT IS PUBLISHED HERE IS THE FORM, NOT THE NUMBERS. The research is explicit
+# that stalk count and height are UNPUBLISHED and that its EST-PHOTO figures
+# are unreliable: "roughly 25-35 stalks per side, tallest arcs 8-14 m (+/-25%,
+# perspective makes this unreliable — TREAT AS A RANGE, NOT A NUMBER)". So the
+# midpoints below are AUTHORED off a stated range and this file says so, rather
+# than quoting 30 and 11 as though they were measurements.
+#
+# The 2026 Disney "Gallop into Spring" installation that appears in the most
+# findable night photograph of this spot RAN 30 JAN - 3 MAR 2026 AND IS GONE.
+# No horse, no Mickey figures, no red lanterns. The research flags it because
+# it is exactly the trap a photo-led build falls into.
+GLOW = {
+    "stalks": 30,       # authored midpoint of a published 25-35 range, per side
+    "hi": 12.0,         # authored midpoint of a published 8-14 m range
+    "lo": 7.0,          # the near end of each colonnade, so it ARCS
+    "half": 11.0,       # authored: colonnade offset either side of the axis
+    "run": 44.0,        # authored: length of the flanked space along the spine
+    # NOT HERE YET, AND NOT WRITTEN AS THOUGH IT WERE: the published form also
+    # has "a wide flight of steps plus stepped amphitheatre seating rising from
+    # Beach Plaza". A flight of steps is a WALKABLE SURFACE, and this repo's
+    # rule is that drawing treads is not the same as being able to climb them —
+    # it wants addWalkSurface per tread the way the cable-car stair does, or it
+    # is a picture of a stair that also blocks the route. A `steps` count sat
+    # here for one revision, emitted and ignored by the renderer, which is the
+    # kind of dead field that later reads as a promise. Removed until it is
+    # built.
+}
 
 
 def main():
@@ -95,14 +196,41 @@ def main():
         ax, az = pts[have[j - 1]]
         bx, bz = pts[have[j]]
         ang = math.atan2(bx - ax, bz - az)
-        vessels.append({"n": n, "p": [round(pts[n][0], 1), round(pts[n][1], 1)],
-                        "a": round(ang, 3),
-                        "rx": VESSEL_RX, "rz": VESSEL_RZ, "h": VESSEL_H})
+        spec = VESSEL_SPEC[n]
+        # CIRCULAR, NOT ELLIPTICAL. rx/rz are kept as a pair because the
+        # renderer reads them, but the published figure is a single "outer
+        # diameter" for each vessel — these are baskets on a round plan. The
+        # old 11.0 x 7.5 squashed them along the spine and is most of why they
+        # read as small props rather than as buildings you walk through.
+        v = {"n": n, "p": [round(pts[n][0], 1), round(pts[n][1], 1)],
+             "a": round(ang, 3), "k": spec["kind"],
+             "rx": spec["r"], "rz": spec["r"], "h": spec["h"]}
+        if "pool" in spec:
+            v["pool"] = spec["pool"]
+        vessels.append(v)
+
+    # GLOW GARDEN — the south gate, see the GLOW table above for what is
+    # published (the form) and what is authored (every number).
+    glow = None
+    if "Glow Garden" in pts:
+        i = have.index("Glow Garden")
+        # the colonnades flank the arrival axis, so the axis is the last leg of
+        # the walk INTO the garden — the direction a player is facing when they
+        # come up from Beach Station
+        if i > 0:
+            ax, az = pts[have[i - 1]]
+        else:
+            ax, az = pts[have[1]]
+        bx, bz = pts["Glow Garden"]
+        glow = {"p": [round(bx, 1), round(bz, 1)],
+                "a": round(math.atan2(bx - ax, bz - az), 3)}
+        glow.update(GLOW)
 
     d["sensoryscape"] = {
         "spine": spine,
         "gardens": have,
         "vessels": vessels,
+        "glow": glow,
         "src": "spine measured from the surveyed garden nodes; vessel form and "
                "which gardens carry one are authored (not published)",
     }
