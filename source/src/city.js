@@ -4945,6 +4945,33 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
     }
     return inside;
   };
+  // A RUIN YOU CANNOT FIND IS NOT A PLACE — and this is the ONE case where a
+  // mapped wood gives way.
+  //
+  // The clearing rule below defers to mapped woods on purpose: if OSM says
+  // there are trees there, there are trees there. That is right for the halo
+  // and the wild fill. It is wrong for the three kinds whose entire purpose is
+  // to be reached and seen, and the proof is that Fort Serapong ruins, built
+  // 2026-08-06, rendered as nothing at all — the canopy closed over them
+  // completely and a player would never know they existed.
+  //
+  // It is the same argument that won Fort Siloso's gun its field of fire: a
+  // battery has one by definition, a viewpoint has a view by definition, and a
+  // ruin is a thing you come to look at. Only fort, ruins and viewpoint, and
+  // only within their own radius — the wood closes in again immediately beyond.
+  const KEEP_CLEAR = { fort: 30, ruins: 20, viewpoint: 26 };
+  const seeClear = [];
+  for (const a of (data.attractions || [])) {
+    const r = KEEP_CLEAR[a.k];
+    if (r && a.p && typeof a.p[0] === 'number') seeClear.push([a.p[0], a.p[1], r * r]);
+  }
+  const inSeeClear = (x, z) => {
+    for (let i = 0; i < seeClear.length; i++) {
+      const dx = x - seeClear[i][0], dz = z - seeClear[i][1];
+      if (dx * dx + dz * dz < seeClear[i][2]) return true;
+    }
+    return false;
+  };
   for (const gp of (data.green || [])) {
     if (gp.k !== 'wood' || !gp.p || gp.p.length < 4) continue;
     let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
@@ -4975,6 +5002,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
         if (blocked && blocked(jx, jz)) continue;
         if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz)) continue;
         if (onTrail(jx, jz)) continue;
+        if (inSeeClear(jx, jz)) continue;          // see KEEP_CLEAR above
         // top of the spread held at ~1.38, not 1.5: at 1.5 the tallest crown
         // put a leaf card 19.6m up and P3 ("props off the ground") refused the
         // deploy on it. The understorey is what the canopy needed anyway — the

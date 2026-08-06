@@ -1845,6 +1845,126 @@ export async function buildAttractions(world, data, Y = null) {
     out.letters = (out.letters || 0) + 1;
   };
 
+  // RUINS ARE BROKEN WALLS, AND A VIEWPOINT IS SOMEWHERE TO STAND.
+  //
+  // Measured: 20 named attractions have no building within 28m. Most are
+  // honest — a luge trail IS its track, an artwork gets the sculpture recipe —
+  // but three are real places standing as bare ground under a floating label:
+  // Fort Serapong ruins, Jetty Ruin, and Dragon's Teeth Gate Viewpoint.
+  //
+  // This file's own rule is that a record with no honest form is left alone
+  // rather than turned into a generic box. These two kinds HAVE honest forms.
+  // A ruin is broken masonry at falling heights with the jungle taking it back;
+  // a viewpoint is a paved standing place with something to lean on. Neither
+  // claims to reproduce the specific structure — no plan or elevation is
+  // published for either — so both are recipes for the KIND, deterministic by
+  // position hash, and they say so.
+  const ruinStone = new THREE.MeshStandardMaterial({ color: 0x8b8578, roughness: 0.95 });
+  const ruinMoss = new THREE.MeshStandardMaterial({ color: 0x6f7a58, roughness: 0.95 });
+  const rail = new THREE.MeshStandardMaterial({ color: 0x5b5f63, roughness: 0.6, metalness: 0.35 });
+  const ruinMass = (x, z, nm) => {
+    let h = 0;
+    for (const ch of nm) h = (h * 31 + ch.charCodeAt(0)) | 0;
+    const ang = ((Math.abs(h) % 360) / 360) * Math.PI * 2;
+    // four fragments of a wall that no longer joins up
+    const seg = [[-4.2, -2.6, 5.0, 2.3], [1.4, -3.0, 3.2, 1.35], [3.6, 1.8, 2.4, 0.85], [-2.0, 2.9, 3.6, 1.7]];
+    for (const [u, v, len, hh] of seg) {
+      const px = x + u * Math.cos(ang) - v * Math.sin(ang);
+      const pz = z + u * Math.sin(ang) + v * Math.cos(ang);
+      if (window.__onRoad && window.__onRoad(px, pz, 0.6)) continue;
+      const gy = surfaceAt(px, pz);
+      if (gy < 0.8) continue;
+      const w = new THREE.BoxGeometry(len, hh, 0.75);
+      w.rotateY(ang + (u + v) * 0.05);
+      w.translate(px, gy + hh / 2, pz);
+      merger.add(w, ruinStone, x, z);
+      // a course of fallen blocks at its foot, which is what tells you it fell
+      const blk = new THREE.BoxGeometry(0.8, 0.34, 0.7);
+      blk.rotateY(ang + 0.7);
+      blk.translate(px + Math.cos(ang) * (len * 0.4), gy + 0.17, pz + Math.sin(ang) * (len * 0.4));
+      merger.add(blk, ruinMoss, x, z);
+    }
+  };
+  const lookout = (x, z) => {
+    const gy = surfaceAt(x, z);
+    if (gy < 0.8) return;
+    const deck = new THREE.BoxGeometry(6.4, 0.16, 4.6);
+    deck.translate(x, gy + 0.08, z);
+    merger.add(deck, granite, x, z);
+    // a rail on three sides, open on the approach — you lean on it and look out
+    for (const [dx, dz, w, d] of [[0, -2.2, 6.4, 0.1], [-3.1, 0, 0.1, 4.6], [3.1, 0, 0.1, 4.6]]) {
+      const r = new THREE.BoxGeometry(w, 0.09, d);
+      r.translate(x + dx, gy + 1.02, z + dz);
+      merger.add(r, rail, x, z);
+      for (const t of [-0.36, 0.36]) {
+        const post = new THREE.BoxGeometry(0.09, 1.0, 0.09);
+        post.translate(x + dx + (d > 1 ? 0 : w * t * 8), gy + 0.5, z + dz + (d > 1 ? d * t : 0));
+        merger.add(post, rail, x, z);
+      }
+    }
+  };
+
+  // A WATER SLIDE IS A TOWER AND A HELIX, and two of Adventure Cove's are
+  // mapped as points with nothing built on them: "Tidal Twister, Pipeline
+  // Plunge" and "Whirlpool & Spiral Washout". Both are slide clusters, and a
+  // slide cluster has one honest shape — a stair tower with flumes winding down
+  // off it. No dimension is published for either, so the height and the radii
+  // are authored, and the count follows the names: two flumes where the name
+  // carries two rides, three where it reads as a cluster.
+  const flumeMat = [
+    new THREE.MeshStandardMaterial({ color: 0x2f8fc4, roughness: 0.35 }),
+    new THREE.MeshStandardMaterial({ color: 0xe2a63c, roughness: 0.35 }),
+    new THREE.MeshStandardMaterial({ color: 0x4bb07a, roughness: 0.35 }),
+  ];
+  const towerMat = new THREE.MeshStandardMaterial({ color: 0xb9b2a4, roughness: 0.85 });
+  const waterSlides = (x, z, nm) => {
+    const gy = surfaceAt(x, z);
+    if (gy < 0.8) return;
+    const H = 14.5, n = /,/.test(nm) ? 2 : 3;
+    // the stair tower they all launch from
+    for (const [ox, oz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]]) {
+      const leg = new THREE.BoxGeometry(0.32, H, 0.32);
+      leg.translate(x + ox, gy + H / 2, z + oz);
+      merger.add(leg, towerMat, x, z);
+    }
+    for (let ty = 3; ty < H; ty += 3) {
+      const band = new THREE.BoxGeometry(3.3, 0.22, 3.3);
+      band.translate(x, gy + ty, z);
+      merger.add(band, towerMat, x, z);
+    }
+    const cap = new THREE.BoxGeometry(4.2, 0.3, 4.2);
+    cap.translate(x, gy + H + 0.15, z);
+    merger.add(cap, towerMat, x, z);
+    // the flumes: a helix down and out, drawn as short chords so it reads as a
+    // tube without costing a swept surface
+    for (let f = 0; f < n; f++) {
+      const dir = f % 2 ? 1 : -1;
+      const R0 = 3.0 + f * 1.4, R1 = 9.5 + f * 2.2;
+      const turns = 1.35, steps = 34;
+      const phase = f * 2.1;
+      let prev = null;
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const ang = phase + dir * turns * Math.PI * 2 * t;
+        const r = R0 + (R1 - R0) * t;
+        const px = x + Math.cos(ang) * r, pz = z + Math.sin(ang) * r;
+        const py = gy + H - 1.2 - (H - 2.6) * t * t;
+        if (prev) {
+          const dx = px - prev[0], dy = py - prev[1], dz = pz - prev[2];
+          const run = Math.hypot(dx, dz), len = Math.hypot(run, dy);
+          if (len > 0.05) {
+            const tube = new THREE.BoxGeometry(1.15, 0.5, len);
+            tube.rotateX(-Math.atan2(dy, run));
+            tube.rotateY(Math.atan2(dx, dz));
+            tube.translate(prev[0] + dx / 2, prev[1] + dy / 2, prev[2] + dz / 2);
+            merger.add(tube, flumeMat[f % flumeMat.length], x, z);
+          }
+        }
+        prev = [px, py, pz];
+      }
+    }
+  };
+
   for (const a of list) {
     await YY();
     const [x, z] = a.p;
@@ -1855,6 +1975,11 @@ export async function buildAttractions(world, data, Y = null) {
     if (a.k === 'cannon') { cannon(x, z); out.attractions++; continue; }
     if (a.k === 'summer_toboggan' && a.g && a.g.length >= 3) {
       lugeRun(a.g); out.attractions++; continue;
+    }
+    if (a.k === 'ruins' || (a.k === 'fort' && /ruins/i.test(nm))) { ruinMass(x, z, nm); out.attractions++; continue; }
+    if (a.k === 'viewpoint') { lookout(x, z); out.attractions++; continue; }
+    if (/tidal twister|whirlpool|pipeline plunge|spiral washout/i.test(nm)) {
+      waterSlides(x, z, nm); out.attractions++; continue;
     }
     out.attrSkipped++;
   }
