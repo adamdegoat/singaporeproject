@@ -3888,6 +3888,144 @@ export async function buildTransit(world, data, Y = null) {
     }
   }
 
+  // -- LOOKOUT LOOP: the north gate, and it was surveyed all along ---------
+  //
+  // A two-level elevated walkway loop over the Merlion Plaza, recovered by
+  // data/lookoutloop.py out of the raw cache. It is NOT a pedestrian overpass
+  // and the overpass recipe in this file correctly refuses it (a ring is
+  // nothing but twisty), which is why it drew as nothing for so long.
+  //
+  // The heights are AUTHORED and `layer` is never read as metres — that is the
+  // monorail lesson, and data/lookoutloop.py's header carries it.
+  const ll = data.lookoutloop;
+  if (ll && ll.decks && ll.decks.length) {
+    const deckMat = surfaced(new THREE.MeshLambertMaterial({ color: 0xd9d3c6 }),
+                             { amt: 0.07, grain: 0.9, edge: 0.22 });
+    const railMat = new THREE.MeshLambertMaterial({ color: 0xb9bdb6 });
+    const colMat = new THREE.MeshLambertMaterial({ color: 0xcac6bb });
+    const HALF = (ll.w || 3.6) / 2;
+    let colN = 0;
+    // ONE DATUM FOR THE WHOLE LOOP, NOT ONE PER WAY.
+    //
+    // baseY was computed per way, so the ring's four ways each sat at their
+    // own max-ground + 5.5 and the ramps arrived at a different height from
+    // the deck they were supposed to meet. It was invisible in a render and
+    // loud in the numbers: N3 surface spikes went 25 -> 30, and >1.0m went
+    // 6 -> 10, which is the same signature the cable-car stair produced the
+    // day it shipped. A ring walkway is ONE LEVEL — that is what makes it a
+    // ring — so the datum is taken once, across the loop ways only (the ramps
+    // descend to meet the ground and must not drag the deck down with them).
+    let loopBase = -Infinity;
+    for (const dk of ll.decks) {
+      if (dk.ramp) continue;
+      for (const [x, z] of dk.p) { const g = groundAt(x, z); if (g > loopBase) loopBase = g; }
+    }
+    if (!isFinite(loopBase)) loopBase = 0;
+    for (const dk of ll.decks) {
+      await YY();
+      const lift = dk.up ? (ll.upperH || 9.3) : (ll.lowerH || 5.5);
+      const pts = dk.p;
+      // THE DECK IS LEVEL, NOT DRAPED. A trail ribbon takes the ground at
+      // every corner because a path follows the land; an elevated structure
+      // does the opposite — it holds its height while the land moves under it.
+      // Seated on the HIGHEST ground beneath the way, so the deck never dives
+      // into the slope at one end (the seatY trap, which buried 19 buildings
+      // on 2026-08-05 by taking the minimum instead).
+      // the ramp's LOW end still needs its own ground; its HIGH end must be
+      // the shared deck datum or it does not meet the deck
+      const baseY = loopBase;
+      const y = baseY + lift;
+      // THE APPROACHES RAMP; THE LOOP ITSELF IS LEVEL.
+      //
+      // Built level, the ring was a walkable deck with NO WAY ONTO IT and two
+      // spurs hanging in the air at their far ends. data/lookoutloop.py marks
+      // the two UNNAMED ways as ramps and says which end is the high one (the
+      // end nearer the loop's centre), so the climb runs from the ground up to
+      // the deck instead of starting five metres above the plaza.
+      //
+      // Cumulative distance, not vertex index: the vertices are not evenly
+      // spaced, and indexing would put most of the climb wherever OSM happened
+      // to place nodes.
+      const segL = [];
+      let total = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const dl = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+        segL.push(dl); total += dl;
+      }
+      const heightAt = (dist) => {
+        if (!dk.ramp || total < 1) return y;
+        const f = dk.hiEnd ? (dist / total) : (1 - dist / total);
+        // the low end lands on the ground actually under it, the high end on
+        // the shared deck datum, and the ramp interpolates between the two
+        const lowEnd = dk.hiEnd ? pts[0] : pts[pts.length - 1];
+        const gLow = groundAt(lowEnd[0], lowEnd[1]);
+        const t = Math.max(0, Math.min(1, f));
+        return gLow + (baseY + lift - gLow) * t;
+      };
+      let along = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, az] = pts[i], [bx6, bz6] = pts[i + 1];
+        const L = segL[i];
+        const yA = heightAt(along), yB = heightAt(along + L);
+        along += L;
+        if (L < 0.4) continue;
+        const ang = Math.atan2(bx6 - ax, bz6 - az);
+        const mx = (ax + bx6) / 2, mz = (az + bz6) / 2;
+        // the deck slab, slightly overlong so consecutive segments mitre shut
+        // rather than showing a slot at every bend
+        const yM = (yA + yB) / 2;
+        const pitch = Math.atan2(yB - yA, L);
+        const slab = new THREE.BoxGeometry(HALF * 2, 0.34, Math.hypot(L, yB - yA) + 0.5);
+        slab.rotateX(-pitch);
+        slab.rotateY(ang);
+        slab.translate(mx, yM, mz);
+        merger.add(slab, deckMat, mx, mz);
+        // a parapet either side, so the edge reads as an edge from below
+        for (const s of [-1, 1]) {
+          const rx = mx + Math.cos(ang) * HALF * s, rz = mz - Math.sin(ang) * HALF * s;
+          const rail = new THREE.BoxGeometry(0.14, 1.05, Math.hypot(L, yB - yA) + 0.5);
+          rail.rotateX(-pitch);
+          rail.rotateY(ang);
+          rail.translate(rx, yM + 0.69, rz);
+          merger.add(rail, railMat, rx, rz);
+        }
+        // COLUMNS, but never in the carriageway and never in the sea — the
+        // same two conditions the entrance canopies learned the hard way (157
+        // six-metre columns once stood in the channel off the ferry terminal).
+        const step = 9.0;
+        for (let t = step / 2; t < L; t += step) {
+          const cx6 = ax + (bx6 - ax) * (t / L), cz6 = az + (bz6 - az) * (t / L);
+          if (window.__onRoad && window.__onRoad(cx6, cz6, 0)) continue;
+          if (!standable(cx6, cz6)) continue;
+          const g = groundAt(cx6, cz6);
+          const h = (yA + (yB - yA) * (t / L)) - 0.17 - g;
+          if (h < 1.0) continue;
+          const col = new THREE.CylinderGeometry(0.30, 0.36, h, 8);
+          col.translate(cx6, g + h / 2, cz6);
+          merger.add(col, colMat, cx6, cz6);
+          colN++;
+        }
+        // AND IT IS WALKABLE, because a walkway you can only look at is a
+        // picture of one. walkSurfaceAt is height-aware since 2026-08-05, so
+        // registering the deck does NOT stand anyone crossing the plaza
+        // underneath on it — that was the revert, and the fix, in SESSION 7.
+        // A WALK SURFACE STORES ONE HEIGHT PER SEGMENT, so a ramp needs to be
+        // registered in short pieces or it is a flat shelf at its own height —
+        // the cable-car stair learned this and N3 went 25 to 30 the day it
+        // did. 0.35m a step is a kerb, not a spike.
+        const RN = Math.max(1, Math.ceil(Math.abs(yB - yA) / 0.35));
+        for (let q = 0; q < RN; q++) {
+          const t0 = q / RN, t1 = (q + 1) / RN;
+          addWalkSurface(ax + (bx6 - ax) * t0, az + (bz6 - az) * t0,
+                         ax + (bx6 - ax) * t1, az + (bz6 - az) * t1,
+                         HALF - 0.2, yA + (yB - yA) * ((t0 + t1) / 2) + 0.17);
+        }
+      }
+    }
+    out.lookoutLoopDecks = ll.decks.length;
+    out.lookoutLoopCols = colN;
+  }
+
   // -- GLOW GARDEN: the south gate of the Sensoryscape ---------------------
   //
   // It had a floating label and bare ground under it, and it is the FIRST
