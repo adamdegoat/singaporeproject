@@ -576,6 +576,20 @@ function travelWorthy(p) {
   return TRAVEL_KEEP.some((k) => n.includes(k));
 }
 
+// trailing words that name the ISLAND or the operator rather than the place
+const QUALIFIERS = [' sentosa', ' singapore', ' adventure park'];
+function qualBase(n) {
+  let out = n;
+  let cut = true;
+  while (cut) {
+    cut = false;
+    for (const q of QUALIFIERS) {
+      if (out.length > q.length + 2 && out.endsWith(q)) { out = out.slice(0, -q.length); cut = true; }
+    }
+  }
+  return out.trim();
+}
+
 function tidyPins(list) {
   const out = [];
   const seen = new Set();
@@ -589,8 +603,27 @@ function tidyPins(list) {
   for (let i = 0; i < out.length; i++) {
     for (let j = i + 1; j < out.length; j++) {
       if (drop.has(i) || drop.has(j)) continue;
-      if (Math.hypot(out[i].x - out[j].x, out[i].z - out[j].z) > 12) continue;
       const a = out[i].n.toLowerCase(), b = out[j].n.toLowerCase();
+      // SAME PLACE, DIFFERENT SUFFIX — and NOT a generic prefix rule.
+      //
+      // "MegaZip" / "megazip adventure park" and "Skyline Luge" / "Skyline
+      // Luge Sentosa" are one attraction mapped twice, hundreds of metres
+      // apart, so the 12m rule below cannot catch them.
+      //
+      // The first attempt dropped anything whose name PREFIXED another, and it
+      // was a disaster: "Siloso" — an ARTWORK — knocked out Siloso Beach,
+      // Siloso Point Cable Car and Siloso Trail, deleting one of the most
+      // important places on the island from the travel list. Caught by reading
+      // the list back, not by any gate.
+      //
+      // So strip only KNOWN TRAILING QUALIFIERS and compare what is left. That
+      // collapses the two real duplicates and cannot touch "Siloso Beach",
+      // because "beach" is not a qualifier — it is the name.
+      if (a !== b && qualBase(a) === qualBase(b)) {
+        drop.add(a.length > b.length ? i : j);
+        continue;
+      }
+      if (Math.hypot(out[i].x - out[j].x, out[i].z - out[j].z) > 12) continue;
       if (a.includes(b)) drop.add(j);
       else if (b.includes(a)) drop.add(i);
     }
@@ -665,6 +698,19 @@ function buildPins(data) {
     if (!h.n || !h.p) continue;
     const px = typeof h.p[0] === 'number' ? h.p : h.p[0];
     push(h.n, 'hotel', px[0], px[1], null, false);
+  }
+  // NAMED BUILDINGS WERE NEVER A PIN SOURCE, so Adventure Cove Waterpark,
+  // Resorts World and every hotel could not be travelled to at all — they are
+  // buildings, and pins came only from attractions, greens, termini and the
+  // one-entry `hotels` layer. Only the ones the travel list would keep anyway
+  // are added, so this does not re-clutter what was just trimmed.
+  for (const b of (data.buildings || [])) {
+    if (!b.n || !b.p || !b.p.length) continue;
+    const nm = b.n.toLowerCase();
+    if (!TRAVEL_KEEP.some((k) => nm.includes(k))) continue;
+    let x = 0, z = 0;
+    for (const [px, pz] of b.p) { x += px; z += pz; }
+    push(b.n, 'landmark', x / b.p.length, z / b.p.length, null, true);
   }
   // Biggest first, so the clustering below keeps the landmark and drops the
   // kiosk beside it rather than the other way round.
