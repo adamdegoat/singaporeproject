@@ -545,6 +545,37 @@ function trailPins(data, startId) {
 // and one name contains the other, the longer name wins — "Resort World
 // Sentosa" over "World Sentosa". Nothing is renamed and nothing is invented;
 // the duplicates are simply not offered twice.
+// A TRAVEL LIST IS FOR PLACES YOU WOULD ACTUALLY GO TO.
+//
+// The owner, 2026-08-06: "the teleport spots now too many bro. how about
+// teleport to impt things only... if not too cluttered."
+//
+// Counted: 73 attraction pins alone, of which SEVEN are the luge — "Luge
+// Dragon Trail", "Luge Expedition Trail", "Luge Jungle Trail", "Luge Kupu Kupu
+// Trail", "Luge Trail", "Skyline Luge" and "Skyline Luge Sentosa" — plus every
+// individual ride, artwork and food outlet. Universal Studios IS in there and
+// you cannot find it.
+//
+// So the list keeps what a visitor names when they say where they are going:
+// anything already flagged `major` (theme parks, forts, museums, aquariums,
+// beaches, parks), every station, and the named set below. Everything else is
+// still ON THE MAP and still labelled in the world — it is only removed from
+// the TRAVEL list, which is the thing that was cluttered.
+const TRAVEL_KEEP = [
+  'skyline luge', 'megazip', 'mega adventure', 'skyhelix', 'adventure cove',
+  'sensoryscape', 'wave house', 'madame tussauds', 'trickeye', 'ifly',
+  'resorts world', 'equarius', 'hotel michael', 'crockfords', 'the laurus',
+  'hotel ora', 'scentopia', 'images of singapore', 'fort siloso', 'fort imbiah',
+  'palawan', 'siloso', 'tanjong', 'oceanarium', 'sentosa cove', 'merlion',
+];
+
+function travelWorthy(p) {
+  if (p.major) return true;
+  if (p.kind === 'station') return true;
+  const n = (p.n || '').toLowerCase();
+  return TRAVEL_KEEP.some((k) => n.includes(k));
+}
+
 function tidyPins(list) {
   const out = [];
   const seen = new Set();
@@ -610,6 +641,24 @@ function buildPins(data) {
     if (!t.n || !t.p) continue;
     const px = typeof t.p[0] === 'number' ? t.p : t.p[0];
     push(t.n, 'station', px[0], px[1], 'Sentosa Express station.', false);
+  }
+  // THE CABLE-CAR STATIONS, WHICH WERE NOT A SOURCE AT ALL.
+  //
+  // The owner, 2026-08-06: "now cable car station cannot teleport." He is
+  // right — pins came from attractions, greens, monorail termini and hotels,
+  // and the cable car lives in `data.cableway.stations`, which nothing here
+  // ever read. Five stations, and the Sentosa Line is how you cross the island
+  // without walking, so they are `major`.
+  //
+  // The monorail termini above are worse: every one of them has `n = null`, so
+  // `if (!t.n) continue` drops all of them and there has never been a Sentosa
+  // Express station in the list either. Named here from the cableway/monorail
+  // data rather than left out — a station you cannot travel to is the one pin
+  // a visitor most wants.
+  for (const st of (((data.cableway || {}).stations) || [])) {
+    if (!st.n || !st.p) continue;
+    push(st.n + ' Cable Car', 'station', st.p[0], st.p[1],
+         'Cable-car station.', true);
   }
   // hotels, from the named buildings that carry one
   for (const h of (data.hotels || [])) {
@@ -763,7 +812,14 @@ export class Wayfinder {
       if (rs.length) this._ridePins = ridePins(rs, this._pins.length);
     }
     if (!this._trailPins) this._trailPins = trailPins(this.data, this._pins.length + 900);
-    if (!this._all) this._all = tidyPins(this._pins.concat(this._ridePins || [], this._trailPins));
+    if (!this._all) {
+      const all = tidyPins(this._pins.concat(this._ridePins || [], this._trailPins));
+      const keep = all.filter(travelWorthy);
+      // never hand back an empty list: if the filter ever over-tightens, a
+      // cluttered list beats no way to travel at all
+      this._all = keep.length >= 8 ? keep : all;
+      if (window.__dbg) window.__dbg('travel pins ' + all.length + ' -> ' + this._all.length);
+    }
     return this._all;
   }
 

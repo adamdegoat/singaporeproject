@@ -2192,9 +2192,30 @@ export async function buildBuildings(world, data, Y = null) {
         if (g < gMin) gMin = g;
         if (g > gMax) gMax = g;
       }
-      if (gMax - gMin > 4 || (b.a || 0) > 12000) { stats.count++; continue; }
+      // A CANOPY ON A SLOPE IS LEVEL, WITH LONGER COLUMNS DOWNHILL.
+      //
+      // This refused anything with over 4m of fall, and the refusal was right
+      // for what the code then did: a slab seated at FOOT — the LOWEST ground
+      // — is buried at the uphill end, which is the brown ceiling over the
+      // Serapong pond this branch's note describes.
+      //
+      // But that is a fault in the SEAT, not in the idea. Found by
+      // data/walksweep.mjs: "Sapphire Pavillion" is a named place with ZERO
+      // built around it and nothing drawn. Measured, its ground rises 7.8m
+      // across the ring and all 13 of its column sites are clear — the slope
+      // gate is the only thing stopping it.
+      //
+      // A real canopy over falling ground is LEVEL and its columns get longer
+      // as the ground drops, which is exactly what the Lookout Loop deck does
+      // for the same reason. So seat it on the HIGHEST ground under the ring
+      // and let the columns vary. Still refused past 12m of fall, where a
+      // level roof really would be a lid over a hillside, and still refused
+      // over 12,000 m2.
+      const fall = gMax - gMin;
+      if (fall > 12 || (b.a || 0) > 12000) { stats.count++; continue; }
       const canopyH = Math.max(4, Math.min(9, b.h || 5));
-      const topY = FOOT + canopyH;
+      // clear the high side, not the low one
+      const topY = (fall > 4 ? gMax : FOOT) + canopyH;
       // columns first, slab only if enough of them stand: a ring whose
       // column sites are all refused (water, roads) would leave a roof
       // floating on nothing — W2 caught exactly one doing so over a golf
