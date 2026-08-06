@@ -122,7 +122,19 @@ def main():
         d.setdefault("attractions", []).append({
             "n": d["wavehouse"]["n"], "k": "attraction",
             "p": [round(cx, 1), round(cz, 1)],
-            "t": "Two standing waves: the Double FlowRider, and the 10ft FlowBarrel.",
+            # THE GUIDE TELLS YOU HOW TO PLAY, not just where you are.
+            #
+            # The owner, 2026-08-06: "got avatar guide on how to play and all.
+            # U know like real places ya the experience."
+            #
+            # Written AFTER the rides existed and from what they actually do —
+            # two lanes on the sheet, one on the barrel, at the two published
+            # water speeds. This session found two features that were described
+            # in comments and never ran, so a line that promises a ride the
+            # code does not implement is the same class of lie as a label with
+            # nothing under it.
+            "t": "Two lanes on the FlowRider sheet, so ride it with a friend. "
+                 "The barrel is the fast one.",
         })
 
     print(f"== wavehouse {a.id}")

@@ -32,14 +32,32 @@ const LUGE_KIND = 'summer_toboggan';
 // route, the stations and the wire are the truth layer; how fast the cabin
 // runs is pacing, and pacing is authored. 7 m/s reads as a cable car and puts
 // the long crossing at four minutes, the Sentosa Line at two.
-const SPEED = { gondola: 7.0, chair_lift: 3.2, luge: 8.5, zip: 16.0 };
+// THE WATER'S SPEED IS NOT THE RIDER'S SPEED — and the first cut used it.
+//
+// The published figures are 20 mph (32 km/h = 8.9 m/s) for the Double
+// FlowRider's sheet and 48 km/h (13.3 m/s) for the FlowBarrel, and those went
+// straight in as ride speeds. That is the wrong number: on a sheet wave the
+// WATER moves at that speed and the RIDER HOLDS STATION against it, carving
+// across. At 8.9 m/s a rider crosses the 12m sheet in a second and a half,
+// which reads as being fired across it rather than surfing.
+//
+// The owner, 2026-08-06: "the ride no need to be exact speed like the real
+// one. as long as the game experience is the same u know what i mean?" —
+// right, and for a reason worth writing down: matching a published number is
+// only faithful when it is a number about the same thing you are setting.
+//
+// So these are AUTHORED for feel, a carve rather than a dash, and the
+// FlowBarrel keeps its edge over the sheet because that difference IS real.
+const SPEED = { gondola: 7.0, chair_lift: 3.2, luge: 8.5, zip: 16.0,
+                flowrider: 3.4, flowbarrel: 4.8 };
 // how far the carrier's seat sits below the wire it hangs from
 const HANG = { gondola: 1.6, chair_lift: 0.9 };
 // WHERE YOUR EYES ARE, relative to the carrier's own origin. The first pass put
 // the camera 0.55 ABOVE the carrier, which on a gondola is above the roof: you
 // rode the cable car sitting on top of the cabin. The cabin body hangs from
 // -2.2 to 0 under the attach point, so an occupant's eyeline is about -1.05.
-export const EYE = { gondola: -1.05, chair_lift: -0.45, luge: 0.85, zip: -0.55 };
+export const EYE = { gondola: -1.05, chair_lift: -0.45, luge: 0.85, zip: -0.55,
+                     flowrider: 1.25, flowbarrel: 1.25 };
 // board within this of an end
 export const BOARD_REACH = 14.0;
 
@@ -100,6 +118,80 @@ export function buildRides(THREE, data, world, surfaceAt) {
       // a wire ride is boarded at its ends, at ground level under the wire
       boards: [{ s: 0 }, { s: len }],
     });
+  }
+
+  // ---- SURF COVE: the Double FlowRider and the FlowBarrel ----------------
+  //
+  // The owner, 2026-08-06: "if the real ride is 2 person u also must do ya.
+  // like must make like similar to the real one as much as u can ok?"
+  //
+  // **"DOUBLE" IS THE NAME OF THE RIDE, NOT A DETAIL.** The Double FlowRider
+  // carries TWO riders abreast on one sheet, and being the only installation
+  // in Asia with it (beside the 10ft FlowBarrel) is the venue's published
+  // distinguishing fact. So it is built as TWO LANES on one sheet — two
+  // separate rides side by side — which is genuinely two players, not one ride
+  // with two places to queue. The FlowBarrel is one rider, as in life.
+  //
+  // A standing wave is not a line you travel down: the water moves and the
+  // rider holds station, carving across it. So each lane's path is a short
+  // ACROSS-the-sheet carve that the rider works back and forth, rather than a
+  // route from A to B — and `speed` is the PUBLISHED WATER SPEED, which is
+  // what makes the Barrel harder than the sheet rather than an invented
+  // difficulty number.
+  {
+    const wh = data.wavehouse;
+    if (wh && wh.p) {
+      const [wx, wz] = wh.p;
+      const ux = Math.sin(wh.a), uz = Math.cos(wh.a);
+      const nx = -uz, nz = ux;
+      const gy = surfaceAt(wx, wz);
+      const put = (u, v) => ({ x: wx + ux * u + nx * v, z: wz + uz * u + nz * v });
+      const [rw, rl] = wh.rider || [12, 18];
+      const FW = Math.min(wh.w * 0.42, 46);
+      // TWO LANES, abreast, on the one sheet — this is the Double.
+      for (const lane of [-1, 1]) {
+        const u0 = -FW * 0.26 + lane * (rw * 0.26);
+        const pts = [];
+        // the carve: across the sheet and back, at the height of the deck
+        for (const v of [-rl * 0.30, 0, rl * 0.30, 0, -rl * 0.30]) {
+          const q = put(u0 + v * 0.18, v);
+          pts.push({ x: q.x, z: q.z, y: gy + 1.5 });
+        }
+        const len = arcLength(pts);
+        if (len < 4) continue;
+        rides.push({
+          id: `flow${rides.length}`,
+          kind: 'flowrider',
+          name: lane < 0 ? 'Double FlowRider (left)' : 'Double FlowRider (right)',
+          pts, len,
+          speed: SPEED.flowrider,
+          hang: 0,
+          boards: [{ s: 0 }],
+        });
+      }
+      // THE FLOWBARREL: one rider, and it curls. Same shape of path, tighter
+      // and faster, on the barrel side of the deck.
+      {
+        const br = wh.barrel || 7.5;
+        const pts = [];
+        for (const v of [-br * 0.7, 0, br * 0.7, 0, -br * 0.7]) {
+          const q = put(FW * 0.30 + v * 0.10, v);
+          pts.push({ x: q.x, z: q.z, y: gy + 1.6 });
+        }
+        const len = arcLength(pts);
+        if (len >= 4) {
+          rides.push({
+            id: `flow${rides.length}`,
+            kind: 'flowbarrel',
+            name: 'FlowBarrel',
+            pts, len,
+            speed: SPEED.flowbarrel,
+            hang: 0,
+            boards: [{ s: 0 }],
+          });
+        }
+      }
+    }
   }
 
   // ---- the luge runs, on the track surface -------------------------------
