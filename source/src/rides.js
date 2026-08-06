@@ -102,30 +102,6 @@ export function buildRides(THREE, data, world, surfaceAt) {
     });
   }
 
-  // ...AND A WIRE RIDE WITH A PLATFORM BOARDS FROM THE PLATFORM.
-  //
-  // A boarding point on the grass under the wire makes the deck scenery: you
-  // would climb it for the view and walk back down to get on, which is the
-  // opposite of a station. This only moves the ENDS, and only onto a platform
-  // within 70m of where the ride already boarded, so a ride with no station
-  // near it is untouched.
-  //
-  // Safe only because walkSurfaceAt is height-aware now — the deck can be
-  // reached by walking up the ramp, and cannot be reached by standing under it.
-  for (const r of rides) {
-    if (r.kind !== 'gondola' && r.kind !== 'chair_lift') continue;
-    for (const b of r.boards) {
-      let best = null, bd = 70 * 70;
-      for (const st of (window.__cableStations || [])) {
-        const d = (st.x - b.x) ** 2 + (st.z - b.z) ** 2;
-        if (d < bd) { bd = d; best = st; }
-      }
-      if (!best) continue;
-      b.x = best.x; b.z = best.z; b.y = best.y + 0.9;
-      b.platform = true;
-    }
-  }
-
   // ---- the luge runs, on the track surface -------------------------------
   for (const a of (data.attractions || [])) {
     if (a.k !== LUGE_KIND || !a.g || a.g.length < 3) continue;
@@ -290,6 +266,61 @@ export function buildRides(THREE, data, world, surfaceAt) {
       b.x = p.x; b.z = p.z;
       b.y = r.kind === 'luge' ? p.y : surfaceAt(p.x, p.z);
     }
+  }
+
+  // A WIRE RIDE STOPS AT ITS STATIONS — ALL OF THEM, NOT JUST ITS ENDS.
+  //
+  // Two faults, found 2026-08-06 by asking whether the Sentosa Line actually
+  // works as the Sentosa Line:
+  //
+  //  1. THE INTERMEDIATE STATION COULD NOT BE BOARDED. `boards` was set to
+  //     [{s:0},{s:len}] and nothing ever added to it, so Imbiah Lookout —
+  //     a real station on a real line, with a platform, a ramp and a stair we
+  //     build — was somewhere you could climb and then not get on. The
+  //     published Sentosa Line is Merlion -> Imbiah Lookout -> Siloso Point.
+  //
+  //  2. THE PLATFORM REMAP WAS DEAD CODE, and had been since it was written.
+  //     It ran BEFORE the loop above, so every `b.x` it compared against was
+  //     `undefined`; `(st.x - undefined) ** 2` is NaN, `NaN < bd` is false, so
+  //     `best` stayed null and it returned without doing anything, every time.
+  //     Even had it matched, the loop above would have overwritten x/z
+  //     straight afterwards. Measured before this fix: `platform` was false on
+  //     every board on the island, Siloso Point boarded on the grass at y=17.1
+  //     with its deck at y=27.9, and Sensoryscape only boarded at deck height
+  //     BY ACCIDENT, because that line's end happens to fall under its deck.
+  //
+  // A boarding point on the grass under the wire makes the deck scenery: you
+  // would climb it for the view and walk back down to get on, which is the
+  // opposite of a station. Safe only because walkSurfaceAt is height-aware —
+  // the deck is reachable by walking up the ramp and NOT by standing under it.
+  // GONDOLAS ONLY. `__cableStations` holds the five CABLE CAR stations and
+  // nothing else — the SkyRide has no station in that list. Including
+  // chair_lifts (which the dead code above did, harmlessly, because it never
+  // ran) snapped both SkyRide chairs onto the Imbiah Lookout cable-car deck at
+  // y=54.9: you would have boarded a ground-level chairlift from a twelve
+  // metre platform belonging to a different ride, 43m from its own wire.
+  // Measured, seen in the boards list, and cut before it shipped.
+  for (const r of rides) {
+    if (r.kind !== 'gondola') continue;
+    for (const st of (window.__cableStations || [])) {
+      // where along THIS wire does the station sit? 60m, because a station
+      // sits beside its wire rather than exactly under it, and a wire that
+      // merely passes a station 200m away is not serving it.
+      let bestS = null, bd = 60 * 60;
+      for (const q of r.pts) {
+        const d = (q.x - st.x) ** 2 + (q.z - st.z) ** 2;
+        if (d < bd) { bd = d; bestS = q.s; }
+      }
+      if (bestS === null) continue;
+      // reuse an end if this station IS that end, otherwise add a stop
+      let b = null;
+      for (const b2 of r.boards) if (Math.abs(b2.s - bestS) < 45) { b = b2; break; }
+      if (!b) { b = { s: bestS }; r.boards.push(b); }
+      b.x = st.x; b.z = st.z; b.y = st.y + 0.9;
+      b.platform = true;
+      b.station = st.n;
+    }
+    r.boards.sort((a2, b2) => a2.s - b2.s);
   }
 
   const nearest = (x, z, reach = BOARD_REACH) => {
