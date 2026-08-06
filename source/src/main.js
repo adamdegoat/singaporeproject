@@ -3086,6 +3086,14 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   if (!P.has('notowers')) statAdd(buildTowers(world, data, null));
   if (!P.has('notowers')) buildCranes(world, data);
   const surveyed = P.has('nofoliage') ? { surveyedTrees: 0 } : await plantSurveyed(world, data, place);
+  // SUB-MARKS, because this phase had none and its name is a lie.
+  //
+  // 'surround' reads as "the city beyond the box" and that part costs 65ms.
+  // Measured with the flags: the phase is 5,071ms and ?nofoliage takes it to
+  // 278ms, so 94% of it is FOLIAGE, not surroundings. Splitting it here is the
+  // same move that found the 10.3s buildTrails scan on 2026-08-04 — you cannot
+  // fix what you have not separated.
+  bmark('sur:plantSurveyed');
   // NOW SHADE THE FLOOR. The ground mesh was coloured before any of this ran, so
   // its canopy could only ever see `data.trees` — the surveyed ones — while
   // city.js invents thousands more. terrain.build() left the shade unapplied and
@@ -3095,6 +3103,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     const shaded = terrain.applyCanopy(invented);
     statAdd({ canopyInvented: invented.length, canopyShadedVerts: shaded });
   }
+  bmark('sur:applyCanopy');
   const surround = P.has('nosurround') ? 0 : buildSurround(world, opts.regionData || data);
   bmark('surround');
 

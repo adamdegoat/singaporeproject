@@ -5109,8 +5109,45 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
   };
   {
     const claimed = (data.green || []).filter((g2) => g2.k !== 'wood' && g2.p && g2.p.length > 3);
+    // INDEXED, for the same reason trailGrid above is, and it is the same bug
+    // wearing its third hat this project.
+    //
+    // This scanned EVERY claimed polygon for EVERY halo candidate, doing a full
+    // ring test each time. Measured on Sentosa: 159 claimed polygons carrying
+    // 2,830 vertices against ~25,500 halo candidates — up to 72 MILLION
+    // ring-edge solves inside the boot. plantSurveyed was 4,846ms of a 25s
+    // boot, and 'surround' (the phase it hides in) reads as "the city beyond
+    // the box", which costs 125ms; ?nofoliage takes the phase 5,071 -> 278ms.
+    //
+    // PATTERN TO WATCH, from the 2026-08-04 handover, now three for three:
+    // an unindexed linear scan inside a per-object loop. onAnyRoadT was the
+    // first, trailDist2 the second, this is the third.
+    //
+    // A polygon can only contain a point if its BOUNDING BOX covers that
+    // point's cell, so bucketing by bbox is exact — the answers are identical,
+    // which is the whole point of fixing it this way rather than by loosening
+    // a test.
+    const CCELL = 48;
+    const claimedGrid = new Map();
+    for (const g2 of claimed) {
+      let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+      for (const [x, z] of g2.p) {
+        if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+        if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+      }
+      for (let gx = Math.floor(mnx / CCELL); gx <= Math.floor(mxx / CCELL); gx++) {
+        for (let gz = Math.floor(mnz / CCELL); gz <= Math.floor(mxz / CCELL); gz++) {
+          const k = gx + ',' + gz;
+          let l = claimedGrid.get(k);
+          if (!l) { l = []; claimedGrid.set(k, l); }
+          l.push(g2);
+        }
+      }
+    }
     const inClaimed = (x, z) => {
-      for (const g2 of claimed) if (inRing(x, z, g2.p)) return true;
+      const l = claimedGrid.get(Math.floor(x / CCELL) + ',' + Math.floor(z / CCELL));
+      if (!l) return false;
+      for (let i = 0; i < l.length; i++) if (inRing(x, z, l[i].p)) return true;
       return false;
     };
     const nearRing = (x, z, pts, d) => {
