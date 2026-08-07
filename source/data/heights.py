@@ -108,11 +108,13 @@ RESEARCHED = [
     #
     # Storey counts only, except where a metre figure is genuinely published.
     # Every needle below was checked against EVERY district's building names
-    # before it was added: all 26 match Sentosa and nothing else, so none of
-    # them can reach into another district by substring. Two from the research
-    # matched no footprint at all ("outpost", "altitudex" — the latter is iFly's
-    # 2025 rename, which our data still calls iFly) and are not carried, because
-    # a needle that matches nothing is a line someone has to read forever.
+    # before it was added: every one matches Sentosa and nothing else, so none
+    # of them can reach into another district by substring. "outpost" matched no
+    # footprint at all and is not carried, because a needle that matches nothing
+    # is a line someone has to read forever. ("altitudex" and "marine division"
+    # ARE carried even though the raw extract does not use those names yet —
+    # stale.py renames into them at the end of the chain, and this table is
+    # re-applied after it. See the note at each.)
 
     # --- RWS
     # Hotel Ora — "a seven-storey property", RWS press release, 14 Jul 2023.
@@ -152,8 +154,10 @@ RESEARCHED = [
 
     # --- Brani
     # SCDF Marine Division HQ — four storeys, opened 19 Jun 2026. mha.gov.sg.
-    # (The mapped name still says "Marine Command", which is the old one.)
+    # Both names, for the same reason as AltitudeX above: stale.py corrects
+    # "Marine Command" to "Marine Division" and this table is read afterwards.
     ("marine command", {"floors": 4}),
+    ("marine division", {"floors": 4}),
 
     # --- Sentosa Cove. Storeys from EdgeProp, which is URA-derived. The
     # published bound: The Oceanfront is the Cove's tallest at a maximum
@@ -188,7 +192,14 @@ RESEARCHED = [
     # --- Published metres
     # AltitudeX (ex-iFly) — the flight chamber alone is 17.2 m tall, and the
     # building encloses it. Sentosa's own copy: "the height of a 6-storey flat".
+    # BOTH SPELLINGS ON PURPOSE. stale.py renames iFly -> AltitudeX at the end
+    # of the chain and this table is re-applied AFTER it, so the new name is
+    # what a needle has to match; the old one stays because the rename is
+    # data-dependent and a district built from an older extract still says iFly.
+    # A rename that silently unhooks a researched height is a bug you cannot
+    # see — the building just quietly goes back to a band median.
     ("ifly", {"floors": 6}),
+    ("altitudex", {"floors": 6}),
 
     # TWO PUBLISHED FIGURES FROM THE RESEARCH ARE DELIBERATELY NOT HERE, and
     # both for the same reason: THE FOOTPRINT IS NOT THE THING.

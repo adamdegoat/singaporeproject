@@ -325,6 +325,31 @@ def main():
     sites = []
     raw_path = os.path.join(HERE, "raw", f"{did}.json")
     if os.path.exists(raw_path):
+        # A SITE IS AN AREA. THIS NEVER CHECKED, AND ROADS WERE NAMING
+        # BUILDINGS (found 2026-08-07, research/sentosa-heights.md §4).
+        #
+        # The rule below says "named site polygon" and the filter only ever
+        # tested "not a building, and has a name". A named `highway` way with
+        # four or more nodes passed, and `inside()` then treated its node list
+        # as a closed ring — so a road that curves, and above all a road that
+        # LOOPS, donated its name to whatever stood inside the loop.
+        #
+        # Measured on Sentosa: SEVENTEEN footprints were wearing the name of a
+        # road in our own road layer. `Woolwich Road` was a 2,152 m2 building.
+        # The Cove is the worst of it and the mechanism is plainest there — the
+        # residential streets ring their own islands, so every house inside
+        # came out called `Treasure Island`, `Paradise Island`, `Coral Island`,
+        # `Sandy Island` or `Pearl Island`, which read as five islands' worth of
+        # confidently wrong labels floating over Sentosa Cove.
+        #
+        # Two tests, because either alone lets it through:
+        #   * the way must be CLOSED — an area's ring starts where it ends;
+        #   * and must not be a LINEAR feature, because closed linear ways are
+        #     real (a roundabout, a loop road, a ring path) and are still not
+        #     sites. `area=yes` is OSM's own override and is honoured.
+        LINEAR = ("highway", "barrier", "waterway", "railway", "aerialway",
+                  "route", "power", "man_made" )
+        skipped_line = skipped_open = 0
         for e in json.load(open(raw_path)).get("elements", []):
             t = e.get("tags") or {}
             if t.get("building") or not t.get("name"):
@@ -332,8 +357,18 @@ def main():
             geom = e.get("geometry") or []
             if len(geom) < 4:
                 continue
+            if t.get("area") != "yes":
+                if any(t.get(k) for k in LINEAR):
+                    skipped_line += 1
+                    continue
+                a, b = geom[0], geom[-1]
+                if abs(a["lat"] - b["lat"]) > 1e-9 or abs(a["lon"] - b["lon"]) > 1e-9:
+                    skipped_open += 1
+                    continue
             sites.append((t["name"], [proj(g["lat"], g["lon"]) for g in geom]))
-        print(f"  {len(sites)} named site polygons in the local raw cache")
+        print(f"  {len(sites)} named site polygons in the local raw cache"
+              f"  (skipped {skipped_line} linear + {skipped_open} unclosed — "
+              f"a site is an area, and roads were naming buildings)")
 
     def inside(px, pz, ring):
         c = False
