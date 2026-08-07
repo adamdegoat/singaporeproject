@@ -601,9 +601,33 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
 
   // Overhead bridges at the positions OSM records, spanning the way it maps.
   let realBridges = 0, droppedBridges = 0;
+  // A WAY THAT AN AUTHORED STRUCTURE ALREADY BUILDS IS NOT DRAWN TWICE.
+  //
+  // The Palawan crossing is three `bridges` ways and the 64 m span clears every
+  // test below, so `pedBridge` stood a white slab exactly where the suspension
+  // bridge is. The fix belongs HERE and not in the data: `navcheck.py` reads
+  // `bridges` as walkable, and deleting the ways to stop them being drawn cut
+  // the islet off the network (N1 0.63% -> 0.82%, a fourth stranded island).
+  // The map keeps saying you can cross; only the recipe stands down.
+  const claimed = ((data.palawanbridge || {}).p) || [];
+  const isClaimed = (a, b) => {
+    if (claimed.length < 2) return false;
+    const near = (q) => {
+      for (let i = 0; i < claimed.length - 1; i++) {
+        const [ax, az] = claimed[i], [bx, bz] = claimed[i + 1];
+        const vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz;
+        const t = L2 < 1e-9 ? 0 : Math.max(0, Math.min(1,
+          ((q[0] - ax) * vx + (q[1] - az) * vz) / L2));
+        if (Math.hypot(q[0] - (ax + vx * t), q[1] - (az + vz * t)) < 8) return true;
+      }
+      return false;
+    };
+    return near(a) && near(b);
+  };
   for (const line of (data.bridges || [])) {
     await YY();
     if (line.length < 2) continue;
+    if (isClaimed(line[0], line[line.length - 1])) continue;
     let len = 0;
     for (let i = 0; i < line.length - 1; i++) {
       len += Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
@@ -5023,6 +5047,210 @@ export async function buildTransit(world, data, Y = null) {
     cap.translate(ax, tgy + th, az);
     merger.add(cap, deckMat, ax, az);
     out.skywalk = 1;
+  }
+
+  // -- THE PALAWAN SUSPENSION BRIDGE --------------------------------------
+  //
+  // research/palawan-spawn.md 4.2: "The single most recognisable object at
+  // Palawan. Get this right and the frame is unmistakable." 78 m from the
+  // spawn. It was drawn by `pedBridge` — a white slab with a box under it.
+  //
+  // The ROUTE is Layer 1 and comes from data/palawanbridge.py, which chains the
+  // three mapped ways. Everything here is Layer 2, authored from the dated
+  // photographs the research reads, and the giveaway details are the ones it
+  // calls out: WHITE-PAINTED CHAIN HANGERS IN A ZIGZAG CHEVRON, not verticals;
+  // a knotted rope net rather than balusters; and end portals of splayed
+  // trunk-like columns carrying a trunk lintel, not masts.
+  //
+  // NO STIFFENING TRUSS — "the deck follows the cable sag, and it sways" — so
+  // the deck itself is built on the catenary rather than run level.
+  //
+  // HEIGHTS COME FROM THE RENDERER, NEVER FROM A DATUM THIS FILE RECONSTRUCTS:
+  // `drawnGroundAt` for the abutments and `window.__seaY` for the water as it
+  // was actually drawn. 14f burned two hours proving an islet was underwater
+  // because it rebuilt sea level out of `g.sea` and `base` instead of asking.
+  const pb = data.palawanbridge;
+  if (pb && pb.p && pb.p.length >= 2) {
+    await YY();
+    const P = pb.p;
+    const HW = (pb.w || 1.2) / 2, RAILH = pb.rail || 1.0;
+    const SAG = pb.sag || 0.9, CLEAR = pb.clear || 1.25;
+    const seaY = typeof window.__seaY === 'number' ? window.__seaY : 0;
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) {
+      cum.push(cum[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]));
+    }
+    const L = cum[cum.length - 1];
+    const Lspan = cum[Math.min(cum.length - 1, Math.max(1, (pb.nspan || 2) - 1))];
+    const yA = Math.max(drawnGroundAt(P[0][0], P[0][1]) + 0.3, seaY + CLEAR);
+    const yB = Math.max(drawnGroundAt(P[P.length - 1][0], P[P.length - 1][1]) + 0.3,
+                        seaY + CLEAR);
+    // the deck IS the catenary, dipping only across the suspended span
+    const deckY = (s) => {
+      const base = yA + (yB - yA) * (s / L);
+      const u = Math.min(1, Math.max(0, s / Lspan));
+      return Math.max(seaY + 0.5, base - SAG * 4 * u * (1 - u));
+    };
+    const at = (s) => {
+      let i = 1;
+      while (i < cum.length - 1 && cum[i] < s) i++;
+      const t = (s - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1]);
+      return [P[i - 1][0] + (P[i][0] - P[i - 1][0]) * t,
+              P[i - 1][1] + (P[i][1] - P[i - 1][1]) * t, i];
+    };
+    const timber = new THREE.MeshLambertMaterial({ color: 0x8b6b47 });
+    const kerb = new THREE.MeshLambertMaterial({ color: 0x6f5334 });
+    const cable = new THREE.MeshLambertMaterial({ color: 0x35383c });
+    const chainW = new THREE.MeshLambertMaterial({ color: 0xe8e6e0 });
+    const ropeM = new THREE.MeshLambertMaterial({ color: 0xbfae8e });
+    const trunk = new THREE.MeshLambertMaterial({ color: 0x9a958c });
+    const rock = new THREE.MeshLambertMaterial({ color: 0x7c7a7a });
+    // A CYLINDER BETWEEN TWO POINTS IN SPACE, AND IT IS WORTH THE HELPER.
+    // The first version composed rotateX(atan2(rise, run)) with rotateY(ang)
+    // and the cables came out as a fringe of disconnected black spikes sticking
+    // up out of the deck at 45 degrees (shots/street/pbside.shot1). Two
+    // successive axis rotations do not compose into "lie along this vector";
+    // rotating the cylinder's +Y onto the unit direction does, once, correctly.
+    const strut = (x0, y0, z0, x1, y1, z1, r, mat) => {
+      const ax = x1 - x0, ay = y1 - y0, az = z1 - z0;
+      const len = Math.hypot(ax, ay, az) || 1e-6;
+      const g = new THREE.CylinderGeometry(r, r, len, 5);
+      g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3(ax / len, ay / len, az / len)));
+      g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+      merger.add(g, mat, x0, z0);
+    };
+    // the cable rides above the deck and climbs to the pylon tops
+    const cableY = (t) => {
+      const u = Math.min(1, Math.max(0, t / Lspan));
+      return deckY(t) + RAILH + 0.35 + (pb.pylon || 6.4) * 0.42 * (1 - 4 * u * (1 - u));
+    };
+    const STEP = 2.0;                       // = the researched hanger spacing
+    const n = Math.max(2, Math.round(L / STEP));
+    let prev = null;
+    for (let k = 0; k <= n; k++) {
+      const s = (k / n) * L;
+      const [px, pz] = at(s);
+      const y = deckY(s);
+      if (prev) {
+        const [qx, qz, qy] = prev;
+        const dx = px - qx, dz = pz - qz;
+        const seg = Math.hypot(dx, dz) || 1;
+        const ang = Math.atan2(dx, dz);
+        const nx3 = Math.cos(ang), nz3 = -Math.sin(ang);
+        const my = (y + qy) / 2, mx = (px + qx) / 2, mz = (pz + qz) / 2;
+        // deck: transverse planking on two edge beams
+        const dk = new THREE.BoxGeometry(HW * 2, 0.11, seg + 0.05);
+        dk.rotateY(ang); dk.translate(mx, my, mz);
+        merger.add(dk, timber, mx, mz);
+        for (const sg of [-1, 1]) {
+          const ox = nx3 * HW * sg, oz = nz3 * HW * sg;
+          const eb = new THREE.BoxGeometry(0.08, 0.16, seg + 0.05);
+          eb.rotateY(ang);
+          eb.translate(mx + ox, my + 0.04, mz + oz);
+          merger.add(eb, kerb, mx, mz);
+          // the rope net, as a band — diamond mesh does not survive to pixels
+          // at the distance this is seen from, and a per-knot net on a
+          // fill-rate-bound phone is not affordable
+          const net = new THREE.BoxGeometry(0.03, RAILH * 0.72, seg + 0.05);
+          net.rotateY(ang);
+          net.translate(mx + ox, my + 0.1 + RAILH * 0.36, mz + oz);
+          merger.add(net, ropeM, mx, mz);
+          // the thick natural-fibre handrail along the top edge
+          strut(qx + ox, qy + RAILH, qz + oz, px + ox, y + RAILH, pz + oz,
+                0.05, ropeM);
+          // MAIN CABLE, in a catenary ABOVE handrail height, anchored at the
+          // pylon tops — so it rises away from the deck toward each end.
+          //
+          // ONLY ACROSS THE SUSPENDED SPAN. It is drawn per segment along the
+          // whole chain otherwise, and past the far pylon the catenary term
+          // pins at full height while the deck descends to the beach — so two
+          // black cables ran on past the portal and out over the islet at a
+          // constant offset above a falling deck. The approaches are ordinary
+          // trestle decking and carry nothing (research 4.2: "near the ends it
+          // is carried on a few slender posts standing in the shallows").
+          const onSpan = s <= Lspan + 0.01;
+          const c0 = cableY(s - seg), c1 = cableY(s);
+          if (onSpan) {
+            strut(qx + ox, c0, qz + oz, px + ox, c1, pz + oz, 0.055, cable);
+          }
+          // ...AND THE HANGERS, WHICH ARE THE TELL. White-painted heavy link
+          // chain, leaning alternately so cable and deck are tied in a
+          // triangulated chevron rather than a ladder of verticals.
+          // the chain must LAND ON the cable, so its top is the cable's own
+          // height at the leaned arc position — averaging the segment's two
+          // ends put the white zigzag through and above the cable near the
+          // pylons, where the catenary climbs fastest
+          const lean = (k % 2 ? 1 : -1) * seg * 0.45;
+          const ux3 = dx / seg, uz3 = dz / seg;
+          if (onSpan) {
+            strut(mx + ox, my + 0.12, mz + oz,
+                  mx + ox + ux3 * lean, cableY(s - seg / 2 + lean),
+                  mz + oz + uz3 * lean, 0.045, chainW);
+          } else if (k % 2 === 0) {
+            // ...and the approach stands on its own slender posts instead
+            const gy2 = drawnGroundAt(mx, mz);
+            if (my - gy2 > 0.4) {
+              strut(mx + ox, my, mz + oz, mx + ox, Math.max(gy2, seaY - 0.6),
+                    mz + oz, 0.06, kerb);
+            }
+          }
+        }
+        // A CROSSING YOU CAN ACTUALLY MAKE. The three mapped ways live in
+        // `bridges`, not in `roads`, so nothing ever registered a walkable
+        // surface here and the islet's own footpaths were stranded from the
+        // network. The Southernmost Point is reachable on foot now.
+        addWalkSurface(qx, qz, px, pz, HW + 0.1, my);
+      }
+      prev = [px, pz, y];
+    }
+    // THE END PORTALS. Not masts — "massive pale grey trunk-like columns,
+    // roughly 5-8 m tall, splayed like a candelabra, with lopped branch stubs
+    // and forked tops, carrying a trunk lintel across the top, standing on
+    // rounded granite boulders."
+    const PH = pb.pylon || 6.4;
+    for (const [ex, ez] of (pb.pyl || [])) {
+      const gy = Math.max(drawnGroundAt(ex, ez), seaY - 0.2);
+      const sAt = (Math.hypot(ex - P[0][0], ez - P[0][1]) < 1) ? 0 : Lspan;
+      const dY = deckY(sAt);
+      const ang2 = Math.atan2(P[1][0] - P[0][0], P[1][1] - P[0][1]);
+      const nx4 = Math.cos(ang2), nz4 = -Math.sin(ang2);
+      for (const sg of [-1, 1]) {
+        const bx = ex + nx4 * (HW + 0.75) * sg, bz = ez + nz4 * (HW + 0.75) * sg;
+        // the boulder the post stands on
+        const bo = new THREE.SphereGeometry(0.85, 6, 4);
+        bo.scale(1, 0.6, 1); bo.translate(bx, gy + 0.15, bz);
+        merger.add(bo, rock, bx, bz);
+        // the trunk, splayed outward as it rises
+        const col = new THREE.CylinderGeometry(0.24, 0.36, PH, 6);
+        col.translate(0, PH / 2, 0);
+        col.rotateZ(0.10 * sg * (nz4 >= 0 ? 1 : -1));
+        col.translate(bx, gy + 0.5, bz);
+        merger.add(col, trunk, bx, bz);
+        // two lopped branch stubs, which is what makes it read as a trunk
+        for (const [fh, fl] of [[PH * 0.62, 0.9], [PH * 0.84, 0.7]]) {
+          const br = new THREE.CylinderGeometry(0.10, 0.14, fl, 5);
+          br.rotateZ(Math.PI / 2.6 * sg);
+          br.translate(bx + nx4 * 0.35 * sg, gy + 0.5 + fh, bz + nz4 * 0.35 * sg);
+          merger.add(br, trunk, bx, bz);
+        }
+      }
+      // the trunk lintel across the top of the portal
+      const lin = new THREE.CylinderGeometry(0.19, 0.19, (HW + 0.75) * 2 + 0.5, 6);
+      lin.rotateZ(Math.PI / 2); lin.rotateY(ang2);
+      lin.translate(ex, gy + 0.5 + PH * 0.94, ez);
+      merger.add(lin, trunk, ex, ez);
+      // the deck has to arrive at something: a short abutment apron of boulders
+      for (let b = -1; b <= 1; b++) {
+        const ax4 = ex + nx4 * b * 1.5, az4 = ez + nz4 * b * 1.5;
+        const bo2 = new THREE.SphereGeometry(0.7, 6, 4);
+        bo2.scale(1.1, 0.55, 1.1);
+        bo2.translate(ax4, Math.min(gy + 0.1, dY - 0.55), az4);
+        merger.add(bo2, rock, ax4, az4);
+      }
+    }
+    out.palawanbridge = 1;
   }
 
   // -- PORTE-COCHERE: drive in, stop at the lobby, drive out ---------------

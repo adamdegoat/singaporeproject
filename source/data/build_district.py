@@ -525,6 +525,10 @@ CHAIN = [
     # touches heights this project invented (`hs == "calib"`).
     Pass("palawan.py", "the spawn: a 25m mast that is a lifeguard hut, and "
          "villa terraces drawn as slabs", only="sentosa"),
+    # Chains the three mapped ways into one crossing and takes them OUT of
+    # `bridges`, so the generic slab recipe cannot stand inside the real one.
+    Pass("palawanbridge.py", "the suspension bridge, chained from its three "
+         "mapped ways", only="sentosa"),
     # ...and here are the four. Each one used to run above attractions.py and
     # print its own "not built" line on every build.
     Pass("sensoryscape.py", "needs attractions: the six gardens", only="sentosa"),

@@ -5393,6 +5393,12 @@ function buildSea(world) {
   mesh.renderOrder = -2;
   world.add(mesh);
   SEA_LEVEL[0] = SEA_Y;
+  // ONE NAME FOR "THE WATER AS DRAWN", for the same reason 13b gave city.js
+  // `drawnGroundAt` beside `groundAt`: anything that has to sit a fixed height
+  // above the sea needs the number the SHEET was drawn at, not a datum it
+  // reconstructs from `g.sea` and `base`. Reconstructing it is how 14f spent
+  // two hours proving an islet was underwater when it was 1.2 m above.
+  window.__seaY = SEA_Y;
   return 1;
 }
 
