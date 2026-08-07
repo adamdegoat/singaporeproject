@@ -927,10 +927,38 @@ def main():
     if _afloat:
         print(f"   {_afloat} structure(s) stand on legs over the water — "
               f"their cells are left to the sea")
+    # A BRIDGE DECK IS NOT THE GROUND — AND THIS FILE ALREADY SAYS SO, 600
+    # LINES UP, IN THE OTHER DIRECTION.
+    #
+    # `road_samples` refuses to SAMPLE a bridge, in those words, because an
+    # elevated way returns its own deck height and put a 53 m ridge across
+    # Marina Bay. The same fact decides this question too and was never applied
+    # here: a deck on piers does not hold its ground up, so marking its cells
+    # `_built` keeps the sea out from under a structure whose whole point is
+    # that the sea runs under it. The Sentosa Boardwalk is 395 m of `bridge=1`
+    # walking over Keppel Harbour, and it was drawing the harbour as land.
+    #
+    # This is the same shape as the `OVER_WATER` exception above, which is a
+    # NAMED list because the discriminator for buildings had to be authored —
+    # a waterfront block only meets the water at its edge and nothing in the
+    # data separates it from a stage on stilts. Ways need no list: OSM tags the
+    # bridge, and the tag is already carried through the pipeline and already
+    # trusted for exactly this fact.
+    #
+    # Over LAND this changes nothing at all — a viaduct's cells are land
+    # whether or not the deck marks them, because only the water and coastline
+    # passes read `_built`, and neither fires on dry ground.
+    _bridged = 0
     for _r in data.get("roads", []):
+        if _r.get("bridge"):
+            _bridged += 1
+            continue
         _p = _r.get("p", [])
         for _s in range(len(_p) - 1):
             _mark_span(_p[_s][0], _p[_s][1], _p[_s + 1][0], _p[_s + 1][1])
+    if _bridged:
+        print(f"   {_bridged} bridge way(s) hold no ground up — their decks "
+              f"are on piers and the water runs under them")
 
     def carries_built(px, pz):
         ci, cj = int(math.floor(px / CELL)), int(math.floor(pz / CELL))
