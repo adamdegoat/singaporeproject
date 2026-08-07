@@ -407,6 +407,148 @@ def process(d, raw_path):
     return out_path
 
 
+# THE POST-PASS CHAIN IS A DEPENDENCY GRAPH, AND IT WAS A HABIT.
+#
+# Written out 2026-08-07, after `build_district.py sentosa` — the documented
+# way to apply a process.py change — SILENTLY DROPPED EIGHT LAYERS AND HALF OF
+# TWO MORE from a scene that had been correct for four sessions:
+#
+#     attractions 110 -> 0    sensoryscape 5 -> 0    entrances 61 -> 4
+#     bullring     11 -> 0    skywalk      7 -> 0    green    200 -> 193
+#     ussgate      11 -> 0    lookoutloop  5 -> 0    land      54 -> 51
+#     rocks        29 -> 0    wavehouse   10 -> 0    water     52 -> 48
+#
+# TWO causes, and the second is the one worth remembering.
+#
+# 1. TEN PASSES WERE NEVER IN THE CHAIN AT ALL. attractions, groynes,
+#    cablestations, railstations, venues, lookoutloop, wavehouse, relparcels,
+#    resortfix and stale were each run BY HAND on the day they were written,
+#    and the scene file carried their output from then on. Nothing recorded
+#    that they had to be re-run, so the knowledge lived in a session log.
+#
+# 2. THE FOUR THAT WERE IN THE CHAIN RAN BEFORE THEIR INPUT EXISTED, AND SAID
+#    SO EVERY TIME. sensoryscape, ussgate, bullring and skywalk all read the
+#    `attractions` layer, and all four sat ABOVE the point where anything
+#    produced it. Every build for weeks printed
+#
+#        ! only 0 Sensoryscape gardens mapped — not built
+#        ! Universal Studios park ring or globe missing — gate not placed
+#        ! Universal Studios Globe node missing — bull ring not placed
+#        ! Fort Siloso or Siloso Point Station missing — skywalk not placed
+#
+#    ...and every one of them is `check=False`, so a build that built none of
+#    Sentosa's authored landmarks still exited 0. The messages were right, they
+#    were printed, and nobody read them because the build "passed".
+#
+# So the order below is the graph, stated once, with the edge that forces each
+# position. `required` is the old check=True: only the two passes whose failure
+# would ship a wrong MAP (the island clip and the path stitch) can stop a build.
+#
+# `only` keeps a pass off the other fourteen districts. Ten of these write
+# Sentosa-only layers and one (attractions) is a live Overpass call, so running
+# them everywhere would both cost network time and give every other district a
+# layer it has never had.
+class Pass:
+    __slots__ = ("script", "why", "only", "required", "args", "verdict")
+
+    def __init__(self, script, why, only=None, required=False, args=(),
+                 verdict=False):
+        self.script, self.why, self.only = script, why, only
+        self.required, self.args = required, args
+        # `verdict` marks a pass whose EXIT CODE IS AN OPINION, not a failure.
+        # navcheck --emit-termini reports the dead ends it found and then
+        # writes the termini that answer them, so it exits 1 on a run that did
+        # exactly its job. Without this the new failure banner cries wolf on
+        # every single build, and a warning that is always on is a warning
+        # nobody reads — which is the whole disease this banner exists to cure.
+        self.verdict = verdict
+
+
+CHAIN = [
+    # --- the map itself -----------------------------------------------------
+    Pass("gantries.py", "surveyed LTA gantries; not in Overpass"),
+    Pass("lamps.py", "real lamp posts, on built roads only"),
+    # THE MAP IS THE ISLAND. The bbox is a rectangle and swept in Pulau Brani,
+    # the Keppel terminal and HarbourFront — 24 of the 30 km that measured as
+    # "unreachable network" was simply land that is not Sentosa. Clipping is
+    # part of the build, not a thing done by hand afterwards, or the next
+    # rebuild silently puts the mainland back.
+    Pass("island.py", "clip every playable layer to the coastline", required=True),
+    # Then join the paths the surveyor left unjoined: 58 of Sentosa's 66
+    # stranded pieces sat within 15m of the network, including the 1,751m
+    # Imbiah trail at 5.4m.
+    Pass("stitch.py", "connect the stranded path pieces", required=True),
+    # OSM's `layer` tag is crossing order; reading it as metres built the
+    # guideway at three different heights.
+    Pass("monorail.py", "one continuous height profile for the Express"),
+    Pass("openground.py", "open the ground storey where a road runs through"),
+    # MOVED UP from below bullring: the ring is an INPUT now. attractions.py
+    # cuts everything more than 200m outside it, so the ring has to exist
+    # before the attractions are fetched or the mainland's come with them.
+    Pass("islandring.py", "publish the stitched coastline ring"),
+
+    # --- buildings, names and heights --------------------------------------
+    Pass("zipline.py", "MegaZip, authored from measured endpoints"),
+    Pass("hotels.py", "the resorts OSM carries as nodes"),
+    Pass("names.py", "bring names up to date before anything reads them"),
+    Pass("heights.py", "calibrate guessed heights against surveyed ones"),
+    # ARCADE STAYS HERE, ABOVE THE SENTOSA BLOCK, AND THAT POSITION IS A
+    # MEASUREMENT. It was tried below the block — which reads better, since
+    # those passes reshape buildings and arcade.py opens routes THROUGH
+    # buildings — and it wrote 33 new arcades and removed 25, among them a
+    # 264 m elevated deck across Sandy Island in Sentosa Cove. Audit T1
+    # (carriageway blocked by solid geometry) went 5 -> 22 against a budget
+    # of 16, all of it that one deck. Above the block reproduces the world
+    # that four sessions of gates were run against; below it does not, and
+    # "reads better" is not a reason to move a pass that changes the map.
+    Pass("arcade.py", "open the mapped walking routes that run through buildings"),
+
+    # --- Sentosa's own layers, in dependency order -------------------------
+    Pass("resortfix.py", "researched resort footprints and heights", only="sentosa"),
+    # THE ROOT OF THIS HALF OF THE GRAPH. Four passes below read `attractions`.
+    Pass("attractions.py", "tourism/historic/attraction — the root of the "
+         "sensoryscape/ussgate/bullring/skywalk subtree", only="sentosa"),
+    Pass("groynes.py", "Siloso's boulder groynes and islets", only="sentosa"),
+    Pass("cablestations.py", "four cable-car stations were 20-27m office blocks",
+         only="sentosa"),
+    Pass("railstations.py", "the three Sentosa Express stations, as places",
+         only="sentosa"),
+    Pass("venues.py", "bind the Siloso strip's venue names to their footprints",
+         only="sentosa"),
+    # ...and here are the four. Each one used to run above attractions.py and
+    # print its own "not built" line on every build.
+    Pass("sensoryscape.py", "needs attractions: the six gardens", only="sentosa"),
+    Pass("ussgate.py", "needs attractions: the USS park ring and globe", only="sentosa"),
+    Pass("bullring.py", "needs attractions: the globe fixes the long axis", only="sentosa"),
+    Pass("skywalk.py", "needs attractions: Fort Siloso and Siloso Point", only="sentosa"),
+    Pass("lookoutloop.py", "recover the name/layer/level process.py strips off "
+         "bridge footways", only="sentosa"),
+    Pass("wavehouse.py", "SURF COVE, authored — the map does not have it", only="sentosa"),
+    Pass("relparcels.py", "the multipolygon relations that arrive without geometry",
+         only="sentosa"),
+
+    # --- what has to come after everything above ---------------------------
+    # Needs attractions: an entrance is where you arrive AT one. It used to sit
+    # above, where the layer was always empty, and wrote 4 entrances instead of
+    # 62. Nothing else reads `entrances`, so this is the only edge it has.
+    Pass("entrances.py", "needs attractions: where you arrive, and what the sign says"),
+    # LAST of the content passes, because it CORRECTS what the ones above
+    # wrote: OSM still carries Madagascar and Jurassic World, and the real
+    # zones are Minion Land and The Lost World. Anything that re-fetches
+    # attractions after this point puts the stale names back.
+    Pass("stale.py", "closed and renamed: correct them after everything is written",
+         only="sentosa"),
+
+    # --- report -------------------------------------------------------------
+    Pass("navcheck.py", "give every path that stops at nothing a reason to stop",
+         args=("--emit-termini",), verdict=True),
+]
+
+
+def post_passes(did):
+    return [p for p in CHAIN if p.only is None or p.only == did]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("id")
@@ -421,54 +563,26 @@ def main():
     # The surveyed ERP gantries, which come from LTA rather than from Overpass
     # and so are a separate step. They were placed by rule at two invented
     # arclengths until 2026-07-28; see data/gantries.py.
-    subprocess.run([sys.executable, os.path.join(HERE, "gantries.py"), d["id"]], check=False)
-    subprocess.run([sys.executable, os.path.join(HERE, "lamps.py"), d["id"]], check=False)
-    # THE MAP IS THE ISLAND. The bbox is a rectangle and swept in Pulau Brani,
-    # the Keppel terminal and HarbourFront — 24 of the 30 km that measured as
-    # "unreachable network" was simply land that is not Sentosa. Clipping is
-    # part of the build, not a thing done by hand afterwards, or the next
-    # rebuild silently puts the mainland back. See data/island.py.
-    subprocess.run([sys.executable, os.path.join(HERE, "island.py"), d["id"]], check=True)
-    # Then join the paths the surveyor left unjoined: 58 of Sentosa's 66
-    # stranded pieces sat within 15m of the network, including the 1,751m
-    # Imbiah trail at 5.4m. See data/stitch.py.
-    subprocess.run([sys.executable, os.path.join(HERE, "stitch.py"), d["id"]], check=True)
-    # One continuous height profile for the Sentosa Express, because OSM's
-    # layer tag is crossing order and reading it as metres built the guideway
-    # at three different heights. See data/monorail.py.
-    subprocess.run([sys.executable, os.path.join(HERE, "monorail.py"), d["id"]], check=False)
-    # Where a real carriageway runs through a real footprint, open the ground
-    # storey — the road passes under the structure. See data/openground.py.
-    subprocess.run([sys.executable, os.path.join(HERE, "openground.py"), d["id"]], check=False)
-    # Sensoryscape is a landscape, not the 27m block the height bands made it.
-    subprocess.run([sys.executable, os.path.join(HERE, "sensoryscape.py"), d["id"]], check=False)
-    # The USS entrance arch is not in OSM either. See data/ussgate.py.
-    subprocess.run([sys.executable, os.path.join(HERE, "ussgate.py"), d["id"]], check=False)
-    # Publish the stitched coastline ring, so the runtime can ask what stands
-    # on the island — the backdrop massing could not. See data/islandring.py.
-    subprocess.run([sys.executable, os.path.join(HERE, "islandring.py"), d["id"]], check=False)
-    # Nor is the Bull Ring, the parasol over the Universal plaza — a published
-    # lat/lon and a satellite-measured ellipse. See data/bullring.py.
-    subprocess.run([sys.executable, os.path.join(HERE, "bullring.py"), d["id"]], check=False)
-    # The Fort Siloso Skywalk is not in OSM either. See data/skywalk.py.
-    subprocess.run([sys.executable, os.path.join(HERE, "skywalk.py"), d["id"]], check=False)
-    # MegaZip is not in OSM — authored from measured endpoints against
-    # published figures. See data/zipline.py.
-    subprocess.run([sys.executable, os.path.join(HERE, "zipline.py"), d["id"]], check=False)
-    # The resorts OSM carries as nodes, which the building layer never had.
-    subprocess.run([sys.executable, os.path.join(HERE, "hotels.py"), d["id"]], check=False)
-    # Bring names up to date before anything reads them (signs, gates, labels).
-    subprocess.run([sys.executable, os.path.join(HERE, "names.py"), d["id"]], check=False)
-    # Calibrate guessed building heights against the district's own surveyed
-    # ones — the blanket default was twice the island's real median.
-    subprocess.run([sys.executable, os.path.join(HERE, "heights.py"), d["id"]], check=False)
-    # Where you arrive at each attraction, and what the guide there says.
-    subprocess.run([sys.executable, os.path.join(HERE, "entrances.py"), d["id"]], check=False)
-    # Open the mapped walking routes that run through buildings.
-    subprocess.run([sys.executable, os.path.join(HERE, "arcade.py"), d["id"]], check=False)
-    # Give every path that stops at nothing a reason to stop, then report.
-    subprocess.run([sys.executable, os.path.join(HERE, "navcheck.py"), d["id"],
-                    "--emit-termini"], check=False)
+    # A PASS THAT DIES MUST SAY SO. `check=False` is right — one broken recipe
+    # should not stop a whole district rebuild — but it was also SILENT, and
+    # silence is how this chain lost eight layers for weeks. It happened again
+    # while the chain was being written down: heights.py grew an import of
+    # process.py, which has an argv guard, so the interpreter exited before the
+    # import finished. The build printed one line nobody read and exited 0, the
+    # entire height calibration stopped running, and fifteen buildings at Fort
+    # Siloso reverted to their raw type defaults. The golden caught it; the
+    # build had said "fine".
+    failed = []
+    for step in post_passes(d["id"]):
+        r = subprocess.run([sys.executable, os.path.join(HERE, step.script), d["id"]]
+                           + list(step.args), check=step.required)
+        if r.returncode != 0 and not step.verdict:
+            failed.append((step.script, r.returncode, step.why))
+    if failed:
+        print(f"\n  ! {len(failed)} POST-PASS(ES) FAILED — the scene is missing "
+              f"what they write, and this build still exited 0:")
+        for script, code, why in failed:
+            print(f"      {script:18} exit {code}   ({why})")
 
     print(f"\nNext: python3 check.py {d['id']}")
 

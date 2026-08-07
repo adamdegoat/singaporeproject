@@ -45,8 +45,14 @@ import json
 import math
 import os
 import statistics
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+# IMPORTED, NOT RE-TYPED — and from buildtypes.py rather than from process.py,
+# which is where this import was first written and where it silently killed
+# this whole script. See the note at the top of data/buildtypes.py.
+from buildtypes import SELF_SCALED                         # noqa: E402
 
 # footprint bands, in m2
 # FINER BANDS. 300-1000 m2 is far too coarse a bucket to carry one median: it
@@ -185,6 +191,17 @@ def main():
         # that clearance against the ground under a real road, and a median has
         # nothing to add.
         if b.get("roof") or b.get("og") or (b.get("mh") or 0) > 1:
+            continue
+        # ...AND THE SAME FOR EVERY OTHER TYPE THAT IS ITS OWN HEIGHT
+        # STATEMENT. The `roof` guard above was written for one canopy and left
+        # the rest of the family behind: a `building=hut` and a
+        # `building=grandstand` — the Wings of Time stage set and its 2,712 m2
+        # seating bank, the two nearest structures to the spawn point — were
+        # both banded up to 20.4 m off their footprint area and both shipped as
+        # solid slabs in the first frame of the world. A hut is single-storey
+        # because it is a hut. The list lives in process.py beside the defaults
+        # it belongs to, so the two cannot drift apart.
+        if b.get("bt") in SELF_SCALED:
             continue
         area = b.get("a") or 0
         med = overall

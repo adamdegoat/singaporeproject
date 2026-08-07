@@ -1726,6 +1726,399 @@ function renderMat(hex, shutter = false, show = false) {
   return m;
 }
 
+// THE GRANDSTAND. See the long note at its call site in buildBuildings for
+// what it is, why it exists and where every figure came from
+// (research/wings-of-time.md). This is only the geometry.
+//
+// The one structural decision worth stating here: the ring is split into a
+// SEAWARD chain and a LANDWARD chain by the polygon's own principal axis, and
+// which is which is asked of the terrain — the seaward side is the low side.
+// Nothing is keyed to a compass bearing or to Sentosa: the same code draws a
+// grandstand facing any direction, and the day a second one is surveyed it
+// will not need touching.
+// DOUBLE-SIDED, DELIBERATELY, AND THE RENDER IS THE REASON. Every surface here
+// is a quad emitted from a ring whose winding depends on how the surveyor drew
+// the polygon, so half the RISERS were culled and the bank read as a fan of
+// floating pale ribs with grass showing between them
+// (shots/street/gs6.shot1, cropped). Reasoning out the winding for an
+// arbitrary ring is the kind of derivation this project keeps getting wrong;
+// there is no interior to this structure and nothing to see the back of.
+const GS_SIDE = { side: THREE.DoubleSide };
+
+// BUILDING TYPES WHOSE OWN NAME IS A HEIGHT STATEMENT. A hut is single-storey
+// because it is a hut; a grandstand is seating; a carport is one car tall. The
+// same list lives in data/process.py (as `SELF_SCALED`, beside the defaults it
+// sets) and data/heights.py imports it from there rather than re-typing it.
+// This is the runtime's copy, and it exists because the RENDER has a third
+// rule that re-scales a mass — the buried-on-a-slope growth in buildBuildings
+// — which is not reachable from Python.
+//
+// `roof` IS IN THE PYTHON LIST AND DELIBERATELY NOT IN THIS ONE, and the
+// difference is the whole point of keeping them separate rather than sharing
+// one name. A canopy must not be BANDED by footprint (that took the Universal
+// forecourt canopy to 20.4 m and blotted out the sky over the globe) — but it
+// must still GROW to clear the hill it stands on, because its height is a
+// clearance and a clearance that the ground swallows is a slab through a
+// hillside. Adding `roof` here cost the fort-siloso golden 28.9%: a canopy
+// that had been clearing the slope dropped into the frame as a grey concrete
+// plate leaning across it. Caught by the goldens, which is what they are for.
+const SELF_SCALED = new Set(['hut', 'grandstand', 'shed', 'kiosk', 'carport']);
+const GS_MAT = {
+  // pale exposed-aggregate (pebble-wash) concrete: treads, risers, apron
+  step: new THREE.MeshStandardMaterial({ color: 0xd8d3c6, roughness: 0.94, ...GS_SIDE }),
+  // "silvered warm grey-brown, NOT new-timber orange" — the research is
+  // specific about this because weathered hardwood is the thing you see
+  bench: new THREE.MeshStandardMaterial({ color: 0x8d8478, roughness: 0.9, ...GS_SIDE }),
+  // Zone A. The single strongest colour on the structure and the reason the
+  // bank is recognisable from the cable car at all
+  premium: new THREE.MeshStandardMaterial({ color: 0xc9736b, roughness: 0.78, ...GS_SIDE }),
+  // stair nosings, painted
+  nosing: new THREE.MeshStandardMaterial({ color: 0xd8b13a, roughness: 0.8, ...GS_SIDE }),
+  // the rear screen and the towers' louvre panels
+  screen: new THREE.MeshStandardMaterial({ color: 0x4a3a2c, roughness: 0.9, ...GS_SIDE }),
+  tower: new THREE.MeshStandardMaterial({ color: 0xe6e2da, roughness: 0.86 }),
+  cabin: new THREE.MeshStandardMaterial({ color: 0x5b6a72, roughness: 0.3, metalness: 0.2 }),
+};
+
+function gsQuadGeo(quads) {
+  // quads: [[p0,p1,p2,p3], ...] each p = [x,y,z], wound so the face is up/out
+  const pos = new Float32Array(quads.length * 6 * 3);
+  let n = 0;
+  for (const q of quads) {
+    for (const i of [0, 1, 2, 0, 2, 3]) {
+      pos[n++] = q[i][0]; pos[n++] = q[i][1]; pos[n++] = q[i][2];
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+function buildGrandstand(ring, merger, world) {
+  // --- 1. principal axis, and the two ends of the band --------------------
+  let cx = 0, cz = 0;
+  for (const [x, z] of ring) { cx += x; cz += z; }
+  cx /= ring.length; cz /= ring.length;
+  let sxx = 0, sxz = 0, szz = 0;
+  for (const [x, z] of ring) {
+    const dx = x - cx, dz = z - cz;
+    sxx += dx * dx; sxz += dx * dz; szz += dz * dz;
+  }
+  // largest eigenvector of [[sxx,sxz],[sxz,szz]], in closed form
+  const tr = sxx + szz, det = sxx * szz - sxz * sxz;
+  const lam = tr / 2 + Math.sqrt(Math.max(0, tr * tr / 4 - det));
+  let ax = sxz, az = lam - sxx;
+  if (Math.hypot(ax, az) < 1e-6) { ax = 1; az = 0; }
+  const aL = Math.hypot(ax, az); ax /= aL; az /= aL;
+  const proj = ring.map(([x, z]) => (x - cx) * ax + (z - cz) * az);
+  let iMin = 0, iMax = 0;
+  for (let i = 1; i < ring.length; i++) {
+    if (proj[i] < proj[iMin]) iMin = i;
+    if (proj[i] > proj[iMax]) iMax = i;
+  }
+  const chainA = [], chainB = [];
+  for (let k = 0, i = iMin; ; k++) {
+    chainA.push(ring[i]);
+    if (i === iMax) break;
+    i = (i + 1) % ring.length;
+    if (k > ring.length) break;
+  }
+  for (let k = 0, i = iMax; ; k++) {
+    chainB.push(ring[i]);
+    if (i === iMin) break;
+    i = (i + 1) % ring.length;
+    if (k > ring.length) break;
+  }
+  chainB.reverse();                      // both now run iMin -> iMax
+  if (chainA.length < 2 || chainB.length < 2) return;
+
+  // --- 2. WHICH CHAIN FACES THE SHOW? ASK THE WATER, NOT THE GROUND. ------
+  //
+  // First cut asked the terrain and took the LOW chain as seaward. It picked
+  // the wrong side, and the reason is worth keeping: THE BAND IS SHALLOWER
+  // THAN A TERRAIN CELL. Depth is 20-27 m on a 35 m heightfield, and the slope
+  // here runs ALONG the arc rather than across it, so the two chains measure
+  // 17.8 m and 19.2 m mean — a coin flip, and the coin came down backwards.
+  // Matched station pairs disagree with each other:
+  //
+  //     (-1830.8,12752.2) 23.2   vs  (-1799.1,12752.1) 19.5   -> B lower
+  //     (-1867.2,12731.1) 26.6   vs  (-1856.6,12715.6) 28.4   -> A lower
+  //
+  // Probing OUTWARD instead is unambiguous, because the thing on one side is
+  // the Singapore Strait. 20/40/60/80/120 m out from each chain's midpoint:
+  //
+  //     chain A   water at 40, 60, 80, 120 m      seaDist 140 -> 70
+  //     chain B   no water at any distance        seaDist unreachable
+  //
+  // Chain A it is, which is also what the research says (audience faces SW,
+  // 225-232 deg; the stage bears 221 deg). A measurement that cannot resolve
+  // a question should not be asked it.
+  const openness = (ch, sign) => {
+    const m = ch[Math.floor(ch.length / 2)];
+    const o = (sign === 1 ? chainB : chainA)[Math.floor((sign === 1 ? chainB : chainA).length / 2)];
+    let dx = m[0] - o[0], dz = m[1] - o[1];
+    const L = Math.hypot(dx, dz);
+    if (L < 1e-6) return 0;
+    dx /= L; dz /= L;
+    let wet = 0;
+    for (const d of [20, 40, 60, 80, 120]) {
+      const x = m[0] + dx * d, z = m[1] + dz * d;
+      if (window.__inWater && window.__inWater(x, z)) wet++;
+    }
+    return wet;
+  };
+  const wetA = openness(chainA, 1), wetB = openness(chainB, -1);
+  let front = chainA, back = chainB;
+  if (wetB > wetA) { front = chainB; back = chainA; }
+  else if (wetA === wetB) {
+    // no water either side (a grandstand at a stadium, an inland arena): the
+    // low side is the field, and now the fallback IS the best evidence there is
+    const meanG = (ch) => {
+      let s = 0;
+      for (const [x, z] of ch) s += TERRAIN.at(x, z);
+      return s / ch.length;
+    };
+    if (meanG(chainA) > meanG(chainB)) { front = chainB; back = chainA; }
+  }
+
+  // --- 3. resample both chains to matched stations ------------------------
+  const resample = (ch, n) => {
+    const seg = [], out = [];
+    let total = 0;
+    for (let i = 0; i < ch.length - 1; i++) {
+      const L = Math.hypot(ch[i + 1][0] - ch[i][0], ch[i + 1][1] - ch[i][1]);
+      seg.push(L); total += L;
+    }
+    if (total < 1e-6) return null;
+    for (let j = 0; j <= n; j++) {
+      let want = (j / n) * total, i = 0;
+      while (i < seg.length - 1 && want > seg[i]) { want -= seg[i]; i++; }
+      const t = seg[i] > 1e-6 ? Math.min(1, want / seg[i]) : 0;
+      out.push([ch[i][0] + (ch[i + 1][0] - ch[i][0]) * t,
+                ch[i][1] + (ch[i + 1][1] - ch[i][1]) * t]);
+    }
+    return out;
+  };
+  const S = 40;
+  const F = resample(front, S), B = resample(back, S);
+  if (!F || !B) return;
+
+  // --- 4. the datum: terrain along the front line, SMOOTHED ---------------
+  //
+  // See the call site. Raked across the depth, smoothed along the arc.
+  //
+  // AND THIS IS DOWNSTREAM OF A TERRAIN DEFECT, STATED SO THE NEXT PERSON DOES
+  // NOT RE-DERIVE IT. The real front row is at beach level and the bank is
+  // essentially level along its length. Our heightfield runs 26.6 m at the
+  // north-west end of this front line to 7.4 m at the south-east — a 19 m fall
+  // that is not there, Mount Imbiah's toe reaching the waterline through a
+  // 35 m cell. Probed outward, the ground 40-120 m out on the SEA side reads
+  // 16.4, 16.2, 16.5, 9.8 m while the water layer says water: the beach in
+  // front of this thing is modelled as a bank, not a strip.
+  //
+  // Following the ground gives an amphitheatre cut into a hillside, which is
+  // coherent. Laying it level would bury the north-west end nineteen metres.
+  // So it follows, and when Siloso's terrain is fixed this same code draws the
+  // level bank the real one is, with no change here.
+  const ROWS = 17;              // ~16-20 rows, DERIVED
+  const RISE = 0.32;            // ~0.30-0.35 m, EST-PHOTO
+  const APRON = 5.0;            // flat boardwalk at the foot, EST-PHOTO
+  const lerp = (a, b2, t) => [a[0] + (b2[0] - a[0]) * t, a[1] + (b2[1] - a[1]) * t];
+  // per station: the apron line, and the seating band from there to the back
+  const A = [];
+  for (let j = 0; j <= S; j++) {
+    const d = Math.hypot(B[j][0] - F[j][0], B[j][1] - F[j][1]);
+    A.push(lerp(F[j], B[j], d > 1e-6 ? Math.min(0.5, APRON / d) : 0));
+  }
+
+  // A RUNNING MAX, THEN THE SMOOTH — not the smooth alone.
+  //
+  // A mean pulls the datum BELOW the ground wherever the ground bulges, and a
+  // platform below the ground it stands on is a platform with grass growing
+  // through it: rendered from the beach the apron came out as a fan of pale
+  // ribs with green wedges between them, which is the heightfield poking up
+  // between the treads. Taking the local MAXIMUM first puts the platform on
+  // top of every bump inside the window, and smoothing after keeps the line
+  // level; the cost is that the front lip stands a little proud on a dip,
+  // which is what a real deck on a slope does and is why it has a fascia.
+  const raw = F.map((p, j) => Math.max(TERRAIN.at(p[0], p[1]),
+                                       TERRAIN.at(A[j][0], A[j][1])));
+  const hiRaw = raw.map((_, j) => {
+    let m = -Infinity;
+    for (let d = -4; d <= 4; d++) {
+      const k = j + d;
+      if (k >= 0 && k < raw.length) m = Math.max(m, raw[k]);
+    }
+    return m;
+  });
+  // ...AND THE CLIMB ALONG THE ARC IS BOUNDED, BECAUSE A GRANDSTAND IS LEVEL.
+  //
+  // Following the heightfield gave a bank that rose 19 m from one end to the
+  // other, and the frame that showed it was the worst one possible: the SPAWN
+  // POINT stands 12 m from this footprint, and the first thing in the world
+  // became a ten-metre pale wall across the whole view with the near plane
+  // punching a black hole in the top corner. (That is this file's oldest trap
+  // and its own golden note names it: a surface closer than the near plane is
+  // a black wall.)
+  //
+  // The real bank is level. Our DEM's 19 m is Mount Imbiah's toe arriving
+  // through a 35 m cell — see the note above and research/wings-of-time.md.
+  // So the datum is allowed to CLIMB only CLIMB_MAX from its lowest point:
+  // the seaward end sits on the ground on a taller fascia, and the landward
+  // end is swallowed by the hill, which is what "cut into the slope" means and
+  // is what the research describes. Nothing is drawn floating either way.
+  const loRaw = Math.min(...raw);
+  // CLIMB_MAX is a measured trade, not a taste. raw runs 7.4 m at the seaward
+  // end to 26.6 m at the landward one, and the bank stands proud of the ground
+  // wherever terrain < lo + CLIMB_MAX + 5.4 (its own height):
+  //
+  //      3 m   spawn frame clean, but HALF THE BANK is inside the hill
+  //      8 m   ~70% of it stands, and its near end tops out ~1 m above the
+  //            spawn's own ground 12 m away, so it does not wall that frame
+  //     12 m   ~85% stands, and the near end is 5 m proud at the spawn, which
+  //            is the wall this whole recipe exists to remove
+  const CLIMB_MAX = 8.0;
+  const capped = hiRaw.map((v) => Math.min(v, loRaw + CLIMB_MAX));
+  const y0 = capped.map((_, j) => {
+    let s = 0, n = 0;
+    for (let d = -6; d <= 6; d++) {
+      const k = j + d;
+      if (k < 0 || k >= capped.length) continue;
+      s += capped[k]; n++;
+    }
+    return Math.min(Math.max(s / n, Math.min(raw[j], loRaw + CLIMB_MAX)),
+                    loRaw + CLIMB_MAX) + 0.12;
+  });
+  const rowPt = (j, k) => lerp(A[j], B[j], k / ROWS);
+  const rowY = (j, k) => y0[j] + k * RISE;
+
+  // --- 5. apron, treads and risers ----------------------------------------
+  const steps = [];
+  for (let j = 0; j < S; j++) {
+    // the flat apron in front of the first row
+    steps.push([[F[j][0], y0[j], F[j][1]], [F[j + 1][0], y0[j + 1], F[j + 1][1]],
+                [A[j + 1][0], y0[j + 1], A[j + 1][1]], [A[j][0], y0[j], A[j][1]]]);
+    for (let k = 0; k < ROWS; k++) {
+      const p0 = rowPt(j, k), p1 = rowPt(j + 1, k);
+      const q0 = rowPt(j, k + 1), q1 = rowPt(j + 1, k + 1);
+      const ya = rowY(j, k), yb = rowY(j + 1, k);
+      const yc = rowY(j, k + 1), yd = rowY(j + 1, k + 1);
+      // tread: horizontal, from this row's line to the next
+      steps.push([[p0[0], ya, p0[1]], [p1[0], yb, p1[1]],
+                  [q1[0], yb, q1[1]], [q0[0], ya, q0[1]]]);
+      // riser: vertical, at the next row's line
+      steps.push([[q0[0], ya, q0[1]], [q1[0], yb, q1[1]],
+                  [q1[0], yd, q1[1]], [q0[0], yc, q0[1]]]);
+    }
+  }
+  // ...AND THE STRUCTURE HAS TO MEET THE GROUND, which the first cut did not.
+  // Rendered from the beach (shots/street/gs5.shot2) the bank stood on nothing
+  // along its low edge and you could see UP INTO the treads: a comb of thin
+  // fins, because a tread is a one-sided quad with no underside. A real bank
+  // has a fascia wall at the front and closed ends, and drawing them is both
+  // the honest form and the whole fix.
+  const skirt = [];
+  const gAt = (p) => TERRAIN.at(p[0], p[1]);
+  for (let j = 0; j < S; j++) {
+    const ya = y0[j], yb = y0[j + 1];
+    const ga = Math.min(gAt(F[j]), ya) - 0.35, gb = Math.min(gAt(F[j + 1]), yb) - 0.35;
+    skirt.push([[F[j][0], ga, F[j][1]], [F[j + 1][0], gb, F[j + 1][1]],
+                [F[j + 1][0], yb, F[j + 1][1]], [F[j][0], ya, F[j][1]]]);
+  }
+  for (const [j, flip] of [[0, false], [S, true]]) {
+    const g = Math.min(gAt(F[j]), gAt(B[j]), y0[j]) - 0.35;
+    const top = rowY(j, ROWS);
+    const q = [[F[j][0], g, F[j][1]], [B[j][0], g, B[j][1]],
+               [B[j][0], top, B[j][1]], [F[j][0], y0[j], F[j][1]]];
+    skirt.push(flip ? q : [q[3], q[2], q[1], q[0]]);
+  }
+  merger.add(gsQuadGeo(steps.concat(skirt)), GS_MAT.step, cx, cz);
+
+  // --- 6. the benches, and Zone A ----------------------------------------
+  // One ribbon per row rather than a box per seat: 2,500 seats is 2,500 draw
+  // calls' worth of nothing, and at any distance a bench bank reads as bands.
+  // Zone A is the middle third of the arc, in the rear third of the rows —
+  // where the satellite shows the orange-red patch.
+  const benches = [], premium = [];
+  for (let k = 1; k <= ROWS; k++) {
+    for (let j = 0; j < S; j++) {
+      const t0 = (k - 0.72) / ROWS, t1 = (k - 0.24) / ROWS;
+      const a0 = lerp(A[j], B[j], t0), a1 = lerp(A[j + 1], B[j + 1], t0);
+      const b0 = lerp(A[j], B[j], t1), b1 = lerp(A[j + 1], B[j + 1], t1);
+      const ya = rowY(j, k - 1) + 0.46, yb = rowY(j + 1, k - 1) + 0.46;
+      const quad = [[a0[0], ya, a0[1]], [a1[0], yb, a1[1]],
+                    [b1[0], yb, b1[1]], [b0[0], ya, b0[1]]];
+      const mid = j > S * 0.33 && j < S * 0.67 && k > ROWS * 0.55 && k <= ROWS * 0.88;
+      (mid ? premium : benches).push(quad);
+    }
+  }
+  merger.add(gsQuadGeo(benches), GS_MAT.bench, cx, cz);
+  if (premium.length) merger.add(gsQuadGeo(premium), GS_MAT.premium, cx, cz);
+
+  // --- 7. the yellow stair nosings, every ~12 m along the arc -------------
+  let arc = 0;
+  const aisleAt = new Set();
+  for (let j = 0; j < S; j++) {
+    arc += Math.hypot(F[j + 1][0] - F[j][0], F[j + 1][1] - F[j][1]);
+    if (arc >= 12) { aisleAt.add(j); arc = 0; }
+  }
+  // AN AISLE IS 1.4 m WIDE, NOT A WHOLE STATION. The first cut painted the
+  // full 3.6 m segment between stations, so the nosings read as big yellow
+  // dashes scattered across the bank instead of a ladder of stair treads
+  // climbing it. An aisle you could drive a car up is not an aisle.
+  const AISLE_W = 1.4;
+  const nosings = [];
+  for (const j of aisleAt) {
+    for (let k = 1; k <= ROWS; k++) {
+      const p = rowPt(j, k), q = rowPt(j + 1, k);
+      let ux = q[0] - p[0], uz = q[1] - p[1];
+      const uL = Math.hypot(ux, uz) || 1;
+      ux = (ux / uL) * AISLE_W; uz = (uz / uL) * AISLE_W;
+      const y = rowY(j, k) + 0.02;
+      const nx = B[j][0] - A[j][0], nz = B[j][1] - A[j][1];
+      const nL = Math.hypot(nx, nz) || 1;
+      const ox = (nx / nL) * 0.3, oz = (nz / nL) * 0.3;
+      nosings.push([[p[0], y, p[1]], [p[0] + ux, y, p[1] + uz],
+                    [p[0] + ux + ox, y, p[1] + uz + oz], [p[0] + ox, y, p[1] + oz]]);
+    }
+  }
+  if (nosings.length) merger.add(gsQuadGeo(nosings), GS_MAT.nosing, cx, cz);
+
+  // --- 8. the rear screen, and the control towers -------------------------
+  // "the top row backs onto a dark brown timber-slat screen ~1.8-2.5 m high"
+  const screen = [];
+  for (let j = 0; j < S; j++) {
+    const ya = rowY(j, ROWS), yb = rowY(j + 1, ROWS);
+    screen.push([[B[j][0], ya, B[j][1]], [B[j + 1][0], yb, B[j + 1][1]],
+                 [B[j + 1][0], yb + 2.2, B[j + 1][1]], [B[j][0], ya + 2.2, B[j][1]]]);
+    screen.push([[B[j + 1][0], yb, B[j + 1][1]], [B[j][0], ya, B[j][1]],
+                 [B[j][0], ya + 2.2, B[j][1]], [B[j + 1][0], yb + 2.2, B[j + 1][1]]]);
+  }
+  merger.add(gsQuadGeo(screen), GS_MAT.screen, cx, cz);
+
+  // Two of them, at the top rear near each end — "the only roofed elements on
+  // the whole structure", and the tallest thing here at about 9 m, which is
+  // still less than half what the generic box was.
+  for (const j of [Math.round(S * 0.16), Math.round(S * 0.84)]) {
+    const nx = B[j][0] - A[j][0], nz = B[j][1] - A[j][1];
+    const nL = Math.hypot(nx, nz) || 1;
+    const bx = B[j][0] + (nx / nL) * 2.6, bz = B[j][1] + (nz / nL) * 2.6;
+    const ang = Math.atan2(nx, nz);
+    const base = rowY(j, ROWS);
+    const box = (w, hgt, d, y, mat) => {
+      const g = new THREE.BoxGeometry(w, hgt, d);
+      g.rotateY(ang);
+      g.translate(bx, y + hgt / 2, bz);
+      merger.add(g, mat, bx, bz);
+    };
+    box(6.4, 6.2, 5.0, base - 1.2, GS_MAT.tower);          // rendered shaft
+    box(6.6, 1.1, 5.2, base + 2.4, GS_MAT.screen);         // louvre band
+    box(5.2, 2.4, 4.2, base + 5.0, GS_MAT.cabin);          // glazed cabin
+    box(5.8, 0.24, 4.8, base + 7.4, GS_MAT.tower);         // its flat cap
+  }
+}
+
 export async function buildBuildings(world, data, Y = null) {
   // the district decides its own default facade character from its own tags
   setDistrictCharacter(data.buildings || []);
@@ -2295,6 +2688,52 @@ export async function buildBuildings(world, data, Y = null) {
     FOOT = seatY(b);
     STREET = streetY(b);
 
+    // A GRANDSTAND IS SEATING. IT IS NOT A BOX, AND IT HAS NO ROOF.
+    //
+    // `bt: 'grandstand'` has been in this scene file since the building layer
+    // was written and NOTHING HAS EVER READ IT. There is exactly one on the
+    // island — OSM way/116818107, 2,712 m², unnamed — and it is the SECOND
+    // NEAREST BUILDING TO THE SPAWN POINT. Drawn by the generic rules it came
+    // out as a 20.4 m solid slab (heights.py's calibrated guess for a
+    // footprint that size) filling the top half of the very first frame every
+    // player sees. The world only ever half-hid it behind a stale open-ground
+    // storey that no current build reproduces.
+    //
+    // It is the WINGS OF TIME audience bank at Central Beach, Siloso — the
+    // show is running, two performances nightly, enhanced Feb 2025. The full
+    // brief with sources and confidence labels is research/wings-of-time.md;
+    // everything dimensional below comes from it:
+    //
+    //     capacity 2,500 PUBLISHED         no roof at all PUBLISHED
+    //     row pitch ~1.05 m DERIVED        riser ~0.32 m EST-PHOTO
+    //     ~16-20 rows DERIVED              back ~5 m above the front EST-PHOTO
+    //     front ~5 m is flat apron         stair aisles every 10-15 m
+    //     benches grey-weathered timber    Zone A pink/salmon bucket seats
+    //     rear: dark timber screen 1.8-2.5 m, control towers behind it
+    //
+    // THE HEIGHT IS THE WHOLE POINT: five metres, not twenty. Nothing here is
+    // taller than the screen at the back, which is why the spawn frame gets
+    // its sky back.
+    //
+    // ON THE DATUM, WHICH IS THE ONE THING I COULD NOT TAKE FROM THE RESEARCH.
+    // The real front row sits at beach level, +3 to +5 m, and the bank is cut
+    // against a low rise. OUR heightfield says the ground under this footprint
+    // falls from 26.5 m at the north-west end to 7.8 m at the south-east — an
+    // 18 m fall, which is Mount Imbiah's flank arriving through a 35 m cell.
+    // Measurements in the research file. So a single flat datum would bury the
+    // north-west end nineteen metres into a hill, and a per-vertex seat would
+    // make a staircase of the arc. The rows are therefore raked ACROSS the
+    // depth (which is the structure) and follow a SMOOTHED terrain line ALONG
+    // the arc (which is the ground), so it neither floats nor buries. On a
+    // truer heightfield the same code draws a flat bank; the smoothing is what
+    // absorbs the DEM, not a fudge factor tuned to it.
+    if (b.bt === 'grandstand' && pts.length >= 6) {
+      buildGrandstand(pts, merger, world);
+      stats.count++;
+      if (stats.bespoke !== undefined) stats.bespoke++;
+      continue;
+    }
+
     // A STREET-SEATED BUILDING ON A REAL SLOPE GETS A SKIRT. seatY hands
     // low buildings (h <= 16) the street-footing rule, which was written for
     // shophouse terraces whose ground barely falls — but Canninghill Square
@@ -2704,7 +3143,21 @@ export async function buildBuildings(world, data, Y = null) {
     // the way the real resort does — that wants a terraced recipe, and this is
     // the honest single-mass answer until one exists.
     let h = b.h;
-    if (!(b.mh && b.mh > 1) && !b.con && h > 0 && pts.length > 2) {
+    // ...BUT A HUT DOES NOT GROW TO SWALLOW A HILLSIDE.
+    //
+    // This rule is right for a resort block and it silently undid a fix made
+    // the same day. process.py now gives `building=hut` a 4 m default and
+    // heights.py leaves it alone — and the Wings of Time stage set still drew
+    // as a three-storey white block in the SPAWN FRAME, because the ground
+    // under its 78 m span runs 7.8 m to 22.1 m in our heightfield and this
+    // line grew it to 22.1 - 7.8 + 3 = 17.3 m.
+    //
+    // A type whose name states its scale must not be re-scaled by the terrain
+    // either. It is the same list, from the same place, for the third time
+    // (process.py TYPE_DEFAULT, heights.py's banding, here) — which is exactly
+    // why it is a list and not three conditions.
+    if (!SELF_SCALED.has(b.bt)
+        && !(b.mh && b.mh > 1) && !b.con && h > 0 && pts.length > 2) {
       let hiG = -Infinity;
       for (const [_x, _z] of pts) { const _g = TERRAIN.at(_x, _z); if (_g > hiG) hiG = _g; }
       const buried = hiG - (FOOT + h);

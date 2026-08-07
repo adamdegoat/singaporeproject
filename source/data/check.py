@@ -12,6 +12,8 @@ import argparse, json, math, os, re, subprocess, sys
 import gzip
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from buildtypes import SELF_SCALED                         # noqa: E402
 OUT_DIR = os.path.join(HERE, "districts")
 
 
@@ -101,7 +103,17 @@ def check(did):
     # `low` is set only where a SOURCE says one storey — not by the pipeline
     # guessing. Same reasoning as `roof` above: excluded by kind, not by
     # fudging the threshold.
+    # ...AND NEITHER IS A TYPE WHOSE OWN NAME SAYS IT IS LOW. Same argument as
+    # `roof` directly above, generalised: a hut, a shed, a kiosk, a carport and
+    # a grandstand are all wide-and-low by definition, and `roof` was simply
+    # the first one this project met. The case that forced it is the Wings of
+    # Time stage set — OSM way/116818158, `building=hut`, 706 m2, 78 m across,
+    # standing on stilts over the water — which was being drawn at 20.4 m
+    # because a footprint that size bands to a four-storey block. Given its
+    # honest 4 m it then tripped THIS check, which is the same rule wearing a
+    # different hat. Excluded by kind, not by fudging the threshold.
     squat = [b for b in B if b["h"] < 8 and b["a"] > 600
+             and b.get("bt") not in SELF_SCALED
              and not b.get("roof") and not b.get("low")]
     if squat:
         fail(f"{len(squat)} footprints over 600 m2 shorter than 8m")

@@ -30,6 +30,18 @@ const TILE = 3;                        // 3 x 35m cells ~ 105m, the merger's til
 // the three callers that must all read the same number.
 const SHELF_LO = 0.5, SHELF_HI = 1.2;
 
+// THE KINDS IN THE GREEN LAYER THAT ARE NOT GREEN, in one place.
+//
+// `pool`, `track` and `deck` sit in the green layer because that layer owns
+// areal ground COVER, not because they are vegetation — the alternative was a
+// fourth list for three kinds. Any rule that means "how green is this" must
+// subtract them, and there is exactly one such rule today (greenFrac in
+// setGreen), so the set is small. It is a NAMED SET rather than an inline
+// `k !== 'pool'` because the last three bugs in this project were the same
+// shape: a rule that was true only where somebody remembered to apply it.
+// Adding a kind here is one edit; adding it to a string comparison is a hunt.
+const NOT_GREEN = new Set(['pool', 'track', 'deck']);
+
 export class Terrain {
   constructor(grid) {
     this.g = grid || null;
@@ -762,6 +774,21 @@ export class Terrain {
     return (a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + d * tx) * tz;
   }
 
+  // THE KINDS IN THE GREEN LAYER THAT ARE NOT GREEN, in one place.
+  //
+  // `pool`, `track` and `deck` live in the green layer because that layer owns
+  // areal ground COVER, not because they are vegetation — the alternative was
+  // a fourth list for three kinds. Every rule that means "how green is this"
+  // has to subtract them, and there is exactly one such rule (greenFrac), so
+  // this set is small. It is a NAMED SET rather than `k !== 'pool'` inline
+  // because the last three bugs in this project were all the same shape: a
+  // rule that was true only where somebody remembered to apply it. Adding a
+  // kind here is one edit; adding it to a string comparison is a hunt.
+  //
+  // NOT the island land mask (build's `setIsland`): a pool is excluded there
+  // because it is water, and a deck is paving over ground and must stay in.
+  //
+  // (Defined at module scope, just above the class — see NOT_GREEN there.)
   setGreen(list) {
     this.green = [];
     this.gGrid = new Map();
@@ -812,7 +839,7 @@ export class Terrain {
           if (g.h[j * g.nx + i] <= 0.05) continue;      // sea
           n++;
           const k = this.greenAt(g.x0 + i * g.cell, g.z0 + j * g.cell);
-          if (k && k !== 'pool') hit++;
+          if (k && !NOT_GREEN.has(k)) hit++;
         }
       }
       this.greenFrac = n ? hit / n : 0;
@@ -948,6 +975,14 @@ export class Terrain {
           // inside these districts and were drawing as ordinary green.
           track: [0.72, 0.36, 0.28],
           pool:  [0.36, 0.62, 0.76],
+          // A WATER PARK'S GROUND IS DECK. Warm pale non-slip paving — the
+          // surface between Adventure Cove's pools — so it sits between
+          // `plaza` (cool grey, a forecourt) and `sand` (the brightest thing
+          // on the island). It has to be clearly NOT a lawn from the ridge,
+          // which is the read this kind exists to fix, and clearly not sand
+          // either, because the wave pool it wraps is sand-edged in every
+          // reference and that edge has to still show.
+          deck:  [0.85, 0.82, 0.75],
           wood:  [0.34, 0.55, 0.32],
           scrub: [0.62, 0.72, 0.46],
           // Beach sand. Warm and pale, and deliberately not the old ground
@@ -1030,7 +1065,7 @@ export class Terrain {
         // moves a lot, because it genuinely does.
         const VARY = {
           wood: 0.115, scrub: 0.10, grass: 0.085, park: 0.085, golf: 0.05,
-          sand: 0.055, pitch: 0.05, track: 0.02, pool: 0.012,
+          sand: 0.055, pitch: 0.05, track: 0.02, pool: 0.012, deck: 0.022,
           resi: 0.022, comm: 0.02, civic: 0.02, indus: 0.028, works: 0.03,
           parking: 0.025, plaza: 0.018,
         };

@@ -78,7 +78,37 @@ def district(did):
     sys.exit(f"no district '{did}'")
 
 
-def fetch(bbox, query=None):
+# THIS FETCH IS CACHED TO DISK, AND THE REASON IS A BUILD THAT SHIPPED EMPTY.
+#
+# Every other input to a district build comes off local disk — data/raw/<id>.json
+# or the osmlocal extract; "THE MAP IS A FILE NOW" is one of this project's own
+# headline notes. This pass is the single exception: a live Overpass call in the
+# middle of build_district.py. On 2026-08-07 all three mirrors refused at once
+# (504, then an SSL hostname mismatch on overpass.osm.jp) and the consequences
+# ran a long way:
+#
+#   * process.py rewrites the scene file from scratch at the start of a build,
+#     so `attractions` was ABSENT rather than stale — and the "keep what we
+#     had" fallback below had nothing to keep. It wrote ZERO.
+#   * four passes read that layer. sensoryscape, ussgate, bullring and skywalk
+#     each printed "not built" and the SCENTED SPHERE, the diagrid vessels, the
+#     Universal gate, the Bull Ring and the Fort Siloso Skywalk all vanished.
+#   * the golden frames caught it at 50.4% (sensory-vessels) — the whole
+#     Sensoryscape boardwalk replaced by grass.
+#
+# It also explains something noticed earlier the same day and written off as
+# OSM churn: three consecutive builds returned 110, 115 and 117 attractions
+# from the same query. That was never the map changing. It was the mirrors
+# answering differently, and a WORLD THAT CHANGES WHEN A PUBLIC SERVER HICCUPS
+# IS NOT REPRODUCIBLE.
+#
+# So: a good response is written to data/raw/attr.<id>.json, and a failed fetch
+# reads it back. Delete the file to force a genuine refetch.
+def cache_path(did, tag):
+    return os.path.join(HERE, "raw", f"attr.{tag}.{did}.json")
+
+
+def fetch(bbox, query=None, did=None, tag="main"):
     body = (query or QUERY).format(bbox=bbox)
     for m in MIRRORS:
         try:
@@ -87,15 +117,30 @@ def fetch(bbox, query=None):
                 m, data=urllib.parse.urlencode({"data": body}).encode(),
                 headers={"User-Agent": "orchard-attractions/1.0"})
             with urllib.request.urlopen(req, timeout=240) as r:
-                return json.loads(r.read().decode())
+                data = json.loads(r.read().decode())
+            if did and (data.get("elements") or []):
+                try:
+                    os.makedirs(os.path.join(HERE, "raw"), exist_ok=True)
+                    json.dump(data, open(cache_path(did, tag), "w"),
+                              separators=(",", ":"))
+                except OSError as e:                 # noqa: BLE001
+                    print(f"    (could not cache: {type(e).__name__})")
+            return data
         except Exception as e:                       # noqa: BLE001 - any failure fails over
             print(f"    failed: {type(e).__name__} {e}")
             time.sleep(3)
+    if did and os.path.exists(cache_path(did, tag)):
+        data = json.load(open(cache_path(did, tag)))
+        n = len(data.get("elements") or [])
+        print(f"  every Overpass mirror refused — REPLAYING THE CACHE "
+              f"({n} elements, {cache_path(did, tag).split('/')[-1]})")
+        return data
     # NOT sys.exit. The site-naming pass below reads the LOCAL cache and is the
     # most valuable thing this script does; killing the run because a public
     # server is busy would throw that away for no reason. Return nothing and
     # let the caller keep whatever the scene already had.
-    print("  every Overpass mirror refused — keeping the existing layer")
+    print("  every Overpass mirror refused AND NO CACHE EXISTS — keeping the "
+          "existing layer, which on a fresh build is nothing at all")
     return None
 
 
@@ -120,7 +165,7 @@ def main():
     scene = json.load(open(path))
 
     print(f"== attractions: {did}")
-    raw = fetch(d["bbox"])
+    raw = fetch(d["bbox"], did=did, tag="main")
     els = (raw or {}).get("elements", [])
     print(f"  {len(els)} elements from Overpass")
 
@@ -162,12 +207,90 @@ def main():
                 rec[key[0] if key == "height" else key] = t[key]
         out.append(rec)
 
+    # THE PLAY AREA IS THE ISLAND; THE VIEW IS NOT (SENTOSA.md).
+    #
+    # This fetch is a live Overpass call over the DISTRICT BBOX, and the bbox
+    # reaches across the strait. Two consecutive runs a day apart returned 110
+    # and 119 attractions from the same query — the count is not stable — and
+    # the nine that arrived the second time included Berlayer Point Lighthouse
+    # and Dragon's Teeth Gate, both in Labrador Park on the MAINLAND. Nothing
+    # downstream clips this layer (island.py runs before it), so they would
+    # have shipped as named labels floating over the far shore, on ground the
+    # player cannot reach.
+    #
+    # The cut is by DISTANCE OUTSIDE THE RING, not by inside/outside, because
+    # inside/outside deletes the right things too. Measured, this run:
+    #
+    #     14 m  Jetty Ruin                              Sentosa's own shore
+    #     72 m  "Sentosa" artwork
+    #     85 m  Southernmost Point of Continental Asia  Palawan islet, and you
+    #     87 m    (the same point, twice, two kinds)    walk to it on a bridge
+    #    122 m  Reverie - Musical Journey               the boardwalk
+    #    ----  200 m  ------------------------------------------------------
+    #    324 m  Berlayer Point Lighthouse               MAINLAND
+    #    368 m  Dragon's Teeth Gate                     MAINLAND
+    #    456 m  Cycling Track Sentosa                   MAINLAND
+    #    527 m  (unnamed) train                         MAINLAND
+    #
+    # The gap either side of 200 m is wide (122 -> 324) and it is the strait.
+    # Only applied where the scene HAS an island ring, so every other district
+    # is untouched.
+    ring = scene.get("islandRing")
+    if ring and len(ring) >= 3:
+        def _d2ring(px, pz):
+            best = float("inf")
+            for i in range(len(ring)):
+                ax, az = ring[i]
+                bx, bz = ring[(i + 1) % len(ring)]
+                dx, dz = bx - ax, bz - az
+                L2 = dx * dx + dz * dz
+                t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((px - ax) * dx + (pz - az) * dz) / L2))
+                best = min(best, math.hypot(px - (ax + dx * t), pz - (az + dz * t)))
+            return best
+
+        def _inside(px, pz):
+            c = False
+            j = len(ring) - 1
+            for i in range(len(ring)):
+                xi, zi = ring[i]
+                xj, zj = ring[j]
+                if (zi > pz) != (zj > pz) and px < (xj - xi) * (pz - zi) / (zj - zi) + xi:
+                    c = not c
+                j = i
+            return c
+
+        OFFSHORE_M = 200.0
+        keep, cut = [], []
+        for r in out:
+            px, pz = r["p"]
+            if _inside(px, pz) or _d2ring(px, pz) <= OFFSHORE_M:
+                keep.append(r)
+            else:
+                cut.append((round(_d2ring(px, pz)), r.get("n") or "(unnamed)", r["k"]))
+        if cut:
+            print(f"  {len(cut)} across the water, dropped — this district's play "
+                  f"area is the island (>{OFFSHORE_M:.0f}m outside the ring):")
+            for dist, nm, k in sorted(cut, reverse=True):
+                print(f"     {dist:5d} m   {nm}  [{k}]")
+        out = keep
+
     out.sort(key=lambda r: (r.get("n") or "~", r["p"][0]))
     if out or "attractions" not in scene:
         scene["attractions"] = out
     else:
         out = scene["attractions"]        # fetch failed; keep what we had
     json.dump(scene, open(path, "w"), separators=(",", ":"))
+    # AN EMPTY ATTRACTIONS LAYER IS A BUILD FAILURE, NOT A RESULT. Four passes
+    # read this layer and each of them politely prints "not built" and exits 0
+    # when it is empty, so a build with no attractions at all still reported
+    # success while the Sensoryscape, the Universal gate, the Bull Ring and the
+    # Fort Siloso Skywalk quietly stopped existing. With the cache above this
+    # should now be unreachable — which is exactly when a guard is worth having.
+    _empty = not out
+    if _empty:
+        print("  ! ZERO attractions in the scene. sensoryscape, ussgate, "
+              "bullring, skywalk and entrances all read this layer and will "
+              "each build NOTHING. Exiting non-zero so the build says so.")
 
     named = sum(1 for r in out if r.get("n"))
     kinds = {}
@@ -244,7 +367,7 @@ def main():
 
     # ...and the rock groynes, in the same pass so one run does both
     rocks = []
-    for e in ((fetch(d["bbox"], ROCK_QUERY) or {}).get("elements", [])):
+    for e in ((fetch(d["bbox"], ROCK_QUERY, did=did, tag="rock") or {}).get("elements", [])):
         t = e.get("tags") or {}
         geom = e.get("geometry") or []
         if len(geom) < 3:
@@ -259,6 +382,8 @@ def main():
         rocks = scene["rocks"]            # fetch failed; keep what we had
     json.dump(scene, open(path, "w"), separators=(",", ":"))
     print(f"  {len(rocks)} rock groynes / outcrops written")
+    if _empty:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

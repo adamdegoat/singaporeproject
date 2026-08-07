@@ -98,6 +98,30 @@ const SPOTS = [
   // Eighteen frames passed at 0.000% through the fix. Fifth time this file has
   // needed the same sentence in one night, so: SHIP THE FRAME WITH THE PASS.
   ['uss-lagoon', -1250, 12340, 1.14],
+  // SIXTH AND SEVENTH TIME, so these two ship WITH their pass rather than
+  // after it (2026-08-07).
+  //
+  // `adventure-cove` stands on the water park's deck. Adventure Cove is one
+  // OSM way carrying both `leisure=water_park` and `landuse=recreation_ground`
+  // and it was read as the landuse: 50,434 m2 of it drew as a bright green
+  // LAWN with 126 scattered trees, slides standing in grass and three ride
+  // labels floating over it. No existing camera can see the RWS quarter's
+  // ground at all — `rws-globe` looks at the globe from the Waterfront.
+  ['adventure-cove', -1760, 12060, 2.28],
+  // `wings-grandstand` stands on the beach in front of the Wings of Time
+  // seating bank and looks up it. `building=grandstand` had been in the scene
+  // data since the building layer was written and was read by NOTHING, so the
+  // second-nearest structure to the spawn point drew as a 20.4 m solid slab.
+  // `spawn` DOES see it — that frame went 45% red the moment a rebuild removed
+  // the stale open-ground storey that had been half-hiding it — but the spawn
+  // camera looks past its end. This one looks AT it.
+  // Stands at the LOW (south-east) end of the bank and looks up the whole
+  // 140 m arc. The first placement stood square to mid-span and put the
+  // structure at the right-hand edge with a grass slope filling the middle:
+  // the chase camera sits behind and above the rider, so a spot chosen by
+  // "square to the thing" is not the view it gives you. Looking ALONG a long
+  // structure fills the frame however the camera trails.
+  ['wings-grandstand', -1855, 12795, 1.67],
 ];
 
 mkdirSync(ACT, { recursive: true });

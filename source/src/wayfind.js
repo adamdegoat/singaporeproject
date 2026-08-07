@@ -332,6 +332,10 @@ const MAPCOL = {
     pitch: '#b9d2a6',
     sand: '#f4e3bb',
     pool: '#8fcbd4',
+    // Adventure Cove's deck. Without an entry here the biggest single parcel
+    // in the RWS quarter draws as bare land on both maps — `col` falsy is a
+    // `continue`, so a missing kind is silence, not a warning.
+    deck: '#e6ded0',
   },
 };
 
@@ -1338,7 +1342,7 @@ export class Wayfinder {
     /* ---- what the land is made of ---- */
     // Drawn biggest-first so a beach inside a park is not painted over by it.
     const greens = (this.data.green || []).filter((q) => q.p && q.p.length > 2);
-    const order = { golf: 0, park: 1, grass: 2, wood: 3, pitch: 4, sand: 5, pool: 6 };
+    const order = { golf: 0, park: 1, grass: 2, wood: 3, deck: 4, pitch: 5, sand: 6, pool: 7 };
     for (const q of [...greens].sort((a, b) => (order[a.k] ?? 9) - (order[b.k] ?? 9))) {
       const col = C.green[q.k];
       if (!col) continue;

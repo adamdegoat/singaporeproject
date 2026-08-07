@@ -10,6 +10,8 @@ floor count, then to a per-type default.
 import json, math, os, random, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from buildtypes import TYPE_HEIGHT                         # noqa: E402
 
 # Driven by build_district.py via the environment so one code path serves every
 # district; the defaults keep a bare `python3 process.py` working on Orchard.
@@ -2106,6 +2108,18 @@ TYPE_DEFAULT = {
     "retail": 22, "commercial": 30, "hotel": 55, "apartments": 45,
     "residential": 40, "office": 45, "civic": 18, "house": 9,
     "roof": 5, "yes": 20, "school": 14, "church": 16, "parking": 12,
+    # SOME TYPES ARE THEIR OWN HEIGHT STATEMENT. `roof` has been here since the
+    # Universal canopy went to 20.4m and blotted out the sky over the globe;
+    # these are the same argument. A hut is single-storey by definition and a
+    # grandstand is seating — neither can be banded off a footprint area.
+    # Sentosa has exactly one of each, and they are the Wings of Time pair at
+    # Central Beach: the 2,712 m2 seating bank and the 706 m2 offshore stage
+    # set, both of which were standing 20.4m tall in the spawn frame.
+    #
+    # The values come from data/buildtypes.py, which is also what heights.py
+    # reads so it can refuse to band them. Merged in below the literal, so the
+    # `roof: 5` that has been here for months is the same number either way.
+    **TYPE_HEIGHT,
 }
 ROAD_WIDTH = {
     "trunk": 17.5, "primary": 15.0, "secondary": 12.0, "tertiary": 10.0,
@@ -5072,6 +5086,28 @@ def main():
         # are also small, so they lose to the 60 m2 floor less often than they
         # lose to being drawn the colour of a lawn.
         "track": "track", "swimming_pool": "pool",
+        # A WATER PARK IS POOL DECK, AND IT WAS DRAWING AS A MOWN LAWN.
+        #
+        # Adventure Cove Waterpark is ONE way (50,434 m2) carrying BOTH
+        # `leisure=water_park` and `landuse=recreation_ground`. The loop below
+        # reads leisure first, water_park was not a kind, so it fell through to
+        # the landuse and came out `park` — bright green, and `park` is in
+        # PLANT at one tree per 400 m2, so 126 trees were scattered over a
+        # water park. Rendered from the ridge it is a lawn with slides standing
+        # on it and three floating ride labels (shots/street/advcove.shot2).
+        #
+        # It is the ONLY misclassification of this shape on the island: a sweep
+        # of every on-island areal element >300 m2 for "a specific tag lost to
+        # a generic one" returns this and nothing else (the second hit,
+        # Bluwater Bay at 935 m2, is already drawn as a pool).
+        #
+        # `deck` is not green, exactly as `track` and `pool` are not, and it is
+        # in the green layer for the same reason they are: this is the layer
+        # that owns areal ground COVER, and the alternative is a fourth list.
+        # research/rws-architecture.md E10 is the surface being drawn — "more
+        # landscape than building", pale deck between bright blue pools, a
+        # sand-edged wave pool and rockwork.
+        "water_park": "deck",
         "forest": "wood", "wood": "wood", "scrub": "scrub", "heath": "scrub",
         # Sand reads as a distinct surface from any distance and there is
         # nothing else this colour in the world.
@@ -5553,7 +5589,13 @@ def main():
     # specimen trees over grass, scrub is bushes with the odd tree. Rejecting a
     # candidate is cheap; the sample count is set from the ring's own area so a
     # small garden gets a few and the Istana gets a thousand.
-    PLANT = {"wood": 170.0, "park": 400.0, "scrub": 900.0}
+    # `deck` is a water park's paving, so it is planted at a fifth of a park's
+    # density and not at zero: cutting it to nothing swaps one wrong read for
+    # the other one this project has already been told off for — "empty car
+    # park with trees on it" — and Adventure Cove genuinely is landscaped,
+    # palms and rockwork round the pool edges. Sparse specimen trees over
+    # paving is the honest middle, and the count is authored, not derived.
+    PLANT = {"wood": 170.0, "park": 400.0, "scrub": 900.0, "deck": 2000.0}
     _rt = random.Random(20260801)
 
     def _in_ring(ring, x, z):
@@ -5646,7 +5688,7 @@ def main():
         _planted += _hit
     if _planted:
         print(f"  planted {_planted} trees across {len([g for g in green if g['k'] in PLANT])} "
-              f"park/wood/scrub rings")
+              f"rings ({'/'.join(sorted(PLANT))})")
 
     # ONE SHAPE FOR `a`, NORMALISED AT THE BOUNDARY.
     #
