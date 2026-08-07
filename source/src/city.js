@@ -1775,7 +1775,7 @@ const GS_MAT = {
   // stair nosings, painted
   nosing: new THREE.MeshStandardMaterial({ color: 0xd8b13a, roughness: 0.8, ...GS_SIDE }),
   // the rear screen and the towers' louvre panels
-  screen: new THREE.MeshStandardMaterial({ color: 0x4a3a2c, roughness: 0.9, ...GS_SIDE }),
+  screen: new THREE.MeshStandardMaterial({ color: 0x6f5a45, roughness: 0.82, ...GS_SIDE }),
   tower: new THREE.MeshStandardMaterial({ color: 0xe6e2da, roughness: 0.86 }),
   cabin: new THREE.MeshStandardMaterial({ color: 0x5b6a72, roughness: 0.3, metalness: 0.2 }),
 };
@@ -2087,13 +2087,50 @@ function buildGrandstand(ring, merger, world) {
 
   // --- 8. the rear screen, and the control towers -------------------------
   // "the top row backs onto a dark brown timber-slat screen ~1.8-2.5 m high"
+  //
+  // SLATS, WITH THE GAPS DRAWN. It was one solid 2.2 m panel running the whole
+  // 140 m arc, and the word in the research it is built from is SLAT.
+  //
+  // The difference is not a detail, it is the whole read of the thing from
+  // behind. The screen faces NE and the sun is at (-0.52, 0.80, -0.30), so its
+  // outward face never catches a direct ray: 0x4a3a2c under ambient alone is
+  // visually black, and a 140 m unbroken band of it is a black wall across the
+  // sky (shots/street/spawnview.shot1 — named by tinting the material, not
+  // guessed). The terrain fix is what exposed it. The old heightfield stood the
+  // ground behind this bank 20 m too high, so you looked DOWN on the screen and
+  // saw a dark line; at the beach level the ground really is, you stand behind
+  // it and it fills the frame.
+  //
+  // Six 0.22 m battens on a 0.36 m pitch is the reference's proportion and it
+  // shows sky between them, so the mass reads as a screen rather than a void —
+  // and it is what a slat screen is FOR, which is wind through and view out.
+  // Cost is 6 slats x 40 stations x 2 faces = 480 quads on a structure that
+  // already draws 1,400, and it merges into the same batch.
   const screen = [];
+  const SLAT_H = 0.22, SLAT_PITCH = 0.36, SLAT_N = 6;
   for (let j = 0; j < S; j++) {
     const ya = rowY(j, ROWS), yb = rowY(j + 1, ROWS);
-    screen.push([[B[j][0], ya, B[j][1]], [B[j + 1][0], yb, B[j + 1][1]],
-                 [B[j + 1][0], yb + 2.2, B[j + 1][1]], [B[j][0], ya + 2.2, B[j][1]]]);
-    screen.push([[B[j + 1][0], yb, B[j + 1][1]], [B[j][0], ya, B[j][1]],
-                 [B[j][0], ya + 2.2, B[j][1]], [B[j + 1][0], yb + 2.2, B[j + 1][1]]]);
+    for (let s = 0; s < SLAT_N; s++) {
+      const lo = 0.16 + s * SLAT_PITCH, hi = lo + SLAT_H;
+      screen.push([[B[j][0], ya + lo, B[j][1]], [B[j + 1][0], yb + lo, B[j + 1][1]],
+                   [B[j + 1][0], yb + hi, B[j + 1][1]], [B[j][0], ya + hi, B[j][1]]]);
+      screen.push([[B[j + 1][0], yb + lo, B[j + 1][1]], [B[j][0], ya + lo, B[j][1]],
+                   [B[j][0], ya + hi, B[j][1]], [B[j + 1][0], yb + hi, B[j + 1][1]]]);
+    }
+  }
+  // the posts the battens are fixed to, every ~9 m, so the screen has a frame
+  // rather than floating bands
+  for (let j = 0; j <= S; j += Math.max(1, Math.round(S / 15))) {
+    const nx = B[j][0] - A[j][0], nz = B[j][1] - A[j][1];
+    const nL = Math.hypot(nx, nz) || 1;
+    const ux = -(nz / nL) * 0.09, uz = (nx / nL) * 0.09;   // along the arc
+    const y = rowY(j, ROWS);
+    for (const sgn of [1, -1]) {
+      screen.push([[B[j][0] - ux * sgn, y, B[j][1] - uz * sgn],
+                   [B[j][0] + ux * sgn, y, B[j][1] + uz * sgn],
+                   [B[j][0] + ux * sgn, y + 2.34, B[j][1] + uz * sgn],
+                   [B[j][0] - ux * sgn, y + 2.34, B[j][1] - uz * sgn]]);
+    }
   }
   merger.add(gsQuadGeo(screen), GS_MAT.screen, cx, cz);
 

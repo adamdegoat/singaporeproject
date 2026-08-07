@@ -31,7 +31,14 @@ const PORT = process.env.SG_PORT || 8933;
 // the money shots: every big authored read and every place a regression has
 // actually happened. Add a spot when a new pass ships; bless updates follow.
 const SPOTS = [
-  ['spawn',          -1800, 12740, -0.6],
+  // `central-beach` WAS CALLED `spawn` UNTIL 2026-08-07, and the name had been
+  // wrong since 2026-08-05, when the player's start moved to Palawan Beach on
+  // the owner's ask. A frame named for the first thing a player sees, pointed
+  // somewhere no player starts, is the kind of stale label this project keeps
+  // paying for — every note about it in this file since then reasons about
+  // "the spawn frame" and means this one. It is a good viewpoint and it stays;
+  // it just says what it is. The real start now has its own frame, below.
+  ['central-beach',  -1800, 12740, -0.6],
   ['siloso-letters', -2410, 12190, -2.1],
   ['siloso-lagoon',  -2231, 12610, 0.6],
   ['groyne-islet',   -2450, 12420, -0.9],
@@ -121,7 +128,24 @@ const SPOTS = [
   // the chase camera sits behind and above the rider, so a spot chosen by
   // "square to the thing" is not the view it gives you. Looking ALONG a long
   // structure fills the frame however the camera trails.
+  // KEPT HERE after the 2026-08-07 terrain fix, having tried twice to re-aim
+  // it. With the bank now level at beach height this frame shows its REAR
+  // elevation rather than the rows, so two seaward spots were shot to get the
+  // rake in view: (-1880,12820,2.32) put the Wings of Time stage block across
+  // the whole frame, and (-1902,12774,1.72) pushed the bank into the top-left
+  // corner. Both were measured with lookat.mjs first and both still came back
+  // wrong, because THE CHASE CAMERA TRAILS FURTHER THAN A FREE CAMERA AT THE
+  // SAME POINT — the same trap as the original "square to the thing" placement
+  // noted above. This spot does photograph the structure. Re-aim it when the
+  // stage is rebuilt from the block it is now, and shoot it through golden.mjs
+  // rather than lookat.mjs.
   ['wings-grandstand', -1855, 12795, 1.67],
+  // THE FIRST FRAME OF THE GAME, and it had no golden at all until now.
+  // main.js SPAWNS is {sentosa: [-1241.7, 12973]}, snapped to Palawan Beach
+  // Walk's carriageway; this stands on that point with the heading the road
+  // gives it. Twenty-one frames watched the island while the one view every
+  // single player is guaranteed to load into was covered by none of them.
+  ['spawn', -1241.7, 12973, 0.365],
 ];
 
 mkdirSync(ACT, { recursive: true });
@@ -155,7 +179,16 @@ if (BLESS) {
   console.log(`   blessed ${SPOTS.length} golden baselines into golden/ — commit them`);
   process.exit(0);
 }
-if (!existsSync(join(GOLD, 'spawn.png'))) {
+// "HAS THIS SET EVER BEEN BLESSED", asked of the set and not of one spot's
+// filename. It tested for spawn.png, so renaming that one spot on 2026-08-07
+// made a set of twenty-one baselines report itself as no baselines at all and
+// skip the comparison entirely — a gate that turns itself off when a camera is
+// renamed, which is this project's own favourite bug wearing a new hat.
+// A spot with no baseline yet is not an error either: golden_compare.py already
+// reports it, and the whole point of adding a frame WITH its pass is that the
+// other twenty still guard the build on the run that introduces it.
+const haveBaselines = readdirSync(GOLD).some((f) => f.endsWith('.png'));
+if (!haveBaselines) {
   console.log('   no baselines yet — run with --bless once, then commit golden/');
   process.exit(1);
 }

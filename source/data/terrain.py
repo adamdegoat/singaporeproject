@@ -755,11 +755,32 @@ def main():
             #   negative); on a hill it is the floor that keeps the hill.
             # Water contamination always repairs — a reading over water is
             # garbage in the other direction and raw is no anchor at all.
+            # AND THE SAME SENTENCE HAS A SECOND HALF THAT WAS NEVER WRITTEN:
+            # a building can only have LIFTED the reading, so removing the lift
+            # can only LOWER it. A building repair that RAISES a sample is
+            # inventing ground out of the donors' neighbourhood, and on a coast
+            # backed by a hill the donors ARE the hill.
+            #
+            # This is what put a 20m bank across Siloso. Central Beach is built
+            # end to end, so nearly every sample there is "contaminated"; the
+            # clean donors within 300m are up on Mount Imbiah's slope; and four
+            # samples reading a correct 6.7-7.8m were rewritten to 27-39m. The
+            # grid then interpolated 22.9m at the Wings of Time grandstand,
+            # where raw Copernicus says 3.9m — a 19m error with no bad input
+            # anywhere, made entirely by the repair. 582 of Sentosa's 1,256
+            # repairs were raising a sample, by a median 4.2m and a worst 30.9m.
+            #
+            # The floor above keeps a hill; this ceiling keeps a beach. Both are
+            # the same fact about what a surface model does to a building.
+            # Water still repairs in both directions — a reading over water is
+            # garbage in the other direction and raw is no anchor at all.
             hmax, wat = near_fn.contam_h(x, z) if near_fn else (0.0, True)
             if not wat and hmax < 8.0:
                 continue                     # reading kept; error <= 8m
             if hmax > 0.0:
                 med = max(med, elev[i] - hmax - 6.0)
+            if not wat:
+                med = min(med, elev[i])      # a building lifts; it never digs
             elev[i] = med
             fixed_roof += 1
         else:
