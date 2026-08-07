@@ -92,6 +92,12 @@ const SPOTS = [
   // wall, and main.js's _BOOM_MIN note records the 2025-08-05 RWS golden that
   // taught it. A golden vantage has to stand where a VISITOR stands.
   ['ancient-egypt', -1232, 12468, 0.86],
+  // THE LAGOON UNIVERSAL IS BUILT AROUND, invisible until 2026-08-07: the
+  // `y > 1.2` guard handed back the LAND height inside every inland water ring,
+  // so 87% of the island's ponds were drawn as ground over their own water.
+  // Eighteen frames passed at 0.000% through the fix. Fifth time this file has
+  // needed the same sentence in one night, so: SHIP THE FRAME WITH THE PASS.
+  ['uss-lagoon', -1250, 12340, 1.14],
 ];
 
 mkdirSync(ACT, { recursive: true });

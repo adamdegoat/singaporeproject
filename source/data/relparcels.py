@@ -103,6 +103,50 @@ def stitch(ways):
     return ring
 
 
+def stitch_rings(ways):
+    """Chain member ways into AS MANY CLOSED RINGS as they actually form.
+
+    `stitch` above chains everything into ONE ring and returns whatever it has,
+    closed or not. That is right for a relation's outer boundary and wrong for
+    its inners: a lagoon with three islands in it has THREE separate inner
+    rings, and running them through `stitch` welds unrelated islands into one
+    self-intersecting loop whose point-in-polygon answer is meaningless.
+
+    Measured when that was the bug: Sentosa Cove's Sandy Island and Pearl
+    Island are inner rings of the waterway, and with the welded version they
+    were not recognised as holes — 411 m and 435 m of their footways came back
+    drowned, and the trailcheck gate refused the deploy.
+
+    A ring is only returned if it CLOSES. An unclosed chain is not a hole, it
+    is a fragment, and testing a point against it gives an answer that is worse
+    than refusing.
+    """
+    segs = [list(w) for w in ways if w and len(w) >= 2]
+    rings = []
+    while segs:
+        ring = segs.pop(0)
+        changed = True
+        while segs and changed:
+            changed = False
+            for i, s in enumerate(segs):
+                if math.dist(ring[-1], s[0]) < 1.0:
+                    ring += s[1:]
+                elif math.dist(ring[-1], s[-1]) < 1.0:
+                    ring += list(reversed(s))[1:]
+                elif math.dist(ring[0], s[-1]) < 1.0:
+                    ring = s[:-1] + ring
+                elif math.dist(ring[0], s[0]) < 1.0:
+                    ring = list(reversed(s))[1:] + ring
+                else:
+                    continue
+                segs.pop(i)
+                changed = True
+                break
+        if len(ring) >= 4 and math.dist(ring[0], ring[-1]) < 1.0:
+            rings.append(ring)
+    return rings
+
+
 def area_of(p):
     s = 0.0
     for i in range(len(p)):
@@ -197,9 +241,27 @@ def main():
                 if tgt[i].get("p", [])[:3] == sig:
                     tgt.pop(i)
                     print(f"   - {cls:<24} rel/{rid} previous record removed")
-        if holed:
-            print(f"   ! {cls:<24} rel/{rid} has inner ring(s) and our polygon "
-                  f"layers cannot hold a hole — refused  {name}")
+        # ...AND THE WATER LAYER CAN HOLD ONE NOW.
+        #
+        # The refusal above was right when it was written and is now only half
+        # right: `water` records carry `hp`, a list of inner rings, and both
+        # readers honour it — terrain.waterFloor returns null inside a hole, and
+        # buildWater cuts the sheet around it. So a lagoon with an island in it
+        # is drawable honestly.
+        #
+        # The other layers (green, land) still cannot, so a holed wood, meadow
+        # or park is STILL REFUSED and still says so. That is the point of
+        # reporting an absence: it tells you exactly which half is now possible.
+        inners = []
+        if holed and layer == "water":
+            inner_ways = [[proj(q["lat"], q["lon"]) for q in m["geometry"]]
+                          for m in members
+                          if m.get("role") == "inner" and m.get("geometry")]
+            for ir in stitch_rings(inner_ways):
+                inners.append([[round(x, 1), round(z, 1)] for x, z in ir])
+        if holed and not inners:
+            print(f"   ! {cls:<24} rel/{rid} has inner ring(s) and the {layer} "
+                  f"layer cannot hold a hole — refused  {name}")
             refused += 1
             continue
         if len(ring) < 4 or area_of(ring) < MIN_AREA[layer]:
@@ -209,6 +271,8 @@ def main():
             continue
         pts = [[round(x, 1), round(z, 1)] for x, z in ring]
         rec = {"p": pts, "a": int(area_of(ring))}
+        if inners:
+            rec["hp"] = inners
         if kind:
             rec["k"] = kind
         if name:
@@ -217,7 +281,8 @@ def main():
         added += 1
         by_class[cls] = by_class.get(cls, 0) + 1
         print(f"   {cls:<24} {area_of(ring):10,.0f} m2 -> {layer}"
-              f"{'[' + kind + ']' if kind else ''}   {name}")
+              f"{'[' + kind + ']' if kind else ''}"
+              f"{f'  + {len(inners)} hole(s)' if inners else ''}   {name}")
 
     print(f"   {added} recovered, {refused} refused")
     if a.dry_run:

@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance, resetSignAtlas } from './tex.js';
-import { MAT, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, plantSurveyed, openGroundAt, openGroundPolys } from './city.js';
+import { MAT, badGeoCount, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, plantSurveyed, openGroundAt, openGroundPolys } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, lambertise, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
@@ -319,9 +319,26 @@ let WALLSREF = null;
 // folding it in would make every check that asks "is there a wall here" answer
 // yes over open water.
 let WATERPOLY = [];
+// inner rings, one list per WATERPOLY entry — see setWater
+let WATERHOLES = [];
 const wCell = 40, wGrid = new Map();
-function setWater(polys) {
+function setWater(polys, holes) {
   WATERPOLY = polys || [];
+  // AN ISLAND INSIDE A LAGOON IS NOT THE LAGOON.
+  //
+  // `inWater` is what stops a walker and what the dressing asks before placing
+  // anything, and it knew only about outer rings. When three holed water
+  // relations were recovered (data/relparcels.py), Sentosa Cove's Sandy Island
+  // and Pearl Island — which ARE inner rings of the waterway — came back as
+  // open water: 411 m and 435 m of their own footways blocked, and the
+  // trailcheck gate refused it.
+  //
+  // Teaching terrain.waterFloor about holes was not enough and the reason is
+  // worth keeping: TWO SEPARATE FUNCTIONS OWN "is this water", fed from the
+  // same array by two different setters, and fixing one leaves the other
+  // confidently wrong. The data said `inHole: true` at both islands while the
+  // walker still drowned.
+  WATERHOLES = holes || [];
   wGrid.clear();
   // Exposed HERE, not with the other globals at the end of boot: the street
   // dressing runs before that point and asks about water, so assigning it late
@@ -329,7 +346,9 @@ function setWater(polys) {
   // stayed painted on the reservoir. A guard that is installed after the thing
   // it guards is not a guard.
   window.__inWater = (x, z) => inWater(x, z);
-  for (const ring of WATERPOLY) {
+  for (let ri = 0; ri < WATERPOLY.length; ri++) {
+    const ring = WATERPOLY[ri];
+    ring.__holes = WATERHOLES[ri] || null;
     let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
     for (const [x, z] of ring) {
       if (x < mnx) mnx = x; if (x > mxx) mxx = x;
@@ -346,7 +365,15 @@ function setWater(polys) {
 function inWater(x, z) {
   const list = wGrid.get(Math.floor(x / wCell) + ',' + Math.floor(z / wCell));
   if (!list) return false;
-  for (const ring of list) if (inPoly(ring, x, z)) return true;
+  for (const ring of list) {
+    if (!inPoly(ring, x, z)) continue;
+    if (ring.__holes) {
+      let inHole = false;
+      for (const h of ring.__holes) if (inPoly(h, x, z)) { inHole = true; break; }
+      if (inHole) continue;                      // an island, not the water
+    }
+    return true;
+  }
   return false;
 }
 // THE ARCADE CORRIDORS, INDEXED ONCE.
@@ -3040,12 +3067,18 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   const water = P.has('nowater') ? { water: 0, waterArea: 0 } : buildWater(world, data);
   if (!P.has('nowater')) buildPiers(world, data);
   if (!P.has('nowater')) {
-    const wrings = ((opts.regionData || data).water || []).map((w) => w.p);
-    setWater(wrings);
+    // A LAGOON WITH AN ISLAND IN IT. `hp` carries a water body's inner rings —
+    // see data/relparcels.py, which refused three of them outright until the
+    // layer could hold a hole. Passed through as the ring plus its holes so
+    // waterFloor can say "not here" inside one.
+    const wsrc = ((opts.regionData || data).water || []);
+    const wrings = wsrc.map((w) => w.p);
+    const wholes = wsrc.map((w) => w.hp || null);
+    setWater(wrings, wholes);
     // The terrain mesh is cut for the water BEFORE it is built, so the
     // riverbed exists in the geometry rather than being hidden by it.
     // See setWaterRings() in terrain.js for why the grid cannot do this.
-    terrain.setWaterRings(wrings);
+    terrain.setWaterRings(wrings, wholes);
   }
   bmark('setup+water');
 
@@ -3129,6 +3162,41 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // once for the whole region, so it has to know about all of it up front.
   {
     const allGreen = [];
+    // COVERED GROUND IS PAVED, NOT MOWN.
+    //
+    // The 2026-08-07 walksweep frame at Beach Arrival Plaza is a forest of
+    // columns under a soffit standing on LAWN — grass indoors, at the arrival
+    // hall a player walks through to reach the beaches. The ground under a
+    // building's open ground storey or a canopy falls through to the
+    // green-island fallback, which is a mown pale sage, because nothing ever
+    // told the ground it was inside.
+    //
+    //     open ground storeys   13, 37,222 m2   (Beach Arrival Plaza,
+    //                                            Quayside Isle, The Galleria…)
+    //     canopies              32, 36,809 m2
+    //
+    // `plaza` is a tint terrain.js already carries, so this is not a new
+    // surface — it is the existing paved class applied where the map says
+    // there is a roof overhead.
+    //
+    // PUSHED INTO `allGreen` AND NOT INTO `data.green`, deliberately. The
+    // planting's `claimed` list reads data.green directly, so writing there
+    // would silently move thousands of trees; this array only ever reaches
+    // setGreen, which paints. One effect, not two.
+    let paved = 0;
+    for (const b of (data.buildings || [])) {
+      if (!b.p || b.p.length < 3) continue;
+      if (!(b.og || b.bt === 'roof' || b.roof)) continue;
+      allGreen.push({ k: 'plaza', p: b.p });
+      paved++;
+    }
+    window.__pavedCovered = paved;
+    // ...AND FIRST IN THE LIST, WHICH IS THE WHOLE FIX. `greenAt` returns the
+    // FIRST polygon in a cell that contains the point, so appending these at
+    // the end put them behind the landuse parcel that already covers the same
+    // ground — Beach Arrival Plaza sits inside a `comm` parcel, so the paint
+    // never once ran. A covered floor is the most specific statement anyone
+    // makes about that ground; it goes in front.
     if (data.green) allGreen.push(...data.green);
     if (data.land) allGreen.push(...data.land);
     if (window.__allGreen) allGreen.push(...window.__allGreen);
@@ -3443,7 +3511,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   window.__roadList = data.roads.filter((r) => r.k !== 'footway' && r.k !== 'pedestrian');
   const people = crowdSys ? crowdSys.people.length : 0;
 
-  stats = { surround, ...water, ...trees2, marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, zoneCrown: bs.zoneCrown || 0, junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...surveyed, ...furniture, ...signage, ...shopf };
+  stats = { surround, ...water, ...trees2, marks, laneCount: window.__laneCount, relief: data.terrain ? +Math.max(...data.terrain.h).toFixed(1) : 0, ...side, ...sg, realCrossings: window.__realCrossings, merged: bs.mergedMeshes, shophouses: bs.shophouses, zoneCrown: bs.zoneCrown || 0, badGeo: badGeoCount(), junctions: (furniture.signals || []).length, buildings: bs.count, bespoke: bs.bespoke, towers: bs.tall, roads: data.roads.length, people, trees: treeCount, ...surveyed, ...furniture, ...signage, ...shopf };
   // one pass over the finished district: share identical materials, then batch
   // small static meshes per 110m tile. See consolidate.js.
   // Solidity is rasterised from the finished district and BEFORE the meshes are

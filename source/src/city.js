@@ -2891,8 +2891,10 @@ export async function buildBuildings(world, data, Y = null) {
           'Madagascar':   { col: 0xb99f4c, top: [[0.30, 0.50, -1.40], [0.75, 0.90, -0.90]] },
         };
         const _c = _z && CROWN[_z.n];
+        // hoisted: the pylon below is a separate piece of the same architecture
+        // and must be the same stone as the crown, not a second guess at it
+        const trimMat = _c ? renderMat(_c.col, false, true) : null;
         if (_c) {
-          const trimMat = renderMat(_c.col, false, true);
           for (const [out, thick, at] of _c.top) {
             merger.add(extrudeGeo(growM(pts, out), thick, h + at), trimMat, cB[0], cB[1]);
           }
@@ -2901,6 +2903,56 @@ export async function buildBuildings(world, data, Y = null) {
           }
           stats.zoneCrown = (stats.zoneCrown || 0) + 1;
         }
+        // A PYLON GATEWAY WAS BUILT HERE AND CUT. The measurements are kept
+        // because the next person will have the same idea.
+        //
+        // An Egyptian temple front is a pylon — two battered towers flanking a
+        // lower opening — and Revenge of the Mummy's entrance is the obvious
+        // place for one. It was built, on the footprint edge NEAREST the
+        // entrance that data/entrances.py already computes, and it could not be
+        // seen from anywhere.
+        //
+        // EVERY MEASUREMENT SAID IT WAS FINE: count 1, coordinates on the right
+        // edge, `badGeo` 0, the material present in the scene with a bounding
+        // box in the right place. It took a STRAIGHT-DOWN render to find that
+        // the spot is covered by the ROOF OF ANOTHER BUILDING — an unnamed
+        // 1,408 m2 show building sits in the gap between the Mummy's z-min edge
+        // (12517) and the walk. The pylon was inside another mass.
+        //
+        // An earlier cut had a second fault worth knowing: it oriented the
+        // towers "toward the entrance", which is wrong whenever the entrance
+        // point falls INSIDE the footprint — on a 6,145 m2 shed it can. Outward
+        // belongs to the ring's own centroid, which is growM's rule in this
+        // file.
+        //
+        // AND IT WAS REBUILT WITH THAT TEST, AND THE ANSWER WAS ZERO.
+        //
+        // Second attempt added exactly what was missing: candidate edges sorted
+        // by distance to the entrance, each tower site tested against every
+        // other footprint within 90 m (at the tower centre and out to its full
+        // 2.8 m projection), and the first clear one wins.
+        //
+        // It refused two edges and built on the EAST face — 72 m away, on the
+        // far side of the shed, a clear site nobody walks past. So a second
+        // rule was needed and is the more interesting one: the face must be one
+        // people ARRIVE at (35 m of the entrance). A gateway on the wrong
+        // facade is worse than none, because it is scenery that also lies about
+        // where the way in is.
+        //
+        // With both rules the answer is **0 built, 1 refused**, and that is
+        // correct rather than disappointing: the Mummy's arrival face is
+        // occupied by an unnamed 1,408 m2 show building, and THAT is the mass a
+        // visitor actually stands in front of. It already carries the Ancient
+        // Egypt crown, because the crown is gated on the zone and not on a
+        // name. The zone is as built as this data supports.
+        //
+        // The code is not kept. A recipe that builds nothing on the only data
+        // it has is a promise, and this project removes those rather than
+        // leaving them (the Glow Garden's `steps: 7`, emitted and ignored, is
+        // the precedent). What to build instead, if anyone returns: the temple
+        // front belongs on the building the visitor FACES, not on the one the
+        // label is attached to — and that building is unnamed, so it needs the
+        // zone's entrance rather than its own.
       }
       // A CONSERVED SHOPHOUSE HAS A PITCHED CLAY-TILE ROOF, and until now every
       // one of them in this world had a flat concrete parapet like an office
@@ -4717,6 +4769,17 @@ export function buildWater(world, data) {
       const xs = pts.map((q) => q[0]), zs = pts.map((q) => q[1]);
       const x0r = Math.min(...xs), x1r = Math.max(...xs);
       const z0r = Math.min(...zs), z1r = Math.max(...zs);
+      const inAnyHole = (px, pz) => {
+        for (const h of (w.hp || [])) {
+          let c = false;
+          for (let i2 = 0, j2 = h.length - 1; i2 < h.length; j2 = i2++) {
+            const [xi, zi] = h[i2], [xj, zj] = h[j2];
+            if ((zi > pz) !== (zj > pz) && px < (xj - xi) * (pz - zi) / (zj - zi) + xi) c = !c;
+          }
+          if (c) return true;
+        }
+        return false;
+      };
       const insideRing = (px, pz) => {
         let c = false;
         for (let i2 = 0, j2 = pts.length - 1; i2 < pts.length; j2 = i2++) {
@@ -4730,7 +4793,23 @@ export function buildWater(world, data) {
         for (let gz = z0r; gz < z1r; gz += STEP2) {
           const mx = gx + STEP2 / 2, mz = gz + STEP2 / 2;
           if (!insideRing(mx, mz)) continue;
-          if (TERRAIN.at(mx, mz) > level + 0.15) continue;   // dry land, no sheet
+          // ...AND NOT INSIDE ONE OF ITS HOLES. A multipolygon's inner ring is
+          // an island; the cell test below only rejects it when its ground
+          // happens to sit above the water level, which is not something an
+          // island is obliged to do.
+          if (inAnyHole(mx, mz)) continue;
+          // THE DRY-LAND TEST IS THE OLD DEFENCE, AND A HOLED RING NO LONGER
+          // NEEDS IT. It exists because a multipolygon that LOST ITS PARTS
+          // fills solid and surfaces cyan on lawns; the fix was to keep only
+          // cells whose ground lies below the water. A ring that carries its
+          // inner rings has not lost anything — the holes ARE the parts — and
+          // applying the height test to it as well rejects the whole body:
+          // Sentosa Cove's waterway sits at 4.5 m in a 35 m heightfield that
+          // has no canal cut into it, against its own level of 2.3 m, so every
+          // channel cell reads as dry land and 92,363 m2 of marina drew as
+          // nothing. The drawn ground there IS sunk (vertexY takes it to the
+          // bed); only this test was still asking the unsunk grid.
+          if (!(w.hp && w.hp.length) && TERRAIN.at(mx, mz) > level + 0.15) continue;
           const q = new THREE.PlaneGeometry(STEP2 + 0.4, STEP2 + 0.4);
           q.rotateX(-Math.PI / 2);
           q.translate(mx, level, mz);
@@ -5043,9 +5122,140 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
     }
     return false;
   };
+  // A ROOF IS BUILT SPACE EVEN THOUGH NOTHING SOLID STANDS IN IT.
+  //
+  // Planting refuses ground that `blocked()` calls occupied, and a CANOPY is a
+  // roof on slender columns — no mass at ground level — so the test says the
+  // ground under it is free and the fill plants there. At Sapphire Pavillion
+  // the result is trees growing THROUGH the roof, trunks and leaves punching
+  // out of the plane, which is what the 2026-08-07 walksweep frame shows.
+  //
+  // Every one of them is INVENTED: 0 of 3,668 surveyed trees fall inside a
+  // roof footprint, so this only ever refuses the fill's own guesses. 32
+  // canopies, 36,809 m2.
+  //
+  // Indexed on a 48 m grid rather than scanned, because this is called per
+  // planting candidate and an unindexed ring test inside a per-object loop is
+  // the single most expensive shape in this codebase's history — four
+  // instances, 17 seconds of boot between them.
+  const roofRings = (data.buildings || [])
+    .filter((b2) => (b2.bt === 'roof' || b2.roof) && b2.p && b2.p.length >= 3)
+    .map((b2) => b2.p);
+  const roofIx = new Map();
+  const RCELL = 48;
+  for (const r of roofRings) {
+    let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+    for (const [vx2, vz2] of r) {
+      if (vx2 < mnx) mnx = vx2; if (vx2 > mxx) mxx = vx2;
+      if (vz2 < mnz) mnz = vz2; if (vz2 > mxz) mxz = vz2;
+    }
+    for (let cx2 = Math.floor(mnx / RCELL); cx2 <= Math.floor(mxx / RCELL); cx2++) {
+      for (let cz2 = Math.floor(mnz / RCELL); cz2 <= Math.floor(mxz / RCELL); cz2++) {
+        const k = cx2 + ',' + cz2;
+        let l = roofIx.get(k);
+        if (!l) { l = []; roofIx.set(k, l); }
+        l.push(r);
+      }
+    }
+  }
+  // A CROWN IS WIDER THAN A TRUNK, which is why this is not a point-in-ring
+  // test. Refusing only the inside of the rings removed exactly ONE tree
+  // island-wide and changed nothing in the frame: the trees punching through
+  // Sapphire Pavillion stand OUTSIDE a 45 x 44 m canopy and lean over it. The
+  // margin is a crown radius, so a tree may stand a crown's width back from
+  // the eaves and no closer.
+  const ROOF_MARGIN = 6.0;
+  const underRoof = (x, z) => {
+    const l = roofIx.get(Math.floor(x / RCELL) + ',' + Math.floor(z / RCELL));
+    if (!l) return false;
+    for (const r of l) {
+      let c = false;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const xi = r[i][0], zi = r[i][1], xj = r[j][0], zj = r[j][1];
+        if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+        const ex = xj - xi, ez = zj - zi;
+        const L2 = ex * ex + ez * ez || 1;
+        let t2 = ((x - xi) * ex + (z - zi) * ez) / L2;
+        t2 = t2 < 0 ? 0 : t2 > 1 ? 1 : t2;
+        const dx = x - (xi + ex * t2), dz = z - (zi + ez * t2);
+        if (dx * dx + dz * dz < ROOF_MARGIN * ROOF_MARGIN) return true;
+      }
+      if (c) return true;
+    }
+    return false;
+  };
+  // A RUIN YOU CANNOT FIND IS NOT A PLACE — and this is the ONE case where a
+  // mapped wood gives way.
+  //
+  // The clearing rule below defers to mapped woods on purpose: if OSM says
+  // there are trees there, there are trees there. That is right for the halo
+  // and the wild fill. It is wrong for the three kinds whose entire purpose is
+  // to be reached and seen, and the proof is that Fort Serapong ruins, built
+  // 2026-08-06, rendered as nothing at all — the canopy closed over them
+  // completely and a player would never know they existed.
+  //
+  // It is the same argument that won Fort Siloso's gun its field of fire: a
+  // battery has one by definition, a viewpoint has a view by definition, and a
+  // ruin is a thing you come to look at. Only fort, ruins and viewpoint, and
+  // only within their own radius — the wood closes in again immediately beyond.
+  // `attraction` joins them: those 19 nodes are rides and water-park features —
+  // Adventure Cove's slide towers among them — and a ride stands on open ground
+  // by definition. Rendered before this, the slides built at Tidal Twister were
+  // completely hidden by canopy the fill had put around them.
+  const KEEP_CLEAR = { fort: 30, ruins: 20, viewpoint: 26, attraction: 18 };
+  const seeClear = [];
+  for (const a of (data.attractions || [])) {
+    const r = KEEP_CLEAR[a.k];
+    if (r && a.p && typeof a.p[0] === 'number') seeClear.push([a.p[0], a.p[1], r * r]);
+  }
+  const inSeeClear = (x, z) => {
+    for (let i = 0; i < seeClear.length; i++) {
+      const dx = x - seeClear[i][0], dz = z - seeClear[i][1];
+      if (dx * dx + dz * dz < seeClear[i][2]) return true;
+    }
+    return false;
+  };
+  // MOVED UP HERE, AND THIS IS THE BUG IT FIXES.
+  //
+  // `inSeeClear` was tested at exactly ONE of the six planting call sites — the
+  // jungle fill — while `onTrail` was tested at all six. So the rule that keeps
+  // a canopy off the things you are meant to walk up to did not apply to the
+  // surveyed planting or to four of the fills, and megazip adventure park's
+  // 2026-08-07 sweep frame is the result: a headline ride, standing in dense
+  // trunks with its own gate sign barely visible behind them.
+  //
+  // That is precisely the trap the comment below already warns about, written
+  // for a different rule and never applied to this one: **adding it at one call
+  // site is how a rule ends up half-applied.**
+  //
+  // Indexed on the same 48 m grid as the roofs. `inSeeClear` was a linear scan
+  // over every keep-clear node, which was survivable at one call site and is
+  // the four-times-burned shape at six.
+  const scIx = new Map();
+  for (const c of seeClear) {
+    const r = Math.sqrt(c[2]);
+    for (let cx2 = Math.floor((c[0] - r) / RCELL); cx2 <= Math.floor((c[0] + r) / RCELL); cx2++) {
+      for (let cz2 = Math.floor((c[1] - r) / RCELL); cz2 <= Math.floor((c[1] + r) / RCELL); cz2++) {
+        const k = cx2 + ',' + cz2;
+        let l = scIx.get(k);
+        if (!l) { l = []; scIx.set(k, l); }
+        l.push(c);
+      }
+    }
+  }
+  const inSeeClearIx = (x, z) => {
+    const l = scIx.get(Math.floor(x / RCELL) + ',' + Math.floor(z / RCELL));
+    if (!l) return false;
+    for (let i = 0; i < l.length; i++) {
+      const dx = x - l[i][0], dz = z - l[i][1];
+      if (dx * dx + dz * dz < l[i][2]) return true;
+    }
+    return false;
+  };
   // folded into onTrail so all seven planting call sites get it at once —
   // adding it at one of them is how a rule ends up half-applied
-  const onTrail = (x, z) => trailDist2(x, z) < 3.4 * 3.4 || onPromenade(x, z);
+  const onTrail = (x, z) => trailDist2(x, z) < 3.4 * 3.4 || onPromenade(x, z)
+    || underRoof(x, z) || inSeeClearIx(x, z);
 
   const zip = data.zipline;
   const ZIP_CLEAR = 15.0;
@@ -5171,37 +5381,6 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
     }
     return inside;
   };
-  // A RUIN YOU CANNOT FIND IS NOT A PLACE — and this is the ONE case where a
-  // mapped wood gives way.
-  //
-  // The clearing rule below defers to mapped woods on purpose: if OSM says
-  // there are trees there, there are trees there. That is right for the halo
-  // and the wild fill. It is wrong for the three kinds whose entire purpose is
-  // to be reached and seen, and the proof is that Fort Serapong ruins, built
-  // 2026-08-06, rendered as nothing at all — the canopy closed over them
-  // completely and a player would never know they existed.
-  //
-  // It is the same argument that won Fort Siloso's gun its field of fire: a
-  // battery has one by definition, a viewpoint has a view by definition, and a
-  // ruin is a thing you come to look at. Only fort, ruins and viewpoint, and
-  // only within their own radius — the wood closes in again immediately beyond.
-  // `attraction` joins them: those 19 nodes are rides and water-park features —
-  // Adventure Cove's slide towers among them — and a ride stands on open ground
-  // by definition. Rendered before this, the slides built at Tidal Twister were
-  // completely hidden by canopy the fill had put around them.
-  const KEEP_CLEAR = { fort: 30, ruins: 20, viewpoint: 26, attraction: 18 };
-  const seeClear = [];
-  for (const a of (data.attractions || [])) {
-    const r = KEEP_CLEAR[a.k];
-    if (r && a.p && typeof a.p[0] === 'number') seeClear.push([a.p[0], a.p[1], r * r]);
-  }
-  const inSeeClear = (x, z) => {
-    for (let i = 0; i < seeClear.length; i++) {
-      const dx = x - seeClear[i][0], dz = z - seeClear[i][1];
-      if (dx * dx + dz * dz < seeClear[i][2]) return true;
-    }
-    return false;
-  };
   for (const gp of (data.green || [])) {
     if (gp.k !== 'wood' || !gp.p || gp.p.length < 4) continue;
     let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
@@ -5232,7 +5411,6 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
         if (blocked && blocked(jx, jz)) continue;
         if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz)) continue;
         if (onTrail(jx, jz)) continue;
-        if (inSeeClear(jx, jz)) continue;          // see KEEP_CLEAR above
         // top of the spread held at ~1.38, not 1.5: at 1.5 the tallest crown
         // put a leaf card 19.6m up and P3 ("props off the ground") refused the
         // deploy on it. The understorey is what the canopy needed anyway — the

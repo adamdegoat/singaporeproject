@@ -181,11 +181,13 @@ export class Terrain {
   //
   // The step from bank to bed lands in one mesh interval, which reads as a
   // vertical quay wall — which is what the Singapore River actually has.
-  setWaterRings(rings) {
+  setWaterRings(rings, holes) {
     this.wr = [];
     this.wrGrid = new Map();
     this.wrCell = 60;
-    for (const ring of rings || []) {
+    for (let ri = 0; ri < (rings || []).length; ri++) {
+      const ring = rings[ri];
+      const hs = (holes && holes[ri]) || null;
       if (!ring || ring.length < 4) continue;
       let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity, lo = Infinity;
       for (const [x, z] of ring) {
@@ -198,7 +200,7 @@ export class Terrain {
       // buildWater() puts the surface at rim - 0.35. Sit the bed 1.4m under it
       // so there is visible depth rather than z-fighting.
       const id = this.wr.length;
-      this.wr.push({ ring, floor: lo - 0.35 - 1.4, bb: [mnx, mnz, mxx, mxz] });
+      this.wr.push({ ring, holes: hs, floor: lo - 0.35 - 1.4, bb: [mnx, mnz, mxx, mxz] });
       for (let cx = Math.floor(mnx / this.wrCell); cx <= Math.floor(mxx / this.wrCell); cx++)
         for (let cz = Math.floor(mnz / this.wrCell); cz <= Math.floor(mxz / this.wrCell); cz++) {
           const k = cx + ',' + cz;
@@ -226,6 +228,21 @@ export class Terrain {
       }
       // deepest wins where two rings overlap, so a river mouth meeting the bay
       // does not leave a ridge on the seam
+      // A HOLE IS LAND. An island inside a lagoon is not the lagoon, and
+      // filling it drowned a mapped footway the first time it was tried
+      // (data/relparcels.py records the case: 26 blocked samples 29.7 m inside
+      // rel/2142498). The ring says where the water is; the holes say where it
+      // is not, and the holes win.
+      if (hit && w.holes) {
+        for (const h of w.holes) {
+          let inH = false;
+          for (let i = 0, j = h.length - 1; i < h.length; j = i++) {
+            const xi = h[i][0], zi = h[i][1], xj = h[j][0], zj = h[j][1];
+            if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) inH = !inH;
+          }
+          if (inH) { hit = false; break; }
+        }
+      }
       if (hit && (best === null || w.floor < best)) best = w.floor;
     }
     return best;
@@ -286,7 +303,24 @@ export class Terrain {
     // always returned, so the case the guard exists for — 2,465 points of open
     // sea at the bbox corner, where the mask reads 0 — is untouched. Only the
     // transition cell moves, which is the only place there was a step.
-    if (y > 1.2) {
+    // AT SEA LEVEL ONLY — this guard was burying every pond on the island.
+    //
+    // It exists for one case: the SEA polygon over-reaching inland, sinking
+    // firm ground the heightfield still calls land ("the road floating up in
+    // the air"). It was written unconditionally, so it also fired inside every
+    // surveyed inland ring, where it hands back the LAND height — and a pond
+    // whose ground is drawn above its own water surface is a pond you cannot
+    // see. Measured across the island:
+    //
+    //     inland water sampled            9,115 points
+    //     ground drawn ABOVE the water    7,955  (87%), worst 11.2 m
+    //     of those, on a mapped road      1      <- nothing floats if it sinks
+    //
+    // An inland ring is a surveyed pool, lagoon or pond — small, deliberate,
+    // and nothing like the strait polygon this guard was written to distrust.
+    // `bed < 0.2` is the same sea-level test the shore shelf uses, so the two
+    // rules agree about which water is which.
+    if (y > 1.2 && bed < 0.2) {
       const w1 = this.islandW(x, z);
       if (w1 >= 1) return y;
       if (w1 > 0) {

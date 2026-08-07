@@ -2437,15 +2437,37 @@ window.__auditWorld = async function auditWorld() {
    * to consider it.
    */
   {
-    const wpolys = (data.water || []).map((w) => w.p).filter((p) => p && p.length > 3);
+    // THE AUDIT HAS TO ASK THE SAME QUESTION THE PLAYER DOES.
+    //
+    // A water body may carry INNER RINGS — `hp`, the islands inside a lagoon
+    // (data/relparcels.py). Testing outer rings alone makes an island read as
+    // open water, and then W3 compares that against the runtime's hole-aware
+    // `__inWater` and reports every point on the island as "open water you can
+    // ride into". Measured when this was the bug: 6 blockers at Sentosa Cove,
+    // all of them on Sandy Island — dry land at 5-6.8 m, correctly not blocked,
+    // flagged because only the audit still thought it was the sea.
+    //
+    // THIRD OWNER OF "IS THIS WATER" in this codebase, after terrain.waterFloor
+    // and main.js inWater. Each was fixed in turn and each time the next one
+    // was still confidently wrong. If a fourth appears, it is this comment's
+    // fault for not saying: grep for the ring test, not for the symptom.
+    const wsrcA = (data.water || []).filter((w) => w.p && w.p.length > 3);
+    const wpolys = wsrcA.map((w) => w.p);
+    const wholesA = wsrcA.map((w) => w.hp || null);
+    const ringHit = (x, z, ring) => {
+      let c = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, zi] = ring[i], [xj, zj] = ring[j];
+        if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+      }
+      return c;
+    };
     const inWater = (x, z) => {
-      for (const ring of wpolys) {
-        let c = false;
-        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-          const [xi, zi] = ring[i], [xj, zj] = ring[j];
-          if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
-        }
-        if (c) return true;
+      for (let r = 0; r < wpolys.length; r++) {
+        if (!ringHit(x, z, wpolys[r])) continue;
+        const hs = wholesA[r];
+        if (hs && hs.some((h) => ringHit(x, z, h))) continue;   // an island
+        return true;
       }
       return false;
     };
