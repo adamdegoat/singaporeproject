@@ -2,19 +2,45 @@
 
 The owner, 2026-08-06: "wave house i want to make like a real game can play ok"
 
-**AND IT IS OPEN.** I told him it had closed and he replied "if its close alr
-then no need do" — so a half-remembered fact nearly deleted a real attraction.
-Checked properly afterwards, which is the rule (never guess a published fact):
-
-  * the ORIGINAL "Wave House Sentosa" did close, and Time Out still lists it
-    that way, which is where the wrong impression came from
-  * it reopened as **SURF COVE by Wave House Sentosa** and is TRADING — live
-    booking site, published hours 12:00-21:00, and FlowRider's own page refers
-    to "their new location Surf Cove by Wave House Sentosa"
-
-So it is a current Sentosa place, not a Madagascar case. Correcting the record
-mattered more than the build: the owner had already decided against it on my
-word.
+# ==========================================================================
+# THIS VENUE IS CLOSED IN REAL LIFE AND IT STAYS IN THE GAME ON PURPOSE.
+# THE OWNER'S CALL, 2026-08-08: "Keep it open i want to play it."
+# DO NOT DELETE IT. DO NOT QUIETLY RENAME IT. It has now been raised THREE
+# times and answered; anyone who reopens it is re-litigating a settled
+# decision.
+# ==========================================================================
+#
+# WHAT THIS HEADER USED TO SAY, AND WHY IT WAS WRONG. It opened "**AND IT IS
+# OPEN**" and claimed the venue had reopened as Surf Cove and was TRADING, on
+# the strength of a live booking site and published hours. That was a
+# CORRECTION OF A CORRECTION and it was the one that was wrong:
+#
+#   15 Oct 2019   Wave House Sentosa's last day (Wikipedia, Sentosa closures)
+#   Sep 2023      Tipsy Unicorn Beach Club opens in the SAME building, SAME
+#                 address, 36 Siloso Beach Walk #01-01
+#   23 Jan 2026   High Court winding-up order against operator Tipsy Bird
+#   30 Jan 2026   Tipsy Unicorn ceases operations
+#   May 2026      SDC's OWN island map lists neither Wave House nor Surf Cove.
+#                 The only tenant it shows at this address is Scentopia.
+#
+# SDC's own venue page carries the string "Tipsy Unicorn has permanently
+# closed." Time Out titles its page "Wave House Sentosa (CLOSED)"; Foursquare
+# says "Surf Cove by Wave House (Now Closed)". `surfcove.sg` is a parked
+# WordPress domain whose TLS certificate does not match its own hostname.
+# Full evidence chain: research/sentosa-inventory-2026.md section 1.2.
+#
+# WHAT FOOLED ME WAS OTA LISTINGS — Klook, Traveloka, Headout, Streetdirectory
+# and Yelp all still sell tickets to it. They are the least reliable source on
+# this island and they must never be used to prove a venue is open. That is
+# the rule this file paid for twice.
+#
+# So: the FACT is corrected here, and the BUILD is unchanged, because those are
+# two different things and only the first one was ever mine to decide. Under
+# SENTOSA.md the map's SHAPE is truth and the detail is designed — this is a
+# designed attraction on a real site, and the owner wants to ride it.
+#
+# The real 36 Siloso Beach Walk in 2026, for whoever needs it later: Scentopia
+# trading in #01-02, and a vacant three-storey beach-club shell in #01-01.
 
 PUBLISHED (surfcove.sg, FlowRider, streetdirectory; retrieved 2026-08-06):
 

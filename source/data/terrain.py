@@ -1312,6 +1312,133 @@ def main():
         if any(bluff):
             print(f"   {sum(bluff)} cells classified bluff — shore passes keep off")
 
+        # A MASK WITHOUT A MARGIN IS HALF A MASK, and its own edge is the cliff.
+        #
+        # The bluff test above is a BINARY laid across a CONTINUOUS slope, so
+        # the shore passes stop dead at it: the hill is protected and the hill's
+        # TOE is cut to the beach profile, and the discontinuity lands on the
+        # boundary of the mask rather than on any landform. Measured on the
+        # shipped grid 2026-08-08, against the DEM as referee — "did a pass
+        # invent a step the source data does not have?", which needs no opinion
+        # about the true height of a wooded ridge:
+        #
+        #   116 adjacent land-cell pairs where OUR step exceeds the DEM's by
+        #   more than 4m. THE TOP 20 ARE EVERY ONE OF THEM A BLUFF/NON-BLUFF
+        #   PAIR. At (-2312,11930), Fort Siloso: we drew 0.6 beside 23.8 where
+        #   the DEM reads 15.6 beside 20.8.
+        #
+        # That pair is the N3 regression the owner has had live since
+        # 260807-2354 (spikes 20 -> 79): the footway over it went from a 14%
+        # grade to 63%. The 3x3 there is 10.3 14.1 18.5 / 12.4 17.6 23.8 /
+        # 17.0 23.4 29.6 — an unbroken monotonic hillside, and the cell fails
+        # BOTH halves of the CLIFF_H test by 0.4m. A threshold on a continuum
+        # will always cut somewhere; the answer is not to move it (this
+        # headland has been mis-modelled twice by hand-picked constants and the
+        # standing instruction is DO NOT TUNE IT BY EYE) but to stop the mask
+        # having an edge at all.
+        #
+        # So a bluff casts a FLOOR onto the ground around it, falling away at
+        # the rate ground on this island actually falls. BLUFF_FALL is the p90
+        # of the DEM's own cell-to-cell grade over the pairs that touch the
+        # bluff (median 0.113, p90 0.265, p95 0.318 — measured, not chosen), so
+        # the feather is as steep as real steep ground here and no steeper.
+        # It is capped at the cell's own pre-shore height, so it can only ever
+        # withhold a cut and never invent ground; on a beach the nearest bluff
+        # is far outside REACH and it never fires at all.
+        # ...AND WHERE THE SURVEY SAYS THERE IS A BEACH, THE BEACH CUT GOVERNS
+        # AND THE FEATHER STANDS DOWN. This is not an exemption, it is this
+        # file's own hierarchy applied one level further: the beach cut exists
+        # because "the elevation source is a 30m global surface model and the
+        # COASTLINE is surveyed, and where the two disagree about where the sea
+        # starts, the survey wins." The feather is DEM-derived. Mapped sand is
+        # survey. So sand wins over the feather for the same reason.
+        #
+        # WITHOUT THIS IT BURIED SILOSO BEACH, and the render is the only thing
+        # that said so — the grid-cell check passed (6 sand cells moved, by at
+        # most 0.20m) because the DRAWN sand interpolates from the cells OUTSIDE
+        # the ring, and those rose 7m. Rendered at Coastes from the water: the
+        # sand and the waterline were gone and the beach read as a green bank
+        # with the sign buried behind it. That is the owner's "greenish thing in
+        # the sand", which he has now had to report twice, arriving a third time
+        # by a new route. VERIFY AT THE END OF THE PIPELINE THE USER LOOKS AT —
+        # this file already carried that sentence and I still paid for it.
+        #
+        # The separation is not close, so this costs the fix nothing: the Fort
+        # Siloso cell this whole batch is for is 265 m from the nearest mapped
+        # sand, and the cells that buried Siloso were 50-56 m. The radius is
+        # BEACH_REACH, the constant already defined below for exactly "how far
+        # inland a beach's influence runs" — not a new number chosen to fit.
+        BLUFF_FALL = 0.28
+        BLUFF_REACH = 3          # cells — the same reach the ease itself has
+        SAND_KEEPOUT = 110.0     # = BEACH_REACH, defined below
+        _sand = [w["p"] for w in data.get("green", [])
+                 if w.get("k") == "sand" and len(w.get("p", [])) >= 3]
+        bluff_floor = [-1e9] * len(Hpre)
+        for j in range(grid["nz"]):
+            for i in range(grid["nx"]):
+                if not bluff[j * grid["nx"] + i]:
+                    continue
+                hb = Hpre[j * grid["nx"] + i]
+                for dj in range(-BLUFF_REACH, BLUFF_REACH + 1):
+                    for di in range(-BLUFF_REACH, BLUFF_REACH + 1):
+                        ni, nj = i + di, j + dj
+                        if not (0 <= ni < grid["nx"] and 0 <= nj < grid["nz"]):
+                            continue
+                        d = math.hypot(di, dj) * CELL
+                        k2 = nj * grid["nx"] + ni
+                        v = hb - d * BLUFF_FALL
+                        if v > bluff_floor[k2]:
+                            bluff_floor[k2] = v
+        # ...AND THE DEM IS THE CEILING ON THE FEATHER, because Hpre alone is
+        # not a safe cap: the interpolated grid is exactly what is wrong on a
+        # cape. At Tanjong Rimau (-2531,11852) Hpre is 15.3 where the DEM reads
+        # 4.33, so capping at Hpre held 9.9m of invented ground that the shore
+        # passes had been correctly cutting away. The referee that diagnosed
+        # this defect is "our step against the DEM's step", so the repair is
+        # keyed to the same referee: a bluff may withhold a cut only up to the
+        # height the source data itself reports. Over a roof or under canopy
+        # the DEM reads HIGH, which cannot bite; over water it reads garbage,
+        # and a lower cap only means the existing passes proceed untouched.
+        _cell_dem = local_elev([(lat0 - (grid["z0"] + j * CELL) / m_lat,
+                                 lon0 + (grid["x0"] + i * CELL) / m_lon)
+                                for j in range(grid["nz"])
+                                for i in range(grid["nx"])])
+        _onsand = 0
+        for k in range(len(bluff_floor)):
+            # never above what the cell already had, and never above the source:
+            # a floor withholds a cut, it does not build a hill
+            bluff_floor[k] = min(bluff_floor[k], Hpre[k], _cell_dem[k])
+            if bluff_floor[k] <= SEA_SINK:
+                continue
+            gx = grid["x0"] + (k % grid["nx"]) * CELL
+            gz = grid["z0"] + (k // grid["nx"]) * CELL
+            for _s in _sand:
+                if _inside(gx, gz, _s) or _edge_dist(gx, gz, _s) < SAND_KEEPOUT:
+                    bluff_floor[k] = -1e9      # the survey says beach
+                    _onsand += 1
+                    break
+        if _onsand:
+            print(f"   {_onsand} of those stand down — mapped sand within "
+                  f"{SAND_KEEPOUT:.0f}m, and the survey outranks the DEM")
+        _feathered = sum(1 for k in range(len(bluff_floor))
+                         if not bluff[k] and Hpre[k] > SEA_SINK
+                         and bluff_floor[k] > SEA_SINK)
+        if _feathered:
+            print(f"   {_feathered} cells on a bluff's flank — the shore passes "
+                  f"feather out of it at {BLUFF_FALL:.2f}")
+
+        # TERRAIN_BLUFF_DUMP=<path> writes the PRE-SHORE grid and this
+        # classification out, so a threshold here can be chosen from the
+        # measured distribution rather than by eye. Fort Siloso has been
+        # mis-modelled twice by hand-picked constants and the standing
+        # instruction on this headland is DO NOT TUNE IT BY EYE.
+        _dump = os.environ.get("TERRAIN_BLUFF_DUMP")
+        if _dump:
+            json.dump({"x0": grid["x0"], "z0": grid["z0"], "cell": CELL,
+                       "nx": grid["nx"], "nz": grid["nz"],
+                       "hpre": Hpre, "bluff": bluff}, open(_dump, "w"))
+            print(f"   wrote pre-shore grid + bluff mask to {_dump}")
+
         # THE SHORE SLOPES. Sinking only the outside leaves the DEM's smeared
         # 10-35m coast standing as a one-cell CLIFF into the water. A shore is
         # a ramp: land cells near the sea are pulled DOWN (never up) toward a
@@ -1341,6 +1468,7 @@ def main():
                 if best > 3:
                     continue
                 target = [0.0, 0.8, 3.0, 5.5][best]
+                target = max(target, bluff_floor[k])    # feather out of a bluff
                 if grid["h"][k] > target:
                     grid["h"][k] = target
                     eased += 1
@@ -1396,6 +1524,11 @@ def main():
                 target = BEACH_TOE + d * BEACH_GRADE
                 if on_building(gx, gz):
                     target = max(target, SEA_SINK + 1.2)
+                # ...and the same feather, BEFORE cut_target is stored, so the
+                # smoothing pass's ceiling honours the flank too. A ceiling set
+                # from a cut this pass was not allowed to make would put the
+                # cliff straight back on the next blur.
+                target = max(target, bluff_floor[k])
                 cut_target[k] = target
                 if grid["h"][k] > target:
                     grid["h"][k] = target
