@@ -111,15 +111,94 @@ CLOSED["Costa Sands Resort (Sentosa)"] = (
     "closed 2019 (research/sentosa-inventory-2026.md)")
 CLOSED["Dolphin Island"] = (
     "closed 2025 (research/sentosa-heights.md, sentosa-inventory-2026.md)")
-CLOSED["KidZania Singapore"] = (
-    "closed 2020; the Palawan site was relaunched without it "
-    "(research/palawan-spawn.md)")
+# KIDZANIA WAS IN HERE AND IT IS OPEN. Removed 2026-08-08.
+#
+# The entry read "closed 2020; the Palawan site was relaunched without it" and
+# cited `research/palawan-spawn.md` — WHICH SAYS THE OPPOSITE, in bold, in its
+# own loud table: "closed mid-2020 -> REOPENED 16 May 2024 ... operating in the
+# Palawan Kidz City shed, 31 Beach View. **Build it.**" It has a live page at
+# `sentosa.com.sg/attractions/kidzania-singapore/`, the reopening is sourced
+# three ways (BYKidO, theAsianDad, Travel Weekly Asia) with the unit number,
+# and the same research warns that the shuttle stop is STILL called "Palawan
+# Kidz City" for a building that has been KidZania since 2024.
+#
+# So a live attraction was being deleted from the island on the authority of
+# the document that says to build it. THE HALF OF A SOURCE THAT SUPPORTS THE
+# ENTRY IS NOT THE SOURCE — this file's own header demands a source and a date
+# for every row and the row had both, correctly formatted, and was still wrong.
+# When a row cites a file, the reviewer's job is to read that file's verdict,
+# not to confirm the phrase appears in it.
+#
+# NOTE FOR WHOEVER RESTORES IT: removing the entry stops the deletion happening
+# again, but it does NOT put KidZania back into `data/sentosa.json` — the
+# record was deleted from the scene by an earlier run and only a district
+# rebuild re-fetches it. It is absent from every layer today. See NEXT.md.
 CLOSED["Hard Rock"] = (
     "the Hard Rock brand left Singapore in March 2024; the hotel is The "
     "Laurus (research/sentosa-heights.md)")
 CLOSED["Hard Rock Cafe"] = (
     "the Hard Rock brand left Singapore in March 2024 "
     "(research/sentosa-heights.md)")
+
+# THE PALAWAN GHOST ROW, 2026-08-08. research/palawan-spawn.md §1a-0 carries
+# these as a DELETE-BY-ID list, and its point is that there is nothing to reason
+# about: every one is still an ACTIVE object in the OSM database (checked live
+# on Overpass 2026-08-07 11:14 UTC), which is exactly how they reached us.
+#
+# Five of the six stood within ~40 m of each other. They were ONE low-rise
+# beachfront shophouse row, 70-85 Palawan Beach Walk, and that row is gone — the
+# site is now the +Twelve / HydroDash end of The Palawan @ Sentosa. There is no
+# souvenir shop and no food court on Palawan Beach in 2026.
+#
+# This matters more than the count: "Island Life Shop" stands 50 m from the
+# SPAWN POINT. It is one of the first labels the owner can read on loading in,
+# and it names a shop that shut in the eight weeks between 19 March and 19 May
+# 2012. The dates below were bracketed by diffing SDC's own dated printed
+# island maps (Sept 2011, Jan 2015, July 2017) against Wayback snapshots of
+# SDC's directory pages — not from a review site, which this research is
+# explicit never proves a venue is trading.
+CLOSED["Koufu"] = (
+    "Palawan Beach food court; on SDC's Sept 2011 map, gone by Jan 2015 "
+    "(research/palawan-spawn.md 1a-0, way/163502438)")
+CLOSED["Silk Road of the Sea"] = (
+    "opened May 2007 as Amara Sanctuary's beach-level annexe; on the Sept 2011 "
+    "map, gone by Jan 2015 (research/palawan-spawn.md 1a-0, way/163502425)")
+CLOSED["Island Life Shop"] = (
+    "listed on SDC's shopping directory 19 Mar 2012, absent from the same page "
+    "19 May 2012; the brand today is SentosaShop at Central Beach Bazaar "
+    "(research/palawan-spawn.md 1a-0, way/163201819)")
+CLOSED["Mövenpick of Switzerland"] = (
+    "on SDC's Jan 2015 map, gone by July 2017 "
+    "(research/palawan-spawn.md 1a-0, way/176839446)")
+CLOSED["Samundar Indian Fusion Crusine & Bar"] = (
+    "est. 2006 at 85 Palawan Beach Walk and lasted the longest of the row; "
+    "still item 34 on the July 2017 map, gone 2017-2019 "
+    "(research/palawan-spawn.md 1a-0, way/176839457)")
+CLOSED["Bora Bora Beach Bar"] = (
+    "closed end Nov 2018 after 18 years "
+    "(research/palawan-spawn.md 1a-0, way/176839400)")
+
+# AND THE PIRATE SHIP, WHICH IS THE ONE A PLAYER WOULD WALK TO. The free water
+# playground reopened Feb 2017 as a ship-only remnant and had its last day on
+# 14 Apr 2019. Splash Tribe's pool and cabanas stand on the site, verified
+# against 2026 satellite: no ship, no water playground, no trace. Our
+# `parkfurn` carries it as `{"k":"playground","r":10.8,"n":"Pirate Ship"}`
+# 265 m from the spawn — a labelled attraction with nothing behind it, which is
+# the precise thing walksweep.mjs exists to find.
+CLOSED["Pirate Ship"] = (
+    "Palawan Pirate Ship water playground; last day 14 Apr 2019, Splash Tribe "
+    "stands on the site (research/palawan-spawn.md 1a-0, way/528233073)")
+
+# NOT IN HERE ON PURPOSE — "Palawan Amphitheatre" and "Animal & Bird
+# Encounters". The SHOW is gone (SDC has delisted it entirely; no page, no
+# sitemap entry, no dated source after 2023) but the research is explicit that
+# the amphitheatre SHELL, OSM way/163502445, 207 m2, 21 x 15 m, "may well still
+# stand — build the shell if imagery supports it, not the show." We carry only
+# the building, not the show, so deleting its name would remove a structure
+# that is probably there. The research also warns why the temptation exists:
+# the beach-shuttle stop is still called "Opp Animal & Bird Encounters", and a
+# stop name proves nothing — Sentosa's stops are still called "Palawan Kidz
+# City" for a building that has been KidZania since 2024.
 
 # NOT IN HERE, AND THE RESEARCH WAS WRONG ABOUT IT — recorded so nobody
 # re-derives it. research/sentosa-heights.md §4 lists the Sentosa Cove

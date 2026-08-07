@@ -520,6 +520,11 @@ CHAIN = [
          only="sentosa"),
     Pass("venues.py", "bind the Siloso strip's venue names to their footprints",
          only="sentosa"),
+    # The spawn frame. Keyed on POSITION, not on names, because every footprint
+    # it corrects is anonymous — same reason cablestations.py exists. Only
+    # touches heights this project invented (`hs == "calib"`).
+    Pass("palawan.py", "the spawn: a 25m mast that is a lifeguard hut, and "
+         "villa terraces drawn as slabs", only="sentosa"),
     # ...and here are the four. Each one used to run above attractions.py and
     # print its own "not built" line on every build.
     Pass("sensoryscape.py", "needs attractions: the six gardens", only="sentosa"),
