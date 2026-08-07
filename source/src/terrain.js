@@ -128,6 +128,62 @@ export class Terrain {
         }
         for (let i = 0; i < n; i++) if (isSea[i]) { d[i] = 0; q.push(i); }
         if (!q.length) { this._seaD = d; return Infinity; }
+        // SEED AT THE WATERLINE, NOT AT THE CENTRE OF THE SEA CELL — and this
+        // is the OTHER HALF of the 2026-08-07 fix below, which was only half
+        // of one.
+        //
+        // That fix made the SAMPLING bilinear so this field could answer in
+        // metres instead of in multiples of 35. It did nothing about where the
+        // metres are measured FROM. The sources are sea cells and they are
+        // seeded at their CENTRES, so the first dry cell inland scores a flat
+        // 35 however close the water actually is — and the water is somewhere
+        // inside that sea cell, not at the far side of it.
+        //
+        // MEASURED ON THE ISLAND'S FOUR NAMED BEACHES, true geometric distance
+        // to the drawn waterline against what this field said:
+        //
+        //     Siloso    true median 30 m   said 59   +29
+        //     Tanjong               28 m        55   +27
+        //     Palawan               42 m        86   +44
+        //     Central Beach         18 m        60   +42
+        //
+        // A systematic over-read of about one cell. Three rules read this
+        // number and two are written in tens of metres, so "the back-beach
+        // fades beyond 45 m" was really "beyond about 15 m of real beach": it
+        // was painting 69% of Siloso, 70% of Tanjong and 97% of PALAWAN — the
+        // spawn — toward lawn green, which is the owner's "still got greenish
+        // thing in the sand", and it is why Central Beach had to be EXEMPTED
+        // from the fade last session rather than tuned. An exemption is what
+        // you write when the ruler is wrong and you cannot say why.
+        //
+        // So refine the boundary: for every dry cell touching a sea cell, walk
+        // toward that neighbour and find where vertexY actually crosses sea
+        // level. Only the boundary needs it — the interior inherits the
+        // correction through the relaxation below — so this is a few thousand
+        // extra vertexY calls once, not a finer grid.
+        const SEED_STEPS = 7;
+        for (let c = 0; c < n; c++) {
+          if (isSea[c]) continue;
+          const ci = c % g2.nx, cj = (c / g2.nx) | 0;
+          const cx = g2.x0 + ci * g2.cell, cz = g2.z0 + cj * g2.cell;
+          let best = Infinity;
+          for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const ni = ci + di, nj = cj + dj;
+            if (ni < 0 || nj < 0 || ni >= g2.nx || nj >= g2.nz) continue;
+            if (!isSea[nj * g2.nx + ni]) continue;
+            // march toward the wet neighbour and take the first wet sample;
+            // the crossing is between it and the one before, so split them
+            for (let s = 1; s <= SEED_STEPS; s++) {
+              const f = s / SEED_STEPS;
+              const px = cx + di * g2.cell * f, pz = cz + dj * g2.cell * f;
+              if (this.vertexY(px, pz) <= 0) {
+                best = Math.min(best, g2.cell * (f - 0.5 / SEED_STEPS));
+                break;
+              }
+            }
+          }
+          if (best < d[c]) { d[c] = best; q.push(c); }
+        }
         for (let head = 0; head < q.length; head++) {
           const c = q[head];
           const ci = c % g2.nx, cj = (c / g2.nx) | 0;
@@ -1289,7 +1345,36 @@ export class Terrain {
               //
               // The distance rule stays exactly as it was for every inherited
               // ring, which is all of the ones it was written for.
-              if (sdw > 45 && !this.greenMeasuredAt(x, z)) {
+              // ...AND A WIDE BEACH IS NOT A BACK-BEACH. The owner, 2026-08-08:
+              // "the beach sand i duno why still got greenish thing in the
+              // sand. Please check all the beaches properly."
+              //
+              // The rule above is DISTANCE FROM WATER used as a proxy for "this
+              // polygon has run up the slope". On a wide beach the proxy is
+              // simply wrong, and Sentosa's beaches are wide. Measured against
+              // true geometric distance to the drawn waterline:
+              //
+              //   Siloso   sand median 30 m deep, ground median 2.1 m
+              //   Tanjong                28 m                    2.1 m
+              //   Palawan                42 m                    2.3 m
+              //
+              // and `research/palawan-spawn.md` sizes Palawan's sand off a
+              // metre grid at MEDIAN 44 m, range 13-72 m, area 29,329 m2
+              // against our polygon's 29,131 — "correct, matches the survey".
+              // There is no back-beach lawn inside that ring to fade TO. It was
+              // painting 97% of the SPAWN BEACH toward green.
+              //
+              // A beach is flat and at sea level; a ring that has climbed off
+              // the beach has RISEN. So ask the thing the rule actually means.
+              // `Palavan Beach` (median 4.6 m, up to 12.1) and the unnamed ring
+              // behind Tanjong (6.5 m, up to 8.8) are the two that really do
+              // run up the slope, and both still fade — 57% and 98%. The flat
+              // sand keeps its colour: Siloso 41% -> 20%, Palawan 80% -> 11%.
+              //
+              // BOTH conditions, so this is strictly NARROWER than what it
+              // replaces and no ground anywhere starts fading that was not
+              // already fading.
+              if (sdw > 45 && vy > 4.0 && !this.greenMeasuredAt(x, z)) {
                 const f = Math.min(1, (sdw - 45) / 40) * 0.8;
                 t = [t[0] + (0.50 - t[0]) * f,
                      t[1] + (0.60 - t[1]) * f,

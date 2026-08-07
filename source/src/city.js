@@ -668,6 +668,21 @@ export function onCarriageway(x, z, margin = -0.6, except = null) {
 }
 export function groundAt(x, z) { return TERRAIN.at(x, z); }
 
+// THE GROUND AS IT IS DRAWN, which is not `groundAt`, and the difference is
+// the entire waterline. `at()` is the logical heightfield; `vertexY` is the
+// surface the player sees, and it alone owns the water polygons, the
+// overreach guard and the shore shelf. Anything asking "where does the land
+// meet the sea" must ask this one — terrain.js already calls that out as
+// "one authority, three readers" (the drawn mesh, what a walker stands on,
+// and what stops them). The swim flags were a fourth reader that was not
+// using it: they walked downhill until `at() < 1.0` against a comment saying
+// "the eased 0.8m band IS the waterline", and when the shore profile changed
+// under them on 2026-08-07 that band became sea, so the flags waded out.
+// A magic contour is not a waterline; the thing that draws the water is.
+export function drawnGroundAt(x, z) {
+  return TERRAIN.vertexY ? TERRAIN.vertexY(x, z) : TERRAIN.at(x, z);
+}
+
 // The height of the surface you stand ON, which is not the terrain height. The
 // carriageway is drawn at terrain + 0.055 plus up to 5mm of per-road offset, and
 // footways at terrain + 0.02. Anything placed at the raw terrain height is under

@@ -12,7 +12,7 @@ import { R, rand, pick, chance, rng, sharedSignAtlas } from './tex.js';
 // to — the same two-numbers trap that had the bike riding 5.5cm under the road
 // for the whole project, one storey up. surfaceAt() answers both cases and is
 // the single function main.js already uses for the ride and the walker.
-import { MAT, groundAt, surfaceAt, Merger, standable, addWalkSurface } from './city.js';
+import { MAT, groundAt, drawnGroundAt, surfaceAt, Merger, standable, addWalkSurface } from './city.js';
 import { recipeFor } from './landmarks.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d,
@@ -5564,9 +5564,22 @@ export async function buildBeachLife(world, data, Y = null) {
           const t = 1 - acc / L;
           let fx = ax + (bx - ax) * t, fz = az + (bz - az) * t;
           let found = false, why = 'steps';
+          // ASK THE THING THAT DRAWS THE WATER, not a contour that used to
+          // correlate with it. This tested `groundAt(fx,fz) < 1.0` against a
+          // comment reading "the eased 0.8m band IS the waterline (terrain.py
+          // shore profile)" — true of the shore-ease plateaus it was written
+          // for, and false the moment the beach cut regraded the shore off
+          // the surveyed coastline. Measured 2026-08-07: with the coastline
+          // fix in, everything under 1.0 on these beaches is DRAWN AS SEA, so
+          // the flags planted in the water and the buoy line went with them.
+          // (They were already wading in the shipped build — the same frames
+          // show it — because the number was never the waterline, only near
+          // it.) `drawnGroundAt` is vertexY, which owns the shelf and the
+          // water polygons, so this now stops exactly where the sea starts
+          // however the profile is graded, and steps back onto the sand.
           for (let stepn = 0; stepn < 34; stepn++) {   // some shores start 200m+ upslope
-            const h0 = groundAt(fx, fz);
-            if (h0 < 1.0) { found = true; break; }   // the eased 0.8m band IS the waterline (terrain.py shore profile)
+            const h0 = drawnGroundAt(fx, fz);
+            if (h0 <= 0.15) { found = true; break; }
             const gx2 = groundAt(fx + 6, fz) - groundAt(fx - 6, fz);
             const gz2 = groundAt(fx, fz + 6) - groundAt(fx, fz - 6);
             const gl = Math.hypot(gx2, gz2);
@@ -5580,7 +5593,7 @@ export async function buildBeachLife(world, data, Y = null) {
             for (let a2 = 0; a2 < 8 && !found; a2++) {
               const dx2 = Math.cos(a2 / 8 * Math.PI * 2), dz2 = Math.sin(a2 / 8 * Math.PI * 2);
               for (let d2 = 8; d2 <= 88; d2 += 8) {
-                if (groundAt(fx + dx2 * d2, fz + dz2 * d2) < 1.0) {
+                if (drawnGroundAt(fx + dx2 * d2, fz + dz2 * d2) <= 0.15) {
                   fx += dx2 * (d2 - 4); fz += dz2 * (d2 - 4);
                   found = true;
                   break;
@@ -5590,9 +5603,28 @@ export async function buildBeachLife(world, data, Y = null) {
           }
           if (window.__flagDbg) window.__flagDbg.push({ found, why, endH: +groundAt(fx, fz).toFixed(1), fx: fx | 0, fz: fz | 0 });
           if (!found) continue;
+          // ...AND THEN BACK ONTO THE SAND. The walk above stops at the first
+          // point the sea is drawn, which is the waterline itself — stand a
+          // pole there and its foot is in the water on the seaward side of a
+          // surface that shelves. A real swim flag is planted on wet sand a
+          // couple of metres up the beach, so retreat along the inward normal
+          // until the DRAWN ground is clear of the shelf, and give up after a
+          // few steps rather than march inland on a shore that has none.
+          // THE BUOY LINE KEEPS THE WATERLINE THE FLAGS JUST LEFT. It is
+          // strung from this station "22m out", and out is measured from
+          // wherever this point ends up — so stepping the flags back onto the
+          // sand walked the whole chain of buoys up the beach with them, and
+          // Palawan drew a row of floats sitting on dry sand (vetted, and
+          // visible in the frame before this line existed). A flag stands on
+          // the beach and a buoy floats on the water; they are two different
+          // places and now they are two different variables.
+          const wx = fx, wz = fz;
+          for (let back = 0; back < 5 && drawnGroundAt(fx, fz) < 0.35; back++) {
+            fx -= nx * 2.0; fz -= nz * 2.0;
+          }
           // no blocked() veto here: the waterline IS the water-wall's edge,
           // and a swim flag's whole job is standing on it
-          const fy = groundAt(fx, fz);
+          const fy = drawnGroundAt(fx, fz);
           for (const off of [-1.4, 1.4]) {
             const px2 = fx + nz * off, pz2 = fz - nx * off;   // pair spread ALONG the edge
             bake(new THREE.CylinderGeometry(0.035, 0.045, 2.6, 6), poleM, px2, fy + 1.3, pz2);
@@ -5614,12 +5646,22 @@ export async function buildBeachLife(world, data, Y = null) {
           // a broken line parallel to the shore, which is what the
           // photographs show.
           if ((out.swimFlags % 6) === 0) {
-            const bx2 = fx + nx * 24, bz2 = fz + nz * 24;
-            const by = groundAt(bx2, bz2);
+            const bx2 = wx + nx * 22, bz2 = wz + nz * 22;   // from the WATERLINE
+            // A BUOY THAT IS NOT ON WATER IS NOT A BUOY, and until now nothing
+            // in this chain ever asked. The station's outward normal is the
+            // SAND RING's edge normal, which on a curved bay or at a groyne
+            // root does not point at the sea at all — so a chain could march
+            // 22m up the beach and sit there. It only showed once the flags
+            // stopped standing in the water and the eye had something to
+            // compare against (vetted at Palawan, a row of floats on dry
+            // sand). Each bead is placed only where the DRAWN ground is below
+            // the waterline, and it floats at sea level rather than following
+            // the seabed down.
             for (let bi = -4; bi <= 4; bi++) {
               const qx = bx2 + nz * bi * 6.5, qz = bz2 - nx * bi * 6.5;
+              if (drawnGroundAt(qx, qz) > 0) continue;
               const bo = new THREE.SphereGeometry(0.22, 6, 5);
-              bo.translate(qx, Math.max(by, 0.1) + 0.12, qz);
+              bo.translate(qx, 0.22, qz);
               merger.add(bo, (bi & 1) ? redM : yellowM, qx, qz);
               out.buoys = (out.buoys || 0) + 1;
             }
