@@ -5253,6 +5253,131 @@ export async function buildTransit(world, data, Y = null) {
     out.palawanbridge = 1;
   }
 
+  // -- THE TWO PALAWAN VIEWING TOWERS -------------------------------------
+  //
+  // research/palawan-spawn.md 4.3: "the identity of this place", and `towers`
+  // had no entry for either. Heavy timber, four chunky round columns plus a
+  // core on masonry bases; a square hipped pyramidal crown in TWO tiers with a
+  // ventilated clerestory gap and very deep eaves, over a third wider low
+  // hipped skirt at mid level; closely spaced plain vertical balusters over a
+  // solid boarded fascia; SWITCHBACK stair flights wrapping the frame, not
+  // spiral. Palette: chocolate shingle, honey-brown columns, dark red-brown
+  // rails — no white, no render, no metal.
+  const pt = data.palawantowers;
+  if (pt && pt.p && pt.p.length === 2) {
+    await YY();
+    const ROOF = pt.roof || 10.7, DECKH = pt.deck || 6.5;
+    const APEX = pt.apex || 13.5, SKIRTH = pt.skirt || 4.6;
+    const A2 = pt.ang || 0;
+    const post = new THREE.MeshLambertMaterial({ color: 0x8a5f38 });
+    const rail = new THREE.MeshLambertMaterial({ color: 0x6b3a2c });
+    const shingle = new THREE.MeshLambertMaterial({ color: 0x7a4630 });
+    const plank = new THREE.MeshLambertMaterial({ color: 0x9c7247 });
+    const base = new THREE.MeshLambertMaterial({ color: 0x8d8a83 });
+    const hip = (cx, cz, gy, y, w, h, mat) => {
+      // a hipped pyramidal roof: a 4-sided cone, rotated 45 deg so its ridges
+      // land on the corners and it reads square rather than diamond
+      const g = new THREE.ConeGeometry(w * 0.707, h, 4);
+      g.rotateY(Math.PI / 4 + A2);
+      g.translate(cx, y + h / 2, cz);
+      merger.add(g, mat, cx, cz);
+    };
+    for (const [tx, tz] of pt.p) {
+      const gy = drawnGroundAt(tx, tz);
+      // masonry base
+      const bs = new THREE.BoxGeometry(ROOF * 0.52, 0.7, ROOF * 0.52);
+      bs.rotateY(A2); bs.translate(tx, gy + 0.35, tz);
+      merger.add(bs, base, tx, tz);
+      // four chunky round columns plus a core
+      const R = ROOF * 0.24;
+      for (let c = 0; c < 4; c++) {
+        const a3 = A2 + Math.PI / 4 + c * Math.PI / 2;
+        const px2 = tx + Math.sin(a3) * R, pz2 = tz + Math.cos(a3) * R;
+        const col = new THREE.CylinderGeometry(0.26, 0.30, APEX * 0.72, 7);
+        col.translate(px2, gy + 0.7 + APEX * 0.36, pz2);
+        merger.add(col, post, px2, pz2);
+      }
+      const core = new THREE.CylinderGeometry(0.42, 0.46, DECKH + 0.5, 7);
+      core.translate(tx, gy + 0.7 + (DECKH + 0.5) / 2, tz);
+      merger.add(core, post, tx, tz);
+      // the viewing deck, and the mid landing below it
+      // DECKS SIT WELL INSIDE THE ROOFLINE. The research is explicit that the
+      // 10.7 m roof plan is the EAVES outline and "the structural frame inside
+      // it is smaller", with "very deep overhanging eaves" — at 0.44/0.40 of
+      // the roof the decks nearly reached the eaves and the tower read as a
+      // stack of plates rather than a pavilion under a wide hat.
+      for (const [dy, dw] of [[SKIRTH - 1.5, ROOF * 0.35], [DECKH, ROOF * 0.31]]) {
+        const dk = new THREE.BoxGeometry(dw * 2, 0.18, dw * 2);
+        dk.rotateY(A2); dk.translate(tx, gy + dy, tz);
+        merger.add(dk, plank, tx, tz);
+        // solid boarded fascia below deck level, then the baluster rail above
+        const fa = new THREE.BoxGeometry(dw * 2 + 0.1, 0.32, dw * 2 + 0.1);
+        fa.rotateY(A2); fa.translate(tx, gy + dy - 0.24, tz);
+        merger.add(fa, rail, tx, tz);
+        for (const [rh, rt] of [[0.55, 0.10], [1.02, 0.13]]) {
+          const rr = new THREE.BoxGeometry(dw * 2 + 0.12, rt, dw * 2 + 0.12);
+          rr.rotateY(A2); rr.translate(tx, gy + dy + rh, tz);
+          merger.add(rr, rail, tx, tz);
+        }
+      }
+      // the third, wider low hipped skirt over the mid level
+      hip(tx, tz, gy, gy + SKIRTH + 0.6, ROOF * 0.92, 1.5, shingle);
+      // the crown, in two tiers with a ventilated clerestory gap between
+      hip(tx, tz, gy, gy + APEX - 3.6, ROOF, 2.3, shingle);
+      hip(tx, tz, gy, gy + APEX - 0.9, ROOF * 0.56, 1.5, shingle);
+      // a finial at the apex
+      const fin = new THREE.CylinderGeometry(0.05, 0.07, 0.9, 5);
+      fin.translate(tx, gy + APEX + 0.3, tz);
+      merger.add(fin, rail, tx, tz);
+      // SWITCHBACK stair flights wrapping the frame — not spiral
+      for (let f = 0; f < 3; f++) {
+        const y0 = gy + 0.7 + f * (DECKH - 0.7) / 3;
+        const y1 = gy + 0.7 + (f + 1) * (DECKH - 0.7) / 3;
+        const a4 = A2 + f * Math.PI / 2;
+        const sx = tx + Math.sin(a4) * ROOF * 0.30;
+        const sz = tz + Math.cos(a4) * ROOF * 0.30;
+        const run = ROOF * 0.46;
+        const fl = new THREE.BoxGeometry(1.15, 0.16, run);
+        fl.rotateX(-Math.atan2(y1 - y0, run));
+        fl.rotateY(a4 + Math.PI / 2);
+        fl.translate(sx, (y0 + y1) / 2, sz);
+        merger.add(fl, plank, sx, sz);
+        const ld = new THREE.BoxGeometry(1.3, 0.16, 1.3);
+        ld.rotateY(A2);
+        ld.translate(tx + Math.sin(a4 + Math.PI / 2) * ROOF * 0.30,
+                     y1, tz + Math.cos(a4 + Math.PI / 2) * ROOF * 0.30);
+        merger.add(ld, plank, tx, tz);
+      }
+    }
+    // THE LINK, AT AN INTERMEDIATE LEVEL. "You cannot cross between the top
+    // decks" — so this is deliberately below them, and it is not roofed
+    // because "covered" is unconfirmed in the research.
+    {
+      const [[ax5, az5], [bx5, bz5]] = pt.p;
+      const gy2 = (drawnGroundAt(ax5, az5) + drawnGroundAt(bx5, bz5)) / 2;
+      const ly = gy2 + (pt.linkY || 4.2);
+      const L5 = Math.hypot(bx5 - ax5, bz5 - az5);
+      const ang5 = Math.atan2(bx5 - ax5, bz5 - az5);
+      const inner = Math.max(2, L5 - ROOF * 0.78);
+      const dk2 = new THREE.BoxGeometry(pt.linkW || 1.6, 0.16, inner);
+      dk2.rotateY(ang5);
+      dk2.translate((ax5 + bx5) / 2, ly, (az5 + bz5) / 2);
+      merger.add(dk2, plank, (ax5 + bx5) / 2, (az5 + bz5) / 2);
+      for (const sg of [-1, 1]) {
+        const nx5 = Math.cos(ang5) * (pt.linkW || 1.6) / 2 * sg;
+        const nz5 = -Math.sin(ang5) * (pt.linkW || 1.6) / 2 * sg;
+        for (const rh of [0.5, 0.96]) {
+          const rr2 = new THREE.BoxGeometry(0.09, 0.1, inner);
+          rr2.rotateY(ang5);
+          rr2.translate((ax5 + bx5) / 2 + nx5, ly + rh, (az5 + bz5) / 2 + nz5);
+          merger.add(rr2, rail, (ax5 + bx5) / 2, (az5 + bz5) / 2);
+        }
+      }
+      addWalkSurface(ax5, az5, bx5, bz5, (pt.linkW || 1.6) / 2, ly);
+    }
+    out.palawantowers = 1;
+  }
+
   // -- PORTE-COCHERE: drive in, stop at the lobby, drive out ---------------
   //
   // The owner: "even like hotels can drive thru to the main lobby like drop off

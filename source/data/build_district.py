@@ -529,6 +529,8 @@ CHAIN = [
     # `bridges`, so the generic slab recipe cannot stand inside the real one.
     Pass("palawanbridge.py", "the suspension bridge, chained from its three "
          "mapped ways", only="sentosa"),
+    Pass("palawantowers.py", "the two viewing towers, and the 242 m2 'building' "
+         "that is really their roof outlines", only="sentosa"),
     # ...and here are the four. Each one used to run above attractions.py and
     # print its own "not built" line on every build.
     Pass("sensoryscape.py", "needs attractions: the six gardens", only="sentosa"),
