@@ -85,7 +85,15 @@ const SPOTS = [
   // SET IS ONLY AS GOOD AS WHAT ITS CAMERAS CAN SEE, and "all frames passed"
   // means nothing about a thing none of them is looking at. This one stands on
   // Siloso and looks down the waterline, which is where the staircase was.
-  ['waterline', -2240, 12455, -1.05],
+  // MOVED 15 m LANDWARD 2026-08-07, and it is the same correction
+  // `wings-grandstand` took the day before. This stood 14 m OUTSIDE the
+  // surveyed coastline and only ever photographed dry sand because the
+  // heightfield kept a 31.5 m lip of Copernicus's smeared shore above sea
+  // level out there; with the lip gone the camera is chest-deep in the strait
+  // and the frame is a wall of water. It now stands on Siloso Beach's own
+  // mapped sand, which is 100% inside the ring, and still looks down the
+  // waterline — which is the whole point of it.
+  ['waterline', -2226, 12447, -1.05],
   // ...AND NOTHING COULD SEE UNIVERSAL'S SHOW BUILDINGS EITHER. Ancient Egypt
   // got a cavetto cornice and a battered plinth on 2026-08-06 — seven crowned
   // buildings, new geometry on the largest footprint in the park — and all
@@ -157,7 +165,13 @@ const SPOTS = [
   // with the bank filling the frame, so the set the whole venue points at was
   // off-screen the entire time it was a 4 m tan box on the water. Stands on
   // the sand at Central Beach and looks straight out at it.
-  ['wings-stage', -1866, 12772, 0.15],
+  // MOVED 2026-08-07, same reason as `waterline` above: it stood 5 m outside
+  // the surveyed coastline, on lip, and is now in the strait. Moved NW along
+  // the beach rather than straight back, because straight back is the rock
+  // revetment the research says this corner pinches out on and the boulders
+  // filled the frame. It now stands on the deep end of centralbeach.py's own
+  // authored sand and still looks straight out at the stage.
+  ['wings-stage', -1858, 12757, 0.15],
 ];
 
 mkdirSync(ACT, { recursive: true });

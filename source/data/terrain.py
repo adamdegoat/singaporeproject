@@ -243,6 +243,44 @@ def open_samples(data, extent, step=35.0):
     and the gaps between blocks are all open sky and all real ground, and they
     are exactly where the honest samples live. They are only used where they are
     CLEAN, so this adds anchors without adding assumptions.
+
+    A BUILDING PAD DELETES A SAMPLE; WATER DELETES A SAMPLE; THEY ARE NOT THE
+    SAME THING, and treating them alike wiped a headland off the island.
+
+    Fifty lines below, in capitals, this file says CORRECT THEM, DO NOT DELETE
+    THEM — a sample's POSITION is good even when its VALUE is a roof — and the
+    repair loop in main() has carried that rule for road samples since
+    2026-08-01. This lattice was the one place still deleting, and the cost was
+    measured on 2026-08-07:
+
+      Session 12 gave Shangri-La's Rasa Sentosa its RESEARCHED height (37.4m,
+      up from a band median). The contamination pad is 24 + 0.45h, so a correct
+      height grew that resort's pad to 41m, and 41m was enough to swallow the
+      last lattice point on Tanjong Rimau. The cape then had NO sample within
+      REACH (70m) at all, build_grid fell into its ring-widening fallback, and
+      that fallback inverse-distance-weights an unbounded annulus — 37 samples
+      90-220m away, every one of them up on the Fort Siloso ridge. It wrote
+      22.4m of hill onto a cape where raw Copernicus reads 2.04m.
+
+      Nothing had broken yet ONLY because terrain.py is not in the build chain
+      (process.py carries the heightfield forward), so the grid had not been
+      rebuilt since. It was a landmine, not a bug: armed by a correct fix, in a
+      pass nobody re-runs, waiting for the next person to run it.
+
+    So a building-contaminated lattice point is KEPT, and the repair loop does
+    what it already does for a road: re-read from the nearest clean ground,
+    floored at raw minus the building (which keeps a hill), and capped at raw
+    (`a building lifts; it never digs`, which keeps a beach). At Tanjong Rimau
+    that cap is what answers it — the donors are the ridge at ~15m, raw is
+    2.04m, and min() holds the cape at 2.04.
+
+    WATER STILL DELETES, and the asymmetry is the same one the repair loop is
+    already written around: a building can only have LIFTED a reading, so the
+    error is bounded and one-directional and raw is still an anchor. A radar
+    return off water is garbage in BOTH directions, so water repairs in both
+    directions — and this lattice covers 800 hectares of open sea, every point
+    of which would then be repaired UP to the nearest dry land. Keeping those
+    would not fix a cape; it would build a continent.
     """
     near = contam_fn(data)
     xs = [p[0] for p in extent]; zs = [p[1] for p in extent]
@@ -255,6 +293,8 @@ def open_samples(data, extent, step=35.0):
         while x <= x1:
             if near is None or not near(x, z):
                 out.append((x, z))
+            elif not near.contam_h(x, z)[1]:
+                out.append((x, z))           # a roof, not water — repairable
             x += step
         z += step
     return out
@@ -1102,7 +1142,48 @@ def main():
                         return True
             return False
 
-        INSET_C = CELL * 0.9
+        # THE BEACH LIP IS GONE, AND IT WAS DRAWING 69 HECTARES OF SEA AS LAND.
+        #
+        # This pass used to keep any cell within INSET_C = 31.5 m OUTSIDE the
+        # coastline at whatever the DEM said, "with a one-cell lip at land
+        # height so the coast slopes rather than steps". That was written on
+        # 2026-08-03, when sinking the outside was ALL this file did about the
+        # shore and a bare sink really did leave a cliff at the ring.
+        #
+        # The beach cut below now grades the LANDWARD side off the surveyed
+        # coastline — the ground sits just under the waterline at the ring and
+        # climbs inland at 8.5% — so the slope the lip existed to provide is
+        # already there, and better, and keyed to the survey rather than to a
+        # cell size. What the lip does now is hold 31.5 m of Copernicus's
+        # SMEARED SHORE above sea level, and this file already knows what that
+        # reads: "a 35 m cell blending jungle hill into beach reads 5-16 m over
+        # the SAND and stays positive over near-shore water". The shore-smooth
+        # pass names it as its own worst case in so many words — "the coastline
+        # inset keeps a 'beach lip' cell at the DEM's smeared 15-20 m and the
+        # cell beside it is sunk to -2, so the face between them is the full
+        # drop".
+        #
+        # MEASURED 2026-08-07, on the world as it shipped, and this is the
+        # defect the handover filed as "a coastline question":
+        #
+        #   surveyed island (islandRing)     4.89 km2   (published Sentosa ~5.0)
+        #   DRAWN land (vertexY > 0)         5.58 km2
+        #     drawn land that is sea          69.3 ha
+        #     sea that should be land          0.0 ha   <- one-directional
+        #   drawn waterline seaward of the survey, over 13.67 km of coast:
+        #     p25 31 m   MEDIAN 46 m   p90 158 m
+        #
+        # The p25 IS this constant. Then at() is bilinear over 35 m cells, so
+        # the lip bleeds another cell seaward, and terrain.js's overreach guard
+        # keeps anything above 1.2 m on the island mask as land — a guard whose
+        # own written premise is "the grid's own data-side passes already sank
+        # every genuine water cell". This was the pass that didn't. Central
+        # Beach measured 80 m from drawn water on a 30 m beach because the water
+        # genuinely was that far away in what we drew.
+        #
+        # A cell outside the survey is sea. Buildings and roads still hold their
+        # ground (the two guards below, unchanged) — that is what keeps a pier,
+        # a stilted deck and the Keppel wharves out of the water.
         sunk_sea = 0
         kept_built = 0
         for j in range(grid["nz"]):
@@ -1114,8 +1195,6 @@ def main():
                     continue
                 if any(_inside(gx, gz, r) for r in coast_rings):
                     continue
-                if min(_edge_dist(gx, gz, r) for r in coast_rings) < INSET_C:
-                    continue                       # the beach lip keeps its height
                 if on_building(gx, gz):
                     continue
                 if carries_built(gx, gz):
@@ -1297,6 +1376,11 @@ def main():
         BEACH_GRADE = 0.085        # ~8.5%, a walkable Singapore beach
         BEACH_TOE = SEA_SINK + 0.25
         cut = 0
+        # THE TARGET IS KEPT, because the smoothing pass below has to honour it.
+        # See the ceiling there: this profile is the survey's answer for the
+        # shore band, and a box blur that may raise a cell will otherwise walk
+        # the waterline back out to sea, which is what it was doing.
+        cut_target = [None] * len(grid["h"])
         for j in range(grid["nz"]):
             gz = grid["z0"] + j * CELL
             for i in range(grid["nx"]):
@@ -1312,6 +1396,7 @@ def main():
                 target = BEACH_TOE + d * BEACH_GRADE
                 if on_building(gx, gz):
                     target = max(target, SEA_SINK + 1.2)
+                cut_target[k] = target
                 if grid["h"][k] > target:
                     grid["h"][k] = target
                     cut += 1
@@ -1411,6 +1496,32 @@ def main():
                     # clamp goes.
                     floor = (SEA_SINK + 1.2) if on_b else SEA_SINK
                     nv = max(nv, floor)
+                    # ...AND A CEILING, WHICH IS THE OTHER HALF OF THE SAME
+                    # SENTENCE THE REPAIR LOOP LEARNED IN main().
+                    #
+                    # That loop's note reads: "a building repair that RAISES a
+                    # sample is inventing ground out of the donors' neighbourhood,
+                    # and on a coast backed by a hill the donors ARE the hill."
+                    # This blur is the same shape of rule with the same donors,
+                    # and it had a floor and no ceiling — so on every shore with
+                    # ground rising behind it, five passes lifted the graded
+                    # waterline cells back toward that ground.
+                    #
+                    # Measured 2026-08-07 on the Central Beach transects, in the
+                    # probe's own words: beach-cut 0.9 -> shore-smooth 2.1 at the
+                    # back of the beach, and -0.7 -> 0.7 at the surveyed
+                    # waterline. A cell the survey had just put UNDER the water
+                    # came back out of it. That is why removing the 31.5 m lip
+                    # above only took the drawn coastline from 46 m out to 30 m
+                    # instead of to the survey: this pass was putting it back.
+                    #
+                    # So the beach cut's own target is the ceiling wherever it
+                    # set one. Spike-lowering — the entire reason this pass
+                    # exists — is untouched, because a protected building spike
+                    # is ABOVE its target and still falls. Beyond BEACH_REACH
+                    # there is no target and no ceiling, so nothing inland moves.
+                    if cut_target[k] is not None:
+                        nv = min(nv, cut_target[k])
                     if abs(nv - grid["h"][k]) > 0.01:
                         grid["h"][k] = nv
                         smoothed += 1
