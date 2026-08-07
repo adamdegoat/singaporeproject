@@ -866,7 +866,28 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
 
     // named buildings get their name on the fascia, which is what actually
     // lets you tell where you are
-    if (b.n && bl > 7) {
+    // A FASCIA SIGN NEEDS A FASCIA, and two structures on this island are
+    // drawn by bespoke recipes that have none.
+    //
+    // The Wings of Time stage is the one that showed it: `building=hut` named
+    // "Wings of Time", a 78 m frame on stilts in the Singapore Strait, so its
+    // longest edge is 36 m and it earned a 23 x 6 m signboard hung at y=3.2 —
+    // over open water, with its blank grey aluminium BACK to the beach. That
+    // panel had been floating in the sea off Central Beach for as long as the
+    // building layer has existed, it is in frame from the seating bank the
+    // whole show is watched from, and it cost most of an evening: it was
+    // blamed on the beach furniture, an arcade, the seating bank's own skirt,
+    // a place label and a terrain step, and each was ruled out by tinting its
+    // material before a raycast fan finally named it (#9aa0a6, SIGN_TRAY).
+    //
+    // The seating bank goes with it for the same reason: 2,712 m² of open
+    // raked seating has no wall to mount a sign on either.
+    //
+    // Matched on the SAME identity city.js dispatches its bespoke builders on,
+    // so the two lists cannot drift apart silently.
+    const noFascia = b.bt === 'grandstand'
+      || (b.bt === 'hut' && b.n === 'Wings of Time');
+    if (b.n && bl > 7 && !noFascia) {
       const bgc = pick(SIGN_COLS);
       // BIGGER, AND WITH A FLOOR. The board was 55% of the longest edge capped
       // at 26m, which on a 9m beach-bar frontage is a 5m board 1.2m tall —

@@ -841,14 +841,52 @@ def main():
         for s in range(n + 1):
             t = s / n
             _mark_cell(ax + (bx - ax) * t, az + (bz - az) * t)
+    # ...EXCEPT A STRUCTURE THAT STANDS ON LEGS OVER THE WATER, which is not a
+    # building holding its ground up. Holding its cell dry builds it an island.
+    #
+    # The Wings of Time stage found this: way/116818158, 677 m2 of surveyed
+    # framework standing in the Singapore Strait 77 m off Central Beach,
+    # published by its contractor as "mounted on a framework six meters above
+    # the sea level" and "constructed in the ocean". Its cells stayed dry, the
+    # sea around them sank to -2, and the stage sat on a 3.4 m plateau of land
+    # with its own beach edge — in full view from the seating bank the entire
+    # show is watched from (shots/street/stage2.shot2).
+    #
+    # A GENERAL RULE WAS WRITTEN FIRST, AND MEASURING IT IS WHY IT IS NOT HERE.
+    # "Every vertex inside mapped water" sounds like exactly the discriminator —
+    # a waterfront block only ever meets the ring at its edge. On sentosa it
+    # matched 79 footprints, and 78 of them are OUR data gaps rather than the
+    # world:
+    #   * 40 are `bg:1` on Pulau Brani and the Keppel shore — the Police Coast
+    #     Guard base, the Brani Terminal Building, the SCDF Marine Command. They
+    #     read as "in water" because our sea polygon is everything outside
+    #     SENTOSA's coastline and the far shore is inside it. Sinking those is
+    #     the exact regression the protection above was written for on
+    #     2026-08-03.
+    #   * 38 are the Pearl Island and Sandy Island bungalows at Sentosa Cove.
+    #     They are on reclaimed islands INSIDE the marina, and the islands are
+    #     holes in the water polygon that we do not model — the demoted `hp`
+    #     item. The rule would have dropped 38 real houses into the sea.
+    # So the general-looking rule was a rule about two unfixed data gaps, and a
+    # measurement caught it before it shipped. This is a NAMED exception, which
+    # is what an authored fact is in this project, and it says why.
+    OVER_WATER = {("hut", "Wings of Time")}      # the show's set, on stilts
+
+    _afloat = 0
     for _b in data.get("buildings", []):
         _p = _b.get("p", [])
         if len(_p) < 3:
+            continue
+        if (_b.get("bt"), _b.get("n")) in OVER_WATER:
+            _afloat += 1
             continue
         _xs = [q[0] for q in _p]; _zs = [q[1] for q in _p]
         for _ci in range(int(math.floor(min(_xs) / CELL)), int(math.floor(max(_xs) / CELL)) + 1):
             for _cj in range(int(math.floor(min(_zs) / CELL)), int(math.floor(max(_zs) / CELL)) + 1):
                 _built[(_ci, _cj)] = True
+    if _afloat:
+        print(f"   {_afloat} structure(s) stand on legs over the water — "
+              f"their cells are left to the sea")
     for _r in data.get("roads", []):
         _p = _r.get("p", [])
         for _s in range(len(_p) - 1):
@@ -1091,6 +1129,79 @@ def main():
             print(f"   sank {sunk_sea} cells outside {len(coast_rings)} coastline ring(s) — the open sea")
         probe(grid, "sea-sink")
 
+        # ...AND THE WATER UNDER A STRUCTURE ON LEGS GOES BACK BEFORE THE SHORE
+        # PASSES RUN, NOT AFTER THEM.
+        #
+        # Not marking the Wings of Time stage as built (see OVER_WATER above)
+        # was necessary and not sufficient. Its cell still came out dry, at
+        # +0.1 m, for two reasons stacked on each other: `carries_built` reads a
+        # 3x3 neighbourhood, and a footprint marks its BOUNDING BOX rather than
+        # its ring — so the seating bank 78 m away, whose bbox corner just
+        # clips this cell, held the sea out from under the stage. Then every
+        # shore pass has SEA_SINK as its floor and can only approach it.
+        #
+        # The result is what the frame showed: pale peaks on a dark deck with
+        # its legs planted in SAND (shots/street/stage5.shot1). A stage
+        # published as "constructed in the ocean" needs the ocean drawn under
+        # it.
+        #
+        # DOING IT LAST WAS THE OBVIOUS PLACE AND IT WAS WRONG. Set after every
+        # shore pass, where nothing could raise them again, the sunk cells stood
+        # as a 3 m VERTICAL STEP against their neighbours and the ground shader
+        # drew that face as grey rock — a flat slab standing on the beach beside
+        # the stage, in frame in `wings-stage` and `wings-grandstand`. (It is
+        # also, finally, the answer to an artefact that had been in every shot
+        # of this quarter all session and survived being blamed on the beach
+        # furniture, the arcade, the seating bank's own skirt and a place label,
+        # each ruled out by tinting its material: a heightfield step IS a wall,
+        # and no object had to exist to draw one.)
+        #
+        # So it goes in HERE instead, straight after the sea sink, and the same
+        # ease / beach-cut / smooth passes that grade every other waterline
+        # grade this one. Their floor is SEA_SINK, so nothing can lift a sunk
+        # cell back into the air; all they can do is slope its neighbours in.
+        if OVER_WATER:
+            _ow_rings = [b["p"] for b in data.get("buildings", [])
+                         if (b.get("bt"), b.get("n")) in OVER_WATER
+                         and len(b.get("p", [])) >= 3]
+            # A PAD, because a 35 m grid cannot follow a 10 m-wide frame. The
+            # first cut sank only the cells whose sample point fell inside the
+            # ring, and that ring is a thin chevron: it caught every other cell
+            # and left a checkerboard of 2-4 m stubs between them, which the
+            # ground shader drew as grey rock faces beside the deck. Cells
+            # WITHIN the pad go too — but only where the water polygon already
+            # says water, so the beach behind can never be sunk by this.
+            OW_PAD = 12.0
+            def _near_ring(px, pz, ring):
+                for a in range(len(ring)):
+                    ax_, az_ = ring[a]; bx_, bz_ = ring[(a + 1) % len(ring)]
+                    vx, vz = bx_ - ax_, bz_ - az_
+                    L2 = vx * vx + vz * vz
+                    t = 0.0 if L2 < 1e-9 else max(0.0, min(1.0, ((px - ax_) * vx + (pz - az_) * vz) / L2))
+                    if math.dist((px, pz), (ax_ + vx * t, az_ + vz * t)) < OW_PAD:
+                        return True
+                return False
+            _wet = [w["p"] for w in data.get("water", []) if len(w.get("p", [])) >= 3]
+            _forced = 0
+            for _r in _ow_rings:
+                for j in range(grid["nz"]):
+                    gz = grid["z0"] + j * CELL
+                    for i in range(grid["nx"]):
+                        k = j * grid["nx"] + i
+                        if grid["h"][k] <= SEA_SINK:
+                            continue
+                        gx = grid["x0"] + i * CELL
+                        if not (_inside(gx, gz, _r) or _near_ring(gx, gz, _r)):
+                            continue
+                        if not any(_inside(gx, gz, _w) for _w in _wet):
+                            continue          # never sink ground the map calls land
+                        grid["h"][k] = SEA_SINK
+                        _forced += 1
+            if _forced:
+                print(f"   put {_forced} cell(s) back under the sea — a structure "
+                      f"on legs stands in the water it was built in")
+            probe(grid, "over-water")
+
         # A BLUFF IS NOT A BEACH. Every pass below exists to fix LOW coast —
         # DEM smear over sand reads 5-16m and must be eased, cut and smoothed
         # into the beach the survey says is there. Fort Siloso is why they must
@@ -1306,6 +1417,7 @@ def main():
         if smoothed:
             print(f"   smoothed {smoothed} shore-band cell writes into a coast")
         probe(grid, "shore-smooth")
+
 
     # store relative to the lowest point, so the world sits near y=0
     #

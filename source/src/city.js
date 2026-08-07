@@ -1795,6 +1795,159 @@ function gsQuadGeo(quads) {
   return g;
 }
 
+// The Wings of Time stage. Pale, angular, and OVER THE WATER.
+//
+// It was a 4 m tan box on the sea — `building=hut`, which is the only thing
+// OSM says about it, and the generic rule for a hut is a shed. The research
+// (research/wings-of-time.md, second pass) found the contractor's own page,
+// and every dimension below except one is PUBLISHED:
+//
+//   LSE, who built it: "The projection surface consists in eight triangles and
+//   one central diamond shape, covered by timber lattice and mounted on a
+//   framework SIX METERS ABOVE THE SEA LEVEL", constructed in the ocean, and
+//   "the arrangement of the individual shapes reminds of the wings of a bird".
+//   ECA2, who made the show: the backdrop is 50 METRES WIDE and triangular.
+//
+// The one estimate is how TALL the array stands on its deck — no drawing and
+// no architect credit exists — so it is drawn at the 3:1 span-to-height the
+// photographs show and is labelled EST-PROPORTION in the research, not stated
+// as if it were known.
+//
+// AND IT DOES NOT SIT ON THE HEIGHTFIELD. terrain.py keeps a grid cell dry when
+// a building stands on it, which is right for a waterfront block and exactly
+// wrong here: this footprint is inside the `sea` ring and the whole point of it
+// is that it stands OUT of the water on legs. So the deck is 6 m above the
+// SEA, which the grid ships as `sea` in its own post-rebase terms, and the legs
+// run down into it. Nothing here reads TERRAIN.at().
+const WOT_MAT = {
+  // "covered by timber lattice" over a pale frame — grey-white, and it reads
+  // as the one bright thing on the water at 150 m, which is its whole job
+  sail: new THREE.MeshStandardMaterial({ color: 0xe8e6df, roughness: 0.72, side: THREE.DoubleSide }),
+  // the lattice battens and the frame edges, a shade down so the panels have
+  // an edge rather than dissolving into one white blob
+  frame: new THREE.MeshStandardMaterial({ color: 0xb9b4a8, roughness: 0.8, side: THREE.DoubleSide }),
+  // the deck and the legs: dark, because in every photograph the structure
+  // reads as pale shapes floating over a dark base
+  deck: new THREE.MeshStandardMaterial({ color: 0x3b3a36, roughness: 0.9, side: THREE.DoubleSide }),
+};
+
+function buildWingsStage(ring, merger, seaY) {
+  let cx = 0, cz = 0;
+  for (const [x, z] of ring) { cx += x; cz += z; }
+  cx /= ring.length; cz /= ring.length;
+  // principal axis of the surveyed ring — 77.6 m long on this footprint
+  let sxx = 0, sxz = 0, szz = 0;
+  for (const [x, z] of ring) {
+    const dx = x - cx, dz = z - cz;
+    sxx += dx * dx; sxz += dx * dz; szz += dz * dz;
+  }
+  const tr = sxx + szz, det = sxx * szz - sxz * sxz;
+  const lam = tr / 2 + Math.sqrt(Math.max(0, tr * tr / 4 - det));
+  let ax = sxz, az = lam - sxx;
+  if (Math.hypot(ax, az) < 1e-6) { ax = 1; az = 0; }
+  const aL = Math.hypot(ax, az); ax /= aL; az /= aL;
+  const nx = -az, nz = ax;                  // across the axis
+
+  const DECK = seaY + 6.0;                  // PUBLISHED
+  const quads = [];
+  const push = (a, b, c, d) => quads.push([a, b, c, d]);
+  const P = (u, v, y) => [cx + ax * u + nx * v, y, cz + az * u + nz * v];
+
+  // --- the framework -------------------------------------------------------
+  // A STRAIGHT BAR ON THE SURVEYED AXIS, not the surveyed ring traced.
+  //
+  // The first cut walked the ring as a 5.2 m walkway and it came out a black
+  // zigzag sprawling over the beach (shots/street/stage2.shot2): that ring is
+  // a thin angular chevron, 677 m² inside a 78x57 m box, which is the frame's
+  // OUTLINE and not a plan you can offset. What the sources actually describe
+  // is one framework carrying one composition — so the axis and the centre are
+  // taken from the survey, which is what the map knows, and the shape of the
+  // deck is authored, which is what the map does not.
+  const BAR = 54.0, HALF = 3.4, TH = 0.6;   // long enough to carry the 50 m array
+  for (const y of [DECK, DECK - TH]) {
+    push(P(-BAR / 2, HALF, y), P(BAR / 2, HALF, y),
+         P(BAR / 2, -HALF, y), P(-BAR / 2, -HALF, y));
+  }
+  for (const s2 of [1, -1]) {
+    push(P(-BAR / 2, HALF * s2, DECK - TH), P(BAR / 2, HALF * s2, DECK - TH),
+         P(BAR / 2, HALF * s2, DECK), P(-BAR / 2, HALF * s2, DECK));
+  }
+  for (const u of [-BAR / 2, BAR / 2]) {
+    push(P(u, HALF, DECK - TH), P(u, -HALF, DECK - TH),
+         P(u, -HALF, DECK), P(u, HALF, DECK));
+  }
+  // slender legs into the water, two rows, every 6 m
+  for (let u = -BAR / 2 + 3; u <= BAR / 2 - 3; u += 6) {
+    for (const v of [HALF - 0.7, -(HALF - 0.7)]) {
+      const q = P(u, v, 0);
+      const g = new THREE.BoxGeometry(0.42, 7.0, 0.42);
+      g.translate(q[0], DECK - TH - 3.5, q[2]);
+      merger.add(g, WOT_MAT.deck, q[0], q[2]);
+    }
+  }
+  merger.add(gsQuadGeo(quads), WOT_MAT.deck, cx, cz);
+
+  // --- the projection surface: 8 triangles and 1 central diamond ----------
+  // 50 m wide (PUBLISHED), standing on the deck and facing the audience across
+  // the water. "The arrangement of the individual shapes reminds of the wings
+  // of a bird" is the only description of the composition that exists, so the
+  // heights fan from a central peak down to the tips, which is what that
+  // sentence describes and what the show's own artwork shows.
+  const SPAN = 50.0;                        // PUBLISHED
+  const APEX = 12.0;                        // EST-PROPORTION, see the research
+  const panes = [], batten = [];
+
+  // PEAKS, STANDING ON THE DECK. The first cut made each element a trapezoid
+  // whose top raked gently from one neighbour to the next, and eight of those
+  // in a row read as a fence of grey boards, not as sails — the top edges were
+  // barely 2 m apart over a 5.6 m span, so nothing came to a point. "Eight
+  // triangles and one central diamond" means eight TRIANGLES: base on the deck,
+  // apex above the middle of it, each one lower than the one inboard, which is
+  // the row of folded-paper peaks every photograph of this thing shows and the
+  // silhouette that identifies the place from the cable car.
+  const dW = 6.0;
+  const H_AT = (k) => APEX * (0.74 - 0.145 * (k - 1));    // 8.9 -> 4.6 m
+  const D = DECK + 0.25;
+
+  // the central diamond, on the axis, tallest thing here — a rhombus resting
+  // on its lower point, which is how the backdrop reads head-on
+  panes.push([P(0, 0, D), P(-dW, 0, D + APEX * 0.52),
+              P(0, 0, D + APEX), P(dW, 0, D + APEX * 0.52)]);
+  for (let c = 1; c <= 4; c++) {            // its lattice, following the shape
+    const f = c / 5, w = dW * (f < 0.52 ? f / 0.52 : (1 - f) / 0.48);
+    batten.push([P(-w, 0, D + APEX * f), P(w, 0, D + APEX * f),
+                 P(w, 0, D + APEX * f - 0.18), P(-w, 0, D + APEX * f - 0.18)]);
+  }
+
+  for (const side of [1, -1]) {
+    for (let k = 1; k <= 4; k++) {
+      const step = (SPAN / 2 - dW) / 4;
+      const u0 = side * (dW + (k - 1) * step), u1 = side * (dW + k * step);
+      const um = (u0 + u1) / 2, h = H_AT(k);
+      // alternate the apex a little off the plane so the row reads as facets
+      // catching different light, which is what "folded" means here
+      const v = ((k % 2) ? 1 : -1) * 1.3;
+      panes.push([P(u0, 0, D), P(u1, 0, D), P(um, v, D + h), P(um, v, D + h)]);
+      // "COVERED BY TIMBER LATTICE" — battens INSIDE each pane's own outline.
+      // The first cut ran six courses across the whole 50 m and they carried on
+      // past the panels into open sky as long grey wires.
+      for (let c = 1; c <= 3; c++) {
+        const f = c / 4, y = D + h * f;
+        const a = [u0 + (um - u0) * f, u1 + (um - u1) * f];
+        batten.push([P(a[0], v * f, y), P(a[1], v * f, y),
+                     P(a[1], v * f, y - 0.18), P(a[0], v * f, y - 0.18)]);
+      }
+      // the frame edges up both rakes, so a peak has an outline against the sky
+      for (const [ue, ve] of [[u0, 0], [u1, 0]]) {
+        batten.push([P(ue, ve, D), P(um, v, D + h),
+                     P(um - (um - ue) * 0.06, v, D + h - 0.5), P(ue + (um - ue) * 0.06, ve, D)]);
+      }
+    }
+  }
+  merger.add(gsQuadGeo(panes), WOT_MAT.sail, cx, cz);
+  merger.add(gsQuadGeo(batten), WOT_MAT.frame, cx, cz);
+}
+
 function buildGrandstand(ring, merger, world) {
   // --- 1. principal axis, and the two ends of the band --------------------
   let cx = 0, cz = 0;
@@ -2766,6 +2919,24 @@ export async function buildBuildings(world, data, Y = null) {
     // absorbs the DEM, not a fudge factor tuned to it.
     if (b.bt === 'grandstand' && pts.length >= 6) {
       buildGrandstand(pts, merger, world);
+      stats.count++;
+      if (stats.bespoke !== undefined) stats.bespoke++;
+      continue;
+    }
+
+    // THE OTHER HALF OF THE SAME PLACE. way/116818158 is `building=hut` and
+    // named "Wings of Time", and a hut is a shed, so 677 m² of surveyed
+    // framework standing in the Singapore Strait was drawn as a 4 m tan box on
+    // the water. It is the SET — the thing the whole bank is pointed at, and
+    // the research calls it "the single best identifier of the place".
+    //
+    // Matched by NAME and not by type: `hut` is a real type with real huts
+    // behind it and this recipe is for exactly one structure on earth. The
+    // sea level comes from the grid rather than SEA_LEVEL[0], which buildSea
+    // has not filled in yet when the buildings are built.
+    if (b.bt === 'hut' && b.n === 'Wings of Time' && pts.length >= 6
+        && data.terrain && typeof data.terrain.sea === 'number') {
+      buildWingsStage(pts, merger, data.terrain.sea + 0.18);
       stats.count++;
       if (stats.bespoke !== undefined) stats.bespoke++;
       continue;

@@ -139,13 +139,25 @@ const SPOTS = [
   // noted above. This spot does photograph the structure. Re-aim it when the
   // stage is rebuilt from the block it is now, and shoot it through golden.mjs
   // rather than lookat.mjs.
-  ['wings-grandstand', -1855, 12795, 1.67],
+  // MOVED 2026-08-07 because the old spot is now IN THE SEA, and that is the
+  // survey's answer rather than a bug: the beach in front of this bank is only
+  // ~35 m deep, and the camera stood 40 m out. It photographed dry sand only
+  // while the stage's footprint was holding a grid cell dry that OSM's
+  // coastline calls water. The rider came back submerged to the helmet.
+  // This one stands on the sand at the bank's own foot and looks up the rows.
+  ['wings-grandstand', -1830, 12780, 2.554],
   // THE FIRST FRAME OF THE GAME, and it had no golden at all until now.
   // main.js SPAWNS is {sentosa: [-1241.7, 12973]}, snapped to Palawan Beach
   // Walk's carriageway; this stands on that point with the heading the road
   // gives it. Twenty-one frames watched the island while the one view every
   // single player is guaranteed to load into was covered by none of them.
   ['spawn', -1241.7, 12973, 0.365],
+  // THE WINGS OF TIME STAGE, shipped with its pass. Nothing could see it: the
+  // nearest camera is `central-beach`, which stands BEHIND the seating bank
+  // with the bank filling the frame, so the set the whole venue points at was
+  // off-screen the entire time it was a 4 m tan box on the water. Stands on
+  // the sand at Central Beach and looks straight out at it.
+  ['wings-stage', -1866, 12772, 0.15],
 ];
 
 mkdirSync(ACT, { recursive: true });
@@ -170,7 +182,15 @@ await page.addStyleTag({ content:
 for (const [name, x, z, h] of SPOTS) {
   await page.evaluate(([x2, z2, h2]) => window.__teleport(x2, z2, h2), [x, z, h]);
   await page.waitForTimeout(1100);
-  await page.screenshot({ path: join(ACT, `${name}.png`) });
+  // Playwright's 30s default is a DEV-MACHINE timeout, not a world timeout.
+  // On 2026-08-07 this threw four times in a row — an uncaught TimeoutError
+  // that kills the process and takes every already-shot frame with it — while
+  // the machine sat at load 14 with another browser and the window server
+  // ahead of it. A gate that CRASHES under load is indistinguishable from a
+  // gate that FAILED, and the run before it had passed at 0.000%. The frame is
+  // still deterministic; it just has to wait its turn for a GPU that something
+  // else is using.
+  await page.screenshot({ path: join(ACT, `${name}.png`), timeout: 180000 });
 }
 await browser.close();
 
