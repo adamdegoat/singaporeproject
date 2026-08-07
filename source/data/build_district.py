@@ -509,6 +509,11 @@ CHAIN = [
     Pass("attractions.py", "tourism/historic/attraction — the root of the "
          "sensoryscape/ussgate/bullring/skywalk subtree", only="sentosa"),
     Pass("groynes.py", "Siloso's boulder groynes and islets", only="sentosa"),
+    # The sand in front of the Wings of Time bank, which OSM does not have and
+    # which rendered as lawn in the island's signature frame. Authored from
+    # eleven measured transects; it owns one polygon and is idempotent.
+    Pass("centralbeach.py", "Central Beach's sand, authored from transects",
+         only="sentosa"),
     Pass("cablestations.py", "four cable-car stations were 20-27m office blocks",
          only="sentosa"),
     Pass("railstations.py", "the three Sentosa Express stations, as places",
@@ -538,6 +543,17 @@ CHAIN = [
     # attractions after this point puts the stale names back.
     Pass("stale.py", "closed and renamed: correct them after everything is written",
          only="sentosa"),
+    # AND NOW THAT EVERY NAME IS FINAL, ASK THE RESEARCH TABLE AGAIN.
+    #
+    # heights.py is keyed on building names and runs fifteen passes above this
+    # line, before attractions.py has transferred the surveyed SITE names onto
+    # their footprints — so Rasa Sentosa and Raffles Sentosa were anonymous when
+    # it looked at them and took band medians instead of their published storey
+    # counts. It only ever re-touches heights it guessed itself, so a surveyed
+    # tag still wins and running it twice is idempotent. Last, because stale.py
+    # renames above it and a rename can produce a name the table knows.
+    Pass("heights.py", "re-apply researched heights now the names are final",
+         args=("--apply-researched",)),
 
     # --- report -------------------------------------------------------------
     Pass("navcheck.py", "give every path that stops at nothing a reason to stop",

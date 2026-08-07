@@ -103,6 +103,108 @@ RESEARCHED = [
     # Hospitality, 2026-08-04.
     ("oasia resort", {"floors": 6}),
     ("oasis resort", {"floors": 3}),
+
+    # SENTOSA HEIGHTS PASS, 2026-08-07. research/sentosa-heights.md.
+    #
+    # Storey counts only, except where a metre figure is genuinely published.
+    # Every needle below was checked against EVERY district's building names
+    # before it was added: all 26 match Sentosa and nothing else, so none of
+    # them can reach into another district by substring. Two from the research
+    # matched no footprint at all ("outpost", "altitudex" — the latter is iFly's
+    # 2025 rename, which our data still calls iFly) and are not carried, because
+    # a needle that matches nothing is a line someone has to read forever.
+
+    # --- RWS
+    # Hotel Ora — "a seven-storey property", RWS press release, 14 Jul 2023.
+    ("hotel ora", {"floors": 7}),
+
+    # --- Sentosa hotels
+    # Shangri-La Rasa Sentosa — 454 rooms over 11 floors, the tallest hotel
+    # block on Sentosa proper. Stood at 20.4 m, which is half of it.
+    ("rasa sentosa", {"floors": 11}),
+    # Sofitel Singapore Sentosa — 211 rooms + 4 villas over five floors, built
+    # as The Beaufort (1992, Kerry Hill). CAVEAT KEPT FROM THE RESEARCH: the
+    # 19,164 m2 footprint merges the main block with much lower wings, so five
+    # floors is the MAIN BLOCK and this may want a footprint split later.
+    ("sofitel", {"floors": 5}),
+    # Siloso Beach Resort — 8 floors (Superior L2-3, Deluxe L5-8), 2006.
+    ("siloso beach resort", {"floors": 8}),
+    # Amara Sanctuary Sentosa — 4 storeys, 137 rooms, 2007.
+    ("amara sanctuary", {"floors": 4}),
+    # Capella Singapore — 5 storeys: two 1880s Tanah Merah bungalows plus the
+    # Foster + Partners crescent wings stepping down the slope.
+    ("capella singapore", {"floors": 5}),
+    # Raffles Sentosa — opened 3 Mar 2025, 62 villas, ALL SINGLE STOREY, on a
+    # 100,000 m2 hilltop. It was standing at 23.8 m, which was the worst single
+    # height on the island: seven storeys of band median over a villa resort.
+    #
+    # 6.5 m AND NOT ONE STOREY, because two research passes are describing two
+    # different things and only one of them is describing THIS footprint.
+    # sentosa-heights.md (2026-08-07) is right that the resort is single-storey
+    # villas — but the villas are separate unnamed footprints, which carry
+    # 3.4-3.5 already. The one polygon wearing the name is the LOBBY PAVILION,
+    # which resort-footprints.md measured at 6.5 m, and a lobby pavilion is
+    # taller than a villa. The more specific reading of the same object wins.
+    # (data/resortfix.py holds the same 6.5 and cannot reach it: at the point
+    # resortfix runs this footprint is still anonymous — the same ordering bug
+    # that --apply-researched exists to close.)
+    ("raffles sentosa", {"m": 6.5}),
+
+    # --- Brani
+    # SCDF Marine Division HQ — four storeys, opened 19 Jun 2026. mha.gov.sg.
+    # (The mapped name still says "Marine Command", which is the old one.)
+    ("marine command", {"floors": 4}),
+
+    # --- Sentosa Cove. Storeys from EdgeProp, which is URA-derived. The
+    # published bound: The Oceanfront is the Cove's tallest at a maximum
+    # permissible 15 storeys, and Cape Royale is the only other above 8.
+    ("oceanfront", {"floors": 15}),
+    ("cape royale", {"floors": 18}),        # URA/EdgeProp max; marketing 17-20
+    ("seascape", {"floors": 8}),
+    ("the coast at sentosa cove", {"floors": 8}),
+    ("turquoise", {"floors": 6}),
+    ("the azure", {"floors": 6}),
+    ("berth by the cove", {"floors": 6}),
+    ("residences at w", {"floors": 6}),
+    ("marina collection", {"floors": 4}),
+    ("seven palms", {"floors": 4}),
+    # Quayside Isle — two-storey waterfront retail, CDL, 2012. Ours had its two
+    # footprints at 27.2 m and 22 m, which is a mall over a marina promenade.
+    ("quayside isle", {"floors": 2}),
+
+    # --- Where OSM already knew and the band median overrode it
+    # Images of Singapore / Madame Tussauds — the former British Sick Quarters
+    # (1893-1950), colonial masonry, OSM-tagged 2 levels.
+    ("images of singapore", {"floors": 2}),
+    # Sentosa Golf Club — OSM tags the clubhouse 2 levels and nothing is
+    # published, so the tag beats a footprint-band median.
+    ("sentosa golf club", {"floors": 2}),
+    # The beach event pavilions on Siloso Beach Walk, single volumes. Sapphire
+    # is OSM building=roof, i.e. a canopy. Both needles match the venue's
+    # spelling AND our data's misspelling ("Pavillion").
+    ("emerald pavil", {"floors": 2}),
+    ("sapphire pavil", {"floors": 1}),
+
+    # --- Published metres
+    # AltitudeX (ex-iFly) — the flight chamber alone is 17.2 m tall, and the
+    # building encloses it. Sentosa's own copy: "the height of a 6-storey flat".
+    ("ifly", {"floors": 6}),
+
+    # TWO PUBLISHED FIGURES FROM THE RESEARCH ARE DELIBERATELY NOT HERE, and
+    # both for the same reason: THE FOOTPRINT IS NOT THE THING.
+    #
+    #   Wings of Time, published backdrop 10 m. The stage is bespoke
+    #   (buildWingsStage, city.js) and reads nothing from b.h — it is built to
+    #   the contractor's own figures off the surveyed ring. An entry here could
+    #   not raise it and could only re-arm the hut-grows-to-the-terrain rules
+    #   that this very structure taught us about.
+    #
+    #   Battlestar Galactica, published 42.5 m. That is the LIFT HILL, and
+    #   landmarks.js already builds the ride to it. The mapped footprint is the
+    #   STATION BUILDING. Applying 42.5 m here would stand a shed the height of
+    #   the coaster beside the coaster.
+    #
+    # A published number is only a fact about the thing it describes.
 ]
 
 
@@ -114,11 +216,73 @@ def researched_for(name):
     return None
 
 
+# THE TABLE ABOVE IS KEYED ON A NAME, AND HALF THE NAMES DO NOT EXIST YET
+# WHEN THIS PASS RUNS. Measured 2026-08-07, and it had been silently eating
+# research for as long as both passes have existed.
+#
+# `attractions.py` runs FIFTEEN passes after this one, and one of the things it
+# does is hand a surveyed SITE name to the largest unnamed footprint standing
+# inside it — which is the only reason "Shangri-La's Rasa Sentosa Resort & Spa"
+# and "Raffles Sentosa Singapore" are named at all (OSM tags those as
+# `tourism=hotel` site boundaries with no `building` tag). At the moment this
+# pass runs they are anonymous, `researched_for` returns None, and they take a
+# footprint-band median: Rasa at 20.4 m against a published eleven floors,
+# Raffles at 23.8 m over a resort of SINGLE-STOREY villas. Run this file by
+# hand afterwards and both correct themselves, which is exactly the shape of
+# "the data is fine and is not reproducible from the build" that this repo has
+# already paid for once.
+#
+# Reordering was the wrong fix: build_district.py's pass order is a measurement
+# with its own warnings on it, and heights.py legitimately has to run before
+# arcade.py. So the table is APPLIED TWICE — once here, and once more at the
+# end of the chain by `--apply-researched`, when every naming pass has run.
+#
+# The second application deliberately touches ONLY the population this pass
+# already owns: heights it guessed itself (`calib`, or never set). A surveyed
+# `building:levels` tag still wins over the table, which is the same precedence
+# as the first pass, so running it twice cannot promote research over a survey.
+def apply_researched(did, dry_run=False):
+    path = os.path.join(HERE, f"{did}.json")
+    d = json.load(open(path))
+    hits = []
+    for b in d.get("buildings") or []:
+        if b.get("hs") not in (None, "calib"):
+            continue
+        spec = researched_for(b.get("n"))
+        if not spec:
+            continue
+        h = round(spec["m"] if "m" in spec else spec["floors"] * STOREY, 1)
+        if abs(b.get("h", 0) - h) < 0.05:
+            continue
+        hits.append((b.get("n"), b.get("h"), h))
+        if "h0" not in b:
+            b["h0"] = b.get("h")
+        b["h"] = h
+        b["hs"] = "research"
+        if h < 8.0:
+            b["low"] = 1              # a researched fact is not a shed
+    print(f"== heights --apply-researched {did}")
+    for n, was, now in hits:
+        print(f"   {n}: {was} -> {now}   (named after heights.py had already run)")
+    if not hits:
+        print("   nothing left to apply — every researched name was in place "
+              "when heights.py ran")
+    if not dry_run and hits:
+        json.dump(d, open(path, "w"), separators=(",", ":"))
+    return len(hits)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("id", nargs="?", default="sentosa")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--apply-researched", action="store_true",
+                    help="second pass: re-apply the RESEARCHED table after the "
+                         "naming passes have run. See the note above.")
     a = ap.parse_args()
+    if a.apply_researched:
+        apply_researched(a.id, a.dry_run)
+        return
     path = os.path.join(HERE, f"{a.id}.json")
     d = json.load(open(path))
     blds = d.get("buildings") or []

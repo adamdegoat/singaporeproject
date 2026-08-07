@@ -5680,6 +5680,23 @@ export async function buildBeachLife(world, data, Y = null) {
         if (d < hd) { hd = d; host = s; }
       }
       if (!host) continue;
+      // AN AUDITORIUM FLOOR IS NOT A SUNBATHING BEACH.
+      //
+      // Central Beach's sand became mapped on 2026-08-07 (data/centralbeach.py,
+      // authored because OSM has a 4.1 ha hole there), and this emitter
+      // immediately furnished it: the frame from the Wings of Time seating bank
+      // came back as a wall of thatch parasols and loungers standing between
+      // the front row and the sea. That sand is the auditorium floor of a 2,712
+      // m2 grandstand — the show is watched ACROSS it — and the research that
+      // measured the beach lists what is actually on it: scattered pale
+      // boulders 1-2 m across and a steel drainage grate. Not one lounger.
+      //
+      // Matched on the ring's name, which is how city.js already skips the
+      // fascia signs for this same structure, so the two lists cannot drift.
+      if ((host.n || '') === 'Central Beach') {
+        out.auditoriumSkipped = (out.auditoriumSkipped || 0) + 1;
+        continue;
+      }
       await YY();
       // walk out onto the sand: step away from the venue until inside the ring,
       // then lay the row across that direction

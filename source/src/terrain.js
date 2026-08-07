@@ -76,11 +76,43 @@ export class Terrain {
         // The sea is the zero region that REACHES THE EDGE OF THE MAP. An
         // inland flat does not. So flood in from the border through zero cells
         // and take that, and only that, as open water.
+        // ...AND THE THIRD BUG: THE TEST DISAGREED WITH THE RENDERER.
+        //
+        // `g2.h` is the height grid the client is SENT, and the pipeline clamps
+        // it to sea level — the -2.0 SEA_SINK that terrain.py writes never
+        // arrives here, so h reads 0.00 for the open sea. Water is put back at
+        // DRAW time, by vertexY, out of the water POLYGONS. The two therefore
+        // disagree, and where they disagree this BFS walls itself out of a bay:
+        // measured on 2026-08-07, 625 cells are drawn below the waterline by
+        // vertexY while h calls them land, and the ones with h > 0.05 form a
+        // continuous rim that the border flood cannot cross. Everything behind
+        // that rim — the whole of Central Beach's water — is then not sea, and
+        // the beach in front of the Wings of Time bank reads 105-140 m from the
+        // ocean it is 30 m from. Every rule keyed on this distance was fed that
+        // number: the shoreline sand paint (<80 m) and the wet-sand band
+        // (<70 m) never fired, the back-beach fade (>45 m) fired everywhere,
+        // and the ground fell through to the green-island vegetation fallback.
+        // That sage-green foreground IS this line.
+        //
+        // So ASK THE THING THAT DRAWS THE WATER. vertexY already owns every
+        // guard this needs — the sloppy-ring overreach test, the island mask,
+        // the shore shelf — and it is the surface the player actually sees, so
+        // a cell it draws at or below sea level IS sea. The h test stays in the
+        // union: it costs nothing and it means no cell that counted as sea
+        // before this change stops counting now.
+        //
+        // The border flood stays exactly as it was, and it is still what keeps
+        // an inland flat from being beach — that half of the rule was right.
         const SEA_Y = 0.05;
         const isSea = new Uint8Array(n);
         const stack = [];
+        const wet = (idx) => {
+          if (g2.h[idx] <= SEA_Y) return true;
+          const ci = idx % g2.nx, cj = (idx / g2.nx) | 0;
+          return this.vertexY(g2.x0 + ci * g2.cell, g2.z0 + cj * g2.cell) <= 0;
+        };
         const pushIf = (idx) => {
-          if (idx >= 0 && idx < n && !isSea[idx] && g2.h[idx] <= SEA_Y) {
+          if (idx >= 0 && idx < n && !isSea[idx] && wet(idx)) {
             isSea[idx] = 1; stack.push(idx);
           }
         };
@@ -110,9 +142,45 @@ export class Terrain {
         }
         this._seaD = d;
       }
-      const i = Math.max(0, Math.min(g2.nx - 1, Math.round((x - g2.x0) / g2.cell)));
-      const j = Math.max(0, Math.min(g2.nz - 1, Math.round((z - g2.z0) / g2.cell)));
-      return this._seaD[j * g2.nx + i];
+      // BILINEAR, NOT NEAREST-CELL, AND THE 45 m THRESHOLD IS WHY.
+      //
+      // The BFS walks 35 m cells, so nearest-cell sampling can only ever answer
+      // 0, 35, 70, 105... Three rules read this number and two of them are
+      // written in tens of metres: the back-beach fade starts at 45 m and the
+      // wet-sand band ends at 70. Against a metric with a 35 m grain, "45 m"
+      // does not mean 45 m — it means "not in a cell touching water", and
+      // `groundtruth.mjs` had already written that down about its own sampling
+      // without anyone noticing it indicts the blend as well.
+      //
+      // Measured on Central Beach, 2026-08-07: every point across a 30 m deep
+      // beach answered a flat 70, so the fade ran at f=0.5 and the whole beach
+      // drew half-blended to lawn — which is the olive the owner reported, and
+      // it survived the sea-test fix above because that fix corrected WHICH
+      // cells are sea, not how coarsely they are read.
+      //
+      // Interpolating the field gives it back its metres. It stays exact at
+      // cell centres, so nothing that was right moves; it only fills in
+      // between. Clamped to the last row/column, and Infinity is left alone —
+      // an unreached cell blended against a reached one would invent a
+      // distance for ground the BFS deliberately stopped at.
+      const d = this._seaD;
+      const fx = Math.max(0, Math.min(g2.nx - 1, (x - g2.x0) / g2.cell));
+      const fz = Math.max(0, Math.min(g2.nz - 1, (z - g2.z0) / g2.cell));
+      const i0 = Math.min(g2.nx - 2, Math.floor(fx)), j0 = Math.min(g2.nz - 2, Math.floor(fz));
+      if (i0 < 0 || j0 < 0) {
+        const i = Math.max(0, Math.min(g2.nx - 1, Math.round(fx)));
+        const j = Math.max(0, Math.min(g2.nz - 1, Math.round(fz)));
+        return d[j * g2.nx + i];
+      }
+      const a = d[j0 * g2.nx + i0], b = d[j0 * g2.nx + i0 + 1];
+      const c = d[(j0 + 1) * g2.nx + i0], e = d[(j0 + 1) * g2.nx + i0 + 1];
+      if (a > 1e8 || b > 1e8 || c > 1e8 || e > 1e8) {
+        const i = Math.max(0, Math.min(g2.nx - 1, Math.round(fx)));
+        const j = Math.max(0, Math.min(g2.nz - 1, Math.round(fz)));
+        return d[j * g2.nx + i];
+      }
+      const tx = fx - i0, tz = fz - j0;
+      return (a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + e * tx) * tz;
     };
     this.flat = !grid;
     this.rg = null;        // road-corridor hash, set by carve()
@@ -800,7 +868,11 @@ export class Terrain {
         if (x < mnx) mnx = x; if (x > mxx) mxx = x;
         if (z < mnz) mnz = z; if (z > mxz) mxz = z;
       }
-      const rec = { ring: p.p, k: p.k || 'grass', bb: [mnx, mnz, mxx, mxz] };
+      // `m` = THIS RING WAS MEASURED, NOT INHERITED FROM OSM. Carried through
+      // because the back-beach fade below must not second-guess a polygon we
+      // surveyed ourselves — see the note at that blend.
+      const rec = { ring: p.p, k: p.k || 'grass', bb: [mnx, mnz, mxx, mxz],
+                    m: p.m ? 1 : 0 };
       const id = this.green.length;
       this.green.push(rec);
       for (let cx = Math.floor(mnx / this.gCell); cx <= Math.floor(mxx / this.gCell); cx++) {
@@ -868,6 +940,35 @@ export class Terrain {
       if (a < bestA) { bestA = a; best = r.k; }
     }
     return best;
+  }
+
+  // IS THE RING UNDER THIS POINT ONE WE MEASURED?
+  //
+  // Same walk and same smallest-ring-wins rule as greenAt, answering the other
+  // question about the same winner. It is a second call rather than a changed
+  // return type because greenAt has a dozen callers and this has one — the
+  // back-beach fade — and a rule that is true only where somebody remembered
+  // to change the call site is the exact shape of the last several bugs here.
+  greenMeasuredAt(x, z) {
+    if (!this.gGrid) return false;
+    const l = this.gGrid.get(Math.floor(x / this.gCell) + ',' + Math.floor(z / this.gCell));
+    if (!l) return false;
+    let best = null, bestA = Infinity;
+    for (const id of l) {
+      const r = this.green[id];
+      const [mnx, mnz, mxx, mxz] = r.bb;
+      if (x < mnx || x > mxx || z < mnz || z > mxz) continue;
+      let hit = false;
+      const ring = r.ring;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], zi = ring[i][1], xj = ring[j][0], zj = ring[j][1];
+        if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
+      }
+      if (!hit) continue;
+      const a = (mxx - mnx) * (mxz - mnz);
+      if (a < bestA) { bestA = a; best = r; }
+    }
+    return !!(best && best.m);
   }
 
   // the visible ground mesh
@@ -998,7 +1099,30 @@ export class Terrain {
           // pale cream-white sand, not gold — Siloso's sand is imported pale.
           // The old fear was reading as concrete, but that came from the flat
           // grey sea beside it; with the jade lagoon in, cream reads as beach.
-          sand:  [0.94, 0.89, 0.74],
+          // SAND HAS TO BE WARM ENOUGH TO SURVIVE THE PIPELINE, and at
+          // 0.94/0.89/0.74 it was not. The owner, twice: "isnt sand like sand
+          // colour".
+          //
+          // Measured off the rendered frame rather than argued, because every
+          // earlier round of this was argued and the vertex colours were
+          // already correct: the beach in front of the Wings of Time bank
+          // rendered #9a9a79 — RED AND GREEN EXACTLY EQUAL, which is the
+          // definition of olive. Sand is the one ground colour whose whole
+          // identity is R clearly above G, and three multiplications in a row
+          // were eating the 5% it started with:
+          //   * the tint itself, R/G = 1.056, thin to begin with;
+          //   * the ground tile material 0x9d9e99, whose GREEN channel is its
+          //     highest — a green-grey multiplier applied to every ground
+          //     vertex in the world;
+          //   * ACES tone mapping, which desaturates as it rolls off.
+          // What comes out the far end is a hue with no red left in it.
+          //
+          // So the fix is at the source and it is a RATIO, not a brightness:
+          // green and blue come down, red stays. R/G goes 1.056 -> 1.16, which
+          // lands the drawn pixel warm instead of neutral. Brightness is
+          // deliberately not raised — the beach was never too dark, it was too
+          // green, and lifting it would have blown the highlights instead.
+          sand:  [0.94, 0.81, 0.62],
           resi:  [0.86, 0.86, 0.78],
           comm:  [0.90, 0.89, 0.86],
           civic: [0.88, 0.87, 0.82],
@@ -1149,7 +1273,23 @@ export class Terrain {
               // behind that it is lawn, planting beds and palms. Blend with
               // distance from the sea, so the mapped extent stays and only
               // the READ changes.
-              if (sdw > 45) {
+              // ...BUT NOT ON A BEACH WE MEASURED OURSELVES.
+              //
+              // This fade is a correction for a polygon that cannot be trusted:
+              // OSM's beach rings on Sentosa run 100 m+ inland. It is the wrong
+              // instrument to point at one that CAN. Central Beach's sand is
+              // authored from eleven transects off the grandstand's own
+              // surveyed vertices (data/centralbeach.py) and is 30 m deep by
+              // measurement — and it drew olive anyway, because our coastline
+              // is mean high water and sits about 40 m seaward of the imaged
+              // waterline on that stretch, so every point on a correct beach
+              // reads 44-86 m from the sea and the fade ran at up to f=0.7.
+              // The owner, twice, and he was right both times: sand is sand
+              // colour.
+              //
+              // The distance rule stays exactly as it was for every inherited
+              // ring, which is all of the ones it was written for.
+              if (sdw > 45 && !this.greenMeasuredAt(x, z)) {
                 const f = Math.min(1, (sdw - 45) / 40) * 0.8;
                 t = [t[0] + (0.50 - t[0]) * f,
                      t[1] + (0.60 - t[1]) * f,
@@ -1181,7 +1321,14 @@ export class Terrain {
                 const f = Math.max(0, 1 - Math.max(0, vy) / 2.4) * Math.max(0, 1 - sd / 80);
                 // endpoint matches the cream TINT.sand above, or the painted
                 // shoreline and the mapped beach beside it disagree by a hue
-                col.push(0.84 + (0.91 - 0.84) * f, 0.87 + (0.86 - 0.87) * f, 0.80 + (0.70 - 0.80) * f);
+                // ENDPOINT FOLLOWS TINT.sand, and the line above says why: the
+                // painted shoreline and the mapped beach beside it must not
+                // disagree by a hue. TINT.sand was warmed on 2026-08-07 to
+                // survive the material and the tone curve, so this moves with
+                // it by the same ratio it has always carried (~0.97/0.88/0.79
+                // of the tint). Left behind, this would have drawn a cool
+                // cream seam along every mapped beach in the world.
+                col.push(0.84 + (0.91 - 0.84) * f, 0.87 + (0.78 - 0.87) * f, 0.80 + (0.59 - 0.80) * f);
               } else if (this.greenFrac > 0.35) {
                 // ON A GREEN ISLAND, UNKNOWN GROUND IS VEGETATION.
                 //
