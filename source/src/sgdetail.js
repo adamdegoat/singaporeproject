@@ -911,15 +911,37 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
     // so the two lists cannot drift apart silently.
     const noFascia = b.bt === 'grandstand'
       || (b.bt === 'hut' && b.n === 'Wings of Time');
-    if (b.n && bl > 7 && !noFascia) {
+    // ...AND A WALL AT LEAST A SIGN TALL. There was no height test here at all,
+    // so the shrink below would ask a 1 m shed for a negative board.
+    if (b.n && bl > 7 && b.h > 2.6 && !noFascia) {
       const bgc = pick(SIGN_COLS);
       // BIGGER, AND WITH A FLOOR. The board was 55% of the longest edge capped
       // at 26m, which on a 9m beach-bar frontage is a 5m board 1.2m tall —
       // unreadable from the road. A sign exists to be read, so it takes the
       // greater of "a share of the frontage" and "big enough to read", and the
       // cap stays so a 60m mall does not get a billboard.
-      const boardW = Math.max(6.5, Math.min(26, bl * 0.62)), boardH = boardW * 0.26;
-      const sy = Math.min(Math.max(3.2, b.h - 2.2), 7.4);
+      // A FASCIA BOARD NEEDS A WALL BEHIND IT. This had a cap on WIDTH and no
+      // check at all on what was underneath. Measured across sentosa's 192
+      // named buildings: **45 boards had their TOP ABOVE THE ROOFLINE** —
+      // Sapphire Pavilion worst, a 3.4 m pavilion wearing a 5.9 m board that
+      // stood 2.8 m into open sky above it, and Wings of Time, Coastes and
+      // Festive Walk all carrying a full 26 m board on a 4-5 m shed. One
+      // (SkyHelix) was wider than its own wall: 6.5 m of board on a 2.4 m edge.
+      //
+      // The 6.5 m FLOOR is what did it. `Math.min(26, bl*0.62)` is a sane cap,
+      // but `Math.max(6.5, ...)` then overrode it for anything small, and
+      // nothing anywhere compared the result with the building.
+      let boardW = Math.min(Math.max(6.5, Math.min(26, bl * 0.62)), bl - 0.6);
+      let boardH = boardW * 0.26;
+      // ...and the wall has to be able to carry it. Shrunk on the ASPECT, so a
+      // small shopfront gets a small sign instead of a squashed one.
+      const band = b.h - 1.0;
+      if (boardH > band * 0.55) {
+        boardH = band * 0.55;
+        boardW = boardH / 0.26;
+      }
+      const sy = Math.min(Math.max(3.2, b.h - 2.2),
+                          Math.max(boardH / 2 + 0.4, b.h - 0.4 - boardH / 2));
       const rot = ang + Math.PI / 2;
       const uv = atlas.add(b.n, '#' + bgc.toString(16).padStart(6, '0'), '#f4f1ea');
       const face = atlas.plane(boardW, boardH, uv);
