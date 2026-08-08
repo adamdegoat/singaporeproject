@@ -3020,7 +3020,33 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // directions at 6m, and the heading the road gives it looks down an avenue of
   // palms with the sea ahead. The other way along the same road faces inland
   // service buildings, which is why the direction is not left to chance.
+  // THE HEADING NO LONGER COMES FROM THE ROAD, AND THE REASON IS THAT THE
+  // THINGS IT WAS CHOSEN AGAINST DID NOT EXIST YET.
+  //
+  // The road heading looks WNW-ESE down Palawan Beach Walk, and the comment
+  // above is true: it is an avenue of palms with the sea ahead, and since the
+  // palm avenue was authored it is finally true in the world as well as on
+  // paper. But it was picked when the only things at Palawan were a road, a
+  // beach and a 25 m mast that turned out to be a lifeguard hut. The two
+  // objects `research/palawan-spawn.md` §2 calls the ones that make the frame
+  // "unmistakably Palawan" — the suspension bridge at 204° / 118 m and the
+  // twin viewing towers at 207° / 189 m — are now BUILT, and both sit about
+  // 46° off the road.
+  //
+  // Vetted, not reasoned: four frames from this exact point, at the road
+  // heading and at 185/195/205°. The road frame is a grey carriageway filling
+  // the lower half with trees either side — a good frame that could be any
+  // coast road anywhere. At 205° the opening shot holds the lagoon, the
+  // islet, both viewing towers, the rock groyne, the loungers, the lifeguard
+  // hut and a readable PALAWAN BEACH sign. 195° is the same frame with the
+  // sign cut off at the edge, which is the one thing in it that NAMES the
+  // place. The first frame's job is to say where you are.
+  //
+  // Bearing, not radians, because that is what the research quotes and what
+  // anyone re-deciding this will be holding: heading = pi - bearing, since
+  // the ride's forward is (sin h, cos h) and +z runs south.
   const SPAWNS = { sentosa: [-1241.7, 12973] };
+  const SPAWN_BEARING = { sentosa: 205 };
   let spawnDone = false;
   const want = SPAWNS[SCENE];
   if (want && Array.isArray(data.roads)) {
@@ -3039,7 +3065,14 @@ window.__placeBlocked = (x, z) => blocked(x, z);
         if (d2 < bd) { bd = d2; bx = px; bz = pz; bh = Math.atan2(dx, dz); }
       }
     }
-    if (bd < 80 * 80) { S = newState(bx, bz, bh); spawnDone = true; }
+    if (bd < 80 * 80) {
+      // the POSITION still comes from the road — it is what keeps the spawn on
+      // a real carriageway with 12/12 open directions, and moving it by eye is
+      // what once pinned the rider against AltitudeX's collision
+      const brg = SPAWN_BEARING[SCENE];
+      if (brg != null) bh = Math.PI - brg * Math.PI / 180;
+      S = newState(bx, bz, bh); spawnDone = true;
+    }
   }
   if (!spawnDone && data.axis && data.axis.p.length > 1) {
     const P0 = data.axis.p;

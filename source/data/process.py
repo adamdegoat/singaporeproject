@@ -2774,7 +2774,41 @@ def main():
                     (proj(p["lat"], p["lon"]) for p in e["geometry"])]
             if tags.get("bridge"):
                 bridges.append(line)
-                continue
+                # A FOOTBRIDGE IS A FOOTWAY. IT WAS BEING FILED AS SCENERY.
+                #
+                # This `continue` is the whole of the "75 bridge footways lose
+                # name/layer/level" item carried since SESSION 8, and it is not
+                # a stripping bug — the way never reaches the road branch at
+                # all. `bridges` is a list of BARE POLYLINES: no name, no width,
+                # no layer, no kind. sgdetail's pedBridge recipe reads it and
+                # builds an overpass for the ones that are straight, 22-90m and
+                # span something; every other bridge footway on the island
+                # draws NOTHING and is not in the walking network.
+                #
+                # Measured on sentosa: 75 OSM ways are highway=footway/path/
+                # pedestrian + bridge. The 14 tagged `path` or `pedestrian` are
+                # not caught by this branch, fall through, and arrive as proper
+                # roads with bridge=1 — including the Sentosa Boardwalk. The 61
+                # tagged `footway` are caught here and arrive as scenery. Same
+                # crossing, same map, two fates, decided by a tag the renderer
+                # never sees. THAT is why Lookout Loop and the Fort Siloso
+                # Skywalk each needed a hand-written pass to put their own names
+                # back: the names were never taken away, they were never
+                # carried.
+                #
+                # So the line falls through as well as being recorded. Nothing
+                # downstream needs teaching — city.js already registers a
+                # `bridge` path via addFootbridgeWay, already seats a walker on
+                # a promenade-class deck, and already leaves narrow crossing
+                # linkways as overpasses you pass under. The renderer has been
+                # ready for these for three sessions; the data never sent them.
+                #
+                # `bridges` keeps its copy on purpose. pedBridge is what builds
+                # the visible overhead structure, it is tuned against that list,
+                # and it stands itself down where an authored bridge already
+                # claims the span (the Palawan crossing). Removing the way from
+                # `bridges` to stop a double-draw is the mistake SESSION 14
+                # already made once: it cut the islet off the walkable network.
             if tags.get("covered"):
                 covered.append(line)
                 continue

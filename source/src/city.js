@@ -2694,21 +2694,73 @@ export async function buildBuildings(world, data, Y = null) {
     //   Jurassic World -> The Lost World   "officially The Lost World, not
     //                                       Jurassic Park or Jurassic World"
     //   Madagascar     -> Minion Land      closed 2022-03, reopened 2025-02
-    const want = { 'Hollywood': [0xe8dcc4, 0xdcc9a8, 0xe3d3bb],
-                   'New York': [0x9d6b57, 0x8a5f4e, 0xa87a63],
-                   'Sci-Fi City': [0x8f9aa6, 0x7d8894, 0x9caab6],
-                   'Ancient Egypt': [0xd9bd86, 0xcaa970, 0xe0c894],
-                   'Far Far Away': [0xbfa9cb, 0xa892b8, 0xcdb9d6],
-                   // the dinosaur zone: wet jungle greens over damp stone
-                   'The Lost World': [0x6f8a5e, 0x5f7a52, 0x7e9a6b],
-                   'Jurassic World': [0x6f8a5e, 0x5f7a52, 0x7e9a6b],
-                   // Minion Land is banana-yellow and Gru-lab grey, and it
-                   // replaced Madagascar's greens on the same ground
+    // ...AND THE PALETTES ARE NO LONGER AUTHORED. THEY ARE SAMPLED.
+    //
+    // Every hex below is now read out of `research/universal-zones.md`, which
+    // sampled them off DATED photographs zone by zone. What was here before
+    // was scenic paint chosen to be plausible, and plausible got two zones
+    // materially wrong:
+    //
+    //   FAR FAR AWAY was LILAC (0xbfa9cb). The brief's §6 samples the castle
+    //   as warm cream-buff limestone #A99876-#BAA784 with weathered terracotta
+    //   roofs, and the handover has carried the correction as an open item
+    //   since SESSION 9 in exactly these words: "Far Far Away's castle is
+    //   cream and terracotta, NOT pink and turquoise". A purple castle is the
+    //   single most visible invented fact inside the park.
+    //
+    //   ANCIENT EGYPT was a bright yellow sand (0xd9bd86). Sampled, the
+    //   show-building ashlar is a GREYED sandstone-ochre, #938778 sunlit and
+    //   #827560 shaded — much duller and browner than it was drawn. §4 also
+    //   notes the colossi read PALER than the wall behind them, which is why
+    //   the third entry here is the lighter one rather than a deeper gold.
+    //
+    //   THE LOST WORLD was wet jungle green. §5A samples it as grey-pink
+    //   granite rockwork and saturated orange-brown stained pole timber — the
+    //   green in the photographs is planting, not building. Its own §5 opens
+    //   by saying the zone is TWO material worlds and to "build them as two,
+    //   not one", so WaterWorld's salvage verdigris and rust are split out
+    //   below rather than averaged into this row.
+    //
+    // Where a zone gives a sunlit and a shaded read, the mid-tone leads: our
+    // own sun lights the facade, and leading with the sunlit sample would pay
+    // for the light twice.
+    //
+    // MINION LAND STAYS AUTHORED AND SAYS SO. §7 warns in bold "Do not sample
+    // hexes for this zone from this file" — Wikimedia holds no photograph of
+    // it, so the colours there are document-read ("an explosion of yellow",
+    // blue, white). The existing banana-yellow and Gru-lab grey match that
+    // description and are kept; they must not be quoted as sampled.
+    const want = { 'Hollywood': [0xd9c7a8, 0xcfd3d2, 0xc4926f],
+                   'New York': [0x9b6a52, 0x87543c, 0xaf8a70],
+                   'Sci-Fi City': [0xa6aaae, 0x7c8384, 0x9aa0a4],
+                   'Ancient Egypt': [0x938778, 0x827560, 0xa6aca5],
+                   // cream-buff limestone and weathered terracotta, NOT lilac
+                   'Far Far Away': [0xb2a07d, 0xa99876, 0xc87a50],
+                   // grey-pink granite and stained pole timber, not jungle
+                   'The Lost World': [0x9a8b82, 0x8a5a3c, 0xa8998c],
+                   'Jurassic World': [0x9a8b82, 0x8a5a3c, 0xa8998c],
+                   // §5B, the other half of the same zone: salvage, verdigris
+                   // metal and rust. Anchored below on its own footprint.
+                   'WaterWorld': [0x6b7f72, 0x8a4b2a, 0x7d8c7c],
+                   // AUTHORED to §7's named hues — see the note above
                    'Minion Land': [0xd8c46a, 0xc7b25c, 0x9aa3ab],
                    'Madagascar': [0xd8c46a, 0xc7b25c, 0x9aa3ab] };
     for (const a of (data.attractions || [])) {
       const pal = a && a.n && want[a.n];
       if (pal && a.p) _ussZones.push({ x: a.p[0], z: a.p[1], pal, n: a.n });
+    }
+    // WATERWORLD IS A BUILDING HERE, NOT AN ATTRACTION NODE, so the loop above
+    // cannot see it and the whole of The Lost World took Jurassic's timber —
+    // measured, 14 of 14 show buildings including the WaterWorld stadium
+    // itself. Its own footprint is the honest anchor and it is a survey, not a
+    // coordinate typed into this file. Any zone that ever arrives as a
+    // building rather than a node lands here for the same reason.
+    for (const q of (data.buildings || [])) {
+      const pal = q && q.n && want[q.n];
+      if (!pal || !q.p || q.p.length < 3) continue;
+      if (_ussZones.some((z) => z.n === q.n)) continue;
+      const c = centroid(q.p);
+      _ussZones.push({ x: c[0], z: c[1], pal, n: q.n });
     }
   }
   // the zone a footprint stands in, or null. `_zoneTint` answered a COLOUR and
@@ -3049,6 +3101,7 @@ export async function buildBuildings(world, data, Y = null) {
       stats.count++; stats.bespoke++;
       continue;
     }
+
     const _isBeach = _beach.has(b);
     const _isCove = _cove.has(b);
     const fam = familyFor(b, _isBeach);
@@ -3556,13 +3609,38 @@ export async function buildBuildings(world, data, Y = null) {
           'Ancient Egypt': { col: 0xc2a469, top: [[0.35, 0.55, -2.30], [0.80, 0.55, -1.75],
                                                   [1.25, 0.75, -1.20], [1.40, 0.45, -0.45]],
                              foot: [[0.85, 0.55, 0.0], [0.55, 0.55, 0.55], [0.25, 0.55, 1.10]] },
-          'New York':     { col: 0x8a5f4e, top: [[0.30, 0.35, -1.90], [0.60, 0.35, -1.55],
+          // A CROWN IS A ROOF, SO IT TAKES THE ROOF'S SAMPLED COLOUR.
+          //
+          // These were picked to sit beside the authored wall palettes; now the
+          // walls are sampled off photographs, four of them were arguing with
+          // the thing they cap. Corrected against the same brief, and the two
+          // that mattered are visible from outside the park:
+          //
+          //   FAR FAR AWAY was 0x9c86ad — LILAC, a purple band running along
+          //   every roofline in Shrek's zone, and the loudest surviving piece
+          //   of "pink and turquoise" the research corrects. §6 samples the
+          //   roofs as weathered terracotta / burnt orange, #855E3A shaded to
+          //   ~#C87A50 in sun.
+          //
+          //   THE LOST WORLD was 0x4e6644, a jungle green, on roofs §5A samples
+          //   as "corrugated metal in dull silver-grey". The green in those
+          //   photographs is the planting in front of the buildings, and this
+          //   was the zone painting itself with its own vegetation.
+          //
+          // New York takes the grey-green fish-scale mansard slate §2 names,
+          // and Sci-Fi City the deep streaked hull grey of §3 rather than a
+          // blue-grey. Hollywood's pale limestone parapet is already what §1
+          // samples for its cast-stone blocks and is left alone; so is Egypt's
+          // gold, which §4 lists among the zone's few saturated accents.
+          'New York':     { col: 0x6e7a6b, top: [[0.30, 0.35, -1.90], [0.60, 0.35, -1.55],
                                                  [0.85, 0.40, -1.20], [0.55, 0.80, -0.80]] },
-          'Sci-Fi City':  { col: 0x6f7a86, top: [[0.55, 1.30, -1.60], [0.20, 0.45, -0.30]] },
+          'Sci-Fi City':  { col: 0x5f5f59, top: [[0.55, 1.30, -1.60], [0.20, 0.45, -0.30]] },
           'Hollywood':    { col: 0xd2c1a2, top: [[0.45, 1.60, -1.90], [0.75, 0.40, -0.30]] },
-          'The Lost World': { col: 0x4e6644, top: [[1.30, 0.45, -1.30], [0.80, 0.55, -0.75]] },
-          'Jurassic World': { col: 0x4e6644, top: [[1.30, 0.45, -1.30], [0.80, 0.55, -0.75]] },
-          'Far Far Away': { col: 0x9c86ad, top: [[0.35, 1.10, -1.60], [0.70, 0.45, -0.50]] },
+          'The Lost World': { col: 0x8f9694, top: [[1.30, 0.45, -1.30], [0.80, 0.55, -0.75]] },
+          'Jurassic World': { col: 0x8f9694, top: [[1.30, 0.45, -1.30], [0.80, 0.55, -0.75]] },
+          // §5B's other half: salvage rust over the verdigris walls
+          'WaterWorld':   { col: 0x8a4b2a, top: [[1.30, 0.45, -1.30], [0.80, 0.55, -0.75]] },
+          'Far Far Away': { col: 0xa8683f, top: [[0.35, 1.10, -1.60], [0.70, 0.45, -0.50]] },
           'Minion Land':  { col: 0xb99f4c, top: [[0.30, 0.50, -1.40], [0.75, 0.90, -0.90]] },
           'Madagascar':   { col: 0xb99f4c, top: [[0.30, 0.50, -1.40], [0.75, 0.90, -0.90]] },
         };

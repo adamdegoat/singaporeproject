@@ -264,7 +264,24 @@ def cut_way(pts, ring):
             cur = []
     if len(cur) > 1:
         out.append(cur)
-    return [c for c in out if seglen(c) >= MIN_PIECE]
+    # A SHORT WAY IS NOT A STUB. A STUB IS WHAT IS LEFT AFTER A CUT.
+    #
+    # MIN_PIECE exists to stop a 2m nub surviving where a road was chopped at
+    # the shore, and it was applied to every piece this function returns —
+    # including ways it never touched. So a way the map really does draw 5m
+    # long was deleted for being 5m long, on the authority of a rule about
+    # cutting, having been cut by nothing.
+    #
+    # Measured on sentosa: 13 of the island's bridge footways are 3.2-7.7m
+    # 2-vertex connectors, every one of them wholly inside the ring, and every
+    # one of them deleted here. They are the short hops between a path and a
+    # deck — exactly the geometry that JOINS a network, which is why deleting
+    # them was invisible in a frame and expensive in N1.
+    #
+    # The test is not the length, it is whether anything was lost: if the way
+    # came through whole, it is the way the map drew and it stays.
+    whole = len(out) == 1 and len(out[0]) == len(pts)
+    return [c for c in out if whole or seglen(c) >= MIN_PIECE]
 
 
 def main():

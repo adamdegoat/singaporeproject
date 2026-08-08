@@ -2304,6 +2304,12 @@ export async function buildTrails(world, data, Y = null) {
   for (const r of (data.roads || [])) {
     const k = r.k || '';
     if (k !== 'footway' && k !== 'pedestrian') continue;
+    // A WAY AN AUTHORED STRUCTURE ALREADY BUILDS IS NOT DRAWN TWICE — the rule
+    // pedBridge already keeps against `bridges`, now also owed to `roads`.
+    // The Palawan crossing arrives in both layers; its authored suspension
+    // bridge draws the deck, the hangers, the pylons and its own walk surface,
+    // and a generic timber ribbon under it came out below the lagoon.
+    if (r.auth) continue;
     const raw = r.p || [];
     if (raw.length < 2) continue;
     const half = Math.max(0.7, (r.w || (k === 'pedestrian' ? 4.0 : 2.0)) / 2);

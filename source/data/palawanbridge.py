@@ -177,6 +177,46 @@ def main():
     # any `bridges` line this spec already covers, and the map keeps saying what
     # is true: you can walk to the Southernmost Point.
 
+    # AND NOW THE SAME THREE WAYS ARE IN `roads` AS WELL, so the same
+    # suppression has to be said twice.
+    #
+    # process.py used to divert every bridge-tagged footway into `bridges` and
+    # stop. It no longer does — a footbridge is a footway — so this crossing
+    # arrives in BOTH layers, which is correct and is what put the islet's
+    # route into the walking network properly. What it also did was hand the
+    # route to buildTrails, which drew a second deck: a timber boardwalk with
+    # handrails, seated on the deck height for a run whose terrain is the
+    # LAGOON BED, so it and its 53 rail posts came out 1.8-2.2 m under the
+    # water the real bridge crosses. The P3 blocker caught it and refused the
+    # deploy, which is the gate doing exactly its job.
+    #
+    # Marked, not deleted — the lesson directly above this, applied a second
+    # time. `auth` says "an authored structure already builds this"; the way
+    # keeps its geometry, its name and its place in the walkable network, and
+    # only the generic recipe stands down.
+    marked = 0
+    if pts:
+        def _near_route(x, z):
+            best = 1e9
+            for i in range(len(pts) - 1):
+                ax_, az_ = pts[i]
+                vx, vz = pts[i + 1][0] - ax_, pts[i + 1][1] - az_
+                l2 = vx * vx + vz * vz
+                t = 0.0 if l2 < 1e-9 else max(0.0, min(1.0, ((x - ax_) * vx + (z - az_) * vz) / l2))
+                best = min(best, math.dist((x, z), (ax_ + vx * t, az_ + vz * t)))
+            return best
+        for r in d.get("roads") or []:
+            p = r.get("p") or []
+            if len(p) < 2 or r.get("k") not in ("footway", "pedestrian"):
+                continue
+            # every vertex on the route, not merely near it: a beach path that
+            # runs to the same landing must keep its own deck
+            if all(_near_route(x, z) < 4.0 for x, z in p):
+                r["auth"] = "palawanbridge"
+                marked += 1
+    print(f"   {marked} road way(s) marked auth=palawanbridge "
+          f"(kept walkable, drawn by the authored structure)")
+
     if a.dry_run:
         print("   dry run — nothing written")
         return
