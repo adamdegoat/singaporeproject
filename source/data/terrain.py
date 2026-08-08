@@ -1323,22 +1323,61 @@ def main():
         # which is what Siloso Point IS.
         CLIFF_H = 18.0
         Hpre = list(grid["h"])
+        # THE MASK MUST ASK THE SOURCE, NOT OUR OWN COPY OF IT.
+        #
+        # This test read `Hpre` alone — the INTERPOLATED grid — and Hpre is the
+        # thing under suspicion. Our 35 m cells smear a ridge downhill, so the
+        # slope BELOW a real cliff reads high in our grid, passes the test, and
+        # is protected from the very shore passes that would have brought it
+        # back to the ground. The mask was defending the error.
+        #
+        # Measured at (-2102,11930), the biggest entry on the manufactured-cliff
+        # list and carried in the handover since SESSION 14 as "the mask's other
+        # half". Its own 3x3, hpre against Copernicus GLO-30:
+        #
+        #     -2137,11895  hpre 20.9 B   DEM  3.4    +17.5
+        #     -2102,11930  hpre 22.8 B   DEM 10.9    +11.9
+        #     -2137,11965  hpre 35.1 B   DEM 39.2     -4.1
+        #     hpre median 22.8  ->  bluff        DEM median 10.9  ->  not a cliff
+        #
+        # The top row is a genuine cliff and the DEM says so; the bottom row is
+        # our smear of it and the DEM says that too. One test could not tell
+        # them apart because it only ever looked at the smear.
+        #
+        # So BOTH must agree: the cell is high in our grid AND the source's own
+        # neighbourhood is a cliff. Every cell the DEM confirms is untouched —
+        # Fort Siloso and Serapong keep their protection, which is what this
+        # mask was built for and what the standing "DO NOT TUNE IT BY EYE"
+        # instruction on that headland is about. Only the cells our own
+        # interpolation invented lose it, which is the entire point.
+        _dem_cell = local_elev([(lat0 - (grid["z0"] + j * CELL) / m_lat,
+                                 lon0 + (grid["x0"] + i * CELL) / m_lon)
+                                for j in range(grid["nz"])
+                                for i in range(grid["nx"])])
         bluff = [False] * len(Hpre)
+        _src_refused = 0
         for j in range(grid["nz"]):
             for i in range(grid["nx"]):
                 k = j * grid["nx"] + i
                 if Hpre[k] <= CLIFF_H:
                     continue
-                neigh = []
+                neigh, dneigh = [], []
                 for dj in (-1, 0, 1):
                     for di in (-1, 0, 1):
                         ni, nj = i + di, j + dj
                         if 0 <= ni < grid["nx"] and 0 <= nj < grid["nz"]:
                             neigh.append(Hpre[nj * grid["nx"] + ni])
+                            dneigh.append(_dem_cell[nj * grid["nx"] + ni])
                 if statistics.median(neigh) > CLIFF_H:
-                    bluff[k] = True
+                    if statistics.median(dneigh) > CLIFF_H:
+                        bluff[k] = True
+                    else:
+                        _src_refused += 1
         if any(bluff):
             print(f"   {sum(bluff)} cells classified bluff — shore passes keep off")
+        if _src_refused:
+            print(f"   {_src_refused} cell(s) looked like bluff in our grid and the "
+                  f"source says otherwise — not protected")
 
         # A MASK WITHOUT A MARGIN IS HALF A MASK, and its own edge is the cliff.
         #
@@ -1427,10 +1466,9 @@ def main():
         # height the source data itself reports. Over a roof or under canopy
         # the DEM reads HIGH, which cannot bite; over water it reads garbage,
         # and a lower cap only means the existing passes proceed untouched.
-        _cell_dem = local_elev([(lat0 - (grid["z0"] + j * CELL) / m_lat,
-                                 lon0 + (grid["x0"] + i * CELL) / m_lon)
-                                for j in range(grid["nz"])
-                                for i in range(grid["nx"])])
+        # the same samples the bluff test above already took: one DEM pass per
+        # grid, not two
+        _cell_dem = _dem_cell
         _onsand = 0
         for k in range(len(bluff_floor)):
             # never above what the cell already had, and never above the source:
