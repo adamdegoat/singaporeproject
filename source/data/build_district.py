@@ -531,6 +531,11 @@ CHAIN = [
          "mapped ways", only="sentosa"),
     Pass("palawantowers.py", "the two viewing towers, and the 242 m2 'building' "
          "that is really their roof outlines", only="sentosa"),
+    # AFTER the towers, because it appends to `trees` and the spawn frame is
+    # judged as a whole. Authored: the research found ZERO trees within 300 m
+    # of a spawn heading chosen to look down an avenue of palms.
+    Pass("palawanpalms.py", "the palm avenue the spawn heading was chosen for",
+         only="sentosa"),
     # ...and here are the four. Each one used to run above attractions.py and
     # print its own "not built" line on every build.
     Pass("sensoryscape.py", "needs attractions: the six gardens", only="sentosa"),
