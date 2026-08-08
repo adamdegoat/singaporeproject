@@ -1199,6 +1199,35 @@ export function surfaceAt(x, z, fromY) {
     const seaLv = grd && typeof grd.sea === 'number' ? grd.sea : null;
     if (fb - g < 3.0 || (seaLv !== null && g < seaLv + 0.6)) return fb + 0.04;
   }
+  // ...AND OVER OPEN WATER, WIDTH IS NOT THE QUESTION EITHER.
+  //
+  // The comment three lines above already states the principle — "over water
+  // anything wide is standable at any height because nothing walks beneath" —
+  // but the width test runs FIRST, inside `_deckWideIn`, so a narrow deck was
+  // never reached to have the water clause applied to it. Width is a proxy for
+  // "could somebody be walking UNDER this", and over the sea the answer is no
+  // at any width.
+  //
+  // Measured at -1075,11790: an unnamed 356 m footway, `bridge=1`, 3.4 m wide,
+  // crosses the Gateway channel. It is a metre under the promenade threshold,
+  // so nothing consulted it and a walker crossed 356 m of open water AT SEA
+  // LEVEL, between the Sentosa Boardwalk's deck at 1.30 and the causeway's walk
+  // surface at 3.42 — four metres of sea in the gap. It is the worst of the
+  // corridor's N3 spikes and it is not a height disagreement, which is what it
+  // looked like from the numbers alone.
+  //
+  // Strictly narrower than the rule above: it applies ONLY where the ground
+  // below is at or under the water, which is the one case where nothing can be
+  // walking beneath the deck. On land the promenade width rule is untouched,
+  // so the low crossing linkways a walker passes under still behave.
+  {
+    const grd2 = TERRAIN.grid && TERRAIN.grid();
+    const seaLv2 = grd2 && typeof grd2.sea === 'number' ? grd2.sea : null;
+    if (seaLv2 !== null && g < seaLv2 + 0.6) {
+      const fbn = _deckWideIn(FOOTBRIDGES, x, z, 0);
+      if (fbn !== null && fbn > g) return fbn + 0.04;
+    }
+  }
   if (window.__onRoad && window.__onRoad(x, z, 0.4)) return g + SURFACE_ROAD;
   return g + SURFACE_PATH;
 }
