@@ -873,9 +873,22 @@ def main():
     # anything closer than that leaks a sunk height into a built thing's ground.
     # Whole footprints and whole road spans, not vertices: a 87m-wide terminal
     # shed has no corner within 35m of its own middle.
+    #
+    # AND EACH MARK CARRIES WHO MADE IT. The two passes below report a COUNT of
+    # cells they kept dry, and a count cannot be argued with — it says the
+    # guard fired, not which surveyed thing it fired for. Queue item 2 was
+    # carried for three sessions as "the 1,050 m footway holds the Gateway
+    # channel dry" on nothing but the fact that a footway is near the channel
+    # and the channel is dry. `_built` is a dict whose VALUES nothing reads, so
+    # the attribution is free: the membership test is unchanged and the print
+    # can finally name the feature. Do not turn this into a fix — it is the
+    # measurement that decides whether there is one.
     _built = {}
+    _mark_who = [None]                  # set by each emitter before it marks
     def _mark_cell(px, pz):
-        _built[(int(math.floor(px / CELL)), int(math.floor(pz / CELL)))] = True
+        _built.setdefault(
+            (int(math.floor(px / CELL)), int(math.floor(pz / CELL))), set()
+        ).add(_mark_who[0])
     def _mark_span(ax, az, bx, bz):
         n = int(math.hypot(bx - ax, bz - az) / (CELL * 0.5)) + 1
         for s in range(n + 1):
@@ -913,17 +926,18 @@ def main():
     OVER_WATER = {("hut", "Wings of Time")}      # the show's set, on stilts
 
     _afloat = 0
-    for _b in data.get("buildings", []):
+    for _bi, _b in enumerate(data.get("buildings", [])):
         _p = _b.get("p", [])
         if len(_p) < 3:
             continue
         if (_b.get("bt"), _b.get("n")) in OVER_WATER:
             _afloat += 1
             continue
+        _who = "bld#%d %s %s" % (_bi, _b.get("bt") or "-", _b.get("n") or "")
         _xs = [q[0] for q in _p]; _zs = [q[1] for q in _p]
         for _ci in range(int(math.floor(min(_xs) / CELL)), int(math.floor(max(_xs) / CELL)) + 1):
             for _cj in range(int(math.floor(min(_zs) / CELL)), int(math.floor(max(_zs) / CELL)) + 1):
-                _built[(_ci, _cj)] = True
+                _built.setdefault((_ci, _cj), set()).add(_who)
     if _afloat:
         print(f"   {_afloat} structure(s) stand on legs over the water — "
               f"their cells are left to the sea")
@@ -949,13 +963,18 @@ def main():
     # whether or not the deck marks them, because only the water and coastline
     # passes read `_built`, and neither fires on dry ground.
     _bridged = 0
-    for _r in data.get("roads", []):
+    for _ri, _r in enumerate(data.get("roads", [])):
         if _r.get("bridge"):
             _bridged += 1
             continue
         _p = _r.get("p", [])
+        _len = sum(math.hypot(_p[_s + 1][0] - _p[_s][0], _p[_s + 1][1] - _p[_s][1])
+                   for _s in range(len(_p) - 1))
+        _mark_who[0] = "road#%d %s w%.1f %.0fm %s" % (
+            _ri, _r.get("k") or "-", _r.get("w") or 0.0, _len, _r.get("n") or "")
         for _s in range(len(_p) - 1):
             _mark_span(_p[_s][0], _p[_s][1], _p[_s + 1][0], _p[_s + 1][1])
+    _mark_who[0] = None
     if _bridged:
         print(f"   {_bridged} bridge way(s) hold no ground up — their decks "
               f"are on piers and the water runs under them")
@@ -967,6 +986,56 @@ def main():
                 if (ci + di, cj + dj) in _built:
                     return True
         return False
+
+    def built_why(px, pz):
+        """Every surveyed thing in the 3x3 that `carries_built` answers TRUE
+        for. Same neighbourhood, same order of scan — if this returns empty,
+        `carries_built` returned False."""
+        ci, cj = int(math.floor(px / CELL)), int(math.floor(pz / CELL))
+        out = set()
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                out |= _built.get((ci + di, cj + dj), set())
+        out.discard(None)
+        return out
+
+    _dry_log = []                       # (pass, gx, gz, frozenset(reasons))
+
+    def _report_dry(tag):
+        """Name the features that held cells out of the water, worst first.
+        A count says the guard fired; this says what it fired FOR."""
+        rows = [r for r in _dry_log if r[0] == tag]
+        if not rows:
+            return
+        tally = {}
+        for _, gx, gz, why in rows:
+            for w in (why or {"(no attribution)"}):
+                e = tally.setdefault(w, [0, gx, gx, gz, gz])
+                e[0] += 1
+                e[1] = min(e[1], gx); e[2] = max(e[2], gx)
+                e[3] = min(e[3], gz); e[4] = max(e[4], gz)
+        order = sorted(tally.items(), key=lambda kv: -kv[1][0])
+        print(f"   why those {len(rows)} stayed dry ({tag}) — "
+              f"{len(order)} feature(s), the top {min(12, len(order))}:")
+        for w, (n, x0, x1, z0, z1) in order[:12]:
+            print(f"     {n:5d} cell(s)  x {x0:.0f}..{x1:.0f}  z {z0:.0f}..{z1:.0f}  {w}")
+        # Island-wide it ranks by count, and the thing you are chasing is
+        # rarely the biggest. `SG_DRYWHY=x0,z0,x1,z1` asks the same question of
+        # one corridor and lists EVERY cell in it, because when the answer is
+        # "nothing holds that dry" only the empty list says so.
+        box = os.environ.get("SG_DRYWHY")
+        if box:
+            try:
+                bx0, bz0, bx1, bz1 = [float(v) for v in box.split(",")]
+            except ValueError:
+                print(f"   SG_DRYWHY={box!r} is not x0,z0,x1,z1 — ignored")
+                return
+            hits = [r for r in rows if bx0 <= r[1] <= bx1 and bz0 <= r[2] <= bz1]
+            print(f"   SG_DRYWHY x {bx0:.0f}..{bx1:.0f} z {bz0:.0f}..{bz1:.0f}: "
+                  f"{len(hits)} of the {len(rows)} kept-dry cells are in that box")
+            for _, gx, gz, why in sorted(hits, key=lambda r: (r[2], r[1])):
+                for w in sorted(why) or ["(no attribution)"]:
+                    print(f"     {gx:8.0f} {gz:8.0f}  {w}")
 
     # ---- SINK THE GROUND UNDER WATER ---------------------------------------
     # The heightfield is interpolated from samples taken along ROADS, and there
@@ -1103,6 +1172,7 @@ def main():
                             and edge_dist(gx, gz, ring) >= inset):
                         if carries_built(gx, gz):
                             kept_w += 1
+                            _dry_log.append(("water-sink", gx, gz, built_why(gx, gz)))
                             continue
                         grid["h"][k] = floor
                         sunk += 1
@@ -1113,6 +1183,7 @@ def main():
             print(f"   sank {sunk} grid cells under {len(rings)} water polygons")
         if kept_w:
             print(f"   kept {kept_w} of those dry — they carry a road or a building")
+            _report_dry("water-sink")
         probe(grid, "water-sink")
 
     # ---- THE SEA IS EVERYTHING OUTSIDE THE COASTLINE (2026-08-03) ---------
@@ -1227,11 +1298,13 @@ def main():
                     continue
                 if carries_built(gx, gz):
                     kept_built += 1
+                    _dry_log.append(("sea-sink", gx, gz, built_why(gx, gz)))
                     continue
                 grid["h"][k] = SEA_SINK
                 sunk_sea += 1
         if kept_built:
             print(f"   kept {kept_built} cells dry — they carry a road or a building")
+            _report_dry("sea-sink")
         if sunk_sea:
             print(f"   sank {sunk_sea} cells outside {len(coast_rings)} coastline ring(s) — the open sea")
         probe(grid, "sea-sink")

@@ -4394,8 +4394,25 @@ export async function buildRoads(world, data, Y = null) {
         // A cut bridge ends level, the way a drawbridge does.
         const g0 = TERRAIN.grid && TERRAIN.grid();
         const seaLv = g0 && typeof g0.sea === 'number' ? g0.sea : null;
-        if ((seaLv !== null && tH <= seaLv + 0.6)
-            || (TERRAIN.waterFloor && TERRAIN.waterFloor(e.x, e.z) !== null)) continue;
+        // A MAPPED POLYGON DOES NOT OUTRANK GROUND THAT IS PLAINLY DRY, and
+        // the data pass next door already settled this exact conflict the
+        // other way. `terrain.py` keeps a cell out of the water sink when it
+        // carries a road or a building, and it kept precisely these cells:
+        // x -1017..-1052, z 12105..12175 (SG_DRYWHY, SESSION 17). The runtime
+        // then read the same coordinates back as water, because `waterFloor`
+        // answers from the polygon alone — so the Gateway's landing, standing
+        // at 2.14 m of dry made ground, was rejected as "no landing at all"
+        // and its run got NO approach ramp. Deck flat at 3.40 over ground
+        // climbing to 2.23: the 1.33 m step at -1036,12168.
+        //
+        // The height test above already covers what the polygon clause was
+        // written for — a scenery-cut bridge ends at the clip margin, where
+        // the terrain IS sea level and the first clause fires. So the polygon
+        // keeps its veto only where the ground does not contradict it: below
+        // SHELF_HI's 1.2 m the two agree it is shore, above it the survey wins.
+        if (seaLv !== null && tH <= seaLv + 0.6) continue;
+        if (TERRAIN.waterFloor && TERRAIN.waterFloor(e.x, e.z) !== null
+            && seaLv !== null && tH <= seaLv + 1.2) continue;
         const root = find(e.i);
         if (!runTerms.has(root)) runTerms.set(root, []);
         runTerms.get(root).push([e.x, e.z, tH]);
@@ -4449,7 +4466,19 @@ export async function buildRoads(world, data, Y = null) {
         let h = deck;
         for (const [tx, tz, tH] of terms) {
           const target = tH + 0.06;
-          if (deck - target <= 1.2) continue;         // natural abutment, no ramp needed
+          // THE TOLERANCE WAS LARGER THAN THE DETECTOR, AND ALWAYS HAD BEEN.
+          //
+          // `deck` is `runMax + 1.2` and `target` is `tH + 0.06`, so at a
+          // run's OWN highest landing the difference is exactly 1.14 and this
+          // line skipped the ramp — by construction, on every run, everywhere.
+          // "Natural abutment" is true of the DECK and false of the WALKER:
+          // trailcheck flags a step over 1.0 m, so the machinery was licensed
+          // to leave one it could never accept. Measured on the Gateway at
+          // -1036,12168 (3.46 vs 2.13 = 1.33) and -1076,12177 (1.22).
+          //
+          // A real abutment ramps. 1.14 m over the 20 m RAMP is a 5.7% grade,
+          // gentler than the trails already climb on Imbiah.
+          if (deck - target <= 0.35) continue;        // a kerb, not a storey
           const d = Math.hypot(x - tx, z - tz);
           if (d < RAMP) h = Math.min(h, target + (deck - target) * (d / RAMP));
         }
@@ -4458,6 +4487,51 @@ export async function buildRoads(world, data, Y = null) {
       f.deck = deck;
       BRDECK.set(r, f);
     });
+
+    // WHAT A RUN ACTUALLY UNIONS, WHEN YOU ASK IT.
+    //
+    // `runMax + 1.2` is one flat height for a whole connected run, and every
+    // deck argument downstream inherits it — so when a deck floats, the
+    // question is not "which clause read it" but "which GROUND set it". That
+    // ground can be a way at the far end of a union nothing on the water ever
+    // touches, and there was no way to see it from outside: the union, the
+    // maxima and the terminals are all locals in this block.
+    //
+    // Same move `terrain.py`'s `_report_dry` makes: a number that cannot be
+    // argued with becomes one that names its cause. Gated, because it walks
+    // every bridge way twice and indexOf's each one — set `__DBG_RUNS` before
+    // boot (Playwright's addInitScript) and read `__bridgeRuns` after.
+    if (typeof window !== 'undefined' && window.__DBG_RUNS) {
+      const runs = new Map();
+      bws.forEach((r, i) => {
+        const root = find(i);
+        let g = runs.get(root);
+        if (!g) { g = { root, cls: cls[i], ways: [], max: -Infinity, at: null }; runs.set(root, g); }
+        let len = 0;
+        for (let s = 0; s < r.p.length - 1; s++)
+          len += Math.hypot(r.p[s + 1][0] - r.p[s][0], r.p[s + 1][1] - r.p[s][1]);
+        // where this way's own ceiling comes from, and whether it is over water
+        let wm = -Infinity, wat = null;
+        for (const q of r.p) {
+          const h = TERRAIN.at(q[0], q[1]);
+          if (h > wm) { wm = h; wat = [Math.round(q[0]), Math.round(q[1])]; }
+        }
+        if (wm > g.max) { g.max = wm; g.at = wat; }
+        const wet = r.p.filter((q) =>
+          TERRAIN.waterFloor && TERRAIN.waterFloor(q[0], q[1]) !== null).length;
+        g.ways.push({ road: data.roads.indexOf(r), k: r.k, n: r.n || '', w: r.w,
+                      len: +len.toFixed(0), ws: r.ws || '',
+                      max: +wm.toFixed(2), at: wat, pts: r.p.length, wet });
+      });
+      window.__bridgeRuns = [...runs.values()].map((g) => ({
+        root: g.root, cls: g.cls, ways: g.ways,
+        runMax: +g.max.toFixed(2), runMaxAt: g.at,
+        deck: +(g.max + 1.2).toFixed(2),
+        aloft: !!runAloft.get(g.root),
+        terms: (runTerms.get(g.root) || []).map(
+          (t) => [Math.round(t[0]), Math.round(t[1]), +t[2].toFixed(2)]),
+      }));
+    }
   }
   let mainAxis = null, bestLen = Infinity;
   let _yt2 = performance.now();      // same time budget as buildBuildings
