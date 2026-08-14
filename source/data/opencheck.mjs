@@ -202,7 +202,7 @@ const out = await page.evaluate(({ STEP, MIN_POCKET }) => {
     if (id === -1 || id === mainId) continue;
     if (sizes[id] * area1 < MIN_POCKET) continue;
     let a = agg.get(id);
-    if (!a) { a = { n: 0, sx: 0, sz: 0, wall: 0, sea: 0, ghost: 0, tags: {} }; agg.set(id, a); }
+    if (!a) { a = { n: 0, sx: 0, sz: 0, wall: 0, sea: 0, ghost: 0, hoard: 0, tags: {} }; agg.set(id, a); }
     const cx = i % W, cz = (i - cx) / W;
     const x = mnx + cx * STEP, z = mnz + cz * STEP;
     a.n++; a.sx += x; a.sz += z;
@@ -246,6 +246,11 @@ const out = await page.evaluate(({ STEP, MIN_POCKET }) => {
       const qx = q % W, qz = (q - qx) / W;
       const t = (window.__solidWhat
         && window.__solidWhat(mnx + qx * STEP, mnz + qz * STEP)) || '(not traced)';
+      // A wall that DECLARES ITSELF is not an invisible wall. The RWS
+      // worksite hoarding names its materials 'hoarding' (sgdetail.js), and
+      // the name survives the merge into Solid's trace. Counted per edge so
+      // the enclosure can be classified below.
+      if (/mat:hoarding/.test(t)) a.hoard++;
       a.tags[t] = (a.tags[t] || 0) + 1;
     }
   }
@@ -260,6 +265,7 @@ const out = await page.evaluate(({ STEP, MIN_POCKET }) => {
     at: [Math.round(a.sx / a.n), Math.round(a.sz / a.n)],
     where: nameAt(a.sx / a.n, a.sz / a.n),
     ghostPct: a.wall ? Math.round(100 * a.ghost / a.wall) : 0,
+    hoardPct: a.wall ? Math.round(100 * a.hoard / a.wall) : 0,
     wall: a.wall,
     sea: a.sea,
     // share of the boundary that is GEOMETRY rather than water
@@ -280,8 +286,16 @@ console.log(`   land ${out.landM2.toLocaleString()} m2, `
             + `solid ${out.solidM2.toLocaleString()} m2 `
             + `(${out.ghostM2.toLocaleString()} m2 of it with no mapped building)`);
 console.log(`   main rideable body ${out.mainM2.toLocaleString()} m2`);
+// A HOARDED WORKSITE IS A DECLARED ENCLOSURE, NOT AN INVISIBLE WALL. The RWS
+// waterfront works (E4, owner-approved) ring ~30k m2 of reclamation behind
+// hoarding whose materials carry the name — a rider sees a real wall that
+// says what it is, which is the whole difference from the defect this check
+// hunts. It still fails if a mapped way runs into it: hoarding across a way
+// the map promises is trailcheck's case and this check's too.
+const worksites = out.pockets.filter((p) => p.sealPct >= 60
+  && p.hoardPct >= 60 && !p.wayIn);
 const walled = out.pockets.filter((p) => p.sealPct >= 60
-  && !(p.ghostPct <= 30 && !p.wayIn));
+  && !(p.ghostPct <= 30 && !p.wayIn) && !worksites.includes(p));
 const bywater = out.pockets.filter((p) => p.sealPct < 60);
 // A COURTYARD IS NOT AN INVISIBLE WALL.
 //
@@ -314,6 +328,10 @@ console.log(`   sealed by GEOMETRY: ${walled.length}`
             + `   (${walled.reduce((s, p) => s + p.m2, 0).toLocaleString()} m2)`);
 console.log(`   separated by water: ${bywater.length}`
             + `   (${bywater.reduce((s, p) => s + p.m2, 0).toLocaleString()} m2, not a defect)`);
+if (worksites.length) {
+  console.log(`   hoarded worksites (declared, authored): ${worksites.length}`
+              + `   (${worksites.reduce((s, p) => s + p.m2, 0).toLocaleString()} m2, not a defect)`);
+}
 console.log(`   courtyards between real buildings: ${courtyards.length}`
             + `   (no mapped way in and at most ${COURTYARD_GHOST_PCT}% ghost, not a defect)\n`);
 for (const p of walled.slice(0, 20)) {

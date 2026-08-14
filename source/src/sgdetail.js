@@ -1043,6 +1043,8 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
   sgmark('attractions');
   Object.assign(stats, await buildBeachWalk(world, data, Y));
   sgmark('beachWalk');
+  Object.assign(stats, await buildRwsWorksite(world, data, Y));
+  sgmark('rwsWorksite');
   return stats;
 }
 
@@ -4790,6 +4792,10 @@ export async function buildTransit(world, data, Y = null) {
           const [ax2, az2] = p[i], [bx2, bz2] = p[(i + 1) % p.length];
           const L = Math.hypot(bx2 - ax2, bz2 - az2);
           if (L < PANEL) continue;
+          // The plaza frontage carries the §3.1 GRAPHIC wall instead —
+          // buildRwsWorksite builds it, and this predicate is shared so the
+          // two hoarding systems can never both fence the same line.
+          if (rwsMintFrontage(ax2, az2, bx2, bz2)) continue;
           const ang = Math.atan2(bx2 - ax2, bz2 - az2);
           const n2 = Math.floor(L / PANEL);
           for (let k = 0; k < n2; k++) {
@@ -4798,12 +4804,19 @@ export async function buildTransit(world, data, Y = null) {
             // leave every crossing open — a haul road has a gate, not a wall
             if (nearWay(px, pz, 3.2)) continue;
             if (window.__blocked && window.__blocked(px, pz)) continue;
-            // NOT IN THE WATER: not needed, and measured. A "solid blue wall
-            // standing in the sea" from the Sentosa Boardwalk turned out to be a
-            // camera SEVEN METRES from a 2.4m panel on dry land — the works
-            // parcel genuinely reaches the waterfront, which is what the
-            // research describes. A heightfield guard was written for it and
-            // rejected ZERO panels island-wide, so it is not here.
+            // IN THE WATER AFTER ALL. The note that used to stand here said a
+            // heightfield guard was measured and rejected zero panels — true
+            // when written, and overtaken: the drawn lagoon between the quay
+            // and the Boardwalk landing now covers the parcel's east boundary,
+            // and the 2026-08-14 E4 vet frames show a long run of hoarding
+            // standing in open water. That lagoon is DRAWN sea (terrain below
+            // the sea surface), not a mapped water polygon, so an inWater
+            // test sees nothing there — the honest question is the drawn
+            // height against the drawn sea, which is the terrain-datum rule.
+            // Panels keep the quay edge (their ground holds them up); a panel
+            // whose ground is at sea level is standing in the sea and the
+            // water itself closes the boundary there.
+            if (drawnGroundAt(px, pz) <= (window.__seaY ?? 0) + 0.45) continue;
             const gy6 = surfaceAt(px, pz);
             const pan = new THREE.BoxGeometry(0.14, HOARD_H, L / n2);
             pan.rotateY(ang);
@@ -6295,6 +6308,241 @@ export async function buildBeachLife(world, data, Y = null) {
       out.patrolTowers++;
     }
   }
+
+  await merger.flushY(world, {}, Y);
+  return out;
+}
+
+// THE RWS WATERFRONT WORKSITE (E4) — STAGE 1: THE PUBLIC GRAPHIC WALL.
+//
+// Owner-approved 2026-08-14; spec in research/rws-worksite-spec.md, sources
+// in research/rws-architecture.md §3.1/E4/6.5. The first draft of this stage
+// built a second fence around ground the works parcel in buildTransit already
+// hoards — two hoarding systems interleaved, one of them marching across the
+// drawn lagoon. Vetted in frame and thrown away. THIS build adds only what
+// §3.1's first-hand photograph shows and the parcel build lacks: the segment
+// of hoarding FACING THE OCEANARIUM PLAZA is not construction blue — it is a
+// finished pale-mint graphic wall, 8-10 m, carrying large marine-life artwork
+// (a weedy seadragon, a lionfish, coral — colour and form only, no text, no
+// logos), a warm-gold festoon curtain along its top edge, uplights at the
+// base and black crowd barriers in front. The parcel's own west edge
+// (surveyed, segs at x < -1355 running south between z 11950 and 12075) IS
+// the frontage; the blue panels there are suppressed by the shared predicate
+// below, so the two builds can never both fence the same line.
+//
+// Materials are NAMED 'hoarding' so Solid's trace lets opencheck classify a
+// declared enclosure honestly (mechanism-declared, like groyneInWater).
+export const rwsMintFrontage = (ax, az, bx, bz) => {
+  const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+  return mx < -1355 && mz > 11950 && mz < 12075 && (bz - az) < -5;
+};
+export async function buildRwsWorksite(world, data, Y = null) {
+  const out = { mintWall: 0, worksiteArt: 0 };
+  const works = (data.land || []).filter((l2) => l2.k === 'works'
+    && l2.p && l2.p.length >= 4);
+  if (!works.length) return out;
+
+  // The frontage chain: the parcel's own west-facing segments, in parcel
+  // order (they are consecutive), as one polyline north -> south.
+  let chain = null;
+  for (const parcel of works) {
+    const p = parcel.p;
+    const segs = [];
+    for (let i = 0; i < p.length; i++) {
+      const a = p[i], b = p[(i + 1) % p.length];
+      if (rwsMintFrontage(a[0], a[1], b[0], b[1])) segs.push([a, b]);
+    }
+    if (segs.length >= 2) { chain = [segs[0][0], ...segs.map((s) => s[1])]; break; }
+  }
+  if (!chain) return out;
+
+  const merger = new Merger();
+  const M = {
+    mint: new THREE.MeshLambertMaterial({ color: 0x9fc9bd }),
+    cap: new THREE.MeshLambertMaterial({ color: 0xd8d8d4 }),
+    post: new THREE.MeshLambertMaterial({ color: 0x8a8f94 }),
+    art1: new THREE.MeshLambertMaterial({ color: 0xc65a2e }),   // seadragon, coral
+    art2: new THREE.MeshLambertMaterial({ color: 0xd9a026 }),   // leaf fins, coral
+    art3: new THREE.MeshLambertMaterial({ color: 0xb8352c }),   // lionfish red
+    art4: new THREE.MeshLambertMaterial({ color: 0xe8e4da }),   // lionfish white
+    gold: new THREE.MeshBasicMaterial({ color: 0xe8a83c }),     // festoon, self-lit
+    black: new THREE.MeshLambertMaterial({ color: 0x2b2d30 }),
+  };
+  for (const k of ['mint', 'cap', 'post']) M[k].name = 'hoarding';
+
+  // Arc-length parametrisation of the chain, plus the west normal at any s.
+  const lens = [];
+  let total = 0;
+  for (let i = 0; i < chain.length - 1; i++) {
+    const L = Math.hypot(chain[i + 1][0] - chain[i][0], chain[i + 1][1] - chain[i][1]);
+    lens.push(L); total += L;
+  }
+  const at = (s) => {
+    let acc = 0;
+    for (let i = 0; i < lens.length; i++) {
+      if (s <= acc + lens[i] || i === lens.length - 1) {
+        const t = Math.min(1, Math.max(0, (s - acc) / (lens[i] || 1)));
+        const [ax, az] = chain[i], [bx, bz] = chain[i + 1];
+        const ux = (bx - ax) / (lens[i] || 1), uz = (bz - az) / (lens[i] || 1);
+        // chain runs north -> south (dz < 0); the plaza is on its WEST, and
+        // rotating the direction +90deg in XZ gives (uz, -ux) — for a
+        // south-running segment that is negative-x, which is west. Checked
+        // against the Oceanarium's own position rather than trusted.
+        let nx = uz, nz = -ux;
+        if (nx > 0) { nx = -nx; nz = -nz; }
+        return { x: ax + (bx - ax) * t, z: az + (bz - az) * t, ux, uz, nx, nz,
+                 yaw: Math.atan2(bx - ax, bz - az) };
+      }
+      acc += lens[i];
+    }
+    return null;
+  };
+
+  const MINT_H = 9, PANEL = 4;
+  const bake = (geo, mat, x, y, z, ry = 0) => {
+    if (ry) geo.rotateY(ry);
+    geo.translate(x, y, z);
+    merger.add(geo, mat, x, z);
+  };
+
+  // THE WALL. Panel bays along the chain; posts on the WORKS side so the
+  // graphic face stays clean. No radial nearWay skip here — the promenade
+  // footway runs PARALLEL a few metres west and a proximity test deletes the
+  // whole wall; only a way actually CROSSING a bay opens a gate, and the
+  // carriageway test covers that.
+  for (let s = 0; s < total; s += PANEL) {
+    const L = Math.min(PANEL, total - s);
+    const q = at(s + L / 2);
+    if (window.__onRoad && window.__onRoad(q.x, q.z, 0.4)) continue;
+    const g0 = drawnGroundAt(q.x, q.z) - 0.3;
+    bake(new THREE.BoxGeometry(0.12, MINT_H + 0.3, L), M.mint,
+      q.x, g0 + (MINT_H + 0.3) / 2, q.z, q.yaw);
+    bake(new THREE.BoxGeometry(0.3, 0.14, L), M.cap,
+      q.x, g0 + MINT_H + 0.36, q.z, q.yaw);
+    const p0 = at(s);
+    bake(new THREE.BoxGeometry(0.3, MINT_H + 0.3, 0.3), M.post,
+      p0.x - p0.nx * 0.28, drawnGroundAt(p0.x, p0.z) - 0.3 + (MINT_H + 0.3) / 2,
+      p0.z - p0.nz * 0.28);
+    out.mintWall++;
+  }
+
+  if (Y) await Y();
+
+  // THE FESTOON — warm gold, sagging bays along the whole top edge. Self-lit
+  // material, no light objects (the many-lights-black-surfaces lesson).
+  {
+    const BAY = 8, SAG = 0.55, SP = 0.55;
+    for (let s0 = 0; s0 < total; s0 += BAY) {
+      const s1 = Math.min(s0 + BAY, total);
+      const qa = at(s0), qb = at(s1);
+      const top = Math.min(drawnGroundAt(qa.x, qa.z), drawnGroundAt(qb.x, qb.z))
+        - 0.3 + MINT_H + 0.42;
+      for (let s = s0; s <= s1; s += SP) {
+        const t = (s - s0) / (s1 - s0 || 1);
+        const q = at(s);
+        bake(new THREE.BoxGeometry(0.14, 0.14, 0.14), M.gold,
+          q.x + q.nx * 0.3, top - SAG * Math.sin(Math.PI * t), q.z + q.nz * 0.3);
+      }
+    }
+  }
+  // Uplight fixtures at the base, every 12m, plaza side.
+  for (let s = 6; s < total; s += 12) {
+    const q = at(s);
+    const g = new THREE.BoxGeometry(0.5, 0.24, 0.7);
+    g.rotateX(-0.5);
+    bake(g, M.black, q.x + q.nx * 0.7, drawnGroundAt(q.x, q.z) + 0.1, q.z + q.nz * 0.7, q.yaw);
+  }
+  // Black crowd barriers in two broken rows on the plaza side.
+  for (const [sA, sB] of [[total * 0.12, total * 0.42], [total * 0.55, total * 0.88]]) {
+    for (let s = sA; s < sB; s += 2.3) {
+      const q = at(s);
+      const bx = q.x + q.nx * 3.2, bz = q.z + q.nz * 3.2;
+      if (window.__onRoad && window.__onRoad(bx, bz, 0.4)) continue;
+      bake(new THREE.BoxGeometry(0.06, 1.05, 2.0), M.black, bx,
+        drawnGroundAt(bx, bz) + 0.55, bz, q.yaw);
+    }
+  }
+
+  if (Y) await Y();
+
+  // THE ARTWORK — flat authored shapes 15cm proud of the graphic face, sized
+  // to read from the Boardwalk at 150m. Species and colours from §3.1; forms
+  // are colour-block only. Each group is built in the wall's local frame at
+  // its own arc anchor: dz runs ALONG the wall, dy up, and the finished
+  // geometry is yawed to the local segment and pushed out along the west
+  // normal — the same rotate-then-translate idiom as the Siloso letters.
+  const artAt = (sAnchor, build) => {
+    const q = at(sAnchor);
+    // Seat the art on the HIGHER of the wall-line ground and the plaza ground
+    // a few metres out: the frontage ground falls away northward, and art
+    // anchored to the wall's own base came back half-buried when seen from
+    // the plaza — the lionfish read as a sunset sinking into the paving.
+    const g0 = Math.max(drawnGroundAt(q.x, q.z),
+                        drawnGroundAt(q.x + q.nx * 5, q.z + q.nz * 5)) - 0.3;
+    const put = (geo, mat, dz, y) => {
+      geo.rotateY(q.yaw);
+      geo.translate(q.x + q.ux * dz + q.nx * 0.15, g0 + y, q.z + q.uz * dz + q.nz * 0.15);
+      merger.add(geo, mat, q.x, q.z);
+    };
+    build(put);
+    out.worksiteArt++;
+  };
+  // weedy seadragon: a thin continuous S-curve of small plates, snout, curled
+  // tail, drooping leaf blades — the first draft's fat tilted boxes read as
+  // chevrons and were redone.
+  artAt(total * 0.28, (put) => {
+    const yAt = (t) => 3.6 + 1.5 * Math.sin(t * Math.PI * 1.6);
+    for (let i = 0; i <= 22; i++) {
+      const t = i / 22;
+      const b = new THREE.BoxGeometry(0.1, 0.85 - 0.35 * t, 1.0);
+      b.rotateX(-Math.cos(t * Math.PI * 1.6) * 0.5);
+      put(b, M.art1, -6.5 + 13 * t, yAt(t));
+    }
+    const sn = new THREE.BoxGeometry(0.1, 0.34, 1.9);
+    sn.rotateX(0.5);
+    put(sn, M.art1, -7.6, yAt(0) - 0.6);
+    for (const [dz, y, tilt] of [[6.9, 2.6, -1.0], [7.3, 2.1, -1.8], [7.0, 1.7, -2.6]]) {
+      const b = new THREE.BoxGeometry(0.1, 0.3, 0.7);
+      b.rotateX(tilt);
+      put(b, M.art2, dz, y);
+    }
+    for (const [t, len, lean] of [[0.12, 1.7, 0.55], [0.3, 2.1, 0.35], [0.5, 2.3, -0.1],
+                                  [0.68, 2.0, -0.4], [0.85, 1.6, -0.7]]) {
+      const f = new THREE.BoxGeometry(0.08, len, 0.5);
+      f.translate(0, len / 2, 0);
+      f.rotateX(lean);
+      put(f, M.art2, -6.5 + 13 * t, yAt(t) + 0.2);
+    }
+  });
+  // lionfish: red body disc, radial red/white spines, bands kept inside the
+  // disc's own radius.
+  artAt(total * 0.6, (put) => {
+    const body = new THREE.CylinderGeometry(1.7, 1.7, 0.1, 20);
+    body.rotateZ(Math.PI / 2);
+    put(body, M.art3, 0, 4.2);
+    for (let i = 0; i < 11; i++) {
+      const a = -Math.PI * 0.15 + (i / 10) * Math.PI * 1.3;
+      const sp = new THREE.BoxGeometry(0.1, 2.2, 0.34);
+      sp.translate(0, 1.9, 0);
+      sp.rotateX(a - Math.PI / 2);
+      put(sp, i % 2 ? M.art4 : M.art3, 0, 4.2);
+    }
+    for (const dz of [-0.9, 0, 0.9]) {
+      const bh = 2 * Math.sqrt(Math.max(0.2, 1.7 * 1.7 - dz * dz)) - 0.5;
+      put(new THREE.BoxGeometry(0.12, bh, 0.34), M.art4, dz, 4.2);
+    }
+  });
+  // coral: rounded flat clumps at two heights.
+  artAt(total * 0.85, (put) => {
+    for (const [dz, y, r, m] of [[-3.4, 2.2, 1.5, M.art1], [-1, 2.9, 1.9, M.art2],
+                                 [1.8, 2.3, 1.4, M.art3], [3.8, 3.1, 1.7, M.art1],
+                                 [0.4, 4.6, 1.1, M.art2]]) {
+      const sphere = new THREE.SphereGeometry(r, 10, 7, 0, Math.PI * 2, 0, Math.PI / 2);
+      sphere.rotateX(-Math.PI / 2);
+      sphere.scale(0.08, 1, 1);
+      put(sphere, m, dz, y);
+    }
+  });
 
   await merger.flushY(world, {}, Y);
   return out;
