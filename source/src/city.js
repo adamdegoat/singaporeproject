@@ -3094,8 +3094,32 @@ export async function buildBuildings(world, data, Y = null) {
     // building=construction means there is no building there yet, and drawing
     // one asserts something false about the city. Ahead of the shophouse test
     // and the recipe table because neither of those has any way to know.
+    //
+    // ...AND A SITE INSIDE A SITE IS NOT TWO SITES. A `con` footprint whose
+    // centroid lies inside a mapped `works` parcel is already inside a
+    // hoarded, craned, stocked worksite (buildTransit builds it), and giving
+    // it its OWN ring and 38 m mast drew a second fence and a red monolith
+    // in the middle of the E4 yard — the plaza vet frames of 2026-08-14 kept
+    // catching it. The parcel IS the site; the footprint stays bare ground.
     if (b.con && !window.__noSites) {
-      constructionSite(api, b);
+      let _inWorks = false;
+      if (b.p && b.p.length) {
+        let _cx = 0, _cz = 0;
+        for (const [_x, _z] of b.p) { _cx += _x; _cz += _z; }
+        _cx /= b.p.length; _cz /= b.p.length;
+        for (const _l of (data.land || [])) {
+          if (_l.k !== 'works' || !_l.p || _l.p.length < 4) continue;
+          let _in = false;
+          const _pp = _l.p;
+          for (let _i = 0, _j = _pp.length - 1; _i < _pp.length; _j = _i++) {
+            if ((_pp[_i][1] > _cz) !== (_pp[_j][1] > _cz)
+                && _cx < ((_pp[_j][0] - _pp[_i][0]) * (_cz - _pp[_i][1]))
+                         / (_pp[_j][1] - _pp[_i][1]) + _pp[_i][0]) _in = !_in;
+          }
+          if (_in) { _inWorks = true; break; }
+        }
+      }
+      if (!_inWorks) constructionSite(api, b);
       stats.count++; stats.sites = (stats.sites || 0) + 1;
       continue;
     }

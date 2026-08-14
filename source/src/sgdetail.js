@@ -4958,6 +4958,188 @@ export async function buildTransit(world, data, Y = null) {
         }
       }
       out.worksKit = kit;
+
+      // -- E4 STAGE 2: what §6.5 lists and the yard still lacked ----------
+      //
+      // "Crawler cranes and piling rigs are the DOMINANT machine — roughly
+      // 6-10 in a single frame" — and this yard drew zero. Three dark-maroon
+      // lattice-boom crawlers, one with the red-and-white banded boom the
+      // stills show; a flooded excavation pit with green standing water at
+      // the satellite anchor; one white marquee. All deterministic from the
+      // parcel's own bounding box and the spec's fixed anchors — no rand().
+      const crawlerMaroon = new THREE.MeshLambertMaterial({ color: 0x6e2f28 });
+      const boomWhite = new THREE.MeshLambertMaterial({ color: 0xe8e4da });
+      const pitWater = new THREE.MeshLambertMaterial({ color: 0x5f8a5a });
+      const pitBerm = new THREE.MeshLambertMaterial({ color: 0x9a8560 });
+      for (const parcel of works) {
+        const p = parcel.p;
+        let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+        for (const [x2, z2] of p) {
+          if (x2 < mnx) mnx = x2; if (x2 > mxx) mxx = x2;
+          if (z2 < mnz) mnz = z2; if (z2 > mxz) mxz = z2;
+        }
+        if (mxx - mnx < 100) continue;               // the E4 parcel, not a yard
+        await YY();
+        // three crawlers at fixed fractions, each yawed differently
+        const CRAWLERS = [[0.30, 0.68, 0.7, true], [0.52, 0.5, 2.1, false],
+                          [0.72, 0.72, 4.0, false]];
+        for (const [fx5, fz5, cyaw, banded] of CRAWLERS) {
+          const cx5 = mnx + (mxx - mnx) * fx5, cz5 = mnz + (mxz - mnz) * fz5;
+          if (!inWorks(cx5, cz5, p)) continue;
+          if (nearWay(cx5, cz5, 6)) continue;
+          if (window.__blocked && window.__blocked(cx5, cz5)) continue;
+          const gy8 = surfaceAt(cx5, cz5);
+          const put2 = (geo) => { geo.rotateY(cyaw); geo.translate(cx5, 0, cz5); return geo; };
+          for (const s2 of [-1.35, 1.35]) {
+            const tr = new THREE.BoxGeometry(0.85, 0.95, 5.6);
+            tr.translate(s2, gy8 + 0.48, 0);
+            merger.add(put2(tr), crawlerMaroon, cx5, cz5);
+          }
+          const body = new THREE.BoxGeometry(2.7, 1.7, 3.8);
+          body.translate(0, gy8 + 2.0, 0);
+          merger.add(put2(body), crawlerMaroon, cx5, cz5);
+          const cab2 = new THREE.BoxGeometry(1.2, 1.2, 1.5);
+          cab2.translate(1.0, gy8 + 3.3, 1.0);
+          merger.add(put2(cab2), boomWhite, cx5, cz5);
+          // the lattice boom: ~30 m at 52 deg, in four segments so one crane
+          // can carry the red-white banding
+          const BL = 30, EL = 0.91;                   // elevation, radians
+          for (let sg2 = 0; sg2 < 4; sg2++) {
+            const segL = BL / 4;
+            const b2 = new THREE.BoxGeometry(0.65, 0.65, segL);
+            b2.translate(0, 0, segL / 2 + sg2 * segL);
+            b2.applyMatrix4(new THREE.Matrix4().makeRotationX(-EL));
+            b2.translate(0, gy8 + 2.8, 1.6);
+            merger.add(put2(b2), (banded && sg2 % 2) ? boomWhite : crawlerMaroon, cx5, cz5);
+          }
+          kit++;
+        }
+        // the flooded pit, green standing water behind a low berm — §6.9's
+        // "flooded excavation pit with green standing water", at its own
+        // satellite anchor when that anchor is inside this parcel
+        const PX = -1272, PZ = 12016;
+        if (inWorks(PX, PZ, p) && !nearWay(PX, PZ, 6)) {
+          const gy9 = surfaceAt(PX, PZ);
+          const wtr = new THREE.BoxGeometry(26, 0.1, 15);
+          wtr.rotateY(0.35);
+          wtr.translate(PX, gy9 + 0.1, PZ);
+          merger.add(wtr, pitWater, PX, PZ);
+          for (const [du, dv, w2, d2] of [[0, -8.6, 28, 1.6], [0, 8.6, 28, 1.6],
+                                          [-14.2, 0, 1.6, 16], [14.2, 0, 1.6, 16]]) {
+            const berm = new THREE.BoxGeometry(w2, 0.75, d2);
+            berm.rotateY(0.35);
+            berm.translate(PX + du * Math.cos(0.35) - dv * Math.sin(0.35), gy9 + 0.38,
+                           PZ + du * Math.sin(0.35) + dv * Math.cos(0.35));
+            merger.add(berm, pitBerm, PX, PZ);
+          }
+          kit++;
+        }
+        // one white marquee: four posts and a shallow four-sided tent roof
+        const MX = mnx + (mxx - mnx) * 0.42, MZ = mnz + (mxz - mnz) * 0.34;
+        if (inWorks(MX, MZ, p) && !nearWay(MX, MZ, 6)
+            && !(window.__blocked && window.__blocked(MX, MZ))) {
+          const gyA = surfaceAt(MX, MZ);
+          for (const [sx4, sz4] of [[-4.5, -3], [4.5, -3], [-4.5, 3], [4.5, 3]]) {
+            const post2 = new THREE.BoxGeometry(0.16, 3.0, 0.16);
+            post2.translate(MX + sx4, gyA + 1.5, MZ + sz4);
+            merger.add(post2, boomWhite, MX, MZ);
+          }
+          const tent = new THREE.ConeGeometry(6.6, 2.4, 4);
+          tent.rotateY(Math.PI / 4);
+          tent.scale(1.5, 1, 1);
+          tent.translate(MX, gyA + 4.2, MZ);
+          merger.add(tent, boomWhite, MX, MZ);
+          kit++;
+        }
+      }
+
+      // -- E4 STAGE 3: THE MARINE WORKS. §6.3's MPA notice authorises work
+      // barges, a crane barge and a standing safety tug on this stretch 24
+      // hours a day through December 2026, and §6.9 calls the yellow silt
+      // curtains "the cheapest single thing we could add that would make the
+      // RWS waterfront read as 2026 rather than 2015". Everything floats in
+      // DRAWN sea only — each anchor is tested against the terrain datum and
+      // skipped if the reclamation has drawn ground there — and every
+      // material declares itself in the water, the groynes' own mechanism,
+      // or W2 reads the whole fleet as a defect list.
+      {
+        const seaY = (typeof window !== 'undefined' && window.__seaY) || 0;
+        const hullRust = new THREE.MeshLambertMaterial({ color: 0x7a5240 });
+        const hullBlue = new THREE.MeshLambertMaterial({ color: 0x2f5f86 });
+        const cabWhite = new THREE.MeshLambertMaterial({ color: 0xe3e5e0 });
+        const boomYellow = new THREE.MeshLambertMaterial({ color: 0xd9b422 });
+        const buoyOrange = new THREE.MeshLambertMaterial({ color: 0xd96a1e });
+        const steelRed = new THREE.MeshLambertMaterial({ color: 0x9c4a2c });
+        for (const m2 of [hullRust, hullBlue, cabWhite, boomYellow, buoyOrange, steelRed]) {
+          m2.userData.groyneInWater = true;
+        }
+        const afloat = (x, z) => drawnGroundAt(x, z) <= seaY + 0.05;
+        let fleet = 0;
+        // four flat-top spud barges with red steel on deck
+        for (const [bx4, bz4, byaw] of [[-1390, 11845, 0.3], [-1330, 11828, 1.25],
+                                        [-1255, 11838, 0.9], [-1180, 11824, 2.0]]) {
+          if (!afloat(bx4, bz4)) continue;
+          const put3 = (geo) => { geo.rotateY(byaw); geo.translate(bx4, 0, bz4); return geo; };
+          const hull = new THREE.BoxGeometry(38, 2.4, 14);
+          hull.translate(0, seaY + 0.1, 0);
+          merger.add(put3(hull), hullRust, bx4, bz4);
+          for (const off2 of [-11, -3, 6]) {
+            const steel = new THREE.BoxGeometry(1.6, 1.3, 10);
+            steel.translate(off2, seaY + 1.9, 0.8);
+            merger.add(put3(steel), steelRed, bx4, bz4);
+          }
+          fleet++;
+        }
+        // the crane barge: same hull, yellow lattice crane
+        if (afloat(-1300, 11856)) {
+          const put3 = (geo) => { geo.rotateY(0.55); geo.translate(-1300, 0, 11856); return geo; };
+          const hull = new THREE.BoxGeometry(34, 2.4, 15);
+          hull.translate(0, seaY + 0.1, 0);
+          merger.add(put3(hull), hullRust, -1300, 11856);
+          const mast2 = new THREE.BoxGeometry(1.4, 9, 1.4);
+          mast2.translate(-8, seaY + 5.5, 0);
+          merger.add(put3(mast2), boomYellow, -1300, 11856);
+          const jib2 = new THREE.BoxGeometry(0.9, 0.9, 26);
+          jib2.translate(0, 0, 13);
+          jib2.applyMatrix4(new THREE.Matrix4().makeRotationX(-0.75));
+          jib2.translate(-8, seaY + 9.6, 0);
+          merger.add(put3(jib2), boomYellow, -1300, 11856);
+          fleet++;
+        }
+        // the safety tug: small blue hull, white wheelhouse
+        if (afloat(-1225, 11848)) {
+          const put3 = (geo) => { geo.rotateY(2.6); geo.translate(-1225, 0, 11848); return geo; };
+          const hull = new THREE.BoxGeometry(11, 2.2, 4.6);
+          hull.translate(0, seaY + 0.3, 0);
+          merger.add(put3(hull), hullBlue, -1225, 11848);
+          const house = new THREE.BoxGeometry(3.4, 2.4, 3.2);
+          house.translate(-1.2, seaY + 2.6, 0);
+          merger.add(put3(house), cabWhite, -1225, 11848);
+          fleet++;
+        }
+        // the silt-curtain boom: one long, gently kinked run of yellow floats
+        // with orange marker buoys every 30 m
+        const BOOM = [[-1432, 11928], [-1372, 11880], [-1292, 11856],
+                      [-1212, 11844], [-1152, 11850]];
+        let run = 0;
+        for (let i2 = 0; i2 < BOOM.length - 1; i2++) {
+          const [ax3, az3] = BOOM[i2], [bx5, bz5] = BOOM[i2 + 1];
+          const L2 = Math.hypot(bx5 - ax3, bz5 - az3);
+          for (let t2 = 0; t2 < L2; t2 += 2.4) {
+            const x3 = ax3 + (bx5 - ax3) * t2 / L2, z3 = az3 + (bz5 - az3) * t2 / L2;
+            if (!afloat(x3, z3)) continue;
+            run += 2.4;
+            const isBuoy = (run % 30) < 2.4;
+            const f2 = new THREE.BoxGeometry(isBuoy ? 1.1 : 0.7,
+              isBuoy ? 1.1 : 0.5, isBuoy ? 1.1 : 1.9);
+            if (!isBuoy) f2.rotateY(Math.atan2(bx5 - ax3, bz5 - az3));
+            f2.translate(x3, seaY + (isBuoy ? 0.45 : 0.2), z3);
+            merger.add(f2, isBuoy ? buoyOrange : boomYellow, x3, z3);
+          }
+        }
+        out.worksFleet = fleet;
+      }
+      out.worksKit = kit;
     }
   }
 
