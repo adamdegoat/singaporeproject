@@ -172,6 +172,31 @@ const SPOTS = [
   // filled the frame. It now stands on the deep end of centralbeach.py's own
   // authored sand and still looks straight out at the stage.
   ['wings-stage', -1858, 12757, 0.15],
+  // NO FRAME COULD SEE A BRIDGE ABUTMENT, and that is the fifth time this
+  // argument has been written in this file. On 2026-08-14 the approach-ramp
+  // rule changed — a run's own highest landing had been exempt from its ramp
+  // by construction, so 60 abutments on sentosa, 26 on marinabay, 9 on
+  // harbourfront and 5 on keppel all changed shape in one batch — and ALL
+  // TWENTY-THREE FRAMES ABOVE CAME BACK AT 0.000%. Not one of them has a deck
+  // meeting the ground in it. `arrival-causeway` stands mid-channel and looks
+  // along the water; `gateway-viaduct` watches the guideway from 900 m away.
+  //
+  // The abutment had to be vetted by hand instead (shots/street/ramp-*), which
+  // is exactly the thing the golden set exists to stop being necessary. This
+  // stands ON the causeway deck AT the Sentosa landing and looks down it, so
+  // both carriageways and the point where the deck comes down to grade are in
+  // frame — the geometry a ramp change moves.
+  //
+  // THE VANTAGE WAS CHOSEN BY MEASURING IT, not by looking at it. Five
+  // candidates were shot with the old rule restored and again with the new
+  // one, and the differences are not close: 54 m back up the deck reads
+  // 0.119% — INSIDE the 0.1% gate by a hair, which is a frame that would have
+  // shipped the regression back. From the landing itself it is 24.5%. The
+  // others: 0.611%, 0.374%, 1.206%. A watchdog whose margin is 0.019% is not a
+  // watchdog. Standing ON the surface under test means the camera moves when
+  // the deck does, which is the same thing `beachwalk-grade` and `spawn` do
+  // and is the whole point of it.
+  ['gateway-landing', -1063, 12145, 0],
 ];
 
 mkdirSync(ACT, { recursive: true });

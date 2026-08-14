@@ -3118,6 +3118,37 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   await bstep(0.09, `raising ${(data.buildings || []).length.toLocaleString()} buildings`);
   const bs = P.has('nobuild') ? { count: 0, tall: 0 } : await buildBuildings(world, data);
   bmark('buildings');
+  // PLANTING GETS ITS OWN STREAM, SO WHAT IS BUILT CANNOT MOVE A TREE.
+  //
+  // The placement stream is module-level, so everything built after a building
+  // draws from wherever that building left the cursor — change ONE record and
+  // the whole island re-rolls. Measured 2026-08-14: a `con` flag on one 832 m2
+  // footprint moved 20 of 24 golden frames, `spawn` by 18.01%, with the trunk
+  // count IDENTICAL at 18,351 — a relocation, not a loss. `?reseed` already
+  // fires, but before buildBuildings, so it buys district order-independence
+  // and not this.
+  //
+  // With this line: 20 frames -> 4, and the ones that mattered go to zero —
+  // spawn 18.01% -> 0.000%, serapong 19.28% -> 0.000%, sensoryscape 11.97% ->
+  // 0.000%, siloso-letters 9.97% -> 0.000%.
+  //
+  // IT IS NOT COMPLETE ISOLATION AND THE HANDOVER SHOULD NOT PROMISE ONE.
+  // Two modes: OFFSET, which this fixes, and DIVERGENCE — a tree near an edit
+  // accepted or rejected differently by TreeField.add()'s guards puts the
+  // stream out of step for everything planted after it, and no reseed reaches
+  // that because it starts downstream. Measured: reseeding here and reseeding
+  // just before plantSurveyed leave the IDENTICAL four residuals to three
+  // decimals, which is what proves the residue is not an offset. The end state
+  // is per-tree randomness from a POSITION HASH, the technique city.js already
+  // argues for at the leaf cards.
+  //
+  // Shipped 2026-08-14 on the owner's call, as its own batch, with all 24
+  // baselines re-vetted frame by frame and re-blessed.
+  {
+    let ph = 0x504c414e;                       // 'PLAN'
+    for (const ch of SCENE) ph = (Math.imul(ph, 31) + ch.charCodeAt(0)) >>> 0;
+    reseedPlacement(ph);
+  }
   // one sweep over what the building pass just added, before any street
   // furniture exists, so the scope is exactly "buildings and landmarks"
   const pruned = await pruneCarriageway(world, ROADIX.onRoad, (x, z) => terrain.at(x, z));

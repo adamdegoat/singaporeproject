@@ -97,7 +97,32 @@ const out = await page.evaluate(({ STEP, MIN_POCKET }) => {
       const i = iz * W + ix;
       if (window.__solid && window.__solid(x, z)) {
         grid[i] = SOLID; solidN++;
-        if (window.__inFootprint && !window.__inFootprint(x, z)) { ghostFlag[i] = 1; ghostN++; }
+        // A WALL HAS THICKNESS, AND THE GHOST TEST WAS COUNTING IT AS INVENTED.
+        //
+        // `ghost` is meant to say "geometry WE made up, sealing ground the map
+        // calls open" — and it asked `__inFootprint` at the cell centre, which
+        // a building's own outer skin fails. Measured 2026-08-14 across 278
+        // wall crossings at Sentosa Cove: the drawn solid extends a MEDIAN OF
+        // 0.5 m past its own footprint (p90 1.0 m). On this raster that puts
+        // roughly half of any building's boundary samples in the skin, and
+        // every pocket walled by real houses came back "49-52% with no
+        // building behind" — which reads as our invention and is the mapped
+        // building.
+        //
+        // It mattered twice over: `ghostPct` is also what exempts a courtyard
+        // between real buildings (<=30%), so genuine courtyards sat at ~50%
+        // and were reported as defects instead.
+        //
+        // A cell within one metre of a mapped footprint is that footprint's
+        // WALL. Beyond that it is ours, which is what the measure was for.
+        if (window.__inFootprint && !window.__inFootprint(x, z)) {
+          let near = false;
+          for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1],
+                                  [0.7, 0.7], [0.7, -0.7], [-0.7, 0.7], [-0.7, -0.7]]) {
+            if (window.__inFootprint(x + dx, z + dz)) { near = true; break; }
+          }
+          if (!near) { ghostFlag[i] = 1; ghostN++; }
+        }
       } else {
         grid[i] = FREE;
       }
