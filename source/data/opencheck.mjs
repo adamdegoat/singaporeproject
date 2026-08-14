@@ -91,8 +91,19 @@ const out = await page.evaluate(({ STEP, MIN_POCKET }) => {
     const z = mnz + iz * STEP;
     for (let ix = 0; ix < W; ix++) {
       const x = mnx + ix * STEP;
-      if (window.__inWater && window.__inWater(x, z)) continue;
-      if (window.__terrain && window.__terrain.at(x, z) < 0.35) continue;
+      // A DECK OVER WATER IS GROUND YOU CAN RIDE. The flood used to see what
+      // the TERRAIN sees, and the rider rides what rideBlocked() sees — which
+      // clears any deck. Pearl Island and Sandy Island (2026-08-14) are the
+      // measured case: both reported "sealed by geometry" while their own
+      // access-road bridges crossed the moat, because the water cells under
+      // the deck never entered the raster and the islands could not connect
+      // to the main body through them. Ask the rider's question, not the
+      // terrain's.
+      const deck = window.__anyDeckAt && window.__anyDeckAt(x, z) !== null;
+      if (!deck) {
+        if (window.__inWater && window.__inWater(x, z)) continue;
+        if (window.__terrain && window.__terrain.at(x, z) < 0.35) continue;
+      }
       landN++;
       const i = iz * W + ix;
       if (window.__solid && window.__solid(x, z)) {
@@ -152,6 +163,31 @@ const out = await page.evaluate(({ STEP, MIN_POCKET }) => {
   }
   let mainId = -1, mainN = 0;
   for (let i = 0; i < sizes.length; i++) if (sizes[i] > mainN) { mainN = sizes[i]; mainId = i; }
+
+  // WHICH POCKETS DOES THE MAP ITSELF PROMISE A WAY INTO? Sample every mapped
+  // way at 1m and note the component under each sample. This is the honest
+  // discriminator between a defect and a courtyard, measured 2026-08-14:
+  // Pearl and Sandy Island are ringed by real houses AND real water — but
+  // their mapped access roads enter them, so the map says a visitor gets in,
+  // and a world where they cannot is wrong. The Seven Palms courtyard is
+  // ringed by the condo's own connected blocks and NO mapped way enters: the
+  // map says the only way in is through the building, and that is the map
+  // being right, whatever the courtyard's size.
+  const wayComp = new Set();
+  for (const r of (d.roads || [])) {
+    const pts = r.p || [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+      const L = Math.hypot(bx - ax, bz - az) || 1;
+      for (let t = 0; t <= L; t += 1) {
+        const x = ax + (bx - ax) * t / L, z = az + (bz - az) * t / L;
+        const ix = Math.round((x - mnx) / STEP), iz = Math.round((z - mnz) / STEP);
+        if (ix < 0 || ix >= W || iz < 0 || iz >= H) continue;
+        const id = comp[iz * W + ix];
+        if (id !== -1 && id !== mainId) wayComp.add(id);
+      }
+    }
+  }
 
   // ---- describe every component that is not the main body
   const area1 = STEP * STEP;
@@ -218,7 +254,8 @@ const out = await page.evaluate(({ STEP, MIN_POCKET }) => {
   // islet, a sandbar, the far side of a lagoon). Only an enclosure made of
   // GEOMETRY is a defect, so they are counted apart and only the walled ones
   // can fail the check.
-  const pockets = [...agg.values()].map((a) => ({
+  const pockets = [...agg.entries()].map(([id, a]) => ({
+    wayIn: wayComp.has(id),
     m2: Math.round(a.n * area1),
     at: [Math.round(a.sx / a.n), Math.round(a.sz / a.n)],
     where: nameAt(a.sx / a.n, a.sz / a.n),
@@ -244,7 +281,7 @@ console.log(`   land ${out.landM2.toLocaleString()} m2, `
             + `(${out.ghostM2.toLocaleString()} m2 of it with no mapped building)`);
 console.log(`   main rideable body ${out.mainM2.toLocaleString()} m2`);
 const walled = out.pockets.filter((p) => p.sealPct >= 60
-  && !(p.m2 <= 120 && p.ghostPct <= 30));
+  && !(p.ghostPct <= 30 && !p.wayIn));
 const bywater = out.pockets.filter((p) => p.sealPct < 60);
 // A COURTYARD IS NOT AN INVISIBLE WALL.
 //
@@ -260,17 +297,25 @@ const bywater = out.pockets.filter((p) => p.sealPct < 60);
 // rather than the map's." Ghost-walled stays a defect and still fails. Small
 // ground ringed by the map's own buildings is the map being right.
 //
-// Bounded deliberately: under 120 m2 AND at most 30% ghost. A courtyard you
-// could hold a wedding in, or one whose walls we invented, still reports.
-const COURTYARD_M2 = 120, COURTYARD_GHOST_PCT = 30;
+// The bound used to be AREA (under 120 m2), which was a proxy — and the
+// Seven Palms courtyard (256 m2, ringed by the condo's own blocks touching
+// at 0.00 m in the map, no mapped way in) sat on the wrong side of it. The
+// direct question replaced it on 2026-08-14: DOES THE MAP PROMISE A WAY IN?
+// A pocket a mapped road or footway enters is a defect whatever its size —
+// the map says a visitor gets there (Pearl and Sandy Island's access
+// bridges, before their decks were fixed the same day). A pocket no mapped
+// way enters, ringed by the map's own buildings, is the map being right —
+// the only way in is through the building. Ghost-walled still reports: walls
+// we invented are our bug at any size.
+const COURTYARD_GHOST_PCT = 30;
 const courtyards = out.pockets.filter((p) => p.sealPct >= 60
-  && p.m2 <= COURTYARD_M2 && p.ghostPct <= COURTYARD_GHOST_PCT);
+  && !p.wayIn && p.ghostPct <= COURTYARD_GHOST_PCT);
 console.log(`   sealed by GEOMETRY: ${walled.length}`
             + `   (${walled.reduce((s, p) => s + p.m2, 0).toLocaleString()} m2)`);
 console.log(`   separated by water: ${bywater.length}`
             + `   (${bywater.reduce((s, p) => s + p.m2, 0).toLocaleString()} m2, not a defect)`);
 console.log(`   courtyards between real buildings: ${courtyards.length}`
-            + `   (under ${COURTYARD_M2} m2 and at most ${COURTYARD_GHOST_PCT}% ghost, not a defect)\n`);
+            + `   (no mapped way in and at most ${COURTYARD_GHOST_PCT}% ghost, not a defect)\n`);
 for (const p of walled.slice(0, 20)) {
   console.log(`   ${String(p.m2).padStart(6)} m2  at ${p.at[0]},${p.at[1]}  ${p.where}`
               + `   ${p.sealPct}% of its edge is geometry (${p.wall} solid / ${p.sea} sea), ${p.ghostPct}% of that with no building behind`);

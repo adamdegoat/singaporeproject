@@ -4441,7 +4441,8 @@ export async function buildRoads(world, data, Y = null) {
       const root = find(i);
       if (runAloft.get(root)) return;
       const deck0 = runMax.get(root) + 1.2;
-      for (const q of r.p) {
+      for (let qi = 0; qi < r.p.length && !runAloft.get(root); qi++) {
+        const q = r.p[qi];
         // A CROSSING OVER WATER IS ALWAYS A BRIDGE, whatever the arithmetic
         // says. TERRAIN.at over a causeway reads the made ground it sits on,
         // so the clearance test can decide the Sentosa Gateway — the road
@@ -4449,10 +4450,29 @@ export async function buildRoads(world, data, Y = null) {
         // piers into the strait. Whether a span is high enough to need piers
         // is a judgement; whether it is over water is a fact, and the fact
         // wins.
+        //
+        // AND THE FACT MUST BE ASKED ALONG THE SPAN, NOT AT THE VERTICES.
+        // Sentosa Cove's three island bridges (Pearl, Sandy, Coral) are
+        // 2-point ways whose endpoints both stand on dry bank — the water is
+        // only ever mid-segment, so a vertex test never sees it, the
+        // clearance arithmetic reads ~1m over the waterway's uncarved 7m
+        // ground, and the run was declared "never in the air". No deck, so
+        // the mapped water walled the rider ON the access road: the Pearl
+        // and Sandy Island pockets of 2026-08-14. Walk each segment at 3m.
         if (TERRAIN.waterFloor && TERRAIN.waterFloor(q[0], q[1]) !== null) {
           runAloft.set(root, true); break;
         }
         if (deck0 - DECK_T - TERRAIN.at(q[0], q[1]) >= LOW_CLEAR) { runAloft.set(root, true); break; }
+        if (qi + 1 < r.p.length && TERRAIN.waterFloor) {
+          const n = r.p[qi + 1];
+          const L = Math.hypot(n[0] - q[0], n[1] - q[1]);
+          for (let t = 3; t < L; t += 3) {
+            if (TERRAIN.waterFloor(q[0] + (n[0] - q[0]) * t / L,
+                                   q[1] + (n[1] - q[1]) * t / L) !== null) {
+              runAloft.set(root, true); break;
+            }
+          }
+        }
       }
       if (!runAloft.has(root)) runAloft.set(root, false);
     });
