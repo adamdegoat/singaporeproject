@@ -1455,12 +1455,14 @@ const statAdd = (o) => {
 // DO NOT "FIX" THIS AGAIN. Vehicles yes, pedestrians no. The whole crowd
 // system stays in the tree and stays correct behind the flag.
 const PEOPLE = P.has('people');
-// ?planthash=1 — param-gated prototype: every tree draws its crown from a
-// hash of its own position instead of the shared placement stream, killing
-// the residual DIVERGENCE mode the reseed cannot reach. Flipping it on by
-// default reshuffles the island's planting once and is the owner's call;
-// see TreeField._tree in city.js.
-window.__planthash = P.has('planthash');
+// POSITION-KEYED LOOKS ARE THE DEFAULT (owner's "ok", 2026-08-14). Every
+// tree crown and every building's facade picks draw from a hash of their own
+// position instead of the shared placement stream, so no edit can move any
+// other thing's look — the A/B took the same edit from 20 disturbed golden
+// frames to one. The flip cost one island-wide reshuffle, vetted frame by
+// frame and re-blessed the same day. ?noplanthash restores the old stream
+// for A/B archaeology only.
+window.__planthash = !P.has('noplanthash');
 // 280 on phones (was 340), part of the owner's 2026-08-03 "make all smooth"
 // package: small dressing (kerbs, benches, plates) drops out 60m earlier.
 const LOD_FAR = PHONE ? 280 : 500;

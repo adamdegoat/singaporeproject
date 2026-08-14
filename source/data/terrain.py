@@ -1143,6 +1143,16 @@ def main():
         sunk_dem = 0
         kept_w = 0
         skipped_sea = 0
+        # AN INLAND CHANNEL BANK IS A QUAY, NOT A BEACH. Cells the DEM-witness
+        # clauses carve (SG_CARVE) are collected here, and the shore-ease and
+        # shore-smooth passes below refuse to treat them as "sea": without
+        # this, carving the Cove moats pulled Sandy Island down four metres —
+        # every island cell sat within the ease pass's three-cell reach of a
+        # newly-sunk moat cell and was graded to a beach ramp (SESSION 18
+        # part 5, measured). The real Cove banks are vertical quay walls; the
+        # water steps down at them, the land does not ramp in. Empty without
+        # the flag, so the default build is untouched.
+        _quay = set()
         for ring in rings:
             if coast_rings:
                 inn = sum(1 for p in ring[::max(1, len(ring)//60)]
@@ -1154,7 +1164,12 @@ def main():
             rim = min((grid_at(grid, x, z) for x, z in ring), default=None)
             if rim is None:
                 continue
-            floor = rim - 2.0
+            # Rings are processed SEQUENTIALLY off the live grid, so a ring
+            # whose lowest vertex lands on a cell an earlier ring already sank
+            # reads rim -2 and writes floor -4 — the whole grid datum shifted
+            # (base -2 -> -4) the first time the carve ran. A rim is a
+            # WATERLINE; it is never below the sea.
+            floor = max(rim, 0.0) - 2.0
             rx0 = min(p[0] for p in ring); rx1 = max(p[0] for p in ring)
             rz0 = min(p[1] for p in ring); rz1 = max(p[1] for p in ring)
             # first pass: how wide is this ring, in cells that are inside it
@@ -1224,6 +1239,7 @@ def main():
                         _dry_log.append(("water-sink", gx, gz, built_why(gx, gz)))
                         continue
                     grid["h"][k] = SEA_SINK
+                    _quay.add(k)
                     sunk_dem += 1
         if skipped_sea:
             print(f"   {skipped_sea} water ring(s) mostly outside the coast — "
@@ -1337,7 +1353,6 @@ def main():
         # a stilted deck and the Keppel wharves out of the water.
         sunk_sea = 0
         kept_built = 0
-        smear_cand = []
         for j in range(grid["nz"]):
             gz = grid["z0"] + j * CELL
             for i in range(grid["nx"]):
@@ -1350,44 +1365,26 @@ def main():
                 if on_building(gx, gz):
                     continue
                 if carries_built(gx, gz):
-                    # A feature ON the cell holds real ground. A feature one
-                    # cell AWAY is the 3x3 bilinear guard — right beside a
-                    # quay, wrong across a channel: the Sentosa Cove moats
-                    # (outside the surveyed coastline, so they are THIS
-                    # pass's cells) stayed 6-9 m grass because the waterside
-                    # promenades stand within a cell of all of them. Defer
-                    # the neighbour-held cells to the DEM: where the raw
-                    # array reads under 0.8 m the cell is sea, whatever
-                    # stands next door.
-                    if (not os.environ.get("SG_CARVE")
-                            or carries_built_here(gx, gz)):
-                        kept_built += 1
-                        _dry_log.append(("sea-sink", gx, gz, built_why(gx, gz)))
-                    else:
-                        smear_cand.append((k, gx, gz))
+                    # The 3x3 keep is generous — and on the beaches it is
+                    # CORRECT: the drawn sand legitimately stands seaward of
+                    # the surveyed coastline (the beach cut builds it there),
+                    # and it is the beach-walk's own features that hold it.
+                    # A DEM-witnessed carve was tried here (SESSION 18) and
+                    # ate Palawan Beach whole — the waterline golden showed
+                    # the rider floating on open water where the sand was.
+                    # Channel carving belongs to the WATER-SINK pass, whose
+                    # rings say where a channel actually is.
+                    kept_built += 1
+                    _dry_log.append(("sea-sink", gx, gz, built_why(gx, gz)))
                     continue
                 grid["h"][k] = SEA_SINK
                 sunk_sea += 1
-        sunk_smear = 0
-        if smear_cand:
-            lls = [(lat0 - gz / m_lat, lon0 + gx / m_lon)
-                   for _, gx, gz in smear_cand]
-            dems = local_elev(lls)
-            for (k, gx, gz), dv in zip(smear_cand, dems):
-                if dv is not None and dv < 0.8:
-                    grid["h"][k] = SEA_SINK
-                    sunk_smear += 1
-                else:
-                    kept_built += 1
-                    _dry_log.append(("sea-sink", gx, gz, built_why(gx, gz)))
         if kept_built:
             print(f"   kept {kept_built} cells dry — they carry a road or a building")
             _report_dry("sea-sink")
         if sunk_sea:
             print(f"   sank {sunk_sea} cells outside {len(coast_rings)} coastline ring(s) — the open sea")
-        if sunk_smear:
-            print(f"   sank {sunk_smear} more that only a NEIGHBOUR's feature held dry — "
-                  f"the raw DEM reads under 0.8m there (a real channel)")
+
         probe(grid, "sea-sink")
 
         # ...AND THE WATER UNDER A STRUCTURE ON LEGS GOES BACK BEFORE THE SHORE
@@ -1683,7 +1680,10 @@ def main():
                         ni, nj = i + di, j + dj
                         if ni < 0 or nj < 0 or ni >= grid["nx"] or nj >= grid["nz"]:
                             continue
-                        if H0[nj * grid["nx"] + ni] <= -1.9:
+                        _nk = nj * grid["nx"] + ni
+                        # a carved channel cell is a QUAY edge — the bank
+                        # holds its height, the ramp rule is for open coast
+                        if H0[_nk] <= -1.9 and _nk not in _quay:
                             best = min(best, max(abs(di), abs(dj)))
                 if best > 3:
                     continue
@@ -1788,8 +1788,11 @@ def main():
                         break
                     for di in range(-SHORE_BAND, SHORE_BAND + 1):
                         ni, nj = i + di, j + dj
+                        # quay cells are not "sea" here either, or the blur
+                        # drags the whole Cove into the shore band
                         if 0 <= ni < grid["nx"] and 0 <= nj < grid["nz"] \
-                                and grid["h"][nj * grid["nx"] + ni] <= -1.9:
+                                and grid["h"][nj * grid["nx"] + ni] <= -1.9 \
+                                and (nj * grid["nx"] + ni) not in _quay:
                             found = True
                             break
                 near_sea[k] = found
