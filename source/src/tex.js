@@ -3,6 +3,16 @@
 // palette under our control.
 import * as THREE from '../lib/three.module.js';
 
+// A DRAW KEYED TO A POSITION, NOT TO THE STREAM. For planting sites whose
+// stream draw is CONDITIONAL on a guard (the divergence mode the reseed
+// cannot reach): under ?planthash=1 the tree's scale comes from its own
+// coordinates, so an edit that flips one guard cannot shift any other
+// tree. Same hash family as TreeField._tree's per-crown rng.
+export function hashRand(x, z, a, b) {
+  const h = (Math.imul(Math.round(x * 8) | 0, 0x9E3779B1)
+             ^ Math.imul(Math.round(z * 8) | 0, 0x85EBCA77)) >>> 0;
+  return a + (Math.imul(h ^ (h >>> 15), 0x2545F491) >>> 0) / 4294967296 * (b - a);
+}
 export function rng(seed) {
   let a = seed >>> 0;
   return () => {
@@ -21,7 +31,18 @@ export function rng(seed) {
 // were, so the legacy whole-region build is byte-identical.
 let _placement = rng(19870219);
 export function reseedPlacement(seed) { _placement = rng(seed >>> 0 || 19870219); }
-export const R = () => _placement();
+// ...AND SCOPABLE PER THING (?planthash=1, 2026-08-14). While a scope is
+// set, every R/rand/pick/chance draw comes from the scoped stream instead —
+// buildBuildings sets one per building from its footprint centroid, so no
+// building's facade picks can depend on any other building's draw count.
+// This is the facade half of the divergence the reseed cannot reach: the
+// A/B pixels showed a wall at Sensoryscape re-picking granite-to-render
+// when a `con` flag 1.4 km away changed one building's own consumption.
+// With no scope set (the default, and always with the flag off), R IS the
+// placement stream, byte for byte.
+let _scoped = null;
+export function scopeDraws(fn) { _scoped = fn; }
+export const R = () => (_scoped || _placement)();
 export const rand = (a, b) => a + R() * (b - a);
 export const pick = (arr) => arr[(R() * arr.length) | 0];
 export const chance = (p) => R() < p;

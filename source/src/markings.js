@@ -4,7 +4,7 @@
 // they are almost free: flat instanced quads a few centimetres above the
 // surface, all in two draw calls.
 import * as THREE from '../lib/three.module.js';
-import { R, rand, chance } from './tex.js';
+import { R, rand, chance, hashRand } from './tex.js';
 // surfaceAt as well as groundAt. This file's own note says a bridge deck "would
 // need the same treatment threaded through four placement paths", and that was
 // true when it was written — surfaceAt() is exported now and answers both the
@@ -771,7 +771,12 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
           if (ok && claim('kerb', kx, kz)) kerb.push([kx, 0.15, kz, ang]);
           if (acc % 44 === 0) {
             const tx = px + nx * (half + 2.8) * sgn, tz = pz + nz * (half + 2.8) * sgn;
-            if (!isBlocked(tx, tz) && claim('tree', tx, tz, 3.0)) trees.add(tx, tz, rand(0.6, 0.9));
+            // The scale draw is CONDITIONAL on the guard — the divergence
+            // mode. Under ?planthash=1 it comes from the tree's own position.
+            if (!isBlocked(tx, tz) && claim('tree', tx, tz, 3.0)) {
+              trees.add(tx, tz, window.__planthash
+                ? hashRand(tx, tz, 0.6, 0.9) : rand(0.6, 0.9));
+            }
           }
           // Lamps used to go in here, every 96 metres. They come from LTA's
           // published lamp-post layer now — see the block below, and

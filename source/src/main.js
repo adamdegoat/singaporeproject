@@ -1,5 +1,5 @@
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, reseedPlacement, rand, pick, chance, resetSignAtlas } from './tex.js';
+import { PAL, R, reseedPlacement, rand, pick, chance, resetSignAtlas, hashRand } from './tex.js';
 import { MAT, badGeoCount, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, plantSurveyed, openGroundAt, openGroundPolys } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, lambertise, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
@@ -715,7 +715,13 @@ async function dressStreet(data, axis, target = world, Y = null) {
         if (acc % 17 === (sgn > 0 ? 0 : 8)) {
           for (const off of [3.2, 2.2, 4.4]) {
             const tx = px + nx * (half + off) * sgn, tz = pz + nz * (half + off) * sgn;
-            if (!place(tx, tz) && claim('tree', tx, tz, 3.0)) { trees.add(tx, tz, rand(0.85, 1.15) * treeK); break; }
+            // Conditional scale draw — divergence mode; position-keyed
+            // under ?planthash=1 (see TreeField._tree).
+            if (!place(tx, tz) && claim('tree', tx, tz, 3.0)) {
+              trees.add(tx, tz, (window.__planthash
+                ? hashRand(tx, tz, 0.85, 1.15) : rand(0.85, 1.15)) * treeK);
+              break;
+            }
           }
         }
         if (acc % 34 === 0 && kerbOK && claim('lamp', kx, kz, 6)) {
@@ -1411,6 +1417,12 @@ const statAdd = (o) => {
 // DO NOT "FIX" THIS AGAIN. Vehicles yes, pedestrians no. The whole crowd
 // system stays in the tree and stays correct behind the flag.
 const PEOPLE = P.has('people');
+// ?planthash=1 — param-gated prototype: every tree draws its crown from a
+// hash of its own position instead of the shared placement stream, killing
+// the residual DIVERGENCE mode the reseed cannot reach. Flipping it on by
+// default reshuffles the island's planting once and is the owner's call;
+// see TreeField._tree in city.js.
+window.__planthash = P.has('planthash');
 // 280 on phones (was 340), part of the owner's 2026-08-03 "make all smooth"
 // package: small dressing (kerbs, benches, plates) drops out 60m earlier.
 const LOD_FAR = PHONE ? 280 : 500;

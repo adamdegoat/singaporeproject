@@ -987,6 +987,16 @@ def main():
                     return True
         return False
 
+    # The 3x3 above exists for the bilinear leak — but it also lets a bank
+    # footway hold a 105 m band of open sea dry: the Sentosa Cove moats were
+    # never sunk because the waterside promenades stand one cell from every
+    # cell in them (SESSION 18; the moats read 6-9 m grass under mapped
+    # water). This answers the narrower question — does a surveyed thing
+    # actually CROSS this cell — so a sinking pass can treat "held only by a
+    # neighbour" differently when the raw DEM testifies the cell is sea.
+    def carries_built_here(px, pz):
+        return (int(math.floor(px / CELL)), int(math.floor(pz / CELL))) in _built
+
     def built_why(px, pz):
         """Every surveyed thing in the 3x3 that `carries_built` answers TRUE
         for. Same neighbourhood, same order of scan — if this returns empty,
@@ -1130,6 +1140,7 @@ def main():
         # ring actually is, measured from the cells inside it.
         INSET = CELL * 1.2
         sunk = 0
+        sunk_dem = 0
         kept_w = 0
         skipped_sea = 0
         for ring in rings:
@@ -1159,6 +1170,23 @@ def main():
                     if inside(gx, gz, ring):
                         widest = max(widest, edge_dist(gx, gz, ring))
             inset = min(INSET, widest * 0.45)
+            # THE INSET STARVES A NARROW CHANNEL, AND THE DEM IS THE WITNESS
+            # THAT REOPENS IT (2026-08-14). The Sentosa Cove waterway arms are
+            # 40-80 m wide on a 35 m grid: nearly every cell inside them sits
+            # within the inset of a bank, so this pass sank nothing there and
+            # the moats around Pearl and Sandy Island stayed drawn as 6-9 m
+            # grass under a mapped water polygon — the invisible walls of
+            # SESSION 18. The raw Copernicus DEM is the non-circular judge
+            # this file already trusts (batch 5): where a cell inside a water
+            # ring reads UNDER 0.8 m in the raw array, the channel is really
+            # there at sea level, and the cell sinks to SEA_SINK whatever the
+            # inset says. An elevated pond never triggers (its DEM reads its
+            # own surface height), an overreaching polygon on a hill never
+            # triggers (DEM high) — the discriminator is per cell, so the
+            # Cruise-Centre class of mistake cannot come back through here. A
+            # small margin (0.35 cells) still keeps the quay-edge cell at
+            # land height, and carries_built keeps every crossing.
+            demwet_cand = []
             for j in range(grid["nz"]):
                 gz = grid["z0"] + j * CELL
                 if gz < rz0 - CELL or gz > rz1 + CELL:
@@ -1168,19 +1196,43 @@ def main():
                     if gx < rx0 - CELL or gx > rx1 + CELL:
                         continue
                     k = j * grid["nx"] + i
-                    if (grid["h"][k] > floor and inside(gx, gz, ring)
-                            and edge_dist(gx, gz, ring) >= inset):
+                    if grid["h"][k] <= floor or not inside(gx, gz, ring):
+                        continue
+                    ed = edge_dist(gx, gz, ring)
+                    if ed >= inset:
                         if carries_built(gx, gz):
                             kept_w += 1
                             _dry_log.append(("water-sink", gx, gz, built_why(gx, gz)))
                             continue
                         grid["h"][k] = floor
                         sunk += 1
+                    elif (os.environ.get("SG_CARVE")
+                          and ed >= CELL * 0.35 and grid["h"][k] > SEA_SINK):
+                        demwet_cand.append((k, gx, gz))
+            if demwet_cand:
+                lls = [(lat0 - gz / m_lat, lon0 + gx / m_lon)
+                       for _, gx, gz in demwet_cand]
+                dems = local_elev(lls)
+                for (k, gx, gz), dv in zip(demwet_cand, dems):
+                    if dv is None or dv >= 0.8:
+                        continue
+                    # held by a feature ON the cell: genuinely built ground.
+                    # Held only by a NEIGHBOUR's feature: the 3x3 smear, and
+                    # the DEM has already testified this cell is sea.
+                    if carries_built_here(gx, gz):
+                        kept_w += 1
+                        _dry_log.append(("water-sink", gx, gz, built_why(gx, gz)))
+                        continue
+                    grid["h"][k] = SEA_SINK
+                    sunk_dem += 1
         if skipped_sea:
             print(f"   {skipped_sea} water ring(s) mostly outside the coast — "
                   f"left to the sea pass")
         if sunk:
             print(f"   sank {sunk} grid cells under {len(rings)} water polygons")
+        if sunk_dem:
+            print(f"   sank {sunk_dem} more inside the bank inset — "
+                  f"the raw DEM reads under 0.8m there (a real channel)")
         if kept_w:
             print(f"   kept {kept_w} of those dry — they carry a road or a building")
             _report_dry("water-sink")
@@ -1285,6 +1337,7 @@ def main():
         # a stilted deck and the Keppel wharves out of the water.
         sunk_sea = 0
         kept_built = 0
+        smear_cand = []
         for j in range(grid["nz"]):
             gz = grid["z0"] + j * CELL
             for i in range(grid["nx"]):
@@ -1297,16 +1350,44 @@ def main():
                 if on_building(gx, gz):
                     continue
                 if carries_built(gx, gz):
-                    kept_built += 1
-                    _dry_log.append(("sea-sink", gx, gz, built_why(gx, gz)))
+                    # A feature ON the cell holds real ground. A feature one
+                    # cell AWAY is the 3x3 bilinear guard — right beside a
+                    # quay, wrong across a channel: the Sentosa Cove moats
+                    # (outside the surveyed coastline, so they are THIS
+                    # pass's cells) stayed 6-9 m grass because the waterside
+                    # promenades stand within a cell of all of them. Defer
+                    # the neighbour-held cells to the DEM: where the raw
+                    # array reads under 0.8 m the cell is sea, whatever
+                    # stands next door.
+                    if (not os.environ.get("SG_CARVE")
+                            or carries_built_here(gx, gz)):
+                        kept_built += 1
+                        _dry_log.append(("sea-sink", gx, gz, built_why(gx, gz)))
+                    else:
+                        smear_cand.append((k, gx, gz))
                     continue
                 grid["h"][k] = SEA_SINK
                 sunk_sea += 1
+        sunk_smear = 0
+        if smear_cand:
+            lls = [(lat0 - gz / m_lat, lon0 + gx / m_lon)
+                   for _, gx, gz in smear_cand]
+            dems = local_elev(lls)
+            for (k, gx, gz), dv in zip(smear_cand, dems):
+                if dv is not None and dv < 0.8:
+                    grid["h"][k] = SEA_SINK
+                    sunk_smear += 1
+                else:
+                    kept_built += 1
+                    _dry_log.append(("sea-sink", gx, gz, built_why(gx, gz)))
         if kept_built:
             print(f"   kept {kept_built} cells dry — they carry a road or a building")
             _report_dry("sea-sink")
         if sunk_sea:
             print(f"   sank {sunk_sea} cells outside {len(coast_rings)} coastline ring(s) — the open sea")
+        if sunk_smear:
+            print(f"   sank {sunk_smear} more that only a NEIGHBOUR's feature held dry — "
+                  f"the raw DEM reads under 0.8m there (a real channel)")
         probe(grid, "sea-sink")
 
         # ...AND THE WATER UNDER A STRUCTURE ON LEGS GOES BACK BEFORE THE SHORE

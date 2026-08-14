@@ -205,7 +205,10 @@ const browser = await chromium.launch({ headless: true, args: [
 ] });
 const page = await browser.newPage({ viewport: { width: 1152, height: 648 }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => { console.log('  page error during golden run: ' + e.message); });
-await page.goto(`http://localhost:${PORT}/?district=sentosa&nostream&reseed=1`, { waitUntil: 'load' });
+// SG_XPARAMS appends extra URL params for A/B runs (e.g. planthash=1) —
+// the baselines never change under it; compare the actual/ dirs instead.
+await page.goto(`http://localhost:${PORT}/?district=sentosa&nostream&reseed=1`
+  + (process.env.SG_XPARAMS ? `&${process.env.SG_XPARAMS}` : ''), { waitUntil: 'load' });
 await page.waitForFunction(() => {
   const b = document.getElementById('boot');
   return window.__teleport && (!b || b.classList.contains('off') || b.style.display === 'none');

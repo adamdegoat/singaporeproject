@@ -2,7 +2,7 @@
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
 import { TOUCH } from './input.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng } from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws } from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV,
          constructionSite } from './landmarks.js';
 
@@ -2845,6 +2845,21 @@ export async function buildBuildings(world, data, Y = null) {
   for (const b of data.buildings) {
     // cooperative yield for the runtime streamer; null during boot
     if (Y && performance.now() - _yt > 8) { await Y(); _yt = performance.now(); }
+    // EVERY DRAW IN THIS BUILDING FROM ITS OWN CENTROID (?planthash=1). The
+    // facade half of the divergence: with the shared stream, one building's
+    // draw count shifts every later building's picks — a `con` toggle at RWS
+    // re-rendered a Sensoryscape wall from granite to render, measured in
+    // the 2026-08-14 A/B. Scoped for the whole body (the only await is the
+    // yield above, so a scope never spans one); cleared after the loop.
+    // With the flag off no scope is ever set and R IS the placement stream.
+    if (typeof window !== 'undefined' && window.__planthash
+        && b.p && b.p.length >= 3) {
+      let _shx = 0, _shz = 0;
+      for (const _q of b.p) { _shx += _q[0]; _shz += _q[1]; }
+      _shx /= b.p.length; _shz /= b.p.length;
+      scopeDraws(rng((Math.imul(Math.round(_shx * 8) | 0, 0x9E3779B1)
+        ^ Math.imul(Math.round(_shz * 8) | 0, 0x85EBCA77)) >>> 0));
+    }
     const pts = b.p;
     if (pts.length < 3) continue;
     if (SOLO && !((b.n || '').toLowerCase().includes(SOLO))) continue;
@@ -3934,6 +3949,7 @@ export async function buildBuildings(world, data, Y = null) {
     }
     stats.count++;
   }
+  scopeDraws(null);       // back to the shared stream for everything after
   FOOT = STREET = null;   // nothing outside this loop belongs to a building
   stats.mergedMeshes = await merger.flushY(world, {}, Y);
   return stats;
@@ -5294,6 +5310,24 @@ export class TreeField {
   _tree(c, i) {
     const [x, z, scale, low] = this.items[i];
     const { BLOBS, BRANCH, CARDS, trunks, branches, blobs, cards, m, e, q, p, sc } = c;
+    // EVERY DRAW IN THIS TREE FROM ITS OWN POSITION — PARAM-GATED PROTOTYPE
+    // (?planthash=1, 2026-08-14). The reseed (batch 12) fixed the OFFSET
+    // mode; what survives is DIVERGENCE: a tree near an edit accepted or
+    // rejected differently shifts the shared stream for every tree after it,
+    // which is the residual 4-frames-under-0.5%. The end state this file's
+    // own leaf-card note argues for is per-tree randomness FROM A POSITION
+    // HASH — then no tree's look can depend on any other tree's fate. Behind
+    // the param because flipping it reshuffles the island's planting ONCE
+    // (every crown re-rolls), which is a look-and-feel call on the owner's
+    // world: the batch-8 playbook, make the decision cheap rather than take
+    // it. With the flag off, _R IS R and _rand IS rand — the default path is
+    // the same functions and the same bytes.
+    const _tr = (typeof window !== 'undefined' && window.__planthash)
+      ? rng((Math.imul(Math.round(x * 8) | 0, 0x9E3779B1)
+             ^ Math.imul(Math.round(z * 8) | 0, 0x85EBCA77)) >>> 0)
+      : null;
+    const _R = _tr || R;
+    const _rand = _tr ? (a, b) => a + _tr() * (b - a) : rand;
     {
       // total height and crown radius. A mature roadside Angsana is about as
       // wide as it is tall, which is what makes the avenue meet overhead.
@@ -5316,15 +5350,15 @@ export class TreeField {
       // actually grows on the island: the broad roadside Angsana, the slender
       // emergents that stand above the canopy on Imbiah and Serapong, and the
       // low spreading sea almond and seagrape along the shore.
-      const _sp = rand(0, 1);
+      const _sp = _rand(0, 1);
       const _radK = _sp < 0.55 ? 1 : _sp < 0.80 ? 0.62 : 1.18;
       const _hK   = _sp < 0.55 ? 1 : _sp < 0.80 ? 1.18 : 0.82;
       const _baseK = _sp < 0.55 ? 1 : _sp < 0.80 ? 1.15 : 0.85;
-      let h = rand(13.0, 17.5) * scale * _hK;
-      const rad = rand(8.0, 12.0) * scale * _radK;
+      let h = _rand(13.0, 17.5) * scale * _hK;
+      const rad = _rand(8.0, 12.0) * scale * _radK;
       const gy = TERRAIN.at(x, z);
       // where the crown starts, and how deep the dome is from top to rim
-      let crownBase = h * rand(0.50, 0.60) * _baseK;
+      let crownBase = h * _rand(0.50, 0.60) * _baseK;
       // Lift the crown clear of the traffic envelope. A crown eight to twelve
       // metres across reaches well past the kerb, so on a smaller side-street
       // tree the limbs came down to about four metres over a live lane, which a
@@ -5367,11 +5401,11 @@ export class TreeField {
       // than level with their outer edge.
       const crownDepth = Math.max(1.5, (h - crownBase));
       for (let k = 0; k < BRANCH; k++) {
-        const a = (k / BRANCH) * Math.PI * 2 + rand(-0.35, 0.35);
-        const L = rad * rand(0.30, 0.46);
-        const tilt = rand(1.32, 1.52);          // radians from vertical: near flat
+        const a = (k / BRANCH) * Math.PI * 2 + _rand(-0.35, 0.35);
+        const L = rad * _rand(0.30, 0.46);
+        const tilt = _rand(1.32, 1.52);          // radians from vertical: near flat
         p.set(x + Math.cos(a) * L * 0.42,
-              gy + crownBase + crownDepth * 0.26 + rand(-0.3, 0.5),
+              gy + crownBase + crownDepth * 0.26 + _rand(-0.3, 0.5),
               z + Math.sin(a) * L * 0.42);
         e.set(Math.cos(a) * tilt, 0, -Math.sin(a) * tilt);
         q.setFromEuler(e); sc.set(scale, L, scale);
@@ -5382,14 +5416,14 @@ export class TreeField {
       // Sitting these at the centre and squashing them vertically is what makes
       // it read as one canopy rather than a cloud of separate leaves.
       for (let k = 0; k < BLOBS; k++) {
-        const rr = rad * rand(0.0, 0.60);
-        const a = R() * Math.PI * 2;
+        const rr = rad * _rand(0.0, 0.60);
+        const a = _R() * Math.PI * 2;
         const t = rr / rad;
-        const r = rad * rand(0.26, 0.42);
+        const r = rad * _rand(0.26, 0.42);
         // spread them down through the crown, not just under its skin, so the
         // limbs below the leaf shell sit in foliage instead of in daylight
         const bx = x + Math.cos(a) * rr, bz = z + Math.sin(a) * rr;
-        let by = gy + crownTop - domeDepth * (t * t * 0.8 + rand(0.05, 0.55)) - r * 0.30;
+        let by = gy + crownTop - domeDepth * (t * t * 0.8 + _rand(0.05, 0.55)) - r * 0.30;
         // foliage that hangs OVER a carriageway clears the traffic envelope
         // the audit judges (9m): one small Clarke Quay tree put a blob 7m
         // over the road. Clamping the single offending blob (not lifting
@@ -5409,7 +5443,7 @@ export class TreeField {
         // Rotating each one hides the shared silhouette for nothing: no extra
         // triangles, no extra memory, the matrix was being composed anyway.
         //
-        // FROM A POSITION HASH, NOT FROM rand(). Three rand() calls per blob
+        // FROM A POSITION HASH, NOT FROM _rand(). Three _rand() calls per blob
         // would consume the placement RNG stream and reshuffle every
         // downstream decision in the world — the rule this file states as "a
         // texture must not be able to move a bus stop". The hash is
@@ -5427,20 +5461,20 @@ export class TreeField {
       // of the distance from the trunk, which is what makes a dome instead of a
       // disc, and the outermost cards get an extra drop for the droop.
       for (let k = 0; k < CARDS; k++) {
-        const a = R() * Math.PI * 2;
+        const a = _R() * Math.PI * 2;
         // Biased slightly inward of even-area coverage (which is sqrt). Even
         // coverage leaves the middle of the crown thin, and the middle is
         // exactly where the limbs are.
-        const t = Math.pow(R(), 0.70);
+        const t = Math.pow(_R(), 0.70);
         const rr = rad * t;
         const droop = domeDepth * t * t * 0.72 + t * t * t * rad * 0.30;
         p.set(x + Math.cos(a) * rr,
-              gy + crownTop - droop + rand(-0.5, 0.5),
+              gy + crownTop - droop + _rand(-0.5, 0.5),
               z + Math.sin(a) * rr);
         // cards near the rim hang steeper, following the drooping branch
-        e.set(rand(-1.5, -0.75) - t * 0.35, a + rand(-0.7, 0.7), rand(-0.4, 0.4));
+        e.set(_rand(-1.5, -0.75) - t * 0.35, a + _rand(-0.7, 0.7), _rand(-0.4, 0.4));
         q.setFromEuler(e);
-        const v = rad * rand(0.42, 0.72); sc.set(v, v, v);
+        const v = rad * _rand(0.42, 0.72); sc.set(v, v, v);
         // every card COMPUTES (the RNG draws above must happen for all 40 —
         // see CARDS_DRAWN in _prep); only the first CARDS_DRAWN are written
         if (k < c.CARDS_DRAWN) { m.compose(p, q, sc); cards.setMatrixAt(c.ci++, m); }
