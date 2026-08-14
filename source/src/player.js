@@ -143,7 +143,13 @@ export function buildWalker() {
       const t = phase * 2.4;
       const sw = moving ? Math.sin(t) : 0;
 
-      // shoulders swing, elbows trail and always bend the same way
+      // shoulders swing, elbows trail and always bend the same way.
+      // The z sweeps, head pitch and surge belong to the swim pose — reset
+      // here or the walker leaves the water with arms stuck out sideways.
+      armL.sh.rotation.z = 0; armR.sh.rotation.z = 0;
+      headPivot.rotation.x = 0;
+      body.position.z = 0;
+      legL.foot.rotation.z = 0; legR.foot.rotation.z = 0;
       armL.sh.rotation.x = sw * 0.62;
       armR.sh.rotation.x = -sw * 0.62;
       armL.el.rotation.x = -0.25 - Math.max(0, sw) * 0.55;
@@ -165,6 +171,46 @@ export function buildWalker() {
       body.rotation.z = moving ? Math.sin(t) * 0.022 : 0;
       body.rotation.x = moving ? 0.045 : 0;
       headPivot.rotation.y = moving ? Math.sin(t * 0.5) * 0.06 : 0;
+      void head;
+    },
+    // BREASTSTROKE (the owner's pick, 2026-08-14 — over freestyle, because
+    // it reads clean on a low-poly figure). The body lies prone at the
+    // surface; both arms work TOGETHER — reach forward, sweep out and back,
+    // recover — and the legs frog-kick half a cycle behind the arms, which
+    // is the timing that makes it read as breaststroke rather than flailing.
+    // The whole figure is pitched prone around the HIPS (the group origin is
+    // at the feet), so the head ends up forward and just clear of the water.
+    swimPose(phase, speed) {
+      const t = phase * 1.35;                    // strokes, slower than steps
+      const s = Math.sin(t);                     // arm cycle
+      const pull = Math.max(0, s);               // the power half
+      const k = Math.max(0, Math.sin(t - Math.PI * 0.55));   // kick trails
+      // prone: rotate the body group nearly flat, nose down a touch
+      body.rotation.x = 1.38;
+      body.rotation.z = 0;
+      body.position.y = 0;
+      // arms: extended ahead at recovery (shoulder swung far forward), then
+      // sweeping down/back together during the pull; elbows soften mid-pull
+      const reach = -2.55 + pull * 1.55;
+      armL.sh.rotation.x = reach;
+      armR.sh.rotation.x = reach;
+      armL.sh.rotation.z = 0.28 + pull * 0.55;   // sweep outward
+      armR.sh.rotation.z = -0.28 - pull * 0.55;
+      armL.el.rotation.x = -0.15 - pull * 0.75;
+      armR.el.rotation.x = -0.15 - pull * 0.75;
+      // legs: draw up (hip + knee flex), then snap straight for the kick
+      const draw = Math.max(0, Math.sin(t - Math.PI * 0.15));
+      legL.hip.rotation.x = -0.15 - draw * 0.62;
+      legR.hip.rotation.x = -0.15 - draw * 0.62;
+      legL.kn.rotation.x = draw * 1.35 - k * 0.2;
+      legR.kn.rotation.x = draw * 1.35 - k * 0.2;
+      legL.foot.rotation.x = 0.5;                // toes trail in the water
+      legR.foot.rotation.x = 0.5;
+      // head up out of the water, breathing forward; a light surge with the
+      // pull so the figure visibly travels on the stroke
+      headPivot.rotation.x = -1.05;
+      headPivot.rotation.y = 0;
+      body.position.z = pull * 0.06 * Math.min(1, speed);
       void head;
     },
   };

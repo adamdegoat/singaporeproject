@@ -529,6 +529,44 @@ function blocked(x, z) {
 //
 // So the split is by QUESTION, not by caller: placement keeps the conservative
 // rule, and the ride gets the honest one. A rider on a deck is on a road.
+// WHERE A PERSON CAN SWIM (2026-08-14, the owner's call: "when the avatar
+// goes into water then can realistically start swimming... so ppl can swim
+// off to the islets"). The SEA only, and only where the water is actually
+// DRAWN: the drawn surface is what the player sees, and swimming on the
+// mapped-but-uncarved water at Sentosa Cove would mean breaststroke across
+// visible grass. So the test is the terrain datum (vertexY under the sea
+// plane by a body's depth), `waterFloor === null` keeps every inland pool
+// and lagoon walled exactly as before (Adventure Cove is a paid attraction,
+// not a shortcut), SOLID still stops you, and the terrain grid's own extent
+// is the soft boundary — beyond the built world there is nothing to draw,
+// so there is nowhere to swim to.
+// Depth below the drawn sea surface at a point, or null where the sea is not
+// enterable at all (solid geometry, an inland water body, or outside the
+// drawn world's own margin).
+function seaDepthAt(x, z) {
+  if (SOLID && SOLID.at(x, z)) return null;
+  if (!terrain || !terrain.grid) return null;
+  const g = terrain.grid();
+  if (!g) return null;
+  const M = 60;   // the soft boundary: beyond the built world there is
+                  // nothing drawn, so there is nowhere to swim to
+  if (x < g.x0 + M || x > g.x0 + (g.nx - 1) * g.cell - M
+      || z < g.z0 + M || z > g.z0 + (g.nz - 1) * g.cell - M) return null;
+  // The STRAIT is a mapped water polygon too, so "has a waterFloor" cannot
+  // mean "inland pool" — the first probe run returned null over the whole
+  // open sea. The discriminator is the one moveBlocked's coast rule already
+  // uses: a floor at SEA level is the sea; a floor well above it is a pool
+  // or lagoon someone built, and stays walled.
+  const bed = terrain.waterFloor(x, z);
+  if (bed !== null && bed >= 0.2) return null;
+  const sy = (window.__seaY ?? 0.1);
+  const d = sy - terrain.vertexY(x, z);
+  return d > 0 ? d : null;
+}
+// Ankle-to-waist water you WADE through; past a body's depth you swim.
+function seaEnterableAt(x, z) { return seaDepthAt(x, z) !== null; }
+function swimmableAt(x, z) { return (seaDepthAt(x, z) || 0) > 0.75; }
+
 function rideBlocked(x, z) {
   // ANY deck clears the water-wall for MOVEMENT — road bridges AND
   // footbridges. The Sentosa Boardwalk and the pond-crossing paths at RWS
@@ -2948,6 +2986,13 @@ window.__blocked = (x, z) => rideBlocked(x, z);   // movement, arcades open
 // treats open-ground storeys via SOLID, so a walker and a ride disagree about
 // what is solid. A gate that cannot see what the player sees is not a gate.
 window.__moveBlocked = (x, z) => moveBlocked(x, z);
+// the swim checks read the player's own state — mode, sub-state, seat;
+// in ride mode the position reported is the VEHICLE's, which is the player
+window.__walkState = () => (mode === 'ride'
+  ? { mode, swim: false, x: S.x, z: S.z, y: null, speed: S.speed }
+  : { mode, swim: !!walker.swim,
+      x: walker.x, z: walker.z, y: walker.y, speed: walker.speed });
+window.__seaDepthAt = (x, z) => seaDepthAt(x, z);
 // open-sided ground storeys (Beach Arrival Plaza), for B5's exemption
 window.__openGround = (x, z) => openGroundAt(x, z);
 // building footprints only, for the occlusion-ceiling measurement
@@ -5187,13 +5232,31 @@ function loop(now) {
       const mz = -inp.moveY * fz + inp.moveX * fx;
       const wx = walker.x, wz = walker.z;
       stepWalk(walker, dt, mx, mz, inp.run);
+      // SWIMMING IS A SUB-STATE OF WALKING. You wade in from the beach; at
+      // swimming depth the walk becomes a breaststroke; swim to where you
+      // can stand and you come out WALKING — the owner's rule, "ppl get out
+      // of water must be realistic". The board stays wherever it was left;
+      // the summon on the ride button already handles getting it back.
+      if (walker.swim) walker.speed = Math.min(walker.speed, 1.35);
       if (trafficHits(walker.x, walker.z, 0.32)) {
         walker.x = wx; walker.z = wz; walker.speed = 0;
       }
-      if (moveBlocked(walker.x, walker.z)) {
-        if (!moveBlocked(walker.x, wz)) walker.z = wz;
-        else if (!moveBlocked(wx, walker.z)) walker.x = wx;
+      // Enterable sea — wading depth or swimming depth — is passable water,
+      // not a wall; everything else keeps moveBlocked's word. The check
+      // lives HERE, in the walker's own frame — moveBlocked itself is
+      // untouched, so the dressing and every data check still treat water
+      // exactly as before.
+      if (moveBlocked(walker.x, walker.z) && !seaEnterableAt(walker.x, walker.z)) {
+        if (!moveBlocked(walker.x, wz) || seaEnterableAt(walker.x, wz)) walker.z = wz;
+        else if (!moveBlocked(wx, walker.z) || seaEnterableAt(wx, walker.z)) walker.x = wx;
         else { walker.x = wx; walker.z = wz; }
+      }
+      if (!walker.swim && swimmableAt(walker.x, walker.z)) { walker.swim = true; walker.y = null; }
+      else if (walker.swim && !swimmableAt(walker.x, walker.z)
+               && (seaEnterableAt(walker.x, walker.z)
+                   || !moveBlocked(walker.x, walker.z))) {
+        // feet found ground — stand up in the shallows and WALK out
+        walker.swim = false; walker.y = null;
       }
       if (knobEl) {
         knobEl.style.transform = `translate(${input.stickDX.toFixed(1)}px, ${input.stickDY.toFixed(1)}px)`;
@@ -5203,11 +5266,23 @@ function loop(now) {
       // the highest registered surface and standing under a platform puts you
       // on top of it. Seeded from the terrain on the first frame so an arrival
       // never begins by picking a deck out of the air.
-      if (walker.y == null) walker.y = terrain.at(walker.x, walker.z);
-      walker.y = surfaceAt(walker.x, walker.z, walker.y);
+      if (walker.swim) {
+        // afloat AT the surface, with a light bob; never seated on the bed —
+        // surfaceAt would put the walker on the sea floor. The group origin
+        // is the FEET and the prone pose swings the body up from there, so
+        // the origin sits just under the surface to put the head and
+        // shoulders just above it — the first value (-0.52) submerged the
+        // whole figure and the vet frame showed empty sea.
+        const sy = (window.__seaY ?? 0.1);
+        walker.y = sy - 0.12 + Math.sin(clock * 1.4) * 0.045;
+      } else {
+        if (walker.y == null) walker.y = terrain.at(walker.x, walker.z);
+        walker.y = surfaceAt(walker.x, walker.z, walker.y);
+      }
       walkerRig.group.position.set(walker.x, walker.y, walker.z);
       walkerRig.group.rotation.y = walker.heading;
-      walkerRig.pose(walker.phase, walker.speed);
+      if (walker.swim) walkerRig.swimPose(walker.phase, walker.speed);
+      else walkerRig.pose(walker.phase, walker.speed);
       const wgy = terrain.at(walker.x, walker.z);
       sun.position.set(walker.x + SUNDIR.x * 150, wgy + SUNDIR.y * 150, walker.z + SUNDIR.z * 150);
       sun.target.position.set(walker.x, wgy, walker.z);
@@ -5287,12 +5362,42 @@ function loop(now) {
       }
     }
     if (rideBlocked(S.x, S.z)) {
-      // slide along the wall rather than dead-stopping: keep whichever single
-      // axis of the attempted move is still free
-      const tryX = { x: S.x, z: pz }, tryZ = { x: px, z: S.z };
-      if (!rideBlocked(tryX.x, tryX.z)) { S.z = pz; S.speed *= 0.86; }
-      else if (!rideBlocked(tryZ.x, tryZ.z)) { S.x = px; S.speed *= 0.86; }
-      else { S.x = px; S.z = pz; S.speed *= 0.2; }
+      // RIDING INTO THE SEA GETS OFF THE BOARD, NOT A WALL (2026-08-14). If
+      // what stopped the ride is enterable water — mapped water, no deck, no
+      // solid geometry — the rider steps off at the last dry spot and is
+      // WALKING (the owner's rule for water exits applies to entries too):
+      // wade in and the walk becomes the swim. The vehicle stays beached;
+      // the ride button's summon already knows how to bring it back.
+      if (!(SOLID && SOLID.at(S.x, S.z))
+          // What stopped the board must be ground the WALKER is allowed on:
+          // the wet-sand overreach band (blocked for wheels, open on foot by
+          // the beach rule) or enterable sea. A fence or wall is neither.
+          && (seaEnterableAt(S.x, S.z)
+              || (inWater(S.x, S.z) && !moveBlocked(S.x, S.z)))
+          // ...and only on an actual CROSSING: the rider was moving, and the
+          // spot they came from was ridable. Without these two, a rider
+          // STANDING on beach sand that a stale water polygon overreaches
+          // got dismounted while parked — the first mobile test did exactly
+          // that at Siloso before any key was pressed.
+          && Math.abs(S.speed) > 0.4 && !rideBlocked(px, pz)) {
+        walker.x = px; walker.z = pz; walker.heading = S.heading;
+        walker.speed = Math.min(1.2, Math.abs(S.speed) * 0.3);
+        walker.y = null; walker.swim = false;
+        S.x = px; S.z = pz; S.speed = 0; S.reversing = false;
+        camYaw = S.heading; camPitch = 0.16;
+        walkerRig.group.visible = true;
+        rider.visible = false;
+        skater.visible = false;
+        mode = 'walk';
+        updateHelp();
+      } else {
+        // slide along the wall rather than dead-stopping: keep whichever
+        // single axis of the attempted move is still free
+        const tryX = { x: S.x, z: pz }, tryZ = { x: px, z: S.z };
+        if (!rideBlocked(tryX.x, tryX.z)) { S.z = pz; S.speed *= 0.86; }
+        else if (!rideBlocked(tryZ.x, tryZ.z)) { S.x = px; S.speed *= 0.86; }
+        else { S.x = px; S.z = pz; S.speed *= 0.2; }
+      }
     }
 
     const gy = terrain.at(S.x, S.z);
@@ -5425,7 +5530,8 @@ function reportHud(now) {
     hud.textContent =
       `${stamp} · ${fps} fps · ${px} @dpr${dpr} · ${(renderer.info.render.triangles / 1000) | 0}k tris · ` +
       `${renderer.info.render.calls} draws · ` +
-      (mode === 'walk' ? 'on foot' : `${Math.abs(S.speed * 3.6) | 0} km/h${S.reversing ? ' R' : ''}`) +
+      (mode === 'walk' ? (walker.swim ? 'swimming' : 'on foot')
+        : `${Math.abs(S.speed * 3.6) | 0} km/h${S.reversing ? ' R' : ''}`) +
       (stats.buildings ? ` · ${stats.buildings} buildings` : '');
     window.__probe = {
       fps, tris: renderer.info.render.triangles, calls: renderer.info.render.calls,
