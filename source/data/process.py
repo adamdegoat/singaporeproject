@@ -1249,6 +1249,34 @@ OSM_WAY = {
     # SENTOSA COVE HOTEL. marriott.com / businesswire.com.
     764585959: {"n": "W Singapore Sentosa Cove", "st": 7},
 
+    # --- RWS north shore: the Waterfront Lifestyle Development worksite.
+    # research/rws-architecture.md sections 3.1, E4 and 6.10, from 2025-2026
+    # photography and satellite.
+    #
+    # 165365230 is an unnamed 832 m2 `building=yes` at -1276,11944 — 166 m EAST
+    # of the Singapore Oceanarium, which puts it inside the ~300 m of shoreline
+    # the research measures as the worksite. We extrude it to 23.8 m, the
+    # calibrated default, and the research says of this exact stretch: **"No
+    # superstructure above hoarding height"**, and that the Crane Dance lake and
+    # its promenade **"are now piling deck, excavation and reclamation extending
+    # into the water"**. Nothing 23.8 m tall stands there.
+    #
+    # This is One Sophia's case with no name to catch it by: a footprint left
+    # behind by something that was cleared. It gets the same answer — `con`,
+    # so `constructionSite()` draws the site rather than asserting a building.
+    #
+    # AND IT IS NOT AN `OVER_WATER` ENTRY, WHICH IS WHAT IT LOOKED LIKE FIRST.
+    # The raw Copernicus DEM reads 0.0 across every vertex and the centroid, and
+    # it is right about that in the sense that the water mask predates the fill
+    # — the SAME rule flags the Marina Bay Cruise Centre Passenger Terminal at
+    # 10,008 m2, which stands on made ground. Reclamation is why the DEM says
+    # water, so sinking the sea under this footprint would be the wrong fix and
+    # a visible one. See SESSION 17 batch 5.
+    #
+    # Re-check when the tags are refetched: when the development completes this
+    # entry becomes wrong and should be replaced by the real building.
+    165365230: {"con": 1},
+
     # --- research/mustafa-centre.md section 5
     # Mustafa Centre is FOUR footprints and OSM gives all four building:levels=5.
     # The research keeps storeys and metres deliberately apart and finds only one
@@ -3057,6 +3085,15 @@ def main():
                     b["yr"] = _ow["yr"]
                 elif _ow.get("era"):
                     b["era"] = list(_ow["era"])
+                # A SITE THAT OSM STILL CALLS A BUILDING, WHERE NO TAG AND NO
+                # NAME CAN REACH IT. `con` is set two ways below — from
+                # `building=construction`, and by NAME for One Sophia, where
+                # OSM still tags a demolished block. Neither handle exists for
+                # an unnamed `building=yes`, and that is exactly the footprint
+                # a cleared site leaves behind. The way id is the only handle,
+                # which is what this table is for.
+                if _ow.get("con"):
+                    b["con"] = 1
             # A NAME IS NOT ALWAYS IN THE NAME TAG.
             #
             # Raffles Hotel is mapped as a multipolygon RELATION carrying
