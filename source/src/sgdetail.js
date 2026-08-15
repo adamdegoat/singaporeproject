@@ -8015,6 +8015,116 @@ export function buildUssVocab(world, data, blocked) {
     out.scifiWedges = wedges;
   }
 
+  // ── HOLLYWOOD §1 + NEW YORK §2 — the boulevard awning rhythm. Both
+  // zones are roofed streets and their briefs converge on the same cheap
+  // texture: repeated canvas awnings over the window rhythm ("repeated
+  // across a whole facade, they read as texture at distance", §2.6).
+  // Hollywood takes the teal-and-white striped domes, New York the
+  // pillar-box red scallops; New York's Transformers frontage also takes
+  // §2.4's arcaded loggia — "the single most memorable brick element on
+  // the street" — as a run of arches on paired dark-green colonnettes.
+  {
+    const BW = {
+      teal: new THREE.MeshLambertMaterial({ color: 0x3d9691 }),
+      red: new THREE.MeshLambertMaterial({ color: 0xd8403d }),
+      valance: new THREE.MeshLambertMaterial({ color: 0xece6d8 }),
+      iron: new THREE.MeshLambertMaterial({ color: 0x1e3a2c }),
+      stoneTrim: new THREE.MeshLambertMaterial({ color: 0xc3aa8e }),
+    };
+    let awnings = 0, loggia = 0;
+    // pre-pass: find the loggia edge (the zone's longest NY frontage)
+    // FIRST, so the awning pass can leave it alone — the first build put
+    // both on the same face and they interleaved (vetted bw2-tf-long)
+    let biggestNYEdge = null, biggestNYLen = 0;
+    const blvd = [];
+    for (const b of (data.buildings || [])) {
+      if (!b.p || b.p.length < 4 || (b.h || 0) < 7 || (b.a || 0) < 400) continue;
+      let cx = 0, cz = 0;
+      for (const [qx, qz] of b.p) { cx += qx; cz += qz; }
+      cx /= b.p.length; cz /= b.p.length;
+      const zn = zoneOf(cx, cz);
+      if ((zn !== 'Hollywood' && zn !== 'New York') || !inPark(cx, cz)) continue;
+      const edges = [];
+      for (let i = 0; i < b.p.length - 1; i++) {
+        const [ax, az] = b.p[i], [bx, bz] = b.p[i + 1];
+        const L = Math.hypot(bx - ax, bz - az);
+        if (L > 12) edges.push([L, ax, az, bx, bz]);
+      }
+      edges.sort((a, q) => q[0] - a[0]);
+      blvd.push({ b, cx, cz, zn, edges });
+      for (const [L, ax, az, bx, bz] of edges.slice(0, 2)) {
+        if (zn !== 'New York' || L <= biggestNYLen) continue;
+        const ux = (bx - ax) / L, uz = (bz - az) / L;
+        let nx = -uz, nz = ux;
+        const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+        if (nx * (mx - cx) + nz * (mz - cz) < 0) { nx = -nx; nz = -nz; }
+        biggestNYLen = L;
+        biggestNYEdge = [L, ax, az, bx, bz, ux, uz, nx, nz, Math.atan2(-uz, ux)];
+      }
+    }
+    for (const { b, cx, cz, zn, edges } of blvd) {
+      const mat = zn === 'Hollywood' ? BW.teal : BW.red;
+      for (const [L, ax, az, bx, bz] of edges.slice(0, 2)) {
+        if (biggestNYEdge && ax === biggestNYEdge[1] && az === biggestNYEdge[2]
+          && bx === biggestNYEdge[3] && bz === biggestNYEdge[4]) continue;
+        const ux = (bx - ax) / L, uz = (bz - az) / L;
+        let nx = -uz, nz = ux;
+        const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+        if (nx * (mx - cx) + nz * (mz - cz) < 0) { nx = -nx; nz = -nz; }
+        const eyaw = Math.atan2(-uz, ux);
+        const levels = (b.h || 10) > 9 ? [3.6, 6.8] : [3.6];
+        for (const lv of levels) {
+          for (let s = 2.5; s <= L - 2.5; s += 3.5) {
+            const px = ax + ux * s + nx * 0.55;
+            const pz = az + uz * s + nz * 0.55;
+            const gy = drawnGroundAt(px, pz) + lv;
+            // the dome: a half-cylinder lying along the facade, bulging out
+            const aw = new THREE.CylinderGeometry(0.75, 0.75, 2.2, 8, 1, false, 0, Math.PI);
+            aw.rotateZ(Math.PI / 2);
+            aw.rotateY(eyaw);
+            aw.translate(px, gy, pz);
+            merger.add(aw, mat, px, pz);
+            const vl = new THREE.BoxGeometry(2.2, 0.18, 0.1);
+            vl.rotateY(eyaw);
+            vl.translate(px + nx * 0.7, gy - 0.08, pz + nz * 0.7);
+            merger.add(vl, BW.valance, px, pz);
+            awnings++;
+          }
+        }
+      }
+    }
+    out.blvdAwnings = awnings;
+    if (biggestNYEdge) {
+      const [L, ax, az, bx, bz, ux, uz, nx, nz, eyaw] = biggestNYEdge;
+      const bays = Math.floor((L - 2) / 2.6);
+      for (let k = 0; k <= bays; k++) {
+        const s = 1 + k * 2.6;
+        const px = ax + ux * s + nx * 0.5;
+        const pz = az + uz * s + nz * 0.5;
+        const gy = drawnGroundAt(px, pz);
+        for (const off of [-0.18, 0.18]) {
+          const col = new THREE.CylinderGeometry(0.09, 0.1, 2.6, 6);
+          col.translate(px + ux * off, gy + 4.7, pz + uz * off);
+          merger.add(col, BW.iron, px, pz);
+        }
+        if (k < bays) {
+          const arch = new THREE.TorusGeometry(1.05, 0.13, 6, 12, Math.PI);
+          arch.rotateY(eyaw);
+          arch.translate(px + ux * 1.3, gy + 6.0, pz + uz * 1.3);
+          merger.add(arch, BW.stoneTrim, px, pz);
+        }
+        loggia++;
+      }
+      // the continuous sill under the run
+      const sill = new THREE.BoxGeometry(L - 1, 0.3, 0.5);
+      sill.rotateY(eyaw);
+      sill.translate((ax + bx) / 2 + nx * 0.5, drawnGroundAt((ax + bx) / 2, (az + bz) / 2) + 3.3,
+        (az + bz) / 2 + nz * 0.5);
+      merger.add(sill, BW.stoneTrim, (ax + bx) / 2, (az + bz) / 2);
+    }
+    out.nyLoggia = loggia;
+  }
+
   merger.flush(world);
   return out;
 }

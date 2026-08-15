@@ -264,6 +264,12 @@ const SPOTS = [
   // ring; the ring guard exists because 240m from this zone's anchor is
   // the Amara Sanctuary Resort). Stands on the avenue facing the station.
   ['scifi-station', -1300, 12590, 2.74],
+  // THE BOULEVARD AWNING RHYTHM (§1 Hollywood teal / §2 New York red) and
+  // §2.4's arcaded loggia, shipped WITH their pass (2026-08-15). This
+  // stands square to the Transformers block's return, both awning rows
+  // across the brick in frame — the vetted bw2-tf-short vantage. The
+  // loggia edge carries NO awnings (the first build interleaved them).
+  ['newyork-awnings', -1413, 12430, 0.87],
 ];
 
 mkdirSync(ACT, { recursive: true });
