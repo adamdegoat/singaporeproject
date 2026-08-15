@@ -7686,6 +7686,92 @@ export function buildUssVocab(world, data, blocked) {
     }
   }
 
+  // ── FAR FAR AWAY — §6.A, the castle rework. The mapped Lord Farquaad's
+  // Castle is a 17m battlemented box; §6.3 gives it what separates a
+  // castle from a box: round drum towers with machicolation corbel bands,
+  // crenellated drums, conical terracotta roofs, gold finials and scarlet
+  // pennants — and the central tower crowned by the giant gold crown.
+  // HEIGHTS: the 40m figure in circulation is UNVERIFIED (§6.A traces it
+  // to aggregators only) — nothing here uses it. Towers are proportioned
+  // off the surveyed 17m mass: corner drums to ~21m, the centre to ~27m,
+  // well under Battlestar's PUBLISHED 42.5m.
+  {
+    const castle = (data.buildings || []).find((b) => (b.n || '').includes('Farquaad'));
+    if (castle && castle.p && castle.p.length >= 4) {
+      const FF = {
+        stone: new THREE.MeshLambertMaterial({ color: 0xb2a07d }),
+        stoneLit: new THREE.MeshLambertMaterial({ color: 0xc9ba97 }),
+        terra: new THREE.MeshLambertMaterial({ color: 0xa8683f }),
+        gold: new THREE.MeshLambertMaterial({ color: 0xc9a437 }),
+        scarlet: new THREE.MeshLambertMaterial({ color: 0xb92a24 }),
+      };
+      let ccx = 0, ccz = 0;
+      for (const [qx, qz] of castle.p) { ccx += qx; ccz += qz; }
+      ccx /= castle.p.length; ccz /= castle.p.length;
+      const ch = castle.h || 17;
+      // corner drums: the 4 footprint vertices furthest from the centroid,
+      // kept 9m apart, pulled 2m inward so each drum engages the wall
+      const verts = castle.p.slice(0, -1).map(([qx, qz]) => {
+        const dd = (qx - ccx) ** 2 + (qz - ccz) ** 2;
+        return [dd, qx, qz];
+      }).sort((a, q) => q[0] - a[0]);
+      const drums = [];
+      for (const [dd, qx, qz] of verts) {
+        if (drums.length >= 4) break;
+        if (drums.some(([px, pz]) => (px - qx) ** 2 + (pz - qz) ** 2 < 9 * 9)) continue;
+        const dl = Math.sqrt(dd) || 1;
+        drums.push([qx + (ccx - qx) / dl * 2, qz + (ccz - qz) / dl * 2]);
+      }
+      const drum = (px, pz, r, top, coneH) => {
+        const g2 = drawnGroundAt(px, pz);
+        const shaft = new THREE.CylinderGeometry(r, r + 0.15, top, 12);
+        shaft.translate(px, g2 + top / 2, pz);
+        merger.add(shaft, FF.stone, px, pz);
+        // machicolation: the projecting corbel band under the crenellation
+        const mach = new THREE.CylinderGeometry(r + 0.55, r + 0.2, 0.9, 12);
+        mach.translate(px, g2 + top - 0.45, pz);
+        merger.add(mach, FF.stoneLit, px, pz);
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          const m = new THREE.BoxGeometry(0.8, 0.6, 0.45);
+          m.rotateY(-a);
+          m.translate(px + Math.cos(a) * (r + 0.35), g2 + top + 0.3, pz + Math.sin(a) * (r + 0.35));
+          merger.add(m, FF.stone, px, pz);
+        }
+        const cone = new THREE.ConeGeometry(r + 0.7, coneH, 12);
+        cone.translate(px, g2 + top + 0.6 + coneH / 2, pz);
+        merger.add(cone, FF.terra, px, pz);
+        const fin = new THREE.SphereGeometry(0.28, 7, 5);
+        fin.translate(px, g2 + top + 0.6 + coneH + 0.28, pz);
+        merger.add(fin, FF.gold, px, pz);
+        // the scarlet pennant on a short mast
+        const mast = new THREE.CylinderGeometry(0.04, 0.04, 1.6, 4);
+        mast.translate(px, g2 + top + 0.6 + coneH + 1.1, pz);
+        merger.add(mast, FF.gold, px, pz);
+        const pen = new THREE.BoxGeometry(1.0, 0.38, 0.05);
+        pen.translate(px + 0.5, g2 + top + 0.6 + coneH + 1.6, pz);
+        merger.add(pen, FF.scarlet, px, pz);
+        return g2 + top + 0.6 + coneH;
+      };
+      for (const [px, pz] of drums) drum(px, pz, 2.4, ch + 3.5, 4.6);
+      // the central tower and the giant gold crown
+      const topY = drum(ccx, ccz, 3.2, ch + 8.5, 5.8);
+      // the crown RINGS the spire: at 3.2 under the apex the cone's own
+      // radius is ~2.15, so the band sits at 2.5 and the points at 2.2 —
+      // the first numbers put the band inside the cone, invisible
+      const band = new THREE.CylinderGeometry(2.5, 2.5, 1.1, 10);
+      band.translate(ccx, topY - 3.2, ccz);
+      merger.add(band, FF.gold, ccx, ccz);
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        const pt = new THREE.ConeGeometry(0.42, 1.3, 5);
+        pt.translate(ccx + Math.cos(a) * 2.2, topY - 2.0, ccz + Math.sin(a) * 2.2);
+        merger.add(pt, FF.gold, ccx, ccz);
+      }
+      out.ffaCastle = drums.length + 1;
+    }
+  }
+
   merger.flush(world);
   return out;
 }

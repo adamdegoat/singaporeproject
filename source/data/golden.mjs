@@ -239,6 +239,15 @@ const SPOTS = [
   // World boundary looking back along the file of figures, with the
   // parapet heads and the obelisk behind — the vetted c2-fromlw vantage.
   ['egypt-colossi', -1098, 12488, -1.75],
+  // THE FFA CASTLE REWORK (§6.A), shipped WITH its pass (2026-08-15):
+  // drum towers with machicolation bands, terracotta cones, gold finials,
+  // scarlet pennants, and the crowned central tower on Lord Farquaad's
+  // Castle. Only uss-lagoon saw it, at 0.34% across 200m of water. This
+  // stands on the lagoon's south-west shore with the whole castle skyline
+  // in frame. The first two placements were IN the lagoon (the rider on
+  // water, chest-deep camera — the waterline lesson again); this point is
+  // point-in-polygon-tested dry.
+  ['ffa-castle', -1145, 12428, 2.39],
 ];
 
 mkdirSync(ACT, { recursive: true });
