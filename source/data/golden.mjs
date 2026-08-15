@@ -224,6 +224,14 @@ const SPOTS = [
   // of it in one frame — the vetted d-lagoon vantage. uss-lagoon sees the
   // zone only across 200m of water; this is the watchdog AT the zone.
   ['minion-land', -1120, 12345, -2.0],
+  // ANCIENT EGYPT'S §4.8/§4.10 INCREMENTS, shipped WITH their pass
+  // (2026-08-15): the Anubis parapet heads, the excavation camp (crates,
+  // jeep, jib crane) and the papyrus shore. The 'ancient-egypt' frame came
+  // back 0.000% through the whole batch — it looks down the avenue and
+  // none of the new pieces enter it — the standing lesson, again. This
+  // stands west of the zone with the camp, the parapet line and the
+  // obelisk shore all in frame (the vetted e-far vantage).
+  ['egypt-camp', -1290, 12420, 0.87],
 ];
 
 mkdirSync(ACT, { recursive: true });

@@ -7424,6 +7424,191 @@ export function buildUssVocab(world, data, blocked) {
     }
   }
 
+  // ── ANCIENT EGYPT — §4's next two increments (the handoff's own order):
+  // §4.8 Anubis jackal heads "set high on the show-building wall as accent
+  // sculptures — the shape reads at long distance against the sky", and
+  // §4.10 the excavation camp at ground level. The zone is 1920s
+  // exploration-era; the camp is crates, a khaki jeep, rope fence, a jib
+  // crane and papyrus at the water edge. Sculpture is PALER than the wall
+  // (§4 palette: the contrast matters) — bleached grey-limestone, not the
+  // ashlar ochre. Anubis is generic Egyptian iconography, not a character.
+  {
+    const EG = {
+      sculpt: new THREE.MeshLambertMaterial({ color: 0x9aa39b }),
+      timber: new THREE.MeshLambertMaterial({ color: 0x7a5f3d }),
+      crate: new THREE.MeshLambertMaterial({ color: 0x8a7048 }),
+      khaki: new THREE.MeshLambertMaterial({ color: 0x7a7350 }),
+      canvas: new THREE.MeshLambertMaterial({ color: 0xe6ddc4 }),
+      wheel: new THREE.MeshLambertMaterial({ color: 0x2c2c2c }),
+      rope: new THREE.MeshLambertMaterial({ color: 0xb9a97e }),
+      reed: new THREE.MeshLambertMaterial({ color: 0x4c7a3d }),
+      umbel: new THREE.MeshLambertMaterial({ color: 0x6f9a4e }),
+    };
+    // §4.8 — the heads, on every tall show mass the zone owns, spaced
+    // along the two longest edges, snout outward, proud of the parapet.
+    let heads = 0;
+    for (const b of (data.buildings || [])) {
+      if (!b.p || b.p.length < 4 || (b.h || 0) < 9 || (b.a || 0) < 700) continue;
+      let cx = 0, cz = 0;
+      for (const [qx, qz] of b.p) { cx += qx; cz += qz; }
+      cx /= b.p.length; cz /= b.p.length;
+      if (zoneOf(cx, cz) !== 'Ancient Egypt') continue;
+      const edges = [];
+      for (let i = 0; i < b.p.length - 1; i++) {
+        const [ax, az] = b.p[i], [bx, bz] = b.p[i + 1];
+        const L = Math.hypot(bx - ax, bz - az);
+        if (L > 14) edges.push([L, ax, az, bx, bz]);
+      }
+      edges.sort((a, q) => q[0] - a[0]);
+      for (const [L, ax, az, bx, bz] of edges.slice(0, 2)) {
+        const ux = (bx - ax) / L, uz = (bz - az) / L;
+        // outward = away from the centroid
+        let nx = -uz, nz = ux;
+        const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+        if (nx * (mx - cx) + nz * (mz - cz) < 0) { nx = -nx; nz = -nz; }
+        const hyaw = Math.atan2(nx, nz);        // snout along the normal
+        // the brief's own test is "reads at long distance against the sky":
+        // a 24m parapet is ~100m from anywhere a player stands, so the
+        // sculpture is accent-sized (~4.5m), not statuette-sized — the
+        // first build's 2m heads vanished at that range (vetted e-wide)
+        for (const f of [0.3, 0.7]) {
+          const px = ax + ux * L * f + nx * 0.6;
+          const pz = az + uz * L * f + nz * 0.6;
+          const y0 = drawnGroundAt(px, pz) + (b.h || 12);
+          const bust = new THREE.BoxGeometry(2.2, 2.4, 1.8);
+          bust.rotateY(hyaw); bust.translate(px, y0 + 1.2, pz);
+          merger.add(bust, EG.sculpt, px, pz);
+          const head = new THREE.BoxGeometry(1.4, 1.2, 3.0);
+          head.rotateY(hyaw);
+          head.translate(px + nx * 0.8, y0 + 2.75, pz + nz * 0.8);
+          merger.add(head, EG.sculpt, px, pz);
+          for (const s of [-1, 1]) {
+            const ear = new THREE.BoxGeometry(0.35, 1.7, 0.65);
+            ear.rotateY(hyaw);
+            ear.translate(px + ux * 0.42 * s - nx * 0.55,
+              y0 + 4.1, pz + uz * 0.42 * s - nz * 0.55);
+            merger.add(ear, EG.sculpt, px, pz);
+          }
+          heads++;
+        }
+      }
+    }
+    out.anubis = heads;
+
+    // §4.10 — the excavation camp, placed off the anchor with the ordinary
+    // guards; every position deterministic, every piece skipped rather
+    // than forced when its ground is taken.
+    if (egy) {
+      const clear = (px, pz, r = 0.5) => standable(px, pz)
+        && !(blocked && blocked(px, pz))
+        && !(window.__onRoad && window.__onRoad(px, pz, r));
+      // crate clusters
+      let crates = 0;
+      for (const [ox, oz] of [[18, 10], [24, -6], [-16, 16], [30, 6], [12, 26]]) {
+        const px = egy.x + ox, pz = egy.z + oz;
+        if (!clear(px, pz)) continue;
+        const cg = drawnGroundAt(px, pz);
+        const c1 = new THREE.BoxGeometry(1.3, 0.9, 1.0);
+        c1.rotateY(ox * 0.13); c1.translate(px, cg + 0.45, pz);
+        merger.add(c1, EG.crate, px, pz);
+        const c2 = new THREE.BoxGeometry(0.9, 0.7, 0.8);
+        c2.rotateY(ox * 0.13 + 0.5); c2.translate(px + 0.9, cg + 0.35, pz + 0.4);
+        merger.add(c2, EG.crate, px, pz);
+        if (crates % 2 === 0) {
+          const c3 = new THREE.BoxGeometry(0.8, 0.6, 0.7);
+          c3.rotateY(ox * 0.13 - 0.4); c3.translate(px + 0.2, cg + 1.2, pz - 0.1);
+          merger.add(c3, EG.crate, px, pz);
+        }
+        crates++;
+      }
+      out.egyptCrates = crates;
+      // the khaki expedition jeep, cream canvas roof, first clear site
+      for (const [ox, oz] of [[8, 20], [-24, 8], [26, 18]]) {
+        const px = egy.x + ox, pz = egy.z + oz;
+        if (!clear(px, pz, 1.4)) continue;
+        const jg = drawnGroundAt(px, pz);
+        const jyaw = (ox + oz) * 0.1;
+        const body = new THREE.BoxGeometry(3.4, 0.9, 1.6);
+        body.rotateY(jyaw); body.translate(px, jg + 0.85, pz);
+        merger.add(body, EG.khaki, px, pz);
+        const bonnet = new THREE.BoxGeometry(1.0, 0.5, 1.4);
+        bonnet.rotateY(jyaw);
+        bonnet.translate(px + Math.cos(jyaw) * 1.9, jg + 0.7, pz - Math.sin(jyaw) * 1.9);
+        merger.add(bonnet, EG.khaki, px, pz);
+        const roof = new THREE.BoxGeometry(2.2, 0.14, 1.7);
+        roof.rotateY(jyaw); roof.translate(px - Math.cos(jyaw) * 0.4, jg + 2.0, pz + Math.sin(jyaw) * 0.4);
+        merger.add(roof, EG.canvas, px, pz);
+        for (const [wx, wz] of [[1.2, 0.8], [1.2, -0.8], [-1.2, 0.8], [-1.2, -0.8]]) {
+          const wheel = new THREE.CylinderGeometry(0.42, 0.42, 0.28, 10);
+          wheel.rotateX(Math.PI / 2);
+          wheel.rotateY(jyaw);
+          const rx = px + Math.cos(jyaw) * wx + Math.sin(jyaw) * wz;
+          const rz = pz - Math.sin(jyaw) * wx + Math.cos(jyaw) * wz;
+          wheel.translate(rx, jg + 0.42, rz);
+          merger.add(wheel, EG.wheel, rx, rz);
+        }
+        out.egyptJeep = 1;
+        break;
+      }
+      // the jib crane over the dig
+      for (const [ox, oz] of [[20, 22], [-12, 24], [34, -2]]) {
+        const px = egy.x + ox, pz = egy.z + oz;
+        if (!clear(px, pz, 1.0)) continue;
+        const kg = drawnGroundAt(px, pz);
+        const post = new THREE.CylinderGeometry(0.12, 0.15, 4.6, 7);
+        post.translate(px, kg + 2.3, pz);
+        merger.add(post, EG.timber, px, pz);
+        const boom = new THREE.CylinderGeometry(0.09, 0.1, 4.4, 6);
+        boom.rotateZ(Math.PI / 2 - 0.7);
+        boom.translate(px + 1.55, kg + 4.9, pz);
+        merger.add(boom, EG.timber, px, pz);
+        const stay = new THREE.CylinderGeometry(0.05, 0.05, 3.4, 5);
+        stay.rotateZ(-0.85);
+        stay.translate(px + 1.2, kg + 3.1, pz);
+        merger.add(stay, EG.timber, px, pz);
+        const ropeG = new THREE.CylinderGeometry(0.025, 0.025, 2.4, 4);
+        ropeG.translate(px + 3.1, kg + 4.6, pz);
+        merger.add(ropeG, EG.rope, px, pz);
+        const hook = new THREE.BoxGeometry(0.5, 0.4, 0.5);
+        hook.translate(px + 3.1, kg + 3.2, pz);
+        merger.add(hook, EG.crate, px, pz);
+        out.egyptCrane = 1;
+        break;
+      }
+      // papyrus reeds at the water edge — the three nearest shore vertices
+      const shore = [];
+      for (const w of (data.water || [])) {
+        for (const [wx, wz] of (w.p || [])) {
+          const dd = (wx - egy.x) ** 2 + (wz - egy.z) ** 2;
+          if (dd < 150 * 150) shore.push([dd, wx, wz]);
+        }
+      }
+      shore.sort((a, q) => a[0] - q[0]);
+      let reeds = 0;
+      for (const [dd, wx, wz] of shore.slice(0, 8)) {
+        if (reeds >= 3) break;
+        const dl = Math.sqrt(dd) || 1;
+        const ux = (egy.x - wx) / dl, uz = (egy.z - wz) / dl;
+        const px = wx + ux * 2.5, pz = wz + uz * 2.5;
+        if (!clear(px, pz)) continue;
+        const rg = drawnGroundAt(px, pz);
+        for (let k = 0; k < 7; k++) {
+          const a = (k / 7) * Math.PI * 2;
+          const rr = 0.25 + (k % 3) * 0.14;
+          const sh = 1.5 + ((k * 5) % 4) * 0.22;
+          const stalk = new THREE.CylinderGeometry(0.03, 0.04, sh, 4);
+          stalk.translate(px + Math.cos(a) * rr, rg + sh / 2, pz + Math.sin(a) * rr);
+          merger.add(stalk, EG.reed, px, pz);
+          const um = new THREE.SphereGeometry(0.17, 6, 5);
+          um.translate(px + Math.cos(a) * rr, rg + sh + 0.1, pz + Math.sin(a) * rr);
+          merger.add(um, EG.umbel, px, pz);
+        }
+        reeds++;
+      }
+      out.egyptReeds = reeds;
+    }
+  }
+
   merger.flush(world);
   return out;
 }
