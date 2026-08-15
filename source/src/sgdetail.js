@@ -7772,6 +7772,145 @@ export function buildUssVocab(world, data, blocked) {
     }
   }
 
+  // ── THE LOST WORLD — §5A's opening increments. The zone's single
+  // strongest motif is LASHED POLE TIMBER: orange-brown stained poles with
+  // X-braced panels between them, on the show masses' long faces. Plus the
+  // giant hollow dead trunk in the Canopy Flyer plaza (§5A materials), the
+  // teal ventilator cupola on Discovery Food Court (§5A.6, "the one bright
+  // roof colour in the zone"), and the oversized timber gate FORM on the
+  // main walk into the zone — §5A.A could not photograph the USS gate, so
+  // it is the film's canonical two-post-and-lintel form, flagged authored,
+  // with NO lettering (the no-branding rule; the form is the read).
+  {
+    const LWm = {
+      pole: new THREE.MeshLambertMaterial({ color: 0x9a5a2e }),
+      brace: new THREE.MeshLambertMaterial({ color: 0x8a5a3c }),
+      bark: new THREE.MeshLambertMaterial({ color: 0x5f4a38 }),
+      hollow: new THREE.MeshLambertMaterial({ color: 0x241c14 }),
+      teal: new THREE.MeshLambertMaterial({ color: 0x2f8f8a }),
+      flame: new THREE.MeshBasicMaterial({ color: 0xf0a030 }),   // self-lit
+    };
+    const lwAnchor = anchors.find((a) => a.n === 'The Lost World' || a.n === 'Jurassic World');
+    const zoneIsLW = (cx, cz) => {
+      const zz = zoneOf(cx, cz);
+      return zz === 'The Lost World' || zz === 'Jurassic World';
+    };
+    // 1. the lashed X-brace pole facades, tiled along the two longest
+    // edges of every tall Lost World mass
+    let panels = 0;
+    for (const b of (data.buildings || [])) {
+      if (!b.p || b.p.length < 4 || (b.h || 0) < 7 || (b.a || 0) < 500) continue;
+      let cx = 0, cz = 0;
+      for (const [qx, qz] of b.p) { cx += qx; cz += qz; }
+      cx /= b.p.length; cz /= b.p.length;
+      if (!zoneIsLW(cx, cz)) continue;
+      const edges = [];
+      for (let i = 0; i < b.p.length - 1; i++) {
+        const [ax, az] = b.p[i], [bx, bz] = b.p[i + 1];
+        const L = Math.hypot(bx - ax, bz - az);
+        if (L > 14) edges.push([L, ax, az, bx, bz]);
+      }
+      edges.sort((a, q) => q[0] - a[0]);
+      for (const [L, ax, az, bx, bz] of edges.slice(0, 2)) {
+        const ux = (bx - ax) / L, uz = (bz - az) / L;
+        let nx = -uz, nz = ux;
+        const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+        if (nx * (mx - cx) + nz * (mz - cz) < 0) { nx = -nx; nz = -nz; }
+        const eyaw = Math.atan2(-uz, ux);
+        const nPoles = Math.max(3, Math.round(L / 5.5) + 1);
+        const step = L / (nPoles - 1);
+        const POLE_H = 7.2;
+        for (let k = 0; k < nPoles; k++) {
+          const px = ax + ux * step * k + nx * 0.45;
+          const pz = az + uz * step * k + nz * 0.45;
+          const pg = drawnGroundAt(px, pz);
+          const pole = new THREE.CylinderGeometry(0.18, 0.22, POLE_H, 7);
+          pole.translate(px, pg + POLE_H / 2, pz);
+          merger.add(pole, LWm.pole, px, pz);
+          if (k === nPoles - 1) continue;
+          // the X, on two levels, in the plane of the wall
+          const qx = ax + ux * step * (k + 1) + nx * 0.45;
+          const qz = az + uz * step * (k + 1) + nz * 0.45;
+          const mgx = (px + qx) / 2, mgz = (pz + qz) / 2;
+          const mg = drawnGroundAt(mgx, mgz);
+          for (const [lo, hi] of [[0.6, 3.4], [3.8, 6.6]]) {
+            const diag = Math.hypot(step, hi - lo);
+            const ang = Math.atan2(hi - lo, step);
+            for (const sgn of [1, -1]) {
+              const br = new THREE.BoxGeometry(diag, 0.17, 0.12);
+              br.rotateZ(ang * sgn);
+              br.rotateY(eyaw);
+              br.translate(mgx, mg + (lo + hi) / 2, mgz);
+              merger.add(br, LWm.brace, mgx, mgz);
+            }
+            panels++;
+          }
+        }
+      }
+    }
+    out.lwPanels = panels;
+
+    // 2. the giant hollow dead trunk, free-standing in the Canopy Flyer
+    // plaza — offset from the station toward the open ground, guarded
+    const cf = (data.buildings || []).find((b) => (b.n || '') === 'Canopy Flyer');
+    if (cf && cf.p) {
+      let cx = 0, cz = 0;
+      for (const [qx, qz] of cf.p) { cx += qx; cz += qz; }
+      cx /= cf.p.length; cz /= cf.p.length;
+      for (const [ox, oz] of [[-14, 6], [10, 12], [-10, -12], [16, -6]]) {
+        const px = cx + ox, pz = cz + oz;
+        if (!standable(px, pz) || (blocked && blocked(px, pz))
+          || (window.__onRoad && window.__onRoad(px, pz, 1.6))) continue;
+        const tg = drawnGroundAt(px, pz);
+        const trunk = new THREE.CylinderGeometry(1.5, 2.3, 8.5, 9);
+        trunk.translate(px, tg + 4.25, pz);
+        merger.add(trunk, LWm.bark, px, pz);
+        // the ragged top: three uneven fingers
+        for (let i = 0; i < 3; i++) {
+          const a = (i / 3) * Math.PI * 2 + 0.5;
+          const fh = 1.6 + (i % 2) * 1.1;
+          const fg = new THREE.CylinderGeometry(0.45, 0.7, fh, 6);
+          fg.translate(px + Math.cos(a) * 0.9, tg + 8.5 + fh / 2 - 0.3, pz + Math.sin(a) * 0.9);
+          merger.add(fg, LWm.bark, px, pz);
+        }
+        // the hollow, facing the plaza
+        const hyaw = Math.atan2(cx - px, cz - pz) + Math.PI;
+        const hole = new THREE.BoxGeometry(1.3, 2.2, 0.4);
+        hole.rotateY(hyaw);
+        hole.translate(px + Math.sin(hyaw) * -1.95, tg + 1.6, pz + Math.cos(hyaw) * -1.95);
+        merger.add(hole, LWm.hollow, px, pz);
+        out.lwTrunk = 1;
+        break;
+      }
+    }
+
+    // 3. the teal ventilator cupola on Discovery Food Court's roofline
+    const dfc = (data.buildings || []).find((b) => (b.n || '') === 'Discovery Food Court');
+    if (dfc && dfc.p) {
+      let cx = 0, cz = 0;
+      for (const [qx, qz] of dfc.p) { cx += qx; cz += qz; }
+      cx /= dfc.p.length; cz /= dfc.p.length;
+      const rg = drawnGroundAt(cx, cz) + (dfc.h || 12);
+      const drum2 = new THREE.BoxGeometry(3.4, 1.6, 3.4);
+      drum2.translate(cx, rg + 0.8, cz);
+      merger.add(drum2, LWm.pole, cx, cz);
+      const cap = new THREE.CylinderGeometry(0.4, 3.1, 1.7, 4);
+      cap.rotateY(Math.PI / 4);
+      cap.translate(cx, rg + 2.45, cz);
+      merger.add(cap, LWm.teal, cx, cz);
+      out.lwCupola = 1;
+    }
+
+    // 4. A JURASSIC-STYLE TIMBER GATE WAS BUILT HERE AND REMOVED, per the
+    // pylon precedent in city.js ("a recipe that builds nothing on the
+    // only data it has is a promise"). The whole boundary walk between
+    // Ancient Egypt and this zone is pinched between the show wall and
+    // the lagoon: every post site inside a 8-90m window either stands in
+    // water, on the footway, or against the wall, and the guards refused
+    // all of them on two measured passes (2026-08-15). If anyone returns:
+    // the gate needs a mapped plaza, not this shoreline path.
+  }
+
   merger.flush(world);
   return out;
 }

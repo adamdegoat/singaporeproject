@@ -248,6 +248,15 @@ const SPOTS = [
   // water, chest-deep camera — the waterline lesson again); this point is
   // point-in-polygon-tested dry.
   ['ffa-castle', -1145, 12428, 2.39],
+  // THE LOST WORLD §5A OPENING INCREMENTS, shipped WITH their pass
+  // (2026-08-15): the lashed X-brace pole facades (the zone's single
+  // strongest motif), the giant hollow trunk in the Canopy Flyer plaza,
+  // the teal ventilator cupola on Discovery Food Court. ALL 30 frames
+  // above passed through the batch — nothing watches this zone's
+  // interior. (A Jurassic timber gate was built and REMOVED: the boundary
+  // walk gave its guards no clear site — the pylon precedent.) This
+  // stands inside the zone with the braced Rapids frontage in view.
+  ['lostworld-timber', -1075, 12520, 0.7],
 ];
 
 mkdirSync(ACT, { recursive: true });
