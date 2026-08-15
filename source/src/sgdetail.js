@@ -3138,7 +3138,7 @@ export async function buildTransit(world, data, Y = null) {
   for (const seg of (data.monorail || [])) {
     await YY();
     if (seg.tun) continue;                       // the tunnel run has no fabric
-    const pts = seg.p;
+    const pts = seg.p && seg.p.slice();
     if (!pts || pts.length < 2) continue;
     // THE DECK HEIGHT COMES FROM data/monorail.py, NOT FROM THE LAYER TAG.
     //
@@ -3172,6 +3172,26 @@ export async function buildTransit(world, data, Y = null) {
         for (let i = 1; i < hs.length - 1; i++) hs[i] = (hs[i - 1] + hs[i] + hs[i + 1]) / 3;
       }
     }
+    // THE MAINLAND CONTINUATION. The real Sentosa Express runs on to
+    // VivoCity; our data clips at the island rules, so from the causeway
+    // the twin beams ended in OPEN SKY past the last pier (2026-08-16
+    // sweep, frame 041 — "the guideway must always be supported and
+    // continuous" is this file's own oldest monorail rule). Any chain end
+    // north of the causeway reach is extended 500m along its final
+    // bearing at its final profile height, which carries it into the
+    // drawn mainland background instead of a cut face in the air. Drawn
+    // fabric only; the ride path still reads the mapped line.
+    for (const end of [0, 1]) {
+      const i0 = end ? pts.length - 1 : 0;
+      const i1 = end ? pts.length - 2 : 1;
+      if (pts[i0][1] > 11780) continue;          // only the mainland-facing end
+      const dl = Math.hypot(pts[i0][0] - pts[i1][0], pts[i0][1] - pts[i1][1]) || 1;
+      const ux2 = (pts[i0][0] - pts[i1][0]) / dl, uz2 = (pts[i0][1] - pts[i1][1]) / dl;
+      const nx2 = pts[i0][0] + ux2 * 500, nz2 = pts[i0][1] + uz2 * 500;
+      if (end) { pts.push([nx2, nz2]); hs.push(hs[hs.length - 1]); }
+      else { pts.unshift([nx2, nz2]); hs.unshift(hs[0]); }
+    }
+
     // ONE SWEPT BEAM, NOT A CHAIN OF BOXES.
     //
     // The owner, 2026-08-05: "monorail or the boardwalk at arrival why still
