@@ -270,6 +270,12 @@ const SPOTS = [
   // across the brick in frame — the vetted bw2-tf-short vantage. The
   // loggia edge carries NO awnings (the first build interleaved them).
   ['newyork-awnings', -1413, 12430, 0.87],
+  // WATERWORLD §5B, shipped WITH its pass (2026-08-15): the skyline
+  // catwalk gantries, the flared watchtower + fabric canopy, the rusted
+  // fuel tank, against the verdigris arena. The arena is CLOSED in life
+  // through 2026 — the venue is built, the show is not. Stands SE of the
+  // stadium with the gantries on the skyline — the ww2-se vantage.
+  ['waterworld-arena', -880, 12580, -2.27],
 ];
 
 mkdirSync(ACT, { recursive: true });

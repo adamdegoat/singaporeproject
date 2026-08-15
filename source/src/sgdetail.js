@@ -8125,6 +8125,87 @@ export function buildUssVocab(world, data, blocked) {
     out.nyLoggia = loggia;
   }
 
+  // ── WATERWORLD §5B — the last zone without a vocabulary. The arena is
+  // CLOSED in life ("Now – 31 Dec 2026": build the arena, not the show).
+  // What maps to cheap geometry from the photo-read: the FLARED watchtower
+  // (cladding widening under an overhung roof) with its grey-white fabric
+  // canopy, the skyline catwalk gantries with pipe rails, and the rusted
+  // spherical fuel tank. The torn-sheet patchwork is texture work and
+  // waits for a material pass.
+  {
+    const WW = {
+      verdi: new THREE.MeshLambertMaterial({ color: 0x7c9792 }),
+      rust: new THREE.MeshLambertMaterial({ color: 0x7a4a2c }),
+      fabric: new THREE.MeshLambertMaterial({ color: 0xd8d8d2 }),
+      tyre: new THREE.MeshLambertMaterial({ color: 0x232323 }),
+    };
+    const ww = (data.buildings || []).find((b) => (b.n || '') === 'WaterWorld');
+    if (ww && ww.p && ww.p.length >= 4) {
+      let cx = 0, cz = 0;
+      for (const [qx, qz] of ww.p) { cx += qx; cz += qz; }
+      cx /= ww.p.length; cz /= ww.p.length;
+      const wh = ww.h || 12;
+      const wg = drawnGroundAt(cx, cz);
+      // the flared watchtower on the vertex farthest from the centroid
+      let vb = null, vd = 0;
+      for (const [qx, qz] of ww.p) {
+        const dd = (qx - cx) ** 2 + (qz - cz) ** 2;
+        if (dd > vd) { vd = dd; vb = [qx, qz]; }
+      }
+      if (vb) {
+        const dl = Math.sqrt(vd) || 1;
+        const tx = vb[0] + (cx - vb[0]) / dl * 2.5, tz = vb[1] + (cz - vb[1]) / dl * 2.5;
+        const tg = drawnGroundAt(tx, tz);
+        const TH = wh + 5.5;
+        // the shaft WIDENS toward the top — the §5B.3 inverted flare
+        const shaft = new THREE.CylinderGeometry(2.3, 1.5, TH, 9);
+        shaft.translate(tx, tg + TH / 2, tz);
+        merger.add(shaft, WW.verdi, tx, tz);
+        const lip = new THREE.CylinderGeometry(2.9, 2.5, 0.7, 9);
+        lip.translate(tx, tg + TH + 0.35, tz);
+        merger.add(lip, WW.rust, tx, tz);
+        const canopy = new THREE.ConeGeometry(3.1, 1.9, 6);
+        canopy.translate(tx, tg + TH + 1.65, tz);
+        merger.add(canopy, WW.fabric, tx, tz);
+        out.wwTower = 1;
+      }
+      // two catwalk gantries crossing the skyline at different levels and
+      // angles, pipe rails along each
+      let gantries = 0;
+      for (const [len, yy, ry] of [[26, wh + 1.4, 0.35], [20, wh + 3.0, -0.85]]) {
+        const walk = new THREE.BoxGeometry(len, 0.25, 1.4);
+        walk.rotateY(ry);
+        walk.translate(cx, wg + yy, cz);
+        merger.add(walk, WW.rust, cx, cz);
+        for (const side of [-0.62, 0.62]) {
+          const rail = new THREE.CylinderGeometry(0.05, 0.05, len, 5);
+          rail.rotateZ(Math.PI / 2);          // axis along local x
+          rail.translate(0, 1.0, side);       // local offset first...
+          rail.rotateY(ry);                   // ...then the shared yaw
+          rail.translate(cx, wg + yy, cz);
+          merger.add(rail, WW.rust, cx, cz);
+        }
+        gantries++;
+      }
+      out.wwCatwalks = gantries;
+      // the rusted spherical fuel tank on the ground beside the set
+      for (const [ox, oz] of [[18, 8], [-16, 12], [12, -16], [-20, -6]]) {
+        const px = cx + ox, pz = cz + oz;
+        if (!standable(px, pz) || (blocked && blocked(px, pz))
+          || (window.__onRoad && window.__onRoad(px, pz, 1.2))) continue;
+        const fg = drawnGroundAt(px, pz);
+        const tank = new THREE.SphereGeometry(2.0, 10, 8);
+        tank.translate(px, fg + 2.0, pz);
+        merger.add(tank, WW.rust, px, pz);
+        const cradle = new THREE.CylinderGeometry(1.7, 1.9, 0.8, 8);
+        cradle.translate(px, fg + 0.4, pz);
+        merger.add(cradle, WW.tyre, px, pz);
+        out.wwTank = 1;
+        break;
+      }
+    }
+  }
+
   merger.flush(world);
   return out;
 }
