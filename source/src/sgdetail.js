@@ -6729,3 +6729,126 @@ export async function buildRwsWorksite(world, data, Y = null) {
   await merger.flushY(world, {}, Y);
   return out;
 }
+
+// USS RELIEF VOCABULARY, first two items (2026-08-15). The zone crowns gave
+// every Universal zone a silhouette; research/universal-zones.md names the
+// next layer, and these are its two "hugely identifying, trivially cheap"
+// entries: §6.10's harlequin lamp canopies ("repeated along every path")
+// for Far Far Away, and §4.9's obelisk, "one of the park's few long-range
+// silhouettes", free-standing on the Lake Hollywood shore. Both are the
+// ordinary furniture of their theme, nothing branded.
+//
+// Zone membership is the same nearest-anchor rule city.js's crowns use,
+// recomputed here from the surveyed attraction nodes (deciding what a
+// thing is belongs to the data).
+export function buildUssVocab(world, data, blocked) {
+  const anchors = [];
+  for (const a of (data.attractions || [])) {
+    if (['Hollywood', 'New York', 'Sci-Fi City', 'Ancient Egypt',
+         'The Lost World', 'Far Far Away', 'Minion Land', 'WaterWorld',
+         'Jurassic World', 'Madagascar'].includes(a.n) && a.p) {
+      anchors.push({ n: a.n, x: a.p[0], z: a.p[1] });
+    }
+  }
+  const out = { harlequin: 0, obelisk: 0 };
+  if (!anchors.length) return out;
+  const zoneOf = (x, z) => {
+    let bd = Infinity, bn = null;
+    for (const q of anchors) {
+      const d = (x - q.x) ** 2 + (z - q.z) ** 2;
+      if (d < bd) { bd = d; bn = q.n; }
+    }
+    return bd < 240 * 240 ? bn : null;
+  };
+
+  const merger = new Merger();
+  const M = {
+    gold: new THREE.MeshLambertMaterial({ color: 0xb98d3f }),
+    blue: new THREE.MeshLambertMaterial({ color: 0x3a6fb3 }),
+    fringe: new THREE.MeshLambertMaterial({ color: 0xe8c33c }),
+    lantern: new THREE.MeshBasicMaterial({ color: 0xf0c060 }),   // self-lit
+    stone: new THREE.MeshLambertMaterial({ color: 0x9a958c }),
+  };
+  const bake = (geo, mat, x, y, z, ry = 0) => {
+    if (ry) geo.rotateY(ry);
+    geo.translate(x, y, z);
+    merger.add(geo, mat, x, z);
+  };
+
+  // THE HARLEQUIN LAMPS — a gold standard under a scalloped blue cone with
+  // a yellow fringe and two lit side lanterns. §6.10 puts them along every
+  // FFA path; every ~24m, alternating sides, 1.6m off the centreline. The
+  // guards are the ordinary ones: never on a carriageway, never anywhere
+  // the placement test calls blocked, never in water (standable).
+  for (const r of (data.roads || [])) {
+    if (r.k !== 'footway' && r.k !== 'pedestrian') continue;
+    const P = r.p || [];
+    let acc = 0, side = 1;
+    for (let i = 0; i < P.length - 1; i++) {
+      const [ax, az] = P[i], [bx, bz] = P[i + 1];
+      const L = Math.hypot(bx - ax, bz - az);
+      if (L < 0.5) continue;
+      const ux = (bx - ax) / L, uz = (bz - az) / L;
+      for (let s = 24 - acc; s <= L; s += 24) {
+        const cx = ax + ux * s, cz = az + uz * s;
+        if (zoneOf(cx, cz) !== 'Far Far Away') continue;
+        const px = cx + -uz * 1.6 * side, pz = cz + ux * 1.6 * side;
+        side = -side;
+        if (window.__onRoad && window.__onRoad(px, pz, 0.3)) continue;
+        if (blocked && blocked(px, pz)) continue;
+        if (!standable(px, pz)) continue;
+        const g0 = drawnGroundAt(px, pz);
+        bake(new THREE.CylinderGeometry(0.3, 0.34, 0.22, 8), M.gold, px, g0 + 0.11, pz);
+        bake(new THREE.CylinderGeometry(0.05, 0.07, 3.1, 6), M.gold, px, g0 + 1.66, pz);
+        // the two side lanterns on short arms, lit
+        for (const sgn of [-1, 1]) {
+          bake(new THREE.BoxGeometry(0.5, 0.05, 0.05), M.gold,
+            px + -uz * 0.25 * sgn, g0 + 2.55, pz + ux * 0.25 * sgn);
+          bake(new THREE.BoxGeometry(0.16, 0.2, 0.16), M.lantern,
+            px + -uz * 0.48 * sgn, g0 + 2.44, pz + ux * 0.48 * sgn);
+        }
+        // fringe ring then the cone, finial ball on top
+        bake(new THREE.CylinderGeometry(0.88, 0.88, 0.13, 10, 1, true), M.fringe,
+          px, g0 + 3.12, pz);
+        bake(new THREE.ConeGeometry(0.85, 0.78, 10), M.blue, px, g0 + 3.56, pz);
+        bake(new THREE.SphereGeometry(0.09, 6, 5), M.gold, px, g0 + 4.02, pz);
+        out.harlequin++;
+      }
+      acc = (acc + L) % 24;
+    }
+  }
+
+  // THE OBELISK — §4.9: a tapering square shaft with a pyramidion, greyer
+  // than the zone's walls, free-standing on the lake shore. The shore point
+  // is found, not guessed: from the Ancient Egypt anchor, the nearest water
+  // ring edge within 150m, then 4m back onto land. 4-segment cylinders
+  // rotated 45 degrees are this file's square taper.
+  const egy = anchors.find((a) => a.n === 'Ancient Egypt');
+  if (egy) {
+    let best = null, bd = 150 * 150;
+    for (const w of (data.water || [])) {
+      for (const [wx, wz] of (w.p || [])) {
+        const d = (wx - egy.x) ** 2 + (wz - egy.z) ** 2;
+        if (d < bd) { bd = d; best = [wx, wz]; }
+      }
+    }
+    if (best) {
+      const d = Math.sqrt(bd) || 1;
+      const ux = (egy.x - best[0]) / d, uz = (egy.z - best[1]) / d;
+      const px = best[0] + ux * 4, pz = best[1] + uz * 4;
+      const ok = !(window.__onRoad && window.__onRoad(px, pz, 0.4))
+        && !(blocked && blocked(px, pz)) && standable(px, pz);
+      if (ok) {
+        const g0 = drawnGroundAt(px, pz);
+        const R4 = Math.PI / 4;
+        bake(new THREE.CylinderGeometry(1.7, 1.85, 1.2, 4), M.stone, px, g0 + 0.6, pz, R4);
+        bake(new THREE.CylinderGeometry(0.55, 0.95, 13.5, 4), M.stone, px, g0 + 7.95, pz, R4);
+        bake(new THREE.CylinderGeometry(0.02, 0.58, 1.7, 4), M.stone, px, g0 + 15.55, pz, R4);
+        out.obelisk = 1;
+      }
+    }
+  }
+
+  merger.flush(world);
+  return out;
+}

@@ -206,6 +206,14 @@ const SPOTS = [
   // underfoot, canal both sides, the island's bungalow bank ahead — the
   // geometry and the water this batch moved, all in one frame.
   ['cove-canal', 745, 13460, 1.5708],
+  // THE USS RELIEF VOCABULARY, shipped WITH its pass (2026-08-15). The
+  // harlequin lamps line Far Far Away's paths and no frame watched that
+  // zone's interior at street level; the Egypt obelisk shows in uss-lagoon
+  // at 0.087% — inside the 0.1% gate, which batch 2 already ruled is not a
+  // watchdog. This stands on the FFA path among the lamps, facades behind,
+  // where the zone's next vocabulary (battlements, beanstalks, the castle)
+  // will also land in frame.
+  ['ffa-street', -1066, 12372, -1.83],
 ];
 
 mkdirSync(ACT, { recursive: true });

@@ -11,7 +11,7 @@ import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from '.
 import { Net } from './net.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
 import { axisSpec, buildMarkings, dressSideStreets, selectSideStreets, dedupeProps } from './markings.js';
-import { buildSgDetail, buildTransit, buildBeachLife } from './sgdetail.js';
+import { buildSgDetail, buildTransit, buildBeachLife, buildUssVocab } from './sgdetail.js';
 import { buildRides, BOARD_REACH, EYE } from './rides.js';
 import { buildPlaceLabels } from './places.js';
 import { buildShopfronts } from './shopfront.js';
@@ -2077,6 +2077,7 @@ async function addChunk(ch, id, Y, rec = {}) {
     await Y();
     mk('sg');
     if (!P.has('nosg')) statAdd(await buildSgDetail(g, ax, ch, place, Y));
+    if (!P.has('nosg')) statAdd(buildUssVocab(g, ch, place));
     await Y();
     if (f.signals && f.signals.length) {
       const es = new Signals(f.signals, f.lensMesh || null);
@@ -3552,6 +3553,8 @@ window.__placeBlocked = (x, z) => blocked(x, z);
       const q = await buildSgDetail(world, ax, data, place);
       bmark('sgdetail');
       for (const k of Object.keys(q)) sg[k] = (sg[k] || 0) + q[k];
+      const v = buildUssVocab(world, data, place);
+      for (const k of Object.keys(v)) sg[k] = (sg[k] || 0) + v[k];
     }
   }
   // The transit geography: the Sentosa Express viaduct and the cable car
