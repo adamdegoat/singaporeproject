@@ -6752,6 +6752,23 @@ export function buildUssVocab(world, data, blocked) {
   }
   const out = { harlequin: 0, obelisk: 0 };
   if (!anchors.length) return out;
+  // THE PARK RING GUARD. The nearest-anchor rule reaches 240m, and 240m
+  // from the Sci-Fi anchor is the Amara Sanctuary Resort — a real hotel
+  // outside the park that very nearly took hull plate and wedge overhangs
+  // (caught in the data probe, 2026-08-15). Zone DRESSING on buildings is
+  // gated on standing inside the surveyed park boundary.
+  const _ussRing = ((data.attractions || [])
+    .find((a) => a.n === 'Universal Studios Singapore' && a.g) || {}).g || null;
+  const inPark = (x, z) => {
+    if (!_ussRing) return true;
+    let c = false;
+    for (let i = 0, j = _ussRing.length - 1; i < _ussRing.length; j = i++) {
+      const [xi, zi] = _ussRing[i], [xj, zj] = _ussRing[j];
+      if ((zi > z) !== (zj > z)
+        && x < ((xj - xi) * (z - zi)) / ((zj - zi) || 1e-9) + xi) c = !c;
+    }
+    return c;
+  };
   const zoneOf = (x, z) => {
     let bd = Infinity, bn = null;
     for (const q of anchors) {
@@ -7452,7 +7469,7 @@ export function buildUssVocab(world, data, blocked) {
       let cx = 0, cz = 0;
       for (const [qx, qz] of b.p) { cx += qx; cz += qz; }
       cx /= b.p.length; cz /= b.p.length;
-      if (zoneOf(cx, cz) !== 'Ancient Egypt') continue;
+      if (zoneOf(cx, cz) !== 'Ancient Egypt' || !inPark(cx, cz)) continue;
       const edges = [];
       for (let i = 0; i < b.p.length - 1; i++) {
         const [ax, az] = b.p[i], [bx, bz] = b.p[i + 1];
@@ -7803,7 +7820,7 @@ export function buildUssVocab(world, data, blocked) {
       let cx = 0, cz = 0;
       for (const [qx, qz] of b.p) { cx += qx; cz += qz; }
       cx /= b.p.length; cz /= b.p.length;
-      if (!zoneIsLW(cx, cz)) continue;
+      if (!zoneIsLW(cx, cz) || !inPark(cx, cz)) continue;
       const edges = [];
       for (let i = 0; i < b.p.length - 1; i++) {
         const [ax, az] = b.p[i], [bx, bz] = b.p[i + 1];
@@ -7909,6 +7926,93 @@ export function buildUssVocab(world, data, blocked) {
     // water, on the footway, or against the wall, and the guards refused
     // all of them on two measured passes (2026-08-15). If anyone returns:
     // the gate needs a mapped plaza, not this shoreline path.
+  }
+
+  // ── SCI-FI CITY — §3's geometric grammar. The brief's own warning:
+  // NOT chrome and blue glass — weathered faceted plate with apple-green,
+  // chrome-yellow and safety-orange accents. What maps to cheap geometry:
+  // canted WEDGE OVERHANGS ("nothing is orthogonal"), recessed circular
+  // ports, louvred vent groups, orange soffit trims. The stencilled
+  // numerals and faction insignia are decal work and the insignia is
+  // branded — both skipped, deliberately.
+  {
+    const SF = {
+      plate: new THREE.MeshLambertMaterial({ color: 0x7c8384 }),
+      hull: new THREE.MeshLambertMaterial({ color: 0x65645e }),
+      green: new THREE.MeshLambertMaterial({ color: 0x6e8c4e }),
+      orange: new THREE.MeshLambertMaterial({ color: 0xd97a2a }),
+      dark: new THREE.MeshLambertMaterial({ color: 0x2e2f2e }),
+    };
+    let wedges = 0;
+    for (const b of (data.buildings || [])) {
+      if (!b.p || b.p.length < 4 || (b.h || 0) < 8 || (b.a || 0) < 500) continue;
+      let cx = 0, cz = 0;
+      for (const [qx, qz] of b.p) { cx += qx; cz += qz; }
+      cx /= b.p.length; cz /= b.p.length;
+      if (zoneOf(cx, cz) !== 'Sci-Fi City' || !inPark(cx, cz)) continue;
+      const bh = b.h || 10;
+      const edges = [];
+      for (let i = 0; i < b.p.length - 1; i++) {
+        const [ax, az] = b.p[i], [bx, bz] = b.p[i + 1];
+        const L = Math.hypot(bx - ax, bz - az);
+        if (L > 12) edges.push([L, ax, az, bx, bz]);
+      }
+      edges.sort((a, q) => q[0] - a[0]);
+      let ei = 0;
+      for (const [L, ax, az, bx, bz] of edges.slice(0, 2)) {
+        const ux = (bx - ax) / L, uz = (bz - az) / L;
+        let nx = -uz, nz = ux;
+        const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+        if (nx * (mx - cx) + nz * (mz - cz) < 0) { nx = -nx; nz = -nz; }
+        const eyaw = Math.atan2(-uz, ux);
+        // the canted wedge overhangs, two per face, alternating grey/green,
+        // each with a safety-orange soffit strip on its outer edge
+        for (const f of [0.32, 0.68]) {
+          const px = ax + ux * L * f + nx * 1.5;
+          const pz = az + uz * L * f + nz * 1.5;
+          const wy = drawnGroundAt(px, pz) + bh * 0.62;
+          const wg = new THREE.BoxGeometry(6.2, 1.6, 3.4);
+          wg.rotateX(0.24);
+          wg.rotateY(eyaw);
+          wg.translate(px, wy, pz);
+          merger.add(wg, (wedges % 2 === 0) ? SF.hull : SF.green, px, pz);
+          const so = new THREE.BoxGeometry(5.6, 0.22, 0.5);
+          so.rotateX(0.24);
+          so.rotateY(eyaw);
+          so.translate(px + nx * 1.5, wy - 0.75, pz + nz * 1.5);
+          merger.add(so, SF.orange, px, pz);
+          wedges++;
+        }
+        // one circular port, mid-face only — the corner spots hovered in
+        // air where the drawn massing recedes from the surveyed footprint
+        // (vetted sf2-face: a black disc floating over the entrance shed)
+        for (const [f, hy] of [[0.5, 0.5]]) {
+          const px = ax + ux * L * f + nx * 0.15;
+          const pz = az + uz * L * f + nz * 0.15;
+          const py = drawnGroundAt(px, pz) + bh * hy;
+          const port = new THREE.CylinderGeometry(0.9, 0.9, 0.25, 12);
+          port.rotateX(Math.PI / 2);
+          port.rotateY(eyaw);
+          port.translate(px, py, pz);
+          merger.add(port, SF.dark, px, pz);
+        }
+        // a louvred vent group: five horizontal slats
+        {
+          const f = ei ? 0.62 : 0.28;
+          const px = ax + ux * L * f + nx * 0.2;
+          const pz = az + uz * L * f + nz * 0.2;
+          const base = drawnGroundAt(px, pz) + bh * 0.18;
+          for (let k = 0; k < 5; k++) {
+            const sl = new THREE.BoxGeometry(3.2, 0.16, 0.3);
+            sl.rotateY(eyaw);
+            sl.translate(px, base + k * 0.42, pz);
+            merger.add(sl, SF.plate, px, pz);
+          }
+        }
+        ei++;
+      }
+    }
+    out.scifiWedges = wedges;
   }
 
   merger.flush(world);

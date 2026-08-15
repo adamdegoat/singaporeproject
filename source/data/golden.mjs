@@ -257,6 +257,13 @@ const SPOTS = [
   // walk gave its guards no clear site — the pylon precedent.) This
   // stands inside the zone with the braced Rapids frontage in view.
   ['lostworld-timber', -1075, 12520, 0.7],
+  // SCI-FI CITY §3, shipped WITH its pass (2026-08-15): the canted wedge
+  // overhangs with safety-orange soffits, mid-face ports and louvre
+  // groups on Battlestar Galactica — the only zone mass both in-park and
+  // tall enough to take them (Mess Hall sits outside the surveyed park
+  // ring; the ring guard exists because 240m from this zone's anchor is
+  // the Amara Sanctuary Resort). Stands on the avenue facing the station.
+  ['scifi-station', -1300, 12590, 2.74],
 ];
 
 mkdirSync(ACT, { recursive: true });
