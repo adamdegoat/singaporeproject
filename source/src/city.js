@@ -3738,20 +3738,27 @@ export async function buildBuildings(world, data, Y = null) {
       // stand, the mass would hang on nothing — so it is NOT lifted at all and
       // is drawn solid, which is a visible, honest failure rather than a
       // building in the sky.
-      if (b.og) {
-        // A SOFFIT, because the underside of a lifted mass is the ceiling of a
-        // public space and it was showing raw facade.
-        //
-        // Rendered from the Universal Studios forecourt, the lifted podium
-        // above read as a DARK BROWN SLAB filling the top half of the frame —
-        // the wall texture, seen from below, unlit. Standing under it felt like
-        // a car park, and it is the single most-looked-at ceiling on the island
-        // because the globe is under it. A real covered plaza has a pale lit
-        // soffit, so build one: a thin cap at the underside, in its own light
-        // material, which also hides the mass's own open bottom face.
+      // A SOFFIT, because the underside of a lifted mass is the ceiling of a
+      // public space and it was showing raw facade.
+      //
+      // Rendered from the Universal Studios forecourt, the lifted podium
+      // above read as a DARK BROWN SLAB filling the top half of the frame —
+      // the wall texture, seen from below, unlit. Standing under it felt like
+      // a car park, and it is the single most-looked-at ceiling on the island
+      // because the globe is under it. A real covered plaza has a pale lit
+      // soffit, so build one: a thin cap at the underside, in its own light
+      // material, which also hides the mass's own open bottom face.
+      //
+      // EVERY lifted mass now, not only og — the 2026-08-16 sweep (frame
+      // 060) found a deck spanning a street with WINDOW PANELS ON ITS
+      // UNDERSIDE: the facade treatment reaches the bottom cap of any
+      // exposed overhang, and only og footprints were getting the cap.
+      {
         const soffit = extrudeGeo(pts, 0.38, 0);
         soffit.translate(0, _mh - 0.38, 0);
         merger.add(soffit, MAT.soffit || MAT.conc, pts[0][0], pts[0][1]);
+      }
+      if (b.og) {
         const cols = [];
         let acc = 0;
         for (let i = 0; i < pts.length - 1; i++) {
