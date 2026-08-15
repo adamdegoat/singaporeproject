@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance, resetSignAtlas, hashRand } from './tex.js';
-import { MAT, badGeoCount, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, plantSurveyed, openGroundAt, openGroundPolys } from './city.js';
+import { MAT, badGeoCount, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, footbridgeIdOf, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, plantSurveyed, openGroundAt, openGroundPolys } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, lambertise, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
@@ -2969,7 +2969,8 @@ async function buildRegion(data, opts = {}) {
   window.__surfaceAt = (x, z) => surfaceAt(x, z);
   // the same question asked from a stated height, which is the only way to see
   // whether a raised deck is being offered to someone who could not reach it
-  window.__surfaceAtFrom = (x, z, fromY) => surfaceAt(x, z, fromY);
+  window.__surfaceAtFrom = (x, z, fromY, seat) => surfaceAt(x, z, fromY, seat);
+  window.__footbridgeIdOf = (pts) => footbridgeIdOf(pts);
   window.__inFootprint = (x, z) => inFootprint(x, z);
   // the solidity test the ride and the walker actually use, so a check can ask
   // the same question they do rather than a lookalike
@@ -4305,7 +4306,7 @@ function toggleMode() {
     const nx = Math.cos(S.heading), nz = -Math.sin(S.heading);
     let wx = S.x + nx * 1.2, wz = S.z + nz * 1.2;
     if (blocked(wx, wz)) { wx = S.x - nx * 1.2; wz = S.z - nz * 1.2; }
-    walker.x = wx; walker.z = wz; walker.heading = S.heading; walker.speed = 0; walker.y = null;
+    walker.x = wx; walker.z = wz; walker.heading = S.heading; walker.speed = 0; walker.y = null; walker.seat.id = null;
     S.speed = 0; S.reversing = false;
     camYaw = S.heading; camPitch = 0.16;
     walkerRig.group.visible = true;
@@ -4432,7 +4433,7 @@ function alightRide() {
     const home = r.boards[0];
     wx = home.x; wz = home.z;
   }
-  walker.x = wx; walker.z = wz; walker.speed = 0; walker.y = null;
+  walker.x = wx; walker.z = wz; walker.speed = 0; walker.y = null; walker.seat.id = null;
   walkerRig.group.visible = true;
   onRide = null;
   mode = 'walk';
@@ -4449,7 +4450,7 @@ function rideStep(dt) {
   // the walker rides along invisibly under the seat: crowd, traffic, streaming
   // and the wayfinder all key off walker.x/z, and a frozen walker would freeze
   // the island around a moving player
-  walker.x = p.x; walker.z = p.z; walker.y = null;
+  walker.x = p.x; walker.z = p.z; walker.y = null; walker.seat.id = null;
   const yaw = Math.atan2(p.dir.x * onRide.dir, p.dir.z * onRide.dir);
   r.carrier.position.set(p.x, p.y - (r.hang || 0), p.z);
   r.carrier.rotation.set(0, yaw, 0);
@@ -5253,12 +5254,12 @@ function loop(now) {
         else if (!moveBlocked(wx, walker.z) || seaEnterableAt(wx, walker.z)) walker.x = wx;
         else { walker.x = wx; walker.z = wz; }
       }
-      if (!walker.swim && swimmableAt(walker.x, walker.z)) { walker.swim = true; walker.y = null; }
+      if (!walker.swim && swimmableAt(walker.x, walker.z)) { walker.swim = true; walker.y = null; walker.seat.id = null; }
       else if (walker.swim && !swimmableAt(walker.x, walker.z)
                && (seaEnterableAt(walker.x, walker.z)
                    || !moveBlocked(walker.x, walker.z))) {
         // feet found ground — stand up in the shallows and WALK out
-        walker.swim = false; walker.y = null;
+        walker.swim = false; walker.y = null; walker.seat.id = null;
       }
       if (knobEl) {
         knobEl.style.transform = `translate(${input.stickDX.toFixed(1)}px, ${input.stickDY.toFixed(1)}px)`;
@@ -5279,7 +5280,14 @@ function loop(now) {
         walker.y = sy - 0.12 + Math.sin(clock * 1.4) * 0.045;
       } else {
         if (walker.y == null) walker.y = terrain.at(walker.x, walker.z);
-        walker.y = surfaceAt(walker.x, walker.z, walker.y);
+        // the seat's direction is the walker's ACTUAL displacement this frame
+        // — boarding a footbridge requires heading along it, and a walker
+        // standing still boards nothing
+        const sdx = walker.x - wx, sdz = walker.z - wz;
+        const sdl = Math.hypot(sdx, sdz);
+        if (sdl > 1e-4) { walker.seat.hx = sdx / sdl; walker.seat.hz = sdz / sdl; }
+        else { walker.seat.hx = 0; walker.seat.hz = 0; }
+        walker.y = surfaceAt(walker.x, walker.z, walker.y, walker.seat);
       }
       walkerRig.group.position.set(walker.x, walker.y, walker.z);
       walkerRig.group.rotation.y = walker.heading;
@@ -5384,7 +5392,7 @@ function loop(now) {
           && Math.abs(S.speed) > 0.4 && !rideBlocked(px, pz)) {
         walker.x = px; walker.z = pz; walker.heading = S.heading;
         walker.speed = Math.min(1.2, Math.abs(S.speed) * 0.3);
-        walker.y = null; walker.swim = false;
+        walker.y = null; walker.seat.id = null; walker.swim = false;
         S.x = px; S.z = pz; S.speed = 0; S.reversing = false;
         camYaw = S.heading; camPitch = 0.16;
         walkerRig.group.visible = true;

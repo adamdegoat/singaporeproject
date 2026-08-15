@@ -11,7 +11,11 @@ export const WALK = {
 };
 
 export function newWalker(x = 0, z = 0, heading = 0) {
-  return { x, z, heading, speed: 0, phase: 0 };
+  // seat: the footbridge way this walker is ON, if any, and the direction
+  // they are travelling — surfaceAt reads and writes it (directional
+  // seating). Cleared with walker.y wherever the walker is placed rather
+  // than walked.
+  return { x, z, heading, speed: 0, phase: 0, seat: { id: null, hx: 0, hz: 0 } };
 }
 
 // move is a vector in world space (already rotated by the camera yaw)

@@ -43,9 +43,16 @@ const out = await page.evaluate(() => {
     const trend = [];
     let blockRun = 0, runX = 0, runZ = 0;
     let walkY = null;      // the height the walker is carrying along this way
+    const seat = { id: null, hx: 0, hz: 0,    // the footbridge way they are ON
+                                // and the direction they walk — directional
+                                // seating, the fact SESSION 17 said was missing
+      // ...and if THIS way is itself a registered footbridge, its id: the way
+      // being followed outranks nearest-by-height where crossings run parallel
+      prefer: window.__footbridgeIdOf ? window.__footbridgeIdOf(r.p) : null };
     for (let i = 0; i < p.length - 1; i++) {
       const [ax, az] = p[i], [bx, bz] = p[i + 1];
       const L = Math.hypot(bx - ax, bz - az);
+      seat.hx = (bx - ax) / (L || 1); seat.hz = (bz - az) / (L || 1);
       const n = Math.max(1, Math.ceil(L / 1.5));   // 1.5m: a stride, so a wall cannot hide between samples
       for (let s = 0; s <= n; s++) {
         const t = s / n;
@@ -66,8 +73,16 @@ const out = await page.evaluate(() => {
         // So the check walks the path the way a person does, carrying its own
         // height from the previous sample. Teaching the check, not loosening
         // it — the same call the D2 kerb and D9 rider-width findings got.
+        // The first sample's carried height is seeded from the SURFACE, not
+        // the raw terrain: seeding from g let the walker false-board a bridge
+        // whose deck was within a stride of ground that nobody stands on (the
+        // -1078 approach starts on a drawn beach 2m below its own terrain,
+        // and the seed boarded the neighbouring crossing for two samples).
+        if (walkY == null && window.__surfaceAtFrom) {
+          walkY = window.__surfaceAtFrom(x, z, g);
+        }
         const surf = window.__surfaceAtFrom
-          ? window.__surfaceAtFrom(x, z, walkY == null ? g : walkY)
+          ? window.__surfaceAtFrom(x, z, walkY == null ? g : walkY, seat)
           : (window.__surfaceAt ? window.__surfaceAt(x, z) : g);
         walkY = surf;
         // N3 — A STEP IS A DISCONTINUITY, NOT A SLOPE.

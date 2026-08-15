@@ -843,12 +843,35 @@ export function clearBridges() { BRIDGES.cells.clear(); BRIDGES.segs.length = 0;
 export function addBridgeWay(pts, width, deck = null) { return _addSpan(BRIDGES, pts, width, deck); }
 
 // A pedestrian bridge. Same geometry, a registry nothing seats a rider from.
+// The pts-array -> way-id map lets a way-following walker (trailcheck walks
+// the very arrays the registry was built from) PREFER the deck of the way it
+// is actually on — two crossings run parallel at the Gateway, and nearest-
+// by-height boarded the wrong one.
+const _SPAN_BY_PTS = new WeakMap();
 export function addFootbridgeWay(pts, width) {
-  return _addSpan(FOOTBRIDGES, pts, Math.max(width || 0, 3));
+  if (!pts || pts.length < 2) return 0;
+  const d = _addSpan(FOOTBRIDGES, pts, Math.max(width || 0, 3));
+  _SPAN_BY_PTS.set(pts, _SPAN_ID);
+  return d;
 }
+export function footbridgeIdOf(pts) {
+  return _SPAN_BY_PTS.get(pts) ?? null;
+}
+
+// Every span call is one WAY, and the id is what directional seating keys on:
+// a walker's seat names the way they boarded, not a point in space. _WET_WAYS
+// holds the ids of ways whose deck genuinely crosses open water — the only
+// ways a walker may BOARD from land. The Cove access bridges hover 1.2m over
+// drawn grass (the uncarved moats): their ground is walkable, boarding them
+// added a step up and a step off that baseline never had (N3 37 -> 111,
+// measured), and a dry way's deck is scenery to a walker until the canal is
+// carved. A shore crossing's ground drowns; its deck is the only truth.
+let _SPAN_ID = 0;
+const _WET_WAYS = new Set();
 
 function _addSpan(REG, pts, width, deckOverride = null) {
   if (!pts || pts.length < 2) return 0;
+  const wid = ++_SPAN_ID;
   // deckOverride: a number, or a HEIGHT FUNCTION (x,z)=>h carrying approach
   // ramps (see the run grouping in buildRoads). The registry already stores a
   // height PER SEGMENT, so a ramped run is just segments at falling heights.
@@ -862,25 +885,103 @@ function _addSpan(REG, pts, width, deckOverride = null) {
     deck += 1.2;                      // the deck sits above its abutment
   }
   const half = width / 2;
+  // A NARROW FOOTBRIDGE COMES DOWN TO ITS LANDINGS IN THE REGISTRY, the way
+  // the drawn ribbon already does — SESSION 17's second diagnosed
+  // inconsistency ("the footbridge comes down to its landing in the picture
+  // and stays in the air in the answer"). The per-RUN ramp fn was measured
+  // there and thrown away (floating 318 -> 572: a pedestrian union reaches
+  // far inland, so runMax + 1.2 came from ground the deck never touches).
+  // This ramp is WAY-LOCAL: the flat deck eases over the last 18m of the
+  // way's own arc to the surface a walker actually meets at each end —
+  // min(shoreY, at), because a landing on a drawn beach is at the drawn
+  // beach — and an end standing in open water (a scenery stub) keeps the
+  // flat deck, which is the measured least-harm for the one dead-end stub.
+  // NARROW ONLY (half < 2.5): the promenade clause is width-gated, so the
+  // Boardwalk's tuned stand-on behaviour never sees these heights.
+  let ramp = null;
+  let total = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    total += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+  }
+  if (REG === FOOTBRIDGES && half < 2.5 && !fn) {
+    const grd = TERRAIN.grid && TERRAIN.grid();
+    const seaLv = grd && typeof grd.sea === 'number' ? grd.sea : 0;
+    const RAMP_LEN = 18;
+    const tgt = [pts[0], pts[pts.length - 1]].map(([ex, ez]) => {
+      const eg = TERRAIN.at(ex, ez);
+      if (eg < seaLv + 0.6) return null;   // ends in open water: scenery stub
+      // The landing floor is the DRAWN skin, not the heightfield — at the
+      // -1078 landing the drawn beach eases to -1.4 while at() reads 0.72,
+      // and a ramp aimed at at() left the deck 2.5m above the sand a walker
+      // is actually on (measured, the +2.54 residual). shoreY at the exact
+      // vertex was tried first and nulls out: the vertex sits a step outside
+      // the water polygon, so waterFloor has no answer there. drawnGroundAt
+      // over a short cross around the end is the height the walker arrives
+      // at, whichever side they step off.
+      let floor = eg;
+      for (const [ox, oz] of [[0, 0], [2.5, 0], [-2.5, 0], [0, 2.5], [0, -2.5]]) {
+        floor = Math.min(floor, drawnGroundAt(ex + ox, ez + oz));
+      }
+      return floor + 0.06;
+    });
+    if (tgt[0] !== null || tgt[1] !== null) {
+      ramp = (s) => {
+        let h = deck;
+        if (tgt[0] !== null && s < RAMP_LEN) {
+          h = Math.min(h, tgt[0] + (deck - tgt[0]) * (s / RAMP_LEN));
+        }
+        if (tgt[1] !== null && total - s < RAMP_LEN) {
+          h = Math.min(h, tgt[1] + (deck - tgt[1]) * ((total - s) / RAMP_LEN));
+        }
+        return h;
+      };
+    }
+  }
   // With a ramp function, long map segments are SUBDIVIDED (8m) before they
   // are stored: one 100m segment scored by its two endpoints would take the
   // ramp's lowest height for its whole length and put the ride surface under
-  // the drawn tarmac mid-span.
+  // the drawn tarmac mid-span. Each entry carries its arc interval [s0,s1]
+  // so the way-local end ramp can score it.
   const src = [];
+  let arc = 0;
   for (let i = 0; i < pts.length - 1; i++) {
     const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
-    if (!fn) { src.push([ax, az, bx, bz]); continue; }
     const L = Math.hypot(bx - ax, bz - az);
+    if (!fn && !ramp) { src.push([ax, az, bx, bz, arc, arc + L]); arc += L; continue; }
     const n = Math.max(1, Math.ceil(L / 8));
     for (let s = 0; s < n; s++) {
       src.push([ax + (bx - ax) * (s / n), az + (bz - az) * (s / n),
-                ax + (bx - ax) * ((s + 1) / n), az + (bz - az) * ((s + 1) / n)]);
+                ax + (bx - ax) * ((s + 1) / n), az + (bz - az) * ((s + 1) / n),
+                arc + L * (s / n), arc + L * ((s + 1) / n)]);
+    }
+    arc += L;
+  }
+  // Sampled ALONG each segment, never at vertices alone — SESSION 18's bridge
+  // decks were missing because a crossing-over-water test read only way
+  // vertices and both ends of every 2-point bridge way stand on dry bank.
+  if (REG === FOOTBRIDGES) {
+    const grd = TERRAIN.grid && TERRAIN.grid();
+    const seaLv = grd && typeof grd.sea === 'number' ? grd.sea : 0;
+    outer: for (const [ax, az, bx, bz] of src) {
+      const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 6));
+      for (let s = 0; s <= n; s++) {
+        const t = s / n;
+        if (TERRAIN.at(ax + (bx - ax) * t, az + (bz - az) * t) < seaLv + 0.6) {
+          _WET_WAYS.add(wid);
+          break outer;
+        }
+      }
     }
   }
-  for (const [ax, az, bx, bz] of src) {
+  for (const [ax, az, bx, bz, s0, s1] of src) {
     const idx = REG.segs.length;
-    const segDeck = fn ? Math.min(fn(ax, az), fn(bx, bz)) : deck;
-    REG.segs.push([ax, az, bx, bz, half, segDeck]);
+    const segDeck = fn ? Math.min(fn(ax, az), fn(bx, bz))
+      : ramp ? Math.min(ramp(s0), ramp(s1)) : deck;
+    const seg = [ax, az, bx, bz, half, segDeck, wid];
+    // an 18% landing ramp quantised to one height per 8m seg is a 1.5m stair
+    // (measured: +2.54 at -1078,12110) — the seat readers interpolate these
+    if (ramp) { seg[7] = ramp(s0); seg[8] = ramp(s1); }
+    REG.segs.push(seg);
     const mnx = Math.min(ax, bx) - half;
     const mxx = Math.max(ax, bx) + half;
     const mnz = Math.min(az, bz) - half;
@@ -1102,8 +1203,8 @@ export function bridgeDecksAt(x, z) {
 // stand-on rule needs to tell a 7m promenade from a 3m crossing linkway
 function _deckWideIn(REG, x, z, minHalf) {
   const l = REG.cells.get(Math.floor(x / BR_CELL) + ',' + Math.floor(z / BR_CELL));
-  if (!l) return null;
-  let best = null, bestHalf = -1;
+  if (!l) { _deckWideIn.id = null; return null; }
+  let best = null, bestHalf = -1, bestId = null;
   for (const i of l) {
     const s = REG.segs[i];
     if (s[4] < minHalf) continue;
@@ -1113,9 +1214,12 @@ function _deckWideIn(REG, x, z, minHalf) {
     t = t < 0 ? 0 : t > 1 ? 1 : t;
     const dx = x - (s[0] + vx * t), dz = z - (s[1] + vz * t);
     if (dx * dx + dz * dz <= (s[4] + 0.4) * (s[4] + 0.4) && s[4] > bestHalf) {
-      bestHalf = s[4]; best = s[5];
+      bestHalf = s[4]; best = s[5]; bestId = s[6];
     }
   }
+  // the way id of the deck just returned, for the seat — read it immediately,
+  // the next call overwrites it
+  _deckWideIn.id = bestId;
   return best;
 }
 
@@ -1137,6 +1241,72 @@ function _deckIn(REG, x, z) {
   return best;
 }
 
+// DIRECTIONAL SEATING — the missing fact was WHICH way the walker follows.
+//
+// SESSION 17 measured four positional rules for the shore-landing spikes and
+// every one moved the step instead of removing it, because surfaceAt(x,z,fromY)
+// cannot know which way the walker is on. The seat is that fact, carried by the
+// caller: a mutable {id} the walker owns. Boarding names the footbridge way
+// (the _addSpan call id stamped on each seg); while seated, THAT way's deck is
+// consulted first and continuously, so the shore-shelf clause cannot walk a
+// bridge-crosser 1.7m under the sea mid-span. Only callers that pass a seat
+// get any of this — the crowd, the kerbs and every dressing pass are unchanged.
+
+// The deck of one named way at x,z, or null once the walker leaves its corridor.
+function _seatDeckAt(id, x, z) {
+  const l = FOOTBRIDGES.cells.get(Math.floor(x / BR_CELL) + ',' + Math.floor(z / BR_CELL));
+  if (!l) return null;
+  for (const i of l) {
+    const s = FOOTBRIDGES.segs[i];
+    if (s[6] !== id) continue;
+    const vx = s[2] - s[0], vz = s[3] - s[1];
+    const l2 = vx * vx + vz * vz || 1;
+    let t = ((x - s[0]) * vx + (z - s[1]) * vz) / l2;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const dx = x - (s[0] + vx * t), dz = z - (s[1] + vz * t);
+    if (dx * dx + dz * dz <= (s[4] + 0.4) * (s[4] + 0.4)) {
+      return s[7] != null ? s[7] + (s[8] - s[7]) * t : s[5];
+    }
+  }
+  return null;
+}
+
+// Can this walker BOARD a footbridge here — inside its corridor, deck within a
+// stride of the height they are carrying (STEP_UP above / 0.5 below, the same
+// reach walkSurfaceAt grants a stair tread), AND heading ALONG it. The height
+// window alone was measured first and it is SESSION 17's unbounded disaster
+// re-run: N3 37 -> 129 with ±1.2m pairs at every footway that crosses a deck
+// corridor, because a walker CROSSING a bridge's approach boarded it for two
+// strides and stepped back off. Direction is the discriminator the whole
+// project was named for: you board a bridge you are following, not one you
+// are walking past, and |cos| > 0.5 (within ~60°) tells those apart while
+// still boarding from a diagonal approach path. Nearest to the walker's own
+// height wins where two ways share a landing.
+function _boardableAt(x, z, fromY, hx, hz, prefer) {
+  const l = FOOTBRIDGES.cells.get(Math.floor(x / BR_CELL) + ',' + Math.floor(z / BR_CELL));
+  if (!l) return null;
+  let best = null;
+  for (const i of l) {
+    const s = FOOTBRIDGES.segs[i];
+    if (!_WET_WAYS.has(s[6])) continue;
+    const vx = s[2] - s[0], vz = s[3] - s[1];
+    const sl = Math.hypot(vx, vz) || 1;
+    const l2 = vx * vx + vz * vz || 1;
+    let t = ((x - s[0]) * vx + (z - s[1]) * vz) / l2;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const dx = x - (s[0] + vx * t), dz = z - (s[1] + vz * t);
+    if (dx * dx + dz * dz > (s[4] + 0.4) * (s[4] + 0.4)) continue;
+    const y = s[7] != null ? s[7] + (s[8] - s[7]) * t : s[5];
+    const d = y - fromY;
+    if (d > STEP_UP || d < -0.5) continue;
+    if (Math.abs((hx * vx + hz * vz) / sl) < 0.5) continue;
+    // the way the walker is actually following outranks nearest-by-height
+    if (prefer != null && s[6] === prefer) return { y, id: s[6] };
+    if (best === null || Math.abs(d) < Math.abs(best.y - fromY)) best = { y, id: s[6] };
+  }
+  return best;
+}
+
 // Can something STAND here? Open water says no — unless there is a bridge
 // deck over it, because a median kerb or a lamp on a causeway is standing on
 // the causeway. street.js and markings.js already filtered their furniture by
@@ -1148,7 +1318,17 @@ export function standable(x, z) {
   return bridgeDeckAt(x, z) !== null;
 }
 
-export function surfaceAt(x, z, fromY) {
+export function surfaceAt(x, z, fromY, seat) {
+  // SEATED: the walker is ON a named footbridge way, and stays on it until
+  // they leave its corridor — the deck answers before every other clause, so
+  // neither a viaduct overhead nor the shore shelf below can pull them off
+  // mid-crossing. Unseating falls through to the ordinary rules, which at a
+  // corridor's end is the abutment ground the deck comes down to.
+  if (seat && seat.id != null) {
+    const sd = _seatDeckAt(seat.id, x, z);
+    if (sd !== null) return sd + 0.04;
+    seat.id = null;
+  }
   const deck = bridgeDeckAt(x, z);
   if (deck !== null) return deck + SURFACE_ROAD;
   // A STAIR TREAD IS GROUND WHEN YOU ARE ON IT. Checked after the deck so a
@@ -1167,6 +1347,23 @@ export function surfaceAt(x, z, fromY) {
   // the water: standing on at() there puts a walker, and anything seated with
   // them, up to a metre above the sand they can see. Only the shelf band is
   // affected; `shoreY` returns null everywhere else.
+  // BOARDING, checked before the shelf — this is the seaward end SESSION 17
+  // said needed solving. The shelf clause returns unconditionally inside its
+  // band, so a walker following a footway onto a shore crossing descended
+  // the drawn beach to 1.7m under the sea and only snapped onto the deck
+  // where the band ran out (the 4.71m step at -1034,12090). A walker in a
+  // WET footbridge's corridor, heading along it, with its deck within a
+  // stride of the height they carry, is boarding it — usually on the made
+  // ground of the approach, where deck and ground nearly meet — and from
+  // there the seat carries them continuously to the far abutment. Boarding
+  // restricted to the shelf band was also measured and left the 4.71
+  // standing: at that landing the deck is 1.76m above the shelf's top, out
+  // of reach, and the only place a walker can honestly step onto it is the
+  // higher approach ground the band excludes.
+  if (seat && fromY != null && (seat.hx || seat.hz)) {
+    const b = _boardableAt(x, z, fromY, seat.hx, seat.hz, seat.prefer);
+    if (b !== null) { seat.id = b.id; return b.y + 0.04; }
+  }
   const sh = TERRAIN.shoreY ? TERRAIN.shoreY(x, z) : null;
   if (sh !== null) return sh + SURFACE_PATH;
   const g = TERRAIN.at(x, z);
