@@ -6849,6 +6849,93 @@ export function buildUssVocab(world, data, blocked) {
     }
   }
 
+  // PUSS IN BOOTS' RUINED KEEP — §6.C, the zone's other named silhouette:
+  // "a ruined round keep in grey-green rubble stone with broken
+  // crenellations, swallowed by giant green beanstalk vines, gold eggs on
+  // the low walls." Height is UNPUBLISHED; EST-PHOTO 12-16m +-25% (the
+  // brief's own basis line), built at 13. It rises from the mapped ride
+  // footprint's own centroid — the 6.8m station box OSM carries is the
+  // ride building, and the keep is the structure inside it.
+  const pib = (data.buildings || []).find((b) => (b.n || '').includes('Puss'));
+  if (pib && pib.p && pib.p.length >= 3) {
+    let cx = 0, cz = 0;
+    for (const [qx, qz] of pib.p) { cx += qx; cz += qz; }
+    cx /= pib.p.length; cz /= pib.p.length;
+    const g0 = drawnGroundAt(cx, cz);
+    const KEEP_H = 16, KEEP_R = 4.2;
+    const stone = new THREE.MeshLambertMaterial({ color: 0x878b7a });
+    const vine = new THREE.MeshLambertMaterial({ color: 0x2e8b46 });
+    const leaf = new THREE.MeshLambertMaterial({ color: 0x3fae5a });
+    const eggM = new THREE.MeshLambertMaterial({ color: 0xd8b23a });
+    bake(new THREE.CylinderGeometry(KEEP_R, KEEP_R + 0.7, KEEP_H, 12), stone,
+      cx, g0 + KEEP_H / 2, cz);
+    // broken crenellations: merlons of irregular height, some missing —
+    // deterministic off the slot index, no RNG (the placement-stream law)
+    for (let i = 0; i < 12; i++) {
+      if (i % 5 === 2) continue;                       // the gaps ARE the ruin
+      const a = (i / 12) * Math.PI * 2;
+      const mh = 0.7 + ((i * 7) % 5) * 0.22;
+      bake(new THREE.BoxGeometry(1.15, mh, 0.55), stone,
+        cx + Math.cos(a) * (KEEP_R + 0.05), g0 + KEEP_H + mh / 2,
+        cz + Math.sin(a) * (KEEP_R + 0.05), -a);
+      out.keepMerlons = (out.keepMerlons || 0) + 1;
+    }
+    // the beanstalk: a helix of stout segments climbing 2.4 turns, heart
+    // leaves every third segment, a curling tendril past the parapet
+    // the vine's visible span starts at the station's own roofline — the
+    // first build wrapped it from the ground and the mapped ride box hid
+    // every turn below 7m (vetted uss-keep)
+    const TURNS = 2.2, SEGS = 30, VR = KEEP_R + 0.55, VLO = 7.0;
+    for (let i = 0; i < SEGS; i++) {
+      const t0 = i / SEGS, t1 = (i + 1) / SEGS;
+      const a0 = t0 * TURNS * Math.PI * 2, a1 = t1 * TURNS * Math.PI * 2;
+      const y0 = g0 + VLO + t0 * (KEEP_H + 1.2 - VLO), y1 = g0 + VLO + t1 * (KEEP_H + 1.2 - VLO);
+      const x0 = cx + Math.cos(a0) * VR, z0 = cz + Math.sin(a0) * VR;
+      const x1 = cx + Math.cos(a1) * VR, z1 = cz + Math.sin(a1) * VR;
+      const L = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+      const gseg = new THREE.CylinderGeometry(0.19, 0.19, L, 5);
+      // orient the segment along its chord
+      const mid = [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2];
+      const dir = new THREE.Vector3(x1 - x0, y1 - y0, z1 - z0).normalize();
+      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      gseg.applyQuaternion(q);
+      gseg.translate(mid[0], mid[1], mid[2]);
+      merger.add(gseg, vine, mid[0], mid[2]);
+      if (i % 3 === 1) {
+        const lg = new THREE.BoxGeometry(0.95, 0.06, 0.95);
+        lg.rotateY(a0);
+        lg.translate(cx + Math.cos(a0) * (VR + 0.65), y0, cz + Math.sin(a0) * (VR + 0.65));
+        merger.add(lg, leaf, x0, z0);
+      }
+    }
+    // the tendril: a chained continuation of the helix, segments touching,
+    // curling inward and up past the parapet
+    {
+      let ta = TURNS * Math.PI * 2, tr = VR, ty = g0 + KEEP_H + 1.2;
+      let px0 = cx + Math.cos(ta) * tr, pz0 = cz + Math.sin(ta) * tr;
+      for (let i = 0; i < 4; i++) {
+        ta += 0.75; tr -= 0.75; ty += 0.55;
+        const nx = cx + Math.cos(ta) * tr, nz = cz + Math.sin(ta) * tr;
+        const L2 = Math.hypot(nx - px0, 0.55, nz - pz0);
+        const tg = new THREE.CylinderGeometry(0.11 - i * 0.02, 0.13 - i * 0.02, L2, 5);
+        const dir2 = new THREE.Vector3(nx - px0, 0.55, nz - pz0).normalize();
+        tg.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir2));
+        tg.translate((px0 + nx) / 2, ty - 0.27, (pz0 + nz) / 2);
+        merger.add(tg, vine, nx, nz);
+        px0 = nx; pz0 = nz;
+      }
+    }
+    // gold eggs on the low wall
+    for (const [ea, es] of [[0.6, 0.34], [2.4, 0.28], [4.4, 0.31]]) {
+      const eg = new THREE.SphereGeometry(es, 7, 5);
+      eg.scale(1, 1.35, 1);
+      eg.translate(cx + Math.cos(ea) * (KEEP_R - 0.4), g0 + KEEP_H + 0.42,
+        cz + Math.sin(ea) * (KEEP_R - 0.4));
+      merger.add(eg, eggM, cx, cz);
+    }
+    out.keep = 1;
+  }
+
   merger.flush(world);
   return out;
 }
