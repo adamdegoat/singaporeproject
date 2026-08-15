@@ -283,6 +283,16 @@ const SPOTS = [
   // the 1408 show building's east face where the colonnade reads — the
   // vetted e-1408 vantage.
   ['egypt-columns', -1120, 12500, -1.24],
+  // THE TANJONG RIMAU INTERTIDAL FLAT (research/tanjong-rimau.md §6.3),
+  // shipped WITH its pass (2026-08-15): boulder and cobble scatter, algal
+  // pads and outcrop clusters in the measured water fringe along the EIA
+  // arc — drawn dressing only, heights untouched per the brief's verdict.
+  // No frame watched this coast (waterline stands 600m east at Siloso).
+  // Stands on the cliff over the arc's south stretch. KNOWN IN-FRAME:
+  // grey background masses across the strait float at the horizon — a
+  // PRE-EXISTING background-layer artifact (A/B'd against the pre-batch
+  // world), not part of this pass.
+  ['rimau-shore', -2860, 11990, -2.2],
 ];
 
 mkdirSync(ACT, { recursive: true });

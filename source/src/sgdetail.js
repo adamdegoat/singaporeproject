@@ -6491,6 +6491,117 @@ export async function buildBeachLife(world, data, Y = null) {
     }
   }
 
+  // ── THE TANJONG RIMAU INTERTIDAL FLAT — research/tanjong-rimau.md §6.3
+  // (2026-08-15). The west cape is one of Singapore's last natural rocky
+  // shores: a soil-nailed coastal cliff over a ~50m rock-and-rubble flat
+  // that dries ~2.7m twice a day (the 2026 EIA surveyed it on 50m
+  // transects below 0.3m CD). The DEM reads that flat as sea and the
+  // brief's verdict is LEAVE THE TERRAIN ALONE — so this is DRAWN
+  // dressing only, the Cove-canal law: boulder and cobble scatter in the
+  // shallow fringe along the EIA arc (I01 x-2837,z11799 around the cape
+  // to I05 x-2836,z12018), algal turf pads, an outcrop ridge (the 2021
+  // photo's #A2AFB8 rock out of shallow water). Rock hexes are sampled
+  // off the dated 2010/2021 photo set, lifted ~30% per the brief's own
+  // exposure note. Everything here deliberately stands in tidal water —
+  // the same mechanism-declared exemption the buoys above carry.
+  {
+    const rockA = new THREE.MeshLambertMaterial({ color: 0xa08064 });
+    const rockB = new THREE.MeshLambertMaterial({ color: 0x745845 });
+    const ridge = new THREE.MeshLambertMaterial({ color: 0xa2afb8 });
+    const cobble = new THREE.MeshLambertMaterial({ color: 0x6e563c });
+    const algal = new THREE.MeshLambertMaterial({ color: 0x46603a });
+    for (const m of [rockA, rockB, ridge, cobble, algal]) m.userData.groyneInWater = true;
+    const inArc = (x, z) => x > -2995 && x < -2815 && z > 11775 && z < 12035;
+    let rocks = 0, pads = 0, ridges = 0;
+    for (const c of (data.coast || [])) {
+      const P = c.p || c || [];
+      if (!Array.isArray(P) || P.length < 2 || !Array.isArray(P[0])) continue;
+      let acc = 0, stepIdx = 0;
+      for (let i = 0; i < P.length - 1; i++) {
+        const [ax, az] = P[i], [bx, bz] = P[i + 1];
+        const L = Math.hypot(bx - ax, bz - az);
+        if (L < 0.5) continue;
+        const ux = (bx - ax) / L, uz = (bz - az) / L;
+        for (let s = 9 - acc; s <= L; s += 9) {
+          const cx = ax + ux * s, cz = az + uz * s;
+          if (!inArc(cx, cz)) { stepIdx++; continue; }
+          // seaward is measured, not assumed: the lower drawn side
+          const gL = drawnGroundAt(cx + -uz * 7, cz + ux * 7);
+          const gR = drawnGroundAt(cx + uz * 7, cz + -ux * 7);
+          const sgn = gL < gR ? 1 : -1;
+          const nx = -uz * sgn, nz = ux * sgn;
+          // THE FRINGE IS MEASURED, NOT ASSUMED. On this stretch the drawn
+          // skin slopes smoothly and only reaches sea level 26m+ seaward of
+          // the coast way (probed: 7.1m at the way, 1.5m at 26m out) — the
+          // first build's fixed 3-22m offsets landed on ground the guards
+          // rejected. Scan outward and drop each piece where the water
+          // fringe actually is.
+          let placedHere = 0;
+          for (let off = 4; off <= 46 && placedHere < 4; off += 3) {
+            const lat = ((stepIdx * 3 + off) % 7) - 3;
+            const px = cx + nx * off + ux * lat, pz = cz + nz * off + uz * lat;
+            const g = drawnGroundAt(px, pz);
+            if (g > 1.2 || g < -1.2) continue;
+            const r = 0.45 + ((stepIdx + off) % 5) * 0.3;
+            const bo = new THREE.SphereGeometry(r, 6, 5);
+            bo.scale(1.25, 0.55, 0.9);
+            bo.rotateY((stepIdx * 0.7 + off) % 3.1);
+            bo.translate(px, Math.max(g, -0.2) + r * 0.28, pz);
+            merger.add(bo, (stepIdx + off) % 3 === 0 ? rockB : rockA, px, pz);
+            rocks++; placedHere++;
+          }
+          // a cobble pad every third step, seated at the fringe's own
+          // height; an algal skin on half of them
+          if (stepIdx % 3 === 1) {
+            for (let off = 4; off <= 40; off += 3) {
+              const px = cx + nx * off, pz = cz + nz * off;
+              const g = drawnGroundAt(px, pz);
+              if (g > 0.8 || g < -0.7) continue;
+              const pr = 2.5 + (stepIdx % 3);
+              const pad = new THREE.CylinderGeometry(pr, pr + 0.3, 0.3, 10);
+              pad.translate(px, Math.max(g, -0.2) + 0.15, pz);
+              merger.add(pad, cobble, px, pz);
+              if (stepIdx % 6 === 1) {
+                const al = new THREE.CylinderGeometry(pr * 0.6, pr * 0.6, 0.1, 8);
+                al.translate(px + nx * 1.2, Math.max(g, -0.2) + 0.32, pz + nz * 1.2);
+                merger.add(al, algal, px, pz);
+              }
+              pads++;
+              break;
+            }
+          }
+          // the outcrop, roughly every 60m: a cluster of three big squashed
+          // rocks half out of the shallows — the first build's flat BOX read
+          // as a concrete slab hovering at the waterline (vetted tr-cape)
+          if (stepIdx % 7 === 3) {
+            for (let off = 12; off <= 50; off += 4) {
+              const px = cx + nx * off, pz = cz + nz * off;
+              const g = drawnGroundAt(px, pz);
+              if (g > 0.4 || g < -1.4) continue;
+              for (let k = 0; k < 3; k++) {
+                const rr = 1.3 + ((stepIdx + k) % 3) * 0.45;
+                const ox = Math.cos(stepIdx + k * 2.1) * 1.6;
+                const oz = Math.sin(stepIdx + k * 2.1) * 1.6;
+                const rk = new THREE.SphereGeometry(rr, 7, 5);
+                rk.scale(1.4, 0.5, 0.95);
+                rk.rotateY((stepIdx + k) % 3.1);
+                rk.translate(px + ox, Math.max(g, -0.4) + rr * 0.22, pz + oz);
+                merger.add(rk, ridge, px, pz);
+              }
+              ridges++;
+              break;
+            }
+          }
+          stepIdx++;
+        }
+        acc = (acc + L) % 9;
+      }
+    }
+    out.rimauRocks = rocks;
+    out.rimauPads = pads;
+    out.rimauRidges = ridges;
+  }
+
   await merger.flushY(world, {}, Y);
   return out;
 }
