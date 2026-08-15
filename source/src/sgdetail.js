@@ -811,6 +811,23 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
       const ex3 = Math.sin(mang) * 2.1, ez3 = Math.cos(mang) * 2.1;
       if (window.__onRoad && (window.__onRoad(mx + ex3, mz + ez3, -0.3)
         || window.__onRoad(mx - ex3, mz - ez3, -0.3))) continue;
+      // ...AND THE SIDES. The 2026-08-16 sweep found this slab lying in
+      // live lanes across five areas (frames 117/121/161/170 et al): the
+      // centreline tests above pass while the slab's 1.05m half-width
+      // overlaps the drawn carriageway — our widths are inferred, and on
+      // the Cove's divided avenues the inferred gap is narrower than the
+      // slab. Both side edges must be clear at a strict margin.
+      const px3 = Math.cos(mang) * 1.2, pz3 = -Math.sin(mang) * 1.2;
+      if (window.__onRoad && (window.__onRoad(mx + px3, mz + pz3, -0.1)
+        || window.__onRoad(mx - px3, mz - pz3, -0.1))) continue;
+      // ...AND THE SLOPE. The slab seats on surfaceAt at its centre, so on
+      // a grade its ends hover (the stepped-pads read in frame 117). A
+      // gentle grade is carried by pitching the bar (the emitter below);
+      // past 0.6m of drop over its length there is no honest way to draw
+      // a rigid kerb bar — skip it.
+      const eh1 = surfaceAt(mx + Math.sin(mang) * 1.5, mz + Math.cos(mang) * 1.5);
+      const eh2 = surfaceAt(mx - Math.sin(mang) * 1.5, mz - Math.cos(mang) * 1.5);
+      if (Math.abs(eh1 - eh2) > 0.6) continue;
       if (!farEnough(mx, mz)) continue;
       medianKerb.push([mx, 0.14, mz, mang]);
       if (mi % 2 === 0) medianShrub.push([mx + jit(), 0.72, mz + jit(), mang]);
@@ -818,7 +835,15 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
       mi++;
     }
   }
-  emit(new THREE.BoxGeometry(2.1, 0.34, 3.0), MAT.kerb, medianKerb, yaw);
+  // the bar PITCHES with the road so its ends stay seated on a grade —
+  // seating only the centre left the ends hovering (sweep frame 117)
+  emit(new THREE.BoxGeometry(2.1, 0.34, 3.0), MAT.kerb, medianKerb, (r) => {
+    const h1 = surfaceAt(r[0] + Math.sin(r[3]) * 1.5, r[2] + Math.cos(r[3]) * 1.5);
+    const h2 = surfaceAt(r[0] - Math.sin(r[3]) * 1.5, r[2] - Math.cos(r[3]) * 1.5);
+    p.set(r[0], (h1 + h2) / 2 + r[1], r[2]);
+    e.set(-Math.atan2(h1 - h2, 3.0), r[3], 0, 'YXZ');
+    q.setFromEuler(e);
+  });
   emit(new THREE.SphereGeometry(0.66, 7, 5),
     new THREE.MeshLambertMaterial({ color: 0x3f5c33 }), medianShrub, (r) => {
       p.set(r[0], surfaceAt(r[0], r[2]) + 0.72, r[2]); q.identity(); s.set(1, 0.78, 1);
@@ -6602,6 +6627,84 @@ export async function buildBeachLife(world, data, Y = null) {
     out.rimauRidges = ridges;
   }
 
+  // ── SERAPONG GOLF FURNITURE — the 2026-08-16 sweep's likeness verdict
+  // (frames 022/158/164/165/166/175): the mapped Sentosa Golf Club is one
+  // flat lawn — "never reads as a golf course, only generic parkland."
+  // What makes a course read at range is mown GREENS with flags and sand
+  // BUNKERS. Placement is survey-bounded: every piece stands inside the
+  // club's own mapped polygon, on a deterministic grid, guarded off roads
+  // and footprints.
+  {
+    const golf = (data.green || []).find((g) => g.k === 'golf' && g.p && g.p.length > 3);
+    if (golf) {
+      const P = golf.p;
+      const inG = (x, z) => {
+        let c = false;
+        for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+          const [xi, zi] = P[i], [xj, zj] = P[j];
+          if ((zi > z) !== (zj > z)
+            && x < ((xj - xi) * (z - zi)) / ((zj - zi) || 1e-9) + xi) c = !c;
+        }
+        return c;
+      };
+      let xmin = 1e9, xmax = -1e9, zmin = 1e9, zmax = -1e9;
+      for (const [qx, qz] of P) {
+        if (qx < xmin) xmin = qx; if (qx > xmax) xmax = qx;
+        if (qz < zmin) zmin = qz; if (qz > zmax) zmax = qz;
+      }
+      const mown = new THREE.MeshLambertMaterial({ color: 0x7fbf62 });
+      const bunkerM = new THREE.MeshLambertMaterial({ color: 0xe2cfa1 });
+      const poleW = new THREE.MeshLambertMaterial({ color: 0xf0efe8 });
+      const flagR = new THREE.MeshLambertMaterial({ color: 0xc8352c, side: THREE.DoubleSide });
+      let greens = 0, bunkers = 0, placedTotal = 0;
+      let gi = 0;
+      for (let gx = xmin + 45; gx < xmax && placedTotal < 30; gx += 90) {
+        for (let gz = zmin + 45; gz < zmax && placedTotal < 30; gz += 90) {
+          gi++;
+          // hash-jitter the cell centre so the grid never reads as a grid
+          const jx = ((gi * 37) % 41) - 20, jz = ((gi * 53) % 41) - 20;
+          const px = gx + jx, pz = gz + jz;
+          if (!inG(px, pz)) continue;
+          if ((window.__onRoad && window.__onRoad(px, pz, 6)) || !standable(px, pz)) continue;
+          // clear of the clubhouse and any other footprint inside the course
+          let nearBld = false;
+          for (const b2 of (data.buildings || [])) {
+            if (!b2.p || !b2.p.length) continue;
+            const [bx2, bz2] = b2.p[0];
+            if ((bx2 - px) ** 2 + (bz2 - pz) ** 2 < 30 * 30) { nearBld = true; break; }
+          }
+          if (nearBld) continue;
+          const gy = drawnGroundAt(px, pz);
+          if (gy < 1.0) continue;                    // never in a water hazard
+          if (gi % 3 !== 0) {
+            // a bunker: two overlapping soft sand blobs, flat on the turf
+            for (const [ox, oz, r] of [[0, 0, 4.2], [3.1, 1.6, 2.9]]) {
+              const b2 = new THREE.CylinderGeometry(r, r + 0.4, 0.14, 12);
+              b2.translate(px + ox, drawnGroundAt(px + ox, pz + oz) + 0.07, pz + oz);
+              merger.add(b2, bunkerM, px, pz);
+            }
+            bunkers++;
+          } else {
+            // a green with its flag
+            const g2 = new THREE.CylinderGeometry(9.5, 10.2, 0.12, 16);
+            g2.translate(px, gy + 0.06, pz);
+            merger.add(g2, mown, px, pz);
+            const pole = new THREE.CylinderGeometry(0.05, 0.05, 2.6, 5);
+            pole.translate(px, gy + 1.36, pz);
+            merger.add(pole, poleW, px, pz);
+            const fl = new THREE.BoxGeometry(0.75, 0.42, 0.03);
+            fl.translate(px + 0.4, gy + 2.35, pz);
+            merger.add(fl, flagR, px, pz);
+            greens++;
+          }
+          placedTotal++;
+        }
+      }
+      out.golfGreens = greens;
+      out.golfBunkers = bunkers;
+    }
+  }
+
   await merger.flushY(world, {}, Y);
   return out;
 }
@@ -7030,9 +7133,11 @@ export function buildUssVocab(world, data, blocked) {
       gseg.translate(mid[0], mid[1], mid[2]);
       merger.add(gseg, vine, mid[0], mid[2]);
       if (i % 3 === 1) {
+        // the leaf hugs the vine — at +0.65 it read as green bars floating
+        // free of the helix (sweep frame 004)
         const lg = new THREE.BoxGeometry(0.95, 0.06, 0.95);
         lg.rotateY(a0);
-        lg.translate(cx + Math.cos(a0) * (VR + 0.65), y0, cz + Math.sin(a0) * (VR + 0.65));
+        lg.translate(cx + Math.cos(a0) * (VR + 0.3), y0, cz + Math.sin(a0) * (VR + 0.3));
         merger.add(lg, leaf, x0, z0);
       }
     }
@@ -8188,10 +8293,24 @@ export function buildUssVocab(world, data, blocked) {
         if (nx * (mx - cx) + nz * (mz - cz) < 0) { nx = -nx; nz = -nz; }
         const eyaw = Math.atan2(-uz, ux);
         // the canted wedge overhangs, two per face, alternating grey/green,
-        // each with a safety-orange soffit strip on its outer edge
+        // each with a safety-orange soffit strip on its outer edge. The
+        // behind-point must be INSIDE the footprint — the centroid-normal
+        // guess fails on concave rings and a wedge floated in open air
+        // beside the coaster (sweep frame 080)
+        const behindOK = (qx, qz) => {
+          let c = false;
+          const pts = b.p;
+          for (let i2 = 0, j2 = pts.length - 1; i2 < pts.length; j2 = i2++) {
+            const [xi, zi] = pts[i2], [xj, zj] = pts[j2];
+            if ((zi > qz) !== (zj > qz)
+              && qx < ((xj - xi) * (qz - zi)) / ((zj - zi) || 1e-9) + xi) c = !c;
+          }
+          return c;
+        };
         for (const f of [0.32, 0.68]) {
           const px = ax + ux * L * f + nx * 1.5;
           const pz = az + uz * L * f + nz * 1.5;
+          if (!behindOK(px - nx * 2.6, pz - nz * 2.6)) continue;
           const wy = drawnGroundAt(px, pz) + bh * 0.62;
           const wg = new THREE.BoxGeometry(6.2, 1.6, 3.4);
           wg.rotateX(0.24);
@@ -8211,6 +8330,7 @@ export function buildUssVocab(world, data, blocked) {
         for (const [f, hy] of [[0.5, 0.5]]) {
           const px = ax + ux * L * f + nx * 0.15;
           const pz = az + uz * L * f + nz * 0.15;
+          if (!behindOK(px - nx * 0.8, pz - nz * 0.8)) continue;
           const py = drawnGroundAt(px, pz) + bh * hy;
           const port = new THREE.CylinderGeometry(0.9, 0.9, 0.25, 12);
           port.rotateX(Math.PI / 2);
@@ -8252,6 +8372,22 @@ export function buildUssVocab(world, data, blocked) {
       valance: new THREE.MeshLambertMaterial({ color: 0xece6d8 }),
       iron: new THREE.MeshLambertMaterial({ color: 0x1e3a2c }),
       stoneTrim: new THREE.MeshLambertMaterial({ color: 0xc3aa8e }),
+    };
+    // A WALL-MOUNTED PIECE NEEDS A WALL BEHIND IT. The "outward = away
+    // from the centroid" normal guess fails on concave footprints, and
+    // the 2026-08-16 sweep photographed the cost: awnings hanging on
+    // blank air at the Battlestar block's corner (frame 073) and a wedge
+    // floating beside the coaster (frame 080). The honest test is the
+    // footprint itself: the point just behind the piece must be INSIDE
+    // the polygon.
+    const inPoly = (x, z, pts) => {
+      let c = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const [xi, zi] = pts[i], [xj, zj] = pts[j];
+        if ((zi > z) !== (zj > z)
+          && x < ((xj - xi) * (z - zi)) / ((zj - zi) || 1e-9) + xi) c = !c;
+      }
+      return c;
     };
     let awnings = 0, loggia = 0;
     // pre-pass: find the loggia edge (the zone's longest NY frontage)
@@ -8299,6 +8435,7 @@ export function buildUssVocab(world, data, blocked) {
           for (let s = 2.5; s <= L - 2.5; s += 3.5) {
             const px = ax + ux * s + nx * 0.55;
             const pz = az + uz * s + nz * 0.55;
+            if (!inPoly(px - nx * 1.3, pz - nz * 1.3, b.p)) continue;
             const gy = drawnGroundAt(px, pz) + lv;
             // the dome: a half-cylinder lying along the facade, bulging out
             const aw = new THREE.CylinderGeometry(0.75, 0.75, 2.2, 8, 1, false, 0, Math.PI);

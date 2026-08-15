@@ -1275,7 +1275,13 @@ export class Terrain {
           // green, and lifting it would have blown the highlights instead.
           sand:  [0.94, 0.81, 0.62],
           resi:  [0.86, 0.86, 0.78],
-          comm:  [0.90, 0.89, 0.86],
+          // was 0.90,0.89,0.86 — the brightest neutral class on the island,
+          // and the 2026-08-16 sweep photographed the cost: the comm parcels
+          // around Artillery Avenue rendered as glaring WHITE sheets between
+          // the road and the colonial houses (frames 071/072/174). Commercial
+          // ground is pavement with wear, not the brightest thing in frame —
+          // seated between civic and plaza now.
+          comm:  [0.83, 0.82, 0.78],
           civic: [0.88, 0.87, 0.82],
           indus: [0.80, 0.79, 0.76],
           works: [0.84, 0.80, 0.72],

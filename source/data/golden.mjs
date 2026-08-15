@@ -47,7 +47,13 @@ const SPOTS = [
   ['headland-sea',   -3150, 11700, 1.12],
   ['imbiah-trail',   -2070, 12300, 0.4],
   ['beach-walk',     -1700, 12722, -1.6],
-  ['rws-globe',      -1349, 12210, -0.2],
+  // RE-AIMED 2026-08-16: the old spot's view of the globe had been walled
+  // in by later builds — the frame showed a service wall and monorail and
+  // NO globe, so the one landmark this frame is named for was unwatched
+  // (a duplicate silver globe shipped over the real one and every golden
+  // passed; found by eye, not by the gate). This stands on the plaza with
+  // the globe's basin, sphere and gold ring in frame.
+  ['rws-globe',      -1330, 12192, -2.45],
   ['sensoryscape',   -1420, 12480, 0.6],
   ['serapong',       7, 12890, 2.4],
   // the owner's own 2026-08-04 screenshot spot: the guideway must never fly
@@ -293,6 +299,12 @@ const SPOTS = [
   // PRE-EXISTING background-layer artifact (A/B'd against the pre-batch
   // world), not part of this pass.
   ['rimau-shore', -2860, 11990, -2.2],
+  // SERAPONG/TANJONG GOLF FURNITURE, shipped WITH its pass (2026-08-16):
+  // greens with flags and sand bunkers inside the club's mapped polygon —
+  // the sweep's likeness verdict was "never reads as a golf course". All
+  // 36 frames above passed through the batch; nothing watches the course.
+  // Stands on the cart path with a flagged green across the fairway.
+  ['serapong-golf', -450, 13120, 0.46],
 ];
 
 mkdirSync(ACT, { recursive: true });
