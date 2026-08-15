@@ -1967,7 +1967,44 @@ def main():
                      if _wc_in(gx, gz, rp)
                      and not any(_wc_in(gx, gz, h) for h in hp)]
             wet_in = sum(1 for (k, _, _) in cells if k in _wet_set)
-            if wet_in >= 3 and wet_in * 10 >= len(cells) * 3:
+            flood = wet_in >= 3 and wet_in * 10 >= len(cells) * 3
+            # THE COVE'S INNER CANAL ARMS CANNOT SEED: raw Copernicus reads
+            # 2.8-7.7m ACROSS a 40m canal between two bungalow rows — pure
+            # smear — so the DEM can neither witness nor refute them, and a
+            # per-ring DEM-median judgement was measured 2026-08-15 to
+            # flood NOTHING (every arm fails on the smeared median). The
+            # published master plan settles it instead: Sentosa Cove is a
+            # Port Grimaud marina-canal estate with "a fully tidal marina
+            # and semi-tidal canal precincts", bungalows berthing yachts
+            # on the waterways — research/cove-arms.md carries the sources
+            # and the rule that applies ("survey outranks derived DEM",
+            # the beach precedent). One authored interior anchor per arm;
+            # a candidate ring containing an anchor floods. The golf ponds
+            # are deliberately NOT anchored — their DEM medians are their
+            # own elevated surfaces, and carving them to sea is the
+            # Cruise-Centre mistake.
+            if not flood:
+                # (-142, 13225), the west Cove Drive arm, was anchored and
+                # WITHDRAWN on its own vet: poly 5 is a 5-10m snake of 237
+                # points and at mesh resolution it renders as angular teal
+                # confetti through a lawn, worse than the grass it replaced
+                # — and it sealed a 56 m2 pocket the opencheck gate refused
+                # (the gate was right). Its polygon needs repair or a finer
+                # mesh before it can carve; research/cove-arms.md stands.
+                for ax_, az_ in ((383, 13575),
+                                 (173, 13435), (-2, 13960)):
+                    if _wc_in(ax_, az_, rp) \
+                            and not any(_wc_in(ax_, az_, h) for h in hp):
+                        flood = True
+                        break
+            if os.environ.get("SG_WETWHY") and not flood and cells:
+                xs = [gx for (_, gx, _) in cells]
+                zs = [gz for (_, _, gz) in cells]
+                print(f"      ring not flooded: cells={len(cells)} "
+                      f"wet_in={wet_in} "
+                      f"bbox={min(xs):.0f},{min(zs):.0f}.."
+                      f"{max(xs):.0f},{max(zs):.0f}")
+            if flood:
                 for (k, _, _) in cells:
                     _wet_set.add(k)
         grid["wet"] = sorted(_wet_set)

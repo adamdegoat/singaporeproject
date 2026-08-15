@@ -419,7 +419,7 @@ export class Terrain {
   waterFloor(x, z) {
     if (!this.wrGrid) return null;
     const l = this.wrGrid.get(Math.floor(x / this.wrCell) + ',' + Math.floor(z / this.wrCell));
-    if (!l) { this.waterFloor.tidal = false; return null; }
+    if (!l) { this._wfTidal = false; return null; }
     let best = null, bestTidal = false;
     for (const id of l) {
       const w = this.wr[id];
@@ -450,8 +450,11 @@ export class Terrain {
       if (hit && (best === null || w.floor < best)) { best = w.floor; bestTidal = !!w.tidal; }
     }
     // side channel for vertexY, read immediately after the call: was the
-    // ring that answered a DEM-witnessed tidal channel?
-    this.waterFloor.tidal = best === null ? false : bestTidal;
+    // ring that answered a DEM-witnessed tidal channel? An instance field,
+    // NOT a property on the function object — waterFloor runs per drawn
+    // vertex and per swim query, and stamping a function object there is a
+    // deopt in the hottest loop the terrain has.
+    this._wfTidal = best === null ? false : bestTidal;
     return best;
   }
 
@@ -481,7 +484,7 @@ export class Terrain {
     // trailcheck's blocked-over-20m runs from 0 to 5 (measured): a
     // non-bridge way carries its own berm through the water, the drawn
     // twin of the data passes' carries_built rule.
-    if (bed < 0.2 && this.waterFloor.tidal && !this.inRoad(x, z)) return Math.min(y, bed);
+    if (bed < 0.2 && this._wfTidal && !this.inRoad(x, z)) return Math.min(y, bed);
     // A RING EDGE THAT OVERREACHES ONTO FIRM LAND DOES NOT SINK A HILL.
     // The grid's own data-side passes already sank every genuine water cell,
     // so a drawn sink deeper than ~7m below the logical ground is the water
