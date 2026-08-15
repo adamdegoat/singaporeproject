@@ -7606,6 +7606,83 @@ export function buildUssVocab(world, data, blocked) {
         reeds++;
       }
       out.egyptReeds = reeds;
+
+      // §4.B — THE COLOSSI COLONNADE, "the shot people take. If only one
+      // thing in Ancient Egypt gets real geometry, make it this." Atlantid
+      // figures with arms raised overhead carrying broken hieroglyphic
+      // lintels, alternating jackal- and falcon-headed, along the main walk
+      // at the Lost World boundary. Heights UNPUBLISHED; EST-PHOTO ~4x
+      // adult height to the lintel (§4.A basis) — 5.5m to the lintel here.
+      // Placement is survey-derived: step along the mapped park walk, keep
+      // the steps that sit in Ancient Egypt within 1.35x of the boundary
+      // (the nearest-anchor rule's own edge), stand each figure 3.4m off
+      // the path on the first side its ground guards allow.
+      const lw = anchors.find((a) => a.n === 'The Lost World' || a.n === 'Jurassic World');
+      const walk = (data.roads || []).find((r) => {
+        const P2 = r.p || [];
+        return (r.k === 'footway' || r.k === 'pedestrian') && P2.length > 15
+          && P2.some(([qx, qz]) => (qx - egy.x) ** 2 + (qz - egy.z) ** 2 < 20 * 20)
+          && lw && P2.some(([qx, qz]) => (qx - lw.x) ** 2 + (qz - lw.z) ** 2 < 60 * 60);
+      });
+      if (lw && walk) {
+        const clear2 = (px, pz) => standable(px, pz)
+          && !(blocked && blocked(px, pz))
+          && !(window.__onRoad && window.__onRoad(px, pz, 0.8));
+        const P2 = walk.p;
+        let placed = 0, acc = 0;
+        for (let i = 0; i < P2.length - 1 && placed < 6; i++) {
+          const [ax, az] = P2[i], [bx, bz] = P2[i + 1];
+          const L = Math.hypot(bx - ax, bz - az);
+          if (L < 0.5) continue;
+          const ux = (bx - ax) / L, uz = (bz - az) / L;
+          for (let s = 7 - acc; s <= L && placed < 6; s += 7) {
+            const cx = ax + ux * s, cz = az + uz * s;
+            const dE = Math.hypot(cx - egy.x, cz - egy.z);
+            const dL = Math.hypot(cx - lw.x, cz - lw.z);
+            // Egypt side, within ~55m of the zone edge (the ratio form of
+            // this test passed ONE step point — measured, 2026-08-15)
+            if (dE >= dL || (dL - dE) > 55) continue;
+            for (const side of [1, -1]) {
+              const px = cx + -uz * 3.4 * side, pz = cz + ux * 3.4 * side;
+              if (!clear2(px, pz)) continue;
+              // face the walk
+              const fyaw = Math.atan2(cx - px, cz - pz);
+              const cg = drawnGroundAt(px, pz);
+              const S = EG.sculpt;
+              const putc = (w, h2, dpt, ox, oy, oz2, rz = 0) => {
+                const g2 = new THREE.BoxGeometry(w, h2, dpt);
+                if (rz) g2.rotateZ(rz);
+                g2.rotateY(fyaw);
+                // local (ox right, oz2 forward) into world through fyaw
+                const rx = px + Math.sin(fyaw) * oz2 + Math.cos(fyaw) * ox;
+                const rzp = pz + Math.cos(fyaw) * oz2 - Math.sin(fyaw) * ox;
+                g2.translate(rx, cg + oy, rzp);
+                merger.add(g2, S, rx, rzp);
+              };
+              putc(2.2, 0.5, 1.6, 0, 0.25, 0);                   // plinth
+              for (const sgn of [-1, 1]) putc(0.55, 1.5, 0.7, sgn * 0.35, 1.25, 0);
+              putc(1.5, 0.9, 1.0, 0, 2.45, 0);                   // kilt
+              putc(1.3, 1.6, 0.9, 0, 3.7, 0);                    // torso
+              for (const sgn of [-1, 1]) putc(0.4, 1.7, 0.4, sgn * 0.8, 5.0, 0, sgn * -0.28);
+              putc(1.15, 0.9, 0.7, 0, 5.0, -0.15);               // nemes
+              if (placed % 2 === 0) {                            // jackal
+                putc(0.65, 0.55, 1.3, 0, 5.35, 0.3);
+                for (const sgn of [-1, 1]) putc(0.2, 0.8, 0.3, sgn * 0.22, 5.95, -0.1);
+              } else {                                           // falcon
+                putc(0.75, 0.7, 0.9, 0, 5.35, 0.15);
+                putc(0.25, 0.25, 0.6, 0, 5.2, 0.75);
+              }
+              // the broken lintel: two offset blocks, irregular ends
+              putc(3.2, 0.7, 1.1, -0.3, 6.15, 0);
+              putc(1.5, 0.7, 1.1, 1.5, 6.15, 0.12);
+              placed++;
+              break;
+            }
+          }
+          acc = (acc + L) % 7;
+        }
+        out.colossi = placed;
+      }
     }
   }
 

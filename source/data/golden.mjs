@@ -232,6 +232,13 @@ const SPOTS = [
   // stands west of the zone with the camp, the parapet line and the
   // obelisk shore all in frame (the vetted e-far vantage).
   ['egypt-camp', -1290, 12420, 0.87],
+  // THE COLOSSI COLONNADE (§4.B, "the shot people take"), shipped WITH its
+  // pass (2026-08-15). All 28 frames above passed at gate level through
+  // the batch that built six atlantid figures — egypt-camp stands 165m
+  // away and cannot resolve them. This stands on the walk at the Lost
+  // World boundary looking back along the file of figures, with the
+  // parapet heads and the obelisk behind — the vetted c2-fromlw vantage.
+  ['egypt-colossi', -1098, 12488, -1.75],
 ];
 
 mkdirSync(ACT, { recursive: true });
