@@ -6936,6 +6936,494 @@ export function buildUssVocab(world, data, blocked) {
     out.keep = 1;
   }
 
+  // ── MINION LAND — THE ZONE REBUILD (research/minion-land.md, the
+  // 2026-08-15 photo pass; every hex below is pixel-sampled off the dated
+  // Feb-2025 photo set). OSM still maps MADAGASCAR here with 2010-era
+  // buildings, so nothing below is fetched: positions key on our own
+  // surviving footprints (the old Crate Adventure show building IS the
+  // Minion Mayhem theatre in life; the old King Julien carousel footprint
+  // IS Buggie Boogie's) and on the spine footway, and every dimension is
+  // EST-PHOTO — the brief's §8 says footprints, ride heights and sign
+  // dimensions are all UNPUBLISHED.
+  //
+  // THE PROJECT'S NO-CHARACTER RULE HOLDS: no Minion faces, no letters, no
+  // logos (city.js zone-palette note: "nothing branded and no character or
+  // logo anywhere near it"). The three signature reads (§9) survive without
+  // them: the navy crooked gable against the sky-blue cloud wall, the lilac
+  // arch with white-tipped teal spires, and plain yellow balloon masses
+  // over a brick-west / carnival-east ground split. The wall's roundel is a
+  // dark ring, not a "G"; the arch ribbon is blank; the balloons have no
+  // goggles.
+  {
+    const mlA = anchors.find((a) => a.n === 'Minion Land' || a.n === 'Madagascar');
+    const theatre = (data.buildings || []).find((b) => (b.n0 || '') === 'A Crate Adventure');
+    const caro = (data.buildings || []).find((b) => (b.n0 || '') === "King Julien's Beach Party-Go-Round");
+    if (mlA && theatre) {
+      const ML = {
+        navy: new THREE.MeshLambertMaterial({ color: 0x2a3e64 }),
+        navyRoof: new THREE.MeshLambertMaterial({ color: 0x204370 }),
+        quoin: new THREE.MeshLambertMaterial({ color: 0x677893 }),
+        winMag: new THREE.MeshLambertMaterial({ color: 0x884e98 }),
+        porch: new THREE.MeshLambertMaterial({ color: 0x7cb1d1 }),
+        sky: new THREE.MeshLambertMaterial({ color: 0x05aade }),
+        cloud: new THREE.MeshLambertMaterial({ color: 0xf4f8fa }),
+        roundel: new THREE.MeshLambertMaterial({ color: 0x1c2430 }),
+        cream: new THREE.MeshLambertMaterial({ color: 0xe0e4e6 }),
+        crimson: new THREE.MeshLambertMaterial({ color: 0xb81d5d }),
+        rose: new THREE.MeshLambertMaterial({ color: 0xf4a2a8 }),
+        plum: new THREE.MeshLambertMaterial({ color: 0x4a3246 }),
+        awn: new THREE.MeshLambertMaterial({ color: 0xc167ac }),
+        white: new THREE.MeshLambertMaterial({ color: 0xf2f4f6 }),
+        lilac: new THREE.MeshLambertMaterial({ color: 0x8c62d7 }),
+        lilacHi: new THREE.MeshLambertMaterial({ color: 0xcdc3e9 }),
+        tealSpire: new THREE.MeshLambertMaterial({ color: 0x2aa7a8 }),
+        ribbon: new THREE.MeshLambertMaterial({ color: 0x0653b4 }),
+        magenta: new THREE.MeshLambertMaterial({ color: 0xc63370 }),
+        sun: new THREE.MeshLambertMaterial({ color: 0xe2be03 }),
+        balloon: new THREE.MeshLambertMaterial({ color: 0xf5d01e }),
+        timber: new THREE.MeshLambertMaterial({ color: 0xa97a4e }),
+        carn: new THREE.MeshLambertMaterial({ color: 0xbcd9e6 }),
+        mint: new THREE.MeshLambertMaterial({ color: 0x50d5c9 }),
+        ironGreen: new THREE.MeshLambertMaterial({ color: 0x129267 }),
+        stoneGrey: new THREE.MeshLambertMaterial({ color: 0x8d8d94 }),
+        water: new THREE.MeshLambertMaterial({ color: 0x3f96b9 }),
+      };
+      // the ensemble baseline: the theatre's street frontage, fitted as one
+      // line so the wall, Gru and the row share a datum. u runs west→east
+      // along the frontage; n points at the spine (the street side).
+      const B0 = [-1163.0, 12282.0], B1 = [-1124.0, 12298.5];
+      const BL = Math.hypot(B1[0] - B0[0], B1[1] - B0[1]);
+      const bu = [(B1[0] - B0[0]) / BL, (B1[1] - B0[1]) / BL];
+      const bn = [-bu[1], bu[0]];             // left normal = toward the street
+      const at = (t, d) => [B0[0] + bu[0] * t + bn[0] * d, B0[1] + bu[1] * t + bn[1] * d];
+      const yaw = Math.atan2(-bu[1], bu[0]);  // rotateY angle aligning +x with u
+      const g0 = drawnGroundAt((B0[0] + B1[0]) / 2, (B0[1] + B1[1]) / 2);
+      // a crooked gable prism: base w x d at (0,0,0)..(w,?,d) in local frame,
+      // eaves at ye, apex at ya, apex skewed by `skew` along the width — the
+      // §2 silhouette ("very tall narrow slightly crooked gable"). Built as a
+      // raw BufferGeometry so the crook is real, not a rotated box.
+      const gable = (w, d, ye, ya, skew) => {
+        const hw = w / 2, hd = d / 2;
+        const v = [
+          -hw, 0, -hd, hw, 0, -hd, hw, 0, hd, -hw, 0, hd,             // 0-3 base
+          -hw, ye, -hd, hw, ye, -hd, hw, ye, hd, -hw, ye, hd,         // 4-7 eaves
+          skew, ya, -hd, skew, ya, hd,                                // 8-9 ridge
+        ];
+        const f = [0, 4, 5, 0, 5, 1, 1, 5, 6, 1, 6, 2, 2, 6, 7, 2, 7, 3, 3, 7, 4, 3, 4, 0,
+          4, 8, 5, 7, 6, 9,            // gable triangles front/back
+          5, 8, 9, 5, 9, 6,            // east roof slope
+          4, 7, 9, 4, 9, 8];           // west roof slope
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+        geo.setIndex(f);
+        // de-index BEFORE the normals: computed on shared vertices they
+        // average across the wall/roof crease and the prism shades soft
+        const flat = geo.toNonIndexed();
+        flat.computeVertexNormals();
+        return flat;
+      };
+      const put = (geo, mat, t, d, y, extraYaw = 0) => {
+        const [px, pz] = at(t, d);
+        geo.rotateY(yaw + extraYaw);
+        geo.translate(px, y, pz);
+        merger.add(geo, mat, px, pz);
+      };
+      // each house seats on ITS OWN drawn ground — one shared g0 floated
+      // the SE fences on the slope (vetted d-gru-angle)
+      const gAt = (t, d) => { const [px, pz] = at(t, d); return drawnGroundAt(px, pz); };
+
+      // 1. THE SKY-BLUE SHOW WALL — §2: "an ENORMOUS flat sky-blue show
+      // wall... the zone's biggest surface", white cartoon clouds, a dark
+      // roundel where the photographs carry the letter. The theatre's own
+      // street face sits at d≈2.8 off this baseline (measured off its
+      // footprint), so the wall stands at 3.5 — proud of the mass, behind
+      // the houses. The first build put it at -5 and the theatre swallowed
+      // it whole (vetted ml-gru).
+      const WALL_D = 3.5;
+      put(new THREE.BoxGeometry(46, 17, 0.9), ML.sky, BL / 2, WALL_D, g0 + 8.5);
+      for (let i = 0; i < 7; i++) {
+        const ct = 4 + i * 6 + (i % 3), cy = g0 + 6.2 + ((i * 5) % 8);
+        const cg = new THREE.SphereGeometry(1.5 + (i % 3) * 0.5, 8, 6);
+        cg.scale(1.5, 0.8, 0.25);
+        put(cg, ML.cloud, ct, WALL_D + 0.6, cy);
+      }
+      put(new THREE.TorusGeometry(2.1, 0.38, 8, 20), ML.roundel, BL / 2 + 6, WALL_D + 0.65, g0 + 12.2);
+
+      // 2. GRU'S HOUSE — §2. Eaves 7.5, apex 16.6 (EST-PHOTO: "apex ~2.2x
+      // eaves"), the crook is the apex skewed 0.9 west. Round clock high in
+      // the gable, tall round-topped magenta windows, the flared pale
+      // pagoda porch over an arched door. Depth is 5.0 — the house is a
+      // show facade standing against the wall, and the spine corridor is
+      // only ~7m in front of it.
+      const GT = 17.5;                       // Gru's centre along the baseline
+      const GD = 6.6, GF = GD + 2.5;         // body centre depth, front face
+      const gg = gAt(GT, GD);
+      put(new THREE.BoxGeometry(9.6, 7.5, 5.0), ML.navy, GT, GD, gg + 3.75);
+      put(gable(9.6, 5.0, 0.01, 9.1, -0.9), ML.navyRoof, GT, GD, gg + 7.5);
+      // quoin chains on the two street corners
+      for (const s of [-1, 1]) {
+        put(new THREE.BoxGeometry(0.55, 7.4, 0.55), ML.quoin, GT + s * 4.6, GF - 0.35, gg + 3.7);
+      }
+      // the clock: white face, dark ring, high in the gable — the disc's
+      // axis turned onto the facade normal before the shared yaw
+      const ck = new THREE.CylinderGeometry(0.85, 0.85, 0.18, 16);
+      ck.rotateX(Math.PI / 2);
+      put(ck, ML.white, GT - 0.9, GF + 0.05, gg + 12.6);
+      put(new THREE.TorusGeometry(0.85, 0.14, 6, 16), ML.roundel, GT - 0.9, GF + 0.14, gg + 12.6);
+      // two tall narrow round-topped windows, magenta-framed
+      for (const wt of [GT - 2.4, GT + 2.4]) {
+        put(new THREE.BoxGeometry(1.0, 2.6, 0.18), ML.winMag, wt, GF + 0.05, gg + 5.2);
+        const wa = new THREE.CylinderGeometry(0.5, 0.5, 0.18, 10, 1, false, 0, Math.PI);
+        wa.rotateX(Math.PI / 2);              // disc vertical, facing the street
+        wa.rotateZ(Math.PI / 2);              // flat chord down, dome up
+        put(wa, ML.winMag, wt, GF + 0.05, gg + 6.5);
+      }
+      // arched door + the flared pagoda porch on four slim posts
+      put(new THREE.BoxGeometry(1.7, 2.5, 0.2), ML.plum, GT, GF + 0.1, gg + 1.25);
+      put(new THREE.CylinderGeometry(1.1, 3.1, 1.5, 8), ML.porch, GT, GF + 0.7, gg + 4.0);
+      for (const [pt, pd] of [[GT - 2.2, GF + 1.5], [GT + 2.2, GF + 1.5]]) {
+        put(new THREE.CylinderGeometry(0.09, 0.09, 3.2, 6), ML.porch, pt, pd, gg + 1.6);
+      }
+      // the lower secondary gable, left of the main one
+      put(new THREE.BoxGeometry(4.6, 5.0, 4.4), ML.navy, GT - 6.4, GD - 0.4, gg + 2.5);
+      put(gable(4.6, 4.4, 0.01, 3.6, -0.4), ML.navyRoof, GT - 6.4, GD - 0.4, gg + 5.0);
+
+      // 3. GRU'S NEIGHBOURHOOD — §3: one cream facade left, three right,
+      // crimson/rose shingle prisms, plum doors, magenta awnings, a
+      // porthole per gable, white picket fences.
+      // the spine footway CONVERGES on this baseline toward the SE (measured
+      // corridor distance ~11.3 at t 4.5 down to ~9.4 at t 40.5), so each
+      // facade carries its own depth: front face held 3.2m off the corridor,
+      // fence 1.6 further out and still ~1.6m clear of the path edge.
+      const rowRoof = [ML.crimson, ML.crimson, ML.rose, ML.crimson];
+      const rowT = [[4.5, 5.6], [26.5, 5.9], [33.5, 4.8], [40.5, 3.7]];
+      for (let i = 0; i < rowT.length; i++) {
+        const [t, RD] = rowT[i];
+        const RF = RD + 2.5;
+        const gh = gAt(t, RD);
+        put(new THREE.BoxGeometry(6.2, 6.0, 5.0), ML.cream, t, RD, gh + 3.0);
+        put(gable(6.2, 5.0, 0.01, 3.4, 0), rowRoof[i], t, RD, gh + 6.0);
+        const ph = new THREE.CylinderGeometry(0.55, 0.55, 0.16, 12);
+        ph.rotateX(Math.PI / 2);
+        put(ph, ML.white, t, RF + 0.05, gh + 7.4);
+        put(new THREE.BoxGeometry(1.3, 2.2, 0.16), ML.plum, t + 1.2, RF + 0.05, gh + 1.1);
+        put(new THREE.BoxGeometry(2.0, 0.22, 0.9), ML.awn, t + 1.2, RF + 0.5, gh + 2.5);
+        // thin dark spear finial on the ridge
+        put(new THREE.CylinderGeometry(0.03, 0.09, 1.1, 5), ML.plum, t, RD, gh + 9.9);
+        // the picket fence: one low white run in front, on its own ground
+        put(new THREE.BoxGeometry(5.6, 0.8, 0.08), ML.white, t - 0.8, RF + 1.6,
+          gAt(t - 0.8, RF + 1.6) + 0.42);
+      }
+      out.minionRow = rowT.length;
+
+      // 4. THE CASTLE ARCH — §4, the gateway into Super Silly Fun Land, the
+      // zone's only purple mass. It straddles the mapped path off the spine
+      // into the carnival: piers clear of the corridor, the opening over it.
+      const AC = [-1145.5, 12309.5];         // the 2-pt access footway's middle
+      const au = [0.96, 0.26];               // across the path (its left normal)
+      const A1 = [AC[0] - au[0] * 4.6, AC[1] - au[1] * 4.6];
+      const A2 = [AC[0] + au[0] * 4.6, AC[1] + au[1] * 4.6];
+      const ayaw = Math.atan2(-au[1], au[0]);
+      const ag = drawnGroundAt(AC[0], AC[1]);
+      for (const P of [A1, A2]) {
+        const pg = new THREE.BoxGeometry(2.0, 7.2, 2.0);
+        pg.rotateY(ayaw); pg.translate(P[0], ag + 3.6, P[1]);
+        merger.add(pg, ML.lilac, P[0], P[1]);
+        // white-capped merlons on each pier
+        const mg = new THREE.BoxGeometry(2.2, 0.5, 2.2);
+        mg.rotateY(ayaw); mg.translate(P[0], ag + 7.45, P[1]);
+        merger.add(mg, ML.lilacHi, P[0], P[1]);
+      }
+      // the segmental arch between them + the crenellated parapet over it
+      {
+        const sp = new THREE.BoxGeometry(9.2, 1.6, 1.7);
+        sp.rotateY(ayaw); sp.translate(AC[0], ag + 6.9, AC[1]);
+        merger.add(sp, ML.lilac, AC[0], AC[1]);
+        // the torus lives in its own XY plane, arc 0..PI = the upper half;
+        // yaw alone lays its span across the gap between the piers
+        const arc = new THREE.TorusGeometry(3.6, 0.55, 8, 18, Math.PI);
+        arc.rotateY(ayaw);
+        arc.translate(AC[0], ag + 3.0, AC[1]);
+        merger.add(arc, ML.lilacHi, AC[0], AC[1]);
+        for (let i = -3; i <= 3; i++) {
+          if (i % 2 === 0) continue;
+          const m = new THREE.BoxGeometry(0.9, 0.6, 1.0);
+          m.rotateY(ayaw);
+          m.translate(AC[0] + au[0] * i * 1.25, ag + 8.0, AC[1] + au[1] * i * 1.25);
+          merger.add(m, ML.white, AC[0], AC[1]);
+        }
+        // the blank royal-blue ribbon band + yellow sun disc over the arch
+        const rb = new THREE.BoxGeometry(6.4, 1.0, 0.4);
+        rb.rotateY(ayaw); rb.translate(AC[0] - bn[0] * 1.0, ag + 5.6, AC[1] - bn[1] * 1.0);
+        merger.add(rb, ML.ribbon, AC[0], AC[1]);
+        const sd = new THREE.CylinderGeometry(0.7, 0.7, 0.2, 12);
+        sd.rotateX(Math.PI / 2); sd.rotateY(ayaw);
+        sd.translate(AC[0] - bn[0] * 1.1, ag + 6.9, AC[1] - bn[1] * 1.1);
+        merger.add(sd, ML.sun, AC[0], AC[1]);
+      }
+      // the three conical spires — teal grading to white tips. The first
+      // build stood their drums 6m behind the arch ON the mapped path (the
+      // centre one squarely in the walkway, vetted ml-arch); they belong to
+      // the gateway itself: one drum tight behind each pier, and the tall
+      // centre spire rising off the parapet with no drum at all.
+      const pdir = [-au[1], au[0]];           // path direction (into Fun Land)
+      for (const o of [-4.6, 4.6]) {
+        const qx = AC[0] + au[0] * o + pdir[0] * 2.4;
+        const qz = AC[1] + au[1] * o + pdir[1] * 2.4;
+        const qg = drawnGroundAt(qx, qz);
+        const sh = 8.5;
+        const drum = new THREE.CylinderGeometry(1.1, 1.25, sh * 0.55, 8);
+        drum.translate(qx, qg + sh * 0.275, qz);
+        merger.add(drum, ML.lilac, qx, qz);
+        const cone = new THREE.ConeGeometry(1.45, sh * 0.45, 10);
+        cone.translate(qx, qg + sh * 0.55 + sh * 0.225, qz);
+        merger.add(cone, ML.tealSpire, qx, qz);
+        const tip = new THREE.ConeGeometry(0.42, sh * 0.16, 8);
+        tip.translate(qx, qg + sh * 0.93 + sh * 0.08, qz);
+        merger.add(tip, ML.white, qx, qz);
+      }
+      {
+        const cone = new THREE.ConeGeometry(1.7, 5.6, 10);
+        cone.translate(AC[0], ag + 8.2 + 2.8, AC[1]);
+        merger.add(cone, ML.tealSpire, AC[0], AC[1]);
+        const tip = new THREE.ConeGeometry(0.5, 1.6, 8);
+        tip.translate(AC[0], ag + 13.4, AC[1]);
+        merger.add(tip, ML.white, AC[0], AC[1]);
+      }
+      out.minionArch = 1;
+
+      // 5. BUGGIE BOOGIE — the carousel keeps the old King Julien footprint
+      // (the box below it is the mapped building, drawn generically); this
+      // adds the read: the rainbow-striped conical canopy and its pink
+      // scalloped fringe over the box, apex ball on top.
+      if (caro && caro.p && caro.p.length >= 3) {
+        let cx = 0, cz = 0;
+        for (const [qx, qz] of caro.p) { cx += qx; cz += qz; }
+        cx /= caro.p.length; cz /= caro.p.length;
+        const cg0 = drawnGroundAt(cx, cz);
+        const boxH = caro.h || 6.8;
+        const bands = [ML.crimson, ML.sun, ML.mint, ML.ribbon, ML.awn, ML.white];
+        const R0 = 10.5, CH = 4.2;
+        for (let i = 0; i < bands.length; i++) {
+          const r1 = R0 * (1 - i / bands.length), r2 = R0 * (1 - (i + 1) / bands.length);
+          const seg = new THREE.CylinderGeometry(Math.max(r2, 0.3), r1, CH / bands.length, 18, 1, true);
+          seg.translate(cx, cg0 + boxH + CH / bands.length * (i + 0.5), cz);
+          merger.add(seg, bands[i], cx, cz);
+        }
+        const fr = new THREE.CylinderGeometry(R0 + 0.35, R0 + 0.35, 0.5, 18, 1, true);
+        fr.translate(cx, cg0 + boxH - 0.1, cz);
+        merger.add(fr, ML.rose, cx, cz);
+        const ball = new THREE.SphereGeometry(0.6, 8, 6);
+        ball.translate(cx, cg0 + boxH + CH + 0.5, cz);
+        merger.add(ball, ML.sun, cx, cz);
+        out.minionCarousel = 1;
+      }
+
+      // 6. SILLY SWIRLY — §6, the balloon-gondola spinner on the lagoon
+      // edge: the shore point is found from the survey (nearest water-ring
+      // vertex to the carousel, 7m landward), like the obelisk's.
+      {
+        const CX = caro ? caro.p.reduce((s, q) => s + q[0], 0) / caro.p.length : mlA.x;
+        const CZ = caro ? caro.p.reduce((s, q) => s + q[1], 0) / caro.p.length : mlA.z;
+        // candidate shore vertices near the carousel, nearest first. The
+        // nearest one's landward spot is INSIDE the carousel's own footprint
+        // (the guard refused it and the ride never appeared — vetted
+        // d-carousel), so the search slides along the shore instead of
+        // pushing landward into the box.
+        const cand = [];
+        for (const w of (data.water || [])) {
+          for (const [wx, wz] of (w.p || [])) {
+            const dd = (wx - CX) ** 2 + (wz - CZ) ** 2;
+            if (dd < 70 * 70) cand.push([dd, wx, wz]);
+          }
+        }
+        cand.sort((a, b) => a[0] - b[0]);
+        let px = 0, pz = 0, ok = false;
+        for (const [dd, wx, wz] of cand) {
+          const dl = Math.sqrt(dd) || 1;
+          const ux = (CX - wx) / dl, uz = (CZ - wz) / dl;
+          px = wx + ux * 7; pz = wz + uz * 7;
+          if (standable(px, pz) && !(blocked && blocked(px, pz))
+            && !(window.__onRoad && window.__onRoad(px, pz, 0.5))) { ok = true; break; }
+        }
+        {
+          if (ok) {
+            const sg = drawnGroundAt(px, pz);
+            // the timber boardwalk disc + white picket ring it stands on
+            const bw = new THREE.CylinderGeometry(8.5, 8.5, 0.14, 20);
+            bw.translate(px, sg + 0.07, pz);
+            merger.add(bw, ML.timber, px, pz);
+            for (let i = 0; i < 14; i++) {
+              const a = (i / 14) * Math.PI * 2;
+              const fp = new THREE.BoxGeometry(1.6, 0.75, 0.07);
+              fp.rotateY(-a);
+              fp.translate(px + Math.cos(a) * 8.1, sg + 0.55, pz + Math.sin(a) * 8.1);
+              merger.add(fp, ML.white, px, pz);
+            }
+            const py = new THREE.CylinderGeometry(0.5, 0.65, 8.4, 8);
+            py.translate(px, sg + 4.2, pz);
+            merger.add(py, ML.tealSpire, px, pz);
+            const hub = new THREE.CylinderGeometry(1.5, 1.5, 0.7, 10);
+            hub.translate(px, sg + 8.2, pz);
+            merger.add(hub, ML.sun, px, pz);
+            const gond = [ML.crimson, ML.sun, ML.lilac, ML.tealSpire, ML.awn, ML.ribbon];
+            for (let i = 0; i < 6; i++) {
+              const a = (i / 6) * Math.PI * 2;
+              const arm = new THREE.BoxGeometry(5.6, 0.16, 0.32);
+              arm.rotateY(-a);
+              arm.translate(px + Math.cos(a) * 2.8, sg + 8.1, pz + Math.sin(a) * 2.8);
+              merger.add(arm, ML.stoneGrey, px, pz);
+              const bg = new THREE.SphereGeometry(0.95, 8, 6);
+              bg.translate(px + Math.cos(a) * 5.4, sg + 7.1, pz + Math.sin(a) * 5.4);
+              merger.add(bg, gond[i], px, pz);
+              const car = new THREE.BoxGeometry(1.0, 0.6, 0.7);
+              car.rotateY(-a);
+              car.translate(px + Math.cos(a) * 5.4, sg + 6.0, pz + Math.sin(a) * 5.4);
+              merger.add(car, gond[(i + 3) % 6], px, pz);
+            }
+            out.minionSwirly = 1;
+          }
+        }
+      }
+
+      // 7. THE GROUND SPLIT — §1/§9.3: pale-blue painted carnival ground on
+      // the Fun Land side. A thin plate, 4cm proud (far under the 0.45m N3
+      // bar), skipped wherever the ground is water or a mapped way runs.
+      {
+        const CC = [-1151, 12322];
+        // a 0.9m-thick puck with its top 5cm proud: the ground falls ~0.5m
+        // across the disc and a thin plate showed daylight under its rim
+        const plate = new THREE.CylinderGeometry(15, 15, 0.9, 22);
+        const pg = drawnGroundAt(CC[0], CC[1]);
+        if (pg > 0.4) {
+          plate.translate(CC[0], pg + 0.05 - 0.45, CC[1]);
+          merger.add(plate, ML.carn, CC[0], CC[1]);
+          out.minionGround = 1;
+        }
+      }
+
+      // 8. THE BALLOON MASSES — "a dominant mass in every photo": clusters
+      // of plain yellow balloons (no faces — the no-character rule) on slim
+      // tether poles, deterministic positions, guarded like the lamps.
+      const spots = [[11, 8.6], [30, 8.2], [44, 7.0]];
+      let bpl = 0;
+      for (let i = 0; i < spots.length; i++) {
+        const [t, d] = spots[i];
+        const [px, pz] = at(t, d);
+        if (window.__onRoad && window.__onRoad(px, pz, 0.4)) continue;
+        if (blocked && blocked(px, pz)) continue;
+        if (!standable(px, pz)) continue;
+        const bg0 = drawnGroundAt(px, pz);
+        const pole = new THREE.CylinderGeometry(0.05, 0.07, 4.4, 5);
+        pole.translate(px, bg0 + 2.2, pz);
+        merger.add(pole, ML.stoneGrey, px, pz);
+        for (let k = 0; k < 3; k++) {
+          const a = (k / 3) * Math.PI * 2 + i;
+          const bb = new THREE.SphereGeometry(0.72, 8, 6);
+          bb.scale(1, 1.15, 1);
+          bb.translate(px + Math.cos(a) * 0.8, bg0 + 4.9 + (k % 2) * 0.7, pz + Math.sin(a) * 0.8);
+          merger.add(bb, ML.balloon, px, pz);
+        }
+        bpl++;
+      }
+      // two more clusters in the carnival itself
+      for (const [px, pz, ph] of [[-1158, 12318, 0], [-1146, 12330, 1]]) {
+        if ((window.__onRoad && window.__onRoad(px, pz, 0.4))
+          || (blocked && blocked(px, pz)) || !standable(px, pz)) continue;
+        const bg0 = drawnGroundAt(px, pz);
+        const pole = new THREE.CylinderGeometry(0.05, 0.07, 4.4, 5);
+        pole.translate(px, bg0 + 2.2, pz);
+        merger.add(pole, ML.stoneGrey, px, pz);
+        for (let k = 0; k < 4; k++) {
+          const a = (k / 4) * Math.PI * 2 + ph;
+          const bb = new THREE.SphereGeometry(0.72, 8, 6);
+          bb.scale(1, 1.15, 1);
+          bb.translate(px + Math.cos(a) * 0.85, bg0 + 4.9 + (k % 2) * 0.7, pz + Math.sin(a) * 0.85);
+          merger.add(bb, ML.balloon, px, pz);
+        }
+        bpl++;
+      }
+      out.minionBalloons = bpl;
+
+      // 9. THE MINION MARKETPLACE DRESSING — §7: the three-storey brick
+      // terrace (the big anonymous box SE of the theatre — brick and grey
+      // cornice come from the zone palette now) gets its mint-and-turquoise
+      // ground shopfronts and pink-striped awnings on the street-facing
+      // edges, and the plaza its circular fountain with the green
+      // wrought-iron railing.
+      {
+        const MP = [-1086, 12296];           // the terrace's surveyed centroid
+        let terr = null, td = 40 * 40;
+        for (const b of (data.buildings || [])) {
+          if (!b.p || b.p.length < 4 || (b.a || 0) < 1000) continue;
+          let cx = 0, cz = 0;
+          for (const [qx, qz] of b.p) { cx += qx; cz += qz; }
+          cx /= b.p.length; cz /= b.p.length;
+          const dd = (cx - MP[0]) ** 2 + (cz - MP[1]) ** 2;
+          if (dd < td) { td = dd; terr = { b, cx, cz }; }
+        }
+        const S = [-1103, 12315];            // a point on the spine, street side
+        if (terr) {
+          let bands = 0;
+          const P = terr.b.p;
+          for (let i = 0; i < P.length - 1; i++) {
+            const [ax, az] = P[i], [bx, bz] = P[i + 1];
+            const L = Math.hypot(bx - ax, bz - az);
+            if (L < 7) continue;
+            const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+            if (Math.hypot(mx - S[0], mz - S[1]) > 45) continue;
+            const outv = [mx - terr.cx, mz - terr.cz];
+            const tos = [S[0] - mx, S[1] - mz];
+            if (outv[0] * tos[0] + outv[1] * tos[1] <= 0) continue;   // faces away
+            const eyaw = Math.atan2(-(bz - az), bx - ax);
+            const eg = drawnGroundAt(mx, mz);
+            const on = Math.hypot(outv[0], outv[1]) || 1;
+            const nx = outv[0] / on, nz = outv[1] / on;
+            const band = new THREE.BoxGeometry(L - 1.2, 3.2, 0.35);
+            band.rotateY(eyaw);
+            band.translate(mx + nx * 0.25, eg + 1.6, mz + nz * 0.25);
+            merger.add(band, ML.mint, mx, mz);
+            const awning = new THREE.BoxGeometry(L - 2.4, 0.18, 1.1);
+            awning.rotateY(eyaw);
+            awning.translate(mx + nx * 0.8, eg + 3.35, mz + nz * 0.8);
+            merger.add(awning, ML.rose, mx, mz);
+            bands++;
+          }
+          out.minionShops = bands;
+        }
+        // the fountain: first clear plaza spot between terrace and spine
+        for (const [fx, fz] of [[-1096, 12318], [-1100, 12312], [-1092, 12322]]) {
+          if ((window.__onRoad && window.__onRoad(fx, fz, 2.8))
+            || (blocked && blocked(fx, fz)) || !standable(fx, fz)) continue;
+          const fg = drawnGroundAt(fx, fz);
+          const basin = new THREE.CylinderGeometry(3.0, 3.2, 0.75, 16);
+          basin.translate(fx, fg + 0.375, fz);
+          merger.add(basin, ML.stoneGrey, fx, fz);
+          const wat = new THREE.CylinderGeometry(2.7, 2.7, 0.12, 16);
+          wat.translate(fx, fg + 0.78, fz);
+          merger.add(wat, ML.water, fx, fz);
+          // the contraption: a green wrought-iron wheel on a centre post
+          const post = new THREE.CylinderGeometry(0.14, 0.18, 2.4, 6);
+          post.translate(fx, fg + 1.9, fz);
+          merger.add(post, ML.ironGreen, fx, fz);
+          const wheel = new THREE.TorusGeometry(1.15, 0.09, 6, 16);
+          wheel.translate(fx, fg + 3.3, fz);
+          merger.add(wheel, ML.ironGreen, fx, fz);
+          // the low railing ring
+          for (let i = 0; i < 10; i++) {
+            const a = (i / 10) * Math.PI * 2;
+            const seg = new THREE.BoxGeometry(2.6, 0.55, 0.06);
+            seg.rotateY(-a);
+            seg.translate(fx + Math.cos(a) * 4.2, fg + 0.5, fz + Math.sin(a) * 4.2);
+            merger.add(seg, ML.ironGreen, fx, fz);
+          }
+          out.minionFountain = 1;
+          break;
+        }
+      }
+    }
+  }
+
   merger.flush(world);
   return out;
 }

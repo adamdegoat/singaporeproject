@@ -2951,11 +2951,15 @@ export async function buildBuildings(world, data, Y = null) {
     // own sun lights the facade, and leading with the sunlit sample would pay
     // for the light twice.
     //
-    // MINION LAND STAYS AUTHORED AND SAYS SO. §7 warns in bold "Do not sample
-    // hexes for this zone from this file" — Wikimedia holds no photograph of
-    // it, so the colours there are document-read ("an explosion of yellow",
-    // blue, white). The existing banana-yellow and Gru-lab grey match that
-    // description and are kept; they must not be quoted as sampled.
+    // MINION LAND IS SAMPLED NOW TOO (research/minion-land.md, photo pass
+    // 2026-08-15). The old row here was banana-yellow, authored off the
+    // document-read "explosion of yellow" — and the new brief's §9.3 closes
+    // with exactly the warning that row violated: "do NOT make the whole
+    // zone yellow". The yellow in the photographs is BALLOONS and trim; the
+    // built fabric is the Marketplace's red-brick terrace (#9C6060/#905454)
+    // and the Neighbourhood's cream clapboard (#E4ECEF). Those lead the row;
+    // the set pieces (Gru's navy house, the lilac arch, the blue show wall)
+    // are authored geometry in sgdetail's buildUssVocab, not wall paint.
     const want = { 'Hollywood': [0xd9c7a8, 0xcfd3d2, 0xc4926f],
                    'New York': [0x9b6a52, 0x87543c, 0xaf8a70],
                    'Sci-Fi City': [0xa6aaae, 0x7c8384, 0x9aa0a4],
@@ -2968,9 +2972,9 @@ export async function buildBuildings(world, data, Y = null) {
                    // §5B, the other half of the same zone: salvage, verdigris
                    // metal and rust. Anchored below on its own footprint.
                    'WaterWorld': [0x6b7f72, 0x8a4b2a, 0x7d8c7c],
-                   // AUTHORED to §7's named hues — see the note above
-                   'Minion Land': [0xd8c46a, 0xc7b25c, 0x9aa3ab],
-                   'Madagascar': [0xd8c46a, 0xc7b25c, 0x9aa3ab] };
+                   // SAMPLED off the 2025-02-14 photo set — see the note above
+                   'Minion Land': [0x9c6060, 0x905454, 0xe4ecef],
+                   'Madagascar': [0x9c6060, 0x905454, 0xe4ecef] };
     for (const a of (data.attractions || [])) {
       const pal = a && a.n && want[a.n];
       if (pal && a.p) _ussZones.push({ x: a.p[0], z: a.p[1], pal, n: a.n });
@@ -3906,8 +3910,11 @@ export async function buildBuildings(world, data, Y = null) {
           // §5B's other half: salvage rust over the verdigris walls
           'WaterWorld':   { col: 0x8a4b2a, top: [[1.30, 0.45, -1.30], [0.80, 0.55, -0.75]] },
           'Far Far Away': { col: 0xa8683f, top: [[0.35, 1.10, -1.60], [0.70, 0.45, -0.50]] },
-          'Minion Land':  { col: 0xb99f4c, top: [[0.30, 0.50, -1.40], [0.75, 0.90, -0.90]] },
-          'Madagascar':   { col: 0xb99f4c, top: [[0.30, 0.50, -1.40], [0.75, 0.90, -0.90]] },
+          // the Marketplace terrace's grey stone cornice (research/
+          // minion-land.md §7), not the old banana-brass — the fat rounded
+          // lip stays, because the zone is still a cartoon
+          'Minion Land':  { col: 0x8d8d94, top: [[0.30, 0.50, -1.40], [0.75, 0.90, -0.90]] },
+          'Madagascar':   { col: 0x8d8d94, top: [[0.30, 0.50, -1.40], [0.75, 0.90, -0.90]] },
         };
         const _c = _z && CROWN[_z.n];
         // hoisted: the pylon below is a separate piece of the same architecture

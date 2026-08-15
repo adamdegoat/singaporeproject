@@ -214,6 +214,16 @@ const SPOTS = [
   // where the zone's next vocabulary (battlements, beanstalks, the castle)
   // will also land in frame.
   ['ffa-street', -1066, 12372, -1.83],
+  // MINION LAND, shipped WITH its rebuild (2026-08-15, the standing habit).
+  // The zone went from stale Madagascar boxes in banana-yellow to the
+  // researched build: Gru's navy crooked gable against the sky-blue cloud
+  // wall, the cream neighbour row, the lilac castle arch with white-tipped
+  // teal spires, the rainbow carousel canopy on the old King Julien
+  // footprint, Silly Swirly on the lagoon shore and the balloon masses.
+  // This stands on the Fun Land grass east of the carousel and reads all
+  // of it in one frame — the vetted d-lagoon vantage. uss-lagoon sees the
+  // zone only across 200m of water; this is the watchdog AT the zone.
+  ['minion-land', -1120, 12345, -2.0],
 ];
 
 mkdirSync(ACT, { recursive: true });
