@@ -7624,6 +7624,117 @@ export function buildUssVocab(world, data, blocked) {
       }
       out.egyptReeds = reeds;
 
+      // §4.4 / §4.6 / §4.7 — the wall vocabulary: LOTUS-BUD COLUMNS with
+      // drum joints and a jade petal collar with coral tips, a NICHE
+      // PHARAOH between them, and a WINGED SUN-DISC at door-head height.
+      // All on the tall Egypt masses' longest walk-facing edge — the same
+      // faces that carry the Anubis heads above.
+      {
+        const jade = new THREE.MeshLambertMaterial({ color: 0x5f8a6a });
+        const coral = new THREE.MeshLambertMaterial({ color: 0xc97a5a });
+        const gold2 = new THREE.MeshLambertMaterial({ color: 0xc2a469 });
+        const niche = new THREE.MeshLambertMaterial({ color: 0x3a352c });
+        let lotus = 0, discs = 0;
+        for (const b of (data.buildings || [])) {
+          if (!b.p || b.p.length < 4 || (b.h || 0) < 9 || (b.a || 0) < 700) continue;
+          let cx = 0, cz = 0;
+          for (const [qx, qz] of b.p) { cx += qx; cz += qz; }
+          cx /= b.p.length; cz /= b.p.length;
+          if (zoneOf(cx, cz) !== 'Ancient Egypt' || !inPark(cx, cz)) continue;
+          let bestE = null, bl = 0;
+          for (let i = 0; i < b.p.length - 1; i++) {
+            const [ax, az] = b.p[i], [bx, bz] = b.p[i + 1];
+            const L = Math.hypot(bx - ax, bz - az);
+            if (L > bl) { bl = L; bestE = [L, ax, az, bx, bz]; }
+          }
+          if (!bestE || bl < 18) continue;
+          const [L, ax, az, bx, bz] = bestE;
+          const ux = (bx - ax) / L, uz = (bz - az) / L;
+          let nx = -uz, nz = ux;
+          const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+          if (nx * (mx - cx) + nz * (mz - cz) < 0) { nx = -nx; nz = -nz; }
+          const eyaw = Math.atan2(-uz, ux);
+          // the lotus columns: 8.5m shafts, three drum joints, bud capital
+          const nCol = Math.min(6, Math.floor(L / 6));
+          const cstep = L / (nCol + 1);
+          for (let k = 1; k <= nCol; k++) {
+            const px = ax + ux * cstep * k + nx * 0.7;
+            const pz = az + uz * cstep * k + nz * 0.7;
+            const pg = drawnGroundAt(px, pz);
+            const CH2 = 8.5;
+            const shaft = new THREE.CylinderGeometry(0.42, 0.5, CH2, 8);
+            shaft.translate(px, pg + CH2 / 2, pz);
+            merger.add(shaft, EG.sculpt, px, pz);
+            for (const jy of [2.6, 4.8, 7.0]) {
+              const joint = new THREE.CylinderGeometry(0.5, 0.5, 0.18, 8);
+              joint.translate(px, pg + jy, pz);
+              merger.add(joint, gold2, px, pz);
+            }
+            // the petal collar at the base: jade ring, coral tip ring above
+            const collar = new THREE.CylinderGeometry(0.62, 0.78, 0.55, 8);
+            collar.translate(px, pg + 0.45, pz);
+            merger.add(collar, jade, px, pz);
+            const tips = new THREE.CylinderGeometry(0.52, 0.66, 0.22, 8);
+            tips.translate(px, pg + 0.82, pz);
+            merger.add(tips, coral, px, pz);
+            // the closed bud: a squat cone over a swell
+            const swell = new THREE.SphereGeometry(0.62, 8, 6);
+            swell.scale(1, 0.7, 1);
+            swell.translate(px, pg + CH2 + 0.25, pz);
+            merger.add(swell, EG.sculpt, px, pz);
+            const bud = new THREE.ConeGeometry(0.5, 0.9, 8);
+            bud.translate(px, pg + CH2 + 0.95, pz);
+            merger.add(bud, jade, px, pz);
+            lotus++;
+          }
+          // the niche pharaoh: a dark recess mid-face with a standing
+          // figure — body, crossed-arm block, sun-disc-and-horns crown
+          {
+            const px = mx + nx * 0.35, pz = mz + nz * 0.35;
+            const pg = drawnGroundAt(px, pz);
+            const rec = new THREE.BoxGeometry(2.2, 6.2, 0.5);
+            rec.rotateY(eyaw); rec.translate(px, pg + 3.4, pz);
+            merger.add(rec, niche, px, pz);
+            const body = new THREE.BoxGeometry(1.1, 4.4, 0.55);
+            body.rotateY(eyaw);
+            body.translate(px + nx * 0.25, pg + 2.5, pz + nz * 0.25);
+            merger.add(body, EG.sculpt, px, pz);
+            const head2 = new THREE.BoxGeometry(0.6, 0.7, 0.5);
+            head2.rotateY(eyaw);
+            head2.translate(px + nx * 0.25, pg + 5.05, pz + nz * 0.25);
+            merger.add(head2, EG.sculpt, px, pz);
+            const crown = new THREE.CylinderGeometry(0.34, 0.34, 0.12, 10);
+            crown.rotateX(Math.PI / 2); crown.rotateY(eyaw);
+            crown.translate(px + nx * 0.3, pg + 5.75, pz + nz * 0.3);
+            merger.add(crown, gold2, px, pz);
+          }
+          // the winged sun-disc over the door head, a third of the way in
+          {
+            const px = ax + ux * L * 0.33 + nx * 0.3;
+            const pz = az + uz * L * 0.33 + nz * 0.3;
+            const pg = drawnGroundAt(px, pz);
+            const disc = new THREE.CylinderGeometry(0.55, 0.55, 0.2, 12);
+            disc.rotateX(Math.PI / 2); disc.rotateY(eyaw);
+            disc.translate(px, pg + 6.2, pz);
+            merger.add(disc, gold2, px, pz);
+            for (const sgn of [-1, 1]) {
+              const wing = new THREE.BoxGeometry(2.4, 0.34, 0.16);
+              wing.rotateZ(sgn * 0.18);
+              wing.rotateY(eyaw);
+              wing.translate(px + ux * sgn * 1.65, pg + 6.05, pz + uz * sgn * 1.65);
+              merger.add(wing, EG.sculpt, px, pz);
+            }
+            const bead = new THREE.BoxGeometry(4.6, 0.16, 0.14);
+            bead.rotateY(eyaw);
+            bead.translate(px, pg + 5.55, pz);
+            merger.add(bead, gold2, px, pz);
+            discs++;
+          }
+        }
+        out.egyptLotus = lotus;
+        out.egyptDiscs = discs;
+      }
+
       // §4.B — THE COLOSSI COLONNADE, "the shot people take. If only one
       // thing in Ancient Egypt gets real geometry, make it this." Atlantid
       // figures with arms raised overhead carrying broken hieroglyphic

@@ -276,6 +276,13 @@ const SPOTS = [
   // through 2026 — the venue is built, the show is not. Stands SE of the
   // stadium with the gantries on the skyline — the ww2-se vantage.
   ['waterworld-arena', -880, 12580, -2.27],
+  // EGYPT'S WALL VOCABULARY (§4.4/§4.6/§4.7 — lotus columns, niche
+  // pharaoh, winged sun-disc), shipped WITH its pass (2026-08-15). All 34
+  // frames above passed through the batch: the columns stand on each
+  // mass's LONGEST face and neither Egypt frame looks at one. Stands at
+  // the 1408 show building's east face where the colonnade reads — the
+  // vetted e-1408 vantage.
+  ['egypt-columns', -1120, 12500, -1.24],
 ];
 
 mkdirSync(ACT, { recursive: true });
