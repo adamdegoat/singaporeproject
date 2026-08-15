@@ -1886,6 +1886,96 @@ def main():
         probe(grid, "shore-smooth")
 
 
+    # ---- THE WET WITNESS: WHERE MAPPED WATER LIES OVER DRAWN LAND AND THE
+    # ---- RAW DEM TESTIFIES THE CHANNEL IS REAL (2026-08-15, the Cove canal)
+    #
+    # The data-side carve stays parked (SG_CARVE, SESSION 18 part 11): at 35m
+    # the waterfront houses' own footprints hold the moat cells, and carving
+    # at() puts their feet in the sea through the bilinear. This block changes
+    # NO height. It ships the part-4 DISCRIMINATION per cell, so the DRAWN
+    # skin (terrain.js vertexY, which already cuts the Singapore River at
+    # mesh resolution while at() keeps the quay) can sink the channels the
+    # picture owes while every check and every house keeps its ground.
+    #
+    # A cell is witnessed when: a mapped water polygon covers its centre
+    # (holes are land — the relparcels lesson), the raw Copernicus DEM reads
+    # under 0.8m (the SG_CARVE clause's own threshold), the grid still calls
+    # it land above 1.2m absolute, and the drawn ground exceeds the DEM by
+    # 2.5m. The last two tests are what keep every beach out: near the
+    # waterline the grid is under 1.2, and mid-beach Copernicus smears the
+    # shore HIGH ("a 35m cell blending jungle hill into beach reads 5-16m
+    # over the SAND") so dem < 0.8 fails — while a moat stands 5-7m of drawn
+    # grass over a DEM of 0.0-0.7.
+    def _wc_in(px, pz, ring):
+        c = False
+        j = len(ring) - 1
+        for i in range(len(ring)):
+            xi, zi = ring[i]
+            xj, zj = ring[j]
+            if (zi > pz) != (zj > pz) and px < (xj - xi) * (pz - zi) / (zj - zi) + xi:
+                c = not c
+            j = i
+        return c
+
+    _wet_polys = [(w["p"], w.get("hp") or []) for w in data.get("water", [])
+                  if len(w.get("p", [])) > 3]
+    _wet_cand = []
+    for j in range(grid["nz"]):
+        gz = grid["z0"] + j * CELL
+        for i in range(grid["nx"]):
+            k = j * grid["nx"] + i
+            if grid["h"][k] <= 1.2:
+                continue
+            gx = grid["x0"] + i * CELL
+            hit = False
+            for rp, hp in _wet_polys:
+                if _wc_in(gx, gz, rp) and not any(_wc_in(gx, gz, h) for h in hp):
+                    hit = True
+                    break
+            if hit:
+                _wet_cand.append((k, gx, gz))
+    grid["wet"] = []
+    if _wet_cand:
+        _wet_dems = local_elev([(lat0 - gz / m_lat, lon0 + gx / m_lon)
+                                for _, gx, gz in _wet_cand])
+        _wet_set = set()
+        for (k, gx, gz), dv in zip(_wet_cand, _wet_dems):
+            if dv is None or dv >= 0.8:
+                continue
+            if grid["h"][k] - dv < 2.5:
+                continue
+            _wet_set.add(k)
+        # THE JUDGEMENT IS PER CLUSTER, THE CARVE IS PER RING — part 4's own
+        # method. The per-cell witness establishes WHICH rings are real
+        # channels, but Copernicus smear leaves gaps along a narrow moat
+        # (Pearl's ring came out 22 cells of 35 and rendered as flooded
+        # marsh, vetted canal-pearl-air). A ring that qualifies — three or
+        # more witnessed cells and 30% of its over-land interior — floods
+        # its WHOLE interior (holes stay land). The sea mega-ring can never
+        # qualify: its over-land interior is the 69-hectare overreach class,
+        # far more than 3.3x its witnessed moat cells, and it is skipped by
+        # name besides.
+        _n_seed = len(_wet_set)
+        for w in data.get("water", []):
+            if w.get("k") == "sea":
+                continue
+            rp = w.get("p") or []
+            if len(rp) < 4:
+                continue
+            hp = w.get("hp") or []
+            cells = [(k, gx, gz) for (k, gx, gz) in _wet_cand
+                     if _wc_in(gx, gz, rp)
+                     and not any(_wc_in(gx, gz, h) for h in hp)]
+            wet_in = sum(1 for (k, _, _) in cells if k in _wet_set)
+            if wet_in >= 3 and wet_in * 10 >= len(cells) * 3:
+                for (k, _, _) in cells:
+                    _wet_set.add(k)
+        grid["wet"] = sorted(_wet_set)
+        print(f"   wet witness: {_n_seed} DEM-witnessed cells -> "
+              f"{len(grid['wet'])} after flooding qualifying rings "
+              f"({len(_wet_cand)} candidates) — heights untouched, the "
+              f"DRAWN skin consumes this")
+
     # store relative to the lowest point, so the world sits near y=0
     #
     # THIS REBASE SILENTLY DISABLED THE OPEN SEA FOR THE WHOLE PROJECT'S LIFE.

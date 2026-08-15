@@ -45,6 +45,65 @@ const NOT_GREEN = new Set(['pool', 'track', 'deck']);
 export class Terrain {
   constructor(grid) {
     this.g = grid || null;
+    // THE WET WITNESS, baked by data/terrain.py (2026-08-15): grid cells
+    // where a mapped water polygon lies over drawn land and the raw
+    // Copernicus DEM testifies the channel is really there at sea level —
+    // the Cove moats, judged per cell so a water polygon overreaching onto
+    // a hill can never qualify. Read by vertexY: the DRAWN skin sinks
+    // there while at() keeps the ground every check and house stands on,
+    // exactly the Singapore River split. Empty set on older grids.
+    this._wet = null;
+    this.wetAt = (x, z) => {
+      const g2 = this.g;
+      if (!g2 || !g2.wet || !g2.wet.length) return false;
+      if (!this._wet) this._wet = new Set(g2.wet);
+      // the same four cells the bilinear read blends, so the witness covers
+      // exactly the ground whose at() the witnessed cell influences
+      let i = Math.floor((x - g2.x0) / g2.cell);
+      let j = Math.floor((z - g2.z0) / g2.cell);
+      if (i < 0) i = 0; if (j < 0) j = 0;
+      if (i > g2.nx - 2) i = g2.nx - 2;
+      if (j > g2.nz - 2) j = g2.nz - 2;
+      return this._wet.has(j * g2.nx + i) || this._wet.has(j * g2.nx + i + 1)
+        || this._wet.has((j + 1) * g2.nx + i) || this._wet.has((j + 1) * g2.nx + i + 1);
+    };
+    // Is this water RING a tidal channel — a ring whose interior is
+    // substantially wet-witnessed? Decides its water level: a witnessed
+    // channel is the SEA reaching inland (the Cove moats), so its surface
+    // sits at sea level and its bed below it, not at the rim-derived pond
+    // level (Pearl's rim gave a surface 1.5m above the sea it opens into).
+    // The strait's own mega-ring never qualifies: its interior is thousands
+    // of open-sea cells and the witness marks only drawn-land channels, so
+    // the fraction stays near zero and every beach keeps today's numbers.
+    this.tidalRing = (pts) => {
+      const g2 = this.g;
+      if (!g2 || !g2.wet || !g2.wet.length || !pts || pts.length < 4) return false;
+      if (!this._wet) this._wet = new Set(g2.wet);
+      let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+      for (const [px, pz] of pts) {
+        if (px < mnx) mnx = px; if (px > mxx) mxx = px;
+        if (pz < mnz) mnz = pz; if (pz > mxz) mxz = pz;
+      }
+      const inRing = (px, pz) => {
+        let c = false;
+        for (let i2 = 0, j2 = pts.length - 1; i2 < pts.length; j2 = i2++) {
+          const xi = pts[i2][0], zi = pts[i2][1], xj = pts[j2][0], zj = pts[j2][1];
+          if (((zi > pz) !== (zj > pz)) && (px < ((xj - xi) * (pz - zi)) / (zj - zi) + xi)) c = !c;
+        }
+        return c;
+      };
+      let inside = 0, wet = 0;
+      for (let j2 = Math.max(0, Math.floor((mnz - g2.z0) / g2.cell));
+           j2 <= Math.min(g2.nz - 1, Math.floor((mxz - g2.z0) / g2.cell)); j2++) {
+        for (let i2 = Math.max(0, Math.floor((mnx - g2.x0) / g2.cell));
+             i2 <= Math.min(g2.nx - 1, Math.floor((mxx - g2.x0) / g2.cell)); i2++) {
+          if (!inRing(g2.x0 + i2 * g2.cell, g2.z0 + j2 * g2.cell)) continue;
+          inside++;
+          if (this._wet.has(j2 * g2.nx + i2)) wet++;
+        }
+      }
+      return wet >= 3 && wet * 10 >= inside * 3;
+    };
     // raw grid accessor for coastal logic (buildSea, shoreline sand): reads
     // only — nothing may write the heightfield through this
     this.grid = () => this.g;
@@ -335,8 +394,17 @@ export class Terrain {
       if (!isFinite(lo)) continue;
       // buildWater() puts the surface at rim - 0.35. Sit the bed 1.4m under it
       // so there is visible depth rather than z-fighting.
+      // ...unless the ring is a DEM-witnessed TIDAL channel (the Cove
+      // moats): its water is the sea reaching inland, so its bed sits below
+      // SEA level, not below a rim read off the uncarved banks — Pearl's
+      // rim put its bed at +0.08, above the water it opens into. The
+      // strait's own ring never qualifies (see tidalRing), so every beach
+      // keeps today's numbers cell for cell.
+      const seaLv = this.g && typeof this.g.sea === 'number' ? this.g.sea : 0;
+      const tidal = !!(this.tidalRing && this.tidalRing(ring));
+      const floor = tidal ? seaLv - 0.35 - 1.4 : lo - 0.35 - 1.4;
       const id = this.wr.length;
-      this.wr.push({ ring, holes: hs, floor: lo - 0.35 - 1.4, bb: [mnx, mnz, mxx, mxz] });
+      this.wr.push({ ring, holes: hs, floor, tidal, bb: [mnx, mnz, mxx, mxz] });
       for (let cx = Math.floor(mnx / this.wrCell); cx <= Math.floor(mxx / this.wrCell); cx++)
         for (let cz = Math.floor(mnz / this.wrCell); cz <= Math.floor(mxz / this.wrCell); cz++) {
           const k = cx + ',' + cz;
@@ -351,8 +419,8 @@ export class Terrain {
   waterFloor(x, z) {
     if (!this.wrGrid) return null;
     const l = this.wrGrid.get(Math.floor(x / this.wrCell) + ',' + Math.floor(z / this.wrCell));
-    if (!l) return null;
-    let best = null;
+    if (!l) { this.waterFloor.tidal = false; return null; }
+    let best = null, bestTidal = false;
     for (const id of l) {
       const w = this.wr[id];
       if (x < w.bb[0] || x > w.bb[2] || z < w.bb[1] || z > w.bb[3]) continue;
@@ -379,8 +447,11 @@ export class Terrain {
           if (inH) { hit = false; break; }
         }
       }
-      if (hit && (best === null || w.floor < best)) best = w.floor;
+      if (hit && (best === null || w.floor < best)) { best = w.floor; bestTidal = !!w.tidal; }
     }
+    // side channel for vertexY, read immediately after the call: was the
+    // ring that answered a DEM-witnessed tidal channel?
+    this.waterFloor.tidal = best === null ? false : bestTidal;
     return best;
   }
 
@@ -390,6 +461,27 @@ export class Terrain {
     const y = this.at(x, z) - (this.inRoad(x, z) ? 0.51 : 0.06);
     const bed = this.waterFloor(x, z);
     if (bed === null) return y;
+    // A DEM-WITNESSED TIDAL CHANNEL SINKS, WHATEVER THE GUARDS BELOW THINK.
+    // The Cove moats are mapped water over 5-7m of drawn grass: the 7m
+    // sloppy-ring gate holds Sandy's moat as land and the overreach guard
+    // holds Pearl's (islandW reads 1.00 across both — the mask smears over
+    // a 40-80m channel, measured 2026-08-15). The witness is per CELL from
+    // the raw DEM, baked data-side (grid.wet), and it QUALIFIES RINGS
+    // (tidalRing): the carve itself is bounded by the qualifying ring's own
+    // polygon, holes are land. The first version consulted the cell mask
+    // per vertex and its one-cell dilation bled through the sea polygon's
+    // overreach zones — angular teal floods far beyond the moats, vetted
+    // canal-pearl-air. A polygon overreaching onto firm land can never
+    // arrive here: overreach reads DEM-high, its ring never qualifies.
+    // Plain min(y, bed): the step from bank to bed lands in one mesh
+    // interval, which reads as the vertical quay wall the real Sentosa
+    // Cove has. at() is untouched — the houses, every check and the datum
+    // keep their ground. A MAPPED WAY KEEPS ITS GROUND TOO — the polygons
+    // overlap the Cove's shoreline promenades, and drowning them took
+    // trailcheck's blocked-over-20m runs from 0 to 5 (measured): a
+    // non-bridge way carries its own berm through the water, the drawn
+    // twin of the data passes' carries_built rule.
+    if (bed < 0.2 && this.waterFloor.tidal && !this.inRoad(x, z)) return Math.min(y, bed);
     // A RING EDGE THAT OVERREACHES ONTO FIRM LAND DOES NOT SINK A HILL.
     // The grid's own data-side passes already sank every genuine water cell,
     // so a drawn sink deeper than ~7m below the logical ground is the water

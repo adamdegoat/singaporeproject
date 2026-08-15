@@ -5894,7 +5894,21 @@ export function buildWater(world, data) {
     // step across one body of water. The sea wins where there is a sea.
     // +2cm, not equal: coplanar with the sea sheet the two z-fight across the
     // whole channel, and the finer mapped ring is the one that should win
-    const level = SEA_LEVEL[0] === null ? lo - 0.35 : Math.max(lo - 0.35, SEA_LEVEL[0] + 0.02);
+    // A DEM-WITNESSED TIDAL RING IS THE SEA REACHING INLAND (the Cove
+    // moats): its surface sits AT sea level, not at a rim read off the
+    // uncarved banks — Pearl's rim put its water 1.5m above the sea it
+    // opens into. tidalRing never matches the strait's own mega-ring, so
+    // every other body keeps today's level.
+    const tidal = SEA_LEVEL[0] !== null && TERRAIN.tidalRing && TERRAIN.tidalRing(pts);
+    // ...and a tidal ring is not merely AT sea level, it IS the sea — the
+    // same water the sheet draws, reaching inland through a carved channel.
+    // Drawing it again gave the Cove flat faceted teal 16cm under the
+    // sheet, the exact two-colours-two-heights defect the `sea` skip above
+    // exists for (vetted canal-pearl-air). The sheet covers the whole grid
+    // plus margin, so the carved channel is already wet without this ring.
+    if (sea && tidal) continue;
+    const level = SEA_LEVEL[0] === null ? lo - 0.35
+      : Math.max(lo - 0.35, SEA_LEVEL[0] + 0.02);
     // A GIANT INLAND RING IS A MULTIPOLYGON THAT LOST ITS PARTS, and filling
     // it solid paints the LAND between its ponds. Sentosa carries one such
     // ring — 10.4 hectares, unnamed — and its single sheet at the lowest

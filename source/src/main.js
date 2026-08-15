@@ -479,6 +479,18 @@ function moveBlocked(x, z) {
       return SOLID ? SOLID.at(x, z) : false;
     }
   }
+  // A DECK CLEARS THE WATER-WALL FOR THE WALKER, exactly as rideBlocked
+  // already holds for the ride — and ONLY the water-wall: on land the deck
+  // changes nothing and blocked() keeps every footprint test, so a walker
+  // under a viaduct still cannot stroll through a building. Needed the day
+  // the Cove canal was drawn as real water (2026-08-15): the Pearl and
+  // Sandy access footbridges cross it with decks registered, and the
+  // walker was walled at the waterline on all four of them (trailcheck
+  // blocked-over-20m 0 -> 4, all four at those crossings). The dressing's
+  // blocked() is untouched — the 2026-08-01 revert stands.
+  if (inWater(x, z) && anyDeckAt(x, z) !== null) {
+    return SOLID ? SOLID.at(x, z) : false;
+  }
   return blocked(x, z);
 }
 // setWaterRings seats every bed this far below its own water surface

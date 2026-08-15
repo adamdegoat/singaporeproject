@@ -197,6 +197,15 @@ const SPOTS = [
   // the deck does, which is the same thing `beachwalk-grade` and `spawn` do
   // and is the whole point of it.
   ['gateway-landing', -1063, 12145, 0],
+  // THE COVE CANAL, shipped WITH its pass (2026-08-15, the standing habit).
+  // The moats around Pearl and Sandy Island draw as tidal water at last —
+  // the DEM-witnessed carve in terrain.js vertexY — and not one of the 24
+  // frames above so much as glances at Sentosa Cove: all 24 came back
+  // 0.000% through the change that turned 850,000 m2 of drawn grass into
+  // sea. Stands mid-crossing on the Sandy Island access bridge, deck
+  // underfoot, canal both sides, the island's bungalow bank ahead — the
+  // geometry and the water this batch moved, all in one frame.
+  ['cove-canal', 745, 13460, 1.5708],
 ];
 
 mkdirSync(ACT, { recursive: true });
