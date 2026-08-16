@@ -2348,7 +2348,46 @@ export async function buildTrails(world, data, Y = null) {
       const L = Math.hypot(bx - ax, bz - az);
       if (L < 0.5) continue;
       const mx = (ax + bx) / 2, mz = (az + bz) / 2;
-      const kind = surfaceFor(mx, mz);
+      // THE MAP'S ANSWER BEATS THE GEOGRAPHY GUESS.
+      //
+      // `surfaceFor` asks what the path CROSSES — wood becomes earth, sand
+      // becomes deck, everything else becomes paving — and never asks what the
+      // way IS. But 714 of this island's 1,678 ways carry a surveyed `surface`
+      // tag, and the road loop in city.js has read it since the day
+      // data/unused.py enumerated the extract ("eighth instance of real data
+      // present and unused"). Paths skip that loop entirely — "registered
+      // above, drawn by buildTrails, not surfaced twice" — so all 878 footways
+      // were guessing: 116 tagged concrete, 65 paving_stones, 8 metal and 6
+      // wood among them.
+      //
+      // The owner, riding: "alot of roads or path looks like flat generic
+      // path." The Imbiah trails are the clearest case — a flat tan ribbon
+      // through the forest because they cross woodland, whatever the map says
+      // they are made of.
+      //
+      // Same precedence the promenade rule uses: where OSM has an opinion it
+      // wins; where it is silent the geography still decides. A boardwalk over
+      // water keeps waterdeck regardless — that is structure, not surfacing.
+      // STRUCTURE BEATS SURFACING, and the first cut of this got that backwards.
+      //
+      // Letting the tag win outright TORE OUT THE CENTRAL BEACH BOARDWALK:
+      // `central-beach` moved 9.70% and the timber deck and its railings became
+      // flat pale paving, because those ways are tagged `paved`/`concrete`
+      // while the thing they physically ARE is a boardwalk over sand. That is
+      // the exact defect the sand rule above was written to fix — the comment
+      // there says these "drew as grey paving" before it existed — and the
+      // golden gate refused it, rightly.
+      //
+      // So a deck stays a deck. The tag only decides the question geography
+      // cannot answer: whether a path on ordinary ground is earth or paved.
+      // A `wood` tag may still PROMOTE a path to a deck; nothing demotes one.
+      const sfp = (r.surface || '').toLowerCase();
+      let kind = surfaceFor(mx, mz);
+      if (sfp && kind !== 'waterdeck' && kind !== 'deck') {
+        if (/wood|boardwalk/.test(sfp)) kind = 'deck';
+        else if (/ground|dirt|earth|unpaved|sand|gravel|fine_gravel|compacted/.test(sfp)) kind = 'earth';
+        else if (/concrete|paving_stones|sett|cobblestone|asphalt|paved|metal/.test(sfp)) kind = 'pave';
+      }
       const mat = kind === 'waterdeck' ? waterDeckM
         : kind === 'deck' ? deckM : kind === 'earth' ? earthM : paveM;
       if (kind === 'deck' || kind === 'waterdeck') out.boardwalk++;
