@@ -579,7 +579,17 @@ const LAMPS_DONE = new WeakSet();
 
 export async function dressSideStreets(world, data, axis, blockedIn, TreeField, done = null, reachOverride = 0, Y = null) {
   const trees = new TreeField();
-  const kerb = [], lamp = [], lampArm = [];
+  const kerb = [], lamp = [], lampArm = [], drain = [];
+  // AT THE TOP OF THE SCOPE THAT USES IT, not beside the other kerb constants
+  // 120 lines below where it is read. That is the temporal-dead-zone trap this
+  // project has already taken a boot down with twice (HANDOFF: "the USS arch
+  // was written 250 lines ABOVE the replacement declaration"), and here it
+  // failed SILENTLY — no page error, just zero drains built.
+  //
+  // Far enough out to clear a ~2m footpath and land on the verge, which is
+  // where KER10 puts it and where Sentosa's loop-road drains actually run: at
+  // the toe of the jungle slope, not against the kerb.
+  const DRAIN_OUT = 3.6;
   let roads = 0, skipped = 0;
   const segs = [];          // every dressed road segment, for matching crossings
   let sideCrossings = 0, sidewalkReal = 0, sidewalkNone = 0;
@@ -769,6 +779,22 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
             if (!isBlocked(kx, kz)) { ok = true; break; }
           }
           if (ok && claim('kerb', kx, kz)) kerb.push([kx, 0.15, kz, ang]);
+          // THE ROADSIDE DRAIN — the most Singaporean object on a road, and we
+          // drew none anywhere (research/sentosa-roads.md). LTA SDRE Ch.2
+          // DRA3's size table starts at a 600mm precast open U-drain with
+          // 150mm walls, and Ch.3 KER10 is titled "FOOTPATH BESIDE OPEN
+          // DRAIN", which settles the cross-section outright:
+          //
+          //   carriageway | kerb | footpath | OPEN U-DRAIN 600 | verge
+          //
+          // So it sits OUTSIDE the footpath, not against the kerb. Same 4m
+          // cadence as the kerb above, and it rides the same `claim` grid so
+          // two ways of one street cannot stack two drains in one place.
+          const dxp = px + nx * (half + DRAIN_OUT) * sgn;
+          const dzp = pz + nz * (half + DRAIN_OUT) * sgn;
+          if (!isBlocked(dxp, dzp) && claim('drain', dxp, dzp)) {
+            drain.push([dxp, 0.15, dzp, ang]);
+          }
           if (acc % 44 === 0) {
             const tx = px + nx * (half + 2.8) * sgn, tz = pz + nz * (half + 2.8) * sgn;
             // The scale draw is CONDITIONAL on the guard — the divergence
@@ -927,6 +953,34 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
   // boxes, so an overlap costs nothing to look at and no extra draw call —
   // the count is unchanged.
   emit(new THREE.BoxGeometry(0.38, 0.3, 4.7), MAT.kerb, dedupeProps(kerbClear, 0.6), kerbSeat);
+  // ...AND THE DRAIN BESIDE IT, IN THREE PARTS THAT SHARE ONE LIST.
+  //
+  // 600mm channel between two 150mm lips, per LTA/SDRE14/2/DRA3. The lateral
+  // offset is baked into each GEOMETRY rather than the instance matrix, so all
+  // three parts ride the same positions and cost three InstancedMeshes for the
+  // whole island — three draw calls, not three per road.
+  //
+  // INSTANCED ON PURPOSE, and this is the safety argument, not a perf one:
+  // `Solid.build` skips InstancedMeshes, so a channel running down both sides
+  // of 132 km of road cannot wall the road. buildTrails learned this the hard
+  // way — its boardwalk handrails are instanced for exactly the same reason
+  // after two blocked-route regressions went into the ledger. The deploy gate
+  // reports `BLOCKED runs >20m` and is the arbiter.
+  {
+    const dSeat = dedupeProps(drain, 0.6);
+    const lip = (sx2) => {
+      const g2 = new THREE.BoxGeometry(0.15, 0.30, 4.7);
+      g2.translate(sx2, 0, 0);
+      return g2;
+    };
+    emit(lip(-0.375), MAT.conc, dSeat, kerbSeat, 'drainLip');
+    emit(lip(0.375), MAT.conc, dSeat, kerbSeat, 'drainLip');
+    // the channel floor: dark, and sat just above the ground so it reads as a
+    // recess rather than z-fighting the terrain it is cut into
+    const floor = new THREE.BoxGeometry(0.60, 0.04, 4.7);
+    floor.translate(0, -0.13, 0);
+    emit(floor, MAT.asphalt, dSeat, kerbSeat, 'drainFloor');
+  }
 
   // The signalised crossings' boundary squares: 200mm, flat, one instanced
   // mesh for the whole district. There are far more of these than zebras --
