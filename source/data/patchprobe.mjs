@@ -9,7 +9,7 @@
 // says it is: minutes of pegged core for a sample. 6 cameras x ~600 rays is
 // the same question asked only where an eye can actually be.
 //
-//     SG_SCENE=orchard node data/patchprobe.mjs
+//     SG_SCENE=sentosa node data/patchprobe.mjs
 const { chromium } = await import(
   process.env.PLAYWRIGHT_PATH || '/Users/ZY/receptionig/node_modules/playwright/index.mjs');
 
@@ -19,7 +19,7 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.setDefaultTimeout(180000);
-await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/?raw=1&dpr=1&scene=${process.env.SG_SCENE || 'orchard'}`,
+await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/?raw=1&dpr=1&scene=${process.env.SG_SCENE || 'sentosa'}`,
   { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true || window.__bootError', null, { timeout: 180000 });
 const err = await page.evaluate(() => window.__bootError || null);

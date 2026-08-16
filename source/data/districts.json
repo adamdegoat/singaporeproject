@@ -1,5 +1,5 @@
 {
- "_readme": "The world, one district at a time. Add an entry, run build_district.py <id>, then check.py <id>. Bboxes are OSM order: south,west,north,east. Keep them under ~1.2km on the long side or Overpass times out.",
+ "_readme": "SENTOSA ONLY. The owner's call, 2026-08-16: \"All the other districts can throw away. Only sentosa bro.\" The other sixteen districts and their build outputs are deleted from the tree. They were NEVER part of the live game -- deploy.sh has always stripped them at publish -- so this changes what the repo carries, not what anybody plays. Recoverable from git history.",
  "_origin_note": "ONE origin for the whole island, and every district projects from it. Each district used to carry its own, which meant two districts built side by side were each measured from a different zero and would not line up at the seam. Nothing caught it because only one district was ever built. This is the SVY21 datum origin, the point Singapore's own national survey grid is measured from. Coordinates run to tens of thousands of metres across the island; float32 still resolves under 2mm at 30km, and depth precision depends on y, which stays under 200m.",
  "island_origin": [
   1.366666,
@@ -7,156 +7,14 @@
  ],
  "districts": [
   {
-   "id": "orchard",
-   "name": "Orchard Road",
-   "bbox": "1.2965,103.8265,1.3085,103.8505",
-   "axis": "orchard road",
-   "status": "live",
-   "notes": "The full 2,586m of Orchard Road, Tanglin junction through to Dhoby Ghaut. The earlier box covered only the middle 1,119m (43%)."
-  },
-  {
-   "id": "somerset",
-   "name": "Somerset / Dhoby Ghaut",
-   "bbox": "1.2960,103.8370,1.3020,103.8470",
-   "axis": "orchard road",
-   "status": "merged into orchard",
-   "notes": "Continues Orchard east: 313, Orchard Gateway, The Cathay, Plaza Singapura."
-  },
-  {
-   "id": "tanglin",
-   "name": "Tanglin",
-   "bbox": "1.3040,103.8180,1.3110,103.8300",
-   "axis": "orchard road",
-   "status": "merged into orchard",
-   "notes": "Continues Orchard west: Tanglin Mall, Forum, St Regis, the Botanic Gardens edge."
-  },
-  {
-   "id": "rivervalley",
-   "name": "River Valley / Clarke Quay",
-   "bbox": "1.2880,103.8280,1.2975,103.8460",
-   "axis": "river valley road",
-   "status": "building",
-   "notes": "The empty square the user pointed at on the map, 2026-07-29: the band between Orchard's south edge and the river. Clarke Quay, Robertson Quay's east end, UE Square, Fort Canning's west flank. Overlaps orchard (to 1.2975 over its 1.2965 south edge), chinatown (1.2880 under its 1.2895 north edge) and brasbasah (103.8460 over its 103.8450 west edge), so the region closes into one block with no seam holes.",
-   "queued_after": "chinatown",
-   "partialMainStreet": "deliberate: River Valley Road runs ~4.9km from Hill Street out past Great World to Kim Seng; this district takes its EAST 1.6km to fill the empty square between Orchard and the river. The western reach belongs to a future Robertson Quay / Great World district. Decided 2026-07-29, not an accident of the bbox."
-  },
-  {
-   "id": "bugis",
-   "name": "Bugis / Rochor",
-   "bbox": "1.2955,103.8520,1.3040,103.8640",
-   "axis": "victoria street",
-   "status": "building",
-   "notes": "Kampong Glam + Bugis + Rochor: Sultan Mosque, Haji Lane, Arab Street, Bugis Junction, Beach Road shophouse spine. East edge 103.8640 takes the whole Arab Street quarter; west overlaps brasbasah (103.8520 < its 103.8560 east edge) so the seam closes. Expanded from the planned box 2026-07-30 overnight, user asked for 1-2 more districts."
-  },
-  {
-   "id": "chinatown",
-   "name": "Chinatown / Raffles Place",
-   "bbox": "1.2740,103.8410,1.2900,103.8560",
-   "axis": "south bridge road",
-   "status": "building",
-   "notes": "Densest shophouse fabric in the city plus the Raffles Place CBD and the river's south bank. Widened 2026-07-29 before first build: the planned box stopped 250m short of Bras Basah in latitude and merely TOUCHED Marina Bay at 103.8500 with zero overlap -- the exact seam-hole the marinabay note documents. Now overlaps Bras Basah (to 1.2895, across the river at Boat Quay where the bridges already land) and Marina Bay (to 103.8530). This is the user's 'expand south' district: the map stops being one long line here. BBOX WIDENED AGAIN 2026-07-29 after the CTBUH research: the first widened box cut the Asia Square block at 1.2790 and stopped short of the Marina Blvd row; now holds Guoco (tallest in SG), Frasers Tower and the MBFC frontage. Requires --force refetch."
-  },
-  {
-   "id": "marinabay",
-   "name": "Marina Bay",
-   "bbox": "1.2760,103.8500,1.2920,103.8680",
-   "axis": "bayfront avenue",
-   "status": "live",
-   "notes": "Towers and WATER, which nothing else in this project has. The planned box was 1.18 km2 and reached none of the things that make Marina Bay recognisable, and it stopped 275m short of Bras Basah in latitude, so the two districts would not have touched and the seam would have been a hole. Widened to overlap Bras Basah (1.2885-1.2920) and to contain Marina Bay Sands, the ArtScience Museum, the Merlion, the Esplanade, the Singapore Flyer, the Helix Bridge, Gardens by the Bay's Supertrees, Marina Bay Financial Centre and the Fullerton."
-  },
-  {
-   "id": "brasbasah",
-   "name": "Bras Basah / Civic District",
-   "bbox": "1.2885,103.8450,1.2995,103.8560",
-   "axis": "bras basah road",
-   "status": "live",
-   "notes": "Continues east from where Orchard Road ends at Handy Road. Fort Canning, the National Museum, SMU, Bras Basah, Bencoolen, Waterloo Street, up to Raffles Hotel and City Hall. Chosen because the street physically hands over here, so the seam needs no invention, and because it looks nothing like Orchard: low colonial civic buildings and open green instead of a canyon of malls. LIVE since 2026-07; registry said planned until 2026-07-29."
-  },
-  {
-   "id": "robertson",
-   "name": "Robertson Quay / Great World",
-   "bbox": "1.2880,103.8180,1.2985,103.8310",
-   "axis": "river valley road",
-   "status": "building",
-   "notes": "The west continuation the rivervalley entry promised: Great World, Zion Road, Robertson Quay, Kim Seng. East edge 103.8310 overlaps rivervalley (its west is 103.8280) so River Valley Road runs unbroken across the seam. Registered 2026-07-30 overnight.",
-   "partialMainStreet": "deliberate: this takes the MIDDLE 1.3km of River Valley Road's 4.9km; the east 1.6km lives in rivervalley and the far west (Kim Seng to Delta) waits for a future district. Decided 2026-07-30.",
-   "noMrt": "verified live against Overpass 2026-07-30 (topup.py mrt: 0 elements): no station or entrance sits inside this box. Great World (TEL) is at ~103.832, just past the east edge, inside rivervalley's coverage."
-  },
-  {
-   "id": "littleindia",
-   "name": "Little India / Farrer Park",
-   "bbox": "1.3030,103.8490,1.3140,103.8600",
-   "axis": "serangoon road",
-   "status": "building",
-   "notes": "Serangoon Road from the Rochor end up past Farrer Park, with Race Course Road, Buffalo Road, Dunlop Street, Campbell Lane, Kerbau Road and the Tekka/Mustafa blocks. Chosen as the first expansion after the polish pass because it is the most recognisable quarter still missing and because it CLOSES A HOLE rather than reaching into empty map: it overlaps bugis (south edge 1.3030 under its 1.3040 north edge) and orchard (west edge 103.8490 under its 103.8505 east edge), so the region stays one block with no seam gap. Long side 1,224m, inside the ~1.2km Overpass ceiling the readme sets. Conservation shophouse country, so it exercises the shophouse path the way chinatown does rather than the tower path. Built 2026-07-30: 2,088 buildings, 1,662 roads, 756 named shopfronts, 217 mapped crossings, terrain pinned to opentopodata like every other district. Overpass had three of four mirrors down that evening, which is what added the live-mirror probe to build_district.py.",
-   "queued_after": "robertson"
-  },
-  {
-   "id": "kallang",
-   "name": "Kallang Basin / Sports Hub",
-   "bbox": "1.2905,103.8620,1.3085,103.8760",
-   "axis": "nicoll highway",
-   "status": "live",
-   "notes": "Ring 1 north-east. National Stadium, Indoor Stadium, Kallang Wave, the 1937 Kallang Airport terminal, Kallang Riverside Park and the west half of the Benjamin Sheares Bridge. Overlaps bugis (940x223m, Nicoll Highway and Crawford Street cross that seam) and marinabay (166x668m, the Sheares approach), and in doing so CLOSES a pre-existing gap between bugis's south edge and marinabay's north edge east of 103.8640. Long side 1,990m, inside Marina Bay's proven 2,003m. Its water is MARINA RESERVOIR, not sea: the same natural=water multipolygon already drawn in three built districts, so no natural=coastline reader is needed. OSM height tags in this bbox are FABRICATED and suppressed in process.py (HEIGHT_TAG_SUPPRESS) -- the National Stadium is tagged 10m against a published 83m dome. AXIS IS NICOLL HIGHWAY, not 'Stadium Boulevard' -- that name does not exist in OSM (the real roads are Stadium Drive / Road / Walk / Place). Nicoll Highway is 3,892m, trunk, 3,561m of it inside the bbox, and it is the road a rider arrives on from bugis. Brief: research/coastal-expansion.md.",
-   "queued_after": "littleindia"
-  },
-  {
-   "id": "marinaeast",
-   "name": "Marina East / Marina Barrage",
-   "bbox": "1.2740,103.8620,1.2920,103.8780",
-   "axis": "marina east drive",
-   "status": "live",
-   "notes": "Ring 1 due east: Marina Barrage, Bay East Garden and the Marina East promenade, closing the last of the Marina Reservoir rim. Overlaps marinabay 1,769x668m and later kallang, tanjongrhu and marinasouth, so the eastern group closes into one block. THE FIRST DISTRICT WITH REAL OPEN SEA: the Straits lie south of the barrage, read by data/coastline.py, which stitches natural=coastline, clips it to this bbox and closes the ring on the seaward side (land-on-left). Verified against known sea and land points before building. Brief: research/coastal-expansion.md candidate 2.",
-   "queued_after": "kallang"
-  },
-  {
-   "id": "tanjongrhu",
-   "name": "Tanjong Rhu",
-   "bbox": "1.2900,103.8700,1.3020,103.8860",
-   "axis": "tanjong rhu road",
-   "status": "live",
-   "notes": "The peninsula east of Kallang Basin: two kilometres of 1990s waterfront condominium wall, the Tanjong Rhu promenade and suspension bridge, and the east half of the Benjamin Sheares Bridge. Ring 2 — it borders no district on its own, but shares 1,272x668m with kallang and 221x890m with marinaeast, both of which are built, so it closes rather than opens a gap. OSM heights here are FABRICATED and suppressed (HEIGHT_TAG_SUPPRESS covers this bbox): Costa Rhu's four blocks of 12/14/16/18 storeys all carry one blanket 56. conservation_fetch.py's BOX was widened east to 103.900 for this district. Brief: research/coastal-expansion.md candidate 4.",
-   "queued_after": "kallang",
-   "partialMainStreet": "deliberate: Tanjong Rhu Road runs ~4.5km from the Sports Hub east along the peninsula and on into Mountbatten and Katong. This district takes its WESTERN 2.3km — the reclaimed peninsula between Kallang Basin and the reservoir, which is the waterfront condominium wall the district exists for. The eastern reach is Katong's, which research/coastal-expansion.md Part 3 assessed and REJECTED as a candidate, so nothing is waiting on it. Decided 2026-08-02, not an accident of the bbox: the east edge 103.8860 was chosen to close against kallang and marinaeast, not to follow the road."
-  },
-  {
-   "id": "marinasouth",
-   "name": "Marina South",
-   "bbox": "1.2640,103.8490,1.2800,103.8670",
-   "axis": "marina coastal drive",
-   "status": "live",
-   "notes": "Due south of marinabay, and the only candidate overlapping TWO built districts: chinatown 663x779m and marinabay 442x1,892m, plus marinaeast 663x557m. Marina Bay Cruise Centre, Marina South Pier, Marina Coastal Drive and the southern seawall facing the Singapore Strait — REAL OPEN COASTLINE, read by data/coastline.py. Expect a LOW building count for the area: most of the land inside this box is vacant reclaimed ground awaiting the URA's future residential district, which is a fact about Singapore and not a failed fetch. The MCE is tagged tunnel=yes and is correctly dropped by process.py. Brief: research/coastal-expansion.md candidate 6.",
-   "queued_after": "marinaeast",
-   "partialMainStreet": "deliberate: Marina Coastal Drive runs ~3km from the Straits edge north-west under Marina Bay and on toward Keppel. This district takes the eastern 1.75km — the working sea edge, the Cruise Centre and Marina South Pier, which is what the district exists for. The western reach runs into keppel's box (next in the ring, research/coastal-expansion.md Part 4), so it is queued rather than abandoned. Decided 2026-08-02: the bbox was drawn to overlap chinatown and marinabay, not to follow the road."
-  },
-  {
-   "id": "keppel",
-   "name": "Keppel Road / Tanjong Pagar",
-   "bbox": "1.2650,103.8260,1.2810,103.8440",
-   "axis": "keppel road",
-   "status": "live",
-   "notes": "THE CONNECTOR, and the reason it is on the list rather than its own ride. It closes the 3.27km between chinatown and Keppel Bay in the only way a district of normal size can: overlaps chinatown 774x334m on the Keppel Road / Anson Road side, and will overlap harbourfront 1,216x334m. Its own ride is the weakest in the brief — mostly the Tanjong Pagar container terminal, the Keppel Viaduct and the AYE — but it carries real coastline (the Keppel Harbour wharves) and without it harbourfront and sentosa are unreachable. The brief warns it is the thinnest-sourced candidate: expect a low named-building share and do not mistake that for a failed fetch. Brief: research/coastal-expansion.md candidate 5.",
-   "queued_after": "marinasouth"
-  },
-  {
-   "id": "harbourfront",
-   "name": "HarbourFront / Keppel Bay",
-   "bbox": "1.2600,103.8110,1.2760,103.8290",
-   "axis": "telok blangah road",
-   "status": "live",
-   "notes": "VivoCity, the Keppel Bay marina and Libeskind's Reflections, the Sentosa gateway and the cable car, under Mount Faber. Ring 2: it borders no district of its own — its east edge sits 1.30km from chinatown — so KEPPEL HAD TO BE BUILT FIRST, and was (2026-08-02); they overlap 1,216x334m. Real open sea (Keppel Harbour and the Sentosa channel), read by data/coastline.py. The only district with real vertical relief: Telok Blangah Road climbs a 106m hill, more than twice Fort Canning's 48m — but NOTE the 35m grid already reads Fort Canning 3-4m low and will understate a steeper hill by more. Mount Faber's elevation has NO Tier-1 source: 106m, 105m and 94m all circulate. Brief: research/coastal-expansion.md candidate 3.",
-   "queued_after": "keppel",
-   "partialMainStreet": "deliberate: Telok Blangah Road runs ~4km from HarbourFront west past Telok Blangah Rise toward Pasir Panjang. This district takes its eastern 2km — the HarbourFront / Keppel Bay end, VivoCity, the Sentosa gateway and the climb onto Mount Faber, which is what the district exists for. The western reach is Pasir Panjang's, which research/coastal-expansion.md Part 3 assessed and did not shortlist, so nothing is waiting on it. Decided 2026-08-02: the bbox was drawn to overlap keppel by 1,216x334m, not to follow the road."
-  },
-  {
    "id": "sentosa",
    "name": "Sentosa",
    "bbox": "1.2380,103.8050,1.2645,103.8480",
    "axis": "sentosa gateway",
    "status": "live",
-   "notes": "BBOX WIDENED 2026-08-03 (was 1.2480,103.8150,1.2620,103.8330): the old box took only the island's northern two-thirds and CUT OFF Sentosa Cove entirely (no W, no Quayside Isle, no ONE°15, no canal houses), the golf clubhouse + driving range, Mount Serapong's summit, Tanjong Beach + Sofitel, and the whole western tip (Fort Siloso, Siloso Point cable car, Mega Adventure) — found by the 2026-08-03 places-research audit, which recommended exactly these bounds. Now the WHOLE island. Original ring-3 notes: Ring 3, two districts out from anything that existed before tonight: it overlaps harbourfront 221x1,558m and nothing else, and harbourfront in turn needed keppel. Both are now built. THE RIDER CAN GET THERE — the road causeway opened in 1992 and cars have been allowed since 1998, so Sentosa Gateway is a real vehicular road and the crossing is a bridge, not a ferry. But the overlap band with harbourfront is mostly WATER, so the seam depends on that bridge deck AND on the coastline reader, which now handles multiple shorelines (this bbox has 27 coastline ways). The box takes the northern two thirds of a ~5 km2 island: Resorts World, Imbiah, Siloso and the Gateway. Siloso, Palawan and Tanjong beaches need the `beach` layer added 2026-08-02 — sand had never been fetched, parsed or coloured anywhere in this pipeline. Brief: research/coastal-expansion.md candidate 7.",
+   "notes": "BBOX WIDENED 2026-08-03 (was 1.2480,103.8150,1.2620,103.8330): the old box took only the island's northern two-thirds and CUT OFF Sentosa Cove entirely (no W, no Quayside Isle, no ONE\u00b015, no canal houses), the golf clubhouse + driving range, Mount Serapong's summit, Tanjong Beach + Sofitel, and the whole western tip (Fort Siloso, Siloso Point cable car, Mega Adventure) \u2014 found by the 2026-08-03 places-research audit, which recommended exactly these bounds. Now the WHOLE island. Original ring-3 notes: Ring 3, two districts out from anything that existed before tonight: it overlaps harbourfront 221x1,558m and nothing else, and harbourfront in turn needed keppel. Both are now built. THE RIDER CAN GET THERE \u2014 the road causeway opened in 1992 and cars have been allowed since 1998, so Sentosa Gateway is a real vehicular road and the crossing is a bridge, not a ferry. But the overlap band with harbourfront is mostly WATER, so the seam depends on that bridge deck AND on the coastline reader, which now handles multiple shorelines (this bbox has 27 coastline ways). The box takes the northern two thirds of a ~5 km2 island: Resorts World, Imbiah, Siloso and the Gateway. Siloso, Palawan and Tanjong beaches need the `beach` layer added 2026-08-02 \u2014 sand had never been fetched, parsed or coloured anywhere in this pipeline. Brief: research/coastal-expansion.md candidate 7.",
    "queued_after": "harbourfront",
-   "noSignals": "verified against the local extract 2026-08-02 (node[highway=traffic_signals] in this bbox: 0 elements): Sentosa has no signalised junctions. The island's road network is roundabouts, give-way junctions and the Gateway toll plaza, which is correct for a resort island and is not a failed fetch — the build's own EMPTY warning fired and was checked rather than assumed."
+   "noSignals": "verified against the local extract 2026-08-02 (node[highway=traffic_signals] in this bbox: 0 elements): Sentosa has no signalised junctions. The island's road network is roundabouts, give-way junctions and the Gateway toll plaza, which is correct for a resort island and is not a failed fetch \u2014 the build's own EMPTY warning fired and was checked rather than assumed."
   }
  ]
 }

@@ -2,7 +2,7 @@
 // Look at the people.
 //
 //     node data/crowdshot.mjs             # three framings, world scene
-//     SG_SCENE=orchard node data/crowdshot.mjs
+//     SG_SCENE=sentosa node data/crowdshot.mjs
 //
 // The crowd is the one part of this world that every other tool is built to
 // ignore. The sweep gates on draw calls, the audit walks a still scene, the
@@ -25,7 +25,7 @@ import { mkdirSync } from 'fs';
 const OUT = 'shots/crowd';
 const TAG = process.argv[2] || 'now';
 mkdirSync(OUT, { recursive: true });
-const SCENE = process.env.SG_SCENE || 'orchard';
+const SCENE = process.env.SG_SCENE || 'sentosa';
 
 const browser = await chromium.launch({
   args: ['--use-gl=angle', '--disable-backgrounding-occluded-windows',

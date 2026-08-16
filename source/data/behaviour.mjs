@@ -84,7 +84,7 @@ const JUMP_MAX = 0.5;
 const browser = await chromium.launch({ args: ['--use-gl=angle'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 500 } });
 page.on('pageerror', (e) => console.log('  page error:', e.message));
-await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/index.html?dpr=1&nostream=1&scene=${process.env.SG_SCENE || 'orchard'}`, { waitUntil: 'load' });
+await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/index.html?dpr=1&nostream=1&scene=${process.env.SG_SCENE || 'sentosa'}`, { waitUntil: 'load' });
 // HOW LONG TO ALLOW FOR BOOT. `?nostream` builds all eight districts inline
 // in one go, which is the heaviest thing this project ever asks a browser to
 // do: measured 115s and 140s on two consecutive clean runs, 2026-07-31. The
