@@ -4975,6 +4975,38 @@ function polyLen(pts) {
   return d;
 }
 
+// A DISC OF CARRIAGEWAY, seated on the terrain like a ribbon is. Used for the
+// junction fillet — see its note in buildRoads. A triangle fan, so a 10-gon is
+// ten triangles; the UVs are world-scaled so the asphalt texture runs
+// continuously with the ribbons it fills between rather than stretching to fit
+// the disc, which would read as a paler plate in the road.
+function junctionPatch(cx, cz, R, y, seg = 10) {
+  // NON-INDEXED, AND THAT IS NOT A STYLE CHOICE. `mergeOne` in this file copies
+  // position and uv straight out of each geometry and NEVER READS AN INDEX — so
+  // an indexed fan arrives in the merged buffer as a triangle soup in vertex
+  // order. The first cut of this was indexed and drew a spray of dark shards
+  // across Tanjong Beach Walk that looked for all the world like z-fighting;
+  // it was three triangles made of the wrong eleven points. Height changes were
+  // tried twice against that theory and neither moved it, which is what said
+  // the theory was wrong.
+  const g = new THREE.BufferGeometry();
+  const pos = [], uv = [];
+  const cy = TERRAIN.at(cx, cz) + y;
+  for (let i = 0; i < seg; i++) {
+    const a0 = (i / seg) * Math.PI * 2, a1 = ((i + 1) / seg) * Math.PI * 2;
+    const x0 = cx + Math.cos(a0) * R, z0 = cz + Math.sin(a0) * R;
+    const x1 = cx + Math.cos(a1) * R, z1 = cz + Math.sin(a1) * R;
+    pos.push(cx, cy, cz,
+             x0, TERRAIN.at(x0, z0) + y, z0,
+             x1, TERRAIN.at(x1, z1) + y, z1);
+    uv.push(cx / 8, cz / 8, x0 / 8, z0 / 8, x1 / 8, z1 / 8);
+  }
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  return g;
+}
+
 export async function buildRoads(world, data, Y = null) {
   const roadGeos = [], paveGeos = [], unitPaveGeos = [], concGeos = [], busGeos = [];
   // A beachfront promenade: unit-paved, unpainted. Named, because that is the
@@ -5824,6 +5856,94 @@ export async function buildRoads(world, data, Y = null) {
     mesh.receiveShadow = true;
     world.add(mesh);
   };
+  // THE JUNCTION FILLET — the green wedges D1 was really about.
+  //
+  // Every way is drawn as its OWN mitred ribbon, so where a 3.8m side street
+  // meets an 8m one the corner between the two ribbons is not paved by either.
+  // The ground shows through as a GREEN WEDGE lying in the middle of what a
+  // rider reads as one junction, with the kerb running round it — which is
+  // exactly what the sweep filed as "floating/detached kerb slabs on
+  // carriageways" (D1, ~20 frames, five areas). It is on Tanjong Beach Walk,
+  // in the owner's own beach frames.
+  //
+  // AND THE KERBS WERE INNOCENT: kerbcheck reports 0 of 3,951 sampled kerb
+  // vertices more than 1.2m inside a carriageway. Nothing is standing in the
+  // road. The road simply is not there.
+  //
+  // MEASURED: 1,865 nodes on this island are shared by two or more ways, 545 of
+  // them by ways whose widths differ by more than 1.5m — the ones that leave a
+  // wedge. A disc at each, radius = the widest half-width meeting there plus
+  // 0.6m, closes the corner at any angle without needing to know the geometry
+  // of the turn.
+  //
+  // SEATED 5mm UNDER THE RIBBONS, deliberately: the ribbons run 0.055..0.0608
+  // and this sits at 0.050, so wherever a ribbon exists the ribbon wins and
+  // nothing z-fights, and the fillet is only ever seen in the gap it is for.
+  // It is still well clear of the terrain, so P8 has nothing to say either.
+  {
+    const CELL = 0.5;
+    const nodes = new Map();
+    for (const r of (data.roads || [])) {
+      if (r.k === 'pedestrian' || r.k === 'footway' || r.bridge) continue;
+      const p = r.p || [];
+      if (p.length < 2) continue;
+      const hw = (r.w || 6) / 2;
+      for (const [x, z] of p) {
+        const k = Math.round(x / CELL) + ',' + Math.round(z / CELL);
+        const e = nodes.get(k);
+        if (!e) nodes.set(k, { x, z, hw, n: 1, ways: new Set([r]) });
+        else { e.hw = Math.max(e.hw, hw); e.ways.add(r); e.n++; }
+      }
+    }
+    let filled = 0, tapers = 0;
+    const TAPER_LEN = 9;
+    for (const e of nodes.values()) {
+      if (e.ways.size < 2) continue;          // a way's own middle needs nothing
+      const R = e.hw + 0.6;
+      roadGeos.push(junctionPatch(e.x, e.z, R, 0.050));
+      filled++;
+      // ...AND THE TAPER, WHICH IS THE BIGGER HALF OF THE WEDGE.
+      //
+      // A disc closes the corner AT the node and nothing more, and the wedge on
+      // Tanjong Beach Walk survived one: it is not a corner, it is a WIDTH
+      // CHANGE. An 8m way continues as a 3.8m way at a shared node, and the
+      // 2.1m step down each side opens a long thin triangle of bare ground
+      // between the two ribbons, running as far as the eye follows the road.
+      // Real carriageways taper; ours stepped.
+      //
+      // So where the widths differ by more than a metre, the narrow way's first
+      // TAPER_LEN metres are re-laid at the WIDE width, under both ribbons. It
+      // is the same 5mm-under trick, so nothing z-fights and nothing shows
+      // except the ground that should never have been visible.
+      const wide = Math.max(...[...e.ways].map((r) => (r.w || 6)));
+      for (const r of e.ways) {
+        const w = r.w || 6;
+        if (wide - w <= 1.0) continue;
+        const p = r.p || [];
+        if (p.length < 2) continue;
+        // walk from whichever end of this way the node is
+        const dStart = Math.hypot(p[0][0] - e.x, p[0][1] - e.z);
+        const dEnd = Math.hypot(p[p.length - 1][0] - e.x, p[p.length - 1][1] - e.z);
+        if (Math.min(dStart, dEnd) > CELL * 2) continue;
+        const seq = dStart <= dEnd ? p : [...p].reverse();
+        const sub = [seq[0]];
+        let run = 0;
+        for (let i = 1; i < seq.length && run < TAPER_LEN; i++) {
+          const d = Math.hypot(seq[i][0] - seq[i - 1][0], seq[i][1] - seq[i - 1][1]);
+          if (run + d <= TAPER_LEN) { sub.push(seq[i]); run += d; }
+          else {
+            const t = (TAPER_LEN - run) / d;
+            sub.push([seq[i - 1][0] + (seq[i][0] - seq[i - 1][0]) * t,
+                      seq[i - 1][1] + (seq[i][1] - seq[i - 1][1]) * t]);
+            run = TAPER_LEN;
+          }
+        }
+        if (sub.length >= 2) { roadGeos.push(ribbon(sub, wide, 0.050)); tapers++; }
+      }
+    }
+    window.__junctionFillets = filled;
+    window.__junctionTapers = tapers;
+  }
   merge(roadGeos, MAT.asphalt, 'roadSurface');
   merge(paveGeos, MAT.paving, 'pavementSurface');
   merge(unitPaveGeos, MAT.unitPave, 'roadSurface');

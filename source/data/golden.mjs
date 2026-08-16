@@ -352,6 +352,12 @@ const SPOTS = [
   // gate that cannot see the biggest object on the beach is not watching the
   // beach. Looking inland from the sand, which is the tourist's own view of it.
   ['skypark', -2270, 12380, 2.50],
+  // TANJONG JUNCTION, and it is here for the same reason `skypark` is: the
+  // junction wedges — bare ground showing between two ribbons of different
+  // width, with the kerb running round it — sat on the owner's own beach walk,
+  // and all 41 frames passed at 0.000% the day they were paved. This is
+  // sweep[54]'s vantage, the frame the defect was found in.
+  ['tanjong-junction', -711, 13487, 0.849],
 ];
 
 mkdirSync(ACT, { recursive: true });
