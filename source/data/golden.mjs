@@ -345,6 +345,13 @@ const SPOTS = [
   // the berth row in view — 18 of them within this reach, the densest run on
   // the island — where a deck back on the wrong datum would be unmissable.
   ['cove-berths', 530, 13700, -0.4],
+  // SKYPARK SENTOSA, and it is here because NOTHING WATCHED IT. A 50m landmark
+  // stood behind Siloso Beach as a featureless tan box for the life of this
+  // project — its recipe never matched its name — and all 40 frames passed the
+  // day it was replaced by two lattice towers and a skybridge, at 0.000%. A
+  // gate that cannot see the biggest object on the beach is not watching the
+  // beach. Looking inland from the sand, which is the tourist's own view of it.
+  ['skypark', -2270, 12380, 2.50],
 ];
 
 mkdirSync(ACT, { recursive: true });

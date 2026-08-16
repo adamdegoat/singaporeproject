@@ -5738,40 +5738,126 @@ function skyHelix(api, b) {
 // share its structure. Kept as structure, not styled: the colour scheme is not
 // published anywhere the research could reach.
 function bungyTower(api, b) {
+  // SKYPARK SENTOSA BY AJ HACKETT — research/skypark-sentosa.md, sources cited.
+  //
+  // THE DEFINING SILHOUETTE IS NOT A TOWER, IT IS TWO TOWERS WITH A BRIDGE
+  // BETWEEN THEM. Published: the only bungy tower in Singapore at 50m; the
+  // Skybridge is 40m long and 47m high, open-air, handrails BOTH sides, glass
+  // floor sections; the Giant Swing winches to 40m and releases at 120km/h.
+  //
+  // The map gives ONE 423 m2 rhombus, 27 x 15 m — one tower base, not the park.
+  // The published 40m span is longer than the whole polygon, so the second
+  // tower is placed BY THIS RECIPE along the footprint's own long axis, and
+  // both towers are tested for a carriageway before anything is drawn: this
+  // sits at the top of Siloso Beach with Siloso Beach Walk running past it.
   const ob = orientedBox(b.p);
   const g0 = api.footingY(b.p);
-  const H = Math.max(20, b.h || 47);        // published 47
-  const half = Math.max(3.5, Math.min(ob.halfLong, ob.halfShort) * 0.8);
+  const H = Math.max(20, b.h || 47);        // published 50 to the jump, 47 to the bridge
+  const SPAN = 40;                          // published Skybridge length
+  const half = Math.max(3.0, Math.min(ob.halfLong, ob.halfShort) * 0.62);
   const steel = COASTER_WHITE, dark = COASTER_GREY;
-  // four legs, slightly battered so it reads as a tower and not a box
+  // the two tower centres, on the long axis, centred on the footprint
+  const towers = [-1, 1].map((s) => [ob.cx + ob.ux * (SPAN / 2) * s, ob.cz + ob.uz * (SPAN / 2) * s]);
+  // A TOWER IN THE ROAD IS A BLOCKER, and the second one is invented. If the
+  // placement cannot clear the carriageway, both fall back onto the footprint's
+  // own ends, which the survey says is buildable ground.
+  if (towers.some(([x, z]) => onCarriageway(x, z, 1.2))) {
+    towers[0] = [ob.cx - ob.ux * ob.halfLong * 0.8, ob.cz - ob.uz * ob.halfLong * 0.8];
+    towers[1] = [ob.cx + ob.ux * ob.halfLong * 0.8, ob.cz + ob.uz * ob.halfLong * 0.8];
+  }
   const legs = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
-  for (const [sx, sz] of legs) {
-    const bx = ob.bx + (sx * half) * ob.ux - (sz * half) * ob.uz;
-    const bz = ob.bz + (sx * half) * ob.uz + (sz * half) * ob.ux;
-    const tx = ob.bx + (sx * half * 0.55) * ob.ux - (sz * half * 0.55) * ob.uz;
-    const tz = ob.bz + (sx * half * 0.55) * ob.uz + (sz * half * 0.55) * ob.ux;
-    const len = Math.hypot(tx - bx, H, tz - bz);
-    const leg = new THREE.CylinderGeometry(0.34, 0.42, len, 8);
-    const dir = new THREE.Vector3(tx - bx, H, tz - bz).normalize();
-    leg.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
-    leg.translate((bx + tx) / 2, g0 + H / 2, (bz + tz) / 2);
-    api.merge(leg, steel, ob.cx, ob.cz);
+  for (const [tcx, tcz] of towers) {
+    // four legs, battered inward so it reads as a tower and not a box
+    for (const [sx, sz] of legs) {
+      const bx = tcx + (sx * half) * ob.ux - (sz * half) * ob.uz;
+      const bz = tcz + (sx * half) * ob.uz + (sz * half) * ob.ux;
+      const tx = tcx + (sx * half * 0.55) * ob.ux - (sz * half * 0.55) * ob.uz;
+      const tz = tcz + (sx * half * 0.55) * ob.uz + (sz * half * 0.55) * ob.ux;
+      const len = Math.hypot(tx - bx, H, tz - bz);
+      const leg = new THREE.CylinderGeometry(0.42, 0.54, len, 8);
+      const dir = new THREE.Vector3(tx - bx, H, tz - bz).normalize();
+      leg.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+      leg.translate((bx + tx) / 2, g0 + H / 2, (bz + tz) / 2);
+      api.merge(leg, steel, ob.cx, ob.cz);
+    }
+    // BRACING, AND IT IS X-BRACING, NOT RINGS. The rings this used to draw are
+    // 11cm torus sections seen against the sky from 200m of open beach: they
+    // vanish, and four bare battered poles read as SCAFFOLDING rather than as
+    // the island's one bungy tower. A lattice tower is recognised by its
+    // diagonals, so each of the four faces gets a cross at every level, and the
+    // level ring stays as the chord that ties them.
+    const LV = 6;
+    for (let k = 1; k <= LV; k++) {
+      const t0 = (k - 1) / LV, t1 = k / LV;
+      const y0 = g0 + t0 * H, y1 = g0 + t1 * H;
+      const r0 = half * (1 - 0.45 * t0), r1 = half * (1 - 0.45 * t1);
+      // the four faces, each as a pair of crossing diagonals
+      for (let f = 0; f < 4; f++) {
+        const a0 = f * Math.PI / 2 + Math.PI / 4, a1 = a0 + Math.PI / 2;
+        const c0 = [tcx + Math.cos(a0) * r0 * 1.42 * ob.ux - Math.sin(a0) * r0 * 1.42 * ob.uz,
+                    tcz + Math.cos(a0) * r0 * 1.42 * ob.uz + Math.sin(a0) * r0 * 1.42 * ob.ux];
+        const c1 = [tcx + Math.cos(a1) * r0 * 1.42 * ob.ux - Math.sin(a1) * r0 * 1.42 * ob.uz,
+                    tcz + Math.cos(a1) * r0 * 1.42 * ob.uz + Math.sin(a1) * r0 * 1.42 * ob.ux];
+        const d0 = [tcx + Math.cos(a0) * r1 * 1.42 * ob.ux - Math.sin(a0) * r1 * 1.42 * ob.uz,
+                    tcz + Math.cos(a0) * r1 * 1.42 * ob.uz + Math.sin(a0) * r1 * 1.42 * ob.ux];
+        const d1 = [tcx + Math.cos(a1) * r1 * 1.42 * ob.ux - Math.sin(a1) * r1 * 1.42 * ob.uz,
+                    tcz + Math.cos(a1) * r1 * 1.42 * ob.uz + Math.sin(a1) * r1 * 1.42 * ob.ux];
+        for (const [p, q] of [[c0, d1], [c1, d0]]) {
+          const len = Math.hypot(q[0] - p[0], y1 - y0, q[1] - p[1]);
+          const br = new THREE.CylinderGeometry(0.13, 0.13, len, 5);
+          const dir = new THREE.Vector3(q[0] - p[0], y1 - y0, q[1] - p[1]).normalize();
+          br.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+          br.translate((p[0] + q[0]) / 2, (y0 + y1) / 2, (p[1] + q[1]) / 2);
+          api.merge(br, dark, ob.cx, ob.cz);
+        }
+      }
+      const ring = new THREE.TorusGeometry(r1 * 1.42, 0.16, 5, 4);
+      ring.rotateX(Math.PI / 2);
+      ring.rotateY(-ob.ang + Math.PI / 4);
+      ring.translate(tcx, y1, tcz);
+      api.merge(ring, dark, ob.cx, ob.cz);
+    }
   }
-  // bracing rings up the tower
-  for (let k = 1; k <= 5; k++) {
-    const y = g0 + (k / 6) * H;
-    const r = half * (1 - 0.45 * (k / 6)) * 1.42;
-    const ring = new THREE.TorusGeometry(r, 0.11, 5, 4);
-    ring.rotateX(Math.PI / 2);
-    ring.rotateY(-ob.ang + Math.PI / 4);
-    ring.translate(ob.bx, y, ob.bz);
-    api.merge(ring, dark, ob.cx, ob.cz);
+  // THE SKYBRIDGE, 47m up and spanning the two towers. Deck, a handrail each
+  // side (published: "handrails present on either sides"), and a paler centre
+  // strip for the glass floor panels.
+  const span = Math.hypot(towers[1][0] - towers[0][0], towers[1][1] - towers[0][1]);
+  const mx = (towers[0][0] + towers[1][0]) / 2, mz = (towers[0][1] + towers[1][1]) / 2;
+  const BY = g0 + H * 0.94;
+  const bridge = (w, hgt, y, mat, dz = 0) => {
+    const geo = new THREE.BoxGeometry(span, hgt, w);
+    geo.rotateY(-ob.ang);
+    geo.translate(mx - ob.uz * dz, y, mz + ob.ux * dz);
+    api.merge(geo, mat, ob.cx, ob.cz);
+  };
+  bridge(2.4, 0.22, BY, dark);                 // deck
+  bridge(0.9, 0.06, BY + 0.13, steel);         // the glass-floor centre panel
+  for (const s of [-1, 1]) {
+    bridge(0.09, 0.05, BY + 1.05, steel, s * 1.15);   // top rail
+    bridge(0.07, 0.05, BY + 0.60, steel, s * 1.15);   // mid rail
   }
-  // the jump platform, cantilevered off one face at the top
+  // the jump platform, cantilevered off the seaward tower at the top
   const deck = new THREE.BoxGeometry(half * 2.6, 0.4, half * 1.5);
   deck.rotateY(-ob.ang);
-  deck.translate(ob.bx + ob.ux * half * 1.1, g0 + H, ob.bz + ob.uz * half * 1.1);
+  deck.translate(towers[0][0] - ob.ux * half * 1.6, g0 + H, towers[0][1] - ob.uz * half * 1.6);
   api.merge(deck, dark, ob.cx, ob.cz);
+  // THE GIANT SWING at the other tower: a gantry arm at the published 40m with
+  // the pod hanging under it. Three seats, so the pod is wide rather than tall.
+  const SY = g0 + Math.min(H - 2, 40);
+  const arm = new THREE.BoxGeometry(0.5, 0.5, half * 3.2);
+  arm.rotateY(-ob.ang);
+  arm.translate(towers[1][0] + ob.uz * half * 1.3, SY, towers[1][1] - ob.ux * half * 1.3);
+  api.merge(arm, dark, ob.cx, ob.cz);
+  for (const s of [-1, 1]) {
+    const rope = new THREE.CylinderGeometry(0.05, 0.05, 5.2, 5);
+    rope.translate(towers[1][0] + ob.uz * half * 1.3 - ob.ux * s * 0.8,
+                   SY - 2.8, towers[1][1] - ob.ux * half * 1.3 - ob.uz * s * 0.8);
+    api.merge(rope, dark, ob.cx, ob.cz);
+  }
+  const pod = new THREE.BoxGeometry(1.9, 0.5, 0.8);
+  pod.rotateY(-ob.ang);
+  pod.translate(towers[1][0] + ob.uz * half * 1.3, SY - 5.5, towers[1][1] - ob.ux * half * 1.3);
+  api.merge(pod, steel, ob.cx, ob.cz);
 }
 
 // SINGAPORE CABLE CAR STATION — published description, and an unusually
@@ -6690,7 +6776,12 @@ export const RECIPES = [
   [/^bora bora beach bar|^rock bar$|^two chefs bar|^tanjong beach club|^foc sentosa/i, beachVenue],
   [/^trapizza/i, trapizza],
   [/^beach arrival plaza/i, beachArrivalPlaza],
-  [/^aj hackett/i, bungyTower],
+  // THE ANCHOR WAS THE BUG. The map's name is "Skypark Sentosa by AJ Hackett",
+  // and `^aj hackett` matches the start of a string, so THIS RECIPE NEVER RAN
+  // on the building it was written for — Siloso Beach carried a 47m featureless
+  // tan box behind the sand from the day it was written until 2026-08-17, and
+  // it was found by riding the beach, not by any gate.
+  [/aj hackett|^skypark sentosa/i, bungyTower],
   [/^hard rock hotel|^the laurus/i, theLaurus],
   [/^hotel ora|^festive hotel/i, hotelOra],
   [/^equarius hotel/i, equariusHotel],
