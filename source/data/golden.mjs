@@ -337,6 +337,19 @@ const SPOTS = [
   // was the other half of the same bug — this is sweep frame 072's own
   // vantage, the one whose white slab opened the hunt.
   ['tanjong-wall', -871, 12867, -2.12],
+  // THE COVE BERTHS, and this frame exists because the gate MISSED them.
+  //
+  // 2026-08-16: the Cove's private jetties were seated on TERRAIN.at(), which
+  // SESSION 20 leaves uncarved across the whole district, so 88 of them stood
+  // on a bank that is not drawn — measured at 15-20m over their own water. The
+  // fix moved 88 decks and **all 39 goldens passed it, 0.000%**: not one frame
+  // looked at a berth. `cove-canal` sees the two nearest and did not move.
+  //
+  // That is the same hole the pale-stone phantom fell through this morning, so
+  // it gets closed the same way. Stands on the bank of the Cove channel with
+  // the berth row in view — 18 of them within this reach, the densest run on
+  // the island — where a deck back on the wrong datum would be unmissable.
+  ['cove-berths', 530, 13700, -0.4],
 ];
 
 mkdirSync(ACT, { recursive: true });
