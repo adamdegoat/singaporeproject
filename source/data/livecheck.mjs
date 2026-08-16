@@ -124,14 +124,38 @@ try {
     let mem = null, settled = false;
     if (performance.memory) {
       if (window.gc) {
+        // SAMPLE UNTIL IT STOPS MOVING, NOT A FIXED THREE TIMES.
+        //
+        // The note above is right that consecutive settled reads agree and a
+        // high one means the collection had not finished — but it then took a
+        // fixed 3 reads over 1.5s after a fixed 2.5s wait, and BOOT HAS SINCE
+        // GROWN TO 23s. The warm spin and shader compile now run past that
+        // window, so the collector is racing live allocation and the min of
+        // three is still whatever the race gave you.
+        //
+        // Measured 2026-08-16 on ONE published build, three runs of this same
+        // check, identical tris (1253k) and draws (212): 441 PASS, 441 PASS,
+        // 468 FAIL against a 460 budget. The gate refused a deploy whose world
+        // was byte-identical to the two that passed — the exact failure this
+        // block was written to end, returned by the back door.
+        //
+        // So: keep collecting until two consecutive reads agree within 1%, up
+        // to 12 tries, then take the lowest seen. Same quantity, same budget —
+        // it just waits for the answer instead of guessing when it is ready.
         const reads = [];
-        for (let i = 0; i < 3; i++) {
+        let stable = false;
+        for (let i = 0; i < 12 && !stable; i++) {
           window.gc(); window.gc();
           await new Promise((r) => setTimeout(r, 500));
           reads.push(performance.memory.usedJSHeapSize);
+          const n = reads.length;
+          if (n >= 2) {
+            const a = reads[n - 1], b = reads[n - 2];
+            stable = Math.abs(a - b) <= Math.max(a, b) * 0.01;
+          }
         }
         mem = Math.round(Math.min(...reads) / 1048576);
-        settled = true;
+        settled = stable;
       } else {
         mem = Math.round(performance.memory.usedJSHeapSize / 1048576);
       }
