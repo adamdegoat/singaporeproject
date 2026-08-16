@@ -6221,12 +6221,48 @@ export function buildWater(world, data) {
 // SEABED, and seating a deck on it would put the jetty at the bottom of the
 // bay. Same two-datums trap as the bridge decks; the answer is the same, ask
 // the right surface.
+let PIER_TIDAL = 0;
 export function buildPiers(world, data) {
+  PIER_TIDAL = 0;
   const polys = data.piers || [];
   if (!polys.length) return { piers: 0 };
   const deckMat = new THREE.MeshStandardMaterial({ color: 0xa89a86, roughness: 0.9 });
   const edgeMat = new THREE.MeshStandardMaterial({ color: 0x6f6a62, roughness: 0.85 });
-  const geos = [], edges = [];
+  // creosoted timber, the same family as the lagoon jetty's piles in sgdetail
+  const pileMat = new THREE.MeshStandardMaterial({ color: 0x554c42, roughness: 0.95 });
+  const geos = [], edges = [], piles = [];
+  // A MOORING PILE BELONGS IN WATER, AND `piers` IS NOT ONLY BERTHS.
+  //
+  // Two wrong cuts before this one, both measured:
+  //   * every pier under 120 m2 -> 517 piles spanning y 2.6 to 19.6. A pile
+  //     nineteen metres up is on an inland boardwalk through the forest.
+  //   * only piers inside a mapped `water` ring -> 96 piles, and it kept
+  //     exactly the wrong ones (y 6.4-19.6, the inland ponds) while dropping
+  //     every Cove berth. THE SEA IS NOT A WATER POLYGON — it is the
+  //     seaSurface sheet — so the tidal berths are inside no mapped ring at
+  //     all. Same two-datums trap this file keeps paying for.
+  //
+  // The Cove's channels are TIDAL (SESSION 20: a DEM-witnessed tidal ring is
+  // the sea reaching inland, and its surface sits AT sea level), so a berth is
+  // a deck whose water is sea level. That is the test.
+  //
+  // NOT `TERRAIN.tidalRing` either: it needs THREE wet cells INSIDE the ring
+  // and the grid is 35m, so a 28 m2 berth can never contain three of anything
+  // — it is built for water POLYGONS, and it silently refused every berth.
+  // A berth asks the same DEM witness a different way: is the cell I stand in
+  // one the DEM saw as wet? `grid()` is read-only by contract.
+  const _g = TERRAIN.grid && TERRAIN.grid();
+  let _wetSet = null;
+  const wetCell = (pts) => {
+    if (!_g || !_g.wet || !_g.wet.length) return false;
+    if (!_wetSet) _wetSet = new Set(_g.wet);
+    for (const [x, z] of pts) {
+      const i = Math.round((x - _g.x0) / _g.cell), j = Math.round((z - _g.z0) / _g.cell);
+      if (i < 0 || j < 0 || i >= _g.nx || j >= _g.nz) continue;
+      if (_wetSet.has(j * _g.nx + i)) return true;
+    }
+    return false;
+  };
   for (const p of polys) {
     const pts = p.p;
     if (pts.length < 4) continue;
@@ -6246,7 +6282,48 @@ export function buildPiers(world, data) {
       if (g < lo) lo = g;
     }
     if (!isFinite(lo)) continue;
-    const level = lo + 1.15;                 // a working deck sits above the rim
+    // THIS FUNCTION'S OWN HEADER SAYS A PIER TAKES ITS LEVEL FROM THE WATER
+    // IT SITS IN, AND THEN IT ASKED THE TERRAIN.
+    //
+    // Measured 2026-08-16 by raycasting five of the Cove's private berths:
+    // pierEdge at y 19.94, 19.98, 16.03, 15.32 with `seaSurface` at 0.18
+    // underneath. **THE COVE'S JETTIES WERE FLOATING FIFTEEN TO TWENTY METRES
+    // IN THE AIR** — the dark beams over the palms in any waterfront frame.
+    //
+    // Why, and it is the same trap the bridge decks paid for: SESSION 20 made
+    // the Cove moats tidal by sinking the DRAWN skin only and left `at()`
+    // deliberately untouched, so TERRAIN.at() over a Cove channel still
+    // returns the UNCARVED BANK. `lo + 1.15` therefore seats a berth on a bank
+    // that is not drawn, 15-20m over the water that is.
+    //
+    // A ring the DEM witnesses as wet IS the sea reaching inland (the tidal
+    // ring rule buildWater uses forty lines above), so its deck belongs at sea
+    // level. Everything else — the inland ponds, the boardwalks on the hill —
+    // keeps the rim rule, because for those the terrain IS the water's bed.
+    // ...AND THE WET WITNESS ALONE ONLY CAUGHT 19 OF 113. The witness marks
+    // whole 35m DEM cells, and a Cove channel is narrower than one, so most
+    // berths sit on a cell the DEM never called wet. Ask the surface that is
+    // actually DRAWN there as well — the same `drawnGroundAt` the note at
+    // buildSea points at, and for the same reason: anything that has to sit a
+    // fixed height above the water needs the number the SHEET was drawn at,
+    // not a datum reconstructed from the grid.
+    // SAMPLE THE MIDDLE, NOT JUST THE CORNERS. A berth deck is built to
+    // straddle the bank, so its VERTICES are routinely all on land while the
+    // deck itself reaches over the channel — testing vertices alone left one
+    // measured berth at 7.96 with the sea at 0.18 and nothing but water under
+    // it. The centroid is the part that is actually over the water.
+    let cx0 = 0, cz0 = 0;
+    for (const [x, z] of pts) { cx0 += x; cz0 += z; }
+    cx0 /= pts.length; cz0 /= pts.length;
+    let drawnLo = drawnGroundAt(cx0, cz0);
+    for (const [x, z] of pts) {
+      const dg = drawnGroundAt(x, z);
+      if (dg < drawnLo) drawnLo = dg;
+    }
+    const pierTidal = SEA_LEVEL[0] !== null
+      && (wetCell(pts) || wetCell([[cx0, cz0]]) || (isFinite(drawnLo) && drawnLo <= SEA_LEVEL[0] + 0.6));
+    const level = pierTidal ? SEA_LEVEL[0] + 1.15 : lo + 1.15;
+    if (pierTidal) PIER_TIDAL++;
     const g1 = new THREE.ShapeGeometry(shapeFrom(pts));
     g1.rotateX(Math.PI / 2);
     g1.translate(0, level, 0);
@@ -6257,8 +6334,44 @@ export function buildPiers(world, data) {
       g2.translate(0, level - 0.45 - (FOOT !== null ? FOOT : 0), 0);
       edges.push(g2);
     }
+    // ...and the mooring piles on the private berths (see the note at the mesh)
+    if ((p.a || 0) <= 120 && level <= 3.0) {
+      let lastx = null, lastz = null;
+      for (const [qx, qz] of pts) {
+        if (lastx !== null && Math.hypot(qx - lastx, qz - lastz) < 3) continue;
+        if (window.__onRoad && window.__onRoad(qx, qz, 0.3)) continue;
+        lastx = qx; lastz = qz;
+        // 2.9m of pile: ~1.5m proud of the deck, the rest down into the water
+        const pg = new THREE.CylinderGeometry(0.135, 0.155, 2.9, 6);
+        pg.translate(qx, level + 1.5 - 1.45, qz);
+        piles.push(pg);
+      }
+    }
   }
   if (!geos.length) return { piers: 0 };
+  // MOORING PILES — WHAT MAKES A DECK READ AS A BERTH.
+  //
+  // The Cove's private jetties have been drawn since before the villa pass and
+  // the data carries 109 of them inside the Cove alone (median 28 m2). Ridden
+  // past, they are flat grey slabs on the water: correct in plan, and nothing
+  // about them says boat. A berth's whole silhouette from the bank is the
+  // PILES standing out of it.
+  //
+  // Only the private berths get them (area under 120 m2). The big working
+  // decks — the ferry terminal, the marina's own structures — are a different
+  // object and would need their own vocabulary, so they are left alone rather
+  // than given a pile field that happens to be the same recipe.
+  //
+  // A pile that stands in a carriageway is the P1b defect the lip rule above
+  // already exists for, so the same `__onRoad` test guards it, and vertices
+  // closer than 3m to the last one are skipped so a finely-traced ring does
+  // not grow a picket fence.
+  if (piles.length) {
+    const pileMesh = new THREE.Mesh(mergeGeos(piles), pileMat);
+    pileMesh.name = 'pierPile';
+    pileMesh.castShadow = false; pileMesh.receiveShadow = true;
+    world.add(pileMesh);
+  }
   const deck = new THREE.Mesh(mergeGeos(geos), deckMat);
   deck.name = 'pierDeck';
   deck.receiveShadow = true;
@@ -6267,6 +6380,10 @@ export function buildPiers(world, data) {
   lip.name = 'pierEdge';
   lip.castShadow = false; lip.receiveShadow = true;
   world.add(lip);
+  if (PIER_TIDAL) {
+    console.log(`  piers: ${PIER_TIDAL} of ${geos.length} seated on the TIDAL water `
+      + `they stand in rather than on the uncarved bank under it`);
+  }
   return { piers: geos.length };
 }
 
