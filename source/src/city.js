@@ -2633,11 +2633,17 @@ export async function buildBuildings(world, data, Y = null) {
   // to remember to set.
   const ABUT_CELL = 60, ABUT_NEAR = 0.9;
   const _abuts = new Set();
+  // buildings that are one real structure mapped as several overlapping rings
+  const _overlapped = new Set();
   {
     const small = [];
     for (const b of (data.buildings || [])) {
       if (!b.k && b.a < 520 && b.h <= 20 && b.p && b.p.length <= 64) small.push(b);
     }
+    // how many small footprints carry each name — >1 means one real building
+    // mapped as several rings
+    const _nameCount = new Map();
+    for (const b of small) if (b.n) _nameCount.set(b.n, (_nameCount.get(b.n) || 0) + 1);
     const cells = new Map();
     small.forEach((b, i) => {
       for (const [px, pz] of b.p) {
@@ -2658,6 +2664,49 @@ export async function buildBuildings(world, data, Y = null) {
           }
         }
       }
+      // OVERLAP IS NOT ABUTMENT, AND ONE OF THEM IS A DEFECT.
+      //
+      // Abutting is a terrace and is what the shophouse recipe is FOR. But some
+      // buildings are mapped as several OVERLAPPING footprints of one real
+      // structure, and then every segment grows its own pitched roof at its own
+      // oriented-box angle and they collide. Beach Station is four rings all
+      // named "Beach Lrt Station (s4)", 175-203 m2, every one h 10, staggered
+      // so each overlaps the next: the real thing is one long curved station.
+      // That collision is the grey wedge in `beach-walk`, the frame whose
+      // golden has been carrying a KNOWN DEFECT note since the roof prism was
+      // turned the right way up and made it visible.
+      //
+      // AND THE MAP SAYS IT OUTRIGHT: THEY SHARE A NAME.
+      //
+      // A corner test was tried first and MEASURED USELESS on the case it was
+      // written for — Beach Station's four rings put at most 25% of their
+      // corners inside a neighbour (0%, 25%, 25%, 17%), because a staggered
+      // chain overlaps by AREA while its corners fall outside. The 40% gate
+      // never fired and the fix changed nothing; the golden proved it by not
+      // moving.
+      //
+      // Four rings carrying the identical name IS the survey telling you it is
+      // one structure. Sentosa's named multi-ring buildings are exactly the
+      // ones that need it — Beach Lrt Station 4 rings, Marina Collection 10,
+      // Seven Palms 6, Shark Encounter 5 — and a shared name is free to read.
+      // The corner test stays as a second trigger for the unnamed cases.
+      let inOther = 0, tested = 0;
+      for (const j of near) {
+        const q = small[j].p;
+        let hit = 0;
+        for (const [px, pz] of b.p) {
+          let c2 = false;
+          for (let u = 0, v = q.length - 1; u < q.length; v = u++) {
+            const xi = q[u][0], zi = q[u][1], xj = q[v][0], zj = q[v][1];
+            if ((zi > pz) !== (zj > pz) && px < ((xj - xi) * (pz - zi)) / (zj - zi) + xi) c2 = !c2;
+          }
+          if (c2) hit++;
+        }
+        if (hit > inOther) inOther = hit;
+        tested++;
+      }
+      if (tested && b.p.length && inOther / b.p.length >= 0.4) _overlapped.add(b);
+      if (b.n && (_nameCount.get(b.n) || 0) > 1) _overlapped.add(b);
       for (const j of near) {
         for (const [qx, qz] of small[j].p) {
           for (const [px, pz] of b.p) {
@@ -3438,7 +3487,7 @@ export async function buildBuildings(world, data, Y = null) {
     // real fix is a recipe per building family (the openground queue's shape),
     // not a rule that takes the fabric away. Do not re-add `!b.n` without one.
     if (!_rec && !b.k && b.a < 520 && b.h <= 20 && b.p.length <= 64 && _abuts.has(b)) {
-      shophouse(api, b);
+      shophouse(api, b, _overlapped.has(b));
       stats.count++; stats.shophouses = (stats.shophouses || 0) + 1;
       continue;
     }

@@ -1363,7 +1363,12 @@ function hotel(api, b) {
 // A shophouse: party walls, a five-foot-way colonnade at the ground floor, tall
 // shuttered upper storeys and a pitched clay roof. 140-odd of these are what
 // actually fills the back lanes.
-export function shophouse(api, b) {
+export // `overlapped` — this ring is one of several mapped over the same real
+// building, so it must NOT grow its own pitched roof: the neighbouring rings
+// have different oriented-box angles and the ridges collide (Beach Station).
+// It falls through to the flat later-infill cap, which is right for a segment
+// of a larger structure and is what the `else` branch below already draws.
+function shophouse(api, b, overlapped = false) {
   const ob = orientedBox(b.p);
   const wall = api.mat.shophouse(b);
   const trim = api.mat.trim;
@@ -1526,7 +1531,7 @@ export function shophouse(api, b) {
   // exactly as crystalMesh's facade panels were fixed in this same session.
   // A terrace whose middle passes a lane keeps the roof over the rest of
   // itself instead of losing all of it. P1b remains the arbiter.
-  const rad = variant < 3 ? Math.min(3.4, ob.halfShort * (0.5 + variant * 0.09)) : 0;
+  const rad = (!overlapped && variant < 3) ? Math.min(3.4, ob.halfShort * (0.5 + variant * 0.09)) : 0;
   // ~9m of ridge per segment, so a single shop is one piece and a terrace is
   // several; never fewer than one, never so many that the merge cost matters.
   const RSEG = rad > 0 ? Math.max(1, Math.min(14, Math.round(span / 9))) : 0;

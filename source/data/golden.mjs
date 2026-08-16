@@ -46,19 +46,14 @@ const SPOTS = [
   ['fort-siloso',    -2721, 11967, -0.8],
   ['headland-sea',   -3150, 11700, 1.12],
   ['imbiah-trail',   -2070, 12300, 0.4],
-  // KNOWN DEFECT IN FRAME, 2026-08-16 — THIS FRAME PASSING IS NOT APPROVAL.
-  // The grey wedge on the left building is Beach Station: FOUR overlapping
-  // footprints all named "Beach Lrt Station (s4)", each 175-203 m2 at h 10, so
-  // each is claimed by the anonymous-shophouse branch and each grows its own
-  // pitched roof — and one of them pokes out of its taller neighbour. It is
-  // the D6a adjacent-footprint class with a name and a vantage at last.
-  //
-  // It was INVISIBLE until the roof prism was turned the right way up (the
-  // sideways prism's flat vertical face read as a plain grey gable wall), so
-  // this baseline is 0.50% worse than the one before it, ON PURPOSE and with
-  // the crop reviewed. The roof correction fixes the whole Cove terrace class;
-  // this one corner is what it cost. Fix is a station recipe or the D6a
-  // neighbour test — NOT `!b.n`, see the note at the branch in city.js.
+  // THE KNOWN DEFECT IN THIS FRAME IS FIXED, 2026-08-16 (same day it was
+  // recorded). The grey wedge was Beach Station: FOUR overlapping footprints
+  // all named "Beach Lrt Station (s4)", each growing its own pitched roof at
+  // its own oriented-box angle, and the ridges collided. Segments of one
+  // building that the map gives one NAME no longer roof themselves
+  // independently — see the note at `_overlapped` in city.js. This baseline is
+  // the clean one; the station reads as a building and the promenade behind it
+  // is visible again.
   ['beach-walk',     -1700, 12722, -1.6],
   // RE-AIMED 2026-08-16: the old spot's view of the globe had been walled
   // in by later builds — the frame showed a service wall and monorail and
