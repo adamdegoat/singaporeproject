@@ -2187,6 +2187,11 @@ export async function buildTrails(world, data, Y = null) {
   const deckM = surfaced(new THREE.MeshLambertMaterial({ color: 0x8d7a63 }),
                          { amt: 0.11, grain: 1.1, planks: 0.14, edge: 0.30 });
   const paveM = grainy(new THREE.MeshLambertMaterial({ color: 0xb0a898 }), 0.11, 3.2);
+  // the edges of the two ground surfaces: a concrete kerb against paving, a
+  // trodden earth lip against a forest trail. Darker than what they edge, or
+  // they do not read as an edge at all.
+  const paveEdgeM = grainy(new THREE.MeshLambertMaterial({ color: 0x928b7e }), 0.10, 3.0);
+  const earthEdgeM = grainy(new THREE.MeshLambertMaterial({ color: 0x7d6b52 }), 0.14, 2.4);
   // A BOARDWALK OVER WATER IS OVER WATER BY DESIGN — the Sentosa Boardwalk,
   // the jetty approaches, every deck round the Cove's basins. W2 counts things
   // standing in mapped water and is right to; this is the same exemption a
@@ -2504,6 +2509,54 @@ export async function buildTrails(world, data, Y = null) {
         for (let q = 0; q < 6; q++) { nrm[q * 3] = nX; nrm[q * 3 + 1] = nY; nrm[q * 3 + 2] = nZ; }
         g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
         merger.add(g, mat, p0x, p0z);
+        // AND AN EDGE, BECAUSE A PATH WITH NO EDGE IS A COLOURED FLOOR.
+        //
+        // The owner, riding: "alot of roads or path looks like flat generic
+        // path." Reading the surveyed `surface` tag (above) fixed WHAT they are
+        // made of; this is the other half — a ribbon that meets the grass on a
+        // hard line has no thickness and reads as paint. Every paved footpath
+        // on this island has a concrete edge and every forest trail has a
+        // trodden lip.
+        //
+        // COSTED BEFORE BUILDING: 87.0 km of footway, 13,213 ribbon steps, so
+        // an edge per side is ~53k triangles and ~2.4 MB island-wide against a
+        // 3.8M triangle budget — and it merges into the tile buckets this loop
+        // already fills, so draw calls do not move.
+        //
+        // Decks are excluded: a boardwalk's edge is its handrail, collected
+        // below and emitted INSTANCED so it cannot wall the walkway.
+        //
+        // The strip reuses this piece's own corner heights rather than asking
+        // surfaceAt again — it is 0.22m wide, the terrain cannot meaningfully
+        // differ across it, and buildTrails is the biggest single cost in the
+        // build (10.3s of an 18.1s boot before it was indexed). The outer lip
+        // drops 3cm so it settles into the grass instead of standing on it.
+        if (kind === 'earth' || kind === 'pave') {
+          const EW = 0.22, DROP = 0.03;
+          const eMat = kind === 'earth' ? earthEdgeM : paveEdgeM;
+          for (const sgnE of [-1, 1]) {
+            const iH = half * sgnE, oH = (half + EW) * sgnE;
+            const i0x = p0x + nx * iH, i0z = p0z + nz * iH;
+            const i1x = p1x + nx * iH, i1z = p1z + nz * iH;
+            const o0x = p0x + nx * oH, o0z = p0z + nz * oH;
+            const o1x = p1x + nx * oH, o1z = p1z + nz * oH;
+            const iA = sgnE < 0 ? aL : aR, iB = sgnE < 0 ? bL : bR;
+            const oA = iA - DROP, oB = iB - DROP;
+            const eg = new THREE.BufferGeometry();
+            // same upward winding as the ribbon; sgnE flips the corner order so
+            // both sides still face the sky
+            const ep = sgnE < 0
+              ? [o0x, oA, o0z,  i1x, iB, i1z,  o1x, oB, o1z,
+                 o0x, oA, o0z,  i0x, iA, i0z,  i1x, iB, i1z]
+              : [i0x, iA, i0z,  o1x, oB, o1z,  i1x, iB, i1z,
+                 i0x, iA, i0z,  o0x, oA, o0z,  o1x, oB, o1z];
+            eg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ep), 3));
+            eg.setAttribute('uv', new THREE.BufferAttribute(
+              new Float32Array([0, 0, seg / 2, 1, seg / 2, 0, 0, 0, 0, 1, seg / 2, 1]), 2));
+            eg.setAttribute('normal', new THREE.BufferAttribute(nrm.slice(), 3));
+            merger.add(eg, eMat, p0x, p0z);
+          }
+        }
         // NO WALK SURFACE IS REGISTERED FOR A TRAIL, and registering one was a
         // bug I put in this morning. addWalkSurface stores ONE height per
         // piece and walkSurfaceAt returns it flat, taking the highest match —
