@@ -651,6 +651,14 @@ LMAT.blueGlass.userData.tile = [26, 38.4];
 LMAT.paleStone.userData.tile = [12, 12];
 LMAT.warmStone.userData.tile = [12, 12];
 
+// THE COVE VILLA ROOF AND EVERY SOLID FENCE ASKED FOR `MAT.paleStone`.
+// It is on LMAT, which is declared 200 lines below MAT, so the reference read
+// undefined and three.js drew those pieces with its default material: unlit
+// white. Same object, not a copy — a second instance would be a second draw
+// batch for a material this world already has, and `autoUV` reads the tile
+// size off this one.
+MAT.paleStone = LMAT.paleStone;
+
 const up = new THREE.Vector3(0, 1, 0);
 
 // Set by main once the district's heightfield is loaded. Everything that used
@@ -1442,9 +1450,28 @@ const TILE = 110;
 // than swallowed: silently discarding a building is how this class of bug hid.
 export let BAD_GEO = 0;
 export function badGeoCount() { return BAD_GEO; }
+// Geometry handed to the merger with no material at all. See Merger.add.
+export let MISSING_MAT = 0;
+let MISSING_MAT_SAID = 0;
+export function missingMatCount() { return MISSING_MAT; }
 export class Merger {
   constructor() { this.groups = new Map(); this.mats = new Map(); }
   add(geo, mat, x = 0, z = 0) {
+    // A MESH WITH NO MATERIAL IS UNLIT WHITE, AND UNLIT WHITE LOOKS BUILT.
+    //
+    // `MAT.paleStone` never existed — paleStone is on LMAT, declared 200 lines
+    // further down — so two of every three Sentosa Cove villas wore a pure
+    // white, flat-shaded roof slab, and every solid fence and garden wall on
+    // the island was the same white. three.js defaults a missing material to
+    // `new MeshBasicMaterial()`, which is white with no map and no lighting,
+    // and `undefined` is a perfectly good Map key, so the pieces bucketed,
+    // merged, batched and LOD'd exactly like real fabric. Three sweeps filed
+    // it as "raw white placeholder geometry" and one whole session's evidence
+    // pack chased the material COLOUR of `roadSurface` — which is ffffff on
+    // every road in this world, because the map carries the colour.
+    //
+    // Nothing silently defaults here again. The count is reported at flush.
+    if (mat === undefined) { MISSING_MAT++; mat = MAT.conc; }
     const key = `${Math.floor(x / TILE)},${Math.floor(z / TILE)}|${this.matKey(mat)}`;
     if (!this.groups.has(key)) { this.groups.set(key, []); this.mats.set(key, mat); }
     this.groups.get(key).push(geo.index ? geo.toNonIndexed() : geo);
@@ -1463,7 +1490,18 @@ export class Merger {
     let meshes = 0;
     for (const [key, _list] of this.groups) meshes += this._bucket(world, key, _list, cast);
     this.groups.clear(); this.mats.clear();
+    this._sayMissing();
     return meshes;
+  }
+  // SAY WHAT HAD NO MATERIAL. The whole point of the guard in add() is that a
+  // missing MAT.* key used to be invisible in every log and merely odd-looking
+  // in the world.
+  _sayMissing() {
+    if (MISSING_MAT > MISSING_MAT_SAID) {
+      console.warn(`  ${MISSING_MAT - MISSING_MAT_SAID} merged pieces had NO MATERIAL `
+        + `(drawn as concrete) — a missing MAT.* key renders as unlit white`);
+      MISSING_MAT_SAID = MISSING_MAT;
+    }
   }
   // flush, but yielding to the frame loop between buckets. Same iteration
   // order and identical geometry to flush() — the buckets are independent —
@@ -1479,6 +1517,7 @@ export class Merger {
       meshes += this._bucket(world, key, _list, cast);
     }
     this.groups.clear(); this.mats.clear();
+    this._sayMissing();
     return meshes;
   }
   _bucket(world, key, _list, cast) {
