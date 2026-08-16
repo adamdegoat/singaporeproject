@@ -5456,6 +5456,42 @@ function loop(now) {
       const swivel = Math.max(-0.6, Math.min(0.6, -S.lean * 0.75));
       skateRig.wheels[0].rotation.set(-S.wheel, swivel, 0);
       skateRig.wheels[1].rotation.set(-S.wheel, 0, 0);
+      // AND THE RIDER RIDES. Until 2026-08-17 he was a single frozen pose
+      // bolted to the deck — the one object on screen in EVERY frame of this
+      // game, and the only one that never moved. buildSkater now hands out a
+      // four-part rig (see its note); this is the whole of the animation, and
+      // it is driven by the STATE, never by a timer, so it cannot drift out of
+      // sync with what the board is doing and it is deterministic for a golden.
+      //
+      //   crouch  from speed, carve and drift together — a rider stands tall
+      //           cruising and gets low when the board is working.
+      //   carve   the lean, normalised: legs compress, the torso rolls INTO
+      //           the turn and opens its shoulders toward it, the arms
+      //           counter-balance across the deck.
+      //   AND THE NEUTRAL POSE IS UNTOUCHED. Every term below is zero when the
+      //   board is standing still, deliberately: a constant forward fold read
+      //   better in isolation and moved 27 of 40 goldens by 0.10-0.16% — the
+      //   rider is in every frame, so any resting change is an island-wide
+      //   diff for nothing. He now stands exactly as he always did and moves
+      //   only when the board does.
+      //   slip    the drift angle: he looks further round than he leans,
+      //           which is what makes a slide read as intended rather than as
+      //           the board sliding out from under a passenger.
+      const RG = skater.userData.rig;
+      if (RG) {
+        const v = Math.min(1, S.speed / SKATE.vMax);
+        const carve = Math.max(-1, Math.min(1, S.lean / SKATE.leanMax));
+        const slip = Math.max(-1, Math.min(1, (S.slip || 0) / 0.5));
+        const crouch = Math.min(1, v * 0.5 + Math.abs(carve) * 0.5 + (S.drifting ? 0.3 : 0));
+        // the legs fold toward the PLANTED feet and the hips ride down with
+        // them — a crouch, not a shrink
+        RG.low.scale.y = 1 - crouch * 0.11;
+        RG.up.position.y = RG.y.pelvis - (RG.y.pelvis - RG.y.ankle) * crouch * 0.11;
+        RG.up.rotation.set(crouch * 0.28, carve * 0.20 + slip * 0.16, -carve * 0.26);
+        RG.head.rotation.set(-crouch * 0.16, carve * 0.42 + slip * 0.34, 0);
+        RG.armF.rotation.set(carve * 0.28, 0, -carve * 0.42 - crouch * 0.10);
+        RG.armB.rotation.set(-carve * 0.24, 0, -carve * 0.38 + crouch * 0.08);
+      }
     } else {
       carRig.group.rotation.z = S.lean;          // CAR.leanMax keeps this a small roll
       // full euler recompose: writing .x alone on a wheel pre-rolled about z
@@ -5886,6 +5922,21 @@ window.__rideState = () => (onRide ? {
   s: +onRide.s.toFixed(1), len: +onRide.ride.len.toFixed(1),
   cam: [+camera.position.x.toFixed(1), +camera.position.y.toFixed(1), +camera.position.z.toFixed(1)],
 } : null);
+// THE RIDER'S POSE, for the animation vet. A still frame cannot tell a rig
+// that is being driven from one that is stuck in a pose that happens to look
+// like motion, and this project's own law is that motion is verified in REAL
+// PLAYBACK at wall-clock. This hands the harness the numbers behind the frame.
+window.__rider = () => {
+  const R = skater.userData.rig;
+  return {
+    kmh: +(S.speed * 3.6).toFixed(1), lean: +S.lean.toFixed(3),
+    slip: +(S.slip || 0).toFixed(3), drifting: !!S.drifting,
+    crouch: R ? +(1 - R.low.scale.y).toFixed(3) : null,
+    fold: R ? +R.up.rotation.x.toFixed(3) : null,
+    roll: R ? +R.up.rotation.z.toFixed(3) : null,
+    look: R ? +R.head.rotation.y.toFixed(3) : null,
+  };
+};
 window.__toggle = () => toggleMode();
 window.__walker = () => ({ x: +walker.x.toFixed(1), z: +walker.z.toFixed(1), h: +walker.heading.toFixed(3), sp: +walker.speed.toFixed(2) });
 // heading included: a probe that wants to stand in front of the rider rather

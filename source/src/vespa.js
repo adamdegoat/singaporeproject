@@ -317,6 +317,40 @@ export function buildSkater() {
     shldrB: [-0.155, 1.135, 0.045], elbowB: [-0.322, 0.990, -0.070], handB: [-0.398, 0.848, -0.232],
     head: [0.010, 1.350, 0.105],
   };
+  // HE WAS A STATUE. Every joint above is baked into ONE flat group parented
+  // to the board, so from the day this was written until 2026-08-17 the rider
+  // held a single frozen pose through every carve, every drift and every stop —
+  // the most-looked-at object in the game, on screen in literally every frame,
+  // not moving a millimetre of its own. The owner: "make the avatar even more
+  // realistic. Also like the skating or moving effects more realistic or
+  // polished."
+  //
+  // So the same joint table now builds a SMALL HIERARCHY instead of a slab, and
+  // main.js poses it per frame. Four moving parts, chosen because they are what
+  // a rider actually does and what a chase camera can actually see:
+  //
+  //   low    legs and hips, pivoting at ANKLE height so scaling it compresses
+  //          the knees toward the planted feet and drops the hips — a crouch,
+  //          not a shrink. The feet stay in the root: they are bolted to the
+  //          deck and must never move.
+  //   up     everything above the pelvis. Folds forward into speed, rolls into
+  //          the carve, and opens its shoulders toward the turn.
+  //   head   its own group at the neck, so he LOOKS where he is going. A rider
+  //          whose head is welded to his shoulders reads as a mannequin.
+  //   armF / armB   shoulder groups, so the arms counter-balance a carve
+  //          instead of hanging in a fixed surfer's line.
+  //
+  // Anything not in one of those stays exactly where it was, so the neutral
+  // pose is IDENTICAL to the statue's — the goldens are the proof.
+  const rel = (j, o) => [j[0] - o[0], j[1] - o[1], j[2] - o[2]];
+  const P = J.pelvis, ANK = [0, J.ankleF[1], 0];
+  const low = new THREE.Group(); low.position.set(ANK[0], ANK[1], ANK[2]);
+  const up = new THREE.Group(); up.position.set(P[0], P[1], P[2]);
+  const head = new THREE.Group(); head.position.set(...rel(J.neck, P));
+  const armF = new THREE.Group(); armF.position.set(...rel(J.shldrF, P));
+  const armB = new THREE.Group(); armB.position.set(...rel(J.shldrB, P));
+  g.add(low, up); up.add(head, armF, armB);
+
   // FEET, across the deck and over the trucks. A skater's feet run ACROSS the
   // board, not along it — get this wrong and it reads instantly as a person
   // standing on a plank.
@@ -325,27 +359,29 @@ export function buildSkater() {
   g.add(part(new THREE.BoxGeometry(0.220, 0.058, 0.104), shoe,
     J.ankleB[0], J.ankleB[1] - 0.030, J.ankleB[2], 0, -0.12, 0));
   // LEGS
-  g.add(bone(J.ankleF, J.kneeF, 0.058, shorts));
-  g.add(bone(J.kneeF, J.hipF, 0.072, shorts));
-  g.add(bone(J.ankleB, J.kneeB, 0.058, shorts));
-  g.add(bone(J.kneeB, J.hipB, 0.072, shorts));
-  for (const k of ['kneeF', 'kneeB']) g.add(part(new THREE.SphereGeometry(0.064, 8, 7), shorts, ...J[k]));
+  low.add(bone(rel(J.ankleF, ANK), rel(J.kneeF, ANK), 0.058, shorts));
+  low.add(bone(rel(J.kneeF, ANK), rel(J.hipF, ANK), 0.072, shorts));
+  low.add(bone(rel(J.ankleB, ANK), rel(J.kneeB, ANK), 0.058, shorts));
+  low.add(bone(rel(J.kneeB, ANK), rel(J.hipB, ANK), 0.072, shorts));
+  for (const k of ['kneeF', 'kneeB']) low.add(part(new THREE.SphereGeometry(0.064, 8, 7), shorts, ...rel(J[k], ANK)));
   // HIPS and TORSO
-  g.add(bone(J.hipB, J.hipF, 0.098, shorts));
-  g.add(bone(J.pelvis, J.chest, 0.145, shirt));
-  g.add(bone(J.shldrB, J.shldrF, 0.098, shirt));
-  g.add(bone(J.chest, J.neck, 0.060, skin));
+  low.add(bone(rel(J.hipB, ANK), rel(J.hipF, ANK), 0.098, shorts));
+  up.add(bone(rel(J.pelvis, P), rel(J.chest, P), 0.145, shirt));
+  up.add(bone(rel(J.shldrB, P), rel(J.shldrF, P), 0.098, shirt));
+  up.add(bone(rel(J.chest, P), rel(J.neck, P), 0.060, skin));
   // ARMS OUT, which is what balancing on a board looks like and what makes the
   // silhouette read as a skater rather than a person standing very still. The
   // front arm reaches across the nose and the back arm trails — a surfer's line.
-  g.add(bone(J.shldrF, J.elbowF, 0.050, shirt));
-  g.add(bone(J.elbowF, J.handF, 0.043, shirt));
-  g.add(bone(J.shldrB, J.elbowB, 0.050, shirt));
-  g.add(bone(J.elbowB, J.handB, 0.043, shirt));
-  for (const k of ['elbowF', 'elbowB']) g.add(part(new THREE.SphereGeometry(0.052, 8, 7), shirt, ...J[k]));
-  for (const k of ['handF', 'handB']) g.add(part(new THREE.SphereGeometry(0.050, 8, 7), skin, ...J[k]));
+  armF.add(bone([0, 0, 0], rel(J.elbowF, J.shldrF), 0.050, shirt));
+  armF.add(bone(rel(J.elbowF, J.shldrF), rel(J.handF, J.shldrF), 0.043, shirt));
+  armB.add(bone([0, 0, 0], rel(J.elbowB, J.shldrB), 0.050, shirt));
+  armB.add(bone(rel(J.elbowB, J.shldrB), rel(J.handB, J.shldrB), 0.043, shirt));
+  armF.add(part(new THREE.SphereGeometry(0.052, 8, 7), shirt, ...rel(J.elbowF, J.shldrF)));
+  armB.add(part(new THREE.SphereGeometry(0.052, 8, 7), shirt, ...rel(J.elbowB, J.shldrB)));
+  armF.add(part(new THREE.SphereGeometry(0.050, 8, 7), skin, ...rel(J.handF, J.shldrF)));
+  armB.add(part(new THREE.SphereGeometry(0.050, 8, 7), skin, ...rel(J.handB, J.shldrB)));
   // HEAD, looking where the board is going
-  g.add(part(new THREE.SphereGeometry(0.128, 14, 12), skin, ...J.head));
+  head.add(part(new THREE.SphereGeometry(0.128, 14, 12), skin, ...rel(J.head, J.neck)));
   // HAIR under the cap. Without it this head was a bald scalp with a cap
   // balanced on top while the walker — the same person, ten metres away — had
   // a full head of dark hair.
@@ -355,14 +391,20 @@ export function buildSkater() {
   // the vet sheet came back with the face blacked out under a helmet of hair.
   // The dome is capped at the equator so the hairline sits where a hairline
   // sits, and the back mass is pushed behind the skull rather than around it.
-  g.add(part(new THREE.SphereGeometry(0.133, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), W.hair,
-    J.head[0], J.head[1] + 0.004, J.head[2] - 0.010, -0.14));
-  g.add(part(new THREE.SphereGeometry(0.088, 12, 10), W.hair,
-    J.head[0], J.head[1] - 0.018, J.head[2] - 0.086));
-  g.add(part(new THREE.SphereGeometry(0.138, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), cap,
-    J.head[0], J.head[1] + 0.008, J.head[2] - 0.004, -0.14));
-  g.add(part(new THREE.BoxGeometry(0.185, 0.020, 0.100), cap,
-    J.head[0], J.head[1] - 0.018, J.head[2] + 0.120, -0.18));    // peak
+  const HD = J.head, NK = J.neck;
+  head.add(part(new THREE.SphereGeometry(0.133, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), W.hair,
+    HD[0] - NK[0], HD[1] + 0.004 - NK[1], HD[2] - 0.010 - NK[2], -0.14));
+  head.add(part(new THREE.SphereGeometry(0.088, 12, 10), W.hair,
+    HD[0] - NK[0], HD[1] - 0.018 - NK[1], HD[2] - 0.086 - NK[2]));
+  head.add(part(new THREE.SphereGeometry(0.138, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), cap,
+    HD[0] - NK[0], HD[1] + 0.008 - NK[1], HD[2] - 0.004 - NK[2], -0.14));
+  head.add(part(new THREE.BoxGeometry(0.185, 0.020, 0.100), cap,
+    HD[0] - NK[0], HD[1] - 0.018 - NK[1], HD[2] + 0.120 - NK[2], -0.18));    // peak
+  // THE RIG, handed out so main.js can pose it. `y` records the two heights
+  // the crouch needs (pelvis and ankle) so the caller never has to know the
+  // joint table — the numbers stay in exactly one place, which is the rule the
+  // joint table itself exists for.
+  g.userData.rig = { low, up, head, armF, armB, y: { pelvis: P[1], ankle: ANK[1] } };
   return g;
 }
 
