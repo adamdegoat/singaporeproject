@@ -2759,13 +2759,25 @@ export async function buildBuildings(world, data, Y = null) {
   // Treasure, Sandy, Pearl) are all in the road layer, so the district defines
   // itself and cannot drift if the data is refetched.
   const _coveRe = /ocean drive|cove way|cove avenue|cove grove|cove drive|coral island|paradise island|treasure island|sandy island|pearl island/i;
+  // AND WHICH COVE, NOT JUST THE COVE. The five islands are separately
+  // mastered and separately designed and every one of their names is already
+  // in the surveyed road layer, so the vocabulary keys off SURVEY. See
+  // research/sentosa-cove.md for the published character of each.
+  const _coveIsle = (n) => (/sandy island/i.test(n) ? 'sandy'
+    : /coral island/i.test(n) ? 'coral'
+    : /paradise island/i.test(n) ? 'paradise'
+    : /treasure island/i.test(n) ? 'treasure'
+    : /pearl island/i.test(n) ? 'pearl' : 'street');
   const _coveSegs = [];
   for (const r of (data.roads || [])) {
     if (!r.n || !_coveRe.test(r.n)) continue;
     const p = r.p || [];
-    for (let i = 0; i < p.length - 1; i++) _coveSegs.push([p[i][0], p[i][1], p[i + 1][0], p[i + 1][1]]);
+    const isle = _coveIsle(r.n);
+    for (let i = 0; i < p.length - 1; i++) _coveSegs.push([p[i][0], p[i][1], p[i + 1][0], p[i + 1][1], isle]);
   }
   const _cove = new Set();
+  // building -> which island it fronts, by NEAREST cove segment
+  const _coveIsleOf = new Map();
   if (_coveSegs.length) {
     for (const b of (data.buildings || [])) {
       if (!b.p || b.p.length < 3) continue;
@@ -2776,13 +2788,20 @@ export async function buildBuildings(world, data, Y = null) {
         if (z < mnz) mnz = z; if (z > mxz) mxz = z;
       }
       const bx = (mnx + mxx) / 2, bz = (mnz + mxz) / 2;
-      for (const [ax, az, cx2, cz2] of _coveSegs) {
+      // NEAREST wins, not first-within-90m: an island villa can be inside the
+      // reach of Ocean Drive as well as its own island road, and whichever
+      // segment happened to be earlier in the array would otherwise decide its
+      // architecture.
+      let _bd = Infinity, _bi = null;
+      for (const [ax, az, cx2, cz2, isle] of _coveSegs) {
         const vx = cx2 - ax, vz = cz2 - az;
         const L2 = vx * vx + vz * vz || 1;
         let t = ((bx - ax) * vx + (bz - az) * vz) / L2;
         t = t < 0 ? 0 : t > 1 ? 1 : t;
-        if (Math.hypot(bx - (ax + vx * t), bz - (az + vz * t)) < 90) { _cove.add(b); break; }
+        const d = Math.hypot(bx - (ax + vx * t), bz - (az + vz * t));
+        if (d < 90 && d < _bd) { _bd = d; _bi = isle; }
       }
+      if (_bi) { _cove.add(b); _coveIsleOf.set(b, _bi); }
     }
   }
   const _wrings = (data.water || []).map((w) => w.p).filter((p) => p && p.length > 3);
@@ -3446,17 +3465,58 @@ export async function buildBuildings(world, data, Y = null) {
       const _cc = centroid(b.p);
       let _ph = 0;
       for (const [x, z] of b.p) _ph = (_ph * 31 + ((x * 7) | 0) + ((z * 13) | 0)) | 0;
-      // 1-in-5 pitched -> 1-in-3. The Cove's villa islands carry a lot of
-      // pitched terracotta among the flat-roofed modern houses, and one in
-      // five read as an estate of flat boxes with the odd exception. Authored
-      // proportion, not a surveyed one — the roof form of an individual villa
-      // is not published anywhere.
-      if (Math.abs(_ph) % 3 === 0) {
+      // 1-in-5 pitched -> 1-in-3 -> PER ISLAND. The share of terracotta pitch
+      // is not one number across the Cove, because the islands are not one
+      // estate (research/sentosa-cove.md):
+      //
+      //   coral     Mediterranean influences, modern interpretation — the
+      //             pitch belongs here most, 1 in 2.
+      //   treasure  villas by PRIVATE OWNERS, the widest mix of the five, so
+      //             the roof form varies most here too, 1 in 2 by a different
+      //             residue so it does not fall on the same houses as coral.
+      //   sandy     Silvestrin's "stone monoliths with two-storey glass walls"
+      //             are FLAT-topped island temples. NEVER pitched.
+      //   paradise  contemporary — the odd pitch only, 1 in 5.
+      //   pearl     undescribed; drawn like paradise.
+      //   street    the terrace and condominium frontage, unchanged at 1 in 3.
+      //
+      // Authored proportions, not surveyed ones — the roof form of an
+      // individual villa is published nowhere. What IS published is which
+      // island leans which way, and that is what these follow.
+      const _pitchEvery = { coral: 2, treasure: 2, sandy: 0, paradise: 5, pearl: 5, street: 3 };
+      const _pe = _pitchEvery[_coveIsleOf.get(b) || 'street'] ?? 3;
+      if (_pe && Math.abs(_ph) % _pe === 0) {
         merger.add(extrudeGeo(grow(b.p, 1.08), 0.3, _hh), MAT.clayTile, _cc[0], _cc[1]);
         merger.add(extrudeGeo(grow(b.p, 0.82), 1.5, _hh + 0.3), MAT.clayTile, _cc[0], _cc[1]);
       } else {
         // thin edge, deep overhang: 22cm of slab reaching 1.3m past the wall
         merger.add(extrudeGeo(grow(b.p, 1.19), 0.22, _hh), MAT.paleStone, _cc[0], _cc[1]);
+      }
+      // AND A TERRACE, BECAUSE COLOUR WAS NEVER THE WHOLE PROBLEM.
+      //
+      // The per-island palettes above are measured and real — d8dedb, e6dfd0
+      // and d6cfc0 all read back off a single Cove frame — and the district
+      // STILL swept back looking uniform, because every villa is the same
+      // shape: an extruded box with dark window rectangles and a cap. Varying
+      // the paint on identical boxes gives you identically-shaped houses in
+      // slightly different paint.
+      //
+      // A waterfront villa's defining street element is the upper terrace, so
+      // that is the one form worth spending geometry on: a thin slab on the
+      // upper floor line, oversailing the wall, with a slim rail above it. It
+      // breaks the silhouette at mid-height on EVERY villa, which is what the
+      // eye reads from the saddle, and it costs two extrusions.
+      //
+      // Only on villas with a real upper floor. A 3m single-storey outbuilding
+      // with a wrap-around terrace is a bandstand.
+      if (_hh >= 6.5) {
+        const _ty = _hh * 0.52;
+        merger.add(extrudeGeo(grow(b.p, 1.13), 0.18, _ty), MAT.paleStone, _cc[0], _cc[1]);
+        // The rail is TRIM, not metal: 0x8b8f93 with metalness drew as a heavy
+        // dark ribbon wrapping every house, and on the long terrace rows that
+        // read as a painted stripe rather than a balustrade. The Cove's rails
+        // are white and glass; the slab's own shadow gives the line.
+        merger.add(extrudeGeo(grow(b.p, 1.13), 0.36, _ty + 0.18), MAT.trim, _cc[0], _cc[1]);
       }
     }
     // A CALIBRATED TOWER ON A FAIRWAY IS A SHED (owner, 2026-08-04: "just
@@ -3679,9 +3739,61 @@ export async function buildBuildings(world, data, Y = null) {
     let _bt = 0;
     for (const [_tx, _tz] of b.p) _bt = (_bt * 31 + ((_tx * 5) | 0) + ((_tz * 3) | 0)) | 0;
     const _beachTint = _BEACH_TINTS[Math.abs(_bt) % _BEACH_TINTS.length];
-    // Bloomberg's own description of the Cove is "white", and the photographs
-    // agree: white render, dark glazing. Brighter than the beach tint.
-    const _coveTint = 0xf2efe8;
+    // THE COVE IS NOT ONE WHITE, AND IT WAS DRAWN AS ONE.
+    //
+    // `0xf2efe8` on every building in the district is precisely the fault the
+    // beach comment twelve lines above already names — "One colour across 78
+    // buildings is as wrong as one shape" — and it is why the Cove sweeps back
+    // as rows of identical white boxes.
+    //
+    // The five islands are separately mastered and separately DESIGNED, and
+    // the differences are published (research/sentosa-cove.md). The whole
+    // district was "tropicalised" by Klages, Carter Vail & Partners in the
+    // manner of the California and Florida waterfront estates — warm and
+    // varied, never a white cube grid.
+    //
+    //   sandy     18 villas by CLAUDIO SILVESTRIN — "striking stone monoliths
+    //             with two-storey glass walls", "chic island temples amid a
+    //             rainforest". Pale stone, tightest spread of the five.
+    //   coral     21 villas, "Mediterranean influences in a modern
+    //             interpretation" — the warm stucco, and where the terracotta
+    //             pitch belongs.
+    //   paradise  29 contemporary villas with private berths — white and glass.
+    //   treasure  19 villas BY PRIVATE OWNERS, so the widest spread of all
+    //             five is the correct answer here, not a house style.
+    //   pearl     no published description found — drawn as contemporary
+    //             waterfront like Paradise, and this comment says so rather
+    //             than inventing a style for it.
+    //   street    Ocean Drive and the Cove Ways/Avenues: the condominium and
+    //             terrace frontage, left on the old white it was tuned for.
+    const _COVE_TINTS = {
+      // SEPARATION HAS TO BE BIG ENOUGH TO SURVIVE SUNLIGHT. The first set of
+      // these sat within ~15 of white in every channel and the sweep came back
+      // looking untouched — under this lighting a 6% difference is nothing.
+      // These are muted (the Cove is not a paintbox) but far enough apart to
+      // read as different houses from the saddle.
+      sandy:    [0xe4ded0, 0xd6cfbe, 0xc8c2b2],                       // Silvestrin limestone
+      coral:    [0xecd9b4, 0xdcc296, 0xcbae84, 0xe4cfa8, 0xd2bc98],   // Mediterranean stucco
+      paradise: [0xf4f2ec, 0xe2e4e3, 0xd2d6d6, 0xeae7de],             // white + glass, cool
+      treasure: [0xf2efe6, 0xdcc296, 0xcdd4d2, 0xe8d2a8, 0xd8cec0, 0xc4bfae],
+      pearl:    [0xf0eee6, 0xdfdcd0, 0xcdcabc],
+      // AND THE STREETS ARE 304 OF THE 415, which is why keying only the five
+      // islands changed almost nothing on a sweep: Ocean Drive and the Cove
+      // Ways/Avenues/Groves carry three quarters of the district's buildings
+      // — the terraces, semi-detacheds and the condominium frontage (Marina
+      // Collection, Seven Palms, The Green Collection). Leaving them on the
+      // single white left the Cove reading exactly as it did before.
+      street:   [0xf2efe8, 0xe6dfd0, 0xd6cfc0, 0xecdcbc, 0xd8dedb, 0xcfc8b8],
+    };
+    // THE COUNTS AGREE WITH THE RESEARCH, which is the check that says this
+    // keying is real and not a regex that happens to run: our footprints come
+    // out paradise 27 / treasure 20 / coral 25 / sandy 19 against the
+    // published 29 / 19 / 21 / 18 villas. Pearl has no published count.
+    const _coveIsleKey = _coveIsleOf.get(b) || 'street';
+    const _coveSet = _COVE_TINTS[_coveIsleKey] || _COVE_TINTS.street;
+    let _ct = 0;
+    for (const [_cx2, _cz2] of b.p) _ct = (_ct * 31 + ((_cx2 * 11) | 0) + ((_cz2 * 7) | 0)) | 0;
+    const _coveTint = _coveSet[Math.abs(_ct) % _coveSet.length];
     // A TINT OVER A STONE TEXTURE IS NOT WHITE RENDER. Tinting multiplies, so
     // a white tint on the STONE pool's dark map came out grey-taupe and the
     // bars still read as sheds (vetted, shots/street/bar3.shot1). A small
