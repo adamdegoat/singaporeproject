@@ -3395,6 +3395,29 @@ export async function buildBuildings(world, data, Y = null) {
     // recipe written for any of them.
     const _rec = NORECIPE ? null : recipeFor(b.n);
     // ...AND IT ABUTS ITS NEIGHBOURS — see the party-wall measurement above.
+    // ADDING `!b.n` HERE WAS TRIED AND REVERTED — 2026-08-16, and the reason
+    // is worth more than the change would have been.
+    //
+    // The branch says "anonymous" and the buildings it claims are not. Counted
+    // in two districts: chinatown 1698 shophouses of which 114 NAMED (One
+    // Fullerton, SGX Centre, Old Customs House, Union Building — office towers
+    // and civic buildings in clay pitched roofs); sentosa 107 of which 28
+    // NAMED (Enchanted Airways — a USS RIDE; Shark Encounter and Ray Bay —
+    // AQUARIUM exhibits; Beach Lrt Station — the MONORAIL STATION, drawn as a
+    // terrace of four; Marina Collection, Seven Palms, The Green Collection —
+    // Cove condominiums). Every one of those is the wrong recipe.
+    //
+    // But `!b.n` sends them to the GENERIC MASSING PATH, and generic massing
+    // for a named building with no recipe written is a blank coloured box.
+    // Vetted on `ffa-street`: Enchanted Airways went from a windowed, signed,
+    // shopfronted frontage to a flat olive slab — 5.06% of the frame, and
+    // worse in every pixel of it. That is the owner's own complaint from
+    // 2026-08-04 ("just generic looking coloured building... everything looks
+    // same same") reintroduced by a correctness argument.
+    //
+    // A WRONG RECIPE WITH A FACADE BEATS A RIGHT REFUSAL WITH NOTHING. The
+    // real fix is a recipe per building family (the openground queue's shape),
+    // not a rule that takes the fabric away. Do not re-add `!b.n` without one.
     if (!_rec && !b.k && b.a < 520 && b.h <= 20 && b.p.length <= 64 && _abuts.has(b)) {
       shophouse(api, b);
       stats.count++; stats.shophouses = (stats.shophouses || 0) + 1;

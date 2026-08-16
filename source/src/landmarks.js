@@ -1539,7 +1539,34 @@ export function shophouse(api, b) {
     anyRoof = true;
     const roofMat = b.rcol ? api.mat.roofTint(b.rcol) : tile;
     const rg = new THREE.CylinderGeometry(rad, rad, segLen, 3, 1, false);
+    // THE APEX HAS TO POINT UP, AND IT DID NOT.
+    //
+    // A 3-sided CylinderGeometry puts one VERTEX at +Z and the opposite FLAT
+    // FACE at -Z. `rotateZ(PI/2)` swings the axis from +Y to +X, but it leaves
+    // z alone — so the vertex stayed horizontal and the flat face stayed
+    // VERTICAL. Every pitched shophouse roof in this world was a triangular
+    // prism lying on its side: measured, the section came out at
+    // (y,z) = (0,+r), (+0.87r,-0.5r), (-0.87r,-0.5r).
+    //
+    // From the street that draws as a terracotta ARROWHEAD half-buried in the
+    // facade, pointing sideways, with the wall carrying on above it — the
+    // sweep filed it as "cove chevrons / roof shards" (D6) and the count of
+    // "6,272 clay-tile triangles" was right the whole time. Triangles were
+    // exactly what it was making. NOBODY HAD LOOKED AT ONE.
+    //
+    // rotateY on the cylinder's OWN axis first brings the vertex to +X, which
+    // rotateZ then lifts to +Y. Verified by dumping the section: apex (0,+r,0),
+    // eaves (0,-r/2,+-0.87r).
+    rg.rotateY(Math.PI / 2);
     rg.rotateZ(Math.PI / 2);
+    // THE WIDTH STAYS TIED TO `rad`, AND THAT IS DELIBERATE. Widening the
+    // eaves to the oriented box's half-short (0.98) was tried in the same
+    // batch and REFUSED BY THE GOLDEN GATE: `beach-walk` moved 1.78% because
+    // a footprint does not fill its own oriented box — on an L-shaped or
+    // splayed plan the segment sits on the box's centre line and the extra
+    // width sails straight out of the facade and hangs over the pavement.
+    // `rad <= halfShort * 0.77` is what keeps the roof inside the walls, and
+    // the walls are the only thing that makes the rectClear guard below sound.
     rg.rotateY(-ob.ang);
     rg.translate(sx, b.h + rad * 0.30, sz);
     api.merge(rg, roofMat, cx0, cz0);
@@ -1551,6 +1578,9 @@ export function shophouse(api, b) {
       const gx = ob.cx + ob.ux * sgn * (span / 2), gz = ob.cz + ob.uz * sgn * (span / 2);
       if (!rectClear(gx, gz, ob.ux, ob.uz, 0.15, rad * 1.03)) continue;
       const gable = new THREE.CylinderGeometry(rad * 1.03, rad * 1.03, 0.3, 3, 1, false);
+      // same section, same correction — a gable cap that does not match the
+      // ridge it caps is worse than no cap at all
+      gable.rotateY(Math.PI / 2);
       gable.rotateZ(Math.PI / 2);
       gable.rotateY(-ob.ang);
       gable.translate(gx, b.h + rad * 0.30, gz);
