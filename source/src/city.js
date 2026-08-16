@@ -6320,10 +6320,84 @@ export function buildPiers(world, data) {
       const dg = drawnGroundAt(x, z);
       if (dg < drawnLo) drawnLo = dg;
     }
+    // ...AND drawnGroundAt IS THE WRONG SURFACE TO ASK, WHICH IS WHY THE FIRST
+    // TWO TESTS ONLY FOUND 22 OF 113.
+    //
+    // `drawnGroundAt` is `vertexY`, and vertexY sinks the drawn skin over a
+    // tidal channel ONLY where `!inRoad` — "A MAPPED WAY KEEPS ITS GROUND TOO
+    // ... a non-bridge way carries its own berm through the water", which is
+    // deliberate and was measured (drowning them took trailcheck's blocked
+    // runs 0 -> 5). The Cove's berths abut the shoreline promenades, so at a
+    // berth the drawn surface correctly answers LAND, and every test built on
+    // it refused the berth.
+    //
+    // ASK THE RINGS, NOT waterFloor — buildPiers RUNS TOO EARLY FOR IT.
+    //
+    // At runtime the terrain answers a failing berth with vertexY -1.75,
+    // waterFloor -1.75 and _wfTidal TRUE: it knows exactly that tidal water is
+    // there. At BUILD time it returns null, because the water-ring table
+    // vertexY reads is not populated until after this function runs. Every
+    // test built on waterFloor therefore asked a question that had no answer
+    // yet and got a silent `false` — which is why seating 22 of 113 was the
+    // ceiling no matter what else changed.
+    //
+    // The rings themselves ARE available (data.water), and `tidalRing` reads
+    // grid.wet, which is baked data-side and ready. So do what buildWater does:
+    // find the mapped ring covering this point and ask whether that RING is a
+    // DEM-witnessed tidal channel. Cached per ring — 113 piers x 52 rings.
+    const tidalRings = (data.water || [])
+      .map((w) => w.p).filter((q) => q && q.length > 3)
+      .filter((q) => TERRAIN.tidalRing && TERRAIN.tidalRing(q));
+    const inPoly = (x, z, ring) => {
+      let c = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], zi = ring[i][1], xj = ring[j][0], zj = ring[j][1];
+        if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+      }
+      return c;
+    };
+    const tidalAt = (x, z) => {
+      for (const ring of tidalRings) if (inPoly(x, z, ring)) return true;
+      return false;
+    };
+    let pierOverTidal = tidalAt(cx0, cz0);
+    if (!pierOverTidal) for (const [x, z] of pts) { if (tidalAt(x, z)) { pierOverTidal = true; break; } }
     const pierTidal = SEA_LEVEL[0] !== null
-      && (wetCell(pts) || wetCell([[cx0, cz0]]) || (isFinite(drawnLo) && drawnLo <= SEA_LEVEL[0] + 0.6));
-    const level = pierTidal ? SEA_LEVEL[0] + 1.15 : lo + 1.15;
-    if (pierTidal) PIER_TIDAL++;
+      && (pierOverTidal || wetCell(pts) || wetCell([[cx0, cz0]])
+          || (isFinite(drawnLo) && drawnLo <= SEA_LEVEL[0] + 0.6));
+    // THE RIM RULE STAYS FOR EVERY PIER THAT IS NOT A TIDAL BERTH.
+    //
+    // Seating decks on the drawn skin instead (`min(lo, drawnMin)`) was tried
+    // and REFUSED BY THE GOLDEN GATE: `gateway-landing` moved 5.70% and the
+    // whole frame shifted, because a pier is a WALKABLE SURFACE and the rider
+    // stands on it — dropping a deck drops the camera. Over the strait,
+    // vertexY is the sunk water bed, so that rule pulled legitimately elevated
+    // boardwalks down to the waterline and put a step between them and the
+    // roads they meet. The strait's own mega-ring never qualifies as tidal
+    // (see buildWater), so those piers must keep the rim.
+    //
+    // What is actually broken is narrower than that: a berth inside a
+    // DEM-witnessed TIDAL ring, where at() is uncarved by SESSION 20's design
+    // and the rim is therefore a bank that is not drawn. Only those move.
+    // ...AND THE SPLIT THAT MAKES BOTH TRUE IS THE OBJECT, NOT THE WATER.
+    //
+    // A PRIVATE BERTH (under 120 m2 — the Cove's are a median 28) is a small
+    // deck whose whole job is to meet a boat, and nothing walks to it from a
+    // road. It belongs on the water, and over the Cove's uncarved channels the
+    // only datum that knows where the water IS drawn is vertexY.
+    //
+    // A BIG PIER is a boardwalk, a ferry landing, a promenade — the rider
+    // stands on it and rides off it onto a road. `gateway-landing` moved 5.70%
+    // and the whole frame shifted when the drawn-skin rule reached those:
+    // over the strait vertexY is the sunk sea bed, so they dropped to the
+    // waterline and left a step where they meet the carriageway. Those keep
+    // the rim, which is what has always held them level with what they join.
+    const berth = (p.a || 0) <= 120;
+    if (pierTidal || berth) PIER_TIDAL++;
+    const level = pierTidal ? SEA_LEVEL[0] + 1.15
+      : berth && SEA_LEVEL[0] !== null
+        ? Math.max(SEA_LEVEL[0] + 1.0, Math.min(lo, drawnLo) + 1.15)
+        : lo + 1.15;
     const g1 = new THREE.ShapeGeometry(shapeFrom(pts));
     g1.rotateX(Math.PI / 2);
     g1.translate(0, level, 0);
