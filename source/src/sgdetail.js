@@ -17,6 +17,28 @@ import { recipeFor } from './landmarks.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d,
                    0xcf6b3a, 0x2b2f33, 0xa8324f, 0x3d6f8f];
+
+// A SIGN'S COLOUR MUST NOT DEPEND ON WHAT ELSE THE WORLD BUILT.
+//
+// These were `pick(SIGN_COLS)` — a draw from the shared seeded stream — so any
+// content change anywhere upstream re-rolled every sign on the island. Caught
+// 2026-08-16: running `openground.py`, whose only effects were at Beach Arrival
+// Plaza and Quayside Isle, turned the BATTLESTAR GALACTICA board from blue to
+// GREEN on the far side of the island. `scifi-station` moved 2.17% with 0.01%
+// in the top third against 7.01% in the middle — the sign and nothing else.
+//
+// This is the defect the PLANTING RESEED already fixed once, and the fix is the
+// same one: hash the choice off the thing's OWN POSITION so it is stable under
+// any change that does not move it. HANDOFF records what the planting version
+// was worth — a data change used to re-roll all 18,351 trees and move 20 of 24
+// goldens; afterwards the same change cost 4 frames under 0.5%.
+//
+// Quantised to 0.5m so a sub-centimetre wobble in a footprint cannot flip a
+// colour, and mixed with a large odd multiplier per axis so neighbours differ.
+function signColAt(x, z) {
+  const h = (Math.round(x * 2) * 73856093) ^ (Math.round(z * 2) * 19349663);
+  return SIGN_COLS[Math.abs(h) % SIGN_COLS.length];
+}
 const BANNER_COLS = [0xb23a2e, 0x2f6b8f, 0xd0a03a, 0x357a55, 0x8a3f70];
 
 function yawMesh(geo, mat, x, y, z, ang) {
@@ -750,7 +772,7 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
     const im = new THREE.InstancedMesh(geo, mat, list.length);
     list.forEach((r, i) => {
       fn(r); m.compose(p, q, s); im.setMatrixAt(i, m);
-      if (colFn) im.setColorAt(i, colFn());
+      if (colFn) im.setColorAt(i, colFn(r));
     });
     if (im.instanceColor) im.instanceColor.needsUpdate = true;
     im.castShadow = false; im.receiveShadow = true;
@@ -939,7 +961,10 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
     // ...AND A WALL AT LEAST A SIGN TALL. There was no height test here at all,
     // so the shrink below would ask a 1 m shed for a negative board.
     if (b.n && bl > 7 && b.h > 2.6 && !noFascia) {
-      const bgc = pick(SIGN_COLS);
+      // position-hashed, not drawn — see signColAt
+      let _bcx = 0, _bcz = 0;
+      for (const [_px, _pz] of b.p) { _bcx += _px; _bcz += _pz; }
+      const bgc = signColAt(_bcx / b.p.length, _bcz / b.p.length);
       // BIGGER, AND WITH A FLOOR. The board was 55% of the longest edge capped
       // at 26m, which on a 9m beach-bar frontage is a 5m board 1.2m tall —
       // unreadable from the road. A sign exists to be read, so it takes the
@@ -1024,7 +1049,7 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
       p.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
       s.set(r[4], 1, 1);
       m.compose(p, q, s); im.setMatrixAt(i, m);
-      im.setColorAt(i, cc.setHex(pick(SIGN_COLS)));
+      im.setColorAt(i, cc.setHex(signColAt(r[0], r[2])));
     });
     if (im.instanceColor) im.instanceColor.needsUpdate = true;
     im.castShadow = true; world.add(im);
@@ -1032,7 +1057,7 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
   }
   emit(new THREE.BoxGeometry(0.9, 7.5, 0.35),
     new THREE.MeshStandardMaterial({ roughness: 0.55 }),
-    vertSign, yaw, () => cc.setHex(pick(SIGN_COLS)));
+    vertSign, yaw, (r) => cc.setHex(signColAt(r[0], r[2])));
   stats.roofSigns = roofSign.length;
   stats.banners2 = vertSign.length;
 
