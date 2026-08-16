@@ -376,8 +376,23 @@ export function buildSkater() {
   legB.add(part(new THREE.SphereGeometry(0.064, 8, 7), shorts, ...rel(J.kneeB, J.hipB)));
   // HIPS and TORSO
   low.add(bone(rel(J.hipB, ANK), rel(J.hipF, ANK), 0.098, shorts));
-  up.add(bone(rel(J.pelvis, P), rel(J.chest, P), 0.145, shirt));
-  up.add(bone(rel(J.shldrB, P), rel(J.shldrF, P), 0.098, shirt));
+  // A TORSO IS NOT A CYLINDER, AND STACKING TWO OF THEM IS WORSE.
+  //
+  // One 0.145 capsule from pelvis to chest is a barrel with no waist, and at
+  // chase-camera range — half a metre from the lens, in every frame — that is
+  // the shape the eye reads first. The obvious fix was two bones, a 0.118 waist
+  // under a 0.150 chest. Vetted on the avatar sheet and REJECTED: the step
+  // between the two radii draws a hard ledge across the middle of his back, and
+  // the rounded waist under it reads as a paunch. It was worse than the barrel.
+  //
+  // What a torso actually is, is ELLIPTICAL — wider across the shoulders than
+  // it is deep front to back. So it stays ONE capsule and gets scaled: 1.18
+  // across, 0.80 deep. No seam anywhere, no extra geometry at all, and the
+  // silhouette from behind finally has a width that is not its depth.
+  const _torso = bone(rel(J.pelvis, P), rel(J.chest, P), 0.132, shirt);
+  _torso.scale.set(1.18, 1, 0.80);
+  up.add(_torso);
+  up.add(bone(rel(J.shldrB, P), rel(J.shldrF, P), 0.104, shirt));
   up.add(bone(rel(J.chest, P), rel(J.neck, P), 0.060, skin));
   // ARMS OUT, which is what balancing on a board looks like and what makes the
   // silhouette read as a skater rather than a person standing very still. The
@@ -388,8 +403,14 @@ export function buildSkater() {
   armB.add(bone(rel(J.elbowB, J.shldrB), rel(J.handB, J.shldrB), 0.043, shirt));
   armF.add(part(new THREE.SphereGeometry(0.052, 8, 7), shirt, ...rel(J.elbowF, J.shldrF)));
   armB.add(part(new THREE.SphereGeometry(0.052, 8, 7), shirt, ...rel(J.elbowB, J.shldrB)));
-  armF.add(part(new THREE.SphereGeometry(0.050, 8, 7), skin, ...rel(J.handF, J.shldrF)));
-  armB.add(part(new THREE.SphereGeometry(0.050, 8, 7), skin, ...rel(J.handB, J.shldrB)));
+  // HANDS, AND THEY ARE FISTS, NOT BALLS. A sphere on the end of an arm reads
+  // as a mitten from behind; a hand riding a board is closed and hangs with its
+  // knuckles out. A short box, turned to the arm, at the same 5cm scale.
+  for (const [grp, j, sh] of [[armF, J.handF, J.shldrF], [armB, J.handB, J.shldrB]]) {
+    const h = part(new THREE.BoxGeometry(0.062, 0.095, 0.048), skin, ...rel(j, sh));
+    h.rotation.set(0.35, j === J.handF ? 0.5 : -0.5, 0);
+    grp.add(h);
+  }
   // HEAD, looking where the board is going
   head.add(part(new THREE.SphereGeometry(0.128, 14, 12), skin, ...rel(J.head, J.neck)));
   // HAIR under the cap. Without it this head was a bald scalp with a cap
