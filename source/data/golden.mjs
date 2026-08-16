@@ -305,6 +305,25 @@ const SPOTS = [
   // 36 frames above passed through the batch; nothing watches the course.
   // Stands on the cart path with a flagged green across the fairway.
   ['serapong-golf', -450, 13120, 0.46],
+  // THE PALE-STONE PHANTOM, shipped WITH its fix (2026-08-16). `MAT.paleStone`
+  // never existed — paleStone is on LMAT — so three.js drew every piece that
+  // asked for it with its DEFAULT material: unlit, unmapped white. That is two
+  // of every three Sentosa Cove villa roof slabs and every solid fence and
+  // garden wall on the island, wrong for as long as the Cove has been built.
+  //
+  // ALL 37 FRAMES ABOVE PASSED THROUGH THE FIX AT 0.000%. An island-wide white
+  // defect, filed by three separate sweeps as "raw white placeholder
+  // geometry", was invisible to every golden this project owns — because not
+  // one of them looks at a Cove villa or at a garden wall. These two do.
+  //
+  // `cove-villa` stands in the villa street between two oversailing slabs,
+  // with a third villa's terracotta pitch across the way (the 1-in-3 branch of
+  // the same recipe, so both roof forms are in one frame).
+  ['cove-villa', 1300, 12620, 0.6],
+  // `tanjong-wall` fills a third of frame with the solid boundary wall that
+  // was the other half of the same bug — this is sweep frame 072's own
+  // vantage, the one whose white slab opened the hunt.
+  ['tanjong-wall', -871, 12867, -2.12],
 ];
 
 mkdirSync(ACT, { recursive: true });
