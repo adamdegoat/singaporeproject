@@ -658,6 +658,13 @@ LMAT.warmStone.userData.tile = [12, 12];
 // batch for a material this world already has, and `autoUV` reads the tile
 // size off this one.
 MAT.paleStone = LMAT.paleStone;
+// AND THE SAME TRAP CAUGHT AGAIN, 2026-08-17, WRITING THE COVE GATE PIERS.
+// `MAT.warmStone` was reached for by reflex because `api.mat.warmStone` exists
+// on the landmark api, and it would have drawn 371 gate piers in three.js's
+// default unlit white — D3 exactly, in the district D3 was found in. The check
+// that found it is the one the D3 note prescribes and it takes ten seconds:
+// grep every `MAT.<key>` in the repo against the keys MAT actually declares.
+MAT.warmStone = LMAT.warmStone;
 
 const up = new THREE.Vector3(0, 1, 0);
 
@@ -1982,6 +1989,103 @@ function grow(pts, f) {
   });
 }
 
+// D6a — AN OVERSAIL MAY NOT REACH INTO THE HOUSE NEXT DOOR.
+//
+// `grow` already pulls a ring back out of a carriageway, and that was the only
+// thing an eave was ever asked about. The sweep filed the other half as "white
+// eave-oversail slabs of adjacent row houses colliding into zigzag shards
+// between rooflines" (D6a, Cove + Serapong rows) and it survived the roof-prism
+// fix and the paleStone fix because neither was the cause.
+//
+// MEASURED BEFORE WRITING THIS, on the shipped scene: of the 371 Cove villas
+// that reach the villa branch, 51 grow a roof slab whose ring lands INSIDE a
+// neighbouring footprint. 43 of those neighbours stand at the SAME height —
+// the two slabs are then coplanar and z-fight along the party line, which is
+// the zigzag — 5 stand taller, so the slab is buried in a standing wall, and 3
+// are shorter, so it hangs through their roof. Marina Collection alone is 10
+// rings of one real building, all 13.6m: it was drawing ten overlapping caps.
+//
+// A real terrace stops its roof at the party wall. So: walk the vertex back,
+// exactly as the carriageway case does, until it is out of every neighbour.
+// The index is built once per world build, over every footprint, in 60m cells
+// (the same cell size `_abuts` uses); a lookup is a handful of point-in-ring
+// tests, and only the roof recipes that actually oversail pay for it.
+const NBR_CELL = 60;
+let _nbrCells = null, _nbrList = null;
+export function setFootprintIndex(buildings) {
+  _nbrList = (buildings || []).filter((b) => b.p && b.p.length >= 3);
+  _nbrCells = new Map();
+  _nbrList.forEach((b, i) => {
+    let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+    for (const [x, z] of b.p) {
+      if (x < mnx) mnx = x; if (x > mxx) mxx = x;
+      if (z < mnz) mnz = z; if (z > mxz) mxz = z;
+    }
+    b.__bb = [mnx, mxx, mnz, mxz];
+    for (let ci = Math.floor(mnx / NBR_CELL); ci <= Math.floor(mxx / NBR_CELL); ci++) {
+      for (let cj = Math.floor(mnz / NBR_CELL); cj <= Math.floor(mxz / NBR_CELL); cj++) {
+        const k = ci + ',' + cj;
+        let s = _nbrCells.get(k);
+        if (!s) _nbrCells.set(k, s = []);
+        s.push(i);
+      }
+    }
+  });
+}
+function _inNeighbour(x, z, self) {
+  if (!_nbrCells) return false;
+  const s = _nbrCells.get(Math.floor(x / NBR_CELL) + ',' + Math.floor(z / NBR_CELL));
+  if (!s) return false;
+  for (const i of s) {
+    const o = _nbrList[i];
+    if (o === self) continue;
+    const bb = o.__bb;
+    if (x < bb[0] || x > bb[1] || z < bb[2] || z > bb[3]) continue;
+    const q = o.p;
+    let c = false;
+    for (let u = 0, v = q.length - 1; u < q.length; v = u++) {
+      const xi = q[u][0], zi = q[u][1], xj = q[v][0], zj = q[v][1];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+    }
+    if (c) return true;
+  }
+  return false;
+}
+// grow(), plus: the ring may not enter another building's footprint either.
+// Never walks BELOW the wall (t stops at 1), because the point is the eave,
+// not the mass: a vertex that cannot get clear simply sits on its own wall.
+// COUNTED, BECAUSE A GUARD THAT NEVER FIRES LOOKS EXACTLY LIKE A GUARD THAT
+// WORKS. The Beach Station corner test passed every gate in this repo while
+// changing nothing, and the only thing that exposed it was a number: `rings`
+// is how many oversails were pulled back at all, `verts` how many vertices
+// moved, `full` how many could not clear at any t and sit on their own wall.
+const _clearStat = { rings: 0, verts: 0, full: 0, worst: 0, at: null };
+export function oversailStat() { return { ..._clearStat }; }
+function growClear(pts, f, self) {
+  const c = centroid(pts);
+  let moved = 0;
+  const out = pts.map(([x, z]) => {
+    const ox = x - c[0], oz = z - c[1];
+    for (let t = f; t > 1; t -= 0.01) {
+      const gx = c[0] + ox * t, gz = c[1] + oz * t;
+      if (!onCarriageway(gx, gz, 0.2) && !_inNeighbour(gx, gz, self)) {
+        if (t < f) {
+          moved++; _clearStat.verts++;
+          const d = Math.hypot(ox, oz) * (f - t);
+          if (d > _clearStat.worst) { _clearStat.worst = +d.toFixed(2); _clearStat.at = [+x.toFixed(1), +z.toFixed(1)]; }
+        }
+        return [gx, gz];
+      }
+    }
+    moved++; _clearStat.verts++; _clearStat.full++;
+    const d = Math.hypot(ox, oz) * (f - 1);
+    if (d > _clearStat.worst) { _clearStat.worst = +d.toFixed(2); _clearStat.at = [+x.toFixed(1), +z.toFixed(1)]; }
+    return [x, z];
+  });
+  if (moved) _clearStat.rings++;
+  return out;
+}
+
 // Plain painted render, cached per colour. Beach bars are flat white walls
 // with no masonry pattern on them at all, and every textured pool in this file
 // puts one there.
@@ -2592,6 +2696,8 @@ function buildGrandstand(ring, merger, world) {
 export async function buildBuildings(world, data, Y = null) {
   // the district decides its own default facade character from its own tags
   setDistrictCharacter(data.buildings || []);
+  // D6a: the neighbour index every oversail is measured against (growClear)
+  setFootprintIndex(data.buildings || []);
   const stats = { count: 0, tall: 0, bespoke: 0 };
   // A PODIUM SKIRT MUST NOT WALL INTO THE WATER — the same rule the skirt
   // already follows for carriageways, for the same reason.
@@ -2825,6 +2931,9 @@ export async function buildBuildings(world, data, Y = null) {
     for (let i = 0; i < p.length - 1; i++) _coveSegs.push([p[i][0], p[i][1], p[i + 1][0], p[i + 1][1], isle]);
   }
   const _cove = new Set();
+  // the villas that actually reached the villa branch — the plot pass at the
+  // end of this function dresses these and nothing else
+  const _coveVillas = [];
   // building -> which island it fronts, by NEAREST cove segment
   const _coveIsleOf = new Map();
   if (_coveSegs.length) {
@@ -3510,6 +3619,7 @@ export async function buildBuildings(world, data, Y = null) {
     // A fifth keep the Port Grimaud terracotta pitch, chosen by the same
     // position hash the facades use so a street is mixed but stable.
     if (_isCove && !b.roof) {
+      _coveVillas.push(b);          // the plot pass runs after the loop, on the ground
       const _hh = Math.max(3, b.h || 8);
       const _cc = centroid(b.p);
       let _ph = 0;
@@ -3535,11 +3645,12 @@ export async function buildBuildings(world, data, Y = null) {
       const _pitchEvery = { coral: 2, treasure: 2, sandy: 0, paradise: 5, pearl: 5, street: 3 };
       const _pe = _pitchEvery[_coveIsleOf.get(b) || 'street'] ?? 3;
       if (_pe && Math.abs(_ph) % _pe === 0) {
-        merger.add(extrudeGeo(grow(b.p, 1.08), 0.3, _hh), MAT.clayTile, _cc[0], _cc[1]);
+        merger.add(extrudeGeo(growClear(b.p, 1.08, b), 0.3, _hh), MAT.clayTile, _cc[0], _cc[1]);
         merger.add(extrudeGeo(grow(b.p, 0.82), 1.5, _hh + 0.3), MAT.clayTile, _cc[0], _cc[1]);
       } else {
-        // thin edge, deep overhang: 22cm of slab reaching 1.3m past the wall
-        merger.add(extrudeGeo(grow(b.p, 1.19), 0.22, _hh), MAT.paleStone, _cc[0], _cc[1]);
+        // thin edge, deep overhang: 22cm of slab reaching 1.3m past the wall —
+        // and NOT into the house next door: growClear, see D6a above.
+        merger.add(extrudeGeo(growClear(b.p, 1.19, b), 0.22, _hh), MAT.paleStone, _cc[0], _cc[1]);
       }
       // AND A TERRACE, BECAUSE COLOUR WAS NEVER THE WHOLE PROBLEM.
       //
@@ -3560,12 +3671,13 @@ export async function buildBuildings(world, data, Y = null) {
       // with a wrap-around terrace is a bandstand.
       if (_hh >= 6.5) {
         const _ty = _hh * 0.52;
-        merger.add(extrudeGeo(grow(b.p, 1.13), 0.18, _ty), MAT.paleStone, _cc[0], _cc[1]);
+        const _tr = growClear(b.p, 1.13, b);
+        merger.add(extrudeGeo(_tr, 0.18, _ty), MAT.paleStone, _cc[0], _cc[1]);
         // The rail is TRIM, not metal: 0x8b8f93 with metalness drew as a heavy
         // dark ribbon wrapping every house, and on the long terrace rows that
         // read as a painted stripe rather than a balustrade. The Cove's rails
         // are white and glass; the slab's own shadow gives the line.
-        merger.add(extrudeGeo(grow(b.p, 1.13), 0.36, _ty + 0.18), MAT.trim, _cc[0], _cc[1]);
+        merger.add(extrudeGeo(_tr, 0.36, _ty + 0.18), MAT.trim, _cc[0], _cc[1]);
       }
     }
     // A CALIBRATED TOWER ON A FAIRWAY IS A SHED (owner, 2026-08-04: "just
@@ -4385,8 +4497,149 @@ export async function buildBuildings(world, data, Y = null) {
   }
   scopeDraws(null);       // back to the shared stream for everything after
   FOOT = STREET = null;   // nothing outside this loop belongs to a building
+  // THE COVE PLOT. Runs here, AFTER the loop, and that is not tidiness: `FOOT`
+  // is the current building's footing and a garden wall six metres away on a
+  // slope must take the ground under ITSELF, which extrudeGeo only does once
+  // FOOT is null again.
+  stats.covePlots = buildCovePlots(_coveVillas, _coveSegs, merger);
+  stats.coveVillas = _coveVillas.length;
+  window.__covePlots = { plots: stats.covePlots, villas: _coveVillas.length };
   stats.mergedMeshes = await merger.flushY(world, {}, Y);
+  const _os = oversailStat();
+  stats.oversailPulled = _os.rings; stats.oversailVerts = _os.verts;
+  window.__oversail = _os;
   return stats;
+}
+
+// THE COVE PLOT — what stands between the villa and the street.
+//
+// The owner's standing note, and the one the Pearl Island re-shot confirms:
+// "I think alot of things not fully yet." The villa pass gave these houses five
+// architectures and an upper terrace, and from the saddle the rows still read
+// as boxes on bare grass, because a waterfront estate's street is not the
+// houses — it is the WALL, the gate and the planting in front of them. 371
+// villas had nothing at ground level at all.
+//
+// WHAT IS PUBLISHED AND WHAT IS AUTHORED, kept apart on purpose:
+//   PUBLISHED (URA development control, bungalows) — a boundary wall may not
+//   exceed 1.8m; side and rear setback is 2m; a car porch is at most 3m wide
+//   measured column to column, set back 2.4m. Those are the constraints this
+//   works inside.
+//   AUTHORED — the wall is 1.1m, not the 1.8m maximum, because a 1.8m wall on
+//   both sides of a 12m street hides the architecture the villa pass just paid
+//   for; the piers are 1.5m; the gate opening is 4m. Sentosa Cove's OWN estate
+//   design guidelines are not published (searched: SDC/Sentosa Cove Pte Ltd
+//   publish the masterplan history, Spoerry and Klages Carter Vail, and no
+//   boundary-treatment control), so nothing here is claimed as surveyed.
+//
+// THE PLOT BOUNDARY IS NOT SURVEYED EITHER — OSM maps the building, not the
+// lot. So the frontage is derived: the nearest Cove road segment gives the
+// direction to the street, the wall sits back from that centreline, and its
+// length comes from the villa's own width across that direction. A villa with
+// no room between its wall and the kerb simply gets nothing, which is why the
+// count this returns matters more than the geometry.
+function buildCovePlots(villas, segs, merger) {
+  if (!villas.length || !segs.length) return 0;
+  const WALL_H = 1.1, WALL_T = 0.35, PIER_H = 1.5, PIER_W = 0.5, GATE = 4;
+  const SETBACK = 5.5;          // from the road centreline: ~3.5m carriageway half + verge
+  let built = 0;
+  const rect = (cx, cz, ux, uz, halfLen, halfWid) => {
+    const px = -uz, pz = ux;
+    return [
+      [cx + ux * halfLen + px * halfWid, cz + uz * halfLen + pz * halfWid],
+      [cx + ux * halfLen - px * halfWid, cz + uz * halfLen - pz * halfWid],
+      [cx - ux * halfLen - px * halfWid, cz - uz * halfLen - pz * halfWid],
+      [cx - ux * halfLen + px * halfWid, cz - uz * halfLen + pz * halfWid],
+    ];
+  };
+  // AND THE GROUND HAS A VETO. `extrudeGeo` takes ONE footing per ring, so a
+  // piece standing where the ground moves under it floats at one end and buries
+  // at the other. Measured on this island's own heightfield: the ground can
+  // shift 18.7m within a THREE-METRE span (the cliffs and the canal banks), so
+  // segmenting alone is not enough — a piece whose corners disagree by more
+  // than 0.7m is simply not built. A gap in a garden wall is a garden wall; a
+  // 2m stone slab hanging in the air is the defect class this repo keeps
+  // finding by eye.
+  const clear = (ring) => {
+    let lo = Infinity, hi = -Infinity;
+    for (const [x, z] of ring) {
+      if (onCarriageway(x, z, 0.2)) return false;
+      if (_inNeighbour(x, z, null)) return false;   // never through a building
+      const g = groundAt(x, z);
+      if (g < lo) lo = g;
+      if (g > hi) hi = g;
+    }
+    return hi - lo <= 0.7;
+  };
+  for (const b of villas) {
+    const c = centroid(b.p);
+    // nearest point on the nearest Cove road segment — the same "nearest wins"
+    // rule the island keying uses, for the same reason
+    let bd = Infinity, qx = 0, qz = 0;
+    for (const [ax, az, cx2, cz2] of segs) {
+      const vx = cx2 - ax, vz = cz2 - az;
+      const L2 = vx * vx + vz * vz || 1;
+      let t = ((c[0] - ax) * vx + (c[1] - az) * vz) / L2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const px2 = ax + vx * t, pz2 = az + vz * t;
+      const d = Math.hypot(c[0] - px2, c[1] - pz2);
+      if (d < bd) { bd = d; qx = px2; qz = pz2; }
+    }
+    if (bd < 9 || bd > 45) continue;      // no frontage to dress, or not a street plot
+    const dx = (qx - c[0]) / bd, dz = (qz - c[1]) / bd;   // toward the street
+    // how far the house itself reaches toward the street, and how wide it is
+    // across that direction — the wall must clear the first and match the second
+    let reach = 0, halfW = 0;
+    for (const [x, z] of b.p) {
+      reach = Math.max(reach, (x - c[0]) * dx + (z - c[1]) * dz);
+      halfW = Math.max(halfW, Math.abs((x - c[0]) * -dz + (z - c[1]) * dx));
+    }
+    const at = bd - SETBACK;              // distance from the villa centre to the wall
+    if (at <= reach + 1.5) continue;      // the house is already at the kerb
+    const wx = c[0] + dx * at, wz = c[1] + dz * at;
+    const ux = -dz, uz = dx;              // along the frontage
+    const half = Math.min(11, halfW + 1.5);
+    if (half <= GATE / 2 + 1) continue;   // narrower than its own gate
+    const runs = [
+      [(GATE / 2 + half) / 2, (half - GATE / 2) / 2],     // centre offset, half length
+      [-(GATE / 2 + half) / 2, (half - GATE / 2) / 2],
+    ];
+    let any = false;
+    // SEGMENTED AT ~3m, AND NOT FOR THE MERGE COST. `extrudeGeo` takes ONE
+    // footing for the whole ring, so an 11m wall on a slope is level while the
+    // ground under it is not: it buries at the top and floats at the bottom.
+    // Three-metre pieces each take their own ground and the wall steps down the
+    // street, which is what a real boundary wall does anyway.
+    for (const [off, hl] of runs) {
+      const n = Math.max(1, Math.round((hl * 2) / 3));
+      for (let i = 0; i < n; i++) {
+        const sub = hl * 2 / n;
+        const o2 = off - hl + sub * (i + 0.5);
+        const sx = wx + ux * o2, sz = wz + uz * o2;
+        const ring = rect(sx, sz, ux, uz, sub / 2, WALL_T / 2);
+        if (!clear(ring)) continue;
+        merger.add(extrudeGeo(ring, WALL_H), MAT.paleStone, sx, sz);
+        // A COPING, because a wall without one is a slab. It is the single
+        // cheapest thing that stops these reading as placeholder blocks: 12cm
+        // of trim oversailing the wall by 7cm a side, which is the shadow line
+        // the eye actually uses to tell a boundary wall from a concrete panel.
+        merger.add(extrudeGeo(rect(sx, sz, ux, uz, sub / 2 + 0.07, WALL_T / 2 + 0.07), 0.12, WALL_H),
+                   MAT.trim, sx, sz);
+        any = true;
+      }
+    }
+    for (const sgn of [-1, 1]) {
+      const sx = wx + ux * sgn * (GATE / 2), sz = wz + uz * sgn * (GATE / 2);
+      const ring = rect(sx, sz, ux, uz, PIER_W / 2, PIER_W / 2);
+      if (!clear(ring)) continue;
+      merger.add(extrudeGeo(ring, PIER_H), MAT.warmStone, sx, sz);
+      merger.add(extrudeGeo(rect(sx, sz, ux, uz, PIER_W / 2 + 0.08, PIER_W / 2 + 0.08), 0.14, PIER_H),
+                 MAT.trim, sx, sz);
+      any = true;
+    }
+    if (any) built++;
+  }
+  return built;
 }
 
 // Ground floor is what you actually see from a scooter: glazed shopfront band,
