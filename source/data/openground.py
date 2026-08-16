@@ -72,6 +72,28 @@ MAX_H = 26.0
 #     A path through a hotel means an arcade or a lobby, not stilts.
 MIN_MASS = 3.0        # below this much mass left, build a canopy instead
 MAX_LIFT = 10.5       # above this, a rule is guessing — report for a recipe
+# ...EXCEPT FOR A THING THAT IS ALREADY A CANOPY.
+#
+# MAX_LIFT exists because lifting a BUILDING absurdly is worse than the defect,
+# and that is right. But Beach Arrival Plaza is not a building: it is an open
+# canopy over Siloso Beach Walk, which HANDOFF has said since the day the T1
+# count was diagnosed ("the road passes under it; we build an open canopy as a
+# solid block"). The roof-rises branch below was written FOR IT, and its own
+# comment quotes the number it needed at the time: 10.1m.
+#
+# The terrain under that road has been re-derived several times since, and the
+# clearance it needs is now 11.3m — so the case the branch exists to serve now
+# trips MAX_LIFT three lines before reaching it, and the plaza has been drawing
+# solid ever since with nobody the wiser.
+#
+# Not solved by raising MAX_LIFT: at 12.0 it would also lift The Galleria
+# (11.7) and an unnamed 20.4m mass (11.1), which are buildings and want the
+# arcade RECIPE the report asks for, not a rule. So the exemption is narrow and
+# says what it is: something whose whole height is under CANOPY_H is a canopy,
+# and a canopy may rise as far as CANOPY_LIFT to clear the road it spans.
+# Sofitel (h 12.5, needs 17.2) is excluded by both numbers, as it must be.
+CANOPY_H = 11.0       # taller than this and it is a building, not a canopy
+CANOPY_LIFT = 13.0    # a canopy may clear this much road, and no more
 # Kinds that are carriageways. Footways are deliberately NOT here: a path
 # through a building is usually an arcade we already handle, and lifting a
 # building for one is far too eager.
@@ -238,7 +260,8 @@ def main():
             foot = min(ground.at(q[0], q[1]) for q in pts)
             lift = round(max(CLEAR, (road_top - foot) + CLEAR), 1)
             h = b.get("h") or 0
-            if lift > MAX_LIFT:
+            is_canopy = h <= CANOPY_H and (h - lift) < MIN_MASS
+            if lift > (CANOPY_LIFT if is_canopy else MAX_LIFT):
                 toosteep.append((b.get("n") or "(unnamed)", h, lift,
                                  round(max(run, foot_run), 1)))
                 continue
