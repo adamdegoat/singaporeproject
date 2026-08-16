@@ -163,8 +163,32 @@ export async function buildFurniture(world, axis, isBlocked, data = {}, Y = null
     const [bx, bz] = b.p;
     const on = nearestOnAnyRoad(bx, bz) || nearestOnAxis(pts, bx, bz);
     if (on.dist > 45) continue;                 // not beside a road at all
-    const ang2 = Math.atan2(on.ux, on.uz);
+    // A SHELTER FACES THE CARRIAGEWAY. THIS ONE FACED DOWN THE STREET.
+    //
+    // `atan2(ux, uz)` is the road's TANGENT, and a group rotated by it has its
+    // local +Z along the road and its local +X across it. The shelter is built
+    // 9.0m in X by 3.0m in Z with the glass back at z -1.4 and the kerb
+    // bollards at z +2.05 — so that rotation ran its NINE-METRE length out
+    // across the carriageway, stood the 3m depth along the kerb, and pointed
+    // the open side down the street with the back wall to the traffic.
+    //
+    // MEASURED before touching it, over the built world: 19 of 19 shelters had
+    // their long axis 90 degrees off the road they serve. Not "some" — all of
+    // them. (The owner reported "some tram or bus stops are not facing the road
+    // the right way", having ridden past a few.)
+    //
+    // What the geometry wants: local +X ALONG the kerb, local +Z pointing AT
+    // the carriageway. The stop stands on the `side` given by the sign of its
+    // offset along the road normal n = (-uz, ux), so "toward the road" is
+    // -side*n = (side*uz, -side*ux), and that is the vector local +Z must
+    // become. Checked by hand on a road running +Z with the stop to its east:
+    // gives -PI/2, whose local +X is (0,1) — along the road, as it must be.
+    //
+    // Everything downstream then comes right on its own: `clearAt` measures
+    // SPAN along local X and DEPTH along local Z, and the back-off search
+    // pushes the shelter away from the road along local Z.
     const side = ((bx - on.x) * -on.uz + (bz - on.z) * on.ux) >= 0 ? 1 : -1;
+    const ang2 = Math.atan2(side * on.uz, -side * on.ux);
     // OSM SAYS WHICH STOPS HAVE WHAT. We were deciding the shelter by whether a
     // 9.2m roof happened to fit, and inventing benches and bins; 94 of these
     // stops carry a `shelter` tag, 97 carry the actual bus numbers in
