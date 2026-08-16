@@ -1149,6 +1149,9 @@ carRig.group.visible = false;
 // note. The skater is parented to the board so a carve leans them together,
 // which is exactly what happens on a real one.
 const skateRig = buildSkate();
+// the push stroke's phase — module scope because it must survive frames,
+// and it is advanced by DISTANCE rather than by a clock (see the push block)
+let pushPhase = 0;
 const skater = buildSkater();
 skateRig.group.add(skater);
 skateRig.group.visible = false;
@@ -5491,6 +5494,29 @@ function loop(now) {
         RG.head.rotation.set(-crouch * 0.16, carve * 0.42 + slip * 0.34, 0);
         RG.armF.rotation.set(carve * 0.28, 0, -carve * 0.42 - crouch * 0.10);
         RG.armB.rotation.set(-carve * 0.24, 0, -carve * 0.38 + crouch * 0.08);
+        // THE PUSH. ride.js has said it since it was written — "on a board the
+        // throttle is a foot on the road, and a push runs out" — and the figure
+        // never took part: he accelerated from a dead stop with both feet
+        // bolted to the deck, which is the one thing everybody knows a
+        // skateboard cannot do.
+        //
+        // The stroke runs while the throttle is down and the board is still
+        // under about two thirds of its top speed, which is exactly the window
+        // where a real rider is still kicking rather than cruising. Its phase
+        // advances with DISTANCE, not with a clock: `(0.9 + speed) * dt` gives
+        // one stroke per stride at walking pace and stretches out as the board
+        // picks up, so the foot never scrabbles faster than the ground goes
+        // past, and the whole thing stays deterministic for a golden.
+        const pushing = inp.throttle > 0.15 && S.speed < SKATE.vMax * 0.66 && !S.drifting;
+        pushPhase = pushing ? (pushPhase + (0.9 + S.speed) * dt * 0.62) % 1 : 0;
+        // one kick: reach forward (nothing), plant and drive back, then recover
+        const kick = pushing ? Math.sin(pushPhase * Math.PI * 2) : 0;
+        const reach = pushing ? (0.5 - 0.5 * Math.cos(pushPhase * Math.PI * 2)) : 0;
+        RG.legB.rotation.x = kick * 0.62 - reach * 0.10;
+        RG.legB.position.y = RG.y.hipB - (RG.y.hipB - RG.y.ankle) * crouch * 0.11;
+        // the body dips over the planted foot and the free arm swings with it
+        RG.up.rotation.x += reach * 0.10;
+        RG.armB.rotation.x += -kick * 0.35;
       }
     } else {
       carRig.group.rotation.z = S.lean;          // CAR.leanMax keeps this a small roll
@@ -5935,6 +5961,7 @@ window.__rider = () => {
     fold: R ? +R.up.rotation.x.toFixed(3) : null,
     roll: R ? +R.up.rotation.z.toFixed(3) : null,
     look: R ? +R.head.rotation.y.toFixed(3) : null,
+    push: R ? +R.legB.rotation.x.toFixed(3) : null, phase: +pushPhase.toFixed(2),
   };
 };
 window.__toggle = () => toggleMode();

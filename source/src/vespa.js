@@ -356,14 +356,24 @@ export function buildSkater() {
   // standing on a plank.
   g.add(part(new THREE.BoxGeometry(0.240, 0.058, 0.108), shoe,
     J.ankleF[0], J.ankleF[1] - 0.030, J.ankleF[2], 0, 0.26, 0));
-  g.add(part(new THREE.BoxGeometry(0.220, 0.058, 0.104), shoe,
-    J.ankleB[0], J.ankleB[1] - 0.030, J.ankleB[2], 0, -0.12, 0));
+  // THE BACK LEG IS ITS OWN LIMB, because the throttle on a board is a FOOT ON
+  // THE ROAD (ride.js says so in its own comment: "on a board the throttle is a
+  // foot on the road, and a push runs out"). The physics has modelled the push
+  // since it was written and the figure never took part: he accelerated from a
+  // standstill with both feet bolted to the deck. So the back foot, shin, thigh
+  // and knee live in a group hinged at the BACK HIP, and main.js swings it down
+  // and behind on the push stroke.
+  const legB = new THREE.Group(); legB.position.set(...J.hipB);
+  g.add(legB);
+  legB.add(part(new THREE.BoxGeometry(0.220, 0.058, 0.104), shoe,
+    J.ankleB[0] - J.hipB[0], J.ankleB[1] - 0.030 - J.hipB[1], J.ankleB[2] - J.hipB[2], 0, -0.12, 0));
   // LEGS
   low.add(bone(rel(J.ankleF, ANK), rel(J.kneeF, ANK), 0.058, shorts));
   low.add(bone(rel(J.kneeF, ANK), rel(J.hipF, ANK), 0.072, shorts));
-  low.add(bone(rel(J.ankleB, ANK), rel(J.kneeB, ANK), 0.058, shorts));
-  low.add(bone(rel(J.kneeB, ANK), rel(J.hipB, ANK), 0.072, shorts));
-  for (const k of ['kneeF', 'kneeB']) low.add(part(new THREE.SphereGeometry(0.064, 8, 7), shorts, ...rel(J[k], ANK)));
+  legB.add(bone(rel(J.ankleB, J.hipB), rel(J.kneeB, J.hipB), 0.058, shorts));
+  legB.add(bone(rel(J.kneeB, J.hipB), [0, 0, 0], 0.072, shorts));
+  low.add(part(new THREE.SphereGeometry(0.064, 8, 7), shorts, ...rel(J.kneeF, ANK)));
+  legB.add(part(new THREE.SphereGeometry(0.064, 8, 7), shorts, ...rel(J.kneeB, J.hipB)));
   // HIPS and TORSO
   low.add(bone(rel(J.hipB, ANK), rel(J.hipF, ANK), 0.098, shorts));
   up.add(bone(rel(J.pelvis, P), rel(J.chest, P), 0.145, shirt));
@@ -404,7 +414,8 @@ export function buildSkater() {
   // the crouch needs (pelvis and ankle) so the caller never has to know the
   // joint table — the numbers stay in exactly one place, which is the rule the
   // joint table itself exists for.
-  g.userData.rig = { low, up, head, armF, armB, y: { pelvis: P[1], ankle: ANK[1] } };
+  g.userData.rig = { low, up, head, armF, armB, legB,
+    y: { pelvis: P[1], ankle: ANK[1], hipB: J.hipB[1] } };
   return g;
 }
 
