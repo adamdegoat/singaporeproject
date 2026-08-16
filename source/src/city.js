@@ -6158,8 +6158,27 @@ export class TreeField {
         p.set(x + Math.cos(a) * rr,
               gy + crownTop - droop + _rand(-0.5, 0.5),
               z + Math.sin(a) * rr);
-        // cards near the rim hang steeper, following the drooping branch
-        e.set(_rand(-1.5, -0.75) - t * 0.35, a + _rand(-0.7, 0.7), _rand(-0.4, 0.4));
+        // D4, THE FOLIAGE STRETCH-RIBBONS — AND THE CARD SIZE WAS NEVER THE
+        // CAUSE. A card is `rad * 0.42..0.72` across, which on a 12m crown is
+        // an EIGHT-METRE plane, and the sweep filed the result as "stretch
+        // ribbons" on eight frames. The instinct is to shrink it, and that is
+        // wrong twice over: coverage falls with the SQUARE of the size, so
+        // holding the canopy would need ~104 cards a tree instead of 40 —
+        // 1.17M more instances on a fill-rate-bound GPU — and it would not fix
+        // the look anyway.
+        //
+        // THE CAUSE IS THE TILT. This read `-1.5..-0.75 - t * 0.35`: every
+        // card lies within about 40 degrees of HORIZONTAL, and the rim cards,
+        // which the extra `- t * 0.35` pushes PAST horizontal, are the ones a
+        // rider at eye height sees exactly edge-on. An 8m plane seen edge-on is
+        // an 8m green ribbon, which is the defect, drawn precisely as asked.
+        //
+        // A dome's surface does not do that: its normal turns OUTWARD as it
+        // falls to the rim. So the tilt now runs WITH t rather than against it
+        // — near-horizontal over the crown, swinging toward vertical at the
+        // edge, where it presents its FACE to the street instead of its edge.
+        // Same one `_rand` call, same RNG stream, not one extra triangle.
+        e.set(_rand(-1.35, -0.95) + t * 0.75, a + _rand(-0.7, 0.7), _rand(-0.4, 0.4));
         q.setFromEuler(e);
         const v = rad * _rand(0.42, 0.72); sc.set(v, v, v);
         // every card COMPUTES (the RNG draws above must happen for all 40 —
