@@ -4459,11 +4459,46 @@ function alightRide() {
   updateHelp();
 }
 
+// How many times a rider carves back across a flow sheet before stepping off.
+// Only the two wave rides are listed: everything else here goes somewhere, and
+// turning a cable car round at the far station would be absurd.
+const FLOW_LAPS = { flowrider: 6, flowbarrel: 6 };
+
 function rideStep(dt) {
   const r = onRide.ride;
   onRide.s += r.speed * dt * onRide.dir;
   const done = onRide.dir > 0 ? onRide.s >= r.len : onRide.s <= 0;
-  if (done) { onRide.s = Math.max(0, Math.min(r.len, onRide.s)); alightRide(); return; }
+  if (done) {
+    onRide.s = Math.max(0, Math.min(r.len, onRide.s));
+    // A FLOW WAVE IS NOT A JOURNEY, AND RIDING IT LIKE ONE MADE IT LAST FOUR
+    // SECONDS.
+    //
+    // Timed at wall clock 2026-08-17: the Double FlowRider ran 6.1s end to end
+    // and the FlowBarrel 4.0s. You board and it is over before you have
+    // registered that you boarded. Every other ride here is a journey — the
+    // cable car crosses the island, the luge comes down a hill, the zip flies
+    // to a landing — so "travel the path, then alight" is the right model for
+    // them. It is the wrong SHAPE for a wave: nobody crosses a flow sheet and
+    // leaves. You hold station and carve back and forth until you fall off.
+    //
+    // The path is already a full weave across the sheet (rides.js builds it
+    // from -0.30, 0, +0.30, 0, -0.30 of the lane width), so a run of it IS one
+    // carve. Nothing is invented here and no geometry is added: the rider
+    // simply turns at the edge and takes the weave back, which is what the
+    // real thing looks like from the deck. The carrier's yaw already reads
+    // `onRide.dir`, so it turns round on its own.
+    //
+    // Six passes puts the FlowRider at about 37s and the barrel at 24s — a
+    // session rather than a blink, and short enough that the queue behind you
+    // is not a wait. It ends on its own; the Get off button has always been
+    // there for anyone who has had enough.
+    const laps = FLOW_LAPS[r.kind];
+    if (laps && (onRide.laps || 1) < laps) {
+      onRide.laps = (onRide.laps || 1) + 1;
+      onRide.dir = -onRide.dir;
+      onRide.s = Math.max(0.01, Math.min(r.len - 0.01, onRide.s));
+    } else { alightRide(); return; }
+  }
   const p = RIDES.at(r, onRide.s);
   // the walker rides along invisibly under the seat: crowd, traffic, streaming
   // and the wayfinder all key off walker.x/z, and a frozen walker would freeze
