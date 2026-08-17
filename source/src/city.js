@@ -6487,9 +6487,93 @@ function buildSea(world) {
   return 1;
 }
 
+// THE SURF LINE, and it is drawn from the COASTLINE, not from the shore field.
+//
+// Every beach on this island met the sea on a hard colour boundary — sand, then
+// water, nothing between. The cheap idea was to do it in the sea shader, which
+// already samples a shore-distance texture two lines from where the foam would
+// go: no geometry, no draw call. TRIED, RENDERED, REJECTED. That field is a BFS
+// over the HEIGHTFIELD at 35m to a cell, so the narrowest band it can express
+// is twenty-odd metres with straight polygonal edges — a milky shelf lying off
+// the beach, worse than the hard boundary it replaced. Tightening the threshold
+// from 0.045 to 0.010 shrank it and did not fix its shape. A 2m effect cannot
+// come out of a 35m field, and no amount of tuning changes that.
+//
+// So it is drawn where the waterline actually is: `data.coast`, the surveyed
+// shoreline, 71 chains of it. Only the stretches whose LANDWARD side is a
+// mapped sand ring get foam — a quay, a seawall and a cliff do not break white,
+// and Sentosa has plenty of all three. Unlit white, so it reads as spray rather
+// than as a lit surface, and 4cm over the sea sheet so nothing z-fights.
+function buildSurf(world, data, seaY) {
+  const sand = (data.green || []).filter((g) => g.k === 'sand' && g.p && g.p.length > 3).map((g) => g.p);
+  if (!sand.length) return 0;
+  const inSand = (x, z) => {
+    for (const r of sand) {
+      let c = false;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const [xi, zi] = r[i], [xj, zj] = r[j];
+        if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+      }
+      if (c) return true;
+    }
+    return false;
+  };
+  const W = 4.6, Y = seaY + 0.04;
+  const pos = [], col = [];
+  let n = 0;
+  // BOTH SOURCES, AND THE SECOND ONE IS THE ONE A SWIMMER SEES. `data.coast` is
+  // the island's outer shoreline; Siloso and Palawan's swimming water is inside
+  // the groynes and is mapped as WATER RINGS, so a surf line drawn from the
+  // coast alone breaks white out on the strait and leaves the beach the player
+  // is standing on exactly as it was. Both lists are walked; the sand test does
+  // the filtering either way, so a reservoir or a hotel pool cannot pick it up.
+  const chains = [...(data.coast || []).map((c) => c.p || []),
+                  ...(data.water || []).map((w) => (w.p || []).concat([w.p && w.p[0]].filter(Boolean)))];
+  for (const p of chains) {
+    for (let i = 0; i < p.length - 1; i++) {
+      const [x1, z1] = p[i], [x2, z2] = p[i + 1];
+      const dx = x2 - x1, dz = z2 - z1;
+      const L = Math.hypot(dx, dz);
+      if (L < 0.5 || L > 60) continue;
+      const nx = -dz / L, nz = dx / L;
+      const mx = (x1 + x2) / 2, mz = (z1 + z2) / 2;
+      // which side is land, and is that land a beach
+      const a = TERRAIN.at(mx + nx * 4, mz + nz * 4), b = TERRAIN.at(mx - nx * 4, mz - nz * 4);
+      const s = a > b ? 1 : -1;
+      if (!inSand(mx + nx * 4 * s, mz + nz * 4 * s)) continue;
+      // a band straddling the line, pushed a little seaward of it
+      const c0x = x1 - nx * s * W * 0.15, c0z = z1 - nz * s * W * 0.15;
+      const c1x = x2 - nx * s * W * 0.15, c1z = z2 - nz * s * W * 0.15;
+      const ox = nx * s * W * 0.5, oz = nz * s * W * 0.5;
+      // A HARD WHITE STRIP IS PAINT, NOT FOAM — that is what the first cut of
+      // this looked like from the sand at Siloso. Foam is dense where the water
+      // meets the beach and gone a few metres out, so the band carries its own
+      // alpha: opaque on the LANDWARD edge, zero on the seaward one. RGBA
+      // vertex colours, which three.js takes as an itemSize-4 colour attribute.
+      const A = 0.9, B = 0.0;                    // landward, seaward
+      const push = (x, z, a) => { pos.push(x, Y, z); col.push(1, 1, 1, a); };
+      push(c0x + ox, c0z + oz, A); push(c0x - ox, c0z - oz, B); push(c1x + ox, c1z + oz, A);
+      push(c1x + ox, c1z + oz, A); push(c0x - ox, c0z - oz, B); push(c1x - ox, c1z - oz, B);
+      n++;
+    }
+  }
+  if (!n) return 0;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+    color: 0xeef5f6, vertexColors: true, transparent: true, opacity: 0.72, depthWrite: false,
+  }));
+  m.name = 'surfLine';
+  m.renderOrder = 1;
+  world.add(m);
+  return n;
+}
+
 export function buildWater(world, data) {
   const polys = data.water || [];
   const sea = buildSea(world);
+  window.__surf = buildSurf(world, data, window.__seaY || 0.18);
   if (!polys.length) return { water: 0, waterArea: 0, sea };
   const geos = [];
   let area = 0;
