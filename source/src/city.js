@@ -459,12 +459,36 @@ function foliageVariation(mat) {
         #else
           vFolT = 0.0;
         #endif`);
+    // ...AND A CARD THREE METRES FROM THE LENS IS NOT FOLIAGE, IT IS A WALL.
+    //
+    // The tilt fix earlier today killed the long diagonal ribbons across the
+    // canopy (D4) by turning the rim cards to face outward. What it cannot
+    // reach is a card on the tree the rider is passing UNDER: at 2-4m an
+    // eight-metre plane fills half the screen, and seen edge-on it is a green
+    // bar straight through the middle of the frame — still visible on sweep
+    // frame 205, and it is the last of that family.
+    //
+    // Cards near the eye now DISSOLVE. `diffuseColor.a` is scaled by distance
+    // and the material's existing `alphaTest: 0.42` does the rest: more texels
+    // fail the test as the card approaches, so it thins out leaf by leaf
+    // instead of popping. NO TRANSPARENCY IS TURNED ON — alphaTest keeps this
+    // in the opaque pass, so there is no sorting cost and no fill-rate change
+    // on a GPU this file elsewhere calls fill-rate bound.
+    //
+    // 1.6m to 5.0m: at 5m a card is behaving, at 1.6m it is gone. The canopy
+    // above the rider is drawn by the BLOBS, which are solid and untouched, so
+    // the crown does not open up over his head.
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vFolW;')
+      .replace('#include <worldpos_vertex>',
+               '#include <worldpos_vertex>\n  vFolW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vFolT;')
+      .replace('#include <common>', '#include <common>\nvarying float vFolT;\nvarying vec3 vFolW;')
       .replace('#include <color_fragment>', `#include <color_fragment>
         diffuseColor.rgb *= vec3(1.0 + vFolT * 0.30,
                                  1.0 + vFolT * 0.17,
-                                 1.0 - vFolT * 0.20);`);
+                                 1.0 - vFolT * 0.20);
+        diffuseColor.a *= smoothstep(1.6, 5.0, distance(cameraPosition, vFolW));`);
   };
   // three.js caches compiled programs per material; without a key of its own
   // an injected shader can be handed a cached program built without it.
