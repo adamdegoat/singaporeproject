@@ -3691,7 +3691,38 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   if (!P.has('nosolid')) {
     const t0 = performance.now();
     SOLID = new Solid();
-    const st = await SOLID.build(world, (x, z) => terrain.at(x, z),
+    // THE BAND IS MEASURED FROM THE SURFACE YOU WOULD BE STANDING ON, AND ON A
+    // BRIDGE THAT IS NOT THE TERRAIN.
+    //
+    // D9 has reported "points on the main street centreline that are blocked"
+    // for as long as it has existed, and on 2026-08-17 it was finally asked
+    // WHERE and WHAT. Both answers are bad: the where is **Sentosa Gateway**,
+    // the causeway that is the island's only road in, and the what — named cell
+    // by cell with `?solidtrace=1` — is **`bridgePier`**, the causeway's own
+    // piers. Measured across the carriageway at each blocked station, the road
+    // is 4% to 48% clear and the widest gap is between **0.5m and 5.5m on an
+    // 11.4m carriageway**. Three stations leave half a metre. The front door of
+    // Sentosa was walled by the bridge that carries it.
+    //
+    // `Solid.build` marks a triangle that crosses the rider band, and it
+    // measures that band against the height passed in here. Passing the TERRAIN
+    // means a pier standing on the seabed at y=0 and reaching the deck at y=12
+    // spans the band at its ANKLES — so its footprint is marked, and the rider
+    // twelve metres above shares that 2D cell. The grid has no third dimension
+    // to tell them apart, and `rideBlocked`'s own deck branch cannot help:
+    // it says "over a deck, only real geometry stops you", and a pier is real
+    // geometry. It is simply real geometry BELOW the deck.
+    //
+    // Measuring from the deck instead makes the arithmetic do the work the grid
+    // cannot. Relative to a deck at 12, that pier spans -12..0, which is under
+    // LOW and skipped; a parapet on the deck spans 0..1 and is still marked, as
+    // it must be. Nothing is special-cased and no mesh is named — a pier is not
+    // exempted, it is simply measured against the right datum.
+    const solidGround = (x, z) => {
+      const d = anyDeckAt(x, z);
+      return d !== null ? d : terrain.at(x, z);
+    };
+    const st = await SOLID.build(world, solidGround,
                                  { trace: P.has('solidtrace') });
     // ...and again on the final grid: this one is what the player is tested
     // against, and a route carved only out of the early WALLS grid would be
