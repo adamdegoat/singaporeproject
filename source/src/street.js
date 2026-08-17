@@ -8,8 +8,8 @@ import { R, rand, pick, chance } from './tex.js';
 // every prop this file places was seated on the terrain under it.
 import { MAT, groundAt, surfaceAt, standable } from './city.js';
 import { claim } from './roads.js';
+import { signColAt } from './sgdetail.js';
 
-const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d, 0xcf6b3a, 0x2b2f33];
 
 // Real map positions take priority over anything placed at an interval. Where
 // OSM has the coordinate we use it; where it does not, we fall back and the
@@ -294,11 +294,24 @@ export async function buildFurniture(world, axis, isBlocked, data = {}, Y = null
   emit(new THREE.CylinderGeometry(0.24, 0.2, 0.9, 8), MAT.darkMetal, binT, yaw);
 
   // fascia signage: colour blocks over the shopfront, no brand marks
+  //
+  // POSITION-HASHED, NOT DRAWN. This was the LAST reader of the shared seeded
+  // stream for a sign colour: `pick(SIGN_COLS)`, which means any content change
+  // anywhere upstream re-rolls every shopfront fascia on the island. It is the
+  // exact defect that turned the BATTLESTAR GALACTICA board from blue to green
+  // when a data tool ran on the far side of Sentosa, and the same one the
+  // planting reseed cost 20 of 24 goldens to learn. sgdetail.js fixed its three
+  // sign types on 2026-08-16 and this line was left "rather than swept in
+  // blind"; it is swept in now.
+  //
+  // `emit` hands the record to its colour callback, so the hash has the sign's
+  // own x,z — and it is sgdetail's OWN `signColAt`, imported rather than
+  // copied, so the two cannot drift into two different palettes.
   const cc = new THREE.Color();
   emit(new THREE.BoxGeometry(0.28, 1.05, 2.6),
     new THREE.MeshStandardMaterial({ roughness: 0.55 }), signT,
     (r) => { p.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); },
-    () => cc.setHex(pick(SIGN_COLS)));
+    (r) => cc.setHex(signColAt(r[0], r[2])));
 
   // Bus stops. Every mapped stop gets a pole and a flag, because a stop is a
   // stop whether or not it is sheltered — and skipping the shelter used to make

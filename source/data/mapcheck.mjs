@@ -41,13 +41,28 @@ check(named, 'every pin carries a name');
 
 // NO INVENTED COPY: a description, where present, must have come from the
 // researched entrance lines rather than been written here.
+//
+// A STATION'S OWN LINE IS NOT INVENTED COPY, AND THIS CHECK HAD BEEN RED SINCE
+// THE CABLE CAR WENT IN. Found 2026-08-17: the five cable-car stations added on
+// 2026-08-06 each carry the literal 'Cable-car station.', written in buildPins
+// because a station has no entrance record to quote — and this check counted
+// that as fabricated flavour text and failed, every run, for eleven days.
+// Nobody had waved it off; nobody had read it either.
+//
+// The rule the check is actually FOR is that no attraction gets a sentence
+// somebody made up about it. A station saying it is a station states its kind
+// and claims nothing, so it is excluded structurally, by kind, rather than by
+// listing the two strings — a third station type would otherwise turn this red
+// again for the same non-reason.
 const copy = await page.evaluate(() => {
   const w = window.__wayfinder;
   const ents = new Set((w.data.entrances || []).map((e) => (e.t || '').trim()).filter(Boolean));
-  const withText = (w._pins || []).filter((p) => p.t);
-  return { n: withText.length, allFromData: withText.every((p) => ents.has(p.t.trim())) };
+  const withText = (w._pins || []).filter((p) => p.t && p.kind !== 'station');
+  return { n: withText.length,
+    bad: withText.filter((p) => !ents.has(p.t.trim())).map((p) => p.n) };
 });
-check(copy.allFromData, `${copy.n} descriptions, all from the researched data`);
+for (const n of copy.bad) console.log(`    invented copy on: ${n}`);
+check(copy.bad.length === 0, `${copy.n} descriptions, all from the researched data`);
 
 // TAP A PIN with a real touch, at its real screen position.
 const target = await page.evaluate(() => {
@@ -104,6 +119,35 @@ check(moved > 20, `the player moved (${moved.toFixed(0)} m from where they were)
 check(landed < 30, `the player arrived at ${target.n} (${landed.toFixed(0)} m off)`);
 check(await page.evaluate(() => !document.getElementById('big').classList.contains('on')),
   'the map closes after travelling');
+
+// EVERY DESTINATION, NOT THE ONE THAT HAPPENED TO BE TAPPED.
+//
+// The owner, 2026-08-17: "can just teleport to all the attractions or things
+// that can play or interact ... now need everything in the teleport map". That
+// took the list from ~40 places to ~95, and the new ones are mostly INSIDE
+// Universal Studios and Adventure Cove — walled, courtyarded geometry, which is
+// the exact shape that produced "i went to some teleport locations and I cant
+// even move" the first time round. One sampled tap cannot see that.
+//
+// So: land at every pin the travel list offers and ask whether the player could
+// walk away from it, using __landAudit — the app's OWN flood, not a copy of it.
+const audit = await page.evaluate(() => {
+  const w = window.__wayfinder;
+  const pins = w._travelPins();
+  const stuck = [];
+  for (const p of pins) {
+    const a = window.__landAudit(p.x, p.z);
+    if (!a.open) stuck.push({ n: p.n, x: Math.round(p.x), z: Math.round(p.z) });
+  }
+  return { total: pins.length, stuck };
+});
+console.log(`  ${audit.total} destinations on the travel map`);
+// The list is the FEATURE now: if a rule change quietly halves it, that is a
+// regression even though every remaining pin still works.
+check(audit.total >= 70, `the travel list offers ${audit.total} places`);
+for (const s of audit.stuck) console.log(`    stranded: ${s.n} (${s.x},${s.z})`);
+check(audit.stuck.length === 0,
+  `every destination can be walked away from (${audit.stuck.length} stranded)`);
 
 // A TAP ON EMPTY SEA MUST NOT TELEPORT YOU INTO IT.
 await page.evaluate(() => window.__wayfinder.setOpen(true));

@@ -5236,8 +5236,40 @@ function loop(now) {
       if (wayfinder) wayfinder.update(walker, dt);
       sound.update(0, 'walk', 0, 0, trafficNearest(walker.x, walker.z));
       if (PLACES) PLACES.update(camera);
+      // THE SKY STOPPED FOLLOWING YOU THE MOMENT YOU SAT DOWN.
+      //
+      // Found 2026-08-17 by riding all fifteen rides and LOOKING at the
+      // frames: the sky was pure `#000000` above the horizon on the FlowRider,
+      // the cable car and the luge. It is not a shader fault and not the
+      // surround massing — both were ruled out by A/B — and the free camera
+      // parked at the FlowRider's own seat coordinates draws a perfect blue
+      // sky with clouds. **The difference is this branch.**
+      //
+      // The dome is a 480m sphere drawn BackSide, and it is kept centred on
+      // the camera by `sky.position.copy(activeCam.position)` in the shared
+      // frame tail — the comment on the dome itself says why, and says it
+      // already rendered black once for exactly this reason. This branch is "a
+      // COMPLETE BRANCH, ending in its own render and return", so it never
+      // reaches that line. Sit in any carrier and the dome stays parked where
+      // you boarded; ride more than its radius away and you are OUTSIDE a
+      // back-faced sphere, which renders nothing at all. The Singapore-Sentosa
+      // Cable Car is 1,734m long, so the island's signature ride spent most of
+      // its four minutes under a black sky.
+      //
+      // A DUPLICATED FRAME TAIL DRIFTS FROM THE ONE IT COPIED, EVERY TIME.
+      // This repo has caught the same shape twice already — the streamed
+      // signals line that "existed TWICE in the walk branch and ZERO times
+      // here", and `cullDistricts` missing from the ride path while the
+      // measurement justifying it was taken riding. Three of the shared tail's
+      // jobs were missing here, not one:
+      //   * the sky, above;
+      //   * NET.update, so other players' avatars FROZE for everyone on a ride;
+      //   * the open-map render skip, so the world kept drawing 1.4M triangles
+      //     behind an opaque full-screen map while you sat in a gondola.
+      sky.position.copy(camera.position);
+      if (NET) NET.update();
       cullDistricts();
-      renderer.render(scene, camera);
+      if (!document.body.classList.contains('mapopen')) renderer.render(scene, camera);
       frames++;
       if (now - t0 > 1000) reportHud(now);
       requestAnimationFrame(loop);
@@ -5790,6 +5822,25 @@ window.__landNear = (x, z, maxR = 40) => {
   }
   // nothing open within reach: somewhere you can stand beats refusing to travel
   return fallback || { x, z };
+};
+
+// THE STRANDING TEST, EXPOSED, BECAUSE THE DESTINATION LIST GREW.
+//
+// The owner, 2026-08-17, asked for every attraction on the travel map, and the
+// list went from ~40 places to ~95 — most of them new ones INSIDE Universal
+// Studios and Adventure Cove, which is exactly the walled, sealed-courtyard
+// geometry that produced "i went to some teleport locations and I cant even
+// move" the first time. A destination list that grows without this measurement
+// is a list of places to get stuck in.
+//
+// `open` is the answer that matters: false means __landNear could only find
+// somewhere to STAND, not somewhere to LEAVE. Kept here beside the flood it
+// calls rather than in a probe file, so the gate can never test a different
+// rule from the one travel actually uses.
+window.__landAudit = (x, z) => {
+  const q = window.__landNear(x, z);
+  return { x: q.x, z: q.z, open: canMoveFrom(q.x, q.z),
+           moved: Math.hypot(q.x - x, q.z - z) };
 };
 
 window.__teleport = (x, z, heading) => {

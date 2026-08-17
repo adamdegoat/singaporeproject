@@ -35,7 +35,7 @@ const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d,
 //
 // Quantised to 0.5m so a sub-centimetre wobble in a footprint cannot flip a
 // colour, and mixed with a large odd multiplier per axis so neighbours differ.
-function signColAt(x, z) {
+export function signColAt(x, z) {
   const h = (Math.round(x * 2) * 73856093) ^ (Math.round(z * 2) * 19349663);
   return SIGN_COLS[Math.abs(h) % SIGN_COLS.length];
 }

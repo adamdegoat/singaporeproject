@@ -571,13 +571,111 @@ const TRAVEL_KEEP = [
   'resorts world', 'equarius', 'hotel michael', 'crockfords', 'the laurus',
   'hotel ora', 'scentopia', 'images of singapore', 'fort siloso', 'fort imbiah',
   'palawan', 'siloso', 'tanjong', 'oceanarium', 'sentosa cove', 'merlion',
+  // UNIVERSAL STUDIOS WAS NEVER ON THIS LIST, which did not show while the
+  // list was also the filter — the park is `major` and everything competing
+  // with it had been deleted. It ranks below a themed zone inside itself the
+  // moment the list opens up, so it is named here.
+  'universal studios',
 ];
 
+// AND THEN IT WAS TOO SHORT. THE RULE INVERTS.
+//
+// The owner, 2026-08-17: "can just teleport to all the attractions or things
+// that can play or interact? ... now need everything in the teleport map if
+// not too cluttered."
+//
+// The 2026-08-06 trim above was a NAME whitelist, and a whitelist cannot know
+// about a place nobody thought to type. Audited against the extract, it was
+// throwing away 54 real destinations, and they were not kiosks:
+//
+//   every ride inside Universal Studios   Battlestar Galactica, Revenge of the
+//                                         Mummy, TRANSFORMERS, Jurassic Park
+//                                         Rapids, Canopy Flyer, Puss In Boots,
+//                                         Enchanted Airways, Accelerator,
+//                                         Dino-Soarin, Treasure Hunters
+//   every slide in Adventure Cove         Riptide Rocket, Dueling Racer, Tidal
+//                                         Twister, Whirlpool & Spiral Washout,
+//                                         Pipeline Plunge, Wet Maze, Big
+//                                         Bucket Treehouse
+//   the bungy                             Skypark Sentosa by AJ Hackett — the
+//                                         47m tower rebuilt only yesterday
+//   the viewpoints                        Lookout Loop, Southern Ridges,
+//                                         Dragon's Teeth Gate
+//   the far end of the island             Southernmost Point of Continental
+//                                         Asia, the Palawan suspension bridge's
+//                                         whole reason to exist
+//   KidZania, the Imbiah Bunkers, Glow Garden, the Jetty Ruin, and every named
+//   walking trail the SESSION of 2026-08-05 built trailheads for.
+//
+// So a pin is now travel-worthy UNLESS it is one of the four things that made
+// the list unreadable in the first place: a duplicate (tidyPins, above, still
+// collapses the seven luges into one), a room rather than a place, a food
+// outlet or a hotel nobody names, or a label that names the ISLAND rather than
+// anywhere on it. Clutter is handled where clutter actually happens — the map
+// clusters pins that would overlap at the current zoom and labels only what
+// there is room for, so a longer list adds destinations at close zoom without
+// adding a single mark at island zoom.
+const TRAVEL_DROP_KIND = new Set([
+  'cannon',                                  // fourteen of them at Fort Siloso
+  'building',                                // Store Room, Engine Room — rooms
+  'restaurant', 'bar', 'cafe',               // you do not teleport to lunch
+]);
+// Names in the extract that are not a destination. Each is checked as a whole
+// name, never a prefix — the prefix rule already deleted Siloso Beach once
+// (see tidyPins) and is not making that mistake twice.
+const TRAVEL_DROP_NAME = new Set([
+  'sentosa', 'world sentosa', 'resort world sentosa',  // the island / the operator
+  'paintings on the road',                             // decoration on a carriageway
+  'cuppa love (ai)',                                   // a coffee kiosk
+  'store room', 'engine room', 'battery command post', // rooms inside Fort Siloso
+]);
+
 function travelWorthy(p) {
+  const n = (p.n || '').toLowerCase().trim();
+  if (TRAVEL_DROP_NAME.has(n)) return false;
   if (p.major) return true;
-  if (p.kind === 'station') return true;
+  if (TRAVEL_KEEP.some((k) => n.includes(k))) return true;
+  // a station and a trailhead are how you GET somewhere, which is the point
+  if (p.kind === 'station' || p.kind === 'trail') return true;
+  if (TRAVEL_DROP_KIND.has(p.kind)) return false;
+  if (p.cat === 'food' || p.cat === 'stay') return false;
+  // everything left is something you ride, climb, swim, look out from or walk into
+  return true;
+}
+
+// WHAT THE WHITELIST WAS REALLY DOING, DONE PROPERLY.
+//
+// Opening the list back up brought back the defect the 2026-08-06 trim was
+// written to cure, and the wording of that trim says so exactly: "Universal
+// Studios IS in there and you cannot find it." Measured on the island-zoom map
+// straight after the change, 18 pins survived clustering and they included
+// 'Reef the Chief' and 'Reverie - Musical Journey' — two artworks — while these
+// were dropped: Universal Studios Singapore, Siloso Beach, Adventure Cove
+// Waterpark, MegaZip, SkyHelix, SkyRide, and all four island cable-car
+// stations.
+//
+// The trim cured it by DELETING the competition. That is why it also deleted
+// the bungy and every ride in the park. The real problem was never the length
+// of the list, it was that clustering had no idea which of two colliding pins
+// mattered — `major` is one bit and a themed zone inside a park carries it just
+// as a park does.
+//
+// So pins carry a rank, and both the clustering and the labelling take the
+// higher one. Nothing is removed; the small things simply wait for the zoom
+// they are legible at.
+function travelRank(p) {
   const n = (p.n || '').toLowerCase();
-  return TRAVEL_KEEP.some((k) => n.includes(k));
+  // 3 — what people come to the island FOR: the beaches, the things you get
+  //     ON, and the names a visitor says out loud
+  if (p.play || p.cat === 'beach') return 3;
+  if (TRAVEL_KEEP.some((k) => n.includes(k))) return 3;
+  // 2 — how you get about. A STATION IS NOT A DESTINATION, and ranking it as
+  //     one hid Universal Studios behind Resorts World Station, which stands
+  //     at the park's own front door — the trade the first cut of this got
+  //     backwards.
+  if (p.kind === 'station') return 2;
+  if (p.major) return 1;
+  return 0;
 }
 
 // trailing words that name the ISLAND or the operator rather than the place
@@ -864,6 +962,17 @@ export class Wayfinder {
     if (!this._trailPins) this._trailPins = trailPins(this.data, this._pins.length + 900);
     if (!this._all) {
       const all = tidyPins(this._pins.concat(this._ridePins || [], this._trailPins));
+      // BIGGEST FIRST, ACROSS ALL THREE SOURCES. buildPins sorts its own
+      // output major-first so the map's clustering keeps the landmark and
+      // drops the kiosk beside it — but the rides and trailheads are
+      // CONCATENATED AFTER that sort, so a ride boarding point (major) sat
+      // below every minor attraction and a 34-pixel collision would drop the
+      // luge in favour of a signboard next to it. With the list now three
+      // times longer, that collision is the common case rather than the rare
+      // one. Ids are not reassigned: they are already unique across the three
+      // sources and the selection compares by id.
+      for (const p of all) p.rank = travelRank(p);
+      all.sort((a, b) => b.rank - a.rank);
       const keep = all.filter(travelWorthy);
       // never hand back an empty list: if the filter ever over-tightens, a
       // cluttered list beats no way to travel at all
@@ -1202,27 +1311,76 @@ export class Wayfinder {
     g.save();
     g.translate(W / 2, W / 2);
     g.rotate(-Math.atan2(Math.sin(S.heading), -Math.cos(S.heading)));
+    //
+    // THE CORNER CLUSTERS TOO, NOW THAT THE LIST IS THREE TIMES LONGER. The
+    // big map has always dropped pins that would collide at the current zoom;
+    // this one drew every pin within 130m unconditionally, which was harmless
+    // at 40 destinations and is not at ~95 — stand at the Universal Studios
+    // lagoon and ten rides fall inside one 248-pixel tile. Same rule as the
+    // big map: major first, then anything that clears the last one drawn by a
+    // pin's width.
+    const seenPx = [];
+    const GAP = 11;
     for (const p of this._travelPins()) {
       const dx = p.x - S.x, dz = p.z - S.z;
       if (Math.abs(dx) > R || Math.abs(dz) > R) continue;
+      const cx = dx * k, cy = dz * k;
+      if (seenPx.some((q) => Math.hypot(q[0] - cx, q[1] - cy) < GAP)) continue;
+      seenPx.push([cx, cy]);
       const cat = PIN_CAT[p.cat] || PIN_CAT.other;
-      g.beginPath(); g.arc(dx * k, dz * k, p.major ? 4.2 : 3.2, 0, Math.PI * 2);
+      g.beginPath(); g.arc(cx, cy, p.major ? 4.2 : 3.2, 0, Math.PI * 2);
       g.fillStyle = (cat && cat.c) || '#8a7a5e'; g.fill();
       g.strokeStyle = 'rgba(255,250,240,0.9)'; g.lineWidth = 1.4; g.stroke();
     }
     g.restore();
 
-    // you, always dead centre and always pointing up
+    // YOU, ALWAYS DEAD CENTRE AND ALWAYS POINTING UP — AND NOW THE FIRST THING
+    // THE EYE LANDS ON.
+    //
+    // The owner, 2026-08-17: "the minimap the own location tracker thing can
+    // more obvious?"
+    //
+    // What it was: a pale 26-pixel arrow, `#ffd696`, on paper `#f2e6cd`, over
+    // sand `#f4e3bb` and roads `#fffaf0`. Ride onto Siloso and the marker and
+    // the ground under it were within a few points of the same colour — the one
+    // mark on the screen that must never be hunted for, drawn in nearly the
+    // shade of the thing it sits on. The travel pins beside it each carry a
+    // cream ring and a shadow, so THEY read as objects and you did not. It is
+    // the same defect, in the same words, as the big map's marker in July:
+    // "a dark green dot on a green island is the one marker that must never be
+    // hunted for, and it was."
+    //
+    // What it is now, in draw order: a wider, brighter facing wedge that fades
+    // out instead of ending on a hard arc edge, so heading reads at a glance;
+    // an ink puck that separates the marker from any ground colour underneath;
+    // a cream ring, which is the device every pin already uses; and a saturated
+    // orange arrow in `#ff9e18` — the BIG map's own marker colour, so the
+    // corner and the island map finally agree about what YOU look like.
+    //
+    // Nothing here animates. This canvas redraws five times a second (the 0.2s
+    // gate in `update`), and a pulse at 5fps is a stutter, not a pulse.
     g.save();
     g.translate(W / 2, W / 2);
-    g.fillStyle = 'rgba(255,214,150,0.22)';
+    const cone = g.createRadialGradient(0, 0, 8, 0, 0, W * 0.34);
+    cone.addColorStop(0, 'rgba(255,158,24,0.40)');
+    cone.addColorStop(1, 'rgba(255,158,24,0)');
+    g.fillStyle = cone;
     g.beginPath(); g.moveTo(0, 0);
-    g.arc(0, 0, W * 0.30, -Math.PI / 2 - 0.42, -Math.PI / 2 + 0.42); g.closePath(); g.fill();
+    g.arc(0, 0, W * 0.34, -Math.PI / 2 - 0.52, -Math.PI / 2 + 0.52); g.closePath(); g.fill();
+    g.save();
+    g.shadowColor = 'rgba(20,40,45,0.45)';
+    g.shadowBlur = 6; g.shadowOffsetY = 1.5;
+    g.fillStyle = 'rgba(26,32,38,0.92)';
+    g.beginPath(); g.arc(0, 0, 14, 0, Math.PI * 2); g.fill();
+    g.restore();
+    g.strokeStyle = 'rgba(255,252,244,0.95)'; g.lineWidth = 2.2;
+    g.beginPath(); g.arc(0, 0, 14, 0, Math.PI * 2); g.stroke();
     g.beginPath();
-    g.moveTo(0, -13); g.lineTo(9, 10); g.lineTo(0, 5); g.lineTo(-9, 10);
+    g.moveTo(0, -10.5); g.lineTo(7.2, 8); g.lineTo(0, 4.2); g.lineTo(-7.2, 8);
     g.closePath();
-    g.fillStyle = '#ffd696'; g.fill();
-    g.strokeStyle = 'rgba(11,15,19,0.95)'; g.lineWidth = 2; g.stroke();
+    g.fillStyle = '#ff9e18'; g.fill();
+    g.lineJoin = 'round';
+    g.strokeStyle = 'rgba(255,246,228,0.9)'; g.lineWidth = 1.2; g.stroke();
     g.restore();
 
     // north, which a turning map otherwise loses completely. INK, not cream:
@@ -1486,11 +1644,14 @@ export class Wayfinder {
       drawGlyph(g, cat.g, p.px, p.py, r * 0.62, '#fffcf4');
       void 0;
     }
-    for (const p of [...shown].sort((a, b) => (b.major ? 1 : 0) - (a.major ? 1 : 0)
-        + ((sel && sel.id === b.id) ? 2 : 0) - ((sel && sel.id === a.id) ? 2 : 0))) {
+    // The selection always names itself; after that it is the rank, so the
+    // beach wins its label over the artwork standing on it rather than losing
+    // it to whichever came first out of the extract.
+    const labelRank = (p) => (p.rank || 0) + ((sel && sel.id === p.id) ? 9 : 0);
+    for (const p of [...shown].sort((a, b) => labelRank(b) - labelRank(a))) {
       const isSel = sel && sel.id === p.id;
       // Only label what there is room for, and always label the selection.
-      if (!(isSel || zoom > 1.35 || p.major)) continue;
+      if (!(isSel || zoom > 1.35 || (p.rank || 0) >= 1)) continue;
       let box = null;
       for (const cand of labelBoxes(p, isSel)) {
         // A CLIPPED LABEL IS WORSE THAN NO LABEL: the first render shipped
