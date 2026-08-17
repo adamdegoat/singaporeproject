@@ -397,11 +397,15 @@ export function buildSkater() {
   // ARMS OUT, which is what balancing on a board looks like and what makes the
   // silhouette read as a skater rather than a person standing very still. The
   // front arm reaches across the nose and the back arm trails — a surfer's line.
+  // SLEEVES TO THE ELBOW, SKIN BELOW — because that is what the walker wears,
+  // and they are the same person. This drew shirt all the way to the wrist
+  // while the man who steps off the board has bare forearms: one wardrobe, two
+  // shirts. Visible the moment `data/avatar.mjs` was fixed to frame both heads.
   armF.add(bone([0, 0, 0], rel(J.elbowF, J.shldrF), 0.050, shirt));
-  armF.add(bone(rel(J.elbowF, J.shldrF), rel(J.handF, J.shldrF), 0.043, shirt));
+  armF.add(bone(rel(J.elbowF, J.shldrF), rel(J.handF, J.shldrF), 0.043, skin));
   armB.add(bone([0, 0, 0], rel(J.elbowB, J.shldrB), 0.050, shirt));
-  armB.add(bone(rel(J.elbowB, J.shldrB), rel(J.handB, J.shldrB), 0.043, shirt));
-  armF.add(part(new THREE.SphereGeometry(0.052, 8, 7), shirt, ...rel(J.elbowF, J.shldrF)));
+  armB.add(bone(rel(J.elbowB, J.shldrB), rel(J.handB, J.shldrB), 0.043, skin));
+  armF.add(part(new THREE.SphereGeometry(0.052, 8, 7), shirt, ...rel(J.elbowF, J.shldrF)));   // the cuff
   armB.add(part(new THREE.SphereGeometry(0.052, 8, 7), shirt, ...rel(J.elbowB, J.shldrB)));
   // HANDS, AND THEY ARE FISTS, NOT BALLS. A sphere on the end of an arm reads
   // as a mitten from behind; a hand riding a board is closed and hangs with its

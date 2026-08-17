@@ -952,7 +952,47 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
   // joint closes at any angle a road actually turns through. They are opaque
   // boxes, so an overlap costs nothing to look at and no extra draw call —
   // the count is unchanged.
-  emit(new THREE.BoxGeometry(0.38, 0.3, 4.7), MAT.kerb, dedupeProps(kerbClear, 0.6), kerbSeat);
+  // A KERB THAT CROSSES ANOTHER KERB IS THE PILE OF SLABS THE SWEEPS KEEP
+  // FILING. `dedupeProps` drops a piece whose CENTRE is within 60cm of another
+  // one's, which is exactly right for two runs laid along the same line and
+  // useless for the case that actually looks wrong: at a bus terminal or a
+  // forecourt, five short ways meet and each lays its own 4.7m kerb through the
+  // junction at its own angle. Their centres are metres apart, so every one
+  // survives, and the result is a heap of pale slabs lying across each other —
+  // plainly visible at Beach Station Bus Terminal, which is where the Sentosa
+  // Express puts every visitor on the island.
+  //
+  // So the rule gets the second half it was missing: two kerbs whose centres
+  // are within 2.2m AND whose headings differ by more than 20 degrees are the
+  // same corner drawn twice. First one wins, which is stable because the list
+  // order is.
+  const KX_R2 = 2.2 * 2.2, KX_ANG = 0.35;   // ~20 degrees
+  const kerbCross = (list) => {
+    const CELL = 2.4, grid = new Map(), out = [];
+    for (const r of list) {
+      const cx = Math.round(r[0] / CELL), cz = Math.round(r[2] / CELL);
+      let dup = false;
+      for (let dx = -1; dx <= 1 && !dup; dx++)
+        for (let dz = -1; dz <= 1 && !dup; dz++) {
+          const l2 = grid.get((cx + dx) + ',' + (cz + dz));
+          if (!l2) continue;
+          for (const q of l2) {
+            if ((q[0] - r[0]) ** 2 + (q[1] - r[2]) ** 2 > KX_R2) continue;
+            let d = Math.abs(((q[2] - r[3]) % Math.PI + Math.PI) % Math.PI);
+            if (d > Math.PI / 2) d = Math.PI - d;       // a kerb has no front
+            if (d > KX_ANG) { dup = true; break; }
+          }
+        }
+      if (dup) continue;
+      const k = cx + ',' + cz;
+      if (!grid.has(k)) grid.set(k, []);
+      grid.get(k).push([r[0], r[2], r[3]]);
+      out.push(r);
+    }
+    window.__kerbCrossDropped = (window.__kerbCrossDropped || 0) + (list.length - out.length);
+    return out;
+  };
+  emit(new THREE.BoxGeometry(0.38, 0.3, 4.7), MAT.kerb, kerbCross(dedupeProps(kerbClear, 0.6)), kerbSeat);
   // ...AND THE DRAIN BESIDE IT, IN THREE PARTS THAT SHARE ONE LIST.
   //
   // 600mm channel between two 150mm lips, per LTA/SDRE14/2/DRA3. The lateral
