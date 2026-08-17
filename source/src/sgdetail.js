@@ -12,7 +12,8 @@ import { R, rand, pick, chance, rng, sharedSignAtlas } from './tex.js';
 // to — the same two-numbers trap that had the bike riding 5.5cm under the road
 // for the whole project, one storey up. surfaceAt() answers both cases and is
 // the single function main.js already uses for the ride and the walker.
-import { MAT, groundAt, drawnGroundAt, surfaceAt, Merger, standable, addWalkSurface } from './city.js';
+import { MAT, groundAt, drawnGroundAt, surfaceAt, Merger, standable, addWalkSurface,
+         cableProfiles, CABLE_RIDE_H, CABLE_STATION_H } from './city.js';
 import { recipeFor } from './landmarks.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d,
@@ -3463,7 +3464,11 @@ export async function buildTransit(world, data, Y = null) {
   // -- the cable car: pylons, catenary cables, resting cabins --------------
   const cw = data.cableway || {};
   const lines = cw.lines || [];
-  const RIDE_H = { gondola: 32, cable_car: 32, chair_lift: 9 };  // plausibility
+  // plausibility. Kept here as the DOCUMENTATION of the numbers; the profile
+  // itself is computed by cableProfiles() in city.js, because the planting pass
+  // needs the same wire and runs at a different point in the build — see the
+  // note on cableProfiles for why the arithmetic may not live in two places.
+  const RIDE_H = CABLE_RIDE_H;
   // THE WIRE HAS TO COME DOWN WHERE THE STATION IS.
   //
   // The profile was ground + 32m along the whole line including THROUGH the
@@ -3478,32 +3483,9 @@ export async function buildTransit(world, data, Y = null) {
   // Point) and describe the stations only as "rather compact". 12m puts the
   // platform a storey and a half up, which is what the photographs show and
   // what a stair can reach without becoming the building.
-  const STATION_H = 12;
+  const STATION_H = CABLE_STATION_H;
   const stationList = cw.stations || [];
-  const nearStation = (x, z) => {
-    let bd = 1e9;
-    for (const st of stationList) {
-      const d = Math.hypot(st.p[0] - x, st.p[1] - z);
-      if (d < bd) bd = d;
-    }
-    return bd;
-  };
-  const profiles = lines.map((ln) => {
-    const hs = ln.p.map(([x, z]) => {
-      const g0 = groundAt(x, z);
-      const d = nearStation(x, z);
-      // inside 22m it IS the platform; out to 90m it eases back to line height,
-      // which is roughly the run a real cable takes to climb away from a station
-      if (d > 90) return g0 + (RIDE_H[ln.k] || 20);
-      const t = d <= 22 ? 0 : (d - 22) / 68;
-      const ease = t * t * (3 - 2 * t);
-      return g0 + STATION_H + ((RIDE_H[ln.k] || 20) - STATION_H) * ease;
-    });
-    for (let pass = 0; pass < 3; pass++) {
-      for (let i = 1; i < hs.length - 1; i++) hs[i] = (hs[i - 1] + hs[i] + hs[i + 1]) / 3;
-    }
-    return hs;
-  });
+  const profiles = cableProfiles(data);
   // THE RIDE READS THE DRAWN WIRE, IT DOES NOT RE-DERIVE IT.
   //
   // src/rides.js carries the player along these lines. If it computed its own

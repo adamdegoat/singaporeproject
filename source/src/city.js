@@ -6765,6 +6765,57 @@ export function buildWater(world, data) {
 // PIERS AND JETTIES, the structures that make a quay a quay.
 //
 // Marina Bay, Clarke Quay and Robertson Quay are quays and had none of them.
+// THE CABLE'S HEIGHT PROFILE, IN ONE PLACE, BECAUSE TWO THINGS NOW NEED IT.
+//
+// sgdetail.js worked this out inline to draw the wire, and its own comment
+// states the law it was obeying: "THE RIDE READS THE DRAWN WIRE, IT DOES NOT
+// RE-DERIVE IT... the exact two-sources-of-one-fact trap that put the monorail
+// at three different heights and the kerbs under a bridge deck."
+//
+// The planting pass below now needs the same profile, to know where the wire
+// comes low enough for a tree to stand in it — and it runs at a different point
+// in the build from sgdetail, so it cannot read `window.__cableways`. Copying
+// the arithmetic across would be that trap, third time. So the arithmetic moves
+// HERE, where `groundAt` already lives and where sgdetail already imports from,
+// and both callers ask this one function. sgdetail keeps drawing exactly what
+// it drew: same constants, same easing, same three smoothing passes.
+//
+// RIDE_H and STATION_H are unchanged and their reasoning stays in sgdetail at
+// the point of use: 32m is a plausible gondola height, 9m a chairlift, and the
+// 12m platform is authored because the published sources give the spans and
+// call the stations only "rather compact".
+export const CABLE_RIDE_H = { gondola: 32, cable_car: 32, chair_lift: 9 };
+export const CABLE_STATION_H = 12;
+export function cableProfiles(data) {
+  const cw = data.cableway || {};
+  const lines = cw.lines || [];
+  const stationList = cw.stations || [];
+  const nearStation = (x, z) => {
+    let bd = 1e9;
+    for (const st of stationList) {
+      const d = Math.hypot(st.p[0] - x, st.p[1] - z);
+      if (d < bd) bd = d;
+    }
+    return bd;
+  };
+  return lines.map((ln) => {
+    const hs = ln.p.map(([x, z]) => {
+      const g0 = groundAt(x, z);
+      const d = nearStation(x, z);
+      // inside 22m it IS the platform; out to 90m it eases back to line height,
+      // which is roughly the run a real cable takes to climb away from a station
+      if (d > 90) return g0 + (CABLE_RIDE_H[ln.k] || 20);
+      const t = d <= 22 ? 0 : (d - 22) / 68;
+      const ease = t * t * (3 - 2 * t);
+      return g0 + CABLE_STATION_H + ((CABLE_RIDE_H[ln.k] || 20) - CABLE_STATION_H) * ease;
+    });
+    for (let pass = 0; pass < 3; pass++) {
+      for (let i = 1; i < hs.length - 1; i++) hs[i] = (hs[i - 1] + hs[i] + hs[i + 1]) / 3;
+    }
+    return hs;
+  });
+}
+
 // A pier stands OVER water, so it takes its level from the water it sits in
 // rather than from the terrain beneath — the terrain under a pier is the
 // SEABED, and seating a deck on it would put the jetty at the bottom of the
@@ -7392,6 +7443,86 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
     return false;
   };
 
+  // AND A CABLE CAR FLIES OVER THE JUNGLE — EXCEPT WHERE IT COMES DOWN INTO IT.
+  //
+  // The MegaZip has had a corridor since it was built and the luge got one
+  // above. The two cableways never did, and riding them showed why that
+  // matters: board the cable car and the cabin is INSIDE the canopy, on a ride
+  // whose entire point is the view.
+  //
+  // MEASURED, and the two lines fail for different reasons:
+  //   * A gondola flies at ground+32, which clears a 17.5m tree by fourteen
+  //     metres — correct, and the jungle under a mid-span must NOT be touched.
+  //     But the wire eases down to a 12m platform at every station, and a tree
+  //     is 13.0-17.5m tall. So the last 146m of the Singapore-Sentosa Cable Car
+  //     and 195m of the Sentosa Line — 8% and 22% of their length, all of it
+  //     the station approaches — run BELOW the treetops.
+  //   * A chair_lift flies at ground+9. That is under the canopy for ONE
+  //     HUNDRED PERCENT of both SkyRide lines, all 598m of them.
+  //
+  // So the test is not "near a cableway", it is "near a cableway that is low
+  // enough for a tree to reach" — which clears the station approaches and the
+  // SkyRide and leaves every mid-span span of jungle exactly as it was. That
+  // distinction is the whole point: a blanket corridor would shave two bald
+  // stripes across Imbiah and a third out to Siloso Point, which is a worse
+  // island than the defect.
+  //
+  // 9m half-width: the crowns are 8-12m in radius, so a trunk at 9m still
+  // overhangs the wire, and the luge already spends 5.5m on a 3m track.
+  // The wire comes from cableProfiles() — the same array sgdetail draws.
+  const CABLE_CLEAR = 9.0;
+  const TREE_REACH = 19.0;            // a 17.5m crown plus a metre and a half
+  const _cwLines = ((data.cableway || {}).lines) || [];
+  const _cwProf = _cwLines.length ? cableProfiles(data) : [];
+  const _cableSegs = [];
+  _cwLines.forEach((ln, li) => {
+    const hs = _cwProf[li] || [];
+    for (let i = 0; i < ln.p.length - 1; i++) {
+      const [ax, az] = ln.p[i], [bx, bz] = ln.p[i + 1];
+      // the clearance at each end, so a span that dips only at one end is only
+      // cleared where it dips
+      const ca = (hs[i] || 0) - groundAt(ax, az);
+      const cb = (hs[i + 1] || 0) - groundAt(bx, bz);
+      if (Math.min(ca, cb) > TREE_REACH) continue;   // flying well over the canopy
+      _cableSegs.push([ax, az, bx, bz, ca, cb]);
+    }
+  });
+  const _CCELL = 24;
+  const _cGrid = new Map();
+  for (const s of _cableSegs) {
+    const pad = CABLE_CLEAR + 1;
+    for (let gx = Math.floor((Math.min(s[0], s[2]) - pad) / _CCELL);
+         gx <= Math.floor((Math.max(s[0], s[2]) + pad) / _CCELL); gx++) {
+      for (let gz = Math.floor((Math.min(s[1], s[3]) - pad) / _CCELL);
+           gz <= Math.floor((Math.max(s[1], s[3]) + pad) / _CCELL); gz++) {
+        const k = gx + ',' + gz;
+        let l = _cGrid.get(k);
+        if (!l) { l = []; _cGrid.set(k, l); }
+        l.push(s);
+      }
+    }
+  }
+  const inCableCorridor = !_cableSegs.length ? () => false : (x, z) => {
+    const cx = Math.floor(x / _CCELL), cz = Math.floor(z / _CCELL);
+    for (let gx = cx - 1; gx <= cx + 1; gx++) {
+      for (let gz = cz - 1; gz <= cz + 1; gz++) {
+        const l = _cGrid.get(gx + ',' + gz);
+        if (!l) continue;
+        for (const [ax, az, bx, bz, ca, cb] of l) {
+          const vx = bx - ax, vz = bz - az;
+          const L2 = vx * vx + vz * vz || 1;
+          let t = ((x - ax) * vx + (z - az) * vz) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+          if (dx * dx + dz * dz >= CABLE_CLEAR * CABLE_CLEAR) continue;
+          // and only where the wire ACTUALLY dips low, along this span
+          if (ca + (cb - ca) * t <= TREE_REACH) return true;
+        }
+      }
+    }
+    return false;
+  };
+
   const inZipCorridor = (!zip || !zip.p) ? () => false : (x, z) => {
     const [[ax, az], [bx, bz]] = zip.p;
     const vx = bx - ax, vz = bz - az;
@@ -7435,7 +7566,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
     // 45m of a sand edge, matching buildBeachLife: those trees are drawn there
     // with the coconut form and would otherwise get a second inland crown
     if (sandRings.some((p) => inRingP(x, z, p) || edgeOfP(x, z, p) <= 45)) continue;
-    if (inZipCorridor(x, z) || inLugeCorridor(x, z)) continue;
+    if (inZipCorridor(x, z) || inLugeCorridor(x, z) || inCableCorridor(x, z)) continue;
     if (onTrail(x, z)) continue;
     // Park trees are older and bigger than the pruned street stock; the scale
     // spread is wider so a wood does not read as a plantation.
@@ -7489,7 +7620,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
         const jz = gz + (((gx * 3.9 + gz * 11.1) % 9) - 4.5);
         if (!inRing(jx, jz, gp.p)) continue;
         if (blocked && blocked(jx, jz)) continue;
-        if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz)) continue;
+        if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz) || inCableCorridor(jx, jz)) continue;
         if (onTrail(jx, jz)) continue;
         // top of the spread held at ~1.38, not 1.5: at 1.5 the tallest crown
         // put a leaf card 19.6m up and P3 ("props off the ground") refused the
@@ -7614,7 +7745,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
           if (blocked && blocked(jx, jz)) continue;
           if (inClaimed(jx, jz)) continue;                 // mapped lawn/golf/sand stays
           if (inClearing(jx, jz)) continue;                // guns, viewpoints, artworks
-          if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz)) continue;
+          if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz) || inCableCorridor(jx, jz)) continue;
           if (onTrail(jx, jz)) continue;
           if (window.__underCanopy && window.__underCanopy(jx, jz)) continue;
           f.add(jx, jz, 0.5 + ((jx * 7.3 + jz * 3.1) % 100) / 140);
@@ -7713,7 +7844,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
             if (gk !== null) continue;    // mapped lawn/golf/sand/wood all handled elsewhere
             if (inLand(jx, jz)) continue; // plazas, car parks, works parcels stay open
             if (inClearing(jx, jz)) continue;   // guns, viewpoints, artworks
-            if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz)) continue;
+            if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz) || inCableCorridor(jx, jz)) continue;
             if (onTrail(jx, jz)) continue;
             if (window.__underCanopy && window.__underCanopy(jx, jz)) continue;
             if (window.__inFootprint && window.__inFootprint(jx, jz)) continue;
@@ -7769,7 +7900,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
           if (!inRing(jx, jz, gp.p)) continue;
           if (!nearTrail(jx, jz)) continue;
           if (blocked && blocked(jx, jz)) continue;
-          if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz)) continue;
+          if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz) || inCableCorridor(jx, jz)) continue;
           if (onTrail(jx, jz)) continue;
           // A LOW plant's limbs sit at 1.5-3m — the traffic envelope. A
           // full tree over a road is an avenue (crown lifted 6m by rule);
@@ -7830,7 +7961,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
         if (taken.has(Math.round(jx / 12) + ',' + Math.round(jz / 12))) continue;
         if (blocked && blocked(jx, jz)) continue;
         if (inClearing(jx, jz)) continue;
-        if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz)) continue;
+        if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz) || inCableCorridor(jx, jz)) continue;
         if (onTrail(jx, jz)) continue;
         if (window.__underCanopy && window.__underCanopy(jx, jz)) continue;
         // A KNOWN TRADE, stated rather than discovered later: this treats ALL

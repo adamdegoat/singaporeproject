@@ -1180,6 +1180,18 @@ let rideParams = SKATE;
 // `const` block exists — without walking into the temporal dead zone that
 // crashed the whole module once already (see the note by updateHelp's call).
 // It touches nothing but the button.
+// What the mode button offers beside each kind of ride. One entry per kind
+// `buildRides` can produce — keep them in step, and see the note at the point
+// of use for why there is deliberately no fall-through default.
+const RIDE_VERB = {
+  gondola: 'Ride the cable car',
+  cable_car: 'Ride the cable car',
+  chair_lift: 'Ride the SkyRide',
+  luge: 'Ride the luge',
+  zip: 'Ride MegaZip',
+  flowrider: 'Surf the FlowRider',
+  flowbarrel: 'Surf the FlowBarrel',
+};
 function modeLabel() {
   const btn = document.getElementById('modebtn');
   if (!btn) return;
@@ -1190,9 +1202,25 @@ function modeLabel() {
   if (mode === 'walk') {
     const hit = (typeof nearestRide === 'function') ? nearestRide() : null;
     if (hit) {
-      const k = hit.ride.kind;
-      btn.textContent = k === 'luge' ? 'Ride the luge'
-        : k === 'chair_lift' ? 'Ride the SkyRide' : 'Ride the cable car';
+      // THE BUTTON OFFERED THE WRONG RIDE ON THREE OF THEM.
+      //
+      // Found 2026-08-17. This chain knew three kinds and the world has six:
+      // `gondola`, `chair_lift`, `luge`, `zip`, `flowrider`, `flowbarrel`. So
+      // everything that was not a luge or a SkyRide fell through the final
+      // `else` and read **"Ride the cable car"** — standing at the foot of
+      // MegaZip, and standing on the Wave House deck with the sheet running in
+      // front of you. The one line whose entire job is to name the thing in
+      // front of you ("a button that does not say which is a button you do not
+      // press") named a cable car three times over.
+      //
+      // A fall-through default is what let that happen quietly, so there is no
+      // default now: an unlisted kind gets the ride's own name rather than
+      // somebody else's, and a new kind cannot inherit a wrong label.
+      //
+      // "Surf", not "Ride", on the two wave rides — you stand up on those, and
+      // the verb is the cheapest way to say so before anyone boards.
+      const R = hit.ride, k = R.kind;
+      btn.textContent = RIDE_VERB[k] || ('Ride ' + (R.name || 'this'));
       return;
     }
   }
@@ -4427,7 +4455,36 @@ function nearestRide() {
 
 function boardRide(hit) {
   if (!hit) return false;
-  onRide = { ride: hit.ride, s: hit.board.s, dir: hit.board.s > 0 ? -1 : 1 };
+  // WHICH WAY DOES A MID-LINE STATION SEND YOU? The old rule was "anything
+  // past the start goes backwards", which at Imbiah Lookout — the Sentosa
+  // Line's middle station — always chose the 244m hop back to Sensoryscape over
+  // the 641m run out to Siloso Point. Nobody climbs a platform for the shorter
+  // half. With no way to ask, take the LONGER remaining run: it is the ride
+  // they came for, and the other direction is one stop away at the far end.
+  {
+    const R = hit.ride;
+    const a = R.s0 || 0, b = R.s1 != null ? R.s1 : R.len;
+    const s = hit.board.s;
+    onRide = { ride: R, s, dir: (s - a) > (b - s) ? -1 : 1 };
+    // AND YOU FACE THE WAY THE SEAT FACES.
+    //
+    // Nothing set `camYaw` when you sat down, so a ride began pointing wherever
+    // you happened to be looking when you pressed the button — while the
+    // CARRIER is turned along the wire by rideStep. Board a SkyRide chair a
+    // quarter turn off and you spend the whole climb looking at your own seat:
+    // caught on the flight strip, where a rust-orange slab (`0xc4632f`, the
+    // chair back, 1.7m wide and 0.45m from the eye) filled a third of every
+    // frame all the way up Imbiah.
+    //
+    // A chairlift and a luge cannot physically face any other way, and a
+    // gondola cabin has you facing along the cabin. So the seat's own heading
+    // is the honest start — the SAME expression rideStep turns the carrier
+    // with, so the two cannot disagree. Free look still works from there; this
+    // only decides where it begins.
+    const p0 = RIDES.at(R, s);
+    if (p0 && p0.dir) camYaw = Math.atan2(p0.dir.x * onRide.dir, p0.dir.z * onRide.dir);
+    camPitch = 0;
+  }
   walkerRig.group.visible = false;
   rider.visible = false;
   skater.visible = false;
@@ -4446,12 +4503,36 @@ function alightRide() {
   // Put the walker on the ground UNDER the carrier, and only somewhere it can
   // stand: stepping off a gondola over open water would be a drowning, not a
   // dismount. If nothing near is standable, walk back to the boarding point.
-  let wx = p.x, wz = p.z;
-  if (blocked(wx, wz) || surfaceAt(wx, wz) < 0.6) {
+  let wx = p.x, wz = p.z, wy = null;
+  // YOU BOARD FROM THE PLATFORM AND YOU USED TO GET OFF ON THE GRASS.
+  //
+  // The station work of 2026-08-06 moved every gondola boarding point up onto
+  // its deck, for a reason it wrote down: "a boarding point on the grass under
+  // the wire makes the deck scenery — you would climb it for the view and walk
+  // back down to get on, which is the opposite of a station." Alighting never
+  // learned the same lesson. It put the walker on the ground under wherever
+  // the carrier stopped, so the cable car set you down UNDER the platform you
+  // had just ridden into, and you climbed the ramp again to leave. Boarding and
+  // alighting disagreed about what a station is.
+  //
+  // So arrive at the STOP, when the carrier has actually stopped at one — the
+  // ride ends on a board's own `s`, so this is a lookup and not a guess — and
+  // stand on its deck if it has one. Every other ride is unaffected: a luge
+  // finishes on its track and a zip on the sand, and neither carries a
+  // `platform` flag, so both keep taking the ground under the carrier.
+  let stop = null, sd = 12;
+  for (const b2 of r.boards) {
+    const d = Math.abs(b2.s - onRide.s);
+    if (d < sd) { sd = d; stop = b2; }
+  }
+  if (stop && stop.platform) {
+    wx = stop.x; wz = stop.z; wy = stop.y;
+  } else if (blocked(wx, wz) || surfaceAt(wx, wz) < 0.6) {
     const home = r.boards[0];
     wx = home.x; wz = home.z;
+    if (home.platform) wy = home.y;
   }
-  walker.x = wx; walker.z = wz; walker.speed = 0; walker.y = null; walker.seat.id = null;
+  walker.x = wx; walker.z = wz; walker.speed = 0; walker.y = wy; walker.seat.id = null;
   walkerRig.group.visible = true;
   onRide = null;
   mode = 'walk';
@@ -4467,9 +4548,13 @@ const FLOW_LAPS = { flowrider: 6, flowbarrel: 6 };
 function rideStep(dt) {
   const r = onRide.ride;
   onRide.s += r.speed * dt * onRide.dir;
-  const done = onRide.dir > 0 ? onRide.s >= r.len : onRide.s <= 0;
+  // `s0`/`s1` are the ride's travelled range, which is NOT always its whole
+  // wire: a cable car stops at its last station rather than carrying you on to
+  // Mount Faber, 529m outside the terrain grid. See the note in rides.js.
+  const s0 = r.s0 || 0, s1 = r.s1 != null ? r.s1 : r.len;
+  const done = onRide.dir > 0 ? onRide.s >= s1 : onRide.s <= s0;
   if (done) {
-    onRide.s = Math.max(0, Math.min(r.len, onRide.s));
+    onRide.s = Math.max(s0, Math.min(s1, onRide.s));
     // A FLOW WAVE IS NOT A JOURNEY, AND RIDING IT LIKE ONE MADE IT LAST FOUR
     // SECONDS.
     //
@@ -4496,7 +4581,9 @@ function rideStep(dt) {
     if (laps && (onRide.laps || 1) < laps) {
       onRide.laps = (onRide.laps || 1) + 1;
       onRide.dir = -onRide.dir;
-      onRide.s = Math.max(0.01, Math.min(r.len - 0.01, onRide.s));
+      // nudged off the limit it just hit, or the reversed step lands on it
+      // again next frame and the turn fires twice
+      onRide.s = Math.max(s0 + 0.01, Math.min(s1 - 0.01, onRide.s));
     } else { alightRide(); return; }
   }
   const p = RIDES.at(r, onRide.s);

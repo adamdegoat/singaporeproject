@@ -24,6 +24,89 @@
 
 const LUGE_KIND = 'summer_toboggan';
 
+// Names that identify the luge as a whole rather than one of its four trails.
+// A segment carrying one of these is a lead-in or a run-out shared by the
+// named descents that pass through it — see the note at the luge build.
+const LUGE_GENERIC = new Set(['luge trail', 'skyline luge', 'skyline luge sentosa', '']);
+const JOIN = 12;                       // endpoints this close are the same node
+
+// Chain the mapped luge ways into whole descents. Purely geometric: ways are
+// joined only where their endpoints coincide, and a way is reversed only to
+// make the chain continuous. Nothing is moved, nothing is interpolated.
+function chainLuge(ways) {
+  if (!ways.length) return ways;
+  const near = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < JOIN;
+  const gen = (a) => LUGE_GENERIC.has((a.n || '').toLowerCase().trim());
+  const named = ways.filter((a) => !gen(a));
+  const generics = ways.filter(gen);
+  if (!named.length) return ways;
+
+  // 1. chain the ways of each named trail into one polyline
+  const runs = [];
+  const byName = new Map();
+  for (const a of named) {
+    const k = a.n.toLowerCase();
+    if (!byName.has(k)) byName.set(k, []);
+    byName.get(k).push(a);
+  }
+  for (const [, group] of byName) {
+    let g = group[0].g.slice();
+    const rest = group.slice(1);
+    let grew = true;
+    while (grew && rest.length) {
+      grew = false;
+      for (let i = 0; i < rest.length; i++) {
+        const h = rest[i].g;
+        if (near(g[g.length - 1], h[0])) { g = g.concat(h.slice(1)); }
+        else if (near(g[g.length - 1], h[h.length - 1])) { g = g.concat(h.slice().reverse().slice(1)); }
+        else if (near(g[0], h[h.length - 1])) { g = h.slice(0, -1).concat(g); }
+        else if (near(g[0], h[0])) { g = h.slice().reverse().slice(0, -1).concat(g); }
+        else continue;
+        rest.splice(i, 1); grew = true; break;
+      }
+    }
+    runs.push({ n: group[0].n, k: LUGE_KIND, g });
+    // a same-named way that would not join stays a run of its own rather than
+    // being silently dropped — a fragment we cannot place is still a fragment
+    // that exists, and losing it quietly is how a trail disappears
+    for (const left of rest) runs.push({ n: left.n, k: LUGE_KIND, g: left.g });
+  }
+
+  // 2. extend each named run through the shared generic segments it continues
+  //    into. A generic may serve SEVERAL runs — exactly as the real lead-in
+  //    does — but it may serve each run only ONCE.
+  //
+  // ONCE PER RUN IS THE WHOLE OF THIS, and the first cut got it wrong in a way
+  // worth keeping: after appending a segment, that segment's far endpoint is
+  // now the run's own end, so the very next pass matched it AGAIN and appended
+  // it reversed. The Dragon Trail came out at 958.9m instead of 634.8m — a luge
+  // that runs to the bottom, turns round and climbs back up. Caught by reading
+  // the number, not the render: 389.2 + 189.9 + 189.9 + 189.9 is exactly 958.9.
+  const used = new Set();
+  for (const r of runs) {
+    const mine = new Set();
+    for (let pass = 0; pass < generics.length; pass++) {
+      let grew = null;
+      for (const q of generics) {
+        if (mine.has(q)) continue;
+        const h = q.g;
+        if (near(r.g[r.g.length - 1], h[0])) { r.g = r.g.concat(h.slice(1)); grew = q; }
+        else if (near(r.g[r.g.length - 1], h[h.length - 1])) { r.g = r.g.concat(h.slice().reverse().slice(1)); grew = q; }
+        else if (near(r.g[0], h[h.length - 1])) { r.g = h.slice(0, -1).concat(r.g); grew = q; }
+        else if (near(r.g[0], h[0])) { r.g = h.slice().reverse().slice(0, -1).concat(r.g); grew = q; }
+        if (grew) break;
+      }
+      if (!grew) break;
+      mine.add(grew); used.add(grew);
+    }
+  }
+
+  // 3. a generic nothing absorbed is still a real mapped way and still rides —
+  //    losing it quietly is how a trail disappears
+  for (const q of generics) if (!used.has(q)) runs.push({ n: q.n, k: LUGE_KIND, g: q.g });
+  return runs;
+}
+
 // metres per second. The real Singapore Cable Car runs about 3 m/s; a luge cart
 // is quick but not a rollercoaster; the zip is the fast one.
 // The real Singapore Cable Car crosses at about 3 m/s and takes the better
@@ -212,8 +295,39 @@ export function buildRides(THREE, data, world, surfaceAt) {
   }
 
   // ---- the luge runs, on the track surface -------------------------------
-  for (const a of (data.attractions || [])) {
-    if (a.k !== LUGE_KIND || !a.g || a.g.length < 3) continue;
+  // A LUGE RUN IS THE WHOLE DESCENT, NOT ONE MAPPED WAY OF IT.
+  //
+  // Found 2026-08-17 by the new ridecheck, on its first run: "Luge Trail lasts
+  // more than 8s — 7s". A fifty-six metre luge is not a ride, it is a fragment,
+  // and it was one of SEVEN, because this loop built one ride per OSM way.
+  //
+  // Measured, and the mapped geometry answers it itself — every one of these
+  // endpoints coincides to 0.0m:
+  //
+  //     (-1781,12387)  top
+  //        | Luge Trail            55.7m      <- was its own 7-second "ride"
+  //     (-1812,12426)  the split
+  //        |\ Luge Dragon Trail   389.2m
+  //        | \ Luge Jungle Trail  228.5 + 7.0 + 131.2m   (three ways)
+  //     (-1938,12548)  they rejoin
+  //        | Luge Trail           189.9m
+  //     (-1838,12667)  bottom
+  //
+  // So the island's mapped luge is TWO complete descents sharing a lead-in and
+  // a run-out — Dragon 635m and Jungle 612m — and we were serving it as seven
+  // disconnected pieces, the shortest of which was over in seven seconds.
+  //
+  // THE JUDGEMENT, SAID OUT LOUD: the two shared segments are named the generic
+  // "Luge Trail" while the branches carry the four real trail names, and the
+  // named branches physically CONTINUE through them. Absorbing a generic
+  // segment into the named run it continues is a reading of the map, not an
+  // invention of geometry — no point is moved and no metre is added. Expedition
+  // (196m) and Kupu Kupu (168m) share no endpoint with anything in this extract
+  // and are left exactly as they were.
+  const lugeRuns = chainLuge((data.attractions || []).filter(
+    (a) => a.k === LUGE_KIND && a.g && a.g.length >= 2));
+  for (const a of lugeRuns) {
+    if (!a.g || a.g.length < 3) continue;
     const pts = a.g.map(([x, z]) => ({ x, z, y: surfaceAt(x, z) + 0.35 }));
     const len = arcLength(pts);
     if (len < 40) continue;
@@ -447,6 +561,36 @@ export function buildRides(THREE, data, world, surfaceAt) {
       b.station = st.n;
     }
     r.boards.sort((a2, b2) => a2.s - b2.s);
+    // A CABLE CAR IS BOARDED AT A STATION, AND IT DOES NOT CARRY YOU PAST THE
+    // LAST ONE INTO A PLACE THE WORLD DOES NOT HAVE.
+    //
+    // Measured 2026-08-17, along the wire, station by station:
+    //
+    //   Singapore-Sentosa Cable Car   1,733m of wire
+    //     Sentosa       s =     0.0
+    //     Harbourfront  s =   990.6      <- the last station in the world
+    //     ...and 742m more, 43% of the ride, running on to MOUNT FABER at
+    //        z = 10,561 — which is 529m OUTSIDE the terrain grid (z >= 11,090)
+    //        and past the last building on the extract (nothing north of
+    //        z = 11,000).
+    //   Sentosa Line                    886m, stations at 0, 244.5 and 885.8
+    //        — the whole line is served, nothing to trim.
+    //
+    // So the island's signature ride was four minutes long and spent the last
+    // ninety seconds of it flying over NOTHING, then set you down there. The
+    // wire itself is not wrong and is not touched — the real cable really does
+    // carry on to Mount Faber, and sgdetail should keep drawing it to the edge.
+    // What is wrong is carrying a PASSENGER past the end of the world.
+    //
+    // Bounded by the stations rather than by a hand-typed distance, so the day
+    // the extract grows north and Mount Faber arrives with a station of its
+    // own, the ride reaches it with nothing here to change.
+    const stops = r.boards.filter((b2) => b2.station);
+    if (stops.length >= 2) {
+      r.boards = stops;
+      r.s0 = stops[0].s;
+      r.s1 = stops[stops.length - 1].s;
+    }
   }
 
   const nearest = (x, z, reach = BOARD_REACH) => {
