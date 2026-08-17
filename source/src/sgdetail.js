@@ -956,8 +956,21 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
     //
     // Matched on the SAME identity city.js dispatches its bespoke builders on,
     // so the two lists cannot drift apart silently.
+    // ...AND A LATTICE TOWER HAS NO FASCIA EITHER. Skypark Sentosa's OSM
+    // footprint is a 423 m2 rhombus tagged h=47, so it earned a 26m board hung
+    // 44m up — and on 2026-08-17 the recipe behind it stopped being a solid
+    // box and became TWO OPEN STEEL TOWERS with a skybridge between them. The
+    // board has nothing to sit on: from the beach it is a hard-edged grey
+    // rectangle floating in the sky between the towers, which is the Wings of
+    // Time panel all over again, and it was chased just as long — called a
+    // cable-car cabin, then "unidentified", before a raycast from a camera that
+    // could actually see it named the material (#9aa0a6, SIGN_TRAY).
+    //
+    // Matched on the same identity city.js dispatches the recipe on, per the
+    // note above, so the two lists cannot drift apart.
     const noFascia = b.bt === 'grandstand'
-      || (b.bt === 'hut' && b.n === 'Wings of Time');
+      || (b.bt === 'hut' && b.n === 'Wings of Time')
+      || /aj hackett|^skypark sentosa/i.test(b.n || '');
     // ...AND A WALL AT LEAST A SIGN TALL. There was no height test here at all,
     // so the shrink below would ask a 1 m shed for a negative board.
     if (b.n && bl > 7 && b.h > 2.6 && !noFascia) {

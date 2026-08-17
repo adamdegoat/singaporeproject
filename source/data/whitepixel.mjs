@@ -24,8 +24,24 @@ const fs = await import('node:fs');
 
 const sweep = JSON.parse(fs.readFileSync(new URL('../shots/sweep/sweep.json', import.meta.url)));
 const rows = sweep.rows || sweep;
-const FRAMES = (process.argv.slice(2).length ? process.argv.slice(2) : ['72', '71', '174'])
-  .map(Number);
+// FREE CAMERAS, NOT ONLY SWEEP INDICES. This is the identity tool this repo
+// reaches for whenever "what IS that thing in the frame" comes up — and three
+// times on 2026-08-17 the thing was NOT at a sweep vantage (a grey plate beside
+// the Skypark towers, the Serapong slabs, two blank walls on the RWS service
+// road). Each time the answer was guessed instead of measured, and twice the
+// guess was wrong. An argument with commas is a camera:
+//
+//     node data/whitepixel.mjs 72 174            two sweep frames
+//     node data/whitepixel.mjs -1072,12272,-2.0  a free camera, x,z,heading
+//
+// NOTE FOR ANYONE WRITING THEIR OWN PROBE INSTEAD: use `window.__THREE`, the
+// page's OWN three.js. An `import()` of the module inside evaluate() gives a
+// SECOND instance whose Raycaster silently misses everything — every ray came
+// back null, which reads exactly like "there is nothing there".
+const ARGS = process.argv.slice(2).length ? process.argv.slice(2) : ['72', '71', '174'];
+const FRAMES = ARGS.map((a) => (a.includes(',')
+  ? (() => { const [x, z, h] = a.split(',').map(Number); return { free: true, x, z, heading: h || 0, street: 'free camera' }; })()
+  : Number(a)));
 
 const browser = await chromium.launch({
   args: ['--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding',
@@ -42,9 +58,10 @@ if (err) { console.error('boot failed: ' + String(err).slice(0, 600)); await bro
 await page.waitForTimeout(2000);
 
 for (const fi of FRAMES) {
-  const s = rows[fi];
+  const s = (fi && typeof fi === 'object') ? fi : rows[fi];
   if (!s) { console.log(`frame ${fi}: not in sweep.json`); continue; }
-  console.log(`\n=== frame ${String(fi).padStart(3, '0')}  (${s.x.toFixed(0)},${s.z.toFixed(0)}) h=${s.heading.toFixed(2)}  ${s.street} ===`);
+  const label = s.free ? 'free  ' : `frame ${String(fi).padStart(3, '0')}`;
+  console.log(`\n=== ${label}  (${s.x.toFixed(0)},${s.z.toFixed(0)}) h=${s.heading.toFixed(2)}  ${s.street} ===`);
   await page.evaluate(([x, z, h]) => window.__teleport(x, z, h), [s.x, s.z, s.heading]);
   await page.waitForTimeout(1400);
 
