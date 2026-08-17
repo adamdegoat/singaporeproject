@@ -138,7 +138,12 @@ for (const r of rides) {
   }
   const dur = (Date.now() - t0) / 1000;
   const ended = await page.evaluate(() => !window.__rideState());
-  check(moved, `${r.kind} ${r.name} moves`);
+  // THE WIRE AND THE RIDE ARE DIFFERENT NUMBERS NOW, so print both. A tool that
+  // measures progress against `len` reports a working cable car as a stall: it
+  // travels 990.6m of a 1,734m line and every mark past 57% never fires. That
+  // happened to the flight strip on 2026-08-18 and would happen to the next
+  // probe somebody writes.
+  check(moved, `${r.kind} ${r.name} moves (rides ${r.ride}m of a ${r.len}m line)`);
   check(ended, `${r.kind} ${r.name} finishes on its own (${dur.toFixed(0)}s)`);
   check(dur >= MIN_S, `${r.name} lasts more than ${MIN_S}s (${dur.toFixed(0)}s)`);
   check(dur <= MAX_S, `${r.name} is over inside ${MAX_S}s (${dur.toFixed(0)}s)`);

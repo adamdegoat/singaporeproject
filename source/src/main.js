@@ -6135,10 +6135,26 @@ window.__mode = () => mode;
 // VET HOOKS for the rides. `__rides()` lists what exists and where you board;
 // `__board(i)` puts the player in seat i without walking there, so a probe can
 // ride the whole line and check the seat against the wire.
-window.__rides = () => (RIDES ? RIDES.rides.map((r, i) => ({
-  i, kind: r.kind, name: r.name, len: +r.len.toFixed(0),
-  boards: r.boards.map((b) => [Math.round(b.x), Math.round(b.z), +b.y.toFixed(1)]),
-})) : []);
+// `len` IS THE WIRE. `ride` IS WHAT YOU ACTUALLY TRAVEL, AND SINCE THE CABLE
+// CAR STOPS AT ITS LAST STATION THOSE ARE NO LONGER THE SAME NUMBER.
+//
+// Reported after the flight-strip tool quietly stopped at 56% of the
+// Singapore-Sentosa Cable Car and looked like a stall. It was not: the ride
+// ends at s=990.6 of a 1,734m wire, so every mark the tool placed past 57% of
+// `len` could never fire. **A tool that measures progress against the wrong
+// total reports a working ride as a broken one**, and the next probe to be
+// written would have made the same mistake. So the travelled range is stated
+// here rather than left to be inferred.
+window.__rides = () => (RIDES ? RIDES.rides.map((r, i) => {
+  const s0 = r.s0 || 0, s1 = r.s1 != null ? r.s1 : r.len;
+  return {
+    i, kind: r.kind, name: r.name,
+    len: +r.len.toFixed(0),          // the wire, end to end
+    ride: +(s1 - s0).toFixed(0),     // what a passenger travels
+    s0: +s0.toFixed(1), s1: +s1.toFixed(1),
+    boards: r.boards.map((b) => [Math.round(b.x), Math.round(b.z), +b.y.toFixed(1)]),
+  };
+}) : []);
 window.__board = (i, endIdx = 0) => {
   if (!RIDES || !RIDES.rides[i]) return false;
   const r = RIDES.rides[i];

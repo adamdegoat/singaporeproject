@@ -462,11 +462,39 @@ const found = await page.evaluate(() => {
       }
       if (Math.abs(a2) / 2 < 4) { bad.push(`"${b.n || '(unnamed)'}" has no area`); continue; }
       if (b.p.length > 40) continue;                 // O(n^2), and long rings are traced curves
+      // A CLOSED RING IS NOT A CROSSED RING, AND THIS TEST COULD NOT TELL.
+      //
+      // D13 reported `"Capella Colonial Block" has a ring that crosses itself`
+      // on every run. It does not. Measured across the extract: **1 of 1,094
+      // building rings is stored CLOSED** — its last point repeats its first —
+      // and that one is Capella. Everything below assumes an OPEN ring and
+      // closes it with `% length`, so on a closed ring the walk invents a
+      // final zero-length segment, and — the actual false positive — segment 0
+      // and segment n-2 then SHARE the vertex p0. The guard excludes only the
+      // (0, n-1) pair, so the genuine adjacency goes untested and its shared
+      // endpoint reads as an intersection.
+      //
+      // Normalise the ring here rather than special-casing the pair: an
+      // explicit closing point carries no information this test needs, and
+      // dropping it makes the adjacency guard mean what it says again.
+      //
+      // The duplicate is still reported, separately and in its own words,
+      // because it IS a real inconsistency in the data — one ring in a thousand
+      // shaped unlike the rest, which extrudes a degenerate edge. Silently
+      // normalising a data anomaly is how it survives to bite something else.
+      const ring = b.p.length > 3
+        && b.p[0][0] === b.p[b.p.length - 1][0]
+        && b.p[0][1] === b.p[b.p.length - 1][1]
+        ? b.p.slice(0, -1) : b.p;
+      if (ring !== b.p) {
+        bad.push(`"${b.n || '(unnamed)'}" repeats its first point to close the ring `
+          + `(1 of ${data.buildings.length} does this; the rest are stored open)`);
+      }
       let self = false;
-      for (let i = 0; i < b.p.length && !self; i++) {
-        for (let j = i + 2; j < b.p.length; j++) {
-          if (i === 0 && j === b.p.length - 1) continue;
-          if (cross(b.p[i], b.p[(i + 1) % b.p.length], b.p[j], b.p[(j + 1) % b.p.length])) { self = true; break; }
+      for (let i = 0; i < ring.length && !self; i++) {
+        for (let j = i + 2; j < ring.length; j++) {
+          if (i === 0 && j === ring.length - 1) continue;
+          if (cross(ring[i], ring[(i + 1) % ring.length], ring[j], ring[(j + 1) % ring.length])) { self = true; break; }
         }
       }
       if (self) bad.push(`"${b.n || '(unnamed)'}" has a ring that crosses itself`);
