@@ -460,7 +460,7 @@ function drawGlyph(g, kind, cx, cy, r, col) {
 // typo for the first, and Sentosa has three beaches, not four. The map's SHAPE
 // is truth — a misspelled label is not shape, it is a data error, and it would
 // be the most visible thing on the screen.
-const NAME_FIX = { 'Palavan Beach': 'Palawan Beach' };
+export const NAME_FIX = { 'Palavan Beach': 'Palawan Beach' };
 
 // THE THINGS YOU CAN ACTUALLY GET ON, AS PLACES YOU CAN TRAVEL TO.
 //

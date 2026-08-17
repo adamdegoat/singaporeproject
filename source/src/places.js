@@ -23,6 +23,9 @@
 // camera would otherwise put into the text.
 
 import { sharedSignAtlas } from './tex.js';
+// ONE correction table for map names, owned by wayfind.js — see the note at
+// `push` below for what happens when two files each keep half of it.
+import { NAME_FIX } from './wayfind.js';
 
 // how far a name is legible before it is noise
 const SHOW_NEAR = 18;      // fades in past this (you are on top of it)
@@ -52,10 +55,24 @@ export function buildPlaceLabels(THREE, data, world, surfaceAt) {
   const atlas = sharedSignAtlas(THREE);
   const items = [];
 
+  // AN OSM MISSPELLING DOES NOT GO ON A LABEL FLOATING OVER THE BEACH.
+  //
+  // The extract carries the Palawan sand as TWO rings, one of them named
+  // `Palavan Beach` — a typo, and Sentosa has three beaches, not four.
+  // wayfind.js has corrected it since the map card was written and says why in
+  // its own note; this file never got the memo, so the world itself has been
+  // captioning the owner's beach **PALAVAN BEACH** in three-dimensional letters
+  // the whole time. Found by riding Palawan, not by any gate. The fix is
+  // imported from wayfind rather than copied, so the next reader of a map name
+  // cannot inherit half of it.
   const push = (name, x, z, y, tier) => {
     if (!name || SKIP_NAME.test(name)) return;
-    const clean = String(name).trim();
+    const clean = NAME_FIX[String(name).trim()] || String(name).trim();
     if (clean.length < 2 || clean.length > 34) return;
+    // ...and the two rings then carry the SAME name, 200m apart, which would
+    // print the label twice. Nearest-wins: a name already placed within 400m is
+    // the same place mapped twice.
+    if (items.some((it) => it.name === clean && Math.hypot(it.x - x, it.z - z) < 400)) return;
     items.push({ name: clean, x, z, y, tier });
   };
 
