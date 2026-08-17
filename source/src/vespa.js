@@ -411,8 +411,18 @@ export function buildSkater() {
     h.rotation.set(0.35, j === J.handF ? 0.5 : -0.5, 0);
     grp.add(h);
   }
+  const HD_ = J.head, NK_ = J.neck;
   // HEAD, looking where the board is going
   head.add(part(new THREE.SphereGeometry(0.128, 14, 12), skin, ...rel(J.head, J.neck)));
+  // EYES — see the walker's own note in player.js. Same wardrobe, same person:
+  // he is the one who stepped off the board. The board's nose is +z, so the
+  // face looks along +z and these sit on that side of the skull.
+  for (const sx of [-0.048, 0.048]) {
+    const e2 = part(new THREE.SphereGeometry(0.019, 10, 8), W.eye,
+      HD_[0] - NK_[0] + sx, HD_[1] - 0.028 - NK_[1], HD_[2] + 0.112 - NK_[2]);
+    e2.scale.y = 0.72;
+    head.add(e2);
+  }
   // HAIR under the cap. Without it this head was a bald scalp with a cap
   // balanced on top while the walker — the same person, ten metres away — had
   // a full head of dark hair.

@@ -25,6 +25,11 @@ export const WARDROBE = {
   legs: 0x3b4250,    // navy shorts / jeans, same cloth either way
   skin: 0x8a6a52,
   hair: 0x241c16,
+  // A FACE IS TWO DARK MARKS. Both figures had a bare skin sphere for a head,
+  // which reads as a mannequin the moment the camera gets close — and the
+  // avatar sheet gets close every time. Near-black rather than black: an eye in
+  // shade under a cap brim goes to pure black on its own.
+  eye: 0x1b1613,
   shoe: 0xf0ece1,    // off-white trainers
   cap: 0xe0dccf,     // cream cap, worn on foot and on the board
   helmet: 0xe6e2d8,  // scooter only
@@ -41,6 +46,7 @@ export function wardrobeMats(THREE) {
     legs: lam(WARDROBE.legs),
     skin: lam(WARDROBE.skin),
     hair: lam(WARDROBE.hair),
+    eye: lam(WARDROBE.eye),
     shoe: lam(WARDROBE.shoe),
     cap: new THREE.MeshStandardMaterial({ color: WARDROBE.cap, roughness: 0.6 }),
     helmet: new THREE.MeshStandardMaterial({ color: WARDROBE.helmet, roughness: 0.3, metalness: 0.1 }),

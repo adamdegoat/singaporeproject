@@ -70,8 +70,14 @@ async function sheet(label) {
       // rotate the offset into the figure's own frame: +z is the way they face
       const fx = Math.sin(s.h), fz = Math.cos(s.h);
       const rx = Math.cos(s.h), rz = -Math.sin(s.h);
+      // AIM AT THE WHOLE FIGURE, NOT AT ITS CHEST. This aimed at g + 0.95 with
+      // a 26-degree lens, which frames a SKATER — he stands on a deck 16cm up
+      // and the crop lands under his board. The WALKER stands on the ground, so
+      // the same aim cut his head off in all four angles: the one sheet in this
+      // repo whose whole job is "is the person on the board the same person on
+      // foot" could not see one of the two faces. Found 2026-08-17, adding eyes.
       window.__cam(s.x + rx * ox + fx * oz, g + oy, s.z + rz * ox + fz * oz,
-        s.x, g + 0.95, s.z, 26);
+        s.x, g + 1.15, s.z, 32);
     }, { s, ox, oy, oz });
     await page.waitForTimeout(260);
     // page.screenshot, NOT locator('#c').screenshot() — Playwright's element

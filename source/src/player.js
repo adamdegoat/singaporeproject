@@ -100,6 +100,11 @@ export function buildWalker() {
   blob(headPivot, 0.082, hair, 0, 0.055, -0.055, 0.8);
   blob(headPivot, 0.03, skin, -0.104, 0.06, 0, 1.1);     // ears
   blob(headPivot, 0.03, skin, 0.104, 0.06, 0, 1.1);
+  // EYES, because the head was a bare skin sphere and that is a mannequin the
+  // moment anything gets close. Two 1.6cm marks set into the front of the
+  // face, squashed to a lid shape rather than left as balls. The SAME pair the
+  // skater wears — one wardrobe, one person (src/wardrobe.js).
+  for (const sx of [-0.042, 0.042]) blob(headPivot, 0.016, W.eye, sx, 0.042, 0.100, 0.72);
   // THE CAP COMES OFF THE BOARD WITH YOU. The skater wore one and the walker
   // did not, which is half of why the two read as different people. Radius
   // clears the hair mass (0.113) so it sits ON the head rather than inside it;
