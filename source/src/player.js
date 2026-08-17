@@ -127,7 +127,23 @@ export function buildWalker() {
     sh.position.x = side * 0.185;
     blob(sh, 0.058, shirt, 0, 0, 0);                     // deltoid
     const el = segment(sh, 0.25, 0.044, 0.038, skin, -0.26);
-    blob(el, 0.045, skin, 0, -0.25, 0);                  // hand
+    // A HAND IS NOT A BALL, AND THIS FILE WAS THE ONE STILL SAYING IT WAS.
+    //
+    // vespa.js wrote the rule down when the skater's hands were fixed: "A
+    // sphere on the end of an arm reads as a MITTEN from behind." The walker
+    // kept the sphere, so the man who steps off the board grew mittens — the
+    // third instance of "one wardrobe, two shirts" in this pair of files, after
+    // the sleeve length and the missing deltoid, and all three were found by
+    // reading `data/avatar.mjs` sheets side by side rather than by any gate.
+    //
+    // A hand hanging at rest is closed and slightly forward, so it is the same
+    // short box the skater carries, at the same scale, tilted out of the arm
+    // line rather than square to it.
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.090, 0.046), skin);
+    hand.position.set(0, -0.272, 0.006);
+    hand.rotation.set(0.22, 0, side * 0.10);
+    hand.castShadow = true;
+    el.add(hand);
     return { sh, el };
   };
   const armL = arm(-1), armR = arm(1);

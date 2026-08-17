@@ -407,6 +407,27 @@ export function buildSkater() {
   armB.add(bone(rel(J.elbowB, J.shldrB), rel(J.handB, J.shldrB), 0.043, skin));
   armF.add(part(new THREE.SphereGeometry(0.052, 8, 7), shirt, ...rel(J.elbowF, J.shldrF)));   // the cuff
   armB.add(part(new THREE.SphereGeometry(0.052, 8, 7), shirt, ...rel(J.elbowB, J.shldrB)));
+  // DELTOIDS — the walker has had them since he was built and the skater never
+  // did, and they are the same person.
+  //
+  // The owner's R4, 2026-08-17: "make the avatar even more realistic." Read off
+  // the avatar sheet: the shoulders are ONE capsule laid across the chest
+  // (`bone(shldrB -> shldrF, 0.104)`) with the arms hung off its ends, so the
+  // arm leaves the torso at a bare 5cm stub and the silhouette has no shoulder
+  // at all — a rounded body with sticks in it. player.js line 128 builds
+  // exactly this cap and calls it `deltoid`, at 0.058.
+  //
+  // This is the SAME BUG AS THE SLEEVES, which this file already records a few
+  // lines up: "one wardrobe, two shirts", the walker wearing something the
+  // skater did not because the two rigs are built by different code. Sleeves
+  // were caught the moment the avatar sheet framed both heads; the shoulder
+  // needed the sheet read for silhouette rather than for clothing.
+  //
+  // Same radius as the walker's, at the group origin — which IS the shoulder
+  // joint, since armF/armB are positioned there — so it rotates with the arm
+  // and cannot separate from it the way a torso-mounted cap would.
+  armF.add(part(new THREE.SphereGeometry(0.058, 9, 8), shirt, 0, 0, 0));
+  armB.add(part(new THREE.SphereGeometry(0.058, 9, 8), shirt, 0, 0, 0));
   // HANDS, AND THEY ARE FISTS, NOT BALLS. A sphere on the end of an arm reads
   // as a mitten from behind; a hand riding a board is closed and hangs with its
   // knuckles out. A short box, turned to the arm, at the same 5cm scale.
