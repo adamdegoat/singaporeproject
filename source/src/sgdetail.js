@@ -1287,6 +1287,34 @@ export async function buildBeachWalk(world, data, Y = null) {
     out.walkSigns++;
   };
 
+  // the blue banner poles from the walk.jpg reference (siloso-spec #14 —
+  // "Signs ok, banners missing"): a dark pole carrying one narrow vertical
+  // banner, the event dressing every Sentosa promenade photograph shows.
+  // Form from the reference; spacing deterministic like everything here.
+  const bannerM = new THREE.MeshLambertMaterial({ color: 0x2456a8, side: THREE.DoubleSide });
+  // the walk is mapped as parallel ways of one name (see the road-index note
+  // above), so one spot can qualify from three centrelines at once — the
+  // first run put THREE poles 0.2m apart at (-1747, 12727). One banner owns
+  // its ten metres.
+  const _bannerSpots = [];
+  const bannerAt = (x, z, yaw) => {
+    for (const [px2, pz2] of _bannerSpots) {
+      if ((px2 - x) * (px2 - x) + (pz2 - z) * (pz2 - z) < 100) return;
+    }
+    _bannerSpots.push([x, z]);
+    const gy = groundAt(x, z);
+    const p = new THREE.CylinderGeometry(0.045, 0.055, 4.0, 6);
+    p.translate(x, gy + 2.0, z);
+    merger.add(p, poleM, x, z);
+    // banner hangs beside the pole, long edge vertical, facing along the walk
+    const b = new THREE.BoxGeometry(0.55, 2.0, 0.03);
+    b.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw));
+    b.translate(x + Math.sin(yaw) * 0.33, gy + 2.75, z + Math.cos(yaw) * 0.33);
+    merger.add(b, bannerM, x, z);
+    out.walkBanners = (out.walkBanners || 0) + 1;
+    (window.__banners = window.__banners || []).push([+x.toFixed(1), +z.toFixed(1)]);
+  };
+
   const benchAt = (x, z, yaw) => {
     const gy = groundAt(x, z);
     const seat = new THREE.BoxGeometry(1.8, 0.1, 0.5);
@@ -1345,6 +1373,7 @@ export async function buildBeachWalk(world, data, Y = null) {
         place(() => benchAt(px + nx * 5.6, pz + nz * 5.6, yaw), 57, 5.6, 1.1);
         place(() => shelterAt(px + nx * 9.5, pz + nz * 9.5, yaw), 95, 9.5, 3.8);
         place(() => signAt(px + nx * 5.2, pz + nz * 5.2, yaw), 130, 5.2, 1.2);
+        place(() => bannerAt(px + nx * 5.0, pz + nz * 5.0, yaw), 47, 5.0, 0.4);
       }
       run += L;
     }

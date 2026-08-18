@@ -59,7 +59,13 @@ for s in $SCENES; do
 done
 
 hr "behaviour"
-SG_SCENE=world node data/behaviour.mjs 2>&1 | tail -1
+# SENTOSA, NOT world — the game has shipped one district since 2026-08-16 and
+# deploy.sh already gates behaviour on sentosa. The world scene here booted
+# seven districts in SwiftShader, timed out at the 900s guard TWICE on
+# 2026-08-19, and `| tail -1` swallowed the non-zero status both times, so
+# the only line anyone saw was "Node.js v25.9.0" and the run stayed green.
+# A gate that cannot fail is not a gate — counted in FAILED now.
+SG_SCENE=sentosa node data/behaviour.mjs 2>&1 | tail -3 || FAILED=1
 
 echo "== determinism (streaming prerequisite)"
 node data/determinism.mjs || exit 1
