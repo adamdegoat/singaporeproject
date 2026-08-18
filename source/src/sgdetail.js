@@ -6429,6 +6429,50 @@ export async function buildBeachLife(world, data, Y = null) {
     const loungerM = new THREE.MeshLambertMaterial({ color: 0xe4dccb });
     const parasolM = new THREE.MeshLambertMaterial({ color: 0xb99a5e, side: THREE.DoubleSide });
     const poleM2 = new THREE.MeshLambertMaterial({ color: 0x7d6647 });
+    // A NAMED BAR'S FURNITURE IS ITS OWN, AND FOUR OF THEM ARE PUBLISHED.
+    //
+    // The thatch cone above is right about the OPEN sand — Sentosa's own
+    // public beach furniture, and the reason the fabric umbrella built first
+    // was taken out. It is not right in front of a bar. Every reference frame
+    // in research/ref-siloso/shots of Coastes, Ola and Sand Bar shows a bank
+    // of SQUARE CANVAS MARKET UMBRELLAS in the venue's own colour standing on
+    // the sand off its deck, and the survey names those colours venue by
+    // venue. So: thatch stays the default everywhere, and a venue the survey
+    // actually describes gets what the survey says it has.
+    //
+    // Sourced line by line, and NOTHING here is a colour I chose:
+    //   Coastes  research/siloso-venues.md 1.9  "cream/off-white market
+    //            umbrellas", "navy-blue deckchairs and loungers"
+    //   Ola      1.7  "cream/white sun loungers in long ranks with
+    //            white/off-white market umbrellas"
+    //   Trapizza 1.3  "large white peaked canvas parasols" -- PEAKED, which is
+    //            why it carries a taller rise than the other three
+    //   Tanjong  research/sentosa-inventory-2026.md, the Feb-2025 revamp:
+    //            "custom daybeds in warm colours", terracotta/yellow/red
+    //            replacing the white. THE CANOPY IS NOT DESCRIBED ANYWHERE, so
+    //            TBC keeps the thatch cone and changes only its daybeds. Half
+    //            a source buys half a change.
+    //
+    // Sand Bar (turquoise) and Bikini Bar (orange) are documented just as well
+    // and get NOTHING here, because neither has an OSM footprint to host an
+    // apron -- this emitter hangs off a mapped building. They are the authored
+    // -footprint question, not this one.
+    const APRON = [
+      [/^coastes/i,          { canvas: 0xf2efe6, lounger: 0x24344d, rise: 0.34 }],
+      [/^ola beach club/i,   { canvas: 0xf4f1e9, lounger: 0xe8e2d4, rise: 0.34 }],
+      [/^trapizza/i,         { canvas: 0xfbf8f2, lounger: 0xe8e2d4, rise: 0.62 }],
+      [/^tanjong beach club/i, { lounger: 0xb4633c }],
+    ];
+    const apronMat = new Map();
+    const matFor = (col, dbl) => {
+      const k = col + (dbl ? 'd' : '');
+      let m = apronMat.get(k);
+      if (!m) {
+        m = new THREE.MeshLambertMaterial(dbl ? { color: col, side: THREE.DoubleSide } : { color: col });
+        apronMat.set(k, m);
+      }
+      return m;
+    };
     const edgeDist = (x, z, p) => {
       let best = 1e9;
       for (let i = 0; i < p.length; i++) {
@@ -6440,6 +6484,22 @@ export async function buildBeachLife(world, data, Y = null) {
         best = Math.min(best, Math.hypot(x - (a[0] + vx * t), z - (a[1] + vz * t)));
       }
       return best;
+    };
+    // THE AUDITORIUM TEST BELONGS ON THE POINT, NOT ON THE HOST.
+    //
+    // Caught by golden `wings-grandstand` the first time the bearing fan ran:
+    // three thatch parasols and their loungers standing on the Wings of Time
+    // auditorium floor, in front of the grandstand, which is the exact thing
+    // the Central Beach skip below was written to stop. The skip asks which
+    // sand ring hosts the BUILDING; the fan walks up to 90 m and can cross
+    // into a ring that is not its host. A venue whose nearest sand is Siloso
+    // can still put its furniture on Central Beach.
+    //
+    // So the ring is tested where the furniture actually lands.
+    const auditoria = sands.filter((s) => (s.n || '') === 'Central Beach');
+    const onAuditorium = (x, z) => {
+      for (const s of auditoria) if (inRing(x, z, s.p)) return true;
+      return false;
     };
     for (const b of (data.buildings || [])) {
       if (!b.p || b.p.length < 3 || (b.a || 0) > 3000) continue;
@@ -6535,11 +6595,56 @@ export async function buildBeachLife(world, data, Y = null) {
           out.backBeachSkipped = (out.backBeachSkipped || 0) + 1;
           return false;
         }
+        if (onAuditorium(px, pz)) {
+          out.auditoriumSkipped = (out.auditoriumSkipped || 0) + 1;
+          return false;
+        }
         return true;
       };
-      for (let step = 6; step <= 170 && fx === null; step += 4) {
+      // THE CENTROID RAY IS ALLOWED 60m, NOT 170.
+      //
+      // 170m of walking along one bearing is not "in front of the venue" by
+      // any reading; it is "somewhere on this beach". Kept because it is one
+      // cheap ray and it does land squarely for the venues that face the water
+      // head-on, but it now has to land NEAR, and the fan below picks up the
+      // rest at the shortest radius that works.
+      for (let step = 6; step <= 60 && fx === null; step += 4) {
         const px = bx + dx * step, pz = bz + dz * step;
         if (usable(px, pz)) { fx = px; fz = pz; }
+      }
+      // THE BEARING FAN THIS FILE HAS CLAIMED TO HAVE SINCE 2026-08-05.
+      //
+      // The comment in the fallback below says "the fan and the walk both
+      // failed the same way", and the note above the walk says "the bearing
+      // fan catches the rest". THERE WAS NO FAN. One ray at the sand's
+      // centroid, then straight to the ring-vertex fallback -- and the
+      // fallback takes the nearest ring vertex that happens to sit in the
+      // open-sand band, which on a 786m crescent mapped at ~30m vertex spacing
+      // is not the vertex in front of anything.
+      //
+      // MEASURED, by logging (venue, apron) pairs out of the built scene:
+      //     Coastes   (-1928,12620) -> apron (-2034,12552)   125 m away
+      //     Trapizza  (-2369,12212) -> apron (-2316,12294)    97 m away
+      //     Ola       (-1995,12563) -> apron (-2049,12532)    62 m away
+      // Coastes' sunbeds stood past Ola Beach Club, two venues down the sand.
+      // The emitter said "in front of its own venue" in its own comment and
+      // had never once been asked to prove it -- the same fault as the AJ
+      // Hackett anchor, and found the same way, by looking at the render.
+      //
+      // Radius-major, so the FIRST hit is the nearest usable sand in any
+      // direction rather than the first bearing that eventually works.
+      if (fx === null) {
+        const FAN = 24;
+        for (let r = 6; r <= 90 && fx === null; r += 3) {
+          for (let k = 0; k < FAN && fx === null; k++) {
+            // start at the seaward bearing and alternate outward from it, so a
+            // tie at the same radius resolves toward the water
+            const half = (k + 1) >> 1, sgn = (k & 1) ? -1 : 1;
+            const th = Math.atan2(dz, dx) + sgn * half * (2 * Math.PI / FAN);
+            const px = bx + Math.cos(th) * r, pz = bz + Math.sin(th) * r;
+            if (usable(px, pz)) { fx = px; fz = pz; out.apronByFan = (out.apronByFan || 0) + 1; }
+          }
+        }
       }
       out.beachVenues = (out.beachVenues || 0) + 1;
       if (fx === null) {
@@ -6576,6 +6681,11 @@ export async function buildBeachLife(world, data, Y = null) {
         }
       }
       if (fx === null) { out.beachNoSpot = (out.beachNoSpot || 0) + 1; continue; }
+      // the venue's own apron, if the survey describes one (see APRON above)
+      const brandEntry = APRON.find(([re]) => re.test(b.n || ''));
+      const brand = brandEntry ? brandEntry[1] : null;
+      if (brand) out.brandedAprons = (out.brandedAprons || 0) + 1;
+      const seatM = brand && brand.lounger ? matFor(brand.lounger, false) : loungerM;
       // a short row along the shore, deterministic from position
       const along = ((bx * 3.1 + bz * 1.7) % 1) * Math.PI;
       const ax2 = Math.cos(along), az2 = Math.sin(along);
@@ -6589,19 +6699,39 @@ export async function buildBeachLife(world, data, Y = null) {
           out.backBeachSkipped = (out.backBeachSkipped || 0) + 1;
           continue;
         }
+        if (onAuditorium(px, pz)) {               // and this one too
+          out.auditoriumSkipped = (out.auditoriumSkipped || 0) + 1;
+          continue;
+        }
         const gy = groundAt(px, pz);
         if (gy < 0.9) continue;
-        // parasol: a pole and a shallow cone
-        bake(new THREE.CylinderGeometry(0.06, 0.08, 2.6, 6), poleM2, px, gy + 1.3, pz);
-        // steeper, taller cone: a thatch parasol is a little roof, not a disc
-        bake(new THREE.ConeGeometry(1.5, 1.1, 9), parasolM, px, gy + 3.05, pz);
+        if (brand && brand.canvas) {
+          // A MARKET UMBRELLA IS A SQUARE, AND THAT IS THE WHOLE SILHOUETTE.
+          // Photographed at Coastes and Ola: a slim pale mast, a square canvas
+          // canopy about 3m across pitched a little to a centre peak, and a
+          // short valance hanging off its edge. Built as a 4-sided cone, which
+          // IS a square pyramid, rotated 45deg so its corners read as corners
+          // rather than as a diamond edge-on from the walk.
+          bake(new THREE.CylinderGeometry(0.05, 0.06, 2.7, 6), matFor(0xdcd6c8, false), px, gy + 1.35, pz);
+          const cap = new THREE.ConeGeometry(2.05, brand.rise, 4);
+          cap.rotateY(Math.PI / 4);
+          bake(cap, matFor(brand.canvas, true), px, gy + 2.7 + brand.rise / 2, pz);
+          const val = new THREE.CylinderGeometry(1.45, 1.45, 0.22, 4, 1, true);
+          val.rotateY(Math.PI / 4);
+          bake(val, matFor(brand.canvas, true), px, gy + 2.62, pz);
+        } else {
+          // parasol: a pole and a shallow cone
+          bake(new THREE.CylinderGeometry(0.06, 0.08, 2.6, 6), poleM2, px, gy + 1.3, pz);
+          // steeper, taller cone: a thatch parasol is a little roof, not a disc
+          bake(new THREE.ConeGeometry(1.5, 1.1, 9), parasolM, px, gy + 3.05, pz);
+        }
         // two loungers under it, laid along the shore
         for (const s2 of [-0.95, 0.95]) {
           const lx = px + az2 * s2, lz = pz - ax2 * s2;
           const pad = new THREE.BoxGeometry(1.85, 0.1, 0.62);
           pad.applyMatrix4(new THREE.Matrix4().makeRotationY(-along));
           pad.translate(lx, gy + 0.36, lz);
-          merger.add(pad, loungerM, lx, lz);
+          merger.add(pad, seatM, lx, lz);
           for (const e2 of [-0.72, 0.72]) {
             bake(new THREE.CylinderGeometry(0.035, 0.035, 0.34, 5), poleM2,
               lx + ax2 * e2, gy + 0.17, lz + az2 * e2);
