@@ -29,7 +29,7 @@ const total = marks.reduce((s, [, ms]) => s + ms, 0);
 console.log(`boot ${bootMs} ms wall, ${total} ms marked  (${URL_BASE})`);
 // sg: sub-marks live INSIDE the sgdetail phase — print them indented, not
 // double-counted in the top-level ranking
-const top = marks.filter(([n]) => !n.startsWith('sg:')).sort((a, b) => b[1] - a[1]);
+const top = marks.filter(([n]) => !n.startsWith('sg:') && !n.endsWith('-count')).sort((a, b) => b[1] - a[1]);
 const sg  = marks.filter(([n]) => n.startsWith('sg:')).sort((a, b) => b[1] - a[1]);
 for (const [n, ms] of top) console.log(`  ${String(ms).padStart(6)} ms  ${n}`);
 console.log('  -- inside sgdetail --');

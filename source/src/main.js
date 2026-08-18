@@ -3897,7 +3897,10 @@ window.__placeBlocked = (x, z) => blocked(x, z);
       o.matrixAutoUpdate = false;
       frozen++;
     });
-    BOOTT.push(['freeze-static', frozen]);
+    // the COUNT, not milliseconds — labelled so no probe reads 1,332 frozen
+    // meshes as 1.3s of boot (bootprobe did exactly that on 2026-08-19; the
+    // freeze itself is microseconds)
+    BOOTT.push(['freeze-static-count', frozen]);
   }
 
   // GPU WARM-UP, and it must come AFTER consolidate. The first rendered frame

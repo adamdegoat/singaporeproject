@@ -7888,7 +7888,15 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
       return d2 < 17 * 17 && d2 > 2.6 * 2.6;
     };
     for (const gp of (data.green || [])) {
-      if (gp.k !== 'wood' || !gp.p || gp.p.length < 4) continue;
+      // A SCRUB RING IS BUSHES BY DEFINITION, so it fills without the trail
+      // band: it exists to BE the vegetation (process.py's taxonomy: "scrub
+      // is bushes with the odd tree"). Until 2026-08-19 a scrub ring got its
+      // ground tint and nothing standing on it, so the Palawan bridge-landing
+      // green island (research §3.4, authored in data/palawangreen.py) drew
+      // as a dark smudge. Every guard below still applies — roads, blocked,
+      // corridors — so the landing loop's boardwalk stays clear through it.
+      const _isScrub = gp.k === 'scrub';
+      if ((gp.k !== 'wood' && !_isScrub) || !gp.p || gp.p.length < 4) continue;
       let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
       for (const [x, z] of gp.p) {
         if (x < mnx) mnx = x; if (x > mxx) mxx = x;
@@ -7904,7 +7912,7 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
           const jx = gx + (((gx * 9.1 + gz * 4.7) % 10) - 5);
           const jz = gz + (((gx * 5.9 + gz * 7.7) % 10) - 5);
           if (!inRing(jx, jz, gp.p)) continue;
-          if (!nearTrail(jx, jz)) continue;
+          if (!_isScrub && !nearTrail(jx, jz)) continue;
           if (blocked && blocked(jx, jz)) continue;
           if (inZipCorridor(jx, jz) || inLugeCorridor(jx, jz) || inCableCorridor(jx, jz)) continue;
           if (onTrail(jx, jz)) continue;
