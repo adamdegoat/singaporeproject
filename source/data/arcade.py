@@ -53,7 +53,24 @@ WALK = {"footway", "pedestrian", "path", "steps"}
 # drawn over it instead of an arcade mouth.
 DRIVE = {"service", "residential", "living_street", "unclassified", "tertiary"}
 DRIVE_W = 7.5
-DRIVE_MIN_RUN = 10.0
+# 10 -> 5, MEASURED 2026-08-18, AND THE NUMBER WAS EXCLUDING THE VERY CASES THIS
+# RULE WAS WRITTEN FOR.
+#
+# `min_run` is tested against the RAW run inside the footprint, while the emitted
+# corridor is that run PLUS `PAD` at each end — five metres. **The threshold
+# reads in one unit and every reported length is in another.** A genuine 8m
+# drop-off that emits a 13m corridor was judged as if it were 8m of corridor.
+# The tell was Sofitel: it already HAD a carved drive-through 34-40m away, so
+# this file was opening one drop-off at a resort and walling the other.
+#
+#     Ocean Way inside W Singapore Sentosa Cove   raw run 6.0 m   excluded
+#     unnamed service inside Sofitel              raw run ~8 m    excluded
+#
+# Costed: 14 drive-throughs -> 19. The five are W Singapore, Sofitel's second
+# stretch, Capella Colonial Block (40.9 m) and Shangri-La's Rasa Sentosa
+# (17.8 m) — which openground.py names BY NAME as needing exactly this — plus
+# three short unnamed service runs. Every one is a resort drop-off.
+DRIVE_MIN_RUN = 5.0
 # AND THE WATER CROSSINGS. A mapped footway that runs across water with no
 # bridge tag is the same contradiction as one that runs through a building: the
 # map says you can walk there AND that there is water there, and in life the
@@ -176,10 +193,53 @@ def main():
                             break
             return near
 
+        # A WATER CROSSING HAS TO BE AT WATER LEVEL, AND 33 OF 44 WERE NOT.
+        #
+        # This tested the water POLYGON alone, and a polygon is a claim, not a
+        # measurement. Sentosa Cove's basin ring swallows the land inside it —
+        # including a place literally called **Sandy Island** — so every mapped
+        # footway on that land read as a crossing and was decked. The worst was
+        # a **264 m "crossing" whose ground is 10.4 m above sea level**, laid as
+        # boardwalk straight down a carriageway; it produced all 27 findings of
+        # `T1 carriageway blocked by solid geometry` and refused a deploy.
+        #
+        # Measured over all 44 decks the polygon test emits, median ground under
+        # each run:
+        #
+        #     11 runs   median 0.00 m            <- real water
+        #     33 runs   median 2.1 m to 11.6 m   <- dry land, up to 11.6 m up
+        #
+        # There is no middle. It is not a length problem either — a length cap
+        # was tried first and rejected, because it keeps 25 of 44 only by being
+        # tuned to reproduce the shipped count, and real Sentosa boardwalks run
+        # to hundreds of metres.
+        #
+        # So ask the ground, which is the same DEM witness terrain.js already
+        # uses for the Cove ("a mapped water polygon lies over drawn land and
+        # the raw Copernicus DEM testifies the channel is really there at sea
+        # level"). This project's datum stores open sea as exactly 0.00, so a
+        # metre of tolerance covers a tidal bank and excludes a hillside.
+        WATER_MAX_GROUND = 1.0
+        tg = d.get("terrain") or {}
+        def ground_at(x, y):
+            if not tg:
+                return 0.0
+            fx = (x - tg["x0"]) / tg["cell"]
+            fz = (y - tg["z0"]) / tg["cell"]
+            i = max(0, min(tg["nx"] - 2, int(fx)))
+            j = max(0, min(tg["nz"] - 2, int(fz)))
+            tx, tz = fx - i, fz - j
+            h = tg["h"]
+            a = h[j * tg["nx"] + i]
+            b = h[j * tg["nx"] + i + 1]
+            c = h[(j + 1) * tg["nx"] + i]
+            e = h[(j + 1) * tg["nx"] + i + 1]
+            return (a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + e * tx) * tz
+
         def in_water(x, y):
             for (bb, poly) in waters:
                 if bb[0] <= x <= bb[2] and bb[1] <= y <= bb[3] and poly_contains(poly, x, y):
-                    return True
+                    return ground_at(x, y) <= WATER_MAX_GROUND
             return False
 
         # a WALK route may also be crossing water rather than a building
