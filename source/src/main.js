@@ -3201,8 +3201,11 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // because TreeField.add() ran during buildRoads, which used to happen before
   // this. Water depends on nothing, so it goes first and every later guard is
   // live by the time it is consulted.
+  bmark('sw:pre-water');
   const water = P.has('nowater') ? { water: 0, waterArea: 0 } : buildWater(world, data);
+  bmark('sw:buildWater');
   if (!P.has('nowater')) buildPiers(world, data);
+  bmark('sw:buildPiers');
   if (!P.has('nowater')) {
     // A LAGOON WITH AN ISLAND IN IT. `hp` carries a water body's inner rings —
     // see data/relparcels.py, which refused three of them outright until the
@@ -3212,10 +3215,12 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     const wrings = wsrc.map((w) => w.p);
     const wholes = wsrc.map((w) => w.hp || null);
     setWater(wrings, wholes);
+    bmark('sw:setWater');
     // The terrain mesh is cut for the water BEFORE it is built, so the
     // riverbed exists in the geometry rather than being hidden by it.
     // See setWaterRings() in terrain.js for why the grid cannot do this.
     terrain.setWaterRings(wrings, wholes);
+    bmark('sw:setWaterRings');
   }
   bmark('setup+water');
 
@@ -3854,7 +3859,13 @@ window.__placeBlocked = (x, z) => blocked(x, z);
       for (let i = 0; i < o.count; i++) {
         o.getMatrixAt(i, m4);
         const e2 = m4.elements;
-        for (let k = 12; k < 15; k++) {
+        // ALL 16 ELEMENTS, NOT TRANSLATION ALONE. Positions are survey-
+        // derived and deterministic; what the placement stream still decides
+        // (crown scale, rotation, variant) lives in the rotation/scale block,
+        // so a translation-only hash returned the same answer for a burnt and
+        // a clean build in BOTH modes and the determinism gate sat blind —
+        // found 2026-08-19 when it refused a green tree.
+        for (let k = 0; k < 16; k++) {
           h1 = (Math.imul(h1 ^ Math.round(e2[k] * 100), 2654435761)) >>> 0;
         }
       }

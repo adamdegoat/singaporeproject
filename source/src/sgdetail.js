@@ -2104,6 +2104,60 @@ export async function buildAttractions(world, data, Y = null) {
     const nm = a.n || '';
     if (GONE.test(nm)) { out.attrSkipped++; continue; }
     if (a.k === 'artwork' && /^siloso$/i.test(nm)) { silosoLetters(x, z); out.attractions++; continue; }
+    // A BEACH VOLLEYBALL COURT, at the SAT-measured markings (attractions.py
+    // AUTHORED, research/palawan-spawn.md §3.5). The POSITION is measured;
+    // the dimensions are the published FIVB beach standard — 16x8m court,
+    // net 8.5m wide at 2.43m — and the research asks for it "lightly-marked,
+    // nets optional", so: sun-bleached boundary lines draped on the sand, two
+    // timber posts and a slim net. Long axis laid along the shore, which the
+    // sea-distance field already knows the direction of.
+    if (a.k === 'beachcourt') {
+      const seaD2 = (px, pz) => (window.__terrain && window.__terrain.seaDistAt
+        ? window.__terrain.seaDistAt(px, pz) : 0);
+      // shore direction = perpendicular to the seaward gradient
+      const gx = seaD2(x + 6, z) - seaD2(x - 6, z);
+      const gz = seaD2(x, z + 6) - seaD2(x, z - 6);
+      const gl = Math.hypot(gx, gz) || 1;
+      let ux = -gz / gl, uz = gx / gl;            // along-shore unit
+      const vx2 = gx / gl, vz2 = gz / gl;         // inland unit
+      const lineM = new THREE.MeshLambertMaterial({ color: 0xefe8d8 });
+      const postM2 = new THREE.MeshLambertMaterial({ color: 0x8a7a5f });
+      // translucent, or from the sand it is a solid black wall, not a net
+      const netM2 = new THREE.MeshLambertMaterial({ color: 0x2e2e30, transparent: true, opacity: 0.45 });
+      const gAt = (px, pz) => (window.__surfaceAt ? window.__surfaceAt(px, pz) : 0);
+      // boundary: 16m along shore x 8m deep, 5cm lines draped in 4m pieces
+      const edge = (x0, z0, x1, z1) => {
+        const L = Math.hypot(x1 - x0, z1 - z0);
+        const n2 = Math.max(1, Math.ceil(L / 4));
+        for (let i2 = 0; i2 < n2; i2++) {
+          const t0 = i2 / n2, t1 = (i2 + 1) / n2;
+          const mx = x0 + (x1 - x0) * (t0 + t1) / 2, mz = z0 + (z1 - z0) * (t0 + t1) / 2;
+          const seg = new THREE.BoxGeometry(L / n2, 0.04, 0.08);
+          seg.rotateY(-Math.atan2(z1 - z0, x1 - x0));
+          seg.translate(mx, gAt(mx, mz) + 0.03, mz);
+          merger.add(seg, lineM, mx, mz);
+        }
+      };
+      const hw = 8, hd = 4;   // half-width along shore, half-depth
+      const c = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]];
+      const P2 = c.map(([a2, b2]) => [x + ux * a2 + vx2 * b2, z + uz * a2 + vz2 * b2]);
+      for (let i2 = 0; i2 < 4; i2++) edge(P2[i2][0], P2[i2][1], P2[(i2 + 1) % 4][0], P2[(i2 + 1) % 4][1]);
+      // net across the middle, posts just outside the sideline
+      const g0 = gAt(x, z);
+      for (const s2 of [-4.25, 4.25]) {
+        const px = x + vx2 * s2, pz = z + vz2 * s2;
+        const pg = gAt(px, pz);
+        const post = new THREE.CylinderGeometry(0.05, 0.06, 2.55, 6);
+        post.translate(px, pg + 1.27, pz);
+        merger.add(post, postM2, px, pz);
+      }
+      const net = new THREE.BoxGeometry(0.04, 1.0, 8.5);
+      net.rotateY(Math.atan2(vx2, vz2));   // long axis along the inland line, box's own +Z
+      net.translate(x, g0 + 2.43 - 0.5, z);
+      merger.add(net, netM2, x, z);
+      out.attractions++; out.beachCourts = (out.beachCourts || 0) + 1;
+      continue;
+    }
     if (/universal studios globe/i.test(nm)) { globe(x, z); out.attractions++; continue; }
     if (a.k === 'cannon') { cannon(x, z); out.attractions++; continue; }
     if (a.k === 'summer_toboggan' && a.g && a.g.length >= 3) {
@@ -2332,11 +2386,29 @@ export async function buildTrails(world, data, Y = null) {
     }
     return best;
   };
+  // BBOX FIRST, RING ONLY IF INSIDE IT. This ran full point-in-polygon over
+  // every water, sand and wood ring — the strait mega-ring included — once
+  // per trail segment, and the trails phase was 3.2s of a 30s-budget boot
+  // (measured 2026-08-19, bootprobe). A point outside a ring's box is outside
+  // the ring, so the box answers first and the answers cannot change.
+  const _bbox = (p, pad = 0) => {
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const [qx, qz] of p) {
+      if (qx < x0) x0 = qx; if (qx > x1) x1 = qx;
+      if (qz < z0) z0 = qz; if (qz > z1) z1 = qz;
+    }
+    return [x0 - pad, x1 + pad, z0 - pad, z1 + pad];
+  };
+  const wpolysB = wpolys.map((p) => [p, _bbox(p)]);
+  const sandsB = sands.map((g) => [g.p, _bbox(g.p)]);
+  const sandsReachB = sands.map((g) => [g.p, _bbox(g.p, BOARDWALK_REACH)]);
+  const woodsB = woods.map((g) => [g.p, _bbox(g.p)]);
+  const _inB = (x, z, b) => x >= b[0] && x <= b[1] && z >= b[2] && z <= b[3];
   const surfaceFor = (x, z) => {
-    for (const p of wpolys) if (inRing(x, z, p)) return 'waterdeck';
-    for (const s of sands) if (inRing(x, z, s.p)) return 'deck';
-    for (const s of sands) if (edgeDistTo(x, z, s.p) < BOARDWALK_REACH) return 'deck';
-    for (const w of woods) if (inRing(x, z, w.p)) return 'earth';
+    for (const [p, b] of wpolysB) if (_inB(x, z, b) && inRing(x, z, p)) return 'waterdeck';
+    for (const [p, b] of sandsB) if (_inB(x, z, b) && inRing(x, z, p)) return 'deck';
+    for (const [p, b] of sandsReachB) if (_inB(x, z, b) && edgeDistTo(x, z, p) < BOARDWALK_REACH) return 'deck';
+    for (const [p, b] of woodsB) if (_inB(x, z, b) && inRing(x, z, p)) return 'earth';
     return 'pave';
   };
 
@@ -6497,7 +6569,36 @@ export async function buildBeachLife(world, data, Y = null) {
     //
     // So the ring is tested where the furniture actually lands.
     const auditoria = sands.filter((s) => (s.n || '') === 'Central Beach');
+    // ...AND THE GRANDSTAND'S OWN RING, WITH A MARGIN FOR ITS DRAWN APRON.
+    // The Central Beach name-test above stops furniture on the auditorium
+    // FLOOR, and one parasol still stood on the seating bank: measured
+    // 2026-08-19 at (-1810.6, 12771.6), 0.9m OUTSIDE the grandstand's mapped
+    // ring — buildGrandstand draws its apron and fascia to the ring's edge,
+    // so 'outside the ring' and 'off the structure' are not the same thing
+    // within a couple of metres. Runtime __blocked knows this, but the solid
+    // grid is built AFTER this pass runs, so at emit time it answers no.
+    // The ring is in the data now; ask it directly, 3m out.
+    const grandstands = (data.buildings || []).filter((b2) => b2.bt === 'grandstand' && b2.p && b2.p.length >= 6);
+    const nearGrandstand = (x, z) => {
+      for (const g2 of grandstands) {
+        if (inRing(x, z, g2.p)) return true;
+        let best = 1e9;
+        const p2 = g2.p;
+        for (let i2 = 0; i2 < p2.length; i2++) {
+          const a2 = p2[i2], c2 = p2[(i2 + 1) % p2.length];
+          const vx = c2[0] - a2[0], vz = c2[1] - a2[1];
+          const L2 = vx * vx + vz * vz || 1;
+          let t = ((x - a2[0]) * vx + (z - a2[1]) * vz) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const dx = x - (a2[0] + vx * t), dz = z - (a2[1] + vz * t);
+          best = Math.min(best, dx * dx + dz * dz);
+        }
+        if (best < 9) return true;
+      }
+      return false;
+    };
     const onAuditorium = (x, z) => {
+      if (nearGrandstand(x, z)) return true;
       for (const s of auditoria) if (inRing(x, z, s.p)) return true;
       return false;
     };
@@ -6703,6 +6804,16 @@ export async function buildBeachLife(world, data, Y = null) {
           out.auditoriumSkipped = (out.auditoriumSkipped || 0) + 1;
           continue;
         }
+        // ...AND THE BLOCKED TEST, THE ONE CONDITION THE ROW FORGOT. usable()
+        // checks five things before anchoring the row; the row loop then
+        // re-tested four of them per umbrella and dropped __blocked, so a row
+        // anchored on clear sand could stride 9m sideways onto the Wings of
+        // Time grandstand steps — the parasol right of frame in the blessed
+        // wings-grandstand golden, at (-1810.6, 12771.6), where __blocked is
+        // true. Found 2026-08-19 by logging window.__parasols out of the
+        // built scene. Same class as the bearing fan: the guard existed, it
+        // just was not asked at the point that mattered.
+        if (window.__blocked && window.__blocked(px, pz)) continue;
         const gy = groundAt(px, pz);
         if (gy < 0.9) continue;
         if (brand && brand.canvas) {
@@ -6739,6 +6850,9 @@ export async function buildBeachLife(world, data, Y = null) {
         }
         out.loungers = (out.loungers || 0) + 2;
         out.parasols = (out.parasols || 0) + 1;
+        // where every parasol stands, for the probes — finding the one on the
+        // Wings grandstand steps took a scene edit without this
+        (window.__parasols = window.__parasols || []).push([+px.toFixed(1), +pz.toFixed(1), +gy.toFixed(2)]);
       }
     }
   }

@@ -31,6 +31,24 @@ RENAMES = [
      "RWS's Forum retail street was rebuilt and reopened as WEAVE in July 2025. "
      "rwsentosa.com."),
 ]
+# NAMES THE MAP IS MISSING — a building that stands, with a documented
+# business in it, and no name on its OSM footprint. A rename cannot reach it
+# (there is nothing to match) and authored.json cannot either (that file is
+# for footprints that do not exist; this one does). Matched by PLACE: the
+# nearest UNNAMED building footprint within max_m of the entry's own OSM
+# node, projected with the island origin. Same bar as every list in this
+# file: a citation per entry, nothing added on a hunch.
+#
+# Found 2026-08-18: Tanjong Beach Club is in the world as an unnamed 1,154 m2
+# building 12m from its own OSM node (published floor area 1,114.84 m2 — a
+# 3.5% match), so the beachVenue recipe written FOR it had never once run.
+ADDS = [
+    ("Tanjong Beach Club", 1.24338, 103.82803, 30,
+     "research/sentosa-inventory-2026.md — 120 Tanjong Beach Walk S098942, "
+     "OSM node 1.24338/103.82803, floor area 1,114.84 m2, reopened Feb 2025. "
+     "Footprint exists unnamed; measured 12m from the node, area within 3.5%."),
+]
+
 # Names that must NOT survive: things that have closed. Kept as a list rather
 # than deleted silently, because a demolished thing and a renamed thing are
 # different facts and the next person needs to see which is which.
@@ -89,9 +107,41 @@ def main():
                 s["n"] = new
                 hits[needle] = hits.get(needle, 0) + 1
 
+    # missing names: nearest unnamed building within max_m of the entry's node
+    import math
+    LAT0, LON0 = 1.366666, 103.833333
+    M_LAT = 110574.0
+    M_LON = 111320.0 * math.cos(math.radians(LAT0))
+    added = []
+    for (name, lat, lon, max_m, why) in ADDS:
+        ex, ez = (lon - LON0) * M_LON, (LAT0 - lat) * M_LAT
+        best, bd = None, max_m
+        already = False
+        for b in (d.get("buildings") or []):
+            if not isinstance(b, dict) or not b.get("p"):
+                continue
+            pts = b["p"]
+            cx = sum(p[0] for p in pts) / len(pts)
+            cz = sum(p[1] for p in pts) / len(pts)
+            dist = math.hypot(cx - ex, cz - ez)
+            if b.get("n"):
+                # the name is already there (a re-run, or OSM caught up)
+                if str(b["n"]).lower() == name.lower() and dist < max_m:
+                    already = True
+                continue
+            if dist < bd:
+                best, bd = b, dist
+        if already:
+            continue
+        if best is not None:
+            best["n"] = name
+            added.append((name, bd))
+
     print(f"== names {a.id}")
-    if not hits and not closed:
+    if not hits and not closed and not added:
         print("   nothing to rename (already current)")
+    for (name, dist) in added:
+        print(f"   named  \"{name}\" onto its unnamed footprint ({dist:.0f} m from node)")
     for (needle, new, why) in RENAMES:
         if needle in hits:
             print(f"   {hits[needle]:3d} x  \"{needle}\" -> \"{new}\"")

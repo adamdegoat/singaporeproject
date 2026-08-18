@@ -40,6 +40,41 @@ LAT0, LON0 = REG["island_origin"][0], REG["island_origin"][1]
 M_LAT = 110574.0
 M_LON = 111320.0 * math.cos(math.radians(LAT0))
 
+# ATTRACTIONS THE MAP DOES NOT CARRY, WITH THE RESEARCH THAT PLACES THEM.
+# Same bar as names.py's ADDS and authored.json: a citation per entry, nothing
+# on a hunch, and a position somebody measured. `--authored-only` appends these
+# to an already-written scene without touching the fetched layer — the fetch
+# rewrites the whole layer from Overpass, which is not a 3am operation.
+AUTHORED = [
+    # research/palawan-spawn.md §3.5: faint court markings on the sand in the
+    # 2026 satellite at 1.2483, 103.8226 (SAT). SDC published 141 bookable
+    # courts across the beaches (2020-22 regime, free since 14 Mar 2022); no
+    # Palawan count is published, so ONE court, at the measured markings.
+    {"n": "Beach volleyball", "k": "beachcourt", "lat": 1.2483, "lon": 103.8226,
+     "src": "research/palawan-spawn.md §3.5 (SAT court markings)"},
+]
+
+
+def authored_only(did):
+    path = os.path.join(HERE, f"{did}.json")
+    d = json.load(open(path))
+    recs = d.get("attractions") or []
+    added = 0
+    for e in AUTHORED:
+        x = (e["lon"] - LON0) * M_LON
+        z = (LAT0 - e["lat"]) * M_LAT
+        dup = any(r.get("k") == e["k"]
+                  and (r["p"][0] - x) ** 2 + (r["p"][1] - z) ** 2 < 100
+                  for r in recs)
+        if dup:
+            continue
+        recs.append({"p": [round(x, 1), round(z, 1)], "k": e["k"], "n": e["n"]})
+        added += 1
+    d["attractions"] = recs
+    json.dump(d, open(path, "w"), separators=(",", ":"))
+    print(f"  authored: +{added} attraction(s) into {did}.json ({len(recs)} total)")
+
+
 # The same mirrors and the same failover the rest of the pipeline uses: a
 # single endpoint rate-limited this fetch twice while it was being written.
 MIRRORS = [
@@ -422,4 +457,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if "--authored-only" in sys.argv:
+        authored_only(next((a for a in sys.argv[1:] if not a.startswith("-")), "sentosa"))
+    else:
+        main()

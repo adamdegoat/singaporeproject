@@ -6863,6 +6863,10 @@ export function buildPiers(world, data) {
     }
     return false;
   };
+  // hoisted out of the pier loop — see the note at its use site below
+  const tidalRings = (data.water || [])
+    .map((w) => w.p).filter((q) => q && q.length > 3)
+    .filter((q) => TERRAIN.tidalRing && TERRAIN.tidalRing(q));
   for (const p of polys) {
     const pts = p.p;
     if (pts.length < 4) continue;
@@ -6944,10 +6948,12 @@ export function buildPiers(world, data) {
     // The rings themselves ARE available (data.water), and `tidalRing` reads
     // grid.wet, which is baked data-side and ready. So do what buildWater does:
     // find the mapped ring covering this point and ask whether that RING is a
-    // DEM-witnessed tidal channel. Cached per ring — 113 piers x 52 rings.
-    const tidalRings = (data.water || [])
-      .map((w) => w.p).filter((q) => q && q.length > 3)
-      .filter((q) => TERRAIN.tidalRing && TERRAIN.tidalRing(q));
+    // DEM-witnessed tidal channel. The comment here used to say "cached per
+    // ring" while the code recomputed EVERY ring's DEM scan for EVERY pier —
+    // 113 x 52 tidalRing() calls, measured 2026-08-19 as 3.8s of a 4.2s
+    // "setup+water" boot phase on a 30s budget. A comment is not a
+    // measurement. The list is hoisted above the pier loop now: one scan per
+    // ring, identical answers.
     const inPoly = (x, z, ring) => {
       let c = false;
       for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
