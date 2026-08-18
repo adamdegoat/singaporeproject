@@ -3321,7 +3321,38 @@ window.__placeBlocked = (x, z) => blocked(x, z);
           // apron and canopy floor each shift around their OWN colour instead
           // of all drifting toward one shared brown.
           vec3 warm = vec3(1.09, 1.02, 0.86);
-          vec3 cool = vec3(0.88, 1.00, 0.90);
+          // ...AND ON SAND THE COOL END IS A GREEN FILTER. THIS IS WHY THE
+          // BEACHES KEPT COMING BACK GREEN.
+          //
+          // The owner has reported greenish sand three times. Twice it was
+          // chased in terrain.js -- the back-beach fade, then the coarse
+          // sea-distance ruler -- and both were real and both were fixed, and
+          // the beach was still olive. Measured 2026-08-18, and the two halves
+          // disagree, which is the whole answer:
+          //
+          //   the sand's VERTEX colour   Siloso 0.90 / 0.80 / 0.63   R > G > B
+          //   the sand's DRAWN pixel     #909174                     G >= R
+          //
+          // A correct warm tan goes in and an olive comes out, so nothing
+          // upstream of here could ever have fixed it. The cool end multiplies red
+          // by 0.88 and green by 1.00: on anything already green that is a
+          // damp shadow, and on a tan it is enough to push green PAST red and
+          // change the hue outright. (0.90,0.80,0.63) * cool = (0.79,0.80,0.57)
+          // -- which is the measured pixel, near enough to name it.
+          //
+          // The comment above says this shifts each surface "around its OWN
+          // colour". For value it does; for hue it never did -- one hue
+          // rotation applied to every surface is not the same as each surface
+          // varying around itself, and sand is where that shows.
+          //
+          // So the cool end keeps its coolness and gives up its hue on ground
+          // that is sand-coloured, judged from the vertex colour the shader is
+          // already handed: a tan has red well above blue, and mown grass, wet
+          // apron, tarmac and the pale unknown fallback all sit under 0.08.
+          // Timber decking crosses it too, and should -- a boardwalk has no
+          // more business going green than the beach it crosses.
+          float sandish = smoothstep(0.09, 0.20, vColor.r - vColor.b);
+          vec3 cool = mix(vec3(0.88, 1.00, 0.90), vec3(0.93, 0.93, 0.91), sandish);
           diffuseColor.rgb *= mix(cool, warm, smoothstep(0.25, 0.75, broad * 0.65 + mid * 0.35));
         }`);
   };
