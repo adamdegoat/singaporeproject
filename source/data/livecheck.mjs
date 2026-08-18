@@ -142,17 +142,43 @@ try {
         // So: keep collecting until two consecutive reads agree within 1%, up
         // to 12 tries, then take the lowest seen. Same quantity, same budget —
         // it just waits for the answer instead of guessing when it is ready.
+        // TWO CONSECUTIVE READS WITHIN 1% DOES NOT MEAN SETTLED. IT MEANS
+        // "NOT CHANGING FAST RIGHT NOW", AND THAT IS NOT THE SAME THING.
+        //
+        // On a 400 MB heap, 1% is 4 MB. A 500 ms window that allocates less
+        // than 4 MB satisfies this test WHILE THE HEAP IS STILL CLIMBING, so
+        // the loop exits at whatever it has reached and calls it settled.
+        //
+        // Measured 2026-08-18. Locally, where the boot finishes quickly, this
+        // genuinely settles: **228 MB, stable, reads 228,228** — and the same
+        // 228 under the plain context AND under the gate's own dpr-2 mobile
+        // context, so neither the renderer nor the device profile moves it.
+        // Against the live site, where fetch and compile run longer, the same
+        // code reported **527 / 441 / 441 MB on one build and 242 MB and 415 MB
+        // on another** — every one of them flagged `(settled)`. A budget of 460
+        // decided two deploys this session on that spread.
+        //
+        // The world was never varying. This file has now said that three times
+        // about three different causes: sampling before a collection, sampling
+        // before the boot finished, and — this — accepting a plateau that is
+        // only a slow stretch of a climb.
+        //
+        // So: THREE consecutive agreements, not one, and a floor on how many
+        // reads may be taken before any of them counts. Three agreements spans
+        // 1.5 s of quiet rather than 0.5 s, which is longer than the gaps
+        // between the allocation bursts that were passing as flat.
         const reads = [];
-        let stable = false;
-        for (let i = 0; i < 12 && !stable; i++) {
+        let stable = false, agree = 0;
+        for (let i = 0; i < 24 && !stable; i++) {
           window.gc(); window.gc();
           await new Promise((r) => setTimeout(r, 500));
           reads.push(performance.memory.usedJSHeapSize);
           const n = reads.length;
           if (n >= 2) {
             const a = reads[n - 1], b = reads[n - 2];
-            stable = Math.abs(a - b) <= Math.max(a, b) * 0.01;
+            agree = Math.abs(a - b) <= Math.max(a, b) * 0.01 ? agree + 1 : 0;
           }
+          stable = agree >= 3 && n >= 4;
         }
         mem = Math.round(Math.min(...reads) / 1048576);
         settled = stable;

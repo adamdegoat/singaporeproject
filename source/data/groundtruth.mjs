@@ -183,8 +183,39 @@ const out = await page.evaluate((N) => {
         const hit = ray.intersectObjects(window.__scene.children, true)
           .find((q) => q.object.geometry && q.object.geometry.attributes.color && q.face);
         if (!hit) { missed++; continue; }
+        // A VERTEX IS NOT A POINT, AND ON THIS GRID IT IS NOWHERE NEAR ONE.
+        //
+        // This read `hit.face.a` — ONE CORNER of the triangle it hit — and then
+        // judged the sample by that corner's colour. **The terrain grid is 35
+        // metres.** Every beach on this island is narrower than that in places,
+        // so corner `a` of the triangle under a point on the sand routinely
+        // sits outside the sand ring, on the lawn behind it. The probe was not
+        // measuring the beach; it was measuring the nearest vertex to the
+        // beach, and reporting the difference as "green at the waterline".
+        //
+        // Found 2026-08-18 by making exactly this mistake in a throwaway probe:
+        // it reported 16,539 m2 of Palawan drawn as lawn, and `greenAt` sampled
+        // across the same ring said sand 97% — the render agreed with greenAt.
+        // The filter above already asks the world the right question; this line
+        // then threw the answer away.
+        //
+        // Interpolated across the face by barycentric weight, which is what the
+        // rasteriser itself does to shade that pixel. Same three vertices, same
+        // arithmetic, so what this reads is what a player sees standing there.
         const c = hit.object.geometry.attributes.color;
-        const R = c.getX(hit.face.a), G = c.getY(hit.face.a), B = c.getZ(hit.face.a);
+        const pos = hit.object.geometry.attributes.position;
+        const M = hit.object.matrixWorld;
+        const vA = new T.Vector3().fromBufferAttribute(pos, hit.face.a).applyMatrix4(M);
+        const vB = new T.Vector3().fromBufferAttribute(pos, hit.face.b).applyMatrix4(M);
+        const vC = new T.Vector3().fromBufferAttribute(pos, hit.face.c).applyMatrix4(M);
+        const bc = new T.Vector3();
+        new T.Triangle(vA, vB, vC).getBarycoord(hit.point, bc);
+        // a degenerate face gives NaN weights; fall back to the corner rather
+        // than poisoning the count with a silent NaN comparison
+        const w = Number.isFinite(bc.x) ? bc : { x: 1, y: 0, z: 0 };
+        const R = c.getX(hit.face.a) * w.x + c.getX(hit.face.b) * w.y + c.getX(hit.face.c) * w.z;
+        const G = c.getY(hit.face.a) * w.x + c.getY(hit.face.b) * w.y + c.getY(hit.face.c) * w.z;
+        const B = c.getZ(hit.face.a) * w.x + c.getZ(hit.face.b) * w.y + c.getZ(hit.face.c) * w.z;
         b.n++;
         // sand is warm and pale — red leads and blue trails. Lawn is green:
         // G above R. This is the same distinction the eye makes at a glance.
