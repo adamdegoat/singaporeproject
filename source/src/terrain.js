@@ -742,6 +742,61 @@ export class Terrain {
     return n0;
   }
 
+  // A FINE EDGE MUST LIE ON ITS COARSER NEIGHBOUR'S EDGE — the owner's "blue
+  // crack lines on the floor" (2026-08-20), run to ground: subdiv() picks a
+  // different n per 35m cell (shore cells are forced to 6 beside inland cells
+  // at 1-2), and where a fine cell meets a coarser one the fine side's
+  // mid-edge vertices sit at their own vertexY while the coarse side spans
+  // the whole edge with one straight segment. The two skins tear along the
+  // boundary — a hairline gap that shows whatever is BEHIND it at grazing
+  // angles: sky, or the water plane that overreaches under the land, which
+  // near a lagoon is a razor-thin cyan line exactly where a rider looks.
+  // Proved by pixel-pick (a camera ray through the crack hits seaSurface
+  // with NO terrain in front) and by the A/B with seaSurface hidden (the
+  // line turns sky-coloured — a hole, not water). The blessed baselines
+  // carried it, so no golden ever fired.
+  //
+  // The stitch: a subcell vertex on a cell boundary whose two cells disagree
+  // about n takes its height from the COARSER side's edge polyline — the
+  // straight line between the coarser side's own two nearest edge vertices —
+  // so the fine edge lies exactly on the coarse edge and the tear closes.
+  // Cell corners and matching-n edges keep raw vertexY (both sides already
+  // agree there). Pure function of the 24-unit lattice coordinate, so
+  // build() and atDrawn() cannot drift apart — one authority, two readers.
+  _lodSnappedY(qx, qz) {
+    const g = this.g;
+    const wx = g.x0 + (qx / 24) * g.cell, wz = g.z0 + (qz / 24) * g.cell;
+    const raw = this.vertexY(wx, wz);
+    const onX = qx % 24 === 0, onZ = qz % 24 === 0;
+    if (onX === onZ) return raw;          // interior vertex, or a cell corner
+    if (onX) {
+      const ci = qx / 24, cj = Math.floor(qz / 24);
+      if (ci <= 0 || ci > g.nx - 2 || cj < 0 || cj > g.nz - 2) return raw;
+      const nA = this.subdiv(ci - 1, cj), nB = this.subdiv(ci, cj);
+      if (nA === nB) return raw;
+      const nC = Math.min(nA, nB);
+      const t = (qz - cj * 24) / 24;
+      const seg = Math.min(nC - 1, Math.floor(t * nC + 1e-9));
+      const t0 = seg / nC, t1 = (seg + 1) / nC;
+      if (t - t0 < 1e-9 || t1 - t < 1e-9) return raw;   // on a coarse vertex
+      const za = g.z0 + (cj + t0) * g.cell, zb = g.z0 + (cj + t1) * g.cell;
+      const ha = this.vertexY(wx, za), hb = this.vertexY(wx, zb);
+      return ha + (hb - ha) * ((t - t0) / (t1 - t0));
+    }
+    const cj = qz / 24, ci = Math.floor(qx / 24);
+    if (cj <= 0 || cj > g.nz - 2 || ci < 0 || ci > g.nx - 2) return raw;
+    const nA = this.subdiv(ci, cj - 1), nB = this.subdiv(ci, cj);
+    if (nA === nB) return raw;
+    const nC = Math.min(nA, nB);
+    const t = (qx - ci * 24) / 24;
+    const seg = Math.min(nC - 1, Math.floor(t * nC + 1e-9));
+    const t0 = seg / nC, t1 = (seg + 1) / nC;
+    if (t - t0 < 1e-9 || t1 - t < 1e-9) return raw;
+    const xa = g.x0 + (ci + t0) * g.cell, xb = g.x0 + (ci + t1) * g.cell;
+    const ha = this.vertexY(xa, wz), hb = this.vertexY(xb, wz);
+    return ha + (hb - ha) * ((t - t0) / (t1 - t0));
+  }
+
   // the height of the DRAWN ground at a point, which is not at(): the mesh is
   // piecewise flat between its vertices. The audit measures the world that is
   // rendered, not the function it was sampled from -- P8 compared at() with a
@@ -760,7 +815,8 @@ export class Terrain {
     if (si > n - 1) si = n - 1; if (sj > n - 1) sj = n - 1;
     const X = (ii, jj) => g.x0 + (i + ii / n) * g.cell;
     const Z = (ii, jj) => g.z0 + (j + jj / n) * g.cell;
-    const H = (ii, jj) => this.vertexY(X(ii, jj), Z(ii, jj));
+    // KEEP IN STEP with build(): corners go through the same LOD stitch
+    const H = (ii, jj) => this._lodSnappedY(i * 24 + ii * (24 / n), j * 24 + jj * (24 / n));
     const tu = u - si, tv = v - sj;
     const h00 = H(si, sj), h10 = H(si + 1, sj), h01 = H(si, sj + 1), h11 = H(si + 1, sj + 1);
     // triangles (00,10,01) and (10,11,01) -- KEEP IN STEP with build()
@@ -1406,7 +1462,8 @@ export class Terrain {
           if (id === undefined) {
             id = pos.length / 3;
             const x = g.x0 + (qx / 24) * g.cell, z = g.z0 + (qz / 24) * g.cell;
-            const vy = this.vertexY(x, z);
+            // LOD-stitched: see _lodSnappedY — the tear this closes is R6
+            const vy = this._lodSnappedY(qx, qz);
             pos.push(x, vy, z);
             let t = this.gGrid ? TINT[this.greenAt(x, z)] : null;
             // A LANDUSE PARCEL ON A RESORT ISLAND IS GROUNDS, NOT CONCRETE.
