@@ -6563,6 +6563,13 @@ export async function buildBeachLife(world, data, Y = null) {
       [/^ola beach club/i,   { canvas: 0xf4f1e9, lounger: 0xe8e2d4, rise: 0.34 }],
       [/^trapizza/i,         { canvas: 0xfbf8f2, lounger: 0xe8e2d4, rise: 0.62 }],
       [/^tanjong beach club/i, { lounger: 0xb4633c }],
+      // Bikini Bar (research/siloso-venues.md 1.8): "blue-cushioned sun
+      // loungers" on the sand in front. Its umbrellas are documented as a
+      // pale pink AND yellow mix, which one canvas colour cannot say — same
+      // half-a-source rule as TBC above: the documented half only, thatch
+      // stays for the canopy. Footprint authored 2026-08-19
+      // (research/bikini-sandbar-measured.md).
+      [/^bikini bar/i,       { lounger: 0x3a5f8a }],
     ];
     const apronMat = new Map();
     const matFor = (col, dbl) => {

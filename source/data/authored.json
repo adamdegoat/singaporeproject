@@ -67,6 +67,26 @@
    },
    "src": "research/authored-footprints.md D.2-D.3. OSM way 47126585 EXISTS but carries construction=yes and NO building tag, so build_district.py's way[\"building\"] query never fetches it -- and it also sits at lon 103.8644-103.8658, outside the bugis east edge of 103.8640. Two independent reasons the most famous building on Beach Road was missing. It is NOT demolished: URA gazetted it for conservation 22 Oct 2021 and that was the condition of the May 2022 en-bloc; it is gutted and hoarded while being restored, with a 45-storey tower going up alongside for late 2029. Confirmed standing in ESRI WorldView-2 imagery captured 2025-05-07. Plan geometry is MEASURED on the OSM way, not on pixels: 9,289 m2 over 40 vertices, long-axis bearing 50.9 deg by PCA, 178.4m along by 68.8m across. The baseline here is the straight NW back face fronting Beach Road (151.8m); the terraces face SE toward Nicoll Highway, which was measured from a perpendicular luminance profile, not assumed.",
    "h_src": "89m [PUBLISHED] from DP Architects' own project page -- first-party, the architect. FLAGGED, NOT TRUSTED BLIND: the same sources say 16 storeys, and 89/16 = 5.56m per storey, which no residential-over-retail building has. Same shape of error as the 178m repeated for One Pearl Bank. The alternative is 55-62m [UNPUBLISHED/ESTIMATE]. A shadow measurement could not settle it -- the sun azimuth was only 17 deg off the slab's own axis, so it back-solved to 48-70m with an error bar too wide to overturn the architect. Built at 89 on the research's own recommendation, because for a 178 x 64m slab a height error reads far less badly than a wrong position or orientation. If it ends up towering over Golden Mile Tower, drop to 60."
+  },
+  {
+   "district": "sentosa",
+   "n": "Bikini Bar",
+   "shape": "slab",
+   "baseline": [
+    [
+     1.252659,
+     103.815705
+    ],
+    [
+     1.252765,
+     103.815824
+    ]
+   ],
+   "depth": 15.4,
+   "lat": 1.25266,
+   "lon": 103.81581,
+   "h": 5.0,
+   "src": "research/bikini-sandbar-measured.md \u2014 ESRI z19 colour-mask fit, 17.7x15.4m, roof centroid 9m from the OSM node in research/siloso-venues.md 1.8. h=5.0 EST-PHOTO, stated assumption."
   }
  ]
 }
