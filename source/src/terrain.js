@@ -894,7 +894,7 @@ export class Terrain {
   // out of the question. Rasterised once into one byte a cell, it is a lookup.
   // The ring is the same stitched coastline data/islandring.py publishes and
   // island.py clips every playable layer to.
-  setIsland(ring, roads, areas, landuse) {
+  setIsland(ring, roads, areas, landuse, buildings) {
     this.isle = null;
     if (!ring || ring.length < 8 || !this.g) return 0;
     const g = this.g;
@@ -984,6 +984,55 @@ export class Terrain {
                 if (!grown[jj * g.nx + ii]) { grown[jj * g.nx + ii] = 1; n++; }
               }
             }
+          }
+        }
+      }
+    }
+    // A MAPPED BUILDING ON DRY-HEIGHTFIELD GROUND IS LAND — the compound
+    // rule that makes the building source safe where its plain form was
+    // killed (the note below: piers carry buildings, so buildings alone
+    // cannot say land). A pier building stands on a heightfield of ~0; a
+    // quay building stands on 0.9-1.6m of smeared-but-real ground. Added
+    // 2026-08-20 for the east quay at (244,12320): satellite-checked SOLID
+    // land — apron, facility, moored boats — whose ONLY mask coverage had
+    // been a bridge-tagged service way, which the lagoon-crack fix rightly
+    // stopped counting. The coastline ring misses the quay entirely
+    // (islandW read 0.00 across the strip while the ring's 70m dilation
+    // never arrived), so without this the whole quarter drew as sea with
+    // its buildings standing in it. Cells at the building's own footprint,
+    // no dilation, and only where the heightfield already calls the cell
+    // dry — the two conditions must BOTH hold, which is what the pier case
+    // and the lagoon case each break one of.
+    if (buildings) {
+      for (const b of buildings) {
+        const p = b && b.p;
+        if (!p || p.length < 3) continue;
+        // ...AND ONLY A SUBSTANTIAL ONE. A 12x12 beach shelter by the Siloso
+        // lagoon mouth was stamping the lagoon's own edge cells and the
+        // groyne-islet golden came back 57.8% — kiosks, shelters and toilets
+        // stand on beaches and piers, and they cannot testify about the
+        // ground around them. 150 m2 is comfortably above every beach kiosk
+        // measured tonight and comfortably below any real facility.
+        if ((b.a || 0) < 150) continue;
+        let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+        for (const v of p) {
+          if (v[0] < mnx) mnx = v[0]; if (v[0] > mxx) mxx = v[0];
+          if (v[1] < mnz) mnz = v[1]; if (v[1] > mxz) mxz = v[1];
+        }
+        const i0 = Math.max(0, Math.floor((mnx - g.x0) / g.cell));
+        const i1 = Math.min(g.nx - 1, Math.ceil((mxx - g.x0) / g.cell));
+        const j0 = Math.max(0, Math.floor((mnz - g.z0) / g.cell));
+        const j1 = Math.min(g.nz - 1, Math.ceil((mxz - g.z0) / g.cell));
+        // Nodes in the footprint plus ONE cell of margin — a substantial
+        // building's apron is part of its ground the way a road's verge is
+        // part of the corridor — and each stamped cell must still read dry
+        // in the heightfield, which is what keeps a pier building (h ~0
+        // under it) from ever landing the sea.
+        for (let j = Math.max(0, j0 - 1); j <= Math.min(g.nz - 1, j1 + 1); j++) {
+          for (let i = Math.max(0, i0 - 1); i <= Math.min(g.nx - 1, i1 + 1); i++) {
+            const k = j * g.nx + i;
+            if (grown[k]) continue;
+            if (g.h[k] >= 0.4) { grown[k] = 1; n++; }
           }
         }
       }

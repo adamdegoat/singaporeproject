@@ -3420,7 +3420,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     terrain.setCanopy(data.trees || []);
     // the coastline, so vertexY can tell a sloppy water-polygon edge on the
     // island from genuine open sea — see the guard in terrain.js vertexY
-    terrain.setIsland(data.islandRing || null, data.roads, data.green, data.land);
+    terrain.setIsland(data.islandRing || null, data.roads, data.green, data.land, data.buildings);
   }
   world.add(terrain.build(groundMat));
   bmark('terrain');
