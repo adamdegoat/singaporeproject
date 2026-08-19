@@ -247,11 +247,16 @@ function indexBuildings(data) {
       mnz = Math.min(mnz, z); mxz = Math.max(mxz, z);
     }
     const into = b.roof ? roofGrid : colGrid;
+    // the bbox was already computed for the cell walk — KEEP it on the entry.
+    // A 90m cell holds many footprints, and inPoly over every one of them per
+    // query was 0.76s of the boot (CPU profile 2026-08-19); the box answers
+    // "not this one" for most before the ring walk runs.
+    const entry = { p: b.p, bb: [mnx, mnz, mxx, mxz] };
     for (let cx = Math.floor(mnx / CELL); cx <= Math.floor(mxx / CELL); cx++)
       for (let cz = Math.floor(mnz / CELL); cz <= Math.floor(mxz / CELL); cz++) {
         const k = cx + ',' + cz;
         if (!into.has(k)) into.set(k, []);
-        into.get(k).push(b.p);
+        into.get(k).push(entry);
       }
   }
 }
@@ -263,6 +268,11 @@ function inPoly(poly, x, z) {
   }
   return hit;
 }
+// a colGrid/roofGrid entry: bbox first, ring walk only inside it
+function inEntry(e, x, z) {
+  const b = e.bb;
+  return x >= b[0] && x <= b[2] && z >= b[1] && z <= b[3] && inPoly(e.p, x, z);
+}
 // FOOTPRINT ALONE — no drawn geometry, no water. blocked() tests the drawn
 // grid first, so it can never answer "is there a MAPPED building here", and a
 // probe that asked it reported every blocked cell as a building when five of
@@ -270,7 +280,7 @@ function inPoly(poly, x, z) {
 function inFootprint(x, z) {
   const list = colGrid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));
   if (!list) return false;
-  for (const poly of list) if (inPoly(poly, x, z)) return true;
+  for (const e of list) if (inEntry(e, x, z)) return true;
   return false;
 }
 // EXPOSED HERE, NOT AT THE END OF THE BUILD. TreeField.add in city.js refuses
@@ -287,7 +297,7 @@ window.__inFootprint = (x, z) => inFootprint(x, z);
 window.__underCanopy = (x, z) => {
   const list = roofGrid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));
   if (!list) return false;
-  for (const poly of list) if (inPoly(poly, x, z)) return true;
+  for (const e of list) if (inEntry(e, x, z)) return true;
   return false;
 };
 
@@ -517,7 +527,7 @@ function blocked(x, z) {
   if (inWater(x, z)) return true;
   const list = colGrid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));
   if (!list) return false;
-  for (const poly of list) if (inPoly(poly, x, z)) return true;
+  for (const e of list) if (inEntry(e, x, z)) return true;
   return false;
 }
 
@@ -598,7 +608,7 @@ function rideBlocked(x, z) {
     if (SOLID && SOLID.at(x, z)) return true;
     const l2 = colGrid.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL));
     if (!l2) return false;
-    for (const poly of l2) if (inPoly(poly, x, z)) return true;
+    for (const e of l2) if (inEntry(e, x, z)) return true;
     return false;
   }
   return blocked(x, z);

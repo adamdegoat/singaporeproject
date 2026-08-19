@@ -358,6 +358,12 @@ const SPOTS = [
   // and all 41 frames passed at 0.000% the day they were paved. This is
   // sweep[54]'s vantage, the frame the defect was found in.
   ['tanjong-junction', -711, 13487, 0.849],
+  // THE SILOSO LAGOON-MOUTH FOOTBRIDGE, the day it was built (2026-08-19,
+  // siloso-spec #8, research/siloso-bridge-measured.md) — added with the
+  // structure because skypark taught what happens to a beach landmark
+  // nothing watches. From the sand at the beach abutment, looking across
+  // the span to the islet, with the lifeguard hut in frame.
+  ['siloso-bridge', -2345, 12315, -0.785],
 ];
 
 mkdirSync(ACT, { recursive: true });

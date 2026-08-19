@@ -42,6 +42,39 @@ const SHELF_LO = 0.5, SHELF_HI = 1.2;
 // Adding a kind here is one edit; adding it to a string comparison is a hunt.
 const NOT_GREEN = new Set(['pool', 'track', 'deck']);
 
+// PARITY NEEDS ONLY THE EDGES WHOSE z-SPAN CROSSES THE QUERY'S z. waterFloor
+// and greenAt ran the even-odd walk over EVERY vertex of every candidate ring
+// — the strait mega-ring included — once per drawn terrain vertex, and the CPU
+// profile (2026-08-19) put waterFloor alone at 1.2s of the boot. The crossing
+// test `(zi > z) !== (zj > z)` already discards every edge that does not
+// straddle z, so bucketing edges by z-band and walking one band gives the
+// SAME parity, byte for byte, from a fraction of the edges.
+// Flat [xi, zi, xj, zj] per band: one array walk, no per-edge allocation.
+const BAND = 40;
+const ringBands = (ring) => {
+  const m = new Map();
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], zi = ring[i][1], xj = ring[j][0], zj = ring[j][1];
+    const b0 = Math.floor(Math.min(zi, zj) / BAND), b1 = Math.floor(Math.max(zi, zj) / BAND);
+    for (let b = b0; b <= b1; b++) {
+      let l = m.get(b);
+      if (!l) { l = []; m.set(b, l); }
+      l.push(xi, zi, xj, zj);
+    }
+  }
+  return m;
+};
+const inRingBanded = (x, z, bands) => {
+  const l = bands.get(Math.floor(z / BAND));
+  if (!l) return false;
+  let inside = false;
+  for (let i = 0; i < l.length; i += 4) {
+    const xi = l[i], zi = l[i + 1], xj = l[i + 2], zj = l[i + 3];
+    if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) inside = !inside;
+  }
+  return inside;
+};
+
 export class Terrain {
   constructor(grid) {
     this.g = grid || null;
@@ -404,7 +437,9 @@ export class Terrain {
       const tidal = !!(this.tidalRing && this.tidalRing(ring));
       const floor = tidal ? seaLv - 0.35 - 1.4 : lo - 0.35 - 1.4;
       const id = this.wr.length;
-      this.wr.push({ ring, holes: hs, floor, tidal, bb: [mnx, mnz, mxx, mxz] });
+      this.wr.push({ ring, holes: hs, floor, tidal, bb: [mnx, mnz, mxx, mxz],
+                     bands: ringBands(ring),
+                     hBands: hs ? hs.map(ringBands) : null });
       for (let cx = Math.floor(mnx / this.wrCell); cx <= Math.floor(mxx / this.wrCell); cx++)
         for (let cz = Math.floor(mnz / this.wrCell); cz <= Math.floor(mxz / this.wrCell); cz++) {
           const k = cx + ',' + cz;
@@ -424,12 +459,8 @@ export class Terrain {
     for (const id of l) {
       const w = this.wr[id];
       if (x < w.bb[0] || x > w.bb[2] || z < w.bb[1] || z > w.bb[3]) continue;
-      let hit = false;
-      const r = w.ring;
-      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
-        const xi = r[i][0], zi = r[i][1], xj = r[j][0], zj = r[j][1];
-        if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
-      }
+      // banded parity — see ringBands above; identical answer to the full walk
+      let hit = inRingBanded(x, z, w.bands);
       // deepest wins where two rings overlap, so a river mouth meeting the bay
       // does not leave a ridge on the seam
       // A HOLE IS LAND. An island inside a lagoon is not the lagoon, and
@@ -437,14 +468,9 @@ export class Terrain {
       // (data/relparcels.py records the case: 26 blocked samples 29.7 m inside
       // rel/2142498). The ring says where the water is; the holes say where it
       // is not, and the holes win.
-      if (hit && w.holes) {
-        for (const h of w.holes) {
-          let inH = false;
-          for (let i = 0, j = h.length - 1; i < h.length; j = i++) {
-            const xi = h[i][0], zi = h[i][1], xj = h[j][0], zj = h[j][1];
-            if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) inH = !inH;
-          }
-          if (inH) { hit = false; break; }
+      if (hit && w.hBands) {
+        for (const hb of w.hBands) {
+          if (inRingBanded(x, z, hb)) { hit = false; break; }
         }
       }
       if (hit && (best === null || w.floor < best)) { best = w.floor; bestTidal = !!w.tidal; }
@@ -1023,7 +1049,7 @@ export class Terrain {
       // because the back-beach fade below must not second-guess a polygon we
       // surveyed ourselves — see the note at that blend.
       const rec = { ring: p.p, k: p.k || 'grass', bb: [mnx, mnz, mxx, mxz],
-                    m: p.m ? 1 : 0 };
+                    m: p.m ? 1 : 0, bands: ringBands(p.p) };
       const id = this.green.length;
       this.green.push(rec);
       for (let cx = Math.floor(mnx / this.gCell); cx <= Math.floor(mxx / this.gCell); cx++) {
@@ -1080,13 +1106,8 @@ export class Terrain {
       const r = this.green[id];
       const [mnx, mnz, mxx, mxz] = r.bb;
       if (x < mnx || x > mxx || z < mnz || z > mxz) continue;
-      let hit = false;
-      const ring = r.ring;
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const xi = ring[i][0], zi = ring[i][1], xj = ring[j][0], zj = ring[j][1];
-        if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
-      }
-      if (!hit) continue;
+      // banded parity — see ringBands above; identical answer to the full walk
+      if (!inRingBanded(x, z, r.bands)) continue;
       const a = (mxx - mnx) * (mxz - mnz);
       if (a < bestA) { bestA = a; best = r.k; }
     }
@@ -1109,13 +1130,8 @@ export class Terrain {
       const r = this.green[id];
       const [mnx, mnz, mxx, mxz] = r.bb;
       if (x < mnx || x > mxx || z < mnz || z > mxz) continue;
-      let hit = false;
-      const ring = r.ring;
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const xi = ring[i][0], zi = ring[i][1], xj = ring[j][0], zj = ring[j][1];
-        if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
-      }
-      if (!hit) continue;
+      // banded parity — see ringBands above; identical answer to the full walk
+      if (!inRingBanded(x, z, r.bands)) continue;
       const a = (mxx - mnx) * (mxz - mnz);
       if (a < bestA) { bestA = a; best = r; }
     }

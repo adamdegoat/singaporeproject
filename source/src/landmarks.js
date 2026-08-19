@@ -6725,15 +6725,15 @@ function festiveWalkCanopy(api, b) {
 // pavilion with posts instead of walls is walkable between the posts without
 // any carve, any flag, or any special case. Building it honestly is what lets
 // you walk in.
-function beachVenue(api, b) {
+function beachVenue(api, b, opts = null) {
   const ob = orientedBox(b.p);
   const g0 = api.footingY(b.p);
   const lift = riseAbove(api, b.p);
   const [sx, sz] = SEAWARD(ob);
   const timber = new THREE.MeshStandardMaterial({ color: 0x9a7550, roughness: 0.88 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x4b3a2a, roughness: 0.9 });
-  const thatch = new THREE.MeshStandardMaterial({ color: 0xb59a63, roughness: 0.95 });
-  const counter = new THREE.MeshStandardMaterial({ color: 0x2f4a44, roughness: 0.7 });
+  const thatch = new THREE.MeshStandardMaterial({ color: (opts && opts.roof) || 0xb59a63, roughness: 0.95 });
+  const counter = new THREE.MeshStandardMaterial({ color: (opts && opts.counter) || 0x2f4a44, roughness: 0.7 });
 
   const DECK = 0.5, EAVE = 3.6;
   const deckTop = g0 + lift + DECK;
@@ -6774,6 +6774,12 @@ export const RECIPES = [
   [/^coastes/i, coastesBar],
   [/^ola beach club/i, olaBeachClub],
   [/^bora bora beach bar|^rock bar$|^two chefs bar|^tanjong beach club|^foc sentosa/i, beachVenue],
+  // Sand Bar (research/siloso-venues.md 1.10 + bikini-sandbar-measured.md
+  // §SAND BAR RESOLVED): same open-pavilion form beachVenue draws, with the
+  // two colours the survey publishes — "low shallow-pitch DARK-GREY roof"
+  // (not thatch) and "turquoise/aqua as the signature colour (counter face)".
+  // The footprint is the unnamed 60 m2 building names.py's ADDS list names.
+  [/^sand bar$/i, (api, b) => beachVenue(api, b, { roof: 0x3f3b36, counter: 0x45b5ac })],
   [/^trapizza/i, trapizza],
   [/^beach arrival plaza/i, beachArrivalPlaza],
   // THE ANCHOR WAS THE BUG. The map's name is "Skypark Sentosa by AJ Hackett",

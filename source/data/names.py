@@ -47,6 +47,19 @@ ADDS = [
      "research/sentosa-inventory-2026.md — 120 Tanjong Beach Walk S098942, "
      "OSM node 1.24338/103.82803, floor area 1,114.84 m2, reopened Feb 2025. "
      "Footprint exists unnamed; measured 12m from the node, area within 3.5%."),
+    # Found 2026-08-19, closing sweep item 7's other half. Sand Bar has no OSM
+    # node at all, so the anchor is SLA's own geocode for its published address
+    # — OneMap search '52 Siloso Beach Walk' returns S099012 at
+    # 1.252044/103.816420, and the ONLY building within 15m of that point is
+    # an unnamed 60 m2 5-vert footprint 8m away (world -1887,12673, h 3.4).
+    # The Coastes/Sand Bar roof mass the satellite pass could not split at z19
+    # turned out to be COASTES ALONE — both halves of it sit inside Coastes'
+    # own mapped footprint (Wayback 2026-08-05 z19, watershed test in
+    # research/bikini-sandbar-measured.md).
+    ("Sand Bar", 1.252044, 103.816420, 15,
+     "research/bikini-sandbar-measured.md §SAND BAR RESOLVED — SLA OneMap "
+     "geocode of 52 Siloso Beach Walk S099012 (1.252044/103.816420); unnamed "
+     "60 m2 footprint 8m from the official address point."),
 ]
 
 # Names that must NOT survive: things that have closed. Kept as a list rather

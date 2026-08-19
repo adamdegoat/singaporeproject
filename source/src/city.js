@@ -2986,9 +2986,22 @@ export async function buildBuildings(world, data, Y = null) {
       if (_bi) { _cove.add(b); _coveIsleOf.set(b, _bi); }
     }
   }
-  const _wrings = (data.water || []).map((w) => w.p).filter((p) => p && p.length > 3);
+  // BBOX FIRST — the EIGHTH unindexed ring scan found by profiling
+  // (2026-08-19, 313ms of boot): this ran full parity over every water ring,
+  // the strait mega-ring included, per query. A point outside a ring's box is
+  // outside the ring; the answers cannot change.
+  const _wrings = (data.water || []).map((w) => w.p).filter((p) => p && p.length > 3)
+    .map((p) => {
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (const [qx, qz] of p) {
+        if (qx < x0) x0 = qx; if (qx > x1) x1 = qx;
+        if (qz < z0) z0 = qz; if (qz > z1) z1 = qz;
+      }
+      return [p, x0, x1, z0, z1];
+    });
   const _inWaterRing = (x, z) => {
-    for (const ring of _wrings) {
+    for (const [ring, x0, x1, z0, z1] of _wrings) {
+      if (x < x0 || x > x1 || z < z0 || z > z1) continue;
       let c = false;
       for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
         const [xi, zi] = ring[i], [xj, zj] = ring[j];
@@ -3696,6 +3709,11 @@ export async function buildBuildings(world, data, Y = null) {
       if (_hh >= 6.5) {
         const _ty = _hh * 0.52;
         const _tr = growClear(b.p, 1.13, b);
+        // every terrace on a probe-readable list, like window.__parasols —
+        // the TBC "slab" hunt (sweep, SESSION 28) needed to ask "which villa
+        // owns a terrace at this y" and nothing could answer it
+        (window.__villaTerraces = window.__villaTerraces || [])
+          .push([Math.round(_cc[0]), Math.round(_cc[1]), Math.round(_ty * 10) / 10, b.n || null]);
         merger.add(extrudeGeo(_tr, 0.18, _ty), MAT.paleStone, _cc[0], _cc[1]);
         // The rail is TRIM, not metal: 0x8b8f93 with metalness drew as a heavy
         // dark ribbon wrapping every house, and on the long terrace rows that

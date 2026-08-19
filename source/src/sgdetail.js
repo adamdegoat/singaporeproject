@@ -13,7 +13,7 @@ import { R, rand, pick, chance, rng, sharedSignAtlas } from './tex.js';
 // for the whole project, one storey up. surfaceAt() answers both cases and is
 // the single function main.js already uses for the ride and the walker.
 import { MAT, groundAt, drawnGroundAt, surfaceAt, Merger, standable, addWalkSurface,
-         cableProfiles, CABLE_RIDE_H, CABLE_STATION_H } from './city.js';
+         addFootbridgeWay, cableProfiles, CABLE_RIDE_H, CABLE_STATION_H } from './city.js';
 import { recipeFor } from './landmarks.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d,
@@ -1187,16 +1187,42 @@ export async function buildBeachWalk(world, data, Y = null) {
       _rseg.push([_r.p[_i][0], _r.p[_i][1], _r.p[_i + 1][0], _r.p[_i + 1][1], _half]);
     }
   }
+  // INDEXED — the SEVENTH unindexed scan inside a per-object loop found by
+  // profiling (CPU profile 2026-08-19: this closure alone was 0.57s of the
+  // boot). Same grid, same cell, same answers as buildTrails' onAnyRoadT.
+  const _BCELL = 24;
+  const _bGrid = new Map();
+  for (const seg of _rseg) {
+    const [ax, az, bx, bz, half] = seg;
+    const pad = half + 3;
+    const x0 = Math.min(ax, bx) - pad, x1 = Math.max(ax, bx) + pad;
+    const z0 = Math.min(az, bz) - pad, z1 = Math.max(az, bz) + pad;
+    for (let gx = Math.floor(x0 / _BCELL); gx <= Math.floor(x1 / _BCELL); gx++) {
+      for (let gz = Math.floor(z0 / _BCELL); gz <= Math.floor(z1 / _BCELL); gz++) {
+        const k = gx + ',' + gz;
+        let l = _bGrid.get(k);
+        if (!l) { l = []; _bGrid.set(k, l); }
+        l.push(seg);
+      }
+    }
+  }
   const onAnyRoad = (x, z, margin) => {
     if (window.__onRoad && window.__onRoad(x, z, margin)) return true;
-    for (const [ax, az, bx, bz, half] of _rseg) {
-      const vx = bx - ax, vz = bz - az;
-      const L2 = vx * vx + vz * vz || 1;
-      let t = ((x - ax) * vx + (z - az) * vz) / L2;
-      t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const dx = x - (ax + vx * t), dz = z - (az + vz * t);
-      const reach = half + margin;
-      if (dx * dx + dz * dz < reach * reach) return true;
+    const cx = Math.floor(x / _BCELL), cz = Math.floor(z / _BCELL);
+    for (let gx = cx - 1; gx <= cx + 1; gx++) {
+      for (let gz = cz - 1; gz <= cz + 1; gz++) {
+        const l = _bGrid.get(gx + ',' + gz);
+        if (!l) continue;
+        for (const [ax, az, bx, bz, half] of l) {
+          const vx = bx - ax, vz = bz - az;
+          const L2 = vx * vx + vz * vz || 1;
+          let t = ((x - ax) * vx + (z - az) * vz) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+          const reach = half + margin;
+          if (dx * dx + dz * dz < reach * reach) return true;
+        }
+      }
     }
     return false;
   };
@@ -5734,6 +5760,131 @@ export async function buildTransit(world, data, Y = null) {
     out.palawanbridge = 1;
   }
 
+  // -- THE SILOSO LAGOON-MOUTH FOOTBRIDGE ---------------------------------
+  //
+  // siloso-spec #8, measured in research/siloso-bridge-measured.md: a
+  // straight 74.8 m piled footbridge from the beach at (-2368,12337) to the
+  // mapped sandy islet, UNMAPPED in OSM (nothing within 30m of its
+  // midpoint), so data/silosobridge.py authors both the route and the one
+  // bridge-tagged footway that makes the deck walkable. The capture shows a
+  // narrow pale deck on regular piers with FIVE widened cross-platforms;
+  // published prose adds "two persons can just pass". Truss webbing is NOT
+  // built — overhead imagery cannot resolve it, half a source buys half a
+  // change. The old TripAdvisor "floating bridge" is the PREVIOUS structure.
+  const sb = data.silosobridge;
+  if (sb && sb.p && sb.p.length >= 2) {
+    await YY();
+    const A3 = sb.p[0], B3 = sb.p[sb.p.length - 1];
+    const HW3 = (sb.w || 1.8) / 2, RAIL3 = sb.rail || 1.05;
+    const L3 = Math.hypot(B3[0] - A3[0], B3[1] - A3[1]);
+    const ux3 = (B3[0] - A3[0]) / L3, uz3 = (B3[1] - A3[1]) / L3;
+    const nx5 = -uz3, nz5 = ux3;
+    const ang3 = Math.atan2(B3[0] - A3[0], B3[1] - A3[1]);
+    // EXACTLY the FOOTBRIDGES registry's own deck rule (city.js _addSpan:
+    // max ground along the way + 1.2) — the walker is seated at the
+    // registry's height, so the drawn deck must be the same number or the
+    // walker floats above it or wades beside it.
+    const dY3 = Math.max(groundAt(A3[0], A3[1]), groundAt(B3[0], B3[1])) + 1.2;
+    // THE BRIDGE REGISTERS ITS OWN DECK — the map has no way here (the
+    // route is authored), and a roads-layer entry was tried and REFUSED by
+    // the golden gate: it sank the drawn ground at groyne-islet, 30m away,
+    // by a terrain coupling not yet named (data/silosobridge.py holds the
+    // receipt). addFootbridgeWay computes the same max-ground+1.2 deck the
+    // box below is drawn at, so movement and pixels agree; the walked
+    // surface is the causeway pattern, so a walker crosses at deck height.
+    addFootbridgeWay(sb.p, sb.w || 1.8);
+    addWalkSurface(A3[0], A3[1], B3[0], B3[1], HW3, dY3 + 0.07);
+    const deckM3 = new THREE.MeshLambertMaterial({ color: 0xcfc9bb });   // pale deck, per capture
+    const steelW3 = new THREE.MeshLambertMaterial({ color: 0xe8e6e0 });  // white rail/pile steel
+    // over the lagoon BY DESIGN — same declared mechanism W2 honours for
+    // buildTrails' water decks; a bridge whose piles the audit counts as
+    // "standing in open water" would refuse its own deploy
+    deckM3.userData.boardwalkOverWater = true;
+    steelW3.userData.boardwalkOverWater = true;
+    // the deck, one box — a straight span needs no per-segment ribbon
+    const dk3 = new THREE.BoxGeometry(HW3 * 2, 0.14, L3);
+    dk3.rotateY(ang3);
+    dk3.translate((A3[0] + B3[0]) / 2, dY3, (A3[1] + B3[1]) / 2);
+    merger.add(dk3, deckM3, A3[0], A3[1]);
+    // rails: top rail + mid rail each side, thin white posts every 2.4m
+    for (const sg3 of [-1, 1]) {
+      const ox3 = nx5 * HW3 * sg3, oz3 = nz5 * HW3 * sg3;
+      for (const rh of [RAIL3, RAIL3 * 0.55]) {
+        const rl = new THREE.BoxGeometry(0.05, 0.05, L3);
+        rl.rotateY(ang3);
+        rl.translate((A3[0] + B3[0]) / 2 + ox3, dY3 + rh, (A3[1] + B3[1]) / 2 + oz3);
+        merger.add(rl, steelW3, A3[0], A3[1]);
+      }
+      const np3 = Math.round(L3 / 2.4);
+      for (let k3 = 0; k3 <= np3; k3++) {
+        const s3 = (k3 / np3) * L3;
+        const px3 = A3[0] + ux3 * s3 + ox3, pz3 = A3[1] + uz3 * s3 + oz3;
+        const po3 = new THREE.BoxGeometry(0.06, RAIL3, 0.06);
+        po3.translate(px3, dY3 + RAIL3 / 2, pz3);
+        merger.add(po3, steelW3, px3, pz3);
+      }
+    }
+    // piles: a pair every ~6m, standing on the drawn ground under the water
+    const npile3 = Math.max(2, Math.round(L3 / 6));
+    for (let k3 = 1; k3 < npile3; k3++) {
+      const s3 = (k3 / npile3) * L3;
+      const cx3 = A3[0] + ux3 * s3, cz3 = A3[1] + uz3 * s3;
+      for (const sg3 of [-1, 1]) {
+        const px3 = cx3 + nx5 * (HW3 - 0.1) * sg3, pz3 = cz3 + nz5 * (HW3 - 0.1) * sg3;
+        const gy3 = drawnGroundAt(px3, pz3);
+        const hp3 = Math.max(0.6, dY3 - gy3);
+        const pl3 = new THREE.CylinderGeometry(0.09, 0.09, hp3, 6);
+        pl3.translate(px3, gy3 + hp3 / 2, pz3);
+        merger.add(pl3, steelW3, px3, pz3);
+      }
+    }
+    // the five measured cross-platforms, evenly spaced along the span —
+    // passing bays reading ~3-4m across on the capture
+    const nplat3 = sb.plat || 5;
+    const PW3 = (sb.platw || 3.6) / 2;
+    for (let k3 = 1; k3 <= nplat3; k3++) {
+      const s3 = (k3 / (nplat3 + 1)) * L3;
+      const cx3 = A3[0] + ux3 * s3, cz3 = A3[1] + uz3 * s3;
+      const pf3 = new THREE.BoxGeometry(PW3 * 2, 0.14, 2.4);
+      pf3.rotateY(ang3);
+      pf3.translate(cx3, dY3 + 0.005, cz3);
+      merger.add(pf3, deckM3, cx3, cz3);
+      // platform corner rails
+      for (const sg3 of [-1, 1]) {
+        const ox3 = nx5 * PW3 * sg3, oz3 = nz5 * PW3 * sg3;
+        const rl3 = new THREE.BoxGeometry(0.05, 0.05, 2.4);
+        rl3.rotateY(ang3);
+        rl3.translate(cx3 + ox3, dY3 + RAIL3, cz3 + oz3);
+        merger.add(rl3, steelW3, cx3, cz3);
+        for (const e3 of [-1, 1]) {
+          const qx3 = cx3 + ox3 + ux3 * 1.2 * e3, qz3 = cz3 + oz3 + uz3 * 1.2 * e3;
+          const po3 = new THREE.BoxGeometry(0.06, RAIL3, 0.06);
+          po3.translate(qx3, dY3 + RAIL3 / 2, qz3);
+          merger.add(po3, steelW3, qx3, qz3);
+        }
+      }
+    }
+    // landings: a short ramp from each abutment down to its own ground. The
+    // ramp runs AWAY from the deck (dir3: -1 off the A end, +1 off the B
+    // end); rotateX pitches the box's +z end down, so the A ramp (whose far
+    // end is -z) takes the opposite sign.
+    for (const [ex3, ez3, dir3] of [[A3[0], A3[1], -1], [B3[0], B3[1], 1]]) {
+      const gy3 = drawnGroundAt(ex3, ez3);
+      const drop3 = dY3 - gy3;
+      if (drop3 > 0.25) {
+        const rlen3 = Math.min(6, Math.max(2.5, drop3 * 3.2));
+        const pitch3 = Math.atan2(drop3, rlen3);
+        const rp3 = new THREE.BoxGeometry(HW3 * 2, 0.14, rlen3);
+        rp3.rotateX(dir3 * pitch3);
+        rp3.rotateY(ang3);
+        rp3.translate(ex3 + ux3 * dir3 * rlen3 / 2, dY3 - drop3 / 2,
+                      ez3 + uz3 * dir3 * rlen3 / 2);
+        merger.add(rp3, deckM3, ex3, ez3);
+      }
+    }
+    out.silosobridge = 1;
+  }
+
   // -- THE TWO PALAWAN VIEWING TOWERS -------------------------------------
   //
   // research/palawan-spawn.md 4.3: "the identity of this place", and `towers`
@@ -6842,10 +6993,11 @@ export async function buildBeachLife(world, data, Y = null) {
     //            TBC keeps the thatch cone and changes only its daybeds. Half
     //            a source buys half a change.
     //
-    // Sand Bar (turquoise) and Bikini Bar (orange) are documented just as well
-    // and get NOTHING here, because neither has an OSM footprint to host an
-    // apron -- this emitter hangs off a mapped building. They are the authored
-    // -footprint question, not this one.
+    // Bikini Bar was the authored-footprint question (authored 2026-08-19);
+    // Sand Bar turned out to be the TBC question instead — its footprint was
+    // in the world UNNAMED all along, 8m from SLA's geocode of its published
+    // address, and names.py's ADDS list now names it (research/
+    // bikini-sandbar-measured.md §SAND BAR RESOLVED). So both hosts exist.
     const APRON = [
       [/^coastes/i,          { canvas: 0xf2efe6, lounger: 0x24344d, rise: 0.34 }],
       [/^ola beach club/i,   { canvas: 0xf4f1e9, lounger: 0xe8e2d4, rise: 0.34 }],
@@ -6858,6 +7010,10 @@ export async function buildBeachLife(world, data, Y = null) {
       // stays for the canopy. Footprint authored 2026-08-19
       // (research/bikini-sandbar-measured.md).
       [/^bikini bar/i,       { lounger: 0x3a5f8a }],
+      // Sand Bar (siloso-venues.md 1.10): "turquoise/aqua as the signature
+      // colour (counter face, signage, UMBRELLAS, DAYBED CUSHIONS)" — the one
+      // venue whose canvas AND loungers are both published in one line.
+      [/^sand bar/i,         { canvas: 0x45b5ac, lounger: 0x2f9089, rise: 0.34 }],
     ];
     const apronMat = new Map();
     const matFor = (col, dbl) => {
