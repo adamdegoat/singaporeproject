@@ -46,12 +46,18 @@ M_LON = 111320.0 * math.cos(math.radians(LAT0))
 # to an already-written scene without touching the fetched layer — the fetch
 # rewrites the whole layer from Overpass, which is not a 3am operation.
 AUTHORED = [
-    # research/palawan-spawn.md §3.5: faint court markings on the sand in the
-    # 2026 satellite at 1.2483, 103.8226 (SAT). SDC published 141 bookable
-    # courts across the beaches (2020-22 regime, free since 14 Mar 2022); no
-    # Palawan count is published, so ONE court, at the measured markings.
-    {"n": "Beach volleyball", "k": "beachcourt", "lat": 1.2483, "lon": 103.8226,
-     "src": "research/palawan-spawn.md §3.5 (SAT court markings)"},
+    # research/palawan-spawn.md §3.5: faint court markings "at around 1.2483,
+    # 103.8226". MOVED 2026-08-19: that "around" coordinate is where the
+    # MID-BEACH SHRUB CLUMP actually stands (measured 26.7 x 17.0 m at
+    # 1.24839/103.82264, Wayback 2026-08-05 — see palawangreen.py), and the
+    # same capture shows NO court markings anywhere on this stretch, so the
+    # court was never truly anchored. The research's own license is "build
+    # one or two lightly-marked courts NEAR the mid-beach promontory"; this
+    # position is 35m west along the same sand, clear of the measured clump
+    # and of every way. SDC's 141-court figure (2020-22 regime, free since
+    # 14 Mar 2022) still carries the count argument: ONE court.
+    {"n": "Beach volleyball", "k": "beachcourt", "lat": 1.24825, "lon": 103.82234,
+     "src": "research/palawan-spawn.md §3.5 + palawangreen.py measuring pass"},
 ]
 
 
