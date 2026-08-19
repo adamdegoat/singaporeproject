@@ -971,7 +971,17 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
     // note above, so the two lists cannot drift apart.
     const noFascia = b.bt === 'grandstand'
       || (b.bt === 'hut' && b.n === 'Wings of Time')
-      || /aj hackett|^skypark sentosa/i.test(b.n || '');
+      || /aj hackett|^skypark sentosa/i.test(b.n || '')
+      // ...AND TANJONG BEACH CLUB IS THE SAME PANEL A THIRD TIME. Its record
+      // reads h=20.4 (the 20m type default, 'calib'), the beachVenue recipe
+      // stands a 10.8m open pavilion, and the fascia pass hung the board off
+      // b.h — a blank grey aluminium back TILTED IN THE SKY 7m above the
+      // venue's own thatch roof, in frame from the beach. Chased through the
+      // SESSION 28 slab hunt as "the tilted grey panel, unidentified" until
+      // a pixel-pick named the material: #9aa0a6, SIGN_TRAY, like Wings of
+      // Time before it and Skypark before that. Same list, same reason: the
+      // wall the board needs does not exist.
+      || /^tanjong beach club/i.test(b.n || '');
     // ...AND A WALL AT LEAST A SIGN TALL. There was no height test here at all,
     // so the shrink below would ask a 1 m shed for a negative board.
     if (b.n && bl > 7 && b.h > 2.6 && !noFascia) {
