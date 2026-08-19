@@ -8465,7 +8465,9 @@ export function buildSurround(world, data, reach = 470) {
 
   const rnd = rng(20260727);
   const put = [];
-  let onIsleSkipped = 0;
+  let onIsleSkipped = 0, inStraitSkipped = 0;
+  const _g2s = TERRAIN.grid && TERRAIN.grid();
+  const _seaLvl = _g2s && typeof _g2s.sea === 'number' ? _g2s.sea : null;
   const CELL = 78;
   // INDEX THE BUILT BOXES, because this tested every cell against every
   // building. Chinatown has 2,294 buildings and the surround grid spans the
@@ -8551,11 +8553,42 @@ export function buildSurround(world, data, reach = 470) {
           for (const oz of [-bd / 2, 0, bd / 2])
             if (onIsland(jx + ox, jz + oz)) ashore = true;
         if (ashore) { onIsleSkipped++; continue; }
+        // ...AND NOT IN THE STRAIT. The water test above reads the MAPPED
+        // water rings, and the open sea is not a ring — it is the seaSurface
+        // sheet (the same two-datums trap buildPiers pays for), so south of
+        // the island the backdrop city stood in the anchorage: khaki blocks
+        // floating a kilometre off Palawan, found 2026-08-19 the first time
+        // a camera ever looked out from the sea (shots/street/
+        // south_noboats.png). Only the open-sea SIDES are culled — south,
+        // west and east of the island ring's own extent — because the north
+        // edge clamps to the channel and a bare DEM test would take the
+        // mainland horizon with it, which is real city and the whole point.
+        // Placed after every rnd() draw, same stream discipline as the
+        // island test above.
+        // ...everywhere except the CHANNEL STRIP, where the mainland horizon
+        // lives. Two earlier cuts each left floaters: the bounding-box bands
+        // missed sea inside the box's x-range, and "north of the island's
+        // northernmost point" turned out to describe Tanjong Rimau's own
+        // water — the island's north tip IS Rimau, so mainland-horizon
+        // blocks stood mid-channel right off its shore (in the blessed
+        // rimau-shore golden, shipping since the surround was born). The
+        // channel between Sentosa and the mainland runs along z~11400-11600;
+        // 11600 keeps the whole mainland strip and none of the island's own
+        // sea. A constant, for THIS island, said out loud — the islandRing
+        // gate above already makes this branch Sentosa-only.
+        if (_seaLvl !== null && jz > 11600) {
+          let atSea = false;
+          for (const ox of [-bw / 2, 0, bw / 2])
+            for (const oz of [-bd / 2, 0, bd / 2])
+              if (TERRAIN.at(jx + ox, jz + oz) <= _seaLvl + 0.4) atSea = true;
+          if (atSea) { inStraitSkipped++; continue; }
+        }
       }
       put.push([jx, jz, _bh, bw, bd, _byaw]);
     }
   }
   if (onIsleSkipped) console.log(`  surround: ${onIsleSkipped} backdrop blocks refused — on the island`);
+  if (inStraitSkipped) console.log(`  surround: ${inStraitSkipped} backdrop blocks refused — in the strait`);
   if (!put.length) return 0;
 
   const geo = new THREE.BoxGeometry(1, 1, 1);

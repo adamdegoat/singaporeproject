@@ -911,6 +911,10 @@ window.__auditWorld = async function auditWorld() {
                    parked: !!o.userData.parked,
                    actor: !!(o.userData.actor || o.userData.crowdPart
                              || o.userData.parked),
+                   // a moored vessel floats on the sea; its ground question
+                   // is answered by the water test at placement, not by the
+                   // terrain under its keel (P3's own two-datums note)
+                   afloat: !!o.userData.afloat,
                    flat: g.type === 'PlaneGeometry' });
     }
   });
@@ -1393,6 +1397,13 @@ window.__auditWorld = async function auditWorld() {
       // are still placed at groundAt(), so terrain remains the right question
       // for them; when that stops being true this is the place to fix it.
       if (p.actor) continue;
+      // A MOORED BOAT IS NOT A PROP OFF THE GROUND. Declared at the mesh
+      // (userData.afloat, buildBoats): the hull was placed on water PROVEN
+      // wet five ways, and over the Cove's uncarved channels the terrain is
+      // the bank, so measuring a boat against at() reports it sunk by the
+      // height of ground that is not drawn. 323 findings on the day the
+      // marina was moored, every one of them this.
+      if (p.afloat) continue;
       const d = p.y - terr.at(p.x, p.z);
       if (d > 19) {
         if ((CANOPY.has(p.sig) || p.flat) && overATree(p, 1.6)) continue;

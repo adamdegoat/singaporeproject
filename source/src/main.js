@@ -11,7 +11,7 @@ import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from '.
 import { Net } from './net.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
 import { axisSpec, buildMarkings, dressSideStreets, selectSideStreets, dedupeProps } from './markings.js';
-import { buildSgDetail, buildTransit, buildBeachLife, buildUssVocab } from './sgdetail.js';
+import { buildSgDetail, buildTransit, buildBeachLife, buildBoats, buildAnchorage, buildUssVocab } from './sgdetail.js';
 import { buildRides, BOARD_REACH, EYE } from './rides.js';
 import { buildPlaceLabels } from './places.js';
 import { buildShopfronts } from './shopfront.js';
@@ -3636,6 +3636,17 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     const q = await buildBeachLife(world, data);
     bmark('beach');
     for (const k of Object.keys(q)) sg[k] = (sg[k] || 0) + q[k];
+  }
+  // The Cove's boats — moored scenery on the pontoons buildPiers seats.
+  // ?noboats for an A/B. Owner's go, 2026-08-19; spec in
+  // research/cove-marina-boats.md.
+  if (!P.has('nosg') && !P.has('noboats')) {
+    const q = await buildBoats(world, data);
+    for (const k of Object.keys(q)) sg[k] = (sg[k] || 0) + q[k];
+    // ...and the strait's anchorage on the horizon (siloso-spec #18)
+    const q2 = await buildAnchorage(world, data);
+    bmark('boats');
+    for (const k of Object.keys(q2)) sg[k] = (sg[k] || 0) + q2[k];
   }
   // The crowd is built AFTER the collision grid, not before it.
   //

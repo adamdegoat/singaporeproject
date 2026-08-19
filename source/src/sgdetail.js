@@ -6239,6 +6239,294 @@ export async function buildTransit(world, data, Y = null) {
 // towers — count published, form/colour UNPUBLISHED so the hut is a plain
 // elevated watch platform, not a claimed design. All deterministic from
 // position hashes; nothing touches the placement RNG streams.
+// THE COVE'S BOATS — the marina the pontoons were always waiting for.
+//
+// research/cove-marina-boats.md, built on the owner's go (2026-08-19,
+// "go", after the question was put directly — a moored boat is scenery
+// like a building, not an agent like the banned vehicles). The published
+// facts that shape it: ONE°15 has 272 wet berths, 32 of them megayacht,
+// boats to 67m; about one in eight is 24m or over; sail and motor both.
+//
+// PLACEMENT IS THE PIERS' OWN GEOMETRY. Every pier edge over 6m is walked
+// in slots; a slot gets a boat only if the water test PROVES the outboard
+// side wet (drawnGroundAt below sea level — the same drawn-surface datum
+// the buoys and berths use, because the Cove's channels are uncarved in
+// at()). ~70% occupancy by position hash, so a rebuilt scene moors the
+// same boats at the same fingers.
+//
+// COST, measured in the spec before writing: three instanced classes plus
+// masts — four draw calls, ~15k triangles at full occupancy.
+export async function buildBoats(world, data, Y = null) {
+  const out = { boats: 0, sailboats: 0, megayachts: 0, boatSlots: 0 };
+  const piers = (data.piers || []).filter((p) => p.p && p.p.length >= 4);
+  if (!piers.length) return out;
+  const seaY = (data.terrain && typeof data.terrain.sea === 'number') ? data.terrain.sea : 0;
+  const wet = (x, z) => drawnGroundAt(x, z) <= seaY + 0.05;
+  const hash = (x, z, s) => {
+    let h = (Math.imul(Math.round(x * 5) | 0, 0x9E3779B1)
+      ^ Math.imul(Math.round(z * 5) | 0, 0x85EBCA77) ^ (s * 0x27d4eb2f)) >>> 0;
+    h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) >>> 0;
+    return (h >>> 8) / 16777216;
+  };
+  // one unit hull per class, instanced: box hull with a wedge bow baked in
+  const unitHull = () => {
+    // unit length 1 (bow at +z), beam 1, depth 1 — scaled per instance
+    const g = new THREE.BufferGeometry();
+    // bow taper over the front 40% — at 0.22 of the length it was invisible
+    // from the promenade and the fleet read as white slabs
+    const hw = 0.5, stern = -0.5, bowS = 0.1, bow = 0.5, top = 0.5, bot = -0.28;
+    const v = [];
+    const quad = (a, b, c, d) => { v.push(...a, ...b, ...c, ...a, ...c, ...d); };
+    // port / starboard sides to the bow taper point
+    quad([-hw, bot, stern], [-hw, top, stern], [-hw, top, bowS], [-hw, bot, bowS]);
+    quad([hw, bot, bowS], [hw, top, bowS], [hw, top, stern], [hw, bot, stern]);
+    // bow taper: two angled faces meeting at the stem
+    quad([-hw, bot, bowS], [-hw, top, bowS], [0, top, bow], [0, bot, bow]);
+    quad([0, bot, bow], [0, top, bow], [hw, top, bowS], [hw, bot, bowS]);
+    // transom, deck, bottom
+    quad([hw, bot, stern], [hw, top, stern], [-hw, top, stern], [-hw, bot, stern]);
+    quad([-hw, top, stern], [hw, top, stern], [hw, top, bowS], [-hw, top, bowS]);
+    v.push(-hw, top, bowS, hw, top, bowS, 0, top, bow);   // deck bow triangle
+    quad([-hw, bot, bowS], [-hw, bot, stern], [hw, bot, stern], [hw, bot, bowS]);
+    v.push(0, bot, bow, -hw, bot, bowS, hw, bot, bowS);   // hull bow triangle
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(v), 3));
+    g.computeVertexNormals();
+    return g;
+  };
+  // CLASSES: [length, beam, topside, cabinLen, cabinH, mast]. `topside` is
+  // the hull side ABOVE the waterline: the first render floated the hulls at
+  // a hydrostatically-honest depth and they disappeared — flush with the
+  // pontoon decks, which this world seats ~1.15m over the sea, so 121 boats
+  // read as white lids on the pontoons. A boat is read by its freeboard:
+  // topsides now stand clear of the deck line the way the marina photographs
+  // do, and the submerged half is not drawn at all (the water is opaque).
+  const CLASSES = [
+    [11.5, 3.6, 1.55, 0.34, 1.10, false],   // small motor cruiser
+    [13.5, 3.9, 1.40, 0.30, 1.00, true],    // sailing yacht
+    [26.0, 6.2, 2.60, 0.44, 2.20, false],   // large motor / megayacht
+  ];
+  const hullG = unitHull();
+  // white hull, white cabin, DARK GLAZING BAND. The first contrast attempt
+  // made the whole cabin dark and every boat read as a crate on a raft — the
+  // photographs say the opposite: the superstructure is white like the hull,
+  // and what is dark is the strip of glass around it. So the band carries
+  // the contrast and the masses stay white.
+  const hullM = new THREE.MeshLambertMaterial({ color: 0xf2f1ec });
+  const cabM = new THREE.MeshLambertMaterial({ color: 0xecebe4 });
+  const glassM = new THREE.MeshLambertMaterial({ color: 0x2e333b });
+  const mastM = new THREE.MeshLambertMaterial({ color: 0xb9b9b4 });
+  const slots = [];   // [x, z, yaw, classIdx]
+  const clash = (x, z, len) => {
+    for (const s of slots) {
+      const need = (len + CLASSES[s[3]][0]) * 0.36;
+      if ((s[0] - x) * (s[0] - x) + (s[1] - z) * (s[1] - z) < need * need) return true;
+    }
+    return false;
+  };
+  for (const pier of piers) {
+    await YYb();
+    const pts = pier.p;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      const ex = b[0] - a[0], ez = b[1] - a[1];
+      const L = Math.hypot(ex, ez);
+      if (L < 6) continue;
+      const ux = ex / L, uz = ez / L;
+      out.boatSlots++;
+      // 24m+ only where the EDGE itself is berth-scale for it (the published
+      // megayacht berths are on the club's long outer faces)
+      const canMega = L >= 30;
+      let along = 0;
+      while (along + 8 <= L) {
+        const r = hash(a[0] + ux * along, a[1] + uz * along, 7);
+        let cls = r < 0.55 ? 0 : r < 0.83 ? 1 : 2;
+        if (cls === 2 && !canMega) cls = r < 0.69 ? 0 : 1;
+        const [len, beam, depth, cabF, cabH, mast] = CLASSES[cls];
+        const step = len + 2.5;
+        if (along + step > L + 2) break;
+        const mx = a[0] + ux * (along + step / 2), mz = a[1] + uz * (along + step / 2);
+        along += step;
+        // ~70% occupancy, deterministic
+        if (hash(mx, mz, 3) > 0.70) continue;
+        for (const sgn of [1, -1]) {
+          const nx = -uz * sgn, nz = ux * sgn;
+          const cx = mx + nx * (beam / 2 + 0.8), cz = mz + nz * (beam / 2 + 0.8);
+          // the WHOLE hull needs water: centre, bow and stern, outboard side
+          if (!wet(cx, cz)) continue;
+          if (!wet(cx + ux * len * 0.45, cz + uz * len * 0.45)) continue;
+          if (!wet(cx - ux * len * 0.45, cz - uz * len * 0.45)) continue;
+          if (!wet(cx + nx * beam * 0.7, cz + nz * beam * 0.7)) continue;
+          if (clash(cx, cz, len)) continue;
+          // ...AND NOT INSIDE ANY PONTOON. The wet test reads the DRAWN
+          // ground, and the water under a deck is still water — so between
+          // two parallel fingers 4m apart a slot could pass every water test
+          // while the hull lay across both decks. Sample the hull rectangle
+          // against the pier rings themselves.
+          let onPier = false;
+          for (const [fx2, fz2] of [[0, 0], [0.45, 0], [-0.45, 0], [0, 0.6], [0, -0.6]]) {
+            const hx = cx + ux * len * fx2 + nx * beam * fz2;
+            const hz = cz + uz * len * fx2 + nz * beam * fz2;
+            for (const p2 of piers) {
+              let c2 = false;
+              const q2 = p2.p;
+              for (let i2 = 0, j2 = q2.length - 1; i2 < q2.length; j2 = i2++) {
+                const [xi, zi] = q2[i2], [xj, zj] = q2[j2];
+                if ((zi > hz) !== (zj > hz) && hx < ((xj - xi) * (hz - zi)) / (zj - zi) + xi) c2 = !c2;
+              }
+              if (c2) { onPier = true; break; }
+            }
+            if (onPier) break;
+          }
+          if (onPier) continue;
+          slots.push([cx, cz, Math.atan2(ux, uz), cls]);
+          break;
+        }
+      }
+    }
+  }
+  if (!slots.length) return out;
+  // emit: one InstancedMesh per class for hulls, one for cabins, one mast set
+  const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), e3 = new THREE.Euler(), v3 = new THREE.Vector3(), s3 = new THREE.Vector3();
+  for (let c = 0; c < CLASSES.length; c++) {
+    const mine = slots.filter((s) => s[3] === c);
+    if (!mine.length) continue;
+    const [len, beam, depth, cabF, cabH, mast] = CLASSES[c];
+    const im = new THREE.InstancedMesh(hullG, hullM, mine.length);
+    const cab = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), cabM, mine.length);
+    const glz = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), glassM, mine.length);
+    mine.forEach((s, i) => {
+      const [x, z, yaw] = s;
+      e3.set(0, yaw, 0); q4.setFromEuler(e3);
+      // the drawn hull IS the topsides: bottom face at the waterline
+      v3.set(x, seaY + depth * 0.36, z); s3.set(beam, depth, len);
+      m4.compose(v3, q4, s3); im.setMatrixAt(i, m4);
+      // hull colour: mostly white, a few cream and navy, position-stable
+      const hv = hash(x, z, 11);
+      im.setColorAt(i, new THREE.Color(hv < 0.82 ? 0xffffff : hv < 0.94 ? 0xefe6cf : 0x33455e));
+      // cabin block amidships, slightly aft
+      v3.set(x - Math.sin(yaw) * len * 0.06, seaY + depth * 0.86 + cabH / 2, z - Math.cos(yaw) * len * 0.06);
+      s3.set(beam * 0.62, cabH, len * cabF);
+      m4.compose(v3, q4, s3); cab.setMatrixAt(i, m4);
+      // the glazing: a thin band tucked under the cabin roof — proud and
+      // thick it read as a black layer in a cake; windows sit just below the
+      // roof edge and are narrower than the cabin they pierce
+      v3.y += cabH * 0.16;
+      s3.set(beam * 0.56, cabH * 0.24, len * cabF * 1.04);
+      m4.compose(v3, q4, s3); glz.setMatrixAt(i, m4);
+      out.boats++;
+      if (c === 1) out.sailboats++;
+      if (c === 2) out.megayachts++;
+    });
+    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    im.castShadow = cab.castShadow = true;
+    // declared for the audit: a moored vessel sits on the SEA, and its datum
+    // is sea level — P3 measures props against the TERRAIN, which under the
+    // Cove's uncarved channels is the bank 3-15m above the water the boat
+    // actually floats on (the same two-datums split buildPiers documents).
+    // 323 findings, one mechanism. Same discipline as userData.parked.
+    im.userData.afloat = cab.userData.afloat = glz.userData.afloat = true;
+    world.add(im); world.add(cab); world.add(glz);
+    if (mast) {
+      const mm = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.055, 0.075, 1, 6), mastM, mine.length);
+      mine.forEach((s, i) => {
+        const [x, z, yaw] = s;
+        const mh = len * 1.25;
+        e3.set(0, yaw, 0); q4.setFromEuler(e3);
+        v3.set(x, seaY + depth * 0.86 + mh / 2, z); s3.set(1, mh, 1);
+        m4.compose(v3, q4, s3); mm.setMatrixAt(i, m4);
+      });
+      mm.userData.afloat = true;
+      world.add(mm);
+    }
+  }
+  return out;
+  async function YYb() { if (Y) await Y(); }
+}
+
+
+// THE ANCHORAGE — the container ships every Siloso reference frame shows on
+// the horizon (siloso-spec #18: "Container ships, always visible", from the
+// photographs; the strait south of the beaches is a working anchorage and
+// its silhouettes are half of what says "Singapore" from the sand). Owner's
+// go 2026-08-19, the same answer as the Cove boats.
+//
+// They sit in the band of open sea PAST the heightfield's southern edge
+// (the sheet reaches 2,200m beyond it), 1.4-2.0km off the beaches — far
+// enough to read as the photographs' silhouettes, near enough to be there.
+// Static merged geometry: eight ships, two forms, ~300 triangles the lot.
+export async function buildAnchorage(world, data, Y = null) {
+  const out = { ships: 0 };
+  const t = data.terrain;
+  if (!t || typeof t.sea !== 'number') return out;
+  const seaY = t.sea;
+  const zEdge = t.z0 + t.cell * t.nz;          // the grid's southern edge
+  const merger = new Merger();
+  const hullM2 = new THREE.MeshLambertMaterial({ color: 0x3c4249 });
+  const hullR2 = new THREE.MeshLambertMaterial({ color: 0x5c352c });
+  const supM2 = new THREE.MeshLambertMaterial({ color: 0xe8e6df });
+  const boxM = [0x8a4a3a, 0x3f6276, 0x4d6b52, 0x76766e].map((c) => new THREE.MeshLambertMaterial({ color: c }));
+  const hash2 = (i, s) => {
+    let h = (Math.imul(i + 1, 0x9E3779B1) ^ Math.imul(s + 1, 0x85EBCA77)) >>> 0;
+    h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) >>> 0;
+    return (h >>> 8) / 16777216;
+  };
+  // TWO GROUPS, BECAUSE THE WORLD'S HORIZON IS 1.6KM. The first cut anchored
+  // the fleet a geographically-honest 1.4-2.0km out and not one ship could
+  // ever render: the camera's far plane is 1,600m (seaside mode), so the
+  // world ends before the real anchorage begins. The ships stand where the
+  // FRAMES need them — 850-1,300m off the south beaches for Palawan and
+  // Tanjong, and a western trio beyond the grid edge for Siloso, whose sea
+  // is a different sea. Scenery serves the view or it serves nothing.
+  const SPOTS = [];
+  for (let i = 0; i < 5; i++) {
+    SPOTS.push([t.x0 + 900 + (t.cell * t.nx - 1500) * ((i + 0.5) / 5 + (hash2(i, 1) - 0.5) * 0.1),
+                zEdge + 380 + hash2(i, 2) * 320, Math.PI / 2]);
+  }
+  for (let i = 5; i < 8; i++) {
+    SPOTS.push([t.x0 - 420 - hash2(i, 1) * 480,
+                12350 + (i - 5) * 380 + hash2(i, 2) * 200, 0]);
+  }
+  const N = SPOTS.length;
+  for (let i = 0; i < N; i++) {
+    if (Y) await Y();
+    const [fx, fz, baseYaw] = SPOTS[i];
+    const container = hash2(i, 3) < 0.6;
+    const L = container ? 210 + hash2(i, 4) * 90 : 150 + hash2(i, 4) * 60;
+    const B = L * 0.15;
+    const free = container ? 9 + hash2(i, 5) * 4 : 6 + hash2(i, 5) * 3;
+    // at anchor the fleet heads into the same tide, varied a little
+    const yaw = baseYaw + (hash2(i, 6) - 0.5) * 0.5;
+    const hm = hash2(i, 7) < 0.7 ? hullM2 : hullR2;
+    const hull = new THREE.BoxGeometry(L, free, B);
+    hull.rotateY(yaw);
+    hull.translate(fx, seaY + free / 2, fz);
+    merger.add(hull, hm, fx, fz);
+    // accommodation block aft, white
+    const ax2 = Math.cos(yaw), az2 = -Math.sin(yaw);
+    const supH = free * (container ? 1.6 : 1.3);
+    const sup = new THREE.BoxGeometry(L * 0.09, supH, B * 0.82);
+    sup.rotateY(yaw);
+    sup.translate(fx - ax2 * L * 0.38, seaY + free + supH / 2, fz - az2 * L * 0.38);
+    merger.add(sup, supM2, fx, fz);
+    if (container) {
+      // container stacks forward of the house, stepped heights
+      let off = -0.24;
+      for (let s = 0; s < 3; s++) {
+        const segL = L * 0.19;
+        const stackH = free * (0.5 + hash2(i, 8 + s) * 0.5);
+        const st = new THREE.BoxGeometry(segL, stackH, B * 0.86);
+        st.rotateY(yaw);
+        st.translate(fx + ax2 * L * (off + 0.22 * s + segL / L / 2),
+                     seaY + free + stackH / 2, fz + az2 * L * (off + 0.22 * s + segL / L / 2));
+        merger.add(st, boxM[(i + s) % boxM.length], fx, fz);
+      }
+    }
+    out.ships++;
+  }
+  await merger.flushY(world, {}, Y);
+  return out;
+}
+
 export async function buildBeachLife(world, data, Y = null) {
   const YY = Y || (async () => {});
   const out = { beachPalms: 0, swimFlags: 0, patrolTowers: 0 };
