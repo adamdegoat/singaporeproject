@@ -901,6 +901,18 @@ export class Terrain {
       for (const r of roads) {
         const p = r.p;
         if (!p || p.length < 2) continue;
+        // A BRIDGE DECK IS NOT EVIDENCE OF LAND UNDER IT — carve() already
+        // knows this ("a deck has open ground under it"); this pass did not,
+        // and the comment above claimed it did not need to ("the heightfield
+        // under it is genuinely water and the guard needs both"). That
+        // argument fails exactly where the guard matters: wherever Copernicus
+        // SMEARS land height over real water. Measured 2026-08-19 at the
+        // Siloso lagoon: at(-2450,12420) reads 0.79 "land" over the swimming
+        // lagoon, and ONE bridge-tagged footway across the water stamped a
+        // ~105m land corridor (3x3 cells x 35m) that lifted the drawn bed
+        // 0.6m and moved the groyne-islet golden 58.84%. The full hunt is in
+        // the sweep file, SESSION 28.
+        if (r.bridge) continue;
         for (let i = 0; i < p.length - 1; i++) {
           const x0 = p[i][0], z0 = p[i][1], x1 = p[i + 1][0], z1 = p[i + 1][1];
           const L = Math.hypot(x1 - x0, z1 - z0);

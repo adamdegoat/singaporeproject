@@ -6769,6 +6769,8 @@ function beachVenue(api, b, opts = null) {
   api.merge(bar, counter, ob.cx, ob.cz);
 }
 
+const sandBar = (api, b) => beachVenue(api, b, { roof: 0x3f3b36, counter: 0x45b5ac });
+
 export const RECIPES = [
   [/^emerald pavilion/i, emeraldPavilion],
   [/^coastes/i, coastesBar],
@@ -6779,7 +6781,8 @@ export const RECIPES = [
   // two colours the survey publishes — "low shallow-pitch DARK-GREY roof"
   // (not thatch) and "turquoise/aqua as the signature colour (counter face)".
   // The footprint is the unnamed 60 m2 building names.py's ADDS list names.
-  [/^sand bar$/i, (api, b) => beachVenue(api, b, { roof: 0x3f3b36, counter: 0x45b5ac })],
+  // A NAMED const, not an inline arrow: NO_SHOPFRONT tests function identity.
+  [/^sand bar$/i, sandBar],
   [/^trapizza/i, trapizza],
   [/^beach arrival plaza/i, beachArrivalPlaza],
   // THE ANCHOR WAS THE BUG. The map's name is "Skypark Sentosa by AJ Hackett",
@@ -7028,7 +7031,19 @@ const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery,
                               tekkaCentre,
                               // LASALLE's ground floor is studios and a colonnade behind a
                               // base flare, not a retail frontage.
-                              lasalle]);
+                              lasalle,
+                              // AN OPEN-AIR BEACH PAVILION HAS NO GLAZED RETAIL
+                              // BAYS — same idiom argument as Tekka above. Every
+                              // beach recipe draws its own complete frontage
+                              // (folding fronts, counters, open sides), and the
+                              // generic band layered on top was the TBC "white
+                              // slab": a full-perimeter fascia + trim cap sized
+                              // off TBC's calib h=20.4, towering 0.5m over the
+                              // recipe's own thatch roof. Found by the huntBox
+                              // stack capture in Merger.add (sweep, SESSION 28)
+                              // after three sessions of colour-only probes.
+                              beachVenue, coastesBar, olaBeachClub, trapizza,
+                              emeraldPavilion, sandBar]);
 // Buildings that never have a shopfront whether or not a recipe knows them.
 // Maghain Aboth Synagogue has no recipe, so the set above let it through and it
 // was given a row of glazed retail bays. Only words that cannot be anything

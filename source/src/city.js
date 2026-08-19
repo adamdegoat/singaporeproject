@@ -1503,6 +1503,29 @@ export class Merger {
     //
     // Nothing silently defaults here again. The count is reported at flush.
     if (mat === undefined) { MISSING_MAT++; mat = MAT.conc; }
+    // WHO PUT THIS HERE? Merged output carries no identity, which is why the
+    // TBC slab hunt (sweep, SESSION 28) stalled at "a white slab from
+    // somewhere in buildBuildings". Set `window.__huntBox = {x, z, y0, y1}`
+    // BEFORE the build (an init script, not a post-ready evaluate) and every
+    // add() whose geometry bbox covers that point in that y-range records its
+    // material colour, its bbox and ITS OWN CALL STACK — the one identity a
+    // merged mesh can never lose at emit time. Undefined in normal play; one
+    // property check per add.
+    if (typeof window !== 'undefined' && window.__huntBox) {
+      const hb = window.__huntBox;
+      if (!geo.boundingBox) geo.computeBoundingBox();
+      const b = geo.boundingBox;
+      if (b.min.x <= hb.x && hb.x <= b.max.x && b.min.z <= hb.z && hb.z <= b.max.z
+          && b.max.y >= hb.y0 && b.min.y <= hb.y1) {
+        (window.__huntHits = window.__huntHits || []).push({
+          col: mat && mat.color ? mat.color.getHexString() : null,
+          bb: [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z]
+            .map((v) => Math.round(v * 100) / 100),
+          stack: String(new Error().stack || '').split('\n').slice(1, 5)
+            .map((s) => s.trim()).join(' | '),
+        });
+      }
+    }
     const key = `${Math.floor(x / TILE)},${Math.floor(z / TILE)}|${this.matKey(mat)}`;
     if (!this.groups.has(key)) { this.groups.set(key, []); this.mats.set(key, mat); }
     this.groups.get(key).push(geo.index ? geo.toNonIndexed() : geo);
