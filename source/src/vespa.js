@@ -175,14 +175,13 @@ export function buildRider() {
 }
 
 
-// THE SURF SKATE. A 34" carver: a wide deck with a kicked tail, a surf
-// adapter on the front truck (the tall pivoting casting that is the whole
-// reason the thing carves) and four fat 70mm wheels.
-//
-// TWO THINGS MAKE IT READ AS A SURF SKATE RATHER THAN A SKATEBOARD, and both
-// are the front end. The front truck is TALLER than the rear and visibly
-// hinged, and the deck is WIDE with a long nose. A plank on four wheels reads
-// as a longboard; those two details are what a skater's eye picks up.
+// THE SURF SKATE, STRETCHED TO A LONGBOARD (owner, 2026-08-20: "make the
+// board i skate longer abit? Abit like longboard look"). The deck went
+// 0.78 -> 0.94 and the wheelbase 0.58 -> 0.74; the surf adapter on the front
+// truck (the tall pivoting casting that is the whole reason the thing
+// carves) and the four fat 70mm wheels stay — a longboard carver, not a
+// street plank. The stance in buildSkater() moved out with the trucks; the
+// two sets of numbers must not drift apart or the feet leave the trucks.
 //
 // Wheels are returned in the same shape the Vespa and the car use, so the one
 // loop in main.js that spins them needs no new case. They are returned
@@ -205,22 +204,23 @@ export function buildSkate() {
   // kicked tail. Built as separate boxes with a tilt rather than a curve,
   // which is how every other shape in this file is made.
   const DECK_Y = 0.115;                       // top of the deck above the road
-  g.add(part(new THREE.BoxGeometry(0.245, 0.028, 0.78), deckM, 0, DECK_Y, 0));
-  g.add(part(new THREE.BoxGeometry(0.235, 0.006, 0.76), gripM, 0, DECK_Y + 0.017, 0));
-  // nose and tail, kicked up at the ends
-  g.add(part(new THREE.BoxGeometry(0.225, 0.026, 0.20), deckM, 0, DECK_Y + 0.035, 0.465, -0.36));
-  g.add(part(new THREE.BoxGeometry(0.215, 0.006, 0.19), gripM, 0, DECK_Y + 0.051, 0.463, -0.36));
-  g.add(part(new THREE.BoxGeometry(0.215, 0.026, 0.17), deckM, 0, DECK_Y + 0.030, -0.445, 0.34));
-  g.add(part(new THREE.BoxGeometry(0.205, 0.006, 0.16), gripM, 0, DECK_Y + 0.046, -0.443, 0.34));
+  g.add(part(new THREE.BoxGeometry(0.245, 0.028, 0.94), deckM, 0, DECK_Y, 0));
+  g.add(part(new THREE.BoxGeometry(0.235, 0.006, 0.92), gripM, 0, DECK_Y + 0.017, 0));
+  // nose and tail, kicked up at the ends — a longboard's kicks are shallower
+  // than a street deck's, so the tilt eased when the deck stretched
+  g.add(part(new THREE.BoxGeometry(0.225, 0.026, 0.20), deckM, 0, DECK_Y + 0.030, 0.545, -0.28));
+  g.add(part(new THREE.BoxGeometry(0.215, 0.006, 0.19), gripM, 0, DECK_Y + 0.046, 0.543, -0.28));
+  g.add(part(new THREE.BoxGeometry(0.215, 0.026, 0.17), deckM, 0, DECK_Y + 0.026, -0.525, 0.26));
+  g.add(part(new THREE.BoxGeometry(0.205, 0.006, 0.16), gripM, 0, DECK_Y + 0.042, -0.523, 0.26));
   // a painted rail down each edge of the underside, which is what you actually
   // see of a board from behind when it is up on edge in a carve
   for (const sx of [-0.108, 0.108]) {
-    g.add(part(new THREE.BoxGeometry(0.028, 0.016, 0.74), railM, sx, DECK_Y - 0.020, 0));
+    g.add(part(new THREE.BoxGeometry(0.028, 0.016, 0.90), railM, sx, DECK_Y - 0.020, 0));
   }
 
   const wheels = [];
   // FRONT truck first: taller, and carrying the surf adapter.
-  for (const [wz, front] of [[0.295, true], [-0.285, false]]) {
+  for (const [wz, front] of [[0.375, true], [-0.365, false]]) {
     const baseY = front ? DECK_Y - 0.052 : DECK_Y - 0.030;
     // baseplate under the deck
     g.add(part(new THREE.BoxGeometry(0.115, 0.016, 0.085), truckM, 0, DECK_Y - 0.020, wz));
@@ -298,8 +298,8 @@ export function buildSkater() {
   // Regular stance: left foot forward, shoulders open toward the nose, both
   // knees bent, arms out. Change a number here and the limbs follow.
   const J = {
-    ankleF: [0.035, 0.205, 0.280], kneeF: [0.140, 0.505, 0.300], hipF: [0.085, 0.775, 0.070],
-    ankleB: [-0.035, 0.205, -0.265], kneeB: [-0.130, 0.485, -0.155], hipB: [-0.085, 0.775, 0.000],
+    ankleF: [0.035, 0.205, 0.355], kneeF: [0.140, 0.505, 0.345], hipF: [0.085, 0.775, 0.070],
+    ankleB: [-0.035, 0.205, -0.340], kneeB: [-0.130, 0.485, -0.205], hipB: [-0.085, 0.775, 0.000],
     pelvis: [0.000, 0.800, 0.035], chest: [0.010, 1.165, 0.080], neck: [0.010, 1.235, 0.090],
     // ARMS DOWN INTO A CRUISE, NOT OUT INTO A T.
     //

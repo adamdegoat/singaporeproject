@@ -17,6 +17,7 @@ import { buildPlaceLabels } from './places.js';
 import { buildShopfronts } from './shopfront.js';
 import { Signals } from './signals.js';
 import { Sound } from './audio.js';
+import { buildTimeAttack } from './timeattack.js';
 import { Crowd, Traffic } from './actors.js';
 import { buildFurniture, buildParkedCars } from './street.js';
 import { buildSignage, Wayfinder } from './wayfind.js';
@@ -1747,6 +1748,7 @@ let mode = 'ride';                 // 'ride' | 'walk' | 'onride'
 // `onRide` is null unless the player is being carried.
 let RIDES = null;
 let PLACES = null;   // 3D names floating over the landmarks
+let TA = null;       // Time Attack — the game layer (src/timeattack.js)
 let onRide = null;                 // { ride, s, from }
 let lastRideLabel = 0;
 // THE GUIDE AT THE GATE. Shown only while you are standing at an entrance;
@@ -1783,9 +1785,12 @@ function updateGuide(x, z, now) {
 // `node relay/local.mjs`. Null until ?room= activates multiplayer post-boot.
 const SG_RELAY_URL = 'https://sentosa-relay.propsightsg.workers.dev';
 let NET = null;
-// OFF unless ?audio — see the note in audio.js. The rider asked for it out
-// while it is unreliable, and a silent world is better than a flaky one.
-const sound = new Sound(P.has('audio'));
+// ON by default since 2026-08-20: the owner asked for sound back as part of
+// the game layer ("A. Also you said need audio in game?"). It went out on
+// 2026-08-02 as unreliable; the unlock path has since grown the playback-
+// session element (ringer switch), visibilitychange resume and per-gesture
+// retries. ?noaudio turns it off; ?audio still forces it on for diagnosis.
+const sound = new Sound(!P.has('noaudio'));
 window.__sound = sound;   // so the audio path can be verified, not assumed
 // BROWSERS WILL NOT START AUDIO WITHOUT A GESTURE, and these listeners have to
 // see the gesture FIRST.
@@ -4186,6 +4191,15 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     RIDES = buildRides(THREE, data, world, surfaceAt);
     if (P.has('boot')) console.log('rides: ' + RIDES.rides.map((r) => r.kind).join(','));
   } catch (e) { console.warn('rides failed to build: ' + e.message); }
+  // TIME ATTACK, after the world so its gates stand on drawn ground. Never
+  // fatal: an island without a race is still an island.
+  try {
+    const ghostRig = buildSkate().group;
+    ghostRig.add(buildSkater());
+    TA = buildTimeAttack({ THREE, scene, data, sound,
+      groundAt: (x, z) => terrain.at(x, z), ghostRig });
+    window.__ta = TA;   // so a probe can count runs instead of trusting a frame
+  } catch (e) { console.warn('time attack failed to build: ' + e.message); }
   await bstep(1, 'ready');
   bootDone();
   ready = true;
@@ -4456,6 +4470,7 @@ function toggleMode() {
     rider.visible = false;      // he is the one standing next to it now
     skater.visible = false;     // and the board is left parked on the kerb
     mode = 'walk';
+    if (TA) TA.cancel(clock);   // stepping off abandons a live run
   } else {
     // THE VEHICLE COMES TO YOU. "Walk back within 6m" made walking a trap:
     // wander a street away and the ride button silently did nothing. Now a
@@ -5805,8 +5820,9 @@ function loop(now) {
     fmk('crowd');
     if (wayfinder) wayfinder.update(S, dt);
     fmk('wayfind');
-    sound.update(S.speed, 'ride', 0, 0, trafficNearest(S.x, S.z));
+    sound.update(S.speed, 'ride', 0, 0, trafficNearest(S.x, S.z), vehicleKind);
     fmk('sound');
+    if (TA && vehicleKind === 'skate') TA.update(S, clock);
 
     driveCamera(dt);
     fmk('camera');
@@ -6065,6 +6081,7 @@ window.__landAudit = (x, z) => {
 window.__teleport = (x, z, heading) => {
   S = newState(x, z, heading == null ? S.heading : heading);
   S.speed = 0;
+  if (TA) TA.cancel(clock);   // a jump across the island abandons a live run
   if (crowdSys) crowdSys.update(clock, 0, S.x, S.z, signals);
   for (const c of extraCrowds) c.update(clock, 0, S.x, S.z, signals);
   // Traffic is NOT rebuilt here: Traffic.build() creates a fresh set of

@@ -6,9 +6,13 @@
 // the first touch or click.
 
 export class Sound {
-  // AUDIO IS OFF. The rider asked for it out on 2026-08-02: "the audio still
-  // got a lot of problem. sometimes have sometimes don't have. can we totally
-  // remove audio first."
+  // AUDIO IS BACK ON (2026-08-20, owner's call for the game layer). It went
+  // out on 2026-08-02: "the audio still got a lot of problem. sometimes have
+  // sometimes don't have. can we totally remove audio first." The likely
+  // makers of "sometimes" are each guarded now: the iPhone ringer switch
+  // (playback-session element in start()), backgrounding (visibilitychange
+  // resume), and a refused first gesture (poke() retries on every gesture).
+  // main.js passes enabled; ?noaudio is the off switch.
   //
   // Switched off at the CONSTRUCTOR rather than deleted, so nothing else in
   // the world has to change and it comes back with one flag when it is worth
@@ -162,6 +166,24 @@ export class Sound {
     this.ambFilter.connect(this.ambGain);
     this.ambGain.connect(this.master);
 
+    /* ---- wheel roll: the skateboard's voice. A board has no engine; what
+       you hear is urethane on ground — the same noise bed through a lowpass
+       that rises with speed, plus the wind. Kept separate from the engine
+       chain so the vespa and the car keep their motor. ---- */
+    this.roll = ctx.createBufferSource();
+    this.roll.buffer = buf; this.roll.loop = true;
+    this.roll.playbackRate.value = 1.35;        // urethane sits brighter than ambience
+    this.rollFilter = ctx.createBiquadFilter();
+    this.rollFilter.type = 'lowpass';
+    this.rollFilter.frequency.value = 400;
+    this.rollFilter.Q.value = 0.8;
+    this.rollGain = ctx.createGain();
+    this.rollGain.gain.value = 0;
+    this.roll.connect(this.rollFilter);
+    this.rollFilter.connect(this.rollGain);
+    this.rollGain.connect(this.master);
+    this.roll.start();
+
     /* ---- passing traffic: a low band that rises as a vehicle gets close ---- */
     this.traffic = ctx.createBufferSource();
     this.traffic.buffer = buf; this.traffic.loop = true;
@@ -248,8 +270,9 @@ export class Sound {
     if (this.ready) this.master.gain.setTargetAtTime(m ? 0 : 0.55, this.ctx.currentTime, 0.15);
   }
 
-  // speed in m/s (may be negative), mode 'ride' | 'walk'
-  update(speed, mode, walkSpeed, walkPhase, nearestVehicle = 999) {
+  // speed in m/s (may be negative), mode 'ride' | 'walk'.
+  // kind: 'skate' | 'bike' | 'car' — a board rolls, the other two have motors.
+  update(speed, mode, walkSpeed, walkPhase, nearestVehicle = 999, kind = 'skate') {
     if (!this.enabled) return;
     if (!this.ready || this.muted) return;
     const t = this.ctx.currentTime;
@@ -260,9 +283,17 @@ export class Sound {
     this.trafficGain.gain.setTargetAtTime(0.02 + near * near * 0.16, t, 0.35);
     this.trafficFilter.frequency.setTargetAtTime(210 + near * 220, t, 0.4);
 
-    if (mode === 'ride') {
+    if (mode === 'ride' && kind === 'skate') {
+      // no engine on a board: wheel roll rises with speed, wind over the top
+      this.engineGain.gain.setTargetAtTime(0, t, 0.15);
+      this.rollGain.gain.setTargetAtTime(Math.min(0.22, v * 0.024), t, 0.1);
+      this.rollFilter.frequency.setTargetAtTime(320 + v * 95, t, 0.12);
+      this.windGain.gain.setTargetAtTime(Math.min(0.32, (v * v) * 0.0026), t, 0.2);
+      this.windFilter.frequency.setTargetAtTime(520 + v * 60, t, 0.2);
+    } else if (mode === 'ride') {
       // engine note rises with speed, with a little compression at the top so it
       // does not turn into a siren
+      this.rollGain.gain.setTargetAtTime(0, t, 0.15);
       const f = 44 + Math.pow(v, 0.86) * 9.4;
       this.osc1.frequency.setTargetAtTime(f, t, 0.06);
       this.osc2.frequency.setTargetAtTime(f * 2.01, t, 0.06);
@@ -272,8 +303,9 @@ export class Sound {
       this.windGain.gain.setTargetAtTime(Math.min(0.3, (v * v) * 0.0022), t, 0.2);
       this.windFilter.frequency.setTargetAtTime(520 + v * 60, t, 0.2);
     } else {
-      // parked: engine off, just the street
+      // parked: engine and roll off, just the street
       this.engineGain.gain.setTargetAtTime(0, t, 0.25);
+      this.rollGain.gain.setTargetAtTime(0, t, 0.25);
       this.windGain.gain.setTargetAtTime(0, t, 0.3);
       // footsteps on the walk cycle
       if (walkSpeed > 0.3) {
@@ -284,6 +316,40 @@ export class Sound {
         }
       }
     }
+  }
+
+  // GAME CUES for Time Attack. Tiny envelope tones through the master, so
+  // they respect the mute and never play before the unlock. Each kind is a
+  // distinct pitch shape a rider can tell apart without looking:
+  //   count  - one low tick (3..2..1)
+  //   go     - a rising two-note
+  //   check  - one bright mid blip (checkpoint crossed)
+  //   best   - a quick up-arpeggio (new best time)
+  //   finish - a settled two-note close (run done, not a best)
+  cue(kind) {
+    if (!this.enabled || !this.ready || this.muted) return;
+    if (this.ctx.state !== 'running') return;
+    const NOTES = {
+      count:  [[440, 0, 0.09]],
+      go:     [[660, 0, 0.10], [990, 0.10, 0.16]],
+      check:  [[880, 0, 0.09]],
+      best:   [[660, 0, 0.08], [830, 0.08, 0.08], [990, 0.16, 0.18]],
+      finish: [[740, 0, 0.10], [590, 0.12, 0.20]],
+    }[kind];
+    if (!NOTES) return;
+    try {
+      const t0 = this.ctx.currentTime;
+      for (const [f, dt, d] of NOTES) {
+        const o = this.ctx.createOscillator();
+        o.type = 'triangle'; o.frequency.value = f;
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t0 + dt);
+        g.gain.exponentialRampToValueAtTime(0.35, t0 + dt + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + d);
+        o.connect(g); g.connect(this.master);
+        o.start(t0 + dt); o.stop(t0 + dt + d + 0.02);
+      }
+    } catch (e) { /* a cue is never fatal */ }
   }
 
   _footstep(intensity) {
