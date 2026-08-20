@@ -6009,6 +6009,51 @@ export async function buildRoads(world, data, Y = null) {
     window.__junctionFillets = filled;
     window.__junctionTapers = tapers;
   }
+  // THE MARGIN WHERE A ROAD MEETS THE GRASS — the open half of the owner's
+  // 2026-08-16 ride report: "no edge where they meet the grass, no verge, no
+  // kerb line". The kerb line was never the missing part: measured 2026-08-20,
+  // there are 648 kerb props within 200m of the Siloso run, 469 on Tanjong and
+  // 1,280 on Palawan, and the audit finds only 4 streets island-wide without
+  // them. What is missing is TONE. A carriageway is drawn as one flat colour
+  // out to its last centimetre, so the edge is a hard seam between two flat
+  // fields and reads as coloured floor rather than as something built.
+  //
+  // buildTrails solved exactly this for paths and wrote down why — "darken the
+  // outer eighth of the width... its absence is most of why a flat quad reads
+  // as a coloured floor" — and roads never got it. This is that treatment,
+  // and it is shader-only: no geometry, no memory, no draw calls, which
+  // matters because triangles sit at 91% of budget and the iOS heap ceiling is
+  // the tightest limit this project has.
+  //
+  // ONE DIFFERENCE THAT WILL BITE ANYONE COPYING IT: the two ribbon builders
+  // use OPPOSITE uv conventions. buildTrails puts ACROSS in `v`; ribbon() here
+  // pushes `(t, u)` where t = (f+1)/2 is ACROSS and u is along, so the road
+  // margin has to read **vTUv.x**. Writing .y here darkens bands across the
+  // road at every metre instead of a margin down each side.
+  // 0.26 is buildTrails' own default, deliberately: paths and roads meeting the
+  // same grass should wear the same margin, and that value is already in the
+  // game and accepted. Measured on the rendered pixel at Siloso — road centre
+  // luminance 68, margin 56 — so this is a real 18% band, not a hopeful one.
+  const edged = (m, edge = 0.26, band = 0.085) => {
+    m.onBeforeCompile = (sh) => {
+      sh.vertexShader = 'varying vec2 vREUv;\n'
+        + sh.vertexShader.replace('#include <begin_vertex>',
+          '#include <begin_vertex>\n  vREUv = uv;');
+      sh.fragmentShader = 'varying vec2 vREUv;\n'
+        + sh.fragmentShader.replace('#include <color_fragment>',
+          `#include <color_fragment>
+          {
+            float e = smoothstep(0.0, ${band.toFixed(3)}, vREUv.x)
+                    * smoothstep(0.0, ${band.toFixed(3)}, 1.0 - vREUv.x);
+            diffuseColor.rgb *= mix(${(1.0 - edge).toFixed(2)}, 1.0, e);
+          }`);
+    };
+    m.customProgramCacheKey = () => `edged${edge}_${band}`;
+    return m;
+  };
+  edged(MAT.asphalt);
+  edged(MAT.unitPave, 0.16);      // pavers are lighter; a heavy margin reads as dirt
+  edged(MAT.roadConc, 0.16);
   merge(roadGeos, MAT.asphalt, 'roadSurface');
   merge(paveGeos, MAT.paving, 'pavementSurface');
   merge(unitPaveGeos, MAT.unitPave, 'roadSurface');
