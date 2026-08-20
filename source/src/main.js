@@ -6085,6 +6085,47 @@ window.__landAudit = (x, z) => {
 window.__teleport = (x, z, heading) => {
   S = newState(x, z, heading == null ? S.heading : heading);
   S.speed = 0;
+  // TAKE THE PERSON, NOT JUST THE BOARD.
+  //
+  // The owner, 2026-08-20: "Once i tele to tanjong beach i cannot teleport
+  // away." He was RIGHT and it was not Tanjong — it was every place on the
+  // island, the moment you are ON FOOT. This function set `S`, the RIDE state,
+  // and never touched `walker`, so travelling while off the board sent the
+  // skateboard 2km across Sentosa and left the player standing exactly where
+  // they were. Nothing looked broken: the map opened, the pin selected, the
+  // card said "Go here", the panel flashed — and you had not moved. Measured
+  // walking on Tanjong Beach: walker 0m, ride state 2049m.
+  //
+  // A beach is precisely where someone gets off to walk about, which is why
+  // this surfaced there. `__teleportTo` — the DISTRICT jump — has always moved
+  // `walker` alongside `S`; the map's own Go button called this one instead,
+  // and the two had quietly disagreed about what travel means since the map
+  // became the travel interface.
+  //
+  // `y = null` means "work it out from the ground under me" (see the walk
+  // step); seat and swim are cleared so arriving does not carry a bench or a
+  // breaststroke to dry land. Done in every mode, not just walk: in the saddle
+  // the walker is supposed to be under the rider anyway, and leaving it behind
+  // is how a dismount 2km away became possible in the first place.
+  // ON A RIDE, TRAVELLING MEANS GETTING OFF AND GOING. The same defect as the
+  // walker above, found in the same hunt: sitting in the cable car, "Go here"
+  // moved the ride state 2km and left the player IN THE CABLE CAR, which then
+  // carried serenely on along its cable — measured, the target was
+  // (-2047,12386) and the player finished 333m away, still `onride`. It could
+  // not have worked: rideStep() drives `walker` from the vehicle every frame
+  // while `onRide` is set, so it overwrites any position travel writes. The
+  // only honest fix is to leave the ride. They boarded it on foot, so they
+  // arrive on foot.
+  if (mode === 'onride') {
+    onRide = null;
+    mode = 'walk';
+    walkerRig.group.visible = true;
+    rider.visible = false;
+    skater.visible = false;
+    updateHelp();
+  }
+  walker.x = S.x; walker.z = S.z; walker.heading = S.heading;
+  walker.speed = 0; walker.y = null; walker.seat.id = null; walker.swim = false;
   if (TA) TA.cancel(clock);   // a jump across the island abandons a live run
   if (crowdSys) crowdSys.update(clock, 0, S.x, S.z, signals);
   for (const c of extraCrowds) c.update(clock, 0, S.x, S.z, signals);
@@ -6219,6 +6260,11 @@ window.__allTraffic = () => {
 };
 window.__camYaw = () => camYaw;
 window.__mode = () => mode;
+// GET ON AND OFF, FROM A PROBE. The same call the mode button makes, exposed
+// because his "cannot teleport away" bug lived ONLY in walk mode and every
+// check the map had drove it from the saddle — a gate that cannot change mode
+// cannot see half the interface.
+window.__toggleMode = () => { toggleMode(); return mode; };
 // VET HOOKS for the rides. `__rides()` lists what exists and where you board;
 // `__board(i)` puts the player in seat i without walking there, so a probe can
 // ride the whole line and check the seat against the wire.

@@ -149,6 +149,54 @@ for (const s of audit.stuck) console.log(`    stranded: ${s.n} (${s.x},${s.z})`)
 check(audit.stuck.length === 0,
   `every destination can be walked away from (${audit.stuck.length} stranded)`);
 
+// TRAVEL MUST TAKE THE PERSON, NOT JUST THE BOARD.
+//
+// The owner, 2026-08-20: "Once i tele to tanjong beach i cannot teleport
+// away." Every check above this line passed while that was true, because every
+// one of them travelled IN THE SADDLE. `__teleport` set the ride state and
+// never touched `walker`, so on foot the skateboard crossed the island alone
+// and the player did not move a metre — and a beach is exactly where somebody
+// gets off to walk about, which is why it surfaced at Tanjong.
+//
+// Both modes a player can be in when they open the map now get asked the only
+// question that matters: DID YOU END UP THERE.
+const modeTravel = await page.evaluate(async () => {
+  const W = window.__wayfinder;
+  const out = {};
+  const dest = W._travelPins().find((p) => /siloso beach/i.test(p.n || '')) || W._travelPins()[0];
+  const q = window.__landNear(dest.x, dest.z);
+
+  // --- on foot
+  if (window.__mode() !== 'walk') window.__toggleMode();
+  await new Promise((r) => setTimeout(r, 600));
+  out.modeBefore = window.__mode();
+  window.__teleport(q.x, q.z, 0);
+  await new Promise((r) => setTimeout(r, 900));
+  let w = window.__walkState();
+  out.walk = { off: Math.round(Math.hypot(w.x - q.x, w.z - q.z)), mode: window.__mode() };
+
+  // --- sitting on a ride: travelling means getting off and going
+  const rides = window.__rides ? window.__rides() : [];
+  if (rides.length) {
+    window.__board(0);
+    await new Promise((r) => setTimeout(r, 1200));
+    out.boarded = window.__mode();
+    window.__teleport(q.x, q.z, 0);
+    await new Promise((r) => setTimeout(r, 900));
+    w = window.__walkState();
+    out.onride = { off: Math.round(Math.hypot(w.x - q.x, w.z - q.z)), mode: window.__mode() };
+  }
+  return out;
+});
+check(modeTravel.walk && modeTravel.walk.off <= 3,
+  `travelling ON FOOT moves the player (${modeTravel.walk ? modeTravel.walk.off : '?'} m off target)`);
+if (modeTravel.onride) {
+  check(modeTravel.onride.off <= 3,
+    `travelling while ON A RIDE moves the player (${modeTravel.onride.off} m off target)`);
+  check(modeTravel.onride.mode !== 'onride',
+    `travelling while on a ride gets you off it (mode "${modeTravel.onride.mode}")`);
+}
+
 // A TAP ON EMPTY SEA MUST NOT TELEPORT YOU INTO IT.
 await page.evaluate(() => window.__wayfinder.setOpen(true));
 await page.waitForTimeout(500);
