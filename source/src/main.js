@@ -5655,6 +5655,43 @@ function loop(now) {
         }
       }
     }
+    // SWEEP THE MOVE, DO NOT ONLY TEST THE END OF IT.
+    //
+    // Collision is resolved once per frame, from where the ride was to where
+    // the physics put it, and until 2026-08-20 that was safe because the board
+    // topped out at 7.778 m/s: 0.13m per frame at 60fps, comfortably inside the
+    // 0.75m collision cell. The owner then asked for 60 km/h. At 16.667 m/s one
+    // frame at HIS PHONE'S measured 20fps moves 0.83m — wider than a cell — and
+    // a janky frame (rawDt clamps at 0.24) moves 4.2m. A wall one cell thick
+    // sits entirely between the two tested points, so the board goes THROUGH
+    // it and nothing reports it.
+    //
+    // MEASURED, because the size of a defect decides whether a fix earns its
+    // place. Riding all three beach runs flat out on a 6x-throttled CPU (frame
+    // steps up to 3.4m, 1,450 frames): WITHOUT this sweep, ONE frame crossed a
+    // blocked cell with both endpoints clear; WITH it, zero. So it is a real
+    // defect and a rare one — a building is metres thick and the old
+    // end-of-frame test always caught it; only a FENCE-thick blocker can be
+    // jumped. Cheap insurance, not a crisis, and the honest figure is 1 in
+    // 1,450 rather than anything more exciting.
+    //
+    // So walk the move in half-cell steps and stop at the FIRST blocked point.
+    // Snapping to the blocked point rather than the last clear one is
+    // deliberate: everything below — the sea dismount, the slide-along-wall —
+    // is written to run with S at the blocking spot and (px,pz) as where the
+    // rider came from, and this keeps that contract exactly as it was.
+    {
+      const sdx = S.x - px, sdz = S.z - pz;
+      const sdist = Math.hypot(sdx, sdz);
+      if (sdist > 0.5) {
+        const nsteps = Math.ceil(sdist / 0.5);
+        for (let i = 1; i <= nsteps; i++) {
+          const f = i / nsteps;
+          const cx = px + sdx * f, cz = pz + sdz * f;
+          if (rideBlocked(cx, cz)) { S.x = cx; S.z = cz; break; }
+        }
+      }
+    }
     if (rideBlocked(S.x, S.z)) {
       // RIDING INTO THE SEA GETS OFF THE BOARD, NOT A WALL (2026-08-14). If
       // what stopped the ride is enterable water — mapped water, no deck, no

@@ -71,10 +71,23 @@ export const CAR = {
 // Every one of these is off by default, so RIDE and CAR are untouched — and
 // test/ride.test.mjs asserts that they measure exactly zero slip.
 export const SKATE = {
-  vMax: 7.778,         // m/s, 28 km/h — the owner rode 20 and called it too slow
-                       // (2026-08-03 phone test); was 9.2 (~33), then 5.556. Drift/pump
+  vMax: 16.667,        // m/s, 60 km/h — THE OWNER'S CALL, 2026-08-20: "can you
+                       // allow the skating max speed to be 60km/h please".
+                       // History: 5.556 (20), 9.2 (~33), 7.778 (28) — he rode 20
+                       // and called it too slow, and now 28 too. Drift/pump
                        // margins in test/ride.test.mjs are tuned to THIS value —
                        // retune them together, never separately.
+                       // WHAT 60 CHANGES, measured rather than assumed:
+                       //   * steer authority is 1/(1 + steerFalloff*v^2), so at
+                       //     16.667 m/s it is 0.052 of the crawl figure — the
+                       //     turning circle at top speed is ~25m. That is the
+                       //     falloff doing its job (top speed is a commitment),
+                       //     not a bug, but it is why flat-out is now a
+                       //     straight-line-only state.
+                       //   * one frame at 20fps (his phone's figure) moves 0.83m
+                       //     and the collision cell is 0.75m — see the substep
+                       //     note in step(): movement is now split so a wall can
+                       //     never be jumped over in one frame.
   vReverse: 1.4,
   accel: 5.4,          // a hub motor: it pulls from a standstill and keeps pulling
   reverseAccel: 1.4,
