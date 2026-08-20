@@ -29,6 +29,7 @@
 //   A5  ghost saved       sg_ta_ghost_<id> holds the samples, >1 of them
 //   A6  ghost replays     a second lap shows the translucent rig, moving
 //   A7  no stall          the board never sits still for 3s mid-run
+//   A8  nothing in the road  no gate post stands in a carriageway
 //
 // Needs the dev server on :8933 and Playwright's chromium.
 import { refuseUnderDeploy } from './deploylock.mjs';
@@ -66,6 +67,35 @@ const runs = await page.evaluate(() => (window.__ta ? window.__ta.runs.map((r) =
   id: r.id, label: r.label, length: Math.round(r.length), gates: r.gates.length })) : null));
 if (!runs) { console.error('no window.__ta — time attack did not build'); await browser.close(); process.exit(2); }
 console.log(`  ${runs.length} run(s): ` + runs.map((r) => `${r.id} ${r.length}m`).join(', '));
+
+// A8 — NOTHING THIS GAME BUILDS MAY STAND IN A CARRIAGEWAY.
+//
+// The module shipped with a hardcoded 3.2m post offset and a comment claiming
+// the runs were footpaths so it could never happen; all four beach walks are
+// EIGHT METRE roads and 24 of 32 posts were in the road the next morning. It is
+// the oldest defect class on this project and the game layer walked straight
+// into it, so it gets a check that asks the road index rather than a comment
+// that asserts. Runs first — it needs nothing but the built world.
+const posts = await page.evaluate(() => {
+  const bad = [];
+  let n = 0;
+  const grp = window.__scene.getObjectByName('timeattack');
+  if (!grp) return { n: 0, bad: ['no timeattack group'] };
+  grp.traverse((o) => {
+    if (!o.isMesh || o.geometry.type !== 'CylinderGeometry') return;   // the posts
+    n++;
+    const p = new window.__THREE.Vector3();
+    o.getWorldPosition(p);
+    if (window.__onRoad && window.__onRoad(p.x, p.z, 0)) {
+      bad.push(`${window.__nearestStreet(p.x, p.z)} (${p.x.toFixed(0)},${p.z.toFixed(0)})`);
+    }
+  });
+  return { n, bad };
+});
+console.log(`  ${posts.bad.length ? 'FAIL' : 'ok  '} A8 posts clear of the road  ` +
+  `${posts.n - posts.bad.length}/${posts.n} clear` +
+  (posts.bad.length ? ` — IN THE ROAD: ${posts.bad.slice(0, 6).join('; ')}` : ''));
+const postFails = posts.bad.length ? [`A8: ${posts.bad.length} gate post(s) stand in a carriageway`] : [];
 
 // ---- the autopilot. Runs inside the page: a rAF loop that steers toward a
 // lookahead point on the run's polyline and reports what the HUD said.
@@ -210,7 +240,7 @@ async function ride(id, lapMs) {
   }, [id, lapMs]);
 }
 
-const fails = [];
+const fails = [...postFails];
 const note = (ok, name, msg) => {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}  ${msg}`);
   if (!ok) fails.push(`${name}: ${msg}`);

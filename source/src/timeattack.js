@@ -99,9 +99,35 @@ export function buildTimeAttack({ THREE, scene, data, groundAt, sound, ghostRig 
 
   // an arch: two slim poles either side of the path plus a crossbar. The
   // finish crossbar is chequered (alternating boxes), the start bar is teal.
-  function arch(p, chequered) {
+  // HOW FAR OUT A POST HAS TO STAND, MEASURED, NOT ASSUMED.
+  //
+  // This module shipped with `half = 3.2` and a comment claiming the runs were
+  // "FOOTPATHS ONLY" so a post could never land in a carriageway — Cove Drive
+  // was dropped from the first draft for exactly that reason. THE PREMISE WAS
+  // FALSE. All four beach walks are `unclassified` or `residential` ways EIGHT
+  // METRES WIDE in the extract, so half the carriageway is 4m and a post at
+  // 3.2m stands INSIDE it. Measured the morning after it shipped: 24 of 32
+  // posts were in the road — the oldest defect class on this project,
+  // reintroduced by the check that was supposed to prevent it.
+  //
+  // So ask the road how wide it is and step outside it, then ask __onRoad —
+  // the same index the rest of the world uses — and keep stepping until the
+  // spot is clear. Capped, because a post 9m out is no longer a gate; if
+  // nothing clear is found the widest tried is used and the run still works.
+  function clearHalf(p, wayHalf) {
+    let h = Math.max(3.2, wayHalf + 0.7);
+    if (!(typeof window !== 'undefined' && window.__onRoad)) return h;
+    for (let k = 0; k < 8; k++) {
+      const bad = [-1, 1].some((side) =>
+        window.__onRoad(p.x + -p.tz * h * side, p.z + p.tx * h * side, 0));
+      if (!bad) return h;
+      h += 0.6;
+    }
+    return h;
+  }
+
+  function arch(p, chequered, half) {
     const g = new THREE.Group();
-    const half = 3.2;                  // clears the widest beach walk
     for (const side of [-1, 1]) {
       const x = p.x + -p.tz * half * side, z = p.z + p.tx * half * side;
       const pole = noShadow(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.4, 6), poleM));
@@ -129,9 +155,9 @@ export function buildTimeAttack({ THREE, scene, data, groundAt, sound, ghostRig 
   }
 
   // a checkpoint: one pole with a small red pennant, on the left of travel
-  function flag(p) {
+  function flag(p, half) {
     const g = new THREE.Group();
-    const x = p.x + -p.tz * -3.2, z = p.z + p.tx * -3.2;
+    const x = p.x + -p.tz * -half, z = p.z + p.tx * -half;
     const y = groundAt(x, z);
     const pole = noShadow(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.8, 6), poleM));
     pole.position.set(x, y + 1.4, z);
@@ -146,10 +172,40 @@ export function buildTimeAttack({ THREE, scene, data, groundAt, sound, ghostRig 
     if (!line || length < minLen) { skipped++; continue; }
     // gates: start, two checkpoints at thirds, finish
     const gates = [0, length / 3, (2 * length) / 3, length].map((s) => pointAt(line, s));
-    group.add(arch(gates[0], false));
-    group.add(flag(gates[1]));
-    group.add(flag(gates[2]));
-    group.add(arch(gates[3], true));
+    // the WIDEST fragment carrying this name — a run stitched from an 8m
+    // stretch and a 3.8m one has to clear the 8m
+    let wayW = 0;
+    for (const rr of (data.roads || [])) {
+      if ((rr.n || '') === wayName && (rr.w || 0) > wayW) wayW = rr.w || 0;
+    }
+    // AND IF NO OFFSET IS CLEAR, MOVE THE GATE, NOT THE POST.
+    //
+    // Four posts survived the clearance step above, all of them at JUNCTIONS —
+    // the Tanjong start where the walk meets Artillery Avenue South, the
+    // Imbiah gates on Siloso Road. At a crossroads there is no sideways offset
+    // that is not in some carriageway, so pushing the post further out only
+    // makes a wider gate that is still in a road. Slide the GATE along the run
+    // instead: it stays on the same named way, the run is the same run, and a
+    // few metres of arc-length is not a thing a player can notice. Tried
+    // nearest-first, and the original position is kept if nothing is better.
+    const anchors = [0, 8, -8, 16, -16, 24, -24];
+    for (let gi = 0; gi < gates.length; gi++) {
+      const s0 = [0, length / 3, (2 * length) / 3, length][gi];
+      for (const d of anchors) {
+        const s = Math.max(0, Math.min(length, s0 + d));
+        const cand = pointAt(line, s);
+        const h = clearHalf(cand, wayW / 2);
+        const clear = !(typeof window !== 'undefined' && window.__onRoad)
+          || ![-1, 1].some((side) =>
+               window.__onRoad(cand.x + -cand.tz * h * side, cand.z + cand.tx * h * side, 0));
+        if (clear) { gates[gi] = cand; break; }
+      }
+    }
+    const halves = gates.map((g) => clearHalf(g, wayW / 2));
+    group.add(arch(gates[0], false, halves[0]));
+    group.add(flag(gates[1], halves[1]));
+    group.add(flag(gates[2], halves[2]));
+    group.add(arch(gates[3], true, halves[3]));
     runs.push({ id, label, wayName, line, length, gates,
       best: +(localStorage.getItem('sg_ta_' + id) || 0) || null });
     console.log(`timeattack: ${label} on "${wayName}" ${Math.round(length)}m` +
