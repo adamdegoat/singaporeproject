@@ -6317,7 +6317,118 @@ export async function buildTransit(world, data, Y = null) {
     }
     out.entrances = (out.entrances || 0) + 1;
   }
-  if (data.entrances && data.entrances.length) await gateSigns.flushY(world, {}, Y);
+  // -- THE VENUES SAY WHO THEY ARE ----------------------------------------
+  //
+  // 127 shops on this island are mapped WITH NAMES — Trapizza, Coaste's,
+  // Shake Shack, Billabong, SeaBreeze Water Sports, 7-Eleven — and every one
+  // of their buildings is a blank wall. The owner's standing order is to make
+  // the beaches and the beach walks look like Sentosa, and a beachfront strip
+  // whose bars have no names on them is the biggest thing still missing from
+  // that: the buildings are drawn, the venues are surveyed, and nothing joins
+  // the two.
+  //
+  // WHY NOT src/shopfront.js, WHICH EXISTS FOR EXACTLY THIS. Because it builds
+  // NOTHING here and its own counters say so: shopRuns 0, bays 0, realShops 0,
+  // and all 127 shops rejected — 63 "back block", 47 upstairs, 16 inside. That
+  // system forms RUNS of shopfronts along a terrace, which is Orchard Road and
+  // the shophouse streets it was written for. Sentosa is detached resort
+  // buildings with no terrace to run along, so the whole pass no-ops. Forcing
+  // it would mean loosening a rule that is right where it came from.
+  //
+  // So: one name band per named venue, on the wall of its OWN building that
+  // faces a street. The wall is chosen by asking the road index — step outward
+  // from each edge midpoint and take the first edge that finds carriageway
+  // within 14m — which is the same question a person answers by looking, and
+  // it means a sign can never end up on the back of a building. Placed 0.25m
+  // proud of the wall so it cannot z-fight, and refused outright if the plate
+  // would land in a carriageway (today's lesson, twice over).
+  {
+    const B = (data.buildings || []).filter((b) => b.p && b.p.length >= 3);
+    const inside = (x, z, p) => {
+      let h = false;
+      for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+        const xi = p[i][0], zi = p[i][1], xj = p[j][0], zj = p[j][1];
+        if (((zi > z) !== (zj > z))
+            && (x < ((xj - xi) * (z - zi)) / ((zj - zi) || 1e-9) + xi)) h = !h;
+      }
+      return h;
+    };
+    let named = 0, noHost = 0, noStreetWall = 0, tooSmall = 0;
+    const done = new Set();
+    for (const sh of (data.shops || [])) {
+      await YY();
+      const nm = (sh.n || '').trim();
+      const sp = sh.p || (sh.x !== undefined ? [sh.x, sh.z] : null);
+      if (!nm || nm.length < 2 || !sp) continue;
+      // one band per venue per building — a mall's worth of tenants must not
+      // stack six plates on the same wall
+      let host = null;
+      for (const b of B) { if (inside(sp[0], sp[1], b.p)) { host = b; break; } }
+      if (!host) {
+        // not inside anything: take a building within 12m, or give up. A name
+        // floating on the nearest wall 40m away is a lie about where it is.
+        let bd = 12 * 12;
+        for (const b of B) {
+          for (const q of b.p) {
+            const d = (q[0] - sp[0]) ** 2 + (q[1] - sp[1]) ** 2;
+            if (d < bd) { bd = d; host = b; }
+          }
+        }
+      }
+      if (!host) { noHost++; continue; }
+      // WHICH WALL FACES THE STREET
+      let best = null;
+      for (let i = 0; i < host.p.length; i++) {
+        const a = host.p[i], c = host.p[(i + 1) % host.p.length];
+        const ex = c[0] - a[0], ez = c[1] - a[1];
+        const L = Math.hypot(ex, ez);
+        if (L < 3.2) continue;                       // too short to carry a name
+        const mx = (a[0] + c[0]) / 2, mz = (a[1] + c[1]) / 2;
+        // outward normal: whichever of the two points away from the footprint
+        let nx = -ez / L, nz = ex / L;
+        if (inside(mx + nx * 0.8, mz + nz * 0.8, host.p)) { nx = -nx; nz = -nz; }
+        let road = 0;
+        for (let d = 2; d <= 14; d += 2) {
+          if (window.__onRoad && window.__onRoad(mx + nx * d, mz + nz * d, 0)) { road = d; break; }
+        }
+        if (!road) continue;
+        // nearest street wins, then the longest of those
+        if (!best || road < best.road || (road === best.road && L > best.L)) {
+          best = { mx, mz, nx, nz, L, road };
+        }
+      }
+      if (!best) { noStreetWall++; continue; }
+      const k = Math.round(best.mx) + ',' + Math.round(best.mz);
+      if (done.has(k)) continue;
+      done.add(k);
+      const w = Math.min(best.L - 1.0, 6.4);
+      if (w < 2.2) { tooSmall++; continue; }
+      const h = w * 0.2;
+      const px = best.mx + best.nx * 0.25, pz = best.mz + best.nz * 0.25;
+      if (window.__onRoad && window.__onRoad(px, pz, 0)) continue;   // never in the road
+      // sit the band just under the eaves of a low building, or at fascia
+      // height on a tall one — a name 20m up is a name nobody reads
+      const gy = surfaceAt(best.mx, best.mz);
+      const y = gy + Math.min(Math.max((host.h || 4) - 0.9, 2.6), 4.2);
+      const uv = gateAtlas.add(nm, '#1e2024', '#f4f0e6');
+      const face = gateAtlas.plane(w, h, uv);
+      face.rotateY(Math.atan2(best.nx, best.nz));
+      face.translate(px, y, pz);
+      gateSigns.add(face, uv.mat, px, pz);
+      // exposed so a probe can check placement without a second copy of the
+      // rule that chose it — the same reason __shopBays and __ta.runs are
+      (window.__venueSigns = window.__venueSigns || []).push({ n: nm, x: +px.toFixed(1), z: +pz.toFixed(1), y: +y.toFixed(1) });
+      named++;
+    }
+    out.venueNames = named;
+    out.venueNoHost = noHost;
+    out.venueNoStreetWall = noStreetWall;
+    out.venueTooSmall = tooSmall;
+  }
+
+  if ((data.entrances && data.entrances.length) || out.venueNames) {
+    await gateSigns.flushY(world, {}, Y);
+  }
 
   // -- TERMINI: a path that stops, stops AT something ----------------------
   //
