@@ -6214,6 +6214,12 @@ export async function buildTransit(world, data, Y = null) {
   const gateTrim = new THREE.MeshLambertMaterial({ color: 0x8a7f6c });
   const gatePlanter = new THREE.MeshLambertMaterial({ color: 0x7d6a52 });
   const gateLeaf = new THREE.MeshLambertMaterial({ color: 0x4e7a45 });
+  // the standing directories: a dark slab so the lettering carries, a paler
+  // plinth so it does not read as a hole in the ground, and the same teal cap
+  // the Time Attack arch plates use, because they are the same family of thing
+  const pylonBody = new THREE.MeshLambertMaterial({ color: 0x2a2e33 });
+  const pylonBase = new THREE.MeshLambertMaterial({ color: 0x9a9184 });
+  const pylonCap = new THREE.MeshLambertMaterial({ color: 0x2f7d78 });
   for (const e of (data.entrances || [])) {
     await YY();
     const [ex, ez] = e.p;
@@ -6354,6 +6360,9 @@ export async function buildTransit(world, data, Y = null) {
       return h;
     };
     let named = 0, noHost = 0, noStreetWall = 0, tooSmall = 0;
+    let pylons = 0, noPylon = 0, shared = 0;
+    const orphans = [];
+    const setBack = [];
     const done = new Set();
     for (const sh of (data.shops || [])) {
       await YY();
@@ -6375,7 +6384,7 @@ export async function buildTransit(world, data, Y = null) {
           }
         }
       }
-      if (!host) { noHost++; continue; }
+      if (!host) { noHost++; orphans.push({ n: nm, sp, host: null }); continue; }
       // WHICH WALL FACES THE STREET
       let best = null;
       for (let i = 0; i < host.p.length; i++) {
@@ -6397,15 +6406,29 @@ export async function buildTransit(world, data, Y = null) {
           best = { mx, mz, nx, nz, L, road };
         }
       }
-      if (!best) { noStreetWall++; continue; }
+      if (!best) { noStreetWall++; setBack.push({ n: nm, sp, host }); continue; }
       const k = Math.round(best.mx) + ',' + Math.round(best.mz);
-      if (done.has(k)) continue;
+      // A SECOND TENANT ON THE SAME WALL IS NOT A TENANT TO THROW AWAY.
+      //
+      // This used to `continue` and say nothing, and the count it hid was not
+      // small: 73 venues chose a street-facing wall and only 20 DISTINCT walls
+      // came out of it, so 53 named shops — every luxury unit in the Forum,
+      // the whole Quayside Isle row — were dropped on the floor by a dedupe
+      // that existed to stop six plates stacking on one fascia. Stacking is
+      // still wrong; being silent about them was the bug. They go to a
+      // standing directory instead, which is what a second tenant gets.
+      if (done.has(k)) { shared++; setBack.push({ n: nm, sp, host }); continue; }
       done.add(k);
       const w = Math.min(best.L - 1.0, 6.4);
-      if (w < 2.2) { tooSmall++; continue; }
+      // too narrow a wall to carry a name — but the venue still exists, so it
+      // goes to a directory rather than into a counter nobody reads
+      if (w < 2.2) { tooSmall++; setBack.push({ n: nm, sp, host }); continue; }
       const h = w * 0.2;
       const px = best.mx + best.nx * 0.25, pz = best.mz + best.nz * 0.25;
-      if (window.__onRoad && window.__onRoad(px, pz, 0)) continue;   // never in the road
+      // never in the road: a plate laid over a carriageway, twice over, is the
+      // lesson this whole family was built around. It sends the venue to a
+      // directory instead of deleting its name.
+      if (window.__onRoad && window.__onRoad(px, pz, 0)) { setBack.push({ n: nm, sp, host }); continue; }
       // sit the band just under the eaves of a low building, or at fascia
       // height on a tall one — a name 20m up is a name nobody reads
       const gy = surfaceAt(best.mx, best.mz);
@@ -6420,13 +6443,239 @@ export async function buildTransit(world, data, Y = null) {
       (window.__venueSigns = window.__venueSigns || []).push({ n: nm, x: +px.toFixed(1), z: +pz.toFixed(1), y: +y.toFixed(1) });
       named++;
     }
+    // -- AND THE OTHER 51: A DIRECTORY WHERE YOU ARRIVE ----------------------
+    //
+    // The wall band above answers "what is this building". It cannot answer
+    // for the 51 venues that HAVE no wall facing a street: they are tenants
+    // inside Resorts World, the Forum, Merlion Plaza and the cable car
+    // station, set 130-176m back from the nearest carriageway. A band on
+    // their own wall would be a band on an interior partition nobody can see.
+    //
+    // WHAT A SET-BACK TENANT ACTUALLY GETS IN THE REAL WORLD IS A DIRECTORY
+    // AT THE ENTRANCE — one board by the door listing who is inside. So that
+    // is what this builds: standing pylons on the ways that reach the host
+    // building, each carrying up to six of its tenants' names.
+    //
+    // THREE THINGS THIS GOT WRONG FIRST, all measured before writing it:
+    //
+    // 1. ANCHORING THE BOARD TO THE VENUE rather than to its building. The
+    //    nearest walkable point to McDonald's-inside-the-Forum is a footway
+    //    INSIDE the Forum, and both sides of it are inside the footprint, so
+    //    36 of the 51 came out with nowhere to stand. A directory belongs at
+    //    the way in, not at the counter.
+    // 2. TAKING THE HOST FOOTPRINT AT FACE VALUE. Several tenants sit inside
+    //    a small polygon that is itself inside the mall's polygon, so the
+    //    "building" chosen was an interior block with no outside at all.
+    //    Walk OUTWARD to the largest footprint containing it first.
+    // 3. ONE BOARD PER BUILDING. Resorts World has 22 named tenants and one
+    //    5m board cannot carry 22 legible lines. It gets one board per six,
+    //    spread to different way-facing sides, and each tenant is listed on
+    //    whichever of those boards is nearest to it.
+    //
+    // SAFETY, because this is the family that produced "i cant even move": a
+    // pylon is 1.9m of solid wall in the collision grid, so it is refused if
+    // it would stand in a carriageway, on a footway, or inside any building.
+    // It stands just SHORT of the way it faces, never on it.
+    const PSEG = [];
+    for (const r of (data.roads || [])) {
+      if (!(r.k === 'footway' || r.k === 'pedestrian' || r.k === 'steps')) continue;
+      if (!r.p) continue;
+      for (let i = 0; i < r.p.length - 1; i++) {
+        PSEG.push([r.p[i][0], r.p[i][1], r.p[i + 1][0], r.p[i + 1][1], (r.w || 2.4) / 2]);
+      }
+    }
+    const onWay = (x, z, m) => (window.__onRoad && window.__onRoad(x, z, m))
+      || (window.__onPath && window.__onPath(x, z, m));
+    const ringArea = (p) => {
+      let s = 0;
+      for (let i = 0; i < p.length; i++) {
+        const a = p[i], b = p[(i + 1) % p.length];
+        s += a[0] * b[1] - b[0] * a[1];
+      }
+      return Math.abs(s) / 2;
+    };
+    // ITS OWN FOOTPRINT COUNTS. The first version exempted the host, on the
+    // reasoning that a board belongs to its building — and Crockfords' L-shaped
+    // plan put TungLok Heen's board back INSIDE the mall, because stepping 20m
+    // out from one arm of an L walks straight into the other. A board is either
+    // outdoors or it is not visible; there is no "inside is fine here".
+    const insideAny = (x, z) => {
+      for (const b of B) { if (inside(x, z, b.p)) return true; }
+      return false;
+    };
+    // group the rejects by the OUTERMOST footprint that contains their host
+    const groups = new Map();
+    for (const v of setBack) {
+      let h = v.host, ha = ringArea(h.p);
+      let cx = 0, cz = 0;
+      for (const q of h.p) { cx += q[0]; cz += q[1]; }
+      cx /= h.p.length; cz /= h.p.length;
+      for (const b of B) {
+        if (b === h) continue;
+        const a = ringArea(b.p);
+        if (a > ha && inside(cx, cz, b.p)) { h = b; ha = a; }
+      }
+      if (!groups.has(h)) groups.set(h, []);
+      groups.get(h).push(v);
+    }
+    const boards = [];
+    const unplaced = (window.__venueUnplaced = []);
+    // ONE VENUE, BESIDE THE FOOTWAY THAT REACHES IT. Used for a building with
+    // no way-facing side at all, and for the three venues the map places
+    // inside no building — a kiosk on the promenade is a real thing and
+    // deleting its name because it has no walls would be the wrong answer.
+    const beside = (v) => {
+      // EVERY NEARBY FOOTWAY POINT, NEAREST FIRST — not one point and a walk
+      // along it. The first version stepped up to 21m along the direction of
+      // the nearest SEGMENT, which for a 4m segment walks 17m off the end of
+      // the path: Cartier's board came out in a courtyard with no way within
+      // 12m of it in any direction, facing nothing. The signcheck gate asked
+      // "can this board see a way in front of it" and that is what caught it.
+      const anchors = [];
+      for (const [x1, z1, x2, z2, half] of PSEG) {
+        const vx = x2 - x1, vz = z2 - z1, L2 = vx * vx + vz * vz;
+        let t = L2 < 1e-9 ? 0 : ((v.sp[0] - x1) * vx + (v.sp[1] - z1) * vz) / L2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const qx = x1 + vx * t, qz = z1 + vz * t;
+        const dd = (v.sp[0] - qx) ** 2 + (v.sp[1] - qz) ** 2;
+        if (dd > 70 * 70) continue;
+        const LL = Math.sqrt(L2) || 1;
+        anchors.push({ d: dd, qx, qz, ax: -vz / LL, az: vx / LL, half });
+      }
+      if (!anchors.length) { noPylon++; unplaced.push(v.n + ' (no footway)'); return; }
+      anchors.sort((a, b2) => a.d - b2.d);
+      for (const q of anchors.slice(0, 40)) {
+        const s0 = ((v.sp[0] - q.qx) * q.ax + (v.sp[1] - q.qz) * q.az) >= 0 ? 1 : -1;
+        for (const sgn of [s0, -s0]) {
+          const bx = q.qx + q.ax * (q.half + 1.3) * sgn, bz = q.qz + q.az * (q.half + 1.3) * sgn;
+          if (onWay(bx, bz, 0.4) || insideAny(bx, bz)) continue;
+          if (boards.some((r2) => (r2.x - bx) ** 2 + (r2.z - bz) ** 2 < 14 * 14)) continue;
+          boards.push({ x: bx, z: bz, nx: -q.ax * sgn, nz: -q.az * sgn, names: [v.n] });
+          return;
+        }
+      }
+      noPylon++; unplaced.push(v.n + ' (footway side blocked)');
+    };
+    // biggest tenant lists first, so the malls claim their sides before a
+    // one-shop kiosk parks a board across the road from one of them
+    for (const [host, vs] of [...groups.entries()].sort((a, b) => b[1].length - a[1].length)) {
+      await YY();
+      const p = host.p;
+      const cands = [];
+      for (let i = 0; i < p.length; i++) {
+        const a = p[i], c = p[(i + 1) % p.length];
+        const ex = c[0] - a[0], ez = c[1] - a[1];
+        const L = Math.hypot(ex, ez);
+        if (L < 4) continue;
+        const mx = (a[0] + c[0]) / 2, mz = (a[1] + c[1]) / 2;
+        let nx = -ez / L, nz = ex / L;
+        if (inside(mx + nx * 0.8, mz + nz * 0.8, p)) { nx = -nx; nz = -nz; }
+        let way = 0;
+        for (let dd = 2; dd <= 30; dd += 0.5) {
+          if (onWay(mx + nx * dd, mz + nz * dd, 0)) { way = dd; break; }
+        }
+        // A WAY CLOSER THAN 3m LEAVES NO ROOM TO STAND SHORT OF IT. max()
+        // used to paper over that and pushed the board 0.2m PAST the kerb,
+        // facing away — Cartier's directory ended up with its back to the
+        // walkway it was there to serve, which the gate caught by asking
+        // whether each board can see a way in front of it.
+        if (!way || way < 3) continue;
+        const off = way - 1.4;
+        const bx = mx + nx * off, bz = mz + nz * off;
+        if (onWay(bx, bz, 0.5) || insideAny(bx, bz)) continue;
+        cands.push({ way, L, x: bx, z: bz, nx, nz });
+      }
+      // nearest way wins, longest side breaks ties — the same order the wall
+      // band uses, so the two systems pick the same front of a building
+      cands.sort((u, w2) => (u.way - w2.way) || (w2.L - u.L));
+      const want = Math.max(1, Math.ceil(vs.length / 6));
+      const picked = [];
+      for (const c of cands) {
+        if (boards.some((q) => (q.x - c.x) ** 2 + (q.z - c.z) ** 2 < 14 * 14)) continue;
+        if (picked.some((q) => (q.x - c.x) ** 2 + (q.z - c.z) ** 2 < 18 * 18)) continue;
+        picked.push({ x: c.x, z: c.z, nx: c.nx, nz: c.nz, names: [] });
+        if (picked.length >= want) break;
+      }
+      // A BUILDING CAN RUN OUT OF SIDES BEFORE IT RUNS OUT OF TENANTS. The
+      // Forum's luxury row wants five boards and its footprint offers three,
+      // and the first version answered that by dropping Cartier, Bvlgari,
+      // Michael Kors and Montblanc on the floor — the same silence the wall
+      // dedupe was just cured of. A real mall directory is a tall board, so
+      // let the board grow to nine names before anyone is left out.
+      const CAP = picked.length
+        ? Math.max(6, Math.min(9, Math.ceil(vs.length / picked.length))) : 6;
+      if (!picked.length) {
+        // NO WAY-FACING SIDE AT ALL — a kiosk with a footprint smaller than a
+        // bus shelter. Fall back to the venue's own nearest footway.
+        for (const v of vs) beside(v);
+        continue;
+      }
+      // each tenant on whichever board is nearest to it, CAP names to a board
+      for (const v of vs) {
+        let tgt = null, bd = Infinity;
+        for (const q of picked) {
+          if (q.names.length >= CAP) continue;
+          const dd = (q.x - v.sp[0]) ** 2 + (q.z - v.sp[1]) ** 2;
+          if (dd < bd) { bd = dd; tgt = q; }
+        }
+        if (!tgt) { beside(v); continue; }
+        tgt.names.push(v.n);
+      }
+      for (const q of picked) if (q.names.length) boards.push(q);
+    }
+    // the venues the map places inside no building at all
+    for (const v of orphans) { await YY(); beside(v); }
+
+    // BUILD THEM
+    for (const bd of boards) {
+      await YY();
+      const gy = surfaceAt(bd.x, bd.z);
+      const yaw = Math.atan2(bd.nx, bd.nz);
+      const W = 1.9, ROW = 0.48, CAPH = 0.30;   // CAPH, not CAP: the tenant
+      // cap above is a COUNT and this is a HEIGHT, and one name for two things
+      // in one block is how a rename goes wrong later.
+      const H = CAPH + bd.names.length * ROW + 0.22;
+      const y0 = gy + 0.42;                       // clear of the kerb line
+      const plinth = new THREE.BoxGeometry(W + 0.34, 0.5, 0.62);
+      plinth.rotateY(yaw);
+      plinth.translate(bd.x, gy + 0.22, bd.z);
+      merger.add(plinth, pylonBase, bd.x, bd.z);
+      const body = new THREE.BoxGeometry(W, H, 0.24);
+      body.rotateY(yaw);
+      body.translate(bd.x, y0 + H / 2, bd.z);
+      merger.add(body, pylonBody, bd.x, bd.z);
+      const cap = new THREE.BoxGeometry(W + 0.06, CAPH, 0.28);
+      cap.rotateY(yaw);
+      cap.translate(bd.x, y0 + H - CAPH / 2, bd.z);
+      merger.add(cap, pylonCap, bd.x, bd.z);
+      // names read from BOTH faces: you walk past a directory from either
+      // direction and a blank back is a board that is wrong half the time
+      bd.names.forEach((nm2, i) => {
+        const uv2 = gateAtlas.add(nm2, '#1a1d21', '#f4f0e6');
+        const ty = y0 + H - CAPH - 0.24 - i * ROW;
+        for (const s of [1, -1]) {
+          const pl = gateAtlas.plane(W - 0.22, ROW - 0.10, uv2);
+          pl.rotateY(Math.atan2(bd.nx * s, bd.nz * s));
+          pl.translate(bd.x + bd.nx * 0.14 * s, ty, bd.z + bd.nz * 0.14 * s);
+          gateSigns.add(pl, uv2.mat, bd.x, bd.z);
+        }
+      });
+      pylons++;
+      (window.__venuePylons = window.__venuePylons || []).push({
+        x: +bd.x.toFixed(1), z: +bd.z.toFixed(1), y: +(y0 + H).toFixed(1), n: bd.names.slice(),
+        nx: +bd.nx.toFixed(3), nz: +bd.nz.toFixed(3),
+      });
+    }
     out.venueNames = named;
     out.venueNoHost = noHost;
     out.venueNoStreetWall = noStreetWall;
     out.venueTooSmall = tooSmall;
+    out.venuePylons = pylons;
+    out.venueNoPylon = noPylon;
+    out.venueShared = shared;
   }
 
-  if ((data.entrances && data.entrances.length) || out.venueNames) {
+  if ((data.entrances && data.entrances.length) || out.venueNames || out.venuePylons) {
     await gateSigns.flushY(world, {}, Y);
   }
 

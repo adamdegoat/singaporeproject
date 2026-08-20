@@ -84,6 +84,9 @@ hr "exploratory defects (not a gate)"
 # no world payload left to boot, so this was an exploratory pass over nothing.
 SG_SCENE=sentosa node data/defects.mjs 2>&1 | grep -E "FOUND|findings" | sed 's/^/  /' || true
 
+hr "venue signs"
+SG_SCENE=sentosa node data/signcheck.mjs 2>&1 | tail -12 || FAILED=1
+
 hr "accuracy ledger"
 python3 data/accuracy.py sentosa 2>/dev/null | tail -2
 

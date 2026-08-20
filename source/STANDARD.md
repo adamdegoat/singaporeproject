@@ -204,16 +204,49 @@ tag and record the count.
 
 ## How a district is signed off
 
-1. `python3 data/check.py <id>` — the data gate, must PASS
-2. `node test/ride.test.mjs` — the ride model, must pass
-3. `python3 data/audit_roads.py <id>` — analytic road overlap
-4. **World audit** over the whole district: every BLOCKER 0, every MAJOR in budget
-5. **Contact sheet**: a bot drives every street, one frame per ~60m, reviewed as
-   a grid. Coverage, not sampling.
-6. `python3 data/accuracy.py <id>` — the real-vs-invented ledger
-7. **Reference comparison** on the landmark stretch
+This list was written when the project was building districts and the only
+question was whether the GEOMETRY was right. Sentosa is a game now, and the
+gates grew to match: a district can have perfect geometry and still be a place
+you cannot swim in, travel across, or finish a Time Attack lap on. Re-stated
+2026-08-20 against what `deploy.sh` actually runs, in its order, because a
+taxonomy that lags the gates teaches people to trust the wrong list.
 
-Only then is the district done, and only then does the next one start.
+**Is the map right**
+1. `python3 data/check.py <id>` — the data gate, must PASS
+2. `python3 data/audit_roads.py <id>` — analytic road overlap
+3. `python3 data/groundcheck.py` — drawn ground vs published levels
+4. **World audit** over the whole district: every BLOCKER 0, every MAJOR in budget
+
+**Is it a place you can move through**
+5. `node test/ride.test.mjs` — the ride model
+6. `node data/behaviour.mjs` — the actors, over time, not in one frame
+7. `node data/trailcheck.mjs` — can you WALK it (ratcheted, not yet blocking)
+8. `node data/swimcheck.mjs` — the water loop, driven with the player's inputs
+9. `node data/opencheck.mjs` — open ground storeys stay open
+
+**Is it a place that tells you what it is**
+10. `node data/signcheck.mjs` — every named venue says its name, and no sign
+    stands in a carriageway, on a footway, or inside a building
+11. `node data/mapcheck.mjs` — the travel interface, from the saddle AND on foot
+
+**Is it a game you can finish**
+12. `node data/tacheck.mjs` — one Time Attack lap completes end to end
+
+**Is it still the same world tomorrow**
+13. `node data/determinism.mjs` — build order does not reshuffle placement
+14. `node data/golden.mjs` / `livecheck.mjs` — frames and the published build
+15. `python3 data/accuracy.py <id>` — the real-vs-invented ledger
+
+**Human judgement, not a gate**
+16. **Contact sheet**: a bot drives every street, one frame per ~60m, reviewed
+    as a grid. Coverage, not sampling.
+17. **Reference comparison** on the landmark stretch
+
+NOT IN THIS LIST AND NOT IN ANY GATE: `data/stuckcheck.mjs`. It fails on main
+as of 2026-08-20 (Ocean Drive, 0m moved at full throttle) and has not been
+touched since 2026-08-05, so it predates the on-foot world. Either it is
+measuring nothing or Sentosa Cove cannot be ridden; nobody has established
+which, and until somebody does it must not be cited as a pass OR a failure.
 
 ## Ratchets
 
