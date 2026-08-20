@@ -6176,6 +6176,41 @@ export async function buildTransit(world, data, Y = null) {
   const gatePost = new THREE.MeshLambertMaterial({ color: 0x6d5a46 });
   // THE FORECOURT PALETTE. See the arrival note in the gate loop below.
   const gateApron = new THREE.MeshLambertMaterial({ color: 0xbdb4a2 });
+  // A SLAB THAT FOLLOWS THE GROUND. THE TRAIL-RIBBON RULE, ONE MORE TIME.
+  //
+  // The forecourt apron below used to be a BoxGeometry laid at ONE ground
+  // sample — the height under the gate — and the comment beside it argued it
+  // was safe because "a slab at ground level is not a wall and cannot block
+  // anyone". That is true on the flat and false on a slope, which is most of
+  // this island. A rigid 7.8 x 6.2m slab pinned to one sample stands proud of
+  // the ground at its far edge by the cross-fall: MEASURED across all 62
+  // entrances, 24 aprons floated more than 0.45m (the floor of the collision
+  // band) and the worst, Dragon's Teeth, floated 1.59m. A box has four
+  // near-vertical side faces, so Solid rasterised those edges as a WALL —
+  // twelve aprons were standing across a mapped way, and the one outside the
+  // Luge Trail gate laid 36 blocked cells diagonally across Siloso Beach Walk.
+  //
+  // Nobody found this in a year of audits because every gate check asked "is
+  // the opening clear" and the wall was not in the opening, it was around the
+  // back of the forecourt. The Time Attack rider found it in one lap: the
+  // board stopped dead 751m into the Siloso Run and never reached the finish.
+  //
+  // So drape it, exactly as buildTrails drapes a path ribbon: a subdivided
+  // grid with every vertex on the ground beneath it. There are then no
+  // vertical faces to rasterise at all, and the paving reads as paving on a
+  // hill instead of a plinth. ~100 triangles per gate, 62 gates.
+  const drapedSlab = (cx, cz, w, d, yaw, lift, seg = 1.0) => {
+    const g = new THREE.PlaneGeometry(w, d, Math.max(1, Math.round(w / seg)),
+                                            Math.max(1, Math.round(d / seg)));
+    g.rotateX(-Math.PI / 2);          // face up
+    g.rotateY(yaw);
+    g.translate(cx, 0, cz);
+    const pos = g.attributes.position;
+    for (let i = 0; i < pos.count; i++) pos.setY(i, surfaceAt(pos.getX(i), pos.getZ(i)) + lift);
+    pos.needsUpdate = true;
+    g.computeVertexNormals();
+    return g;
+  };
   const gateTrim = new THREE.MeshLambertMaterial({ color: 0x8a7f6c });
   const gatePlanter = new THREE.MeshLambertMaterial({ color: 0x7d6a52 });
   const gateLeaf = new THREE.MeshLambertMaterial({ color: 0x4e7a45 });
@@ -6259,15 +6294,12 @@ export async function buildTransit(world, data, Y = null) {
     // and outside the gate's own opening, so the way through stays clear.
     {
       const apronW = HALF * 2 + 2.6, apronD = 6.2;
-      const ap = new THREE.BoxGeometry(apronW, 0.08, apronD);
-      ap.rotateY(yaw);
-      ap.translate(bx - fx * (apronD * 0.34), by + 0.04, bz - fz * (apronD * 0.34));
-      merger.add(ap, gateApron, bx, bz);
-      // a threshold band across the opening, so the gate reads as a doorway
-      const th = new THREE.BoxGeometry(apronW, 0.1, 0.55);
-      th.rotateY(yaw);
-      th.translate(bx, by + 0.06, bz);
-      merger.add(th, gateTrim, bx, bz);
+      merger.add(drapedSlab(bx - fx * (apronD * 0.34), bz - fz * (apronD * 0.34),
+                            apronW, apronD, yaw, 0.04), gateApron, bx, bz);
+      // a threshold band across the opening, so the gate reads as a doorway.
+      // Draped for the same reason: it is 7.8m across, so on a cross-slope its
+      // ends float exactly as the apron's did.
+      merger.add(drapedSlab(bx, bz, apronW, 0.55, yaw, 0.06, 0.55), gateTrim, bx, bz);
       // planters flanking, well outside the opening and never on a carriageway
       for (const sgn of [-1, 1]) {
         const qx = bx + Math.cos(yaw) * (HALF + 1.15) * sgn;

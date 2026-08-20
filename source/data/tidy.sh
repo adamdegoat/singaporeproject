@@ -1,31 +1,14 @@
 #!/bin/bash
-# Leave nothing running. A headless WebGL page holds two CPU cores at 60fps and
-# a browser that outlives its script keeps doing it, which cooks the laptop
-# overnight for no reason. Run this after any batch of checks.
-pkill -f "data/sweep.mjs"        2>/dev/null
-pkill -f "Chromium --headless"   2>/dev/null
-# ...and the browser that is ACTUALLY launched here, which is Google Chrome, not
-# Chromium. This script has been reporting "browsers still running: 0" while two
-# Chrome instances sat on the debug port holding cores, because it only ever
-# matched a name nothing uses. Matched on the TEMP PROFILE so the user's own
-# Chrome windows, which have a profile under ~/Library, are never touched.
-pkill -f -- "--user-data-dir=/private/tmp" 2>/dev/null
-pkill -f "chromeprof"            2>/dev/null
-pkill -f "chrome_crashpad"       2>/dev/null
-sleep 1
-n=$(pgrep -c -f "Chromium|chromeprof|user-data-dir=/private/tmp" 2>/dev/null || echo 0)
-echo "  browsers still running: $n"
-
-# ...and the wait-loops that never end.
+# THIS IS A SHIM. The real tidy is ../tidy.sh; run either name.
 #
-# A `pgrep -f "probe.mjs"` loop matches its OWN command line -- the pattern is
-# in it -- so the shell finds itself, concludes the probe is still running and
-# sleeps forever. Twenty-three of them were found after fourteen hours, each
-# waking every 8 to 12 seconds. They are invisible to a browser sweep.
-STUCK=$(pgrep -f 'until ! pgrep' 2>/dev/null | tr '\n' ' ')
-if [ -n "$STUCK" ]; then
-  # shellcheck disable=SC2086
-  kill $STUCK 2>/dev/null
-  echo "  killed $(echo $STUCK | wc -w | tr -d ' ') stuck wait-loop(s)"
-fi
-echo "  stuck wait-loops: $(pgrep -f 'until ! pgrep' 2>/dev/null | wc -l | tr -d ' ')"
+# There were two tidy scripts and this was the OLD, DANGEROUS one. It had no
+# deploy guard and a blanket `pkill -f -- "--user-data-dir=/private/tmp"`, which
+# matches EVERY headless browser this project launches — including the one a
+# running deploy owns, and including a probe's own browser mid-measurement. It
+# has killed a deploy's gate once (2026-08-04) and an A/B server run of mine
+# (2026-08-20). The root tidy.sh already refuses to run while a deploy is in
+# flight and kills only what this project started; its wait-loop reaper was
+# carried over from here, so nothing is lost.
+#
+# The path stays because WORKFLOW.md, NEXT.md and data/gates.sh all name it.
+exec bash "$(dirname "$0")/../tidy.sh" "$@"

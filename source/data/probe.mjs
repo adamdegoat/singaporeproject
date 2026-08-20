@@ -3,6 +3,8 @@
 // expression is passed in. For measuring a change, not for gating one.
 //
 //     SG_SCENE=world node data/probe.mjs "window.__shopBays.length"
+import { refuseUnderDeploy } from './deploylock.mjs';
+refuseUnderDeploy('probe.mjs');
 const { chromium } = await import(
   process.env.PLAYWRIGHT_PATH || '/Users/ZY/receptionig/node_modules/playwright/index.mjs');
 

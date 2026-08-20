@@ -14,6 +14,8 @@
 //
 //   node data/golden.mjs            shoot + compare, exit 1 on any mismatch
 //   node data/golden.mjs --bless    shoot + adopt as the new baselines
+import { refuseUnderDeploy } from './deploylock.mjs';
+refuseUnderDeploy('golden.mjs');
 const { chromium } = await import(
   process.env.PLAYWRIGHT_PATH || '/Users/ZY/receptionig/node_modules/playwright/index.mjs');
 import { mkdirSync, copyFileSync, existsSync, readdirSync } from 'fs';

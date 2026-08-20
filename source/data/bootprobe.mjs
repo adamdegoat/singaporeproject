@@ -7,6 +7,8 @@
 //     node data/bootprobe.mjs                    # dev tree on 8933
 //     node data/bootprobe.mjs http://localhost:8935   # a built dist
 const URL_BASE = process.argv[2] || `http://localhost:${process.env.SG_PORT || 8933}`;
+import { refuseUnderDeploy } from './deploylock.mjs';
+refuseUnderDeploy('bootprobe.mjs');
 const { chromium } = await import(
   process.env.PLAYWRIGHT_PATH || '/Users/ZY/receptionig/node_modules/playwright/index.mjs');
 const browser = await chromium.launch({

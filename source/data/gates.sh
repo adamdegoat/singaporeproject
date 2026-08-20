@@ -20,7 +20,16 @@ cd "$(dirname "$0")/.."
 # Same one list as deploy.sh, read from the registry rather than typed here:
 # a district added in one place and missed in the other is how four of them
 # went ungated once already.
-SCENES=${1:-"$(python3 -c "import json,os,sys; h=os.path.dirname(os.path.abspath('$0')); print(' '.join(d['id'] for d in json.load(open(os.path.join(h,'districts.json')))['districts'] if (d.get('status') or '') not in ('planned',) and 'merged' not in (d.get('status') or '')))") world"}
+# `world` USED TO BE APPENDED HERE UNCONDITIONALLY, and it no longer exists.
+# The project is SENTOSA ONLY (the owner, 2026-08-20: "I already said only
+# sentosa bro"), districts.json is down to one entry and there is no
+# data/world.json for the region scene to load — so every run of this file
+# spent its last and heaviest pass booting a scene whose payload 404s, and
+# reported whatever that produced as a district result. Included only if its
+# payload is actually on disk, so it comes back by itself if it ever returns.
+_REG=""
+[ -f "$(dirname "$0")/world.json" ] && _REG=" world"
+SCENES=${1:-"$(python3 -c "import json,os,sys; h=os.path.dirname(os.path.abspath('$0')); print(' '.join(d['id'] for d in json.load(open(os.path.join(h,'districts.json')))['districts'] if (d.get('status') or '') not in ('planned',) and 'merged' not in (d.get('status') or '')))")$_REG"}
 # the world scene streams SEVEN districts in SwiftShader during its audit —
 # the drain alone runs past the old 600s default. Forgetting to pass this
 # by hand refused an otherwise-green deploy on 2026-07-30.
@@ -71,10 +80,12 @@ echo "== determinism (streaming prerequisite)"
 node data/determinism.mjs || exit 1
 
 hr "exploratory defects (not a gate)"
-SG_SCENE=world node data/defects.mjs 2>&1 | grep -E "FOUND|findings" | sed 's/^/  /'
+# SENTOSA, for the same reason the behaviour gate above was repointed: there is
+# no world payload left to boot, so this was an exploratory pass over nothing.
+SG_SCENE=sentosa node data/defects.mjs 2>&1 | grep -E "FOUND|findings" | sed 's/^/  /' || true
 
 hr "accuracy ledger"
-python3 data/accuracy.py world 2>/dev/null | tail -2
+python3 data/accuracy.py sentosa 2>/dev/null | tail -2
 
 hr "tidy"
 bash data/tidy.sh 2>&1 | tail -2

@@ -5822,7 +5822,11 @@ function loop(now) {
     fmk('wayfind');
     sound.update(S.speed, 'ride', 0, 0, trafficNearest(S.x, S.z), vehicleKind);
     fmk('sound');
-    if (TA && vehicleKind === 'skate') TA.update(S, clock);
+    // guarded: a bug in the game layer must never cost the frame loop
+    if (TA && vehicleKind === 'skate') {
+      try { TA.update(S, clock); }
+      catch (e) { if (!TA._warned) { TA._warned = true; console.warn('time attack update failed: ' + e.message); } }
+    }
 
     driveCamera(dt);
     fmk('camera');

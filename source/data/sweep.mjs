@@ -12,6 +12,8 @@
 // Needs the dev server on :8933 and Playwright's chromium.
 // Playwright lives in another project here rather than being a dependency of
 // this one, which has no package.json and ships as plain ES modules.
+import { refuseUnderDeploy } from './deploylock.mjs';
+refuseUnderDeploy('sweep.mjs');
 const { chromium } = await import(
   process.env.PLAYWRIGHT_PATH || '/Users/ZY/receptionig/node_modules/playwright/index.mjs');
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
