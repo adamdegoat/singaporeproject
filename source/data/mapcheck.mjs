@@ -197,6 +197,28 @@ if (modeTravel.onride) {
     `travelling while on a ride gets you off it (mode "${modeTravel.onride.mode}")`);
 }
 
+// THE RUNS MUST BE FINDABLE. Time Attack shipped with four arches and nothing
+// anywhere naming them — "arches alone are silent" — so being ON the travel
+// map is now part of the feature, not decoration. This also pins the flying
+// start: the pin must NOT sit on the gate, because a run only begins above
+// 2.5 m/s and travel arrives stationary, so a pin on the arch would hand the
+// player a start line they cannot trigger.
+const races = await page.evaluate(() => {
+  const pins = window.__wayfinder._travelPins().filter((p) => p.race);
+  const ta = (window.__ta && window.__ta.runs) || [];
+  return pins.map((p) => {
+    const r = ta.find((q) => q.label.toLowerCase().startsWith(p.n.split(' ')[0].toLowerCase()));
+    return { n: p.n, t: p.t || '',
+             fromGate: r ? Math.round(Math.hypot(p.x - r.gates[0].x, p.z - r.gates[0].z)) : -1 };
+  });
+});
+check(races.length >= 4, `${races.length} time attack run(s) on the travel map`);
+check(races.every((r) => /\d+ m along /.test(r.t)),
+  'each run card states its length and the way it runs on');
+check(races.every((r) => r.fromGate >= 8 && r.fromGate <= 40),
+  'each run pin lands SHORT of its arch, not on it '
+  + `(${races.map((r) => r.fromGate + 'm').join(', ')})`);
+
 // A TAP ON EMPTY SEA MUST NOT TELEPORT YOU INTO IT.
 await page.evaluate(() => window.__wayfinder.setOpen(true));
 await page.waitForTimeout(500);

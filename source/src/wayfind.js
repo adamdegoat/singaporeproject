@@ -497,6 +497,54 @@ function ridePins(rides, startId) {
   return out;
 }
 
+// A RACE NOBODY CAN FIND IS NOT A GAME.
+//
+// Time Attack shipped on 2026-08-20 and four arches went up on four beaches
+// with NOTHING anywhere telling a player they exist. You had to already know
+// that two teal poles and a crossbar were a start line. The owner's own note
+// on it: "arches alone are silent."
+//
+// The map is already the travel interface and already carries a "you can ride
+// this" class for the luge and the cable car, so a run belongs in exactly the
+// same list rather than in some new panel bolted on beside it.
+//
+// THE PIN DOES NOT SIT ON THE ARCH, and that is the whole design of it. A run
+// only starts on a FLYING START — over 2.5 m/s through the circle — because
+// teleporting onto a gate used to start the clock while the rider stood still.
+// So travel drops you on the run's own line about 30m SHORT of the arch,
+// facing it, which is the one spot where "Go here" is immediately followed by
+// a start. Landing you on the line itself would hand you a gate you cannot
+// trigger, which is worse than not offering it.
+function racePins(startId) {
+  const ta = window.__ta;
+  if (!ta || !ta.runs || !ta.runs.length) return [];
+  const fmt = (ms) => {
+    const s = ms / 1000;
+    return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
+  };
+  const out = [];
+  for (const r of ta.runs) {
+    const g = r.gates[0];
+    // back along the run's own tangent, the same run-up data/tacheck.mjs uses
+    let d = 0;
+    for (let t = 1; t <= 30; t++) {
+      if (window.__blocked && window.__blocked(g.x - g.tx * t, g.z - g.tz * t)) break;
+      d = t;
+    }
+    out.push({
+      id: startId + out.length,
+      n: r.label.replace(/\bRUN\b/, 'Run').replace(/^([A-Z]+)/, (m) => m[0] + m.slice(1).toLowerCase()),
+      cat: 'race', race: true, major: true,
+      x: g.x - g.tx * d, z: g.z - g.tz * d,
+      // Facts, not copy: the distance is measured off the stitched way and the
+      // best time is whatever this phone has actually done, or nothing at all.
+      t: `${Math.round(r.length)} m along ${r.wayName}. Ride through the arch at speed to start the clock.`
+        + (r.best ? ` Your best: ${fmt(r.best)}.` : ''),
+    });
+  }
+  return out;
+}
+
 // A TRAIL YOU CANNOT FIND IS A TRAIL THAT IS NOT THERE.
 //
 // The owner, 2026-08-05: "sentosa got walking trails all in the forest we need
@@ -960,8 +1008,18 @@ export class Wayfinder {
       if (rs.length) this._ridePins = ridePins(rs, this._pins.length);
     }
     if (!this._trailPins) this._trailPins = trailPins(this.data, this._pins.length + 900);
-    if (!this._all) {
-      const all = tidyPins(this._pins.concat(this._ridePins || [], this._trailPins));
+    // NOT CACHED like the others: a run pin carries the player's BEST TIME in
+    // its card, and that changes every time they beat it. Four pins is nothing
+    // to rebuild; a stale personal best would be a small lie told repeatedly.
+    this._racePins = racePins(this._pins.length + 1800);
+    // The signature is the CARD TEXT, not the count. Keying on how many runs
+    // there are would cache a personal best from before you beat it and go on
+    // showing it — the pin list would be right and the number inside it wrong,
+    // which is the worst of both.
+    const raceSig = this._racePins.map((p) => p.t).join('|');
+    if (!this._all || this._raceSig !== raceSig) {
+      this._raceSig = raceSig;
+      const all = tidyPins(this._pins.concat(this._ridePins || [], this._trailPins, this._racePins));
       // BIGGEST FIRST, ACROSS ALL THREE SOURCES. buildPins sorts its own
       // output major-first so the map's clustering keeps the landmark and
       // drops the kiosk beside it — but the rides and trailheads are
@@ -1122,7 +1180,9 @@ export class Wayfinder {
     if (card) card.classList.toggle('on', !!pin);
     if (pin) {
       const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-      set('mapcardk', pin.play ? 'you can ride this' : pin.trail ? 'walking trail' : (PIN_LABEL[pin.cat] || 'place'));
+      set('mapcardk', pin.race ? 'time attack — a timed run'
+        : pin.play ? 'you can ride this' : pin.trail ? 'walking trail'
+        : (PIN_LABEL[pin.cat] || 'place'));
       set('mapcardn', pin.n);
       // NO INVENTED COPY. If research never produced a line for this place the
       // card says what KIND of place it is and stops. Making something up here

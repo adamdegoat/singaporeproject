@@ -17,6 +17,8 @@
 // run's furniture is ~10 small meshes, far below any perf line worth
 // measuring.
 
+import { sharedSignAtlas } from './tex.js';
+
 const CHAIN_JOIN_M = 1.5;              // same figure as city.js streetRuns
 const GATE_R = 11;                     // metres: a path-width crossing circle
 const OFF_COURSE_M = 70;               // this far from the next gate's line = run over
@@ -90,6 +92,7 @@ export function buildTimeAttack({ THREE, scene, data, groundAt, sound, ghostRig 
   const group = new THREE.Group();
   group.name = 'timeattack';
 
+  const signAtlas = sharedSignAtlas(THREE);
   const poleM = new THREE.MeshLambertMaterial({ color: 0x1f6f6b });   // the banner-pole teal
   const flagM = new THREE.MeshLambertMaterial({ color: 0xc4442f });   // the board-rail red
   const white = new THREE.MeshLambertMaterial({ color: 0xf2efe8 });
@@ -126,7 +129,7 @@ export function buildTimeAttack({ THREE, scene, data, groundAt, sound, ghostRig 
     return h;
   }
 
-  function arch(p, chequered, half) {
+  function arch(p, chequered, half, label) {
     const g = new THREE.Group();
     for (const side of [-1, 1]) {
       const x = p.x + -p.tz * half * side, z = p.z + p.tx * half * side;
@@ -135,6 +138,29 @@ export function buildTimeAttack({ THREE, scene, data, groundAt, sound, ghostRig 
       g.add(pole);
     }
     const span = half * 2;
+    // THE START ARCH SAYS WHAT IT IS.
+    //
+    // Four of these went up on four beaches with nothing anywhere naming them,
+    // so two teal poles and a crossbar were a start line only to someone who
+    // already knew. The map now lists the runs, but a player who simply rides
+    // past one should still be told — a game you can walk through without
+    // noticing is not discoverable, it is merely documented.
+    //
+    // Facing BACK down the approach, so it reads to a rider arriving, and hung
+    // under the bar rather than over it: above the crossbar it competes with
+    // the sky and the tree line, under it the bar itself is the backdrop.
+    // sharedSignAtlas marks its page needsUpdate on every add, so adding text
+    // here — long after sgdetail has uploaded the page — is safe (that trap
+    // was found and closed by the floating place names).
+    if (!chequered && label) {
+      const uv = signAtlas.add(label, '#1f6f6b', '#f4f0e6');
+      const w = Math.min(span * 0.82, 5.2);
+      const plate = new THREE.Mesh(signAtlas.plane(w, w * 0.17, uv), uv.mat);
+      plate.rotation.y = Math.atan2(-p.tx, -p.tz);
+      plate.position.set(p.x, groundAt(p.x, p.z) + 3.12, p.z);
+      plate.castShadow = false; plate.receiveShadow = false;
+      g.add(plate);
+    }
     if (chequered) {
       const n = 8, w = span / n;
       for (let i = 0; i < n; i++) {
@@ -202,7 +228,7 @@ export function buildTimeAttack({ THREE, scene, data, groundAt, sound, ghostRig 
       }
     }
     const halves = gates.map((g) => clearHalf(g, wayW / 2));
-    group.add(arch(gates[0], false, halves[0]));
+    group.add(arch(gates[0], false, halves[0], label));
     group.add(flag(gates[1], halves[1]));
     group.add(flag(gates[2], halves[2]));
     group.add(arch(gates[3], true, halves[3]));
