@@ -8030,8 +8030,19 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
         //
         // the expensive ones last: mapped ground of ANY kind keeps its own
         // character — a lawn stays a lawn, a fairway stays a fairway
+        // THE GOLF FAMILY IS STILL GOLF (2026-08-20). This test was written
+        // when the whole course was one `golf` cover. data/golf.py split it
+        // into the survey's own 418 areas — fairway, rough, green, tee,
+        // bunker, hazard — and the moment it did, every one of those returned
+        // a kind this line had never heard of, so the shrub pass SKIPPED THE
+        // ENTIRE COURSE. That is not a cosmetic loss: the belt between holes
+        // is most of what you see of a course from outside it, and dropping it
+        // also shifted the PLANTED set enough to sink two leaf-cards 345m
+        // away, which is how the deploy caught it (P3, 2 props off the ground).
+        const GOLFY = (k) => k === 'golf' || k === 'fairway' || k === 'grough'
+          || k === 'ggreen' || k === 'gtee' || k === 'gbunker' || k === 'ghazard';
         const _cover = TERRAIN.greenAt(jx, jz);
-        if (_cover && _cover !== 'golf') continue;
+        if (_cover && !GOLFY(_cover)) continue;
         // ...EXCEPT THE EDGE OF A GOLF COURSE, WHICH IS TREES.
         //
         // Measured island-wide: golf is the SECOND largest land cover here —
@@ -8046,10 +8057,17 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
         // So: plant golf ground only where it is within about 25m of something
         // that is not golf. That is the boundary and the gaps between holes by
         // construction, and it cannot touch the middle of a fairway.
-        if (_cover === 'golf') {
+        if (GOLFY(_cover)) {
+          // NOTHING GROWS IN A BUNKER, ON A PUTTING GREEN, ON A TEE OR IN A
+          // LAKE. The old single-cover test could not make this distinction
+          // because it did not know the course had parts; now that it does,
+          // refusing these four is strictly more accurate than what it
+          // replaced — a shrub in a sand trap is a groundsman's nightmare.
+          if (_cover === 'gbunker' || _cover === 'ghazard'
+              || _cover === 'ggreen' || _cover === 'gtee') continue;
           let edge = false;
           for (const [ex, ez] of [[25, 0], [-25, 0], [0, 25], [0, -25]]) {
-            if (TERRAIN.greenAt(jx + ex, jz + ez) !== 'golf') { edge = true; break; }
+            if (!GOLFY(TERRAIN.greenAt(jx + ex, jz + ez))) { edge = true; break; }
           }
           if (!edge) continue;
         }

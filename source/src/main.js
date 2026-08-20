@@ -3410,6 +3410,24 @@ window.__placeBlocked = (x, z) => blocked(x, z);
       paved++;
     }
     window.__pavedCovered = paved;
+    // THE GOLF COURSES, PAINTED AND NOTHING ELSE (data/golf.py, 2026-08-20).
+    //
+    // 418 surveyed areas — every bunker, tee, green, fairway and rough on The
+    // Serapong and The Tanjong — over a quarter of the island that used to
+    // draw as one flat tint. They come in on their OWN key and go into
+    // `allGreen` for the same reason the paved canopies above do, and the note
+    // above is not theoretical: the first cut of this appended them to
+    // `data.green` and the deploy refused it on P3, two tree leaf-cards 1.9m
+    // underground, because the planting's `claimed` list reads data.green and
+    // 418 new polygons over the golf headland moved the trees under them.
+    // Paint is one effect. Planting is another. This layer only ever paints.
+    let golfAreas = 0;
+    for (const g of (data.golfareas || [])) {
+      if (!g.p || g.p.length < 3) continue;
+      allGreen.push({ k: g.k, p: g.p });
+      golfAreas++;
+    }
+    window.__golfAreas = golfAreas;
     // ...AND FIRST IN THE LIST, WHICH IS THE WHOLE FIX. `greenAt` returns the
     // FIRST polygon in a cell that contains the point, so appending these at
     // the end put them behind the landuse parcel that already covers the same

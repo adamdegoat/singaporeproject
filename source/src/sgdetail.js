@@ -6353,6 +6353,42 @@ export async function buildTransit(world, data, Y = null) {
     out.termini = (out.termini || 0) + 1;
   }
 
+  // -- GOLF PINS: the one prop the courses need ---------------------------
+  //
+  // data/golf.py puts the two courses into the scene as 418 surveyed areas,
+  // and every one of those is painted by the TERRAIN (terrain.js TINT), so the
+  // fairways, roughs, bunkers and putting greens cost no geometry at all. What
+  // a course still needs to read as a course rather than as mown grass is the
+  // PIN — and there are 44 mapped greens, so that is 44 small props, not a
+  // scattering of invented ones.
+  //
+  // 35 of them carry a real hole NUMBER, taken from the nearest mapped `hole`
+  // centreline's own `ref` tag (a hole way runs tee to green, so its end is
+  // the green). The other 9 greens get a pin with no number rather than a
+  // guessed one: a wrong number on a real green is worse than no number.
+  //
+  // Placed through groundAt like everything else here, and cast no shadow —
+  // a 2.4m pole's shadow is not worth a shadow-map slot.
+  {
+    const pinPole = new THREE.MeshLambertMaterial({ color: 0xf2efe8 });
+    const pinFlag = new THREE.MeshLambertMaterial({ color: 0xc4442f });
+    let pins = 0;
+    for (const g of (data.golfpins || [])) {
+      await YY();
+      const [px, pz] = g.p;
+      const gy = groundAt(px, pz);
+      const pole = new THREE.CylinderGeometry(0.025, 0.025, 2.4, 5);
+      pole.translate(px, gy + 1.2, pz);
+      merger.add(pole, pinPole, px, pz);
+      // the flag flies from the top, one side, a simple triangle-ish plate
+      const fl = new THREE.BoxGeometry(0.46, 0.30, 0.02);
+      fl.translate(px + 0.24, gy + 2.22, pz);
+      merger.add(fl, pinFlag, px, pz);
+      pins++;
+    }
+    out.golfPins = pins;
+  }
+
   // -- MEGAZIP: launch tower, span, landing deck ---------------------------
   //
   // The only ride here the map does not carry, so data/zipline.py authors it

@@ -40,7 +40,11 @@ const SHELF_LO = 0.5, SHELF_HI = 1.2;
 // `k !== 'pool'` because the last three bugs in this project were the same
 // shape: a rule that was true only where somebody remembered to apply it.
 // Adding a kind here is one edit; adding it to a string comparison is a hunt.
-const NOT_GREEN = new Set(['pool', 'track', 'deck']);
+// A BUNKER IS SAND AND A WATER HAZARD IS WATER. Neither is vegetation, so
+// neither may count toward greenFrac — the same reason `pool` is here. Added
+// with the golf survey layer (data/golf.py, 2026-08-20); the grass parts of a
+// course (fairway, rough, green, tee) are green and correctly absent.
+const NOT_GREEN = new Set(['pool', 'track', 'deck', 'gbunker', 'ghazard']);
 
 // PARITY NEEDS ONLY THE EDGES WHOSE z-SPAN CROSSES THE QUERY'S z. waterFloor
 // and greenAt ran the even-odd walk over EVERY vertex of every candidate ring
@@ -1353,6 +1357,37 @@ export class Terrain {
           // more manicured than a pitch. Sentosa's two courses (The Tanjong,
           // The Serapong) were drawing as football fields.
           golf:  [0.55, 0.76, 0.40],
+          // THE COURSE, AS THE SURVEY ACTUALLY MAPS IT (2026-08-20). `golf`
+          // above painted 1.25 km2 — a QUARTER OF THE ISLAND — in one flat
+          // tone, because data/sentosa.json carried two golf polygons. The
+          // extract carries 565 golf features and 438 of them are areas that
+          // reached nothing at all (data/golf.py; unused.py's 111 saw only the
+          // line features that got into the roads layer). These are the same
+          // machinery as every kind above — a tint on the ground — so 418 new
+          // areas cost NO geometry, and a tint cannot become an invisible wall
+          // the way a laid mesh can (see the gate aprons, same day).
+          //
+          // greenAt takes the SMALLEST ring covering a point, so a bunker
+          // inside a fairway inside the course paints bunker with no nesting
+          // logic of its own. The values are ordered to read as one course
+          // from the cable car: mown fairway brighter and yellower than the
+          // rough around it, the putting green brightest and smoothest of all,
+          // bunkers the pale sand that makes a course legible from the air.
+          fairway: [0.60, 0.80, 0.42],   // mown, brighter and yellower than rough
+          grough:  [0.44, 0.64, 0.34],   // the unmown edge: darker, greyer
+          // The putting surface is the brightest green on a course, but the
+          // first value (0.66/0.86/0.46) read as FLUORESCENT from the ridge —
+          // a video-game green on an island whose whole rule is that it must
+          // not look invented. Pulled back so it still reads as the smoothest,
+          // brightest patch without glowing.
+          ggreen:  [0.60, 0.80, 0.44],   // the putting surface, brightest green
+          gtee:    [0.58, 0.78, 0.44],   // a mown pad, between fairway and green
+          // A BUNKER IS NOT BEACH. Its own kind, not `sand`, because `sand`
+          // carries beach behaviour elsewhere in this file (the wet-sand band,
+          // the swim entry) and a fairway bunker on the Serapong ridge must
+          // never be somewhere you can wade into the sea from.
+          gbunker: [0.90, 0.86, 0.70],
+          ghazard: [0.38, 0.60, 0.68],   // Serapong Lake and the three others
           // A running track is red-brown rubber and a pool is blue, and both
           // are read from a bridge before anything else on the ground is: they
           // are the only two surfaces in the city with a colour nothing else
