@@ -20,12 +20,15 @@
 // from every angle, so it is a defect. A blocker further out is the world
 // standing in front of a sign, which is what worlds do.
 //
-// WHY THIS IS A DIAGNOSTIC AND NOT A DEPLOY GATE: it currently reports two
-// genuine failures (7-Eleven, hidden on 9 lines of 9; "beaute love" on 7 of
-// 9). Wiring a known-red check into deploy.sh would either block every deploy
-// or teach everyone to ignore it, and "a red that lies" is a disease this
-// project has already paid for once (SESSION 30i, stuckcheck). It becomes a
-// gate on the day the count is zero, and not before.
+// A DEPLOY GATE SINCE 2026-08-21 EVENING. It was born a diagnostic with two
+// genuine reds (7-Eleven 9/9, "beaute love" 7/9) because a known-red gate
+// either blocks every deploy or teaches everyone to ignore it (SESSION 30i,
+// stuckcheck). The reds were the plates being placed 0.25m proud of the
+// mapped RING while addShopfront draws the facade from grow(pts, 1.012) — up
+// to half a metre further out — so the plate was buried INSIDE the drawn
+// wall. The placer now mirrors grow's per-vertex arithmetic (growth AND
+// carriageway pullback; the midpoint alone is not enough on a huge
+// footprint), the count is zero, and deploy.sh gates on `self` failures.
 //
 // A FIX WAS ATTEMPTED AND REVERTED, 2026-08-21 — read this before trying the
 // obvious one. The arithmetic looks damning: sgdetail clamps the plate to
@@ -87,4 +90,9 @@ for (const r of dim) {
   console.log(`  note  ${r.n.padEnd(30)} never clear on any of 9 — ${r.scenery} blocked by scenery`);
 }
 console.log(`  ${rows.length - bad.length} of ${rows.length} readable; ${bad.length} hidden by their own building`);
-process.exit(0);      // diagnostic, not a gate — see the header
+// A GATE SINCE 2026-08-21 EVENING — the day the count reached zero, exactly
+// as the header promised. Only `self` failures gate (a plate hidden by its
+// own building is deterministic and always a defect); scenery notes stay
+// notes. If this refuses a deploy, the fix is in the placement or the
+// facade, never in loosening the 1.2m classification.
+process.exit(bad.length ? 1 : 0);

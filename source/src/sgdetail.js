@@ -6558,7 +6558,7 @@ export async function buildTransit(world, data, Y = null) {
         if (!road) continue;
         // nearest street wins, then the longest of those
         if (!best || road < best.road || (road === best.road && L > best.L)) {
-          best = { mx, mz, nx, nz, L, road };
+          best = { mx, mz, nx, nz, L, road, i };
         }
       }
       if (!best) { noStreetWall++; setBack.push({ n: nm, sp, host }); continue; }
@@ -6579,7 +6579,51 @@ export async function buildTransit(world, data, Y = null) {
       // goes to a directory rather than into a counter nobody reads
       if (w < 2.2) { tooSmall++; setBack.push({ n: nm, sp, host }); continue; }
       const h = w * 0.2;
-      const px = best.mx + best.nx * 0.25, pz = best.mz + best.nz * 0.25;
+      // 0.25m PROUD OF THE WALL THAT IS ACTUALLY DRAWN, not of the mapped
+      // ring. addShopfront (city.js) gives any building with a>600 and h>7 a
+      // glazed ground band extruded from grow(pts, 1.012) — the ring scaled
+      // 1.2% from its vertex-mean centroid — so on a big footprint the drawn
+      // facade stands up to half a metre outside the ring, and a plate placed
+      // 0.25m proud of the RING is buried INSIDE the band. That is exactly
+      // the readcheck's two reds (7-Eleven 9/9, beaute love 7/9: a blocker
+      // 0.2-0.25m in front at EVERY height, which is a facade, not a ledge).
+      // The 30l attempt moved the plate UP and made it worse; the plate was
+      // never under a ledge, it was inside the wall. Mirror the band's own
+      // arithmetic instead: same predicate, same grow factor.
+      // ...AND MIRROR THE PULLBACK AS WELL AS THE GROWTH, PER VERTEX. grow()
+      // scales each VERTEX from the centroid and walks any vertex whose grown
+      // position lands in a carriageway back toward the ring — so a wall's
+      // band face is the segment between two INDEPENDENTLY pulled-back
+      // vertices, and the face can sit anywhere from 0 to distC*0.012 proud.
+      // Two approximations failed before this one: a blanket offset pushed
+      // THE CLIFF's plate into the road (its band is pulled back at the
+      // kerb), and testing only the grown MIDPOINT missed that the VERTICES
+      // are what grow() tests — on a 19,000 m2 host the midpoint cleared the
+      // road while both endpoints did not. So: run grow's own arithmetic on
+      // the wall's two endpoints and stand the plate 0.25m proud of the face
+      // they actually make.
+      let proud = 0.25;
+      if ((host.a || 0) > 600 && (host.h || 4) > 7) {
+        let cx = 0, cz = 0;
+        for (const q of host.p) { cx += q[0]; cz += q[1]; }
+        cx /= host.p.length; cz /= host.p.length;
+        const growV = (vx, vz) => {
+          const ox = vx - cx, oz = vz - cz;
+          let gx = cx + ox * 1.012, gz = cz + oz * 1.012;
+          if (!(window.__onRoad && window.__onRoad(gx, gz, 0.2))) return [gx, gz];
+          for (let t = 1.012; t >= 0.92; t -= 0.01) {
+            gx = cx + ox * t; gz = cz + oz * t;
+            if (!(window.__onRoad && window.__onRoad(gx, gz, 0.2))) return [gx, gz];
+          }
+          return [vx, vz];
+        };
+        const wa = host.p[best.i], wc = host.p[(best.i + 1) % host.p.length];
+        const ga = growV(wa[0], wa[1]), gc = growV(wc[0], wc[1]);
+        const bandProud = ((ga[0] + gc[0]) / 2 - best.mx) * best.nx
+                        + ((ga[1] + gc[1]) / 2 - best.mz) * best.nz;
+        if (bandProud > 0) proud += bandProud;
+      }
+      const px = best.mx + best.nx * proud, pz = best.mz + best.nz * proud;
       // never in the road: a plate laid over a carriageway, twice over, is the
       // lesson this whole family was built around. It sends the venue to a
       // directory instead of deleting its name.
@@ -7613,7 +7657,18 @@ export async function buildBeachLife(world, data, Y = null) {
       [/^coastes/i,          { canvas: 0xf2efe6, lounger: 0x24344d, rise: 0.34 }],
       [/^ola beach club/i,   { canvas: 0xf4f1e9, lounger: 0xe8e2d4, rise: 0.34 }],
       [/^trapizza/i,         { canvas: 0xfbf8f2, lounger: 0xe8e2d4, rise: 0.62 }],
-      [/^tanjong beach club/i, { lounger: 0xb4633c }],
+      // TBC's canopy: the Feb-2025 revamp text never describes it, so the
+      // thatch CONE form stays — but the ESRI z19 capture fetched 2026-08-21
+      // (tiles 413353-413357/260333-260337, TBC node georeferenced onto the
+      // parasol rows) shows every canopy poolside and on the sand as a smooth
+      // uniform terracotta, not straw. Colour is what z19 can testify to and
+      // form is not, so this changes ONLY the cone's colour. The satellite
+      // reads a SUN-LIT canopy (~#c08050, mean of 3,077 px #c99269); a
+      // material is an albedo the renderer lights AGAIN, so the first try at
+      // 0xc08050 rendered back to straw. 0xa85c38 is that observation with
+      // the sun divided out — vetted by sampling the rendered cone and
+      // matching it to the z19 pixels, not by eye.
+      [/^tanjong beach club/i, { lounger: 0xb4633c, cone: 0xa85c38 }],
       // Bikini Bar (research/siloso-venues.md 1.8): "blue-cushioned sun
       // loungers" on the sand in front. Its umbrellas are documented as a
       // pale pink AND yellow mix, which one canvas colour cannot say — same
@@ -7922,10 +7977,13 @@ export async function buildBeachLife(world, data, Y = null) {
           val.rotateY(Math.PI / 4);
           bake(val, matFor(brand.canvas, true), px, gy + 2.62, pz);
         } else {
-          // parasol: a pole and a shallow cone
+          // parasol: a pole and a shallow cone. `cone` recolours the thatch
+          // where a capture testifies to the canopy's colour (TBC above) —
+          // same silhouette, different cloth.
           bake(new THREE.CylinderGeometry(0.06, 0.08, 2.6, 6), poleM2, px, gy + 1.3, pz);
           // steeper, taller cone: a thatch parasol is a little roof, not a disc
-          bake(new THREE.ConeGeometry(1.5, 1.1, 9), parasolM, px, gy + 3.05, pz);
+          bake(new THREE.ConeGeometry(1.5, 1.1, 9),
+            brand && brand.cone ? matFor(brand.cone, false) : parasolM, px, gy + 3.05, pz);
         }
         // two loungers under it, laid along the shore
         for (const s2 of [-0.95, 0.95]) {

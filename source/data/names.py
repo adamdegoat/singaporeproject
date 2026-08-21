@@ -30,6 +30,10 @@ RENAMES = [
     ("the forum", "WEAVE",
      "RWS's Forum retail street was rebuilt and reopened as WEAVE in July 2025. "
      "rwsentosa.com."),
+    ("foc sentosa", "FOC by the Beach",
+     "Renamed: focsentosa.com 301-redirects to focbythebeach.com (verified "
+     "live 2026-08-21; research/sentosa-inventory-2026.md records it three "
+     "times, HIGH). Same venue, 110 Tanjong Beach Walk."),
 ]
 # NAMES THE MAP IS MISSING — a building that stands, with a documented
 # business in it, and no name on its OSM footprint. A rename cannot reach it
