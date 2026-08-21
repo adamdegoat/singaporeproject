@@ -1277,6 +1277,22 @@ OSM_WAY = {
     # entry becomes wrong and should be replaced by the real building.
     165365230: {"con": 1},
 
+    # --- USS north edge, research/rws-east-masses.md (2026-08-22). Both were
+    # calibrated 27.2m guesses on 1-storey park fabric; the research walked
+    # the ESRI Wayback series and the OSM way histories.
+    #
+    # 176839485: former Hollywood Blvd EAST block, planted grass roof —
+    # DEMOLISHED between the 2025-10 and 2026-04 Wayback releases (Super
+    # Nintendo World works, construction began 24 Feb 2025, Wikipedia/USS).
+    # Same answer as 165365230 above: a footprint left behind by something
+    # cleared gets `con`, so constructionSite() draws hoarding, not a tower.
+    176839485: {"con": 1},
+    # 116818197: Hollywood Blvd WEST block — REAL and standing: themed retail
+    # streetfront with the 1,500-seat Pantages Hollywood Theater (published,
+    # sentosa.com.sg event venues). White flat roof with PV arrays on the
+    # current imagery. Height UNPUBLISHED; EST 10-12m parapet -> 3 storeys.
+    116818197: {"st": 3},
+
     # --- research/mustafa-centre.md section 5
     # Mustafa Centre is FOUR footprints and OSM gives all four building:levels=5.
     # The research keeps storeys and metres deliberately apart and finds only one
