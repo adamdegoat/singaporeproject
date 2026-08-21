@@ -284,12 +284,28 @@ export class Sound {
     this.trafficFilter.frequency.setTargetAtTime(210 + near * 220, t, 0.4);
 
     if (mode === 'ride' && kind === 'skate') {
-      // no engine on a board: wheel roll rises with speed, wind over the top
+      // no engine on a board — and NO JET EITHER. The first mix let the wind
+      // bed (broadband, v-squared, cap 0.32) sit LOUDER than the wheels
+      // (cap 0.22): a continuous crescendo roar, which the owner named
+      // exactly — "sounds like rocket launching". What a board actually
+      // sounds like is urethane RUMBLE, low and granular, with the seam
+      // clack of the pavement joints; wind is a whisper you only notice at
+      // full tuck. So: wheels are the star, kept LOW (a rumble, not a
+      // hiss), wind capped at a quarter of its old level, and the truck
+      // double-click fires every ~5m of travel.
       this.engineGain.gain.setTargetAtTime(0, t, 0.15);
-      this.rollGain.gain.setTargetAtTime(Math.min(0.22, v * 0.024), t, 0.1);
-      this.rollFilter.frequency.setTargetAtTime(320 + v * 95, t, 0.12);
-      this.windGain.gain.setTargetAtTime(Math.min(0.32, (v * v) * 0.0026), t, 0.2);
-      this.windFilter.frequency.setTargetAtTime(520 + v * 60, t, 0.2);
+      this.rollGain.gain.setTargetAtTime(Math.min(0.3, v * 0.034), t, 0.1);
+      this.rollFilter.frequency.setTargetAtTime(240 + v * 48, t, 0.12);
+      this.roll.playbackRate.setTargetAtTime(1.1 + Math.min(0.7, v * 0.045), t, 0.15);
+      this.windGain.gain.setTargetAtTime(Math.min(0.08, (v * v) * 0.0007), t, 0.25);
+      this.windFilter.frequency.setTargetAtTime(420 + v * 40, t, 0.2);
+      // pavement seams: distance-accumulated so the rhythm follows speed
+      const dt = Math.min(0.12, t - (this._seamT || t));
+      this._seamT = t;
+      if (v > 2.2) {
+        this._seamAcc = (this._seamAcc || 0) + v * dt;
+        if (this._seamAcc > 5.0) { this._seamAcc = 0; this._seamTick(v); }
+      } else { this._seamAcc = 0; }
     } else if (mode === 'ride') {
       // engine note rises with speed, with a little compression at the top so it
       // does not turn into a siren
@@ -350,6 +366,28 @@ export class Sound {
         o.start(t0 + dt); o.stop(t0 + dt + d + 0.02);
       }
     } catch (e) { /* a cue is never fatal */ }
+  }
+
+  // the skateboard's signature: front truck then back truck over a pavement
+  // joint — two short low knocks 60ms apart, louder and slightly brighter
+  // with speed, never long enough to read as a beat of music
+  _seamTick(v) {
+    const ctx = this.ctx, t = ctx.currentTime;
+    const amp = 0.028 + Math.min(0.05, v * 0.004);
+    for (const dt of [0, 0.06]) {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noiseBuf;
+      src.playbackRate.value = 2.2;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass'; f.frequency.value = 620 + v * 18; f.Q.value = 1.4;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0, t + dt);
+      g.gain.linearRampToValueAtTime(amp * (dt ? 0.8 : 1), t + dt + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.045);
+      src.connect(f); f.connect(g); g.connect(this.master);
+      src.start(t + dt, Math.random() * 1.5);
+      src.stop(t + dt + 0.06);
+    }
   }
 
   _footstep(intensity) {
