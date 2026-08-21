@@ -1127,6 +1127,43 @@ export function bridgeFabric(pts, width, deck, deckGeos, pierGeos, ownName) {
   for (const sg of segs) {
     if (Math.min(clearAt(sg, 0), clearAt(sg, 0.5), clearAt(sg, 1)) < LOW_CLEAR) {
       BRIDGE_PIERS.atGrade++;
+      // ...UNLESS THE GRADE IT SITS AT IS THE SEA. The Brani causeway fails
+      // the aloft test — it is a low embankment, not a span — and got
+      // NOTHING: bare tarmac meeting open water on both edges (2026-08-22
+      // sweep frames 032/041, "a road floating on the sea"). A causeway in
+      // life is rock armour and a barrier. The stored datum for open sea is
+      // exactly 0.00 (reference: SG terrain datum), so ground under 0.4
+      // beside a bridge-tagged way IS water, and those segments get an
+      // armour skirt sloping off each edge and a low barrier — still inside
+      // the at-grade branch, so genuine culverts and ramps over land gain
+      // nothing.
+      {
+        const mx = sg.x + sg.dx / 2, mz = sg.z + sg.dz / 2;
+        const cy = Math.cos(sg.yaw), sy = Math.sin(sg.yaw);
+        let water = 0;
+        for (const sgn of [-1, 1]) {
+          const ex = mx + cy * sgn * (half + 3.5), ez = mz - sy * sgn * (half + 3.5);
+          if (TERRAIN.at(ex, ez) < 0.4) water++;
+        }
+        if (water) {
+          const deckY = deck - DECK_T / 2 - 0.02;
+          for (const sgn of [-1, 1]) {
+            const ex = mx + cy * sgn * (half + 3.5), ez = mz - sy * sgn * (half + 3.5);
+            if (TERRAIN.at(ex, ez) >= 0.4) continue;   // this edge meets land
+            // the armour skirt: a slab rolled ~38 degrees off the deck edge
+            const skirt = new THREE.BoxGeometry(3.4, 0.5, sg.L + 0.35).toNonIndexed();
+            skirt.rotateZ(sgn * -0.66);
+            skirt.rotateY(sg.yaw);
+            skirt.translate(mx + cy * sgn * (half + 1.15), deckY - 0.85,
+                            mz - sy * sgn * (half + 1.15));
+            pierGeos.push(skirt);
+            // and the barrier the rider sees
+            deckGeos.push(boxGeo(0.26, 0.92, sg.L + 0.35,
+              mx + cy * sgn * (half + 0.36), deck + 0.42,
+              mz - sy * sgn * (half + 0.36), sg.yaw));
+          }
+        }
+      }
       continue;
     }
     const mx = sg.x + sg.dx / 2, mz = sg.z + sg.dz / 2;
