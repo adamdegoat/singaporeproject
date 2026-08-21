@@ -6775,7 +6775,23 @@ export const RECIPES = [
   [/^emerald pavilion/i, emeraldPavilion],
   [/^coastes/i, coastesBar],
   [/^ola beach club/i, olaBeachClub],
-  [/^bora bora beach bar|^rock bar$|^two chefs bar|^tanjong beach club|^foc sentosa/i, beachVenue],
+  // TANJONG BEACH CLUB IS NOT IN THIS LIST ANY MORE, and the satellite is why.
+  //
+  // beachVenue draws an OPEN THATCH PAVILION on posts — right for Bora Bora,
+  // the Rock Bar and FOC, which are small beach bars. Tanjong Beach Club is
+  // 1,154 m2, and the ESRI z19 capture of 2026-08-21 (overlay in
+  // research/tanjong-beach.md) shows what it actually is: a solid L-plan
+  // building wrapping a pool courtyard, FLAT roofs with rooftop plant, cars
+  // parked against its east side. Standing a 57 m open shed over that was the
+  // biggest single thing wrong with this beach.
+  //
+  // It also cost the club its NAME. sgdetail.js's `noFascia` list excludes it
+  // because the fascia board hung off b.h = 20.4 and floated 7 m above the
+  // thatch — so the fix was "give it no sign at all". With an honest 6.5 m
+  // (data/heights.py, published single-storey + GFA-equals-footprint) and a
+  // building that has WALLS, the board has something to sit on and that
+  // exclusion goes too. Height, form and name were one problem all along.
+  [/^bora bora beach bar|^rock bar$|^two chefs bar|^foc sentosa/i, beachVenue],
   // Sand Bar (research/siloso-venues.md 1.10 + bikini-sandbar-measured.md
   // §SAND BAR RESOLVED): same open-pavilion form beachVenue draws, with the
   // two colours the survey publishes — "low shallow-pitch DARK-GREY roof"

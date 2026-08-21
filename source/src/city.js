@@ -8338,6 +8338,7 @@ export function buildTowers(world, data, taken) {
   // tower standing on top of something we have already drawn is skipped: it is
   // the same real object arriving twice, not two objects.
   const built = [];
+  const lifeguards = [];
   for (const a of (data.attractions || [])) {
     const k = (a.k || '') + ' ' + (a.n || '');
     if (!/zip|helix|cable|luge|tower|bungee/i.test(k)) continue;
@@ -8347,7 +8348,25 @@ export function buildTowers(world, data, taken) {
   for (const zt of (data.zipline && data.zipline.towers) || []) {
     if (Array.isArray(zt) && zt.length >= 2) built.push([zt[0], zt[1]]);
   }
-  const onSomething = (x, z) => built.some(([bx, bz]) => Math.hypot(bx - x, bz - z) < 40);
+  // LIFEGUARD TOWERS BELONG TO THE BEACH, NOT TO THIS LATTICE.
+  //
+  // Same rule as the SkyHelix above, from the other direction. A surveyed
+  // `emergency=lifeguard` node lands within a metre of `man_made=tower`
+  // way/163201840 on Palawan — which is exactly how research/palawan-spawn.md
+  // 6.3 proved that footprint is a Beach Patrol observation tower. sgdetail's
+  // buildBeachLife now stands the researched form there (timber posts, railed
+  // observation deck, hipped chocolate roof, cream soffit), so the honest
+  // generic answer for an unnamed tower is no longer the right one here: it
+  // would put a tapered steel lattice around a 4 m timber hut.
+  //
+  // 8 m, not 40: this is "the map tagged one object twice", not "a big ride
+  // stands hereabouts", and a generous radius would silently delete a real
+  // mast that happened to stand near a beach.
+  for (const f of (data.parkfurn || [])) {
+    if (f.k === 'lifeguard' && Array.isArray(f.p)) lifeguards.push([f.p[0], f.p[1]]);
+  }
+  const onSomething = (x, z) => built.some(([bx, bz]) => Math.hypot(bx - x, bz - z) < 40)
+    || lifeguards.some(([lx, lz]) => Math.hypot(lx - x, lz - z) < 8);
 
   let n = 0;
   for (const t of all) {

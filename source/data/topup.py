@@ -12,122 +12,16 @@ just the named layer and merges it into the cached raw file, deduping by
 import json, os, sys, time, urllib.request, urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 REG = json.load(open(os.path.join(HERE, "districts.json")))
 MIRRORS = ["https://overpass-api.de/api/interpreter",
            "https://overpass.private.coffee/api/interpreter",
            "https://overpass.kumi.systems/api/interpreter"]
 
-LAYERS = {
-    # THE SAME QUERY build_district.py USES, not a second copy of it.
-    #
-    # These two files each held their own `towers` string, so adding
-    # `man_made=crane` to the fetch in build_district.py left this one asking
-    # for towers alone — and topup is the ONLY way to get a new layer into a
-    # district whose cached raw the loss guard will not let you replace. The
-    # crane fix would have looked applied and quietly done nothing for keppel,
-    # which is the one district it exists for. One fact, one place.
-    "towers": ('way["man_made"="tower"]({bbox});node["man_made"="tower"]({bbox});'
-               'way["man_made"="crane"]({bbox});node["man_made"="crane"]({bbox});'),
-    "water": ('way["natural"="water"]({bbox});rel["natural"="water"]({bbox});'
-              'way["landuse"="reservoir"]({bbox});rel["landuse"="reservoir"]({bbox});'
-              'way["waterway"~"^(riverbank|dock|canal|river|stream)$"]({bbox});'
-              'rel["waterway"="riverbank"]({bbox});'),
-    "coast": 'way["natural"="coastline"]({bbox});',
-    "mrt": ('node["railway"="subway_entrance"]({bbox});'
-            'node["railway"="station"]({bbox});'
-            'way["railway"="subway_entrance"]({bbox});'),
-    "buildrel": 'rel["building"]({bbox});',
-    # A tower on a podium is TWO shapes, and OSM maps the second one as
-    # building:part. Orchard and River Valley were fetched before this layer
-    # existed and carry 4 and 1 of them against Chinatown's 505, so every
-    # podium-and-tower up there is drawn as one box to the tower's height.
-    # Topped up rather than refetched: a full refetch has been refused seven
-    # times by the loss guard and there is no reason to risk an eighth.
-    "buildpart": ('way["building:part"]({bbox});'
-                  'rel["building:part"]({bbox});'),
-    # GREEN SPACE, which this pipeline has never fetched. Singapore is a garden
-    # city and every park, garden, field and the whole of the Istana grounds was
-    # being drawn as bare terrain the colour of sand — the user's own words,
-    # riding Orchard Road: "istana all still empty place". The extract carries
-    # 72 individual trees and not one park polygon.
-    # SAND. `natural=beach` and `natural=sand` are fetched by nothing and read
-    # by nothing anywhere in this pipeline — the gap research/coastal-expansion.md
-    # 0.3 flags as "one that no code path anywhere touches". It did not matter
-    # while every district was inland; Sentosa's Siloso, Palawan and Tanjong
-    # beaches are the reason the island is famous and would have drawn as the
-    # world's neutral fallback ground.
-    "beach": ('way["natural"~"^(beach|sand|shingle)$"]({bbox});'
-              'rel["natural"~"^(beach|sand|shingle)$"]({bbox});'),
-    "green": ('way["leisure"~"^(park|garden|pitch|golf_course|common)$"]({bbox});'
-              'rel["leisure"~"^(park|garden|pitch|golf_course|common)$"]({bbox});'
-              'way["landuse"~"^(grass|forest|recreation_ground|cemetery|village_green|meadow|greenfield)$"]({bbox});'
-              'rel["landuse"~"^(grass|forest|recreation_ground|cemetery|village_green|meadow|greenfield)$"]({bbox});'
-              'way["natural"~"^(wood|scrub|grassland|heath)$"]({bbox});'
-              'rel["natural"~"^(wood|scrub|grassland|heath)$"]({bbox});'),
-    # THE OTHER 55%. With green space in, a sampled grid over Orchard still came
-    # back 55% neither building, park nor road — the sand between everything.
-    # In the real city that is residential compounds, car parks, plazas and
-    # forecourts, and OSM maps most of it as landuse. Without it the ground has
-    # one colour for a condo garden, a multi-storey car park apron and a
-    # shopping-mall forecourt.
-    "landuse": ('way["landuse"~"^(residential|commercial|retail|industrial|institutional|education|religious|construction|brownfield|railway)$"]({bbox});'
-                'rel["landuse"~"^(residential|commercial|retail|industrial|institutional|education|religious|construction|brownfield|railway)$"]({bbox});'
-                'way["amenity"="parking"]({bbox});rel["amenity"="parking"]({bbox});'
-                'way["highway"="pedestrian"]["area"="yes"]({bbox});'
-                'way["place"="square"]({bbox});'),
-    # The waterfront and the rail. Clarke Quay, Robertson Quay and Marina Bay
-    # are quays with jetties and pontoons on them, and none of it existed.
-    "marine": ('way["man_made"~"^(pier|breakwater|groyne)$"]({bbox});'
-               'way["waterway"="dock"]({bbox});'
-               'way["amenity"="ferry_terminal"]({bbox});'
-               'node["amenity"="ferry_terminal"]({bbox});'),
-    "rail": ('way["railway"~"^(rail|light_rail|subway|monorail|tram)$"]({bbox});'
-             'way["railway"="platform"]({bbox});'
-             'rel["railway"="platform"]({bbox});'),
-    # The cable car (Sentosa first: the Mount Faber and Sentosa lines). Never
-    # fetched by anything before 2026-08-03 — the only aerialway element in any
-    # raw cache arrived by accident, because the Imbiah station also carries
-    # building=yes. Ways are the cables, nodes are the pylons and stations.
-    "aerialway": ('way["aerialway"]({bbox});'
-                  'node["aerialway"~"^(station|pylon)$"]({bbox});'),
-    "sport": ('way["leisure"~"^(sports_centre|stadium|track|swimming_pool|fitness_station)$"]({bbox});'
-              'rel["leisure"~"^(sports_centre|stadium|track|swimming_pool)$"]({bbox});'),
-    # ---- THE WALKABLE WORLD, added 2026-08-01.
-    #
-    # Everything this pipeline fetches was chosen for a RIDER: carriageways,
-    # traffic signals, bus stops, gantries, street trees. The owner's goal is
-    # bigger than that — "it is not just driving around and seeing things from a
-    # vehicle point of view ... I must be able to walk around" — and measured
-    # against that the extract has never been asked for the things a person on
-    # foot actually meets.
-    #
-    # Counted in the brasbasah bbox alone, none of which anything draws today:
-    #
-    #     steps 107 · bench 60 · barrier ways 29 · memorial/monument 17
-    #     fountain 15 · playground 6 · shelter 6 · path 2
-    #
-    # STEPS IS THE ONE THAT MATTERS MOST and 107 is not a rounding error: it is
-    # every staircase on Fort Canning and up Mount Sophia. Without them the
-    # hills have no way up, so a walker cannot reach the top of either — the
-    # single biggest hole in a world you are meant to be able to explore.
-    #
-    # Two layers rather than ten so a throttled Overpass is asked twice per
-    # district instead of ten times. `barrier` rides with the network because it
-    # is the same question from the other side: where you may NOT walk.
-    "steps": ('way["highway"~"^(steps|path)$"]({bbox});'
-              'way["barrier"~"^(wall|fence|hedge|retaining_wall|handrail|guard_rail)$"]({bbox});'
-              'node["barrier"~"^(gate|bollard|lift_gate)$"]({bbox});'),
-    # The things worth WALKING TO. The Cenotaph, the Lim Bo Seng Memorial and
-    # the Tan Kim Seng Fountain all stand on ground we currently draw as empty
-    # grass, and they are exactly the "iconic places" the goal names.
-    "parkfurn": ('node["historic"~"^(memorial|monument)$"]({bbox});'
-                 'way["historic"~"^(memorial|monument)$"]({bbox});'
-                 'node["tourism"="artwork"]({bbox});way["tourism"="artwork"]({bbox});'
-                 'node["amenity"~"^(bench|fountain|shelter)$"]({bbox});'
-                 'way["amenity"~"^(fountain|shelter)$"]({bbox});'
-                 'node["leisure"="playground"]({bbox});'
-                 'way["leisure"="playground"]({bbox});'),
-}
+# THE LAYER TABLE LIVES IN osmlayers.py, and its header says why: this file
+# and build_district.py had drifted into asking for different worlds, twelve
+# layers apart, with nothing to say so. One table, both callers.
+from osmlayers import LAYERS  # noqa: E402  (after HERE is on sys.path)
 
 
 def main():

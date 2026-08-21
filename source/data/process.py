@@ -2538,6 +2538,23 @@ def floor_of(tags):
     return None
 
 
+# THE AMENITY VALUES THAT COUNT AS A NAMED TENANT.
+#
+# Written out twice below -- once for nodes, once for ways -- and it used to be
+# a literal tuple in both. It is a constant now because it just grew, and
+# growing it in one of two places is the failure this project has already paid
+# for once (see topup.py's `towers`).
+#
+# WHAT IT COST WHILE `bar` WAS MISSING: Tanjong Beach Club is amenity=bar. So
+# are Ola Beach Club, Bikini Bar, FOC Sentosa, WooBar and Bora Bora. The fetch
+# in build_district.py did not ask for them AND this reader would have dropped
+# them if it had. Both halves had to be widened; fixing either alone changes
+# nothing you can see, which is exactly why the gap survived so long.
+SHOP_AMENITIES = ("restaurant", "cafe", "bank", "fast_food", "pharmacy",
+                  "cinema", "bar", "pub", "nightclub", "biergarten",
+                  "food_court", "ice_cream")
+
+
 def shop_rec(tags, x, z):
     """A tenant, with the tags a shopfront needs to look like itself.
     Optional fields are omitted when absent rather than written empty, because
@@ -2769,8 +2786,7 @@ def main():
             elif tags.get("amenity") == "taxi":
                 x, z = proj(e["lat"], e["lon"])
                 taxis.append([round(x, 1), round(z, 1)])
-            elif tags.get("shop") or tags.get("amenity") in (
-                    "restaurant", "cafe", "bank", "fast_food", "pharmacy", "cinema"):
+            elif tags.get("shop") or tags.get("amenity") in SHOP_AMENITIES:
                 if tags.get("name"):
                     x, z = proj(e["lat"], e["lon"])
                     shops.append(shop_rec(tags, x, z))
@@ -2788,8 +2804,8 @@ def main():
             mrt.append({"p": [round(cx, 1), round(cz, 1)],
                         "n": tags.get("name", ""), "kind": "subway_entrance"})
             continue
-        if e["type"] == "way" and (tags.get("shop") or tags.get("amenity") in (
-                "restaurant", "cafe", "bank", "fast_food", "pharmacy", "cinema")) \
+        if e["type"] == "way" and (tags.get("shop")
+                                   or tags.get("amenity") in SHOP_AMENITIES) \
                 and tags.get("name") and "geometry" in e:
             pts = [proj(p["lat"], p["lon"]) for p in e["geometry"]]
             cx = sum(p[0] for p in pts) / len(pts)
@@ -5369,12 +5385,37 @@ def main():
         "artwork": "artwork",
         "bench": "bench", "fountain": "fountain",
         "shelter": "shelter", "playground": "playground",
+        # ---- THE SERVICE LAYER, added 2026-08-21 with osmlayers' `services`.
+        #
+        # Everything above is something you look AT. These are the things you
+        # USE, and on a beach they are the difference between sand you look at
+        # and sand you can spend a day on: 28 toilets, 4 showers, 6
+        # drinking-water points, 7 bicycle stands, 11 vending machines, 11
+        # bins and 22 information boards, all with surveyed positions, none of
+        # which this pipeline had ever asked for.
+        #
+        # research/palawan-spawn.md 6.3 wrote the warning months ago -- "None
+        # of these amenity nodes are in data/raw/sentosa.json ... A refetch
+        # would hand us the whole service layer for free" -- and nothing acted
+        # on it. Same shape as the `bar` omission the same morning: the fact
+        # was known, written down, and not wired up.
+        "toilets": "toilets", "shower": "shower",
+        "drinking_water": "water_point", "bicycle_parking": "bikerack",
+        "vending_machine": "vending", "waste_basket": "bin", "bbq": "bbq",
+        "information": "infoboard",
+        # THE ONE `emergency=lifeguard` NODE ON THE ISLAND. It sits INSIDE
+        # Palawan's patrol-tower footprint, which is what settled that the
+        # footprint is a lifeguard tower rather than a shed (palawan-spawn.md
+        # 6.3). It marks a tower we already have; it does not place new ones,
+        # and no count is published for Tanjong or Palawan -- so do not read
+        # this key as a licence to invent them.
+        "lifeguard": "lifeguard",
     }
     parkfurn = []
     for e in els:
         t = e.get("tags") or {}
         kind = None
-        for key in ("historic", "tourism", "amenity", "leisure"):
+        for key in ("historic", "tourism", "amenity", "leisure", "emergency"):
             v = t.get(key)
             if v in PARKFURN_KIND:
                 kind = PARKFURN_KIND[v]
@@ -5575,6 +5616,45 @@ def main():
                 _added += 1
         if _added:
             print(f"  authored {_added} footprint(s) the map does not have")
+
+        # ---- NAMED PLACES THE MAP DOES NOT CARRY, and the reason this branch
+        # is HERE rather than in the script that used to own it.
+        #
+        # `venues` was applied only by data/authoredapply.py, and NOTHING RUNS
+        # THAT SCRIPT. It is not in build_district.py's CHAIN, not in deploy.sh,
+        # not in any check -- it was run by hand once, in SESSION 30j, and the
+        # scene file kept the result until the next rebuild threw it away. This
+        # rebuild did exactly that: Emerald Pavilion was in the shipped scene on
+        # 2026-08-21 morning and was gone from it by afternoon, silently, with
+        # every gate still green, because a hand-run step is not part of the
+        # build no matter how carefully it was written.
+        #
+        # The buildings branch above never had that problem -- it lives in the
+        # pipeline. So venues joins it here, reading the same file, and
+        # authoredapply.py is retired rather than left lying around as a second
+        # way to do this that is one edit away from disagreeing with the first.
+        #
+        # DEDUPE IS BY NAME WITHIN 40m, not by position: a refreshed OSM cache
+        # can bring the same venue in on a slightly different node, and two
+        # "Ola Beach Club" entries 6m apart would put two bands on one wall.
+        # That is not hypothetical -- widening the shops fetch on 2026-08-21
+        # brought Ola Beach Club and Bikini Bar in from OSM for the first time,
+        # both of which this list had been carrying by hand.
+        _vadded = 0
+        for _e in json.load(open(_auth_path)).get("venues", []):
+            if _e.get("district") != DIST_ID:
+                continue
+            _cx, _cz = proj(_e["lat"], _e["lon"])
+            _nm = (_e.get("n") or "").strip().lower()
+            if any((_s.get("n") or "").strip().lower() == _nm
+                   and math.hypot(_s["p"][0] - _cx, _s["p"][1] - _cz) < 40
+                   for _s in shops):
+                continue
+            shops.append({"p": [round(_cx, 1), round(_cz, 1)], "n": _e["n"],
+                          "k": _e.get("k") or "restaurant"})
+            _vadded += 1
+        if _vadded:
+            print(f"  authored {_vadded} named venue(s) the map does not carry")
 
     # ONE BUILDING, ONE FOOTPRINT.
     #

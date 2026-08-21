@@ -972,16 +972,23 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
     const noFascia = b.bt === 'grandstand'
       || (b.bt === 'hut' && b.n === 'Wings of Time')
       || /aj hackett|^skypark sentosa/i.test(b.n || '')
-      // ...AND TANJONG BEACH CLUB IS THE SAME PANEL A THIRD TIME. Its record
-      // reads h=20.4 (the 20m type default, 'calib'), the beachVenue recipe
-      // stands a 10.8m open pavilion, and the fascia pass hung the board off
-      // b.h — a blank grey aluminium back TILTED IN THE SKY 7m above the
+      // ...AND TANJONG BEACH CLUB WAS HERE, A THIRD TIME, UNTIL 2026-08-21.
+      // Its record read h=20.4 (the 20m type default, 'calib'), beachVenue
+      // stood an open pavilion under it, and the fascia pass hung the board
+      // off b.h — a blank grey aluminium back TILTED IN THE SKY 7m above the
       // venue's own thatch roof, in frame from the beach. Chased through the
-      // SESSION 28 slab hunt as "the tilted grey panel, unidentified" until
-      // a pixel-pick named the material: #9aa0a6, SIGN_TRAY, like Wings of
-      // Time before it and Skypark before that. Same list, same reason: the
-      // wall the board needs does not exist.
-      || /^tanjong beach club/i.test(b.n || '');
+      // SESSION 28 slab hunt as "the tilted grey panel, unidentified" until a
+      // pixel-pick named the material: #9aa0a6, SIGN_TRAY, like Wings of Time
+      // before it and Skypark before that.
+      //
+      // THE ENTRY WAS A PATCH ON TWO OTHER BUGS, and both are fixed: the
+      // height is an evidenced 6.5 m and the recipe is gone, so the club is
+      // built as the solid L-plan building the satellite shows, with walls a
+      // board can sit on. Excluding it now would be suppressing the name of
+      // the most famous venue on this beach for a reason that no longer
+      // exists. If a floating panel ever comes back here, the height is the
+      // thing to look at — not this list.
+      ;
     // ...AND A WALL AT LEAST A SIGN TALL. There was no height test here at all,
     // so the shrink below would ask a 1 m shed for a negative board.
     if (b.n && bl > 7 && b.h > 2.6 && !noFascia) {
@@ -3177,6 +3184,49 @@ export async function buildWalkable(world, data, Y = null) {
     roof: new THREE.MeshStandardMaterial({ color: 0x7d8a7a, roughness: 0.8 }),
     // PUBLIC ART IS NOT A BLACK ROCK. See the artwork branch below.
     art: new THREE.MeshStandardMaterial({ color: 0x9a8f6d, roughness: 0.42, metalness: 0.35 }),
+    // ---- the service layer's three extra materials
+    steel: new THREE.MeshStandardMaterial({ color: 0x9ba1a6, roughness: 0.42, metalness: 0.55 }),
+    dark: new THREE.MeshStandardMaterial({ color: 0x3f4a4e, roughness: 0.72 }),
+    panel: new THREE.MeshStandardMaterial({ color: 0xe8e3d6, roughness: 0.6 }),
+  };
+  // The kinds the service branch owns, and of those, the ones that must not be
+  // built inside somebody else's walls. Sets rather than a chain of ||, so
+  // adding a kind in process.py and forgetting it here fails visibly at the
+  // `continue` rather than silently drawing an existing kind's shape.
+  const PF_SERVICE = new Set(['toilets', 'shower', 'water_point', 'bikerack',
+    'vending', 'bin', 'infoboard', 'lifeguard', 'bbq']);
+  const PF_NEEDS_OPEN = new Set(['toilets', 'shower', 'vending']);
+  // Point-in-any-building, bbox-prefiltered. Only ~60 service points ever ask,
+  // so this stays cheap without an index.
+  //
+  // ITS OWN point-in-ring, deliberately. There is an `inRing` in this file at
+  // module-ish scope inside ANOTHER function, and reaching for it here booted
+  // to `ReferenceError: inRing is not defined` — which three.js and this app
+  // report to console.error, NOT as a page exception, so every probe that
+  // listens only for `pageerror` called it a clean boot that merely never went
+  // ready. Same silence as SESSION 30i's shader failure. The comment at line
+  // ~5043 makes this exact point about this exact helper; heed it.
+  const pfInRing = (x, z, pts) => {
+    let hit = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, zi] = pts[i], [xj, zj] = pts[j];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) hit = !hit;
+    }
+    return hit;
+  };
+  const inHostBuilding = (x, z) => {
+    for (const b of data.buildings || []) {
+      const p = b.p;
+      if (!p || p.length < 3) continue;
+      let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+      for (const [qx, qz] of p) {
+        if (qx < mnx) mnx = qx; if (qx > mxx) mxx = qx;
+        if (qz < mnz) mnz = qz; if (qz > mxz) mxz = qz;
+      }
+      if (x < mnx || x > mxx || z < mnz || z > mxz) continue;
+      if (pfInRing(x, z, p)) return true;
+    }
+    return false;
   };
   for (const f of data.parkfurn || []) {
     await YW();
@@ -3344,6 +3394,111 @@ export async function buildWalkable(world, data, Y = null) {
         form.rotateY(ang + 0.35);
         form.translate(px, y + 1.65, pz);
         merger.add(form, PF.art, px, pz);
+      }
+    } else if (PF_SERVICE.has(f.k)) {
+      // ---- THE SERVICE LAYER (2026-08-21). See process.py's PARKFURN_KIND.
+      //
+      // A LIFEGUARD NODE IS A LABEL, NOT A THING. OSM has exactly one on this
+      // island and it sits INSIDE Palawan's patrol-tower footprint — it is
+      // what proved that footprint is a tower. Drawing anything for it would
+      // put a second object inside a tower we already build.
+      if (f.k === 'lifeguard') continue;
+      // A FITTING INSIDE A MAPPED BUILDING IS ALREADY BUILT.
+      //
+      // 19 of the island's 26 toilets nodes, 5 of 8 vending machines and 2 of
+      // 4 showers sit inside a building footprint: OSM is marking the door of
+      // a restroom block or the machine in a lobby, not a free-standing hut.
+      // Extruding a 3m box on top of one would stand a shed inside a wall —
+      // the double-footprint class this pipeline already dedupes buildings
+      // for. Only the ones out in the open get a body.
+      if (PF_NEEDS_OPEN.has(f.k) && inHostBuilding(px, pz)) continue;
+      if (f.k === 'toilets') {
+        // A SENTOSA BEACH RESTROOM IS A BLOCK, NOT A CUBICLE. palawan-spawn.md
+        // 6.3 measures the east-bay one at 22.6 x 17.0 m — but that one is a
+        // mapped BUILDING and is caught above. What is left here is the
+        // stand-alone unit, so this is the modest form: a single-storey box
+        // with a flat oversailing roof and a shaded doorway on one side.
+        const bw = 3.4, bd = 2.8, bh = 2.6;
+        const body = new THREE.BoxGeometry(bw, bh, bd);
+        body.rotateY(ang); body.translate(px, y + bh / 2, pz);
+        merger.add(body, PF.stone, px, pz);
+        const cap = new THREE.BoxGeometry(bw + 0.5, 0.16, bd + 0.5);
+        cap.rotateY(ang); cap.translate(px, y + bh + 0.08, pz);
+        merger.add(cap, PF.roof, px, pz);
+        // the doorway, recessed on the face the angle points at
+        const dr = new THREE.BoxGeometry(0.9, 2.05, 0.12);
+        dr.rotateY(ang);
+        dr.translate(px + Math.sin(ang) * (bd / 2), y + 1.02, pz + Math.cos(ang) * (bd / 2));
+        merger.add(dr, PF.dark, px, pz);
+      } else if (f.k === 'shower') {
+        // The beach shower: a plain post with a horizontal arm and a head.
+        // Three of the four on this island stand on Palawan's sand, and they
+        // are among the most recognisable objects on a Singapore beach.
+        const post = new THREE.CylinderGeometry(0.055, 0.065, 2.3, 8);
+        post.translate(px, y + 1.15, pz);
+        merger.add(post, PF.steel, px, pz);
+        const arm = new THREE.CylinderGeometry(0.04, 0.04, 0.42, 6);
+        arm.rotateZ(Math.PI / 2); arm.rotateY(ang);
+        arm.translate(px + Math.cos(ang) * 0.21, y + 2.24, pz - Math.sin(ang) * 0.21);
+        merger.add(arm, PF.steel, px, pz);
+        const head = new THREE.CylinderGeometry(0.11, 0.07, 0.09, 10);
+        head.translate(px + Math.cos(ang) * 0.4, y + 2.16, pz - Math.sin(ang) * 0.4);
+        merger.add(head, PF.steel, px, pz);
+        // the drain apron, so it reads as plumbed rather than planted
+        const pad = new THREE.CylinderGeometry(0.62, 0.62, 0.06, 12);
+        pad.translate(px, y + 0.03, pz);
+        merger.add(pad, PF.stone, px, pz);
+      } else if (f.k === 'water_point') {
+        // a drinking fountain: low bollard, basin, spout
+        const col = new THREE.CylinderGeometry(0.16, 0.19, 0.95, 10);
+        col.translate(px, y + 0.475, pz);
+        merger.add(col, PF.steel, px, pz);
+        const basin = new THREE.CylinderGeometry(0.24, 0.2, 0.11, 12);
+        basin.translate(px, y + 1.0, pz);
+        merger.add(basin, PF.stone, px, pz);
+      } else if (f.k === 'bikerack') {
+        // wall_loops — palawan-spawn.md 6.3 records capacity 4, uncovered.
+        // Three inverted-U hoops in a row, which is what capacity 4 looks like.
+        for (let i = -1; i <= 1; i++) {
+          const ox = px + Math.cos(ang) * i * 0.75, oz = pz - Math.sin(ang) * i * 0.75;
+          const hoop = new THREE.TorusGeometry(0.33, 0.032, 6, 12, Math.PI);
+          hoop.rotateY(ang + Math.PI / 2);
+          hoop.translate(ox, y + 0.33, oz);
+          merger.add(hoop, PF.steel, ox, oz);
+        }
+      } else if (f.k === 'vending') {
+        const box = new THREE.BoxGeometry(0.95, 1.85, 0.78);
+        box.rotateY(ang); box.translate(px, y + 0.925, pz);
+        merger.add(box, PF.dark, px, pz);
+        // the lit front panel, so it is not a black slab at night
+        const win = new THREE.BoxGeometry(0.74, 1.18, 0.06);
+        win.rotateY(ang);
+        win.translate(px + Math.sin(ang) * 0.4, y + 1.06, pz + Math.cos(ang) * 0.4);
+        merger.add(win, PF.panel, px, pz);
+      } else if (f.k === 'bin') {
+        const can = new THREE.CylinderGeometry(0.24, 0.21, 0.86, 10);
+        can.translate(px, y + 0.43, pz);
+        merger.add(can, PF.dark, px, pz);
+        const lid = new THREE.CylinderGeometry(0.27, 0.27, 0.07, 10);
+        lid.translate(px, y + 0.89, pz);
+        merger.add(lid, PF.steel, px, pz);
+      } else if (f.k === 'infoboard') {
+        // The angled map/interpretation board: two posts and a raked panel.
+        // Sentosa is covered in these and they are how a visitor on foot works
+        // out where they are, which is the whole point of a walkable island.
+        for (const sx of [-0.52, 0.52]) {
+          const lg = new THREE.CylinderGeometry(0.05, 0.05, 1.15, 6);
+          const lx = px + Math.cos(ang) * sx, lz = pz - Math.sin(ang) * sx;
+          lg.translate(lx, y + 0.575, lz);
+          merger.add(lg, PF.steel, lx, lz);
+        }
+        const panel = new THREE.BoxGeometry(1.24, 0.82, 0.06);
+        panel.rotateX(-0.42);           // raked back, read from standing height
+        panel.rotateY(ang);
+        panel.translate(px, y + 1.28, pz);
+        merger.add(panel, PF.panel, px, pz);
+      } else {
+        continue;
       }
     } else {
       continue;
@@ -7132,6 +7287,14 @@ export async function buildBeachLife(world, data, Y = null) {
   redM.userData.groyneInWater = true;
   yellowM.userData.groyneInWater = true;
   const hutM = new THREE.MeshLambertMaterial({ color: 0xe6e0d2 });
+  // Beach Patrol tower palette, straight off research/palawan-spawn.md 6.3:
+  // dark-brown timber posts, dark chocolate hipped roof, cream soffit, grey
+  // galvanised rail. Named for what they ARE so a future edit cannot quietly
+  // repaint the roof by reaching for the nearest brown.
+  const timberM = new THREE.MeshLambertMaterial({ color: 0x4a3526 });
+  const roofM = new THREE.MeshLambertMaterial({ color: 0x3d2b1d });
+  const soffitM = new THREE.MeshLambertMaterial({ color: 0xf0ead9 });
+  const railM = new THREE.MeshLambertMaterial({ color: 0x9aa0a3 });
 
   const bake = (geo, mat, x, y, z, ry = 0, rx = 0) => {
     if (ry || rx) geo.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, ry, 0, 'YXZ')));
@@ -7775,8 +7938,100 @@ export async function buildBeachLife(world, data, Y = null) {
     }
   }
 
-  // Siloso's three patrol towers (count published; form kept plain): thirds
-  // along the named Siloso Beach polygon, on the dry sand
+  // ── THE SENTOSA BEACH PATROL OBSERVATION TOWER ─────────────────────────
+  //
+  // ONE FORM, BUILT FROM THE SURVEY, USED EVERYWHERE ONE STANDS.
+  //
+  // What was here until 2026-08-21 was "form kept plain": four thin poles, a
+  // 2.6 m deck, three solid waist walls and a FLAT RED SLAB for a roof. The
+  // research had described the real thing in detail for weeks and nothing read
+  // it. research/palawan-spawn.md 6.3, measured off OSM way/163201840 and
+  // photographs:
+  //
+  //   * footprint 4.0 x 4.1 m — ours was 2.6 m, a third of the area
+  //   * two storeys, ~4.5-5 m to the RIDGE
+  //   * four dark-brown timber corner posts
+  //   * the observation level OPEN ON ALL FOUR SIDES — not walled
+  //   * balustrade: grey galvanised HORIZONTAL-RAIL guardrail, ~1 m
+  //   * roof: hipped PYRAMIDAL, four equal slopes, dark chocolate brown,
+  //     broad overhanging eaves, cream / off-white soffit
+  //
+  // Nothing here is invented; the only authored choice is which way it faces,
+  // and that is hashed off the position so it is stable across builds and the
+  // determinism check stays happy.
+  const patrolTower = (tx, gy, tz, ang) => {
+    const DECK = 2.82, RAIL = 1.02, EAVE = 0.16, RIDGE = 0.92;
+    const W = 4.0, D = 4.1, OVER = 0.62;      // eaves oversail on every side
+    const deckY = gy + DECK;
+    // four timber corner posts, ground to the ring beam under the eaves
+    for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const ox = tx + (lx * (W / 2 - 0.12)) * Math.cos(ang) - (lz * (D / 2 - 0.12)) * Math.sin(ang);
+      const oz = tz + (lx * (W / 2 - 0.12)) * Math.sin(ang) + (lz * (D / 2 - 0.12)) * Math.cos(ang);
+      const hgt = DECK + RAIL + EAVE;
+      const post = new THREE.BoxGeometry(0.16, hgt, 0.16);
+      post.rotateY(ang); post.translate(ox, gy + hgt / 2, oz);
+      merger.add(post, timberM, ox, oz);
+    }
+    // the observation floor
+    const deck = new THREE.BoxGeometry(W, 0.16, D);
+    deck.rotateY(ang); deck.translate(tx, deckY, tz);
+    merger.add(deck, hutM, tx, tz);
+    // OPEN ON ALL FOUR SIDES: three horizontal rails a side, not a wall.
+    // This is the detail that changes the read most — a walled box is a shed,
+    // a railed platform is somewhere a lifeguard watches the water from.
+    for (const h of [0.34, 0.68, 1.0]) {
+      for (const [sx, sz, ln] of [[0, 1, W], [0, -1, W], [1, 0, D], [-1, 0, D]]) {
+        const rx = tx + (sx * (W / 2)) * Math.cos(ang) - (sz * (D / 2)) * Math.sin(ang);
+        const rz = tz + (sx * (W / 2)) * Math.sin(ang) + (sz * (D / 2)) * Math.cos(ang);
+        const rail = new THREE.BoxGeometry(sx ? 0.05 : ln, 0.05, sx ? ln : 0.05);
+        rail.rotateY(ang); rail.translate(rx, deckY + 0.08 + h, rz);
+        merger.add(rail, railM, rx, rz);
+      }
+    }
+    // cream soffit, sized to the oversail, so the underside of the eaves reads
+    // pale from the sand exactly as it does in the photographs
+    const soff = new THREE.BoxGeometry(W + OVER * 2, 0.07, D + OVER * 2);
+    soff.rotateY(ang); soff.translate(tx, deckY + 0.08 + RAIL + EAVE, tz);
+    merger.add(soff, soffitM, tx, tz);
+    // hipped pyramidal roof: a 4-sided cone IS four equal slopes. Rotated an
+    // eighth turn so its faces square with the deck rather than its corners.
+    const halfDiag = Math.hypot(W + OVER * 2, D + OVER * 2) / 2;
+    const roof = new THREE.ConeGeometry(halfDiag, RIDGE, 4);
+    roof.rotateY(ang + Math.PI / 4);
+    roof.translate(tx, deckY + 0.08 + RAIL + EAVE + 0.035 + RIDGE / 2, tz);
+    merger.add(roof, roofM, tx, tz);
+    out.patrolTowers++;
+  };
+
+  // ── WHERE THEY STAND ───────────────────────────────────────────────────
+  //
+  // TWO SOURCES, AND NEITHER OF THEM IS A GUESS.
+  //
+  // (a) SILOSO: the count of three is PUBLISHED. No position is, so they sit
+  //     at thirds along the named beach polygon on dry sand — authored
+  //     spacing, published count, and that distinction is the honest one.
+  //
+  // (b) EVERY SURVEYED `emergency=lifeguard` NODE. OSM has exactly one on this
+  //     island, at Palawan, and it lands within a metre of `man_made=tower`
+  //     way/163201840 — which is precisely what palawan-spawn.md 6.3 used to
+  //     prove that footprint is a patrol tower and not a shed. A real position
+  //     from the map beats a rule every time, so it gets the tower here and
+  //     city.js's generic lattice stands down (see buildTowers' LIFEGUARD
+  //     note): the same real object must not arrive twice.
+  //
+  // NOT PLACED: TANJONG. Lifeguards on duty there are published; a COUNT is
+  // not, and a POSITION is not. research/tanjong-beach.md 1.4 is explicit —
+  // "No published COUNT for Tanjong — do not invent one." Dropping a tower on
+  // that sand by rule would be authoring a fact, which is the one thing this
+  // beach's brief asks nobody to do. It needs a satellite pass, like the club.
+  for (const f of data.parkfurn || []) {
+    if (f.k !== 'lifeguard') continue;
+    await YY();
+    const [lx, lz] = f.p;
+    if (window.__onRoad && window.__onRoad(lx, lz, 2)) continue;
+    patrolTower(lx, groundAt(lx, lz), lz, ((lx * 7.3 + lz * 3.1) % Math.PI));
+  }
+
   const siloso = sands.find((s) => (s.n || '') === 'Siloso Beach');
   if (siloso) {
     let mnx = Infinity, mxx = -Infinity, mnz2 = Infinity, mxz2 = -Infinity;
@@ -7798,15 +8053,7 @@ export async function buildBeachLife(world, data, Y = null) {
       }
       if (!best) continue;
       const [tz, gy] = best;
-      for (const [lx, lz] of [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]) {
-        bake(new THREE.CylinderGeometry(0.09, 0.09, 3.2, 6), poleM, tx + lx, gy + 1.6, tz + lz);
-      }
-      bake(new THREE.BoxGeometry(2.6, 0.14, 2.6), hutM, tx, gy + 3.25, tz);
-      bake(new THREE.BoxGeometry(2.6, 0.9, 0.1), hutM, tx, gy + 3.75, tz - 1.25);
-      bake(new THREE.BoxGeometry(2.6, 0.9, 0.1), hutM, tx, gy + 3.75, tz + 1.25);
-      bake(new THREE.BoxGeometry(0.1, 0.9, 2.6), hutM, tx - 1.25, gy + 3.75, tz);
-      bake(new THREE.BoxGeometry(2.9, 0.12, 2.9), redM, tx, gy + 4.45, tz);
-      out.patrolTowers++;
+      patrolTower(tx, gy, tz, ((tx * 7.3 + tz * 3.1) % Math.PI));
     }
   }
 

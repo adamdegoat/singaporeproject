@@ -178,6 +178,32 @@ CLOSED["Bora Bora Beach Bar"] = (
     "closed end Nov 2018 after 18 years "
     "(research/palawan-spawn.md 1a-0, way/176839400)")
 
+# SILOSO'S TWO JANUARY 2026 CLOSURES, and the reason they only became this
+# file's problem on 2026-08-21.
+#
+# The shops fetch had never asked for `amenity=bar`, so no beach bar on the
+# island had ever reached the scene through OSM at all -- which meant a stale
+# bar in the cache could not hurt anybody. Widening that query (build_district
+# .py, SHOPS_Q) turned every bar in the extract into a name on a wall, and OSM
+# does not retag a business the week it stops trading. Rumours is still tagged
+# amenity=bar on way/116818155 today, nineteen weeks after its last night.
+#
+# NOT ON THIS LIST, ON PURPOSE: Baristart Coffee. research/siloso-venues.md
+# "genuinely uncertain" 1 suspects it went with Rumours -- same site, same
+# operator group (Blue Waves), absent from Sentosa's 2026 dining directory --
+# and could find no closure notice either way. This file's rule is a source and
+# a date. Deleting a trading venue on suspicion is the same error as building a
+# closed one, pointed the other way.
+CLOSED["Rumours Beach Club"] = (
+    "last guests 4 January 2026 after six years; OSM still tags the shell "
+    "amenity=bar (research/siloso-venues.md 1.9, way/116818155)")
+CLOSED["Tipsy Unicorn Beach Club"] = (
+    "Tipsy Bird Pte Ltd, compulsory liquidation; ceased trading 30 January "
+    "2026. Absent from the cache today -- listed so a refetch cannot quietly "
+    "resurrect it, and because Sentosa's own directory is still stale "
+    "(research/siloso-venues.md 1.5)")
+CLOSED["Tipsy Unicorn"] = CLOSED["Tipsy Unicorn Beach Club"]
+
 # AND THE PIRATE SHIP, WHICH IS THE ONE A PLAYER WOULD WALK TO. The free water
 # playground reopened Feb 2017 as a ship-only remnant and had its last day on
 # 14 Apr 2019. Splash Tribe's pool and cabanas stand on the site, verified

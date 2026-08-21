@@ -12,6 +12,8 @@ slow and flaky part, so raw responses are cached per district and reused unless
 import argparse, json, math, os, re, subprocess, sys, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from osmlayers import LAYERS as SHARED_LAYERS, SHOPS_Q
 REG = json.load(open(os.path.join(HERE, "districts.json")))
 RAW_DIR = os.path.join(HERE, "raw")
 # The canonical scene path is data/<id>.json, the same one terrain.py and the
@@ -26,6 +28,9 @@ MIRRORS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.osm.jp/api/interpreter",
 ]
+
+
+
 
 
 def order_mirrors():
@@ -231,8 +236,15 @@ def fetch(d, force=False):
         # street level — the names people navigate by
         "bridges": f'way["highway"="footway"]["bridge"]({bbox});',
         "covered": f'way["highway"="footway"]["covered"]({bbox});',
-        "shops": (f'node["shop"]({bbox});way["shop"]({bbox});'
-                  f'node["amenity"~"^(restaurant|cafe|bank|fast_food|pharmacy|cinema)$"]({bbox});'),
+        # .format(bbox=...) IS LOAD-BEARING. Every other entry in this dict is
+        # an f-string that already has the bbox substituted; SHOPS_Q is a
+        # shared constant with a {bbox} PLACEHOLDER, because topup.py needs it
+        # unformatted. Passed raw it would ask Overpass for a node inside
+        # literal "({bbox})" — a syntax error on the one layer, on the one code
+        # path (a network fetch) that the local extract normally hides, since
+        # osmlocal takes the bbox as its own argument and never reads the
+        # string's. Introduced and caught the same day, 2026-08-21.
+        "shops": SHOPS_Q.format(bbox=bbox),
         # WATER, and it has to include RELATIONS. A bay, a reservoir or a river
         # basin is almost always a multipolygon relation in OSM, not a closed
         # way -- Marina Reservoir and the Singapore River both are -- so a
@@ -285,6 +297,24 @@ def fetch(d, force=False):
     # for a layer that expects data also falls through, because "a part
     # returning zero must be loud" is a rule this file already enforces and a
     # deterministic zero deserves the same second opinion as a network one.
+    # EVERY SHARED LAYER, NOT JUST THE FOURTEEN THIS FUNCTION KNEW ABOUT.
+    #
+    # Measured 2026-08-21: `parts` above had fourteen layers and osmlayers.py
+    # had sixteen, of which TWELVE were absent here -- green, beach, landuse,
+    # steps, parkfurn, marine, rail, aerialway, sport, buildrel, buildpart and
+    # shops. Every one had been added to topup.py and to no other place, so a
+    # `--force` refetch would have rebuilt the island without its beaches,
+    # parks, staircases, piers, cable car or street furniture, printed a clean
+    # fetch, and exited 0. The cache was the only copy of half the world.
+    #
+    # Merged rather than replacing `parts`: the entries above are richer for
+    # the layers they share (buildings carries relation and building:part
+    # handling this table states more plainly), so a name already present wins
+    # and the shared table fills the gaps.
+    for _lbl, _q in SHARED_LAYERS.items():
+        if _lbl not in parts:
+            parts[_lbl] = _q.format(bbox=bbox)
+
     local = {}
     try:
         sys.path.insert(0, HERE)
@@ -509,6 +539,35 @@ CHAIN = [
     Pass("attractions.py", "tourism/historic/attraction — the root of the "
          "sensoryscape/ussgate/bullring/skywalk subtree", only="sentosa"),
     Pass("groynes.py", "Siloso's boulder groynes and islets", only="sentosa"),
+    # ---- THREE SCRIPTS THAT WERE IN NO CHAIN AT ALL UNTIL 2026-08-21, and
+    # every rebuild since they were written has silently deleted their work.
+    #
+    # Found by the GOLDEN GATE, which is the only reason this is a paragraph
+    # and not a shipped island with no golf course on it. A rebuild that
+    # afternoon moved five golden frames; three of the five were these:
+    #
+    #   golf.py          418 areas (172 bunkers, 151 tees, 44 greens, 26
+    #                    fairways), 44 flag pins and 110 cart paths — a
+    #                    QUARTER OF THE ISLAND'S LAND, back to one flat tint
+    #   silosobridge.py  the 74.8 m lagoon-mouth footbridge, siloso-spec #8
+    #   palawangreen.py  Palawan's two authored scrub islands, 30 m from spawn
+    #
+    # The pattern is the day's third: authoredapply.py had the same disease
+    # (its venues branch now lives in process.py) and osmlayers.py exists
+    # because build_district and topup had drifted twelve layers apart. THREE
+    # separate cases of work that only existed because somebody once ran a
+    # command by hand. A step that is not in this list is not part of the
+    # build, however carefully it was written and however green the gates go.
+    #
+    # All three are idempotent and own their own layers, which is why they can
+    # simply be appended here. After centralbeach/groynes because they write
+    # into the same scene file and read the sand rings those passes settle.
+    Pass("golf.py", "the two courses: greens, bunkers, tees, cart paths and "
+         "44 flag pins — a quarter of the island", only="sentosa"),
+    Pass("silosobridge.py", "the unmapped lagoon-mouth footbridge, measured "
+         "off satellite (research/siloso-bridge-measured.md)", only="sentosa"),
+    Pass("palawangreen.py", "Palawan's authored green islands in the sand",
+         only="sentosa"),
     # The sand in front of the Wings of Time bank, which OSM does not have and
     # which rendered as lawn in the island's signature frame. Authored from
     # eleven measured transects; it owns one polygon and is idempotent.

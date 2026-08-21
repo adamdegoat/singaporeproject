@@ -62,13 +62,25 @@ ADDS = [
      "60 m2 footprint 8m from the official address point."),
 ]
 
-# Names that must NOT survive: things that have closed. Kept as a list rather
-# than deleted silently, because a demolished thing and a renamed thing are
-# different facts and the next person needs to see which is which.
-CLOSED = [
-    ("rumours beach club",
-     "Closed January 2026. Do not build; do not label."),
-]
+# Names that must NOT survive: things that have closed.
+#
+# EMPTY ON PURPOSE, AND IT SHOULD STAY EMPTY. data/stale.py is where a closure
+# lives: it carries a source and a date per entry, it distinguishes a building
+# (keep the shell, drop the name) from a label (remove the record), and every
+# check that audits provenance reads it.
+#
+# This list held one entry -- "rumours beach club", with no date and no source
+# -- and having two homes for the same fact cost exactly what two homes always
+# cost. names.py runs BEFORE stale.py, so it stripped the name first and left
+# `{"p": [-2082.5, 12458.1], "k": "bar"}` sitting in `shops`: a nameless record
+# that draws nothing, means nothing, and is invisible to the closure audit
+# because the audit looks for the NAME. stale.py's entry for the same venue
+# then matched nothing and reported nothing, so the log said the closure had
+# not been applied while the name was already gone.
+#
+# A closure goes in stale.py. If you are about to add one here, that is the
+# signal you have not read stale.py.
+CLOSED = []
 
 
 def main():

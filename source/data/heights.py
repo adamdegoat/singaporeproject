@@ -201,6 +201,51 @@ RESEARCHED = [
     ("ifly", {"floors": 6}),
     ("altitudex", {"floors": 6}),
 
+    # TANJONG BEACH CLUB — 6.5 m, and the number is an EST with its basis
+    # written out, not a published figure dressed up as one.
+    #
+    # It stood at h 20.4 / h0 20 — the "no height, no storeys" default —
+    # which research/tanjong-beach.md logged as a SEPARATE defect from "the
+    # beach club is missing". They were the same building: footprint at
+    # (-584, 13644), 1,154 m2, and the 20 m slab was it.
+    #
+    # THE BRIEF SAID "Building form, footprint and height: UNPUBLISHED." The
+    # form was published, in this project's own inventory, eight weeks before
+    # anyone went looking (research/sentosa-inventory-2026.md, 2026-08-07):
+    # "a low-rise SINGLE-STOREY beach-house pavilion set back behind the sand,
+    # with the pool as the centrepiece between building and beach."
+    #
+    # FOUR THINGS AGREE, AND NONE OF THEM IS A GUESS ABOUT THE HEIGHT ITSELF:
+    #   1. Published form: single storey (above).
+    #   2. Published floor area 1,114.84 m2 against a DERIVED footprint of
+    #      1,154 m2 — a 3.4% match. GFA that equals the footprint IS a
+    #      one-storey building; a second floor would roughly double it. This
+    #      is the strongest of the four because it is arithmetic, not prose.
+    #   3. Satellite, ESRI World Imagery z19 fetched 2026-08-21 (the method in
+    #      research/bikini-sandbar-measured.md): flat roofs with rooftop plant,
+    #      an L-plan wrapping the pool courtyard, no tall mass anywhere in the
+    #      compound. The OSM ring traces the built L exactly — it is the
+    #      BUILDING, not the whole site, which was worth checking before
+    #      trusting its area in (2).
+    #   4. A published MEZZANINE (~40 seats) — so one tall volume with an
+    #      internal half-level, which is why this is not STOREY x 1 = 3.4 m.
+    #
+    # SO WHY 6.5 AND NOT 3.4: exactly the Raffles Sentosa case above. The
+    # resort is published single-storey and its villas carry 3.4; the polygon
+    # WEARING THE NAME is the lobby pavilion, and a pavilion is taller than a
+    # villa. Same here, same figure, same reasoning — and it sits inside the
+    # band data/venues.py already carries for this building type on this
+    # island (Coastes 5.0, Ola Beach Club 6.0, Emerald Pavilion 8.0).
+    #
+    # THE SHADOW ROUTE WAS TRIED AND REFUSED. A shadow length would have made
+    # this a measurement instead of an estimate, but the z19 capture is
+    # near-noon: the sand beside the club reads p5 97 / p95 212 with the dark
+    # tail owned by parasols and vegetation, not by a roof edge, and there is
+    # no object of known height in frame to calibrate a sun elevation against.
+    # A number derived from that would be an estimate wearing a measurement's
+    # clothes, which is worse than an estimate that says so.
+    ("tanjong beach club", {"m": 6.5}),
+
     # TWO PUBLISHED FIGURES FROM THE RESEARCH ARE DELIBERATELY NOT HERE, and
     # both for the same reason: THE FOOTPRINT IS NOT THE THING.
     #
