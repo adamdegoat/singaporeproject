@@ -69,6 +69,10 @@ MIN_SAMPLE = 12
 SOURCED = {"levels", "osm", "site", "named"}
 # a storey, for rounding to something a building could actually be
 STOREY = 3.4
+# The least mass a building may have ABOVE a route that runs through it.
+# Matches openground.py's own MIN_MASS: a roof with no thickness is not a
+# building, it is a canopy, and the two are different things.
+MIN_SPAN = 2.5
 
 
 # RESEARCHED HEIGHTS BEAT THE CALIBRATION, and a published figure beats both.
@@ -300,7 +304,7 @@ def researched_for(name):
 def apply_researched(did, dry_run=False):
     path = os.path.join(HERE, f"{did}.json")
     d = json.load(open(path))
-    hits = []
+    hits, conflicts = [], []
     for b in d.get("buildings") or []:
         if b.get("hs") not in (None, "calib"):
             continue
@@ -310,6 +314,26 @@ def apply_researched(did, dry_run=False):
         h = round(spec["m"] if "m" in spec else spec["floors"] * STOREY, 1)
         if abs(b.get("h", 0) - h) < 0.05:
             continue
+        # A RESEARCHED HEIGHT MUST STILL CLEAR THE ROAD UNDER THE BUILDING.
+        #
+        # openground.py lifts a footprint a surveyed route runs through and
+        # records the clearance in `mh` -- a MEASURED fact, the ground under a
+        # real road. This pass then wrote a researched height straight over the
+        # top of it with no test, and the two can disagree: Quayside Isle came
+        # out h 6.8 (research: two storeys, CDL, 2012) over mh 6.6, a building
+        # whose base stood 0.2 m below its own roof and which therefore drew as
+        # a solid block across the route it is supposed to span.
+        #
+        # BOTH NUMBERS ARE SOURCED, so this does not pick a winner quietly. It
+        # keeps the world CONSISTENT -- nothing impossible ships -- and says
+        # out loud that two facts disagree, with both of them named, so the
+        # next person resolves it with evidence instead of discovering it as a
+        # solid block in a frame. Silence here would be the whole failure mode
+        # this file's own header warns about.
+        _mh = b.get("mh") or 0
+        if _mh > 1 and h < _mh + MIN_SPAN:
+            conflicts.append((b.get("n"), h, _mh, round(_mh + MIN_SPAN, 1)))
+            h = round(_mh + MIN_SPAN, 1)
         hits.append((b.get("n"), b.get("h"), h))
         if "h0" not in b:
             b["h0"] = b.get("h")
@@ -320,6 +344,10 @@ def apply_researched(did, dry_run=False):
     print(f"== heights --apply-researched {did}")
     for n, was, now in hits:
         print(f"   {n}: {was} -> {now}   (named after heights.py had already run)")
+    for n, want, mh, used in conflicts:
+        print(f"   ! {n}: researched {want}m is BELOW its measured road "
+              f"clearance {mh}m — used {used}m so the span stays a building. "
+              f"Two sourced facts disagree; resolve with evidence.")
     if not hits:
         print("   nothing left to apply — every researched name was in place "
               "when heights.py ran")

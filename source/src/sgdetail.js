@@ -6595,7 +6595,17 @@ export async function buildTransit(world, data, Y = null) {
       gateSigns.add(face, uv.mat, px, pz);
       // exposed so a probe can check placement without a second copy of the
       // rule that chose it — the same reason __shopBays and __ta.runs are
-      (window.__venueSigns = window.__venueSigns || []).push({ n: nm, x: +px.toFixed(1), z: +pz.toFixed(1), y: +y.toFixed(1) });
+      // THE FACING GOES IN THE LEDGER TOO, and it is not bookkeeping.
+      // Without it nothing outside this function can stand where a READER
+      // stands, so the only questions answerable about a name band were
+      // "does it exist" and "is it in the road" — both of which Tanjong Beach
+      // Club passed while its own awning cut the top half off the letters.
+      // With a normal, a probe can put an eye 8-20 m out in front and cast a
+      // ray at the plate, which is the question that actually matters.
+      (window.__venueSigns = window.__venueSigns || []).push({
+        n: nm, x: +px.toFixed(1), z: +pz.toFixed(1), y: +y.toFixed(1),
+        nx: +best.nx.toFixed(3), nz: +best.nz.toFixed(3), w: +w.toFixed(2), h: +h.toFixed(2),
+      });
       named++;
     }
     // -- AND THE OTHER 51: A DIRECTORY WHERE YOU ARRIVE ----------------------

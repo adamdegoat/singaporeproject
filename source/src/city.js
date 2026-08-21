@@ -4115,7 +4115,16 @@ export async function buildBuildings(world, data, Y = null) {
     // atrium is. Built from its own base, it is the 14m deck everyone knows.
     // rule 2 (see the note above the loop): a part whose base stands clear of
     // everything under it is seated on its host's top instead of in the air.
-    let _mh = b.mh;
+    // THE RATIO WINS OVER THE STORED METRES, when the data carries one.
+    //
+    // `mh` is absolute and was computed from whatever `h` the footprint had at
+    // the moment process.py read its tags; post-passes then rewrite `h` and
+    // leave `mh` where it was. That is how three Hotel Michael parts came to
+    // carry h 36.6 with mh 40.8 -- a mass whose base stands above its own top,
+    // silently drawn solid here because the `_mh < h - 0.5` test below quietly
+    // rejects it. `mr` is min_level/levels, which is scale-free: derive from it
+    // and any later change to `h` moves the base with it.
+    let _mh = (b.mr && b.mr > 0 && b.mr < 1 && h) ? b.mr * h : b.mh;
     if (_mh && _mh > 1 && _partHost.has(b)) {
       const hs = _partHost.get(b);
       if (hs.top !== null && _mh > hs.top + 0.5) _mh = hs.top;

@@ -3301,6 +3301,17 @@ def main():
                 _mh = float(str(tags.get("min_height", "")).replace("m", "").strip())
                 if 1.0 < _mh < h:
                     b["mh"] = round(_mh, 1)
+                    # THE RATIO HERE TOO, for the same reason as the levels
+                    # path below: `h` is not final at this point and `mh` is an
+                    # absolute figure derived from the `h` of this moment.
+                    # Quayside Isle was the case that proved the metres path
+                    # needs it as much as the storeys path -- a research height
+                    # of 6.8 landed after a min_height of 6.6 was read from a
+                    # taller tag, leaving a base 0.2 m under its own top. It
+                    # drew correctly (the lift test rejects it) and the data
+                    # was still false, which is the kind of wrong that survives
+                    # because nothing looks at it.
+                    b["mr"] = round(_mh / h, 4)
             except ValueError:
                 pass
             # THE SAME FACT IN STOREYS, WHICH IS HOW MOST OF IT IS ACTUALLY
@@ -4695,6 +4706,25 @@ def main():
                     break
             if _ok:
                 _b["mh"] = _mh
+                # ...AND THE RATIO IT CAME FROM, because `h` IS NOT FINAL HERE.
+                #
+                # `mh` is an absolute metre figure derived from the `h` this
+                # footprint had at THIS moment. Post-passes rewrite `h` freely
+                # -- heights.py from research, names.py's ADDS from surveyed
+                # site coordinates at storeys x 3.1 -- and nothing told `mh`.
+                # Measured 2026-08-21: 4 of the 17 footprints carrying `mh`
+                # had a base at or above their own top, three of them Hotel
+                # Michael parts (h 36.6, mh 40.8) where a `site` height landed
+                # after the lift was computed from levels x 3.4. A mass that
+                # starts above where it ends is not a rounding error.
+                #
+                # The comment above already says why the RATIO is the durable
+                # fact -- "min_level/levels is the one ratio that lands
+                # correctly whichever path produced `h`" -- it just was not
+                # kept. Now it is, and city.js derives the base from it, so a
+                # later height change carries the base with it instead of
+                # stranding it.
+                _b["mr"] = round(_ml / _lvv, 4)
                 _lifted += 1
             else:
                 _floating.append(f"{_b.get('n') or '(unnamed)'} lv{int(_ml)}/{int(_lvv)} @{_mh}m")
