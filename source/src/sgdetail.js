@@ -5754,6 +5754,87 @@ export async function buildTransit(world, data, Y = null) {
     out.boardwalk = (out.boardwalk || 0) + 1;
   }
 
+  // -- THE SENTOSA GATEWAY ARCH --------------------------------------------
+  //
+  // The island's front door: twin masonry towers flanking Gateway Avenue at
+  // the 1992 causeway landing, joined by an arched span OSM itself names
+  // "Sentosa" (data/gatewayarch.py — surveyed tower ways, EST heights). Every
+  // arrival passes under it; the world drew nothing because the 17 m2 tower
+  // footprints are under every area filter.
+  const ga = data.gatewayarch;
+  if (ga && ga.a && ga.b) {
+    await YY();
+    const stone = new THREE.MeshStandardMaterial({ color: 0xcfc4ae, roughness: 0.85 });
+    const cap = new THREE.MeshStandardMaterial({ color: 0x4a4d50, roughness: 0.7 });
+    const spanWhite = new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.75 });
+    const tw = ga.tw || 4.1, th = ga.th || 13, deck = ga.deck || 7;
+    const gys = [];
+    for (const [px, pz] of [ga.a, ga.b]) {
+      const gy = drawnGroundAt(px, pz);
+      gys.push(gy);
+      const t = new THREE.BoxGeometry(tw, th, tw);
+      t.translate(px, gy + th / 2, pz);
+      merger.add(t, stone, px, pz);
+      // masonry banding + the dark cap the satellite shows
+      const band = new THREE.BoxGeometry(tw + 0.3, 0.5, tw + 0.3);
+      band.translate(px, gy + th - 1.6, pz);
+      merger.add(band, spanWhite, px, pz);
+      const c = new THREE.BoxGeometry(tw + 0.5, 0.9, tw + 0.5);
+      c.translate(px, gy + th + 0.45, pz);
+      merger.add(c, cap, px, pz);
+    }
+    // the shallow arch: five segments rising ~1.2m to mid-span, plus parapet
+    const y0 = Math.max(...gys) + deck;
+    const dxs = ga.b[0] - ga.a[0], dzs = ga.b[1] - ga.a[1];
+    const span = Math.hypot(dxs, dzs);
+    const yaw = Math.atan2(dxs, dzs);
+    const SEGS = 5;
+    for (let i = 0; i < SEGS; i++) {
+      const t0 = i / SEGS, t1 = (i + 1) / SEGS;
+      const tm = (t0 + t1) / 2;
+      const rise = 1.2 * Math.sin(Math.PI * tm);          // arch profile
+      const segL = span / SEGS + 0.15;
+      const dk = new THREE.BoxGeometry(2.6, 0.45, segL);
+      dk.rotateX(Math.atan2(1.2 * (Math.sin(Math.PI * t1) - Math.sin(Math.PI * t0)), span / SEGS) * 1);
+      dk.rotateY(yaw);
+      dk.translate(ga.a[0] + dxs * tm, y0 + rise, ga.a[1] + dzs * tm);
+      merger.add(dk, spanWhite, ga.a[0], ga.a[1]);
+      for (const side of [-1, 1]) {
+        const nx = Math.cos(yaw) * side, nz = -Math.sin(yaw) * side;
+        const pr = new THREE.BoxGeometry(0.18, 1.0, segL);
+        pr.rotateY(yaw);
+        pr.translate(ga.a[0] + dxs * tm + nx * 1.25, y0 + rise + 0.7,
+                     ga.a[1] + dzs * tm + nz * 1.25);
+        merger.add(pr, spanWhite, ga.a[0], ga.a[1]);
+      }
+    }
+    // the SENTOSA board at mid-span, both faces — white ground, dark blue
+    // letters, the sign every arrival photo shows
+    {
+      const cv = document.createElement('canvas');
+      cv.width = 512; cv.height = 96;
+      const x2 = cv.getContext('2d');
+      x2.fillStyle = '#f4f3ee'; x2.fillRect(0, 0, 512, 96);
+      x2.fillStyle = '#153a6b';
+      x2.font = '700 64px ui-sans-serif, system-ui, Helvetica, Arial';
+      x2.textAlign = 'center'; x2.textBaseline = 'middle';
+      x2.fillText(ga.sign || 'SENTOSA', 256, 52);
+      const tx2 = new THREE.CanvasTexture(cv);
+      tx2.colorSpace = THREE.SRGBColorSpace;
+      tx2.anisotropy = 4;
+      const bm = new THREE.MeshBasicMaterial({ map: tx2 });
+      const mx = ga.a[0] + dxs * 0.5, mz = ga.a[1] + dzs * 0.5;
+      for (const side of [-1, 1]) {
+        const nx = Math.cos(yaw) * side, nz = -Math.sin(yaw) * side;
+        const face = new THREE.Mesh(new THREE.PlaneGeometry(10.5, 1.95), bm);
+        face.position.set(mx + nx * 1.42, y0 + 1.2 + 1.15, mz + nz * 1.42);
+        face.rotation.y = yaw + (side > 0 ? Math.PI / 2 : -Math.PI / 2);
+        world.add(face);
+      }
+    }
+    out.gatewayArch = 1;
+  }
+
   // -- FORT SILOSO SKYWALK -------------------------------------------------
   //
   // 181m of elevated walkway from a lift tower near Siloso Point to Fort

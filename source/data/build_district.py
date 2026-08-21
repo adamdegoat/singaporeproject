@@ -602,6 +602,8 @@ CHAIN = [
     Pass("ussgate.py", "needs attractions: the USS park ring and globe", only="sentosa"),
     Pass("bullring.py", "needs attractions: the globe fixes the long axis", only="sentosa"),
     Pass("skywalk.py", "needs attractions: Fort Siloso and Siloso Point", only="sentosa"),
+    Pass("gatewayarch.py", "the 1992 twin-tower SENTOSA arch over Gateway "
+         "Avenue, from its own OSM ways", only="sentosa"),
     Pass("lookoutloop.py", "recover the name/layer/level process.py strips off "
          "bridge footways", only="sentosa"),
     Pass("wavehouse.py", "SURF COVE, authored — the map does not have it", only="sentosa"),
