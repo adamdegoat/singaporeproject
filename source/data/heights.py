@@ -200,6 +200,47 @@ RESEARCHED = [
     ("emerald pavil", {"floors": 2}),
     ("sapphire pavil", {"floors": 1}),
 
+    # --- USS SHOW BUILDINGS, 2026-08-21 evening. The show-building heights
+    # were the biggest remaining guess block on the island (47 of 53 park
+    # buildings on calib). Figures from research/universal-zones.md (evidence
+    # labels theirs: PUBLISHED / EST-PHOTO ±25%) plus one rcdb figure fetched
+    # today. EST-PHOTO midpoints are still ESTIMATES — but an estimate whose
+    # basis is a dated photograph beats a footprint-band median every time,
+    # and the brief's own rule is that no invented figure appears anywhere.
+    # NOT touched, on purpose: the Battlestar Galactica footprint (it is the
+    # STATION — stamping the track's published 42.5 m on it is the exact
+    # "four unnamed 68 m towers" mistake pointed the other way), the
+    # TRANSFORMERS box (height UNPUBLISHED, identity carried by the portal),
+    # and the castle's 30-40 m CENTRAL TOWER (a tower is a recipe, not a
+    # taller slab — see the worklist note in HANDOFF 30m).
+    #
+    # Revenge of the Mummy — building height 44.4 ft = 13.5 m, PUBLISHED,
+    # rcdb.com/4327.htm (fetched 2026-08-21). Was 23.8 calib.
+    ("revenge of the mummy", {"m": 13.5}),
+    # WaterWorld amphitheatre — set towers EST-PHOTO 14-18 m above water
+    # (universal-zones §5B, lw_Waterworld_arena 2011-10-08). Midpoint.
+    ("waterworld", {"m": 16.0}),
+    # Far Far Away Castle main mass — the flanking drum towers read as ~6
+    # storey-equivalents (universal-zones §6A, park_Far_Far_Away_Castle
+    # 2024-02-06). The in-circulation "40 m" is UNVERIFIED per the brief and
+    # describes the central tower's crown, not this footprint's bulk.
+    ("lord farquaad", {"m": 20.4}),
+    # Jurassic Park Rapids Adventure — published drop 40 ft / 12.2 m
+    # (universal-zones §5A-C, en.wikipedia.org), and the lift structure must
+    # stand above its own drop: 12.2 plus a deck and roof. Arithmetic on a
+    # published figure, same class as the TBC GFA-equals-footprint argument.
+    ("jurassic park rapids", {"m": 14.5}),
+    # Lights! Camera! Action! corner block — EST-PHOTO 12-15 m, three
+    # expressed storeys plus parapet (universal-zones §2B). Midpoint.
+    ("lights! camera", {"m": 13.5}),
+    # Canopy Flyer station — EST-PHOTO 9-12 m to the ridge, two pole-frame
+    # levels plus gable (universal-zones §5A-B). Midpoint.
+    ("canopy flyer", {"m": 10.5}),
+    # Puss In Boots' Giant Journey — the ruined keep, EST-PHOTO 12-16 m to
+    # the broken parapet (universal-zones §6C). Midpoint. Was 6.8 — the one
+    # in this table the calibration guessed too SHORT.
+    ("puss in boots", {"m": 14.0}),
+
     # --- Published metres
     # AltitudeX (ex-iFly) — the flight chamber alone is 17.2 m tall, and the
     # building encloses it. Sentosa's own copy: "the height of a 6-storey flat".
