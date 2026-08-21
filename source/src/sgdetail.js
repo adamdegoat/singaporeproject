@@ -9639,15 +9639,17 @@ export function buildUssVocab(world, data, blocked) {
     }
   }
 
-  // ── FAR FAR AWAY — §6.A, the castle rework. The mapped Lord Farquaad's
-  // Castle is a 17m battlemented box; §6.3 gives it what separates a
-  // castle from a box: round drum towers with machicolation corbel bands,
-  // crenellated drums, conical terracotta roofs, gold finials and scarlet
-  // pennants — and the central tower crowned by the giant gold crown.
+  // ── FAR FAR AWAY — §6.A, the castle rework (second pass, HANDOFF 30m's
+  // named job). The first pass proved "slab plus sticks" is not a castle:
+  // r2.4 drums on a 67m mass read as pencils (shots/street/ffa0.*). The
+  // identity in park_Far_Far_Away_Castle (2024-02-06) is a CLUSTER of fat
+  // varied drum towers around a tall central tower wearing Lord Farquaad's
+  // gold crown, over crenellated curtain walls.
   // HEIGHTS: the 40m figure in circulation is UNVERIFIED (§6.A traces it
-  // to aggregators only) — nothing here uses it. Towers are proportioned
-  // off the surveyed 17m mass: corner drums to ~21m, the centre to ~27m,
-  // well under Battlestar's PUBLISHED 42.5m.
+  // to aggregators only) — nothing here uses it. The central tower apex
+  // lands at bulk+17.6 ≈ 38m ground-up, inside §6.A's EST-PHOTO 30-40m
+  // band and under Battlestar's PUBLISHED 42.5m. Drums are proportioned
+  // off the surveyed 20.4m bulk (heights.py, EST-PHOTO ~6 storeys).
   {
     const castle = (data.buildings || []).find((b) => (b.n || '').includes('Farquaad'));
     if (castle && castle.p && castle.p.length >= 4) {
@@ -9655,6 +9657,7 @@ export function buildUssVocab(world, data, blocked) {
         stone: new THREE.MeshLambertMaterial({ color: 0xb2a07d }),
         stoneLit: new THREE.MeshLambertMaterial({ color: 0xc9ba97 }),
         terra: new THREE.MeshLambertMaterial({ color: 0xa8683f }),
+        copper: new THREE.MeshLambertMaterial({ color: 0xb06a3c }),
         gold: new THREE.MeshLambertMaterial({ color: 0xc9a437 }),
         scarlet: new THREE.MeshLambertMaterial({ color: 0xb92a24 }),
       };
@@ -9662,8 +9665,9 @@ export function buildUssVocab(world, data, blocked) {
       for (const [qx, qz] of castle.p) { ccx += qx; ccz += qz; }
       ccx /= castle.p.length; ccz /= castle.p.length;
       const ch = castle.h || 17;
+      const gTopC = drawnGroundAt(ccx, ccz) + ch;
       // corner drums: the 4 footprint vertices furthest from the centroid,
-      // kept 9m apart, pulled 2m inward so each drum engages the wall
+      // kept 12m apart, pulled inward so each drum engages the wall
       const verts = castle.p.slice(0, -1).map(([qx, qz]) => {
         const dd = (qx - ccx) ** 2 + (qz - ccz) ** 2;
         return [dd, qx, qz];
@@ -9671,57 +9675,139 @@ export function buildUssVocab(world, data, blocked) {
       const drums = [];
       for (const [dd, qx, qz] of verts) {
         if (drums.length >= 4) break;
-        if (drums.some(([px, pz]) => (px - qx) ** 2 + (pz - qz) ** 2 < 9 * 9)) continue;
+        if (drums.some(([px, pz]) => (px - qx) ** 2 + (pz - qz) ** 2 < 12 * 12)) continue;
         const dl = Math.sqrt(dd) || 1;
-        drums.push([qx + (ccx - qx) / dl * 2, qz + (ccz - qz) / dl * 2]);
+        drums.push([qx + (ccx - qx) / dl * 2.6, qz + (ccz - qz) / dl * 2.6]);
       }
-      const drum = (px, pz, r, top, coneH) => {
+      // roofCap: 'cone' (terracotta scale-tile) or 'dome' (copper-orange,
+      // §6 materials: "copper-orange domes on some subsidiary turrets")
+      const drum = (px, pz, r, top, capH, cap = 'cone') => {
         const g2 = drawnGroundAt(px, pz);
-        const shaft = new THREE.CylinderGeometry(r, r + 0.15, top, 12);
+        const shaft = new THREE.CylinderGeometry(r, r + 0.2, top, 14);
         shaft.translate(px, g2 + top / 2, pz);
         merger.add(shaft, FF.stone, px, pz);
-        // machicolation: the projecting corbel band under the crenellation
-        const mach = new THREE.CylinderGeometry(r + 0.55, r + 0.2, 0.9, 12);
-        mach.translate(px, g2 + top - 0.45, pz);
+        // machicolation: the projecting corbel band under the crenellation —
+        // §6.3, "the one band that separates a castle from a cylinder"
+        const mach = new THREE.CylinderGeometry(r + 0.6, r + 0.2, 1.0, 14);
+        mach.translate(px, g2 + top - 0.5, pz);
         merger.add(mach, FF.stoneLit, px, pz);
-        for (let i = 0; i < 8; i++) {
-          const a = (i / 8) * Math.PI * 2;
-          const m = new THREE.BoxGeometry(0.8, 0.6, 0.45);
+        const nm = Math.max(8, Math.round((r + 0.4) * 4));
+        for (let i = 0; i < nm; i++) {
+          const a = (i / nm) * Math.PI * 2;
+          const m = new THREE.BoxGeometry(0.85, 0.7, 0.45);
           m.rotateY(-a);
-          m.translate(px + Math.cos(a) * (r + 0.35), g2 + top + 0.3, pz + Math.sin(a) * (r + 0.35));
+          m.translate(px + Math.cos(a) * (r + 0.38), g2 + top + 0.35, pz + Math.sin(a) * (r + 0.38));
           merger.add(m, FF.stone, px, pz);
         }
-        const cone = new THREE.ConeGeometry(r + 0.7, coneH, 12);
-        cone.translate(px, g2 + top + 0.6 + coneH / 2, pz);
-        merger.add(cone, FF.terra, px, pz);
-        const fin = new THREE.SphereGeometry(0.28, 7, 5);
-        fin.translate(px, g2 + top + 0.6 + coneH + 0.28, pz);
+        let apex;
+        if (cap === 'dome') {
+          const dome = new THREE.SphereGeometry(r + 0.5, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+          dome.scale(1, capH / (r + 0.5), 1);
+          dome.translate(px, g2 + top + 0.5, pz);
+          merger.add(dome, FF.copper, px, pz);
+          apex = g2 + top + 0.5 + capH;
+        } else {
+          const cone = new THREE.ConeGeometry(r + 0.8, capH, 14);
+          cone.translate(px, g2 + top + 0.7 + capH / 2, pz);
+          merger.add(cone, FF.terra, px, pz);
+          apex = g2 + top + 0.7 + capH;
+        }
+        const fin = new THREE.SphereGeometry(0.3, 7, 5);
+        fin.translate(px, apex + 0.3, pz);
         merger.add(fin, FF.gold, px, pz);
         // the scarlet pennant on a short mast
-        const mast = new THREE.CylinderGeometry(0.04, 0.04, 1.6, 4);
-        mast.translate(px, g2 + top + 0.6 + coneH + 1.1, pz);
+        const mast = new THREE.CylinderGeometry(0.05, 0.05, 1.8, 4);
+        mast.translate(px, apex + 1.2, pz);
         merger.add(mast, FF.gold, px, pz);
-        const pen = new THREE.BoxGeometry(1.0, 0.38, 0.05);
-        pen.translate(px + 0.5, g2 + top + 0.6 + coneH + 1.6, pz);
+        const pen = new THREE.BoxGeometry(1.1, 0.42, 0.06);
+        pen.translate(px + 0.55, apex + 1.7, pz);
         merger.add(pen, FF.scarlet, px, pz);
-        return g2 + top + 0.6 + coneH;
+        return apex;
       };
-      for (const [px, pz] of drums) drum(px, pz, 2.4, ch + 3.5, 4.6);
+      // corner drums: FAT (the first pass's r2.4 vanished against the 67m
+      // mass) and varied in diameter and height, per §6.3 "vary the
+      // diameters" — alternating 3.6/4.4, one taller pair
+      drums.forEach(([px, pz], i) => {
+        drum(px, pz, i % 2 ? 3.6 : 4.4, ch + (i % 2 ? 2.6 : 4.2), i % 2 ? 5.2 : 6.4);
+      });
+      // the tower cluster: two copper-domed subsidiary turrets shouldered
+      // against the central tower so the top reads as a CLUSTER, not a spike.
+      // Offset along the footprint's long axis (widest bbox span).
+      let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
+      for (const [qx, qz] of castle.p) {
+        mnx = Math.min(mnx, qx); mxx = Math.max(mxx, qx);
+        mnz = Math.min(mnz, qz); mxz = Math.max(mxz, qz);
+      }
+      const [lx, lz] = (mxx - mnx) >= (mxz - mnz) ? [1, 0] : [0, 1];
+      drum(ccx - lx * 7.5, ccz - lz * 7.5, 2.1, ch + 6.5, 2.6, 'dome');
+      drum(ccx + lx * 7.5, ccz + lz * 7.5, 2.1, ch + 8.0, 2.6, 'dome');
       // the central tower and the giant gold crown
-      const topY = drum(ccx, ccz, 3.2, ch + 8.5, 5.8);
-      // the crown RINGS the spire: at 3.2 under the apex the cone's own
-      // radius is ~2.15, so the band sits at 2.5 and the points at 2.2 —
-      // the first numbers put the band inside the cone, invisible
-      const band = new THREE.CylinderGeometry(2.5, 2.5, 1.1, 10);
-      band.translate(ccx, topY - 3.2, ccz);
+      const topY = drum(ccx, ccz, 5.0, ch + 10.0, 7.0);
+      // the crown RINGS the spire near the cone's base: cone base r is 5.8,
+      // its radius 1.0m up is ~4.97, so the band sits at 5.5 and the points
+      // at 5.2 — a band inside the cone is invisible (first-pass lesson)
+      const band = new THREE.CylinderGeometry(5.5, 5.5, 1.3, 12);
+      band.translate(ccx, topY - 6.0, ccz);
       merger.add(band, FF.gold, ccx, ccz);
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        const pt = new THREE.ConeGeometry(0.42, 1.3, 5);
-        pt.translate(ccx + Math.cos(a) * 2.2, topY - 2.0, ccz + Math.sin(a) * 2.2);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const pt = new THREE.ConeGeometry(0.55, 1.7, 5);
+        pt.translate(ccx + Math.cos(a) * 5.2, topY - 4.5, ccz + Math.sin(a) * 5.2);
         merger.add(pt, FF.gold, ccx, ccz);
       }
-      out.ffaCastle = drums.length + 1;
+      // crenellated curtain-wall parapet along the footprint roofline —
+      // §6.3 item 1, "on the curtain wall and every tower". Merlons ride
+      // the mapped ring; the cornice band city.js draws projects OUTWARD
+      // at top-1.6..-0.5, so roof-level merlons never touch it.
+      for (let i = 0; i < castle.p.length - 1; i++) {
+        const [ax, az] = castle.p[i], [bx, bz] = castle.p[i + 1];
+        const L = Math.hypot(bx - ax, bz - az);
+        if (L < 4) continue;
+        const eyaw = Math.atan2(-(bz - az), bx - ax);
+        const n = Math.max(2, Math.floor(L / 2.6));
+        for (let k = 0; k <= n; k++) {
+          const t = k / n;
+          const mx = ax + (bx - ax) * t, mz = az + (bz - az) * t;
+          if (drums.some(([px, pz]) => (px - mx) ** 2 + (pz - mz) ** 2 < 5.5 * 5.5)) continue;
+          const m = new THREE.BoxGeometry(1.15, 0.9, 0.5);
+          m.rotateY(eyaw);
+          m.translate(mx, gTopC + 0.45, mz);
+          merger.add(m, FF.stone, mx, mz);
+        }
+      }
+      // scarlet heraldic banners hung under the cornice on the two longest
+      // walls (§6 signage: "scarlet heraldic banners hanging from the
+      // castle wall"), pushed 0.45 proud of the ring — clear of the ground
+      // band's grow(1.012) drift (30m §5) and below the cornice's zone
+      const walls = [];
+      for (let i = 0; i < castle.p.length - 1; i++) {
+        const [ax, az] = castle.p[i], [bx, bz] = castle.p[i + 1];
+        const L = Math.hypot(bx - ax, bz - az);
+        if (L > 20) walls.push([L, ax, az, bx, bz]);
+      }
+      walls.sort((a, q) => q[0] - a[0]);
+      for (const [L, ax, az, bx, bz] of walls.slice(0, 2)) {
+        const ux = (bx - ax) / L, uz = (bz - az) / L;
+        let nx = -uz, nz = ux;
+        const mx0 = (ax + bx) / 2, mz0 = (az + bz) / 2;
+        if (nx * (mx0 - ccx) + nz * (mz0 - ccz) < 0) { nx = -nx; nz = -nz; }
+        const eyaw = Math.atan2(-uz, ux);
+        // no banner at t=0.5: the building's own name board hangs at the
+        // edge midpoint, 1.05m proud — a banner behind it z-pokes through
+        for (const t of [0.22, 0.35, 0.65, 0.78]) {
+          const bx2 = ax + ux * L * t + nx * 0.45;
+          const bz2 = az + uz * L * t + nz * 0.45;
+          const bn = new THREE.BoxGeometry(1.4, 4.4, 0.1);
+          bn.rotateY(eyaw);
+          bn.translate(bx2, gTopC - 4.2, bz2);
+          merger.add(bn, FF.scarlet, bx2, bz2);
+          const dev = new THREE.BoxGeometry(0.8, 0.8, 0.12);
+          dev.rotateY(eyaw);
+          dev.translate(bx2 + nx * 0.02, gTopC - 3.6, bz2 + nz * 0.02);
+          merger.add(dev, FF.gold, bx2, bz2);
+        }
+      }
+      out.ffaCastle = drums.length + 3;
     }
   }
 
