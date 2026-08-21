@@ -380,7 +380,12 @@ export const MAT = {
   // read as big slabs; the reference bricks are half that.
   unitPave: new THREE.MeshStandardMaterial({
     map: (() => { const t = texPaverBlock(); t.repeat.set(2, 2); return t; })(),
-    color: 0x9b9d97, roughness: 0.92,
+    // 0x9b9d97 -> 0xa2a09b: green sat a shade above red, and under the warm
+    // sun the Cove's paver streets rendered military-olive — the 2026-08-22
+    // sweep filed them as "missing asphalt with markings painted on terrain"
+    // (frames 011/177; raycast says the surface is there, it is this tint).
+    // Concrete pavers are warm-neutral; red leads green now.
+    color: 0xa2a09b, roughness: 0.92,
   }),
   roadConc: new THREE.MeshStandardMaterial({ map: texConcrete(0x9d9a94, 0.6), roughness: 0.93 }),
   // LTA SDRE Ch.11 BUS5 publishes the bus-stop colour scheme outright, so
