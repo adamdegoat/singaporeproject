@@ -374,6 +374,34 @@ const browser = await chromium.launch({ headless: true, args: [
 ] });
 const page = await browser.newPage({ viewport: { width: 1152, height: 648 }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => { console.log('  page error during golden run: ' + e.message); });
+// A DEAD SHADER LOOKS EXACTLY LIKE A STYLE CHANGE IN THIS FILE, and that cost
+// a whole night on 2026-08-21.
+//
+// A water shader was edited with `vMapUv += ...` before <map_fragment>. vMapUv
+// is an INPUT to the fragment shader, so GLSL refused it, the whole program
+// failed to compile, the material became invalid and THE SEA STOPPED BEING
+// DRAWN. What this file reported was "25 of 43 golden frames changed" and a
+// lagoon that had gone green — so it was diagnosed as a reflection problem,
+// then as a stale baseline, then as a contaminated run, then as the boot-time
+// cube map. It was none of those. Every frame was showing the seabed through a
+// hole where the water used to be, and the giveaway — identical percentages
+// across two completely different techniques and every parameter value — was
+// read as a puzzle rather than as the obvious sign that the code under test
+// was never running.
+//
+// three.js reports a shader compile failure to console.error, NOT as a page
+// exception, so a probe that listens only for `pageerror` hears nothing.
+// data/livecheck.mjs already catches these at deploy time; this file is where
+// people ITERATE, and a broken shader must announce itself in the first four
+// minutes rather than at the gate an hour later.
+const shaderErrors = [];
+page.on('console', (m) => {
+  if (m.type() !== 'error') return;
+  const t = m.text();
+  if (/Shader Error|not compiled|VALIDATE_STATUS|program not valid|GLSL/i.test(t)) {
+    if (shaderErrors.length < 3) shaderErrors.push(t.slice(0, 700));
+  }
+});
 // SG_XPARAMS appends extra URL params for A/B runs (e.g. planthash=1) —
 // the baselines never change under it; compare the actual/ dirs instead.
 await page.goto(`http://localhost:${PORT}/?district=sentosa&nostream&reseed=1`
@@ -421,6 +449,19 @@ if (BLESS) {
 const haveBaselines = readdirSync(GOLD).some((f) => f.endsWith('.png'));
 if (!haveBaselines) {
   console.log('   no baselines yet — run with --bless once, then commit golden/');
+  process.exit(1);
+}
+// SHADER ERRORS ARE REPORTED BEFORE THE PIXEL VERDICT, and they short-circuit
+// it. A frame diff cannot tell "you changed the look" from "the material is
+// invalid and the surface is not being drawn at all" — the second reads as the
+// first, and on 2026-08-21 it was read as the first four separate times. If a
+// program failed to compile, THAT is the finding; the percentages are noise.
+if (shaderErrors.length) {
+  console.log('   FAIL  a shader did not compile — the frames below are NOT a');
+  console.log('         style change, they are geometry that is no longer drawn:');
+  for (const e of shaderErrors) {
+    for (const line of e.split('\n').slice(0, 12)) console.log('         ' + line);
+  }
   process.exit(1);
 }
 try {

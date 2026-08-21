@@ -25,7 +25,8 @@ did = next((a for a in sys.argv[1:] if not a.startswith("-")), "sentosa")
 path = os.path.join(HERE, f"{did}.json")
 d = json.load(open(path))
 blds = d.get("buildings") or []
-auth = json.load(open(os.path.join(HERE, "authored.json")))["buildings"]
+auth_all = json.load(open(os.path.join(HERE, "authored.json")))
+auth = auth_all["buildings"]
 added = 0
 for e in auth:
     if e.get("district") != did or e.get("shape") != "slab":
@@ -62,9 +63,45 @@ for e in auth:
                  "h": e["h"], "n": e["n"], "hs": "authored", "a": round(ar)})
     added += 1
     print(f"  authored {e['n']}: {round(ar)} m2 at ({cx:.0f}, {cz:.0f})")
-if added:
+# ---- VENUES ------------------------------------------------------------
+# NAMED PLACES THE MAP DOES NOT CARRY. Siloso's beach-bar strip is the case
+# that forced this: research/siloso-venues.md surveys the run west to east with
+# published addresses, and of the named venues on that beach only Trapizza and
+# Coaste's reach the scene. Ola Beach Club, Bikini Bar and Emerald Pavilion are
+# simply absent, so the world says nothing about the most recognisable stretch
+# of the island's most famous beach.
+#
+# A venue added here needs no geometry of its own. The venue-sign system
+# (SESSION 30h) finds whichever mapped building hosts the point and puts the
+# name on the wall that faces the street, or lists it on a standing directory
+# when the venue sits back inside a precinct. So this is a name and a
+# coordinate, and the world does the rest.
+#
+# DEDUPE IS BY NAME WITHIN 40m, not by position alone: a rebuild that ran
+# process.py against a refreshed OSM cache would bring the same venue in with a
+# slightly different node, and two "Ola Beach Club" entries 6m apart would put
+# two bands on one wall.
+shops = d.get("shops") or []
+vadded = 0
+for e in (auth_all.get("venues") or []):
+    if e.get("district") != did:
+        continue
+    cx, cz = proj(e["lat"], e["lon"])
+    nm = (e.get("n") or "").strip().lower()
+    if any((s.get("n") or "").strip().lower() == nm
+           and math.hypot((s.get("p") or [9e9, 9e9])[0] - cx,
+                          (s.get("p") or [9e9, 9e9])[1] - cz) < 40
+           for s in shops):
+        continue
+    shops.append({"p": [round(cx, 1), round(cz, 1)], "n": e["n"], "k": e.get("k") or "restaurant"})
+    vadded += 1
+    print(f"  authored venue {e['n']}: ({cx:.0f}, {cz:.0f})")
+if vadded:
+    d["shops"] = shops
+
+if added or vadded:
     d["buildings"] = blds
     json.dump(d, open(path, "w"), separators=(",", ":"))
-    print(f"  written: {added} authored footprint(s) into {did}.json")
+    print(f"  written: {added} footprint(s), {vadded} venue(s) into {did}.json")
 else:
-    print("  nothing to add (all authored footprints already present)")
+    print("  nothing to add (all authored entries already present)")

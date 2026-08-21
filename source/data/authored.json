@@ -14,7 +14,24 @@
   "",
   "Shapes are stored as PARAMETERS, not as vertex lists: a centre, radii and arc",
   "spans are readable, auditable and correctable, where 140 projected lat/lon",
-  "pairs are none of those things."
+  "pairs are none of those things.",
+  "",
+  "VENUES THE MAP DOES NOT HAVE. Same idea as `buildings` above, for NAMED",
+  "places rather than footprints. Siloso's beach-bar strip is the case that",
+  "forced it: research/siloso-venues.md surveys the whole run west to east with",
+  "published addresses, and the OSM cache carries almost none of them -- of the",
+  "named venues on that beach only Trapizza and Coaste's reach the scene, while",
+  "Ola Beach Club, Bikini Bar, Emerald Pavilion, Sand Bar, Market Hall and",
+  "Summerhouse do not exist in it at all.",
+  "",
+  "ONLY VENUES WITH A PUBLISHED COORDINATE GO IN HERE. Sand Bar and Market",
+  "Hall are real, open and surveyed by address, but the survey records no",
+  "lat/lon for either, and interpolating one along the strip would be inventing",
+  "a position. They stay out until someone pins them.",
+  "",
+  "A venue added here is named in the world for free: the venue-sign system",
+  "(SESSION 30h) puts a band on the wall of whichever mapped building hosts it,",
+  "or lists it on a standing directory when the venue is set back."
  ],
  "buildings": [
   {
@@ -87,6 +104,32 @@
    "lon": 103.81581,
    "h": 5.0,
    "src": "research/bikini-sandbar-measured.md \u2014 ESRI z19 colour-mask fit, 17.7x15.4m, roof centroid 9m from the OSM node in research/siloso-venues.md 1.8. h=5.0 EST-PHOTO, stated assumption."
+  }
+ ],
+ "venues": [
+  {
+   "district": "sentosa",
+   "n": "Ola Beach Club",
+   "k": "restaurant",
+   "lat": 1.25305,
+   "lon": 103.81543,
+   "src": "research/siloso-venues.md 1.7 -- 46 Siloso Beach Walk, S099005; 2 storeys, open 2026"
+  },
+  {
+   "district": "sentosa",
+   "n": "Bikini Bar",
+   "k": "bar",
+   "lat": 1.25272,
+   "lon": 103.81574,
+   "src": "research/siloso-venues.md 1.8 -- Siloso Beach, between Ola (46) and Coastes (50)"
+  },
+  {
+   "district": "sentosa",
+   "n": "Emerald Pavilion",
+   "k": "restaurant",
+   "lat": 1.254,
+   "lon": 103.8146,
+   "src": "research/siloso-venues.md 1.6 -- 40 Siloso Beach Walk; the BUILDING name. Its tenants (Cafe del Mar, Mambo, Rumours) are all gone -- do not build those"
   }
  ]
 }
