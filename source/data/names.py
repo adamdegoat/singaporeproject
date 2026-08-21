@@ -64,6 +64,20 @@ ADDS = [
      "research/bikini-sandbar-measured.md §SAND BAR RESOLVED — SLA OneMap "
      "geocode of 52 Siloso Beach Walk S099012 (1.252044/103.816420); unnamed "
      "60 m2 footprint 8m from the official address point."),
+    # Found 2026-08-22, closing the openground queue's largest unnamed entry.
+    # The 2,174 m2 footprint at Crockfords Tower's south-west foot is the
+    # CASINO PODIUM — ESRI z19 (fetched 2026-08-22, tiles 413341/260315-6)
+    # shows its brown tortoise-shell dome range cascading from the drum, and
+    # research/rws-architecture.md §1.8 places the casino "beneath Crockfords
+    # Tower", entered from the Festive Walk arcade — which is exactly the
+    # 139m mapped footway running through this footprint. The name is what
+    # its own fascia says in life ("CASINO", §1.8's 2023 photograph); the
+    # coordinate is the footprint's own centroid inverted through proj()
+    # (no OSM node exists — the ring is unnamed in OSM).
+    ("Resorts World Casino", 1.255311, 103.819288, 20,
+     "research/rws-architecture.md §1.8 + ESRI z19 2026-08-22 — the domed "
+     "casino podium under Crockfords; 139m of Festive Walk-level footway "
+     "runs through it (openground queue's unnamed 2,174 m2 entry)."),
 ]
 
 # Names that must NOT survive: things that have closed.

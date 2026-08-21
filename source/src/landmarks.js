@@ -6524,11 +6524,19 @@ function sofitelSentosa(api, b) {
   // every edge a carved route passes within its own half-width, stand a
   // recessed opening facing outward — walkers get a doorway, drives get a
   // porte-cochere mouth under the eave
+  routeDoors(api, b.p, doorMat, jambMat);
+}
+
+// Doors where mapped routes cross a facade — the garage-door idiom applied
+// to a THROUGH route: a recessed dark plate and a jamb, proud of the facade
+// along the edge normal (outwardSign knows the winding), at every crossing
+// of a walkway or carriageway with the ring. Shared by Sofitel and the
+// casino podium; the carve opens movement, this is what the eye enters.
+function routeDoors(api, ring, doorMat, jambMat, scaleW = 1) {
   const routes = [];
   for (const r of [...(api.walkways || []), ...(api.drives || [])]) {
     if (r.p && r.p.length > 1) routes.push(r);
   }
-  const ring = b.p;
   const doors = [];
   for (let i = 0; i < ring.length; i++) {
     const [ax, az] = ring[i], [bx2, bz2] = ring[(i + 1) % ring.length];
@@ -6558,9 +6566,7 @@ function sofitelSentosa(api, b) {
   }
   for (const [dx2, dz2, edgeYaw, isDrive] of doors) {
     const gy = api.groundAt(dx2, dz2);
-    const W2 = isDrive ? 7.6 : 3.6, H2 = isDrive ? 5.0 : 3.4;
-    // proud of the facade along the edge normal — outwardSign knows the
-    // winding, so the plate cannot end up inside the mass
+    const W2 = (isDrive ? 7.6 : 3.6) * scaleW, H2 = isDrive ? 5.0 : 3.4 + (scaleW - 1) * 2;
     const sgn = outwardSign(ring);
     const nx = Math.cos(edgeYaw) * sgn, nz = -Math.sin(edgeYaw) * sgn;
     const door = new THREE.BoxGeometry(W2, H2, 0.2);
@@ -6572,6 +6578,60 @@ function sofitelSentosa(api, b) {
     jamb.translate(dx2 + nx * 0.38, gy + (H2 + 0.5) / 2, dz2 + nz * 0.38);
     api.merge(jamb, jambMat, dx2, dz2);
   }
+}
+
+// RESORTS WORLD CASINO — the domed podium beneath Crockfords Tower. The
+// research (rws-architecture.md §1.8) is blunt: the casino is a ROOM — "do
+// not model a casino building. Model an undercroft, a sign and a drop-off."
+// What stands at this footprint in every aerial is the PODIUM Crockfords'
+// drum sits beside: two levels (the Graves 9-vs-11 storey reconciliation is
+// "9 hotel floors above a 2-level podium"), with the brown tortoise-shell
+// DOME RANGE cascading down from the drum — the z19 capture of 2026-08-22
+// shows the domes filling exactly this ring. The mapped 23.8 is hs:"calib"
+// (a guess); the authored podium is 11m + domes, like ESPA's cap of its own
+// calibrated guess. 139m of Festive Walk-level footway runs through the
+// ring — the casino's published arcade entrance — so the crossings get
+// bronze portals via routeDoors, wider than a service door because this is
+// the resort's main covered spine, and the carve already opens movement.
+function casinoPodium(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = 11;                          // 2-level podium, see note above
+  const bronzeDome = new THREE.MeshStandardMaterial({
+    color: 0x6b4a33, roughness: 0.55, metalness: 0.35 });
+  const bronzeDark = new THREE.MeshStandardMaterial({
+    color: 0x2c2018, roughness: 0.5, metalness: 0.3 });
+  const bronzeTrim = new THREE.MeshStandardMaterial({
+    color: 0x8a6a45, roughness: 0.5, metalness: 0.4 });
+  api.world.add(api.extrude(b.p, H, RWS_WALL));
+  // bronze cornice under the dome line
+  api.merge(api.extrudeGeo(api.growM(b.p, 0.6), 0.5, H), bronzeTrim, ob.cx, ob.cz);
+  // the tortoise-shell dome range: squashed spheres on a grid inside the
+  // ring, radius varied by a position hash so the range reads as a cascade
+  const inFoot = (x, z) => {
+    let hit = false;
+    const pts = b.p;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const xi = pts[i][0], zi = pts[i][1], xj = pts[j][0], zj = pts[j][1];
+      if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
+    }
+    return hit;
+  };
+  for (let u = -ob.halfLong + 5; u <= ob.halfLong - 5; u += 10.5) {
+    for (let v = -ob.halfShort + 5; v <= ob.halfShort - 5; v += 10.5) {
+      const px = ob.bx + u * ob.ux - v * ob.uz;
+      const pz = ob.bz + u * ob.uz + v * ob.ux;
+      if (!inFoot(px, pz)) continue;
+      const ph = (Math.imul(Math.round(px * 7) | 0, 0x9E3779B1)
+                  ^ Math.imul(Math.round(pz * 13) | 0, 0x85EBCA77)) >>> 0;
+      const r = 4.6 + (ph % 1000) / 1000 * 2.2;
+      const dome = new THREE.SphereGeometry(r, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+      dome.scale(1, 0.42, 1);
+      dome.translate(px, g0 + H + 0.4, pz);
+      api.merge(dome, bronzeDome, px, pz);
+    }
+  }
+  routeDoors(api, b.p, bronzeDark, bronzeTrim, 1.6);
 }
 
 // SHANGRI-LA RASA SENTOSA — the resort that closes the west end of Siloso,
@@ -7366,6 +7426,7 @@ export const RECIPES = [
   // matches the map's current possessive name and any future simplification
   [/rasa sentosa/i, rasaSentosa],
   [/^sofitel singapore sentosa/i, sofitelSentosa],
+  [/^resorts world casino/i, casinoPodium],
   [/^battlestar galactica/i, battlestar],
   [/^skyhelix/i, skyHelix],
   // River Valley Road's western frontage. RV Residences is six blocks under one
@@ -7593,6 +7654,10 @@ const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery,
                               // a Kerry Hill garden resort has no retail
                               // ribbon; its routes get doors from the recipe
                               sofitelSentosa,
+                              // a casino podium's frontage is its own bronze
+                              // portals, not a retail ribbon across the
+                              // Festive Walk crossings
+                              casinoPodium,
                               // A stadium bowl has no street-level retail bays.
                               nationalStadium, indoorStadium,
                               gothicChurch, colonialHotel, artScienceMuseum,
