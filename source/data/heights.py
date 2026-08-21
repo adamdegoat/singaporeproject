@@ -176,8 +176,15 @@ RESEARCHED = [
     ("residences at w", {"floors": 6}),
     ("marina collection", {"floors": 4}),
     ("seven palms", {"floors": 4}),
-    # Quayside Isle — two-storey waterfront retail, CDL, 2012. Ours had its two
-    # footprints at 27.2 m and 22 m, which is a mall over a marina promenade.
+    # Quayside Isle — CDL, 2012, TWO blocks with DIFFERENT storeys: "one
+    # single-storey, one double-storey" (CBRE/CDL, §1.14), and OSM agrees
+    # (way 764586886 building:levels=1 north, way 764586885 levels=2 south).
+    # Ours had them at 27.2 m and 22 m — a mall over a marina promenade — and
+    # the first fix wrote floors 2 over BOTH, stamping a researched height
+    # onto the surveyed single-storey block. The positioned entry must come
+    # FIRST so it wins over the generic needle; z19 pass 2026-08-21 confirms
+    # the north ring is a plaza with low single-storey roofs.
+    ("quayside isle", {"floors": 1, "near": (924.2, 13106.9), "r": 60}),
     ("quayside isle", {"floors": 2}),
 
     # --- Where OSM already knew and the band median overrode it
@@ -268,11 +275,26 @@ RESEARCHED = [
 ]
 
 
-def researched_for(name):
+def researched_for(name, pts=None):
+    """A spec with "near": (x, z) world metres and "r" matches only the
+    footprint whose centroid stands within r of that point — the Quayside
+    Isle case, where one NAME covers two blocks with different published
+    storeys. A positioned entry is listed before its generic sibling and so
+    wins for its block; a caller that cannot pass a footprint (none today)
+    simply never matches positioned entries."""
     low = (name or "").lower()
     for (needle, spec) in RESEARCHED:
-        if needle in low:
-            return spec
+        if needle not in low:
+            continue
+        near = spec.get("near")
+        if near:
+            if not pts:
+                continue
+            cx = sum(q[0] for q in pts) / len(pts)
+            cz = sum(q[1] for q in pts) / len(pts)
+            if math.hypot(cx - near[0], cz - near[1]) > spec.get("r", 60):
+                continue
+        return spec
     return None
 
 
@@ -308,7 +330,7 @@ def apply_researched(did, dry_run=False):
     for b in d.get("buildings") or []:
         if b.get("hs") not in (None, "calib"):
             continue
-        spec = researched_for(b.get("n"))
+        spec = researched_for(b.get("n"), b.get("p"))
         if not spec:
             continue
         h = round(spec["m"] if "m" in spec else spec["floors"] * STOREY, 1)
@@ -473,9 +495,9 @@ def main():
         # round to a storey, floor at one
         if inherited is None:
             h = max(STOREY, round(h / STOREY) * STOREY)
-        if area > BIG_AREA and not researched_for(b.get("n")):
+        if area > BIG_AREA and not researched_for(b.get("n"), b.get("p")):
             h = max(h, BIG_MIN_H)
-        spec = researched_for(b.get("n"))
+        spec = researched_for(b.get("n"), b.get("p"))
         if spec:
             h = spec["m"] if "m" in spec else spec["floors"] * STOREY
             # A RESEARCHED FACT IS NOT A SHED. check.py refuses a footprint over

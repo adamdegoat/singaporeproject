@@ -94,6 +94,25 @@ MAX_LIFT = 10.5       # above this, a rule is guessing — report for a recipe
 # Sofitel (h 12.5, needs 17.2) is excluded by both numbers, as it must be.
 CANOPY_H = 11.0       # taller than this and it is a building, not a canopy
 CANOPY_LIFT = 13.0    # a canopy may clear this much road, and no more
+# BUILDINGS THE MECHANISM IS WRONG ABOUT, WITH THE EVIDENCE. The run test
+# asks "does a mapped route spend MIN_RUN metres inside the ring" and that is
+# the right question almost everywhere — but a mapped ring can enclose a
+# parcel whose lane threads BETWEEN structures at grade, and then the route is
+# THROUGH the site, not UNDER a lifted mass. Each entry: (name-needle,
+# world-x, world-z, radius) plus the evidence, and the fix for a wrong lift is
+# adding an entry here, never loosening MIN_RUN for everyone.
+NOT_LIFTED = [
+    # Quayside Isle, NORTH block (OSM way 764586886, building:levels=1,
+    # centroid 1.248128/103.841626). ESRI z19 pass 2026-08-21 (tiles
+    # 413373-5/260325-7, both QI rings projected onto the capture): the ring
+    # encloses a plaza and two LOW single-storey roofs; the qualifying
+    # service way (25.7m interior run) crosses the open plaza at ground
+    # level and nothing spans it. Published form agrees: "two commercial
+    # blocks: one single-storey, one double-storey" (CBRE/CDL,
+    # research/sentosa-heights.md 1.14). A single-storey block on stilts
+    # over its own delivery lane is the mechanism talking, not the world.
+    ("quayside isle", 924.2, 13106.9, 60.0),
+]
 # Kinds that are carriageways. Footways are deliberately NOT here: a path
 # through a building is usually an arcade we already handle, and lifting a
 # building for one is far too eager.
@@ -205,6 +224,14 @@ def main():
             b["h"] = b.pop("ogh")      # restore the height we raised
         pts = b.get("p")
         if not pts or len(pts) < 3:
+            continue
+        # the deny list above — after the undo, so an entry added later also
+        # CLEARS a lift a previous run wrote
+        _nm = (b.get("n") or "").lower()
+        if any(nd in _nm
+               and math.hypot(sum(q[0] for q in pts) / len(pts) - ex,
+                              sum(q[1] for q in pts) / len(pts) - ez) <= er
+               for (nd, ex, ez, er) in NOT_LIFTED):
             continue
         if b.get("roof") or (b.get("mh") or 0) > 1:
             continue                   # already a canopy, or already lifted
