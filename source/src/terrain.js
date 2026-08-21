@@ -44,7 +44,11 @@ const SHELF_LO = 0.5, SHELF_HI = 1.2;
 // neither may count toward greenFrac — the same reason `pool` is here. Added
 // with the golf survey layer (data/golf.py, 2026-08-20); the grass parts of a
 // course (fairway, rough, green, tee) are green and correctly absent.
-const NOT_GREEN = new Set(['pool', 'track', 'deck', 'gbunker', 'ghazard']);
+// The USS zone paving cells (data/usspaving.py) are pavement, not planting —
+// they'd swing greenFrac across the whole park if they counted as green.
+const NOT_GREEN = new Set(['pool', 'track', 'deck', 'gbunker', 'ghazard',
+  'pv_holly', 'pv_ny', 'pv_scifi', 'pv_egypt', 'pv_lw', 'pv_ffa',
+  'pv_minion', 'pv_ww']);
 
 // PARITY NEEDS ONLY THE EDGES WHOSE z-SPAN CROSSES THE QUERY'S z. waterFloor
 // and greenAt ran the even-odd walk over EVERY vertex of every candidate ring
@@ -1388,6 +1392,20 @@ export class Terrain {
           // never be somewhere you can wade into the sea from.
           gbunker: [0.90, 0.86, 0.70],
           ghazard: [0.38, 0.60, 0.68],   // Serapong Lake and the three others
+          // THE USS PARK FLOOR (data/usspaving.py) — one tint per zone,
+          // each off the research's own palette line (universal-zones.md,
+          // minion-land.md). §9's rule is the reason these exist at all:
+          // "Ground surface changes at every zone boundary and is a cheap,
+          // high-payoff signal." Muted toward the island's palette — a
+          // paving tint that glows reads as invented (the ggreen lesson).
+          pv_holly:  [0.74, 0.60, 0.49],  // terracotta-and-cream tile, §1.8
+pv_ny:     [0.42, 0.42, 0.43],  // asphalt, §2
+          pv_scifi:  [0.76, 0.66, 0.53],  // swept terrazzo: apricot/sand, §3
+          pv_egypt:  [0.76, 0.70, 0.55],  // sand-toned stamped concrete, §4
+          pv_lw:     [0.58, 0.53, 0.47],  // warm grey stamped stone, §5A
+          pv_ffa:    [0.79, 0.71, 0.66],  // cream/dusty-pink slabs, §6
+          pv_minion: [0.53, 0.49, 0.45],  // grey-brown cobble setts, PHOTO
+          pv_ww:     [0.62, 0.62, 0.60],  // concrete, EST — nothing published
           // A running track is red-brown rubber and a pool is blue, and both
           // are read from a bridge before anything else on the ground is: they
           // are the only two surfaces in the city with a colour nothing else

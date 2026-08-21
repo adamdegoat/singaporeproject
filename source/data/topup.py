@@ -14,9 +14,7 @@ import json, os, sys, time, urllib.request, urllib.parse
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 REG = json.load(open(os.path.join(HERE, "districts.json")))
-MIRRORS = ["https://overpass-api.de/api/interpreter",
-           "https://overpass.private.coffee/api/interpreter",
-           "https://overpass.kumi.systems/api/interpreter"]
+from osmlayers import MIRRORS  # noqa: E402  one ring for both fetch paths
 
 # THE LAYER TABLE LIVES IN osmlayers.py, and its header says why: this file
 # and build_district.py had drifted into asking for different worlds, twelve

@@ -3372,8 +3372,22 @@ window.__placeBlocked = (x, z) => blocked(x, z);
           // Timber decking crosses it too, and should -- a boardwalk has no
           // more business going green than the beach it crosses.
           float sandish = smoothstep(0.09, 0.20, vColor.r - vColor.b);
-          vec3 cool = mix(vec3(0.88, 1.00, 0.90), vec3(0.93, 0.93, 0.91), sandish);
-          diffuseColor.rgb *= mix(cool, warm, smoothstep(0.25, 0.75, broad * 0.65 + mid * 0.35));
+          // ...AND ON PAVEMENT TOO — the same disease, found on the USS zone
+          // floors (2026-08-21): a neutral asphalt tint (0.42,0.42,0.43) went
+          // in and #7a7d67 OLIVE came out, exactly the sand story again. A
+          // NEUTRAL vertex colour (all channels within ~0.1 of each other)
+          // is pavement or concrete, and a green filter on pavement changes
+          // its hue outright. Grass tints have r-g spreads of 0.2+ and keep
+          // their cool end untouched.
+          float paved = 1.0 - smoothstep(0.05, 0.12,
+            abs(vColor.r - vColor.g) + abs(vColor.g - vColor.b));
+          float keepHue = max(sandish, paved);
+          vec3 cool = mix(vec3(0.88, 1.00, 0.90), vec3(0.93, 0.93, 0.91), keepHue);
+          // the WARM end is the other half of the same filter: x0.86 on blue
+          // turns neutral asphalt YELLOW-olive in every sunlit patch. Sand
+          // stays warm (it is warm); pavement's warm end goes near-neutral.
+          vec3 warmv = mix(warm, vec3(1.04, 1.02, 0.99), paved);
+          diffuseColor.rgb *= mix(cool, warmv, smoothstep(0.25, 0.75, broad * 0.65 + mid * 0.35));
         }`);
   };
   await bstep(0.31, 'shaping the ground');
@@ -3428,6 +3442,18 @@ window.__placeBlocked = (x, z) => blocked(x, z);
       golfAreas++;
     }
     window.__golfAreas = golfAreas;
+    // THE USS PARK FLOOR (data/usspaving.py) — zone paving cells, the same
+    // paint-only contract as the golf areas above: tints, no geometry, own
+    // key so the planting's `claimed` list (which reads data.green) never
+    // sees them. They are huge fallback cells; smallest-ring-wins lets any
+    // surveyed parcel inside a zone still paint itself.
+    let ussPave = 0;
+    for (const g of (data.usspaving || [])) {
+      if (!g.p || g.p.length < 3) continue;
+      allGreen.push({ k: g.k, p: g.p });
+      ussPave++;
+    }
+    window.__ussPave = ussPave;
     // ...AND FIRST IN THE LIST, WHICH IS THE WHOLE FIX. `greenAt` returns the
     // FIRST polygon in a cell that contains the point, so appending these at
     // the end put them behind the landuse parcel that already covers the same

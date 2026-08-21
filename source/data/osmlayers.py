@@ -43,6 +43,18 @@ time -- so never bake a bbox into a string in this file.
 # `way["amenity"]` is asked for too -- Rumours Beach Club, Koufu and
 # Bora Bora are mapped as building outlines, not points, and a
 # node-only query drops every venue big enough to have a footprint.
+# THE MIRROR RING, one copy for both fetch paths. Found drifted 2026-08-21
+# (the same audit class as the twelve layers above): build_district.py's
+# ring knew four mirrors, topup.py's knew three and in a different order —
+# so a fetch that failed over behaved differently depending on which script
+# ran it. build_district.py's ring is canonical; osm.jp is the extra.
+MIRRORS = [
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.osm.jp/api/interpreter",
+]
+
 SHOPS_Q = ('node["shop"]({bbox});way["shop"]({bbox});'
            'node["amenity"~"^(restaurant|cafe|bank|fast_food|pharmacy|'
            'cinema|bar|pub|nightclub|biergarten|food_court|ice_cream)$"]({bbox});'

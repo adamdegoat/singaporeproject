@@ -13,7 +13,7 @@ import argparse, json, math, os, re, subprocess, sys, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from osmlayers import LAYERS as SHARED_LAYERS, SHOPS_Q
+from osmlayers import LAYERS as SHARED_LAYERS, SHOPS_Q, MIRRORS
 REG = json.load(open(os.path.join(HERE, "districts.json")))
 RAW_DIR = os.path.join(HERE, "raw")
 # The canonical scene path is data/<id>.json, the same one terrain.py and the
@@ -21,13 +21,8 @@ RAW_DIR = os.path.join(HERE, "raw")
 # district would have produced a SECOND scene file for it, which is the exact
 # duplicate terrain.py already hard-errors on.
 OUT_DIR = HERE
-
-MIRRORS = [
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.private.coffee/api/interpreter",
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.osm.jp/api/interpreter",
-]
+# MIRRORS lives in osmlayers.py beside LAYERS and SHOPS_Q — one ring for
+# both fetch paths (it had drifted; see the note there)
 
 
 
@@ -568,6 +563,12 @@ CHAIN = [
          "off satellite (research/siloso-bridge-measured.md)", only="sentosa"),
     Pass("palawangreen.py", "Palawan's authored green islands in the sand",
          only="sentosa"),
+    # After attractions.py (it reads the USS ring + zone anchors that pass
+    # fetches). Paint-only, owns its layer, idempotent — chained the day it
+    # was written, because a pass that lives outside this list is deleted by
+    # the next rebuild (golf.py's own history, three lines up).
+    Pass("usspaving.py", "the park floor: zone paving cells, Voronoi over "
+         "the surveyed zone anchors (universal-zones §9)", only="sentosa"),
     # The sand in front of the Wings of Time bank, which OSM does not have and
     # which rendered as lawn in the island's signature frame. Authored from
     # eleven measured transects; it owns one polygon and is idempotent.

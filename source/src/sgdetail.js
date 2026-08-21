@@ -2357,6 +2357,59 @@ export async function buildTrails(world, data, Y = null) {
   // they do not read as an edge at all.
   const paveEdgeM = grainy(new THREE.MeshLambertMaterial({ color: 0x928b7e }), 0.10, 3.0);
   const earthEdgeM = grainy(new THREE.MeshLambertMaterial({ color: 0x7d6b52 }), 0.14, 2.4);
+  // THE USS ZONE PATH SURFACES — one grainy Lambert per zone, colours off
+  // universal-zones.md's own palette lines (see data/usspaving.py's header
+  // for the citations; these are the same surfaces, on the walked ribbon).
+  // Same nearest-anchor rule as every other piece of zone dressing, gated
+  // on the surveyed park ring exactly like the boulevard furniture.
+  const USSPAVE = (() => {
+    const anchors = [];
+    let ring = null;
+    for (const a of (data.attractions || [])) {
+      if (a.n === 'Universal Studios Singapore' && a.g) ring = a.g;
+      if (['Hollywood', 'New York', 'Sci-Fi City', 'Ancient Egypt',
+           'The Lost World', 'Far Far Away', 'Minion Land', 'WaterWorld',
+           'Jurassic World', 'Madagascar'].includes(a.n) && a.p) {
+        anchors.push({ n: a.n, x: a.p[0], z: a.p[1] });
+      }
+    }
+    const mk = (c) => grainy(new THREE.MeshLambertMaterial({ color: c }), 0.11, 3.2);
+    const mats = {
+      'Hollywood': mk(0xd0a88a),       // terracotta-and-cream tile, §1.8
+      'New York': mk(0x8c8c92),        // asphalt, §2
+      'Sci-Fi City': mk(0xd8b890),     // swept terrazzo apricot/sand, §3
+      'Ancient Egypt': mk(0xd4bc94),   // sand-toned stamped concrete, §4
+      'The Lost World': mk(0xa89078),  // warm grey stone / salmon, §5A
+      'Jurassic World': mk(0xa89078),
+      'Far Far Away': mk(0xd8c0b4),    // cream/dusty-pink slabs, §6
+      'Minion Land': mk(0x9a8d84),     // grey-brown cobble setts, PHOTO
+      'Madagascar': mk(0x9a8d84),
+      'WaterWorld': mk(0xb0b0aa),      // concrete, EST
+    };
+    return { anchors, ring, mats };
+  })();
+  const ussZonePaveAt = (x, z) => {
+    if (!USSPAVE.ring || !USSPAVE.anchors.length) return null;
+    // the same deny-line as data/usspaving.py's AVENUE_X: the mapped USS
+    // ring includes the Sensoryscape avenue's verge, and without this the
+    // avenue itself paved over as New York asphalt (sensoryscape golden
+    // 4.2% -> 16.8% the moment the ribbon rule landed)
+    if (x < -1416.5) return null;
+    let c = false;
+    const rg = USSPAVE.ring;
+    for (let i = 0, j = rg.length - 1; i < rg.length; j = i++) {
+      const [xi, zi] = rg[i], [xj, zj] = rg[j];
+      if ((zi > z) !== (zj > z)
+        && x < ((xj - xi) * (z - zi)) / ((zj - zi) || 1e-9) + xi) c = !c;
+    }
+    if (!c) return null;
+    let bd = Infinity, bn = null;
+    for (const q of USSPAVE.anchors) {
+      const d = (x - q.x) ** 2 + (z - q.z) ** 2;
+      if (d < bd) { bd = d; bn = q.n; }
+    }
+    return bd < 240 * 240 ? (USSPAVE.mats[bn] || null) : null;
+  };
   // A BOARDWALK OVER WATER IS OVER WATER BY DESIGN — the Sentosa Boardwalk,
   // the jetty approaches, every deck round the Cove's basins. W2 counts things
   // standing in mapped water and is right to; this is the same exemption a
@@ -2576,8 +2629,20 @@ export async function buildTrails(world, data, Y = null) {
         else if (/ground|dirt|earth|unpaved|sand|gravel|fine_gravel|compacted/.test(sfp)) kind = 'earth';
         else if (/concrete|paving_stones|sett|cobblestone|asphalt|paved|metal/.test(sfp)) kind = 'pave';
       }
-      const mat = kind === 'waterdeck' ? waterDeckM
+      let mat = kind === 'waterdeck' ? waterDeckM
         : kind === 'deck' ? deckM : kind === 'earth' ? earthM : paveM;
+      // THE USS MIDWAY IS THE PATH MESH, NOT THE TERRAIN. The zone paving
+      // pass (data/usspaving.py) tints the terrain, but what a player's feet
+      // actually stand on inside the park is THIS ribbon — measured at the
+      // New York wall: greenAt said pv_ny while the rendered pixel was
+      // paveM's khaki, because the ribbon covers the paint. So the ribbon
+      // itself takes the zone's surface (universal-zones §9), same grain
+      // treatment, only for ordinary paved paths — decks and earth keep
+      // their nature, exactly like the surface-tag rule above.
+      if (kind === 'pave') {
+        const zk = ussZonePaveAt(mx, mz);
+        if (zk) mat = zk;
+      }
       if (kind === 'deck' || kind === 'waterdeck') out.boardwalk++;
       else if (kind === 'earth') out.forestTrail++;
       else out.pavedPath++;
@@ -8655,6 +8720,100 @@ export function buildUssVocab(world, data, blocked) {
         out.harlequin++;
       }
       acc = (acc + L) % 24;
+    }
+  }
+
+  // THE HOLLYWOOD BOULEVARD — §1's three cheapest street reads, the same
+  // per-path placement contract as the harlequin lamps above (never on a
+  // carriageway, never blocked, never in water):
+  //   §1.9 fan palms in a double row, crowns at the first-floor cornice
+  //        line — so 7-9m, NOT the 15-19m beach palms;
+  //   §1.7 twin-globe cast-iron lamp standards, black, in the roadway edge;
+  //   §1.8 the Walk of Fame — coral-pink star medallions with a brass edge,
+  //        inlaid flat in the pavement at regular intervals.
+  {
+    const HM = {
+      black: new THREE.MeshLambertMaterial({ color: 0x232323 }),
+      globe2: new THREE.MeshBasicMaterial({ color: 0xf2efe4 }),   // lit
+      star: new THREE.MeshLambertMaterial({ color: 0xd88a7e }),   // coral-pink
+      brass: new THREE.MeshLambertMaterial({ color: 0xa8853c }),
+      htrunk: new THREE.MeshLambertMaterial({ color: 0x8a6f52 }),
+      // DoubleSide, or a frond seen from behind is a hole — first cut of
+      // these palms was bare trunks with one green smudge (pave4.shot2)
+      hleaf: new THREE.MeshLambertMaterial({ color: 0x3f6b34, side: THREE.DoubleSide }),
+    };
+    out.hollyPalms = 0; out.hollyLamps = 0; out.wofStars = 0;
+    const fanPalm = (px, pz) => {
+      const g0 = drawnGroundAt(px, pz);
+      const hsh = ((px * 3.1 + pz * 1.7) % 1 + 1) % 1;
+      const h = 7.0 + hsh * 2.0;
+      const trunk = new THREE.CylinderGeometry(0.13, 0.22, h, 7);
+      trunk.translate(px, g0 + h / 2, pz);
+      merger.add(trunk, HM.htrunk, px, pz);
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2 + hsh * 3.0;
+        const fr = new THREE.PlaneGeometry(2.6, 0.7);
+        fr.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(
+          new THREE.Euler(-0.55 - (k % 3) * 0.2, a + Math.PI / 2, 0, 'YXZ')));
+        fr.translate(px + Math.sin(a) * 1.1, g0 + h - 0.3, pz + Math.cos(a) * 1.1);
+        merger.add(fr, HM.hleaf, px, pz);
+      }
+      out.hollyPalms++;
+    };
+    const twinGlobe = (px, pz) => {
+      const g0 = drawnGroundAt(px, pz);
+      bake(new THREE.CylinderGeometry(0.16, 0.24, 0.5, 8), HM.black, px, g0 + 0.25, pz);
+      bake(new THREE.CylinderGeometry(0.07, 0.1, 4.1, 7), HM.black, px, g0 + 2.3, pz);
+      for (const sgn of [-1, 1]) {
+        bake(new THREE.BoxGeometry(1.1, 0.06, 0.06), HM.black, px, g0 + 4.35, pz + 0.0 * sgn);
+        bake(new THREE.SphereGeometry(0.2, 8, 6), HM.globe2, px + 0.55 * sgn, g0 + 4.5, pz);
+      }
+      out.hollyLamps++;
+    };
+    const starAt = (px, pz) => {
+      const g0 = drawnGroundAt(px, pz);
+      // brass ring under, coral disc on top — a medallion, flat in the floor
+      bake(new THREE.CylinderGeometry(0.62, 0.62, 0.02, 10), HM.brass, px, g0 + 0.02, pz);
+      bake(new THREE.CylinderGeometry(0.5, 0.5, 0.02, 5), HM.star, px, g0 + 0.045, pz);
+      out.wofStars++;
+    };
+    for (const r of (data.roads || [])) {
+      if (r.k !== 'footway' && r.k !== 'pedestrian') continue;
+      const P = r.p || [];
+      let acc = 0, side = 1, sside = 1;
+      for (let i = 0; i < P.length - 1; i++) {
+        const [ax, az] = P[i], [bx, bz] = P[i + 1];
+        const L = Math.hypot(bx - ax, bz - az);
+        if (L < 0.5) continue;
+        const ux = (bx - ax) / L, uz = (bz - az) / L;
+        for (let s = 6 - (acc % 6); s <= L; s += 6) {
+          const cx = ax + ux * s, cz = az + uz * s;
+          // inPark AND zone: Hollywood's anchor sits at the park's edge, so
+          // its 240m reach crosses the gate onto the RWS esplanade — without
+          // this gate the Walk of Fame ran outside the park (found by
+          // replaying the placement offline, 26 palms and 20 were outside)
+          if (!inPark(cx, cz) || zoneOf(cx, cz) !== 'Hollywood') continue;
+          const along = acc + s;
+          // the stars ride the path itself, brass-edged, alternating sides
+          const spx = cx + -uz * 0.9 * sside, spz = cz + ux * 0.9 * sside;
+          sside = -sside;
+          if (standable(spx, spz) && !(blocked && blocked(spx, spz))) starAt(spx, spz);
+          // palms every 12m, lamps every 24m, alternating sides, clear of
+          // the walkway. Denser than the first cut (18/36): the in-park
+          // Hollywood cell is SHORT — its anchor is at the gate, so Voronoi
+          // hands most of the boulevard to Minion Land — and at 18/36 the
+          // whole zone got one palm, which reads as an accident, not a row.
+          if (along % 12 < 6) {
+            const px = cx + -uz * 2.4 * side, pz = cz + ux * 2.4 * side;
+            side = -side;
+            if (!(window.__onRoad && window.__onRoad(px, pz, 0.3))
+              && !(blocked && blocked(px, pz)) && standable(px, pz)) {
+              if (along % 24 < 6) twinGlobe(px, pz); else fanPalm(px, pz);
+            }
+          }
+        }
+        acc += L;
+      }
     }
   }
 
