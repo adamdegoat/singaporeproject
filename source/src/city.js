@@ -3048,6 +3048,11 @@ export async function buildBuildings(world, data, Y = null) {
     // walkable ways too, for frontages on pedestrianised streets (Emerald
     // Hill since 1981) where the road index has nothing to point at
     walkways: (data.roads || []).filter((r) => r.k === 'pedestrian' || r.k === 'footway'),
+    // carriageways too, for porte-cochere recipes: a building a surveyed
+    // service road runs through must not wall that road, and only the recipe
+    // knows which of its panels stand where the road passes
+    drives: (data.roads || []).filter((r) => r.k === 'service' || r.k === 'residential'
+      || r.k === 'unclassified' || r.k === 'living_street' || r.k === 'tertiary'),
     extrude: (pts, h, mat, y0) => autoUV(extrude(pts, h, mat, y0), mat),
     extrudeGeo,
     scaleUV: (geo, sx, sy) => {

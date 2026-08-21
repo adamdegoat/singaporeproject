@@ -6185,6 +6185,295 @@ function espa(api, b) {
   }
 }
 
+// VILLAGE HOTEL @ SENTOSA — the Far East podium on Palawan Ridge that Village
+// Hotel (606 rooms, 2019) and The Outpost (193 rooms, adults-only, 2019) share:
+// one address, 10 Artillery Avenue, Village at #02-01 and Outpost at #03-01,
+// which is a VERTICAL split, not a plan split (research/resort-footprints.md
+// §7.2/7.4). Published form: a raised podium carrying long parallel slab
+// blocks around a central free-form pool courtyard; flat pale roofs; Village
+// in "sun-washed hues", Outpost explicitly BLACK-AND-WHITE after Sentosa's
+// colonial bungalows, Sky Pool on its level 7.
+//
+// WHY THIS RECIPE EXISTS — it is the porte-cochere queue's biggest entry.
+// openground.py: 54.6m of Beach View runs INSIDE this footprint, the building
+// is 27.2m so the lift rule rightly refuses it, and the generic mass walls
+// the road — photographed twice (shots/street/pc0.spot1/2): the carriageway
+// dead-ends into blank facade with the canopy frame standing in front of it.
+//
+// THE MAPPED RING SETTLES THE PLAN. Replayed offline in u,v space (the 30o
+// Hollywood lesson), the 22-node ring is a U: main body ~105 x 103m, two
+// prongs reaching +v, and BOTH Beach View runs cross THROUGH the prongs
+// (v' 52..59 in box coords, prong band v' 39..65). So the prongs are the
+// arrival — deck over each, the road drives under — and the notch between
+// them is the open forecourt in front of the lobby.
+//
+// THE PODIUM STEPS, because the site does. Measured off the terrain the ring
+// itself stands on: foot 10.1, main-body ground up to 21.3 (an 11m fall),
+// west-prong road 15.1-16.8, north-prong road 10.1-10.4. ONE deck level
+// cannot serve that — at the height the west mouth needs, the north mouth is
+// a 12m stilted undercroft; at the north mouth's height, the west deck is
+// buried below its own road (which is exactly what the first cut of this
+// recipe shipped, and what pc1.spot1 photographed: a glazed wall across
+// Beach View). So the main body takes one deck seated just over its own high
+// ground, and EACH PRONG takes a drive-under deck at its own road's ground
+// plus the 5.5m clearance openground.py uses (4.5m bus standard + margin),
+// snapping to the body level when they land within 1.6m of it. Nothing here
+// hardcodes which prong is which: the prongs, their extents and their road
+// tops are re-derived from the mapped drives at build, so a resurveyed road
+// moves its own porte-cochere.
+function villageHotelSentosa(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const CLEAR = 5.5, DECK = 1.1;
+  const buff = new THREE.MeshStandardMaterial({ color: 0xd8cfc0, roughness: 0.86 });
+  const cream = new THREE.MeshStandardMaterial({ color: 0xe9e0cf, roughness: 0.82 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.78 });
+  const charcoal = new THREE.MeshStandardMaterial({ color: 0x2f3134, roughness: 0.7 });
+  const glazing = new THREE.MeshStandardMaterial({
+    color: 0x2b3238, roughness: 0.18, metalness: 0.5 });
+  const roofGrey = new THREE.MeshStandardMaterial({ color: 0xc6c8c3, roughness: 0.8 });
+  const pool = new THREE.MeshStandardMaterial({
+    color: 0x2fa8b8, roughness: 0.25, metalness: 0.1 });
+
+  // box space <-> world
+  const P = (u, v) => [ob.bx + u * ob.ux - v * ob.uz, ob.bz + u * ob.uz + v * ob.ux];
+  const rect = (u0, v0, hu, hv) => [P(u0 - hu, v0 - hv), P(u0 + hu, v0 - hv),
+                                    P(u0 + hu, v0 + hv), P(u0 - hu, v0 + hv)];
+  const uvOf = (x, z) => {
+    const dx = x - ob.bx, dz = z - ob.bz;
+    return [dx * ob.ux + dz * ob.uz, -dx * ob.uz + dz * ob.ux];
+  };
+  const inFoot = (x, z) => {
+    let hit = false;
+    const pts = b.p;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const xi = pts[i][0], zi = pts[i][1], xj = pts[j][0], zj = pts[j][1];
+      if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
+    }
+    return hit;
+  };
+  const roadNear = (x, z, m) => {
+    for (const r of (api.drives || [])) {
+      const pts = r.p || [];
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
+        const vx = bx - ax, vz = bz - az;
+        const L2 = vx * vx + vz * vz || 1;
+        let t = ((x - ax) * vx + (z - az) * vz) / L2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+        const reach = (r.w || 6) / 2 + m;
+        if (dx * dx + dz * dz < reach * reach) return true;
+      }
+    }
+    return false;
+  };
+
+  const hL = ob.halfLong, hS = ob.halfShort;
+  // which half-axis the arrival prongs live on: where the drives cross
+  let vSign = 0;
+  const driveUV = [];              // every drive sample inside the ring
+  for (const r of (api.drives || [])) {
+    const pts = r.p || [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const L = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+      const n2 = Math.max(1, Math.round(L / 3));
+      for (let s2 = 0; s2 <= n2; s2++) {
+        const x = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * (s2 / n2);
+        const z = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * (s2 / n2);
+        if (!inFoot(x, z)) continue;
+        const [u, v] = uvOf(x, z);
+        driveUV.push({ u, v, g: api.groundAt(x, z) });
+        if (Math.abs(v) > hS * 0.5) vSign += Math.sign(v);
+      }
+    }
+  }
+  const S = vSign >= 0 ? 1 : -1;                  // arrival side is +S*v
+  const vBody = 0.58 * hS;                        // body deck reaches this far
+
+  // the body deck level, from the body's own high ground
+  let gBodyMax = -1e9;
+  for (let u = -hL + 4; u <= hL - 4; u += 8) {
+    for (let v = -hS + 4; v <= vBody - 4; v += 8) {
+      const [px, pz] = P(u, v * S);
+      if (!inFoot(px, pz)) continue;
+      gBodyMax = Math.max(gBodyMax, api.groundAt(px, pz));
+    }
+  }
+  if (gBodyMax < -1e8) gBodyMax = g0;
+  const bodySoffit = gBodyMax + 1.2;              // world Y of the body soffit
+
+  // the prongs, clustered from the drive samples on the arrival side
+  const arr = driveUV.filter((q) => q.v * S > vBody).sort((a2, c2) => a2.u - c2.u);
+  const prongs = [];
+  for (const q of arr) {
+    const pr = prongs[prongs.length - 1];
+    if (pr && q.u - pr.u1 < 12) {
+      pr.u1 = Math.max(pr.u1, q.u);
+      pr.roadTop = Math.max(pr.roadTop, q.g);
+    } else {
+      prongs.push({ u0: q.u, u1: q.u, roadTop: q.g });
+    }
+  }
+  for (const pr of prongs) {
+    pr.u0 -= 4; pr.u1 += 4;
+    pr.soffit = pr.roadTop + CLEAR;
+    if (Math.abs(pr.soffit - bodySoffit) < 1.6) pr.soffit = bodySoffit;
+  }
+  const inProng = (u, v) => v * S > vBody - 2
+    && prongs.some((pr) => u >= pr.u0 - 3 && u <= pr.u1 + 3);
+
+  // 1. THE DECKS. Body deck over the main body; a drive-under deck per prong,
+  //    each at its own level, each with a parapet because the podium roof is
+  //    an occupied terrace. y0 for extrudeGeo counts from the building seat.
+  const bodyRect = rect(0, S * ((vBody - hS) / 2), hL, (vBody + hS) / 2);
+  api.merge(api.extrudeGeo(bodyRect, DECK, bodySoffit - g0), buff, ob.cx, ob.cz);
+  api.merge(api.extrudeGeo(bodyRect, 1.0, bodySoffit - g0 + DECK), white, ob.cx, ob.cz);
+  for (const pr of prongs) {
+    const cu = (pr.u0 + pr.u1) / 2, hu = (pr.u1 - pr.u0) / 2;
+    const v0 = vBody - 2, v1 = hS;
+    const prRect = rect(cu, S * ((v0 + v1) / 2), hu, (v1 - v0) / 2);
+    api.merge(api.extrudeGeo(prRect, DECK, pr.soffit - g0), buff, ob.cx, ob.cz);
+    api.merge(api.extrudeGeo(prRect, 1.0, pr.soffit - g0 + DECK), white, ob.cx, ob.cz);
+    // columns under the prong deck, clear of the carriageway
+    for (let u = pr.u0 + 2; u <= pr.u1 - 1; u += 7.5) {
+      for (let v = v0 + 2; v <= v1 - 2; v += 7.5) {
+        const [px, pz] = P(u, S * v);
+        if (!inFoot(px, pz)) continue;
+        if (roadNear(px, pz, 1.2)) continue;
+        const gy = api.groundAt(px, pz);
+        const hcol = pr.soffit - gy;
+        if (hcol < 2.4) continue;
+        const col = new THREE.CylinderGeometry(0.34, 0.38, hcol, 8);
+        col.translate(px, gy + hcol / 2, pz);
+        api.merge(col, buff, px, pz);
+      }
+    }
+  }
+
+  // 2. GROUND STOREY of the main body: piers on the ring with panels between
+  //    them — glazed lobby fronts toward the forecourt, buff elsewhere. Prong
+  //    ring edges get NOTHING: a porte-cochere is open-sided, and its columns
+  //    are placed above. Panels rise from their own local ground to the body
+  //    soffit, which is how the podium base absorbs the 11m fall.
+  const per = perimeterOf(b.p);
+  const n = Math.max(12, Math.round(per / 8.5));
+  const piers = [];
+  for (let i = 0; i < n; i++) {
+    const p2 = alongRing(b.p, (i + 0.5) / n, 1.0, ob);
+    if (!p2) continue;
+    const [pu, pv] = uvOf(p2[0], p2[1]);
+    if (inProng(pu, pv)) continue;
+    if (roadNear(p2[0], p2[1], 2.2)) continue;
+    piers.push(p2);
+    const gy = api.groundAt(p2[0], p2[1]);
+    const hp = bodySoffit - gy;
+    if (hp < 0.6) continue;
+    const pier = new THREE.BoxGeometry(0.9, hp, 0.9);
+    pier.rotateY(-ob.ang);
+    pier.translate(p2[0], gy + hp / 2, p2[1]);
+    api.merge(pier, buff, ob.cx, ob.cz);
+  }
+  for (let i = 0; i < piers.length; i++) {
+    const a = piers[i], c = piers[(i + 1) % piers.length];
+    const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+    if (L < 1.6 || L > 14) continue;              // a skipped pier is an opening
+    const mx = (a[0] + c[0]) / 2, mz = (a[1] + c[1]) / 2;
+    if (roadNear(mx, mz, 1.6)) continue;
+    const [, pv] = uvOf(mx, mz);
+    if (inProng(uvOf(mx, mz)[0], pv)) continue;
+    const gy = api.groundAt(mx, mz);
+    const hp = bodySoffit - gy;
+    if (hp < 0.8) continue;
+    const lobby = pv * S > hS * 0.28;             // forecourt-facing bays glaze
+    const bay = new THREE.BoxGeometry(0.35, hp - (lobby ? 0.8 : 0.2), L - 0.8);
+    bay.rotateY(Math.atan2(c[0] - a[0], c[1] - a[1]));
+    bay.translate(mx, gy + (hp - (lobby ? 0.8 : 0.2)) / 2, mz);
+    api.merge(bay, lobby ? glazing : cream, ob.cx, ob.cz);
+  }
+
+  // 3. THE SLAB BLOCKS on the body deck — all inside the body, which the
+  //    replay shows the road never enters. The +u end slab is THE OUTPOST in
+  //    its published black-and-white; the rest are Village's sun-washed
+  //    slabs around the pool courtyard.
+  const deckTop = bodySoffit - g0 + DECK;         // y0 above seat
+  const TOP = Math.max(deckTop + 10, b.h || 27.2);
+  const FLOORS = Math.max(3, Math.round((TOP - deckTop) / 3.3));
+  const floorH = (TOP - deckTop) / FLOORS;
+  const slabs = [
+    { u: 0.02 * hL, v: S * 0.40 * hS, hu: 0.88 * hL, hv: 0.13 * hS, m: cream },   // lobby slab
+    { u: 0.80 * hL, v: -S * 0.22 * hS, hu: 0.17 * hL, hv: 0.48 * hS, m: white,
+      outpost: true },                                                            // The Outpost
+    { u: -0.04 * hL, v: -S * 0.28 * hS, hu: 0.16 * hL, hv: 0.46 * hS, m: cream }, // middle slab
+    { u: -0.78 * hL, v: -S * 0.32 * hS, hu: 0.16 * hL, hv: 0.42 * hS, m: cream }, // west slab
+    { u: 0.30 * hL, v: -S * 0.84 * hS, hu: 0.30 * hL, hv: 0.13 * hS, m: cream },  // south block
+  ];
+  for (const s of slabs) {
+    const ring = rect(s.u, s.v, s.hu, s.hv);
+    api.merge(api.extrudeGeo(ring, TOP - deckTop, deckTop), s.m, ob.cx, ob.cz);
+    // the repeating balcony line, one band per floor — the read the aerial
+    // gives every slab. Outpost's bands are its charcoal monochrome frames.
+    for (let f = 1; f < FLOORS; f++) {
+      api.merge(api.extrudeGeo(rect(s.u, s.v, s.hu + 0.22, s.hv + 0.22), 0.22,
+        deckTop + f * floorH), s.outpost ? charcoal : white, ob.cx, ob.cz);
+    }
+    // flat pale roof with a plant box
+    api.merge(api.extrudeGeo(rect(s.u, s.v, s.hu + 0.15, s.hv + 0.15), 0.3, TOP),
+      roofGrey, ob.cx, ob.cz);
+    api.merge(api.extrudeGeo(rect(s.u, s.v, s.hu * 0.3, s.hv * 0.4), 1.4, TOP + 0.3),
+      roofGrey, ob.cx, ob.cz);
+    if (s.outpost) {
+      // Sky Pool on the roof (published, level 7) and vertical charcoal fins
+      api.merge(api.extrudeGeo(rect(s.u, s.v + S * 0.1 * hS, s.hu * 0.42, s.hv * 0.2),
+        0.14, TOP + 0.34), pool, ob.cx, ob.cz);
+      for (let k = -2; k <= 2; k++) {
+        const fin = new THREE.BoxGeometry(0.4, TOP - deckTop, 0.6);
+        fin.rotateY(-ob.ang);
+        const [fx, fz] = P(s.u + s.hu, s.v + k * s.hv * 0.4);
+        fin.translate(fx, g0 + deckTop + (TOP - deckTop) / 2, fz);
+        api.merge(fin, charcoal, ob.cx, ob.cz);
+      }
+    }
+  }
+
+  // 4. THE POOL COURTYARD between the slabs: the free-form pool as overlapping
+  //    rounds, the small round pool, and the lap pool along the far edge.
+  for (const [pu, pv, r] of [[0.30 * hL, -S * 0.30 * hS, 11], [0.42 * hL, -S * 0.44 * hS, 7],
+                             [0.20 * hL, -S * 0.18 * hS, 6.5]]) {
+    const disc = new THREE.CylinderGeometry(r, r, 0.14, 20);
+    const [px, pz] = P(pu, pv);
+    disc.translate(px, g0 + deckTop + 0.10, pz);
+    api.merge(disc, pool, ob.cx, ob.cz);
+  }
+  api.merge(api.extrudeGeo(rect(-0.42 * hL, -S * 0.70 * hS, 0.26 * hL, 0.035 * hS),
+    0.14, deckTop + 0.08), pool, ob.cx, ob.cz);
+
+  // 5. THE DROP-OFF CANOPY in the forecourt notch, off the lobby front — flat,
+  //    deep, on paired posts, stepped to the forecourt's own ground.
+  {
+    const cu = prongs.length === 2
+      ? (prongs[0].u1 + prongs[1].u0) / 2 : 0;    // centred between the mouths
+    const cv = S * (vBody + 5.5);
+    const [fx2, fz2] = P(cu, cv);
+    const gF = api.groundAt(fx2, fz2);
+    const half = Math.min(0.16 * hL, prongs.length === 2
+      ? (prongs[1].u0 - prongs[0].u1) / 2 - 2 : 0.16 * hL);
+    if (half > 3) {
+      api.merge(api.extrudeGeo(rect(cu, cv, half, 3.4), 0.45, gF - g0 + 4.2),
+        white, ob.cx, ob.cz);
+      for (const su of [-1, 1]) {
+        const [px, pz] = P(cu + su * half * 0.82, cv);
+        const gy = api.groundAt(px, pz);
+        const hpost = gF + 4.2 - gy;
+        if (hpost < 2.2) continue;
+        const post = new THREE.CylinderGeometry(0.22, 0.26, hpost, 8);
+        post.translate(px, gy + hpost / 2, pz);
+        api.merge(post, buff, px, pz);
+      }
+    }
+  }
+}
+
 // ---- THE SILOSO BEACH VENUES (research/siloso-venues.md, per-venue) -------
 // Every dimension below is EST-PHOTO unless the brief marks it published; the
 // brief is explicit that none of these buildings publish a metre figure.
@@ -6196,6 +6485,167 @@ const SEAWARD = (ob) => {
   const L = Math.hypot(dx, dz) || 1;
   return [dx / L, dz / L];
 };
+
+// SHANGRI-LA RASA SENTOSA — the resort that closes the west end of Siloso,
+// 101 Siloso Road, 454 rooms over 11 floors (heights.py's own fix: h 37.4).
+// Published/photographed form (research/siloso-venues.md §1.1): "long curved
+// multi-storey slab, cream/white render, dark window bands, stepped roofline,
+// sitting on a green ridge; a large blue pool terrace with red-orange
+// umbrellas at its foot". The 53-node OSM ring traces that crescent exactly.
+//
+// THE SITE FALLS 33 METRES (ring ground 2.7 to 35.6, measured), and that is
+// the whole building: you arrive at the TOP — Siloso Road runs at ~34, the
+// roof at 40 — and the eleven storeys cascade down the ridge to the beach.
+// So the porte-cochere here is not a deck over the road; the road is nearly
+// AT roof level. openground.py: 10.0m of the service loop runs inside the
+// ring's small entrance lobe, and the generic mass walls it.
+//
+// THE FIX EDITS THE REAL PLAN RATHER THAN REDRAWING IT: the six ring
+// vertices around that lobe (found at build by distance to the drive samples
+// inside the ring — nothing hardcoded) are cut, which opens the lobe as a
+// drop-off court cut into the building's corner; the carve already opens
+// movement, and sgdetail's corridor canopy is the drop-off canopy. The cut
+// removes 197 m2 of 5,898 (replayed offline, one contiguous run, every road
+// sample outside the reduced ring).
+function rasaSentosa(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const H = Math.max(20, b.h || 37.4);
+  // cream render WITH WINDOWS — texPunched is the project's vocabulary for a
+  // rendered wall with dark punched openings, and a flat colour here was a
+  // step DOWN from the generic facade (solo compare: black slats on a blank
+  // beige cliff vs the generic's real window texture)
+  const cream = new THREE.MeshStandardMaterial({ map: texPunched(0xece4d4), roughness: 0.82 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.78 });
+  const roofGrey = new THREE.MeshStandardMaterial({ color: 0xc6c8c3, roughness: 0.8 });
+  const pool = new THREE.MeshStandardMaterial({
+    color: 0x2fa8b8, roughness: 0.25, metalness: 0.1 });
+  const umbrella = new THREE.MeshStandardMaterial({
+    color: 0xd4593a, roughness: 0.7, side: THREE.DoubleSide });
+
+  const inFoot = (x, z) => {
+    let hit = false;
+    const pts = b.p;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const xi = pts[i][0], zi = pts[i][1], xj = pts[j][0], zj = pts[j][1];
+      if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
+    }
+    return hit;
+  };
+  // drive samples inside the ring, and the entrance-lobe vertices near them
+  const inside = [];
+  for (const r of (api.drives || [])) {
+    const pts = r.p || [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const L = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+      const n2 = Math.max(1, Math.round(L / 2));
+      for (let s2 = 0; s2 <= n2; s2++) {
+        const x = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * (s2 / n2);
+        const z = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * (s2 / n2);
+        if (inFoot(x, z)) inside.push([x, z]);
+      }
+    }
+  }
+  const cut = new Set();
+  for (let i = 0; i < b.p.length; i++) {
+    const [x, z] = b.p[i];
+    if (inside.some(([a2, c2]) => Math.hypot(x - a2, z - c2) < 13)) cut.add(i);
+  }
+  // the cut must be one contiguous run, or the plan is not the lobe this was
+  // written for — build the full ring rather than guess
+  let ring = b.p;
+  if (cut.size && cut.size < b.p.length / 3) {
+    const idx = [...cut].sort((a2, c2) => a2 - c2);
+    let contiguous = true;
+    for (let k = 1; k < idx.length; k++) {
+      if (idx[k] !== idx[k - 1] + 1) { contiguous = false; break; }
+    }
+    // (a run wrapping the array seam would read as two pieces here; this ring
+    // does not wrap — replayed — and if a resurvey makes it wrap, the guard
+    // just builds the full ring, which is never wrong, only walled)
+    if (contiguous) ring = b.p.filter((q, i) => !cut.has(i));
+  }
+
+  // the crescent mass, its window bands, parapet and roof plant
+  api.world.add(api.extrude(ring, H, cream));
+  const FLOORS = 11;                    // published (454 rooms / 11 floors)
+  const floorH = H / FLOORS;
+  // thin white balcony ledges, the horizontal read the photographs give
+  for (let f = 1; f < FLOORS; f++) {
+    api.merge(api.extrudeGeo(api.growM(ring, 0.32), 0.3, f * floorH), white, ob.cx, ob.cz);
+  }
+  api.merge(api.extrudeGeo(api.growM(ring, 0.18), 1.0, H), white, ob.cx, ob.cz);
+  for (const t of [0.2, 0.5, 0.8]) {
+    const p2 = alongRing(ring, t, 0.86, ob);
+    if (!p2) continue;
+    const box = new THREE.BoxGeometry(7, 1.6, 4);
+    box.rotateY(-ob.ang);
+    box.translate(p2[0], g0 + H + 0.8, p2[1]);
+    api.merge(box, roofGrey, ob.cx, ob.cz);
+  }
+
+  // the pool terrace at its foot, on the seaward side: freeform blue pool,
+  // pale deck, red-orange umbrellas — the research's own reading of the
+  // photographs. Seated on the local ground, not the building's seat.
+  // The terrace must not land on the trail network — the first placement put
+  // it 0.6m from a mapped path and the boardwalk's railings ran straight
+  // through the pool. Searched at build over every mapped way: candidate
+  // centres fan along the seaward foot, the clearest wins, and under 14m of
+  // clearance the terrace is not built at all rather than built through a
+  // fence. (Offline replay found 22m of clearance at the crescent's east
+  // foot; the runtime search just re-derives that from the same data.)
+  const [sx, sz] = SEAWARD(ob);
+  const wayDist = (x, z) => {
+    let best = 1e9;
+    for (const r of [...(api.walkways || []), ...(api.drives || [])]) {
+      const pts = r.p || [];
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const ax = pts[i][0], az = pts[i][1], bx2 = pts[i + 1][0], bz2 = pts[i + 1][1];
+        const vx = bx2 - ax, vz = bz2 - az;
+        const L2 = vx * vx + vz * vz || 1;
+        let t = ((x - ax) * vx + (z - az) * vz) / L2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const dx = x - (ax + vx * t), dz = z - (az + vz * t);
+        const dd = dx * dx + dz * dz;
+        if (dd < best) best = dd;
+      }
+    }
+    return Math.sqrt(best);
+  };
+  let spot = null;
+  for (let off = -60; off <= 60; off += 10) {
+    for (let out = 10; out <= 35; out += 5) {
+      const x = ob.bx + sx * (ob.halfShort + out) - sz * off;
+      const z = ob.bz + sz * (ob.halfShort + out) + sx * off;
+      const md = wayDist(x, z);
+      if (!spot || md > spot[0]) spot = [md, x, z];
+    }
+  }
+  if (spot && spot[0] >= 14) {
+    const [, px0, pz0] = spot;
+    const gP = api.groundAt(px0, pz0);
+    const deckG = new THREE.CylinderGeometry(16, 16, 0.5, 22);
+    deckG.scale(1.25, 1, 1);
+    deckG.rotateY(-ob.ang);
+    deckG.translate(px0, gP + 0.25, pz0);
+    api.merge(deckG, white, px0, pz0);
+    for (const [du, dv, r] of [[-6, 2, 7], [3, -2, 8.5], [10, 3, 5]]) {
+      const disc = new THREE.CylinderGeometry(r, r, 0.2, 18);
+      disc.translate(px0 + du, gP + 0.55, pz0 + dv);
+      api.merge(disc, pool, px0, pz0);
+    }
+    for (let k = 0; k < 6; k++) {
+      const a2 = (k / 6) * Math.PI * 2 + 0.4;
+      const ux2 = px0 + Math.cos(a2) * 13, uz2 = pz0 + Math.sin(a2) * 11;
+      const mast = new THREE.CylinderGeometry(0.08, 0.08, 2.6, 5);
+      mast.translate(ux2, gP + 1.55, uz2);
+      api.merge(mast, white, px0, pz0);
+      const shade = new THREE.ConeGeometry(1.9, 0.8, 8);
+      shade.translate(ux2, gP + 2.9, uz2);
+      api.merge(shade, umbrella, px0, pz0);
+    }
+  }
+}
 
 // EMERALD PAVILION, 40 Siloso Beach Walk — ONE building through four tenants
 // (Café del Mar, Mambo, Rumours, Baristart — all gone by 2026; the PAVILION
@@ -6822,6 +7272,11 @@ export const RECIPES = [
   [/^the galleria$/i, theGalleria],
   [/^equarius villas|^beach villas/i, equariusVillas],
   [/^espa$/i, espa],
+  // Village + Outpost share ONE mapped footprint (research/resort-footprints.md
+  // §7.1: "one shared podium... a vertical split, not a plan split")
+  [/^village hotel/i, villageHotelSentosa],
+  // matches the map's current possessive name and any future simplification
+  [/rasa sentosa/i, rasaSentosa],
   [/^battlestar galactica/i, battlestar],
   [/^skyhelix/i, skyHelix],
   // River Valley Road's western frontage. RV Residences is six blocks under one
@@ -7033,6 +7488,19 @@ export const RECIPES = [
 // unbroken white petals, which is the same mistake the Esplanade and the
 // National Gallery are already in this set for.
 const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery,
+                              // The Village/Outpost podium draws its own
+                              // complete ground storey — lobby glazing, piers,
+                              // and two OPEN porte-cochere mouths where Beach
+                              // View drives under the prong decks. The generic
+                              // shopfront ribbon walled the west mouth shut
+                              // (pc2.spot1: retail bays straight across the
+                              // carriageway at the ring crossing).
+                              villageHotelSentosa,
+                              // Rasa's ring is guest-room balconies cascading
+                              // to the beach and a lobby at ridge top — no
+                              // retail ribbon (same defect: bays walled the
+                              // drop-off lobe the recipe cuts open)
+                              rasaSentosa,
                               // A stadium bowl has no street-level retail bays.
                               nationalStadium, indoorStadium,
                               gothicChurch, colonialHotel, artScienceMuseum,
