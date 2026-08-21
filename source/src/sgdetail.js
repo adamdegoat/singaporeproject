@@ -2466,6 +2466,55 @@ export async function buildTrails(world, data, Y = null) {
       }
     }
   }
+  // JUNCTION ZONES, for the edge-lip rule below. The 2026-08-22 sweep's most
+  // repeated finding (4 of 5 reviewers, 8+ frames) was pale beams criss-
+  // crossing junction mouths — measured at the Cove roundabout they are the
+  // PAVED-PATH EDGE STRIPS of mapped pavement links threading between the
+  // arms: each link is honestly off the carriageway (kerbcheck 0/3913, the
+  // on-road guard below is correct), but the junction's painted apron reads
+  // as one surface and a raised lip across it reads as a beam on the road. A
+  // junction node is where two different carriageway WAYS end within 3m of
+  // each other; near one, a path keeps its ribbon and loses the lip.
+  const _juncNodes = [];
+  {
+    const ends = [];
+    for (const _r of (data.roads || [])) {
+      if (!_r.p || _r.p.length < 2) continue;
+      if (_r.k === 'footway' || _r.k === 'pedestrian' || _r.k === 'steps'
+          || _r.k === 'path') continue;
+      ends.push([_r.p[0][0], _r.p[0][1], _r],
+                [_r.p[_r.p.length - 1][0], _r.p[_r.p.length - 1][1], _r]);
+    }
+    for (let i = 0; i < ends.length; i++) {
+      for (let j = i + 1; j < ends.length; j++) {
+        if (ends[i][2] === ends[j][2]) continue;      // same way meeting itself
+        const dx = ends[i][0] - ends[j][0], dz = ends[i][1] - ends[j][1];
+        if (dx * dx + dz * dz < 9) { _juncNodes.push([ends[i][0], ends[i][1]]); break; }
+      }
+    }
+  }
+  const _JCELL = 32;
+  const _jGrid = new Map();
+  for (const [jx, jz] of _juncNodes) {
+    const k = Math.floor(jx / _JCELL) + ',' + Math.floor(jz / _JCELL);
+    let l = _jGrid.get(k);
+    if (!l) _jGrid.set(k, l = []);
+    l.push([jx, jz]);
+  }
+  const nearJunc = (x, z, r) => {
+    const cx = Math.floor(x / _JCELL), cz = Math.floor(z / _JCELL);
+    for (let gx = cx - 1; gx <= cx + 1; gx++) {
+      for (let gz = cz - 1; gz <= cz + 1; gz++) {
+        const l = _jGrid.get(gx + ',' + gz);
+        if (!l) continue;
+        for (const [jx, jz] of l) {
+          const dx = x - jx, dz = z - jz;
+          if (dx * dx + dz * dz < r * r) return true;
+        }
+      }
+    }
+    return false;
+  };
   const onAnyRoadT = (x, z, margin) => {
     if (window.__onRoad && window.__onRoad(x, z, margin)) return true;
     const cx = Math.floor(x / _RCELL), cz = Math.floor(z / _RCELL);
@@ -2779,7 +2828,8 @@ export async function buildTrails(world, data, Y = null) {
         // differ across it, and buildTrails is the biggest single cost in the
         // build (10.3s of an 18.1s boot before it was indexed). The outer lip
         // drops 3cm so it settles into the grass instead of standing on it.
-        if (kind === 'earth' || kind === 'pave') {
+        if ((kind === 'earth' || kind === 'pave')
+            && !nearJunc((p0x + p1x) / 2, (p0z + p1z) / 2, 22)) {
           const EW = 0.22, DROP = 0.03;
           const eMat = kind === 'earth' ? earthEdgeM : paveEdgeM;
           for (const sgnE of [-1, 1]) {
@@ -2829,7 +2879,14 @@ export async function buildTrails(world, data, Y = null) {
         // boardwalk — and this session has already put two blocked-route
         // regressions into the ledger. Solid.build skips InstancedMeshes on
         // purpose, so an instanced rail cannot block anything.
-        if (kind === 'deck' || kind === 'waterdeck') {
+        // ...except where the deck meets a junction mouth: the piece ON the
+        // road is already skipped above, and the rail bars of its surviving
+        // neighbours were left jutting across the mouth (sweep 118/126,
+        // Gateway Avenue). Both conditions, so a boardwalk BRIDGE that
+        // crosses a road away from any junction keeps its balustrade.
+        const _railMuted = nearJunc((p0x + p1x) / 2, (p0z + p1z) / 2, 14)
+          && onAnyRoadT((p0x + p1x) / 2, (p0z + p1z) / 2, 3);
+        if ((kind === 'deck' || kind === 'waterdeck') && !_railMuted) {
           const segL = Math.hypot(p1x - p0x, p1z - p0z);
           const yaw = Math.atan2(p1x - p0x, p1z - p0z);
           for (const sgn of [-1, 1]) {

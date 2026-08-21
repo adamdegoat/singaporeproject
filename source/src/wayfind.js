@@ -245,7 +245,14 @@ export async function buildSignage(world, axis, data, isBlocked, Y = null) {
           g.add(back);
         }
 
-        g.position.set(px, groundAt(px, pz), pz);
+        // surfaceAt, NOT groundAt — the two-numbers trap, again. On the Brani
+        // causeway the deck stands ~5m over the sea and groundAt answers for
+        // the SEA, so the whole gantry group sat 5m low and the rider met the
+        // green face at head height, filling half the frame (2026-08-22 sweep
+        // frame 033). The post-offset special case above already knew this
+        // sign stands on a bridge; the group's own seat did not.
+        g.position.set(px,
+          window.__surfaceAt ? window.__surfaceAt(px, pz) : groundAt(px, pz), pz);
         world.add(g);
         placed.gantries++;
       }
@@ -274,7 +281,8 @@ export async function buildSignage(world, axis, data, isBlocked, Y = null) {
             g.add(plate);
           }
           said.push({ kind: 'plate', x: sx, z: sz, text: axis.n || 'Orchard Road', obj: g });
-          g.position.set(sx, groundAt(sx, sz), sz);
+          g.position.set(sx,
+            window.__surfaceAt ? window.__surfaceAt(sx, sz) : groundAt(sx, sz), sz);
           g.rotation.y = ang + Math.PI / 2;
           world.add(g);
           placed.plates++;

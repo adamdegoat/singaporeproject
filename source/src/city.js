@@ -6147,6 +6147,15 @@ export class TreeField {
     if (window.__inWater && window.__inWater(x, z)) return;
     if (window.__inFootprint && window.__inFootprint(x, z)) return;
     if (window.__underCanopy && window.__underCanopy(x, z)) return;
+    // NOR ON A CARRIAGEWAY. The per-pass guards test onRoad at -0.4m, which
+    // is right for street furniture and wrong for a trunk: a tree half a
+    // metre inside the kerb line passed every guard and stood in the riding
+    // lane on Beach View (2026-08-22 sweep frame 189, verified by probing
+    // __treeIx against __onRoad: one full-size tree at margin 0, clear at
+    // -1). Full-size trees must clear the mapped tarmac entirely;
+    // undergrowth keeps the looser per-pass rule, a bush at the kerb is a
+    // verge.
+    if (!low && scale >= 0.5 && window.__onRoad && window.__onRoad(x, z, 0)) return;
     this.items.push([x, z, scale, low]);
     // AND THE CHASE CAMERA NEEDS TO KNOW WHERE THE TRUNKS ARE. Trees are
     // InstancedMeshes and solid.js deliberately skips those, so a trunk is
