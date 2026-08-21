@@ -6486,6 +6486,94 @@ const SEAWARD = (ob) => {
   return [dx / L, dz / L];
 };
 
+// SOFITEL SINGAPORE SENTOSA — Kerry Hill's The Beaufort (1995), 2 Bukit
+// Manis Road: a chain of courtyard blocks stepping down the ridge, every
+// roof a STEEP TERRACOTTA HIP with deep overhangs, cream rendered walls,
+// heavy tree canopy (research/resort-footprints.md §1.2/1.3). The 115-node
+// OSM way traces the whole connected complex and the research is explicit
+// that the polygon is right and the flat height is not: "no flat roof
+// anywhere in the complex". Storeys UNPUBLISHED — EST-PHOTO 3 plus a tall
+// roof, stated here as the authored assumption (walls 10.2, roof +4.4).
+//
+// THE ROOF IS BUILT IN METERS, NOT SCALE FACTORS. hipRoof() shrinks the ring
+// multiplicatively about the centroid, which is right for a compact block
+// and wrong for a 296m multi-armed complex — scaling drags every wing
+// toward the middle. Constant growM insets keep each wing's own ridge.
+//
+// AND THE MAPPED ROUTES GET DOORS. A footway spends 32.5m inside this ring
+// (openground.py's arcade queue) and two carved drive-throughs cross it;
+// the carve opens movement, and the facade at each crossing gets an opening
+// — dark recessed plate and jamb, the garage-door idiom — so the rider
+// enters a doorway rather than ghosting a blank wall.
+function sofitelSentosa(api, b) {
+  const ob = orientedBox(b.p);
+  const g0 = api.footingY(b.p);
+  const WALL = 10.2;                    // ASSUMPTION: 3 storeys, see above
+  const cream = new THREE.MeshStandardMaterial({ map: texPunched(0xeae1cd), roughness: 0.85 });
+  const tile = new THREE.MeshStandardMaterial({ color: 0xb15733, roughness: 0.78 });
+  const doorMat = new THREE.MeshStandardMaterial({ color: 0x2c2f33, roughness: 0.6 });
+  const jambMat = new THREE.MeshStandardMaterial({ color: 0xd9d0bc, roughness: 0.85 });
+  api.world.add(api.extrude(b.p, WALL, cream));
+  // the hip: deep eave first, then constant-meter insets rising to the ridge
+  api.merge(api.extrudeGeo(api.growM(b.p, 1.7), 0.4, WALL), tile, ob.cx, ob.cz);
+  for (const [inset, y, h] of [[-0.4, WALL + 0.4, 1.2], [-2.2, WALL + 1.6, 1.2],
+                               [-4.0, WALL + 2.8, 1.2], [-5.6, WALL + 4.0, 0.8]]) {
+    api.merge(api.extrudeGeo(api.growM(b.p, inset), h, y), tile, ob.cx, ob.cz);
+  }
+  // doors where the mapped routes cross the facade: walk the ring, and at
+  // every edge a carved route passes within its own half-width, stand a
+  // recessed opening facing outward — walkers get a doorway, drives get a
+  // porte-cochere mouth under the eave
+  const routes = [];
+  for (const r of [...(api.walkways || []), ...(api.drives || [])]) {
+    if (r.p && r.p.length > 1) routes.push(r);
+  }
+  const ring = b.p;
+  const doors = [];
+  for (let i = 0; i < ring.length; i++) {
+    const [ax, az] = ring[i], [bx2, bz2] = ring[(i + 1) % ring.length];
+    const L = Math.hypot(bx2 - ax, bz2 - az);
+    if (L < 2) continue;
+    for (const r of routes) {
+      const isDrive = r.k !== 'footway' && r.k !== 'pedestrian';
+      const halfW = ((r.w || (isDrive ? 6 : 3.4)) / 2) + 0.6;
+      const pts = r.p;
+      for (let j = 0; j + 1 < pts.length; j++) {
+        // segment-segment closest approach, sampled on the ring edge
+        for (let t = 0; t <= 1; t += 0.12) {
+          const x = ax + (bx2 - ax) * t, z = az + (bz2 - az) * t;
+          const vx = pts[j + 1][0] - pts[j][0], vz = pts[j + 1][1] - pts[j][1];
+          const L2 = vx * vx + vz * vz || 1;
+          let s = ((x - pts[j][0]) * vx + (z - pts[j][1]) * vz) / L2;
+          s = s < 0 ? 0 : s > 1 ? 1 : s;
+          const dx = x - (pts[j][0] + vx * s), dz = z - (pts[j][1] + vz * s);
+          if (dx * dx + dz * dz < halfW * halfW) {
+            if (doors.some((q) => Math.hypot(q[0] - x, q[1] - z) < 9)) break;
+            doors.push([x, z, Math.atan2(bx2 - ax, bz2 - az), isDrive]);
+            break;
+          }
+        }
+      }
+    }
+  }
+  for (const [dx2, dz2, edgeYaw, isDrive] of doors) {
+    const gy = api.groundAt(dx2, dz2);
+    const W2 = isDrive ? 7.6 : 3.6, H2 = isDrive ? 5.0 : 3.4;
+    // proud of the facade along the edge normal — outwardSign knows the
+    // winding, so the plate cannot end up inside the mass
+    const sgn = outwardSign(ring);
+    const nx = Math.cos(edgeYaw) * sgn, nz = -Math.sin(edgeYaw) * sgn;
+    const door = new THREE.BoxGeometry(W2, H2, 0.2);
+    door.rotateY(edgeYaw);
+    door.translate(dx2 + nx * 0.3, gy + H2 / 2, dz2 + nz * 0.3);
+    api.merge(door, doorMat, dx2, dz2);
+    const jamb = new THREE.BoxGeometry(W2 + 0.8, H2 + 0.5, 0.16);
+    jamb.rotateY(edgeYaw);
+    jamb.translate(dx2 + nx * 0.38, gy + (H2 + 0.5) / 2, dz2 + nz * 0.38);
+    api.merge(jamb, jambMat, dx2, dz2);
+  }
+}
+
 // SHANGRI-LA RASA SENTOSA — the resort that closes the west end of Siloso,
 // 101 Siloso Road, 454 rooms over 11 floors (heights.py's own fix: h 37.4).
 // Published/photographed form (research/siloso-venues.md §1.1): "long curved
@@ -7277,6 +7365,7 @@ export const RECIPES = [
   [/^village hotel/i, villageHotelSentosa],
   // matches the map's current possessive name and any future simplification
   [/rasa sentosa/i, rasaSentosa],
+  [/^sofitel singapore sentosa/i, sofitelSentosa],
   [/^battlestar galactica/i, battlestar],
   [/^skyhelix/i, skyHelix],
   // River Valley Road's western frontage. RV Residences is six blocks under one
@@ -7501,6 +7590,9 @@ const NO_SHOPFRONT = new Set([esplanade, nationalMuseum, nationalGallery,
                               // retail ribbon (same defect: bays walled the
                               // drop-off lobe the recipe cuts open)
                               rasaSentosa,
+                              // a Kerry Hill garden resort has no retail
+                              // ribbon; its routes get doors from the recipe
+                              sofitelSentosa,
                               // A stadium bowl has no street-level retail bays.
                               nationalStadium, indoorStadium,
                               gothicChurch, colonialHotel, artScienceMuseum,
