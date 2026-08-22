@@ -1293,6 +1293,23 @@ OSM_WAY = {
     # current imagery. Height UNPUBLISHED; EST 10-12m parapet -> 3 storeys.
     116818197: {"st": 3},
 
+    # --- RWS west (Adventure Cove / Oceanarium / ex-Hard Rock), researched
+    # 2026-08-22, research/uss-height-queue.md — all seven were pipeline
+    # guesses, both 27.2s on SINGLE-STOREY waterpark fabric. Heights are the
+    # research's EST/DERIVED figures; sources in the file.
+    172008292: {"m": 12},    # Resorts World Theatre — podium-embedded, no tower
+    172008291: {"m": 18},    # The Coliseum (closed 2 Mar 2024, still standing)
+    445364429: {"m": 18},    # ex-MEM site, now under the Oceanarium gridshell
+    684974076: {"m": 15},    # cream tensile canopy pavilion, Oceanarium plaza
+    # 689159155 and 1530948605 are NOT here, deliberately. Both were tried
+    # with m-heights (2026-08-22) and the override RESCUED twelve sub-
+    # threshold FRAGMENTS of those multi-part ways into the world — seven
+    # strips of a shelter the research says is DEMOLISHED. The honest fix for
+    # 689159155 is removal-by-way-id (stale.py only deletes by NAME), and for
+    # 1530948605 a height that does not resurrect its parts; both answers are
+    # in research/uss-height-queue.md waiting on that mechanism.
+    684985160: {"m": 9},     # Adventure Cove entrance colonnade + BOH wing
+
     # --- research/mustafa-centre.md section 5
     # Mustafa Centre is FOUR footprints and OSM gives all four building:levels=5.
     # The research keeps storeys and metres deliberately apart and finds only one
