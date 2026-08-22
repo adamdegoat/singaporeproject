@@ -15,6 +15,7 @@ import { R, rand, pick, chance, rng, sharedSignAtlas } from './tex.js';
 import { MAT, groundAt, drawnGroundAt, surfaceAt, Merger, standable, addWalkSurface,
          addFootbridgeWay, cableProfiles, CABLE_RIDE_H, CABLE_STATION_H } from './city.js';
 import { recipeFor } from './landmarks.js';
+import { QLIFE } from './qlife_data.js';
 
 const SIGN_COLS = [0xb5372e, 0x1f4f7a, 0xd6a53c, 0x2f6b4f, 0x7a3f6d,
                    0xcf6b3a, 0x2b2f33, 0xa8324f, 0x3d6f8f];
@@ -1358,17 +1359,24 @@ export async function buildBeachWalk(world, data, Y = null) {
     (window.__banners = window.__banners || []).push([+x.toFixed(1), +z.toFixed(1)]);
   };
 
+  // the Quaternius park bench (CC0, pack restyle 2026-08-22): a real slat
+  // bench with legs instead of two floating boxes. Positions/yaw/count are
+  // untouched; benchM keeps the timber colour and the geometry scales to
+  // the same 1.8m footprint the old boxes had.
+  const _benchGeo = (() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(QLIFE.bench.p, 3));
+    g.setIndex(QLIFE.bench.i);
+    g.computeVertexNormals();
+    return g;
+  })();
   const benchAt = (x, z, yaw) => {
     const gy = groundAt(x, z);
-    const seat = new THREE.BoxGeometry(1.8, 0.1, 0.5);
-    seat.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw));
-    seat.translate(x, gy + 0.45, z);
-    merger.add(seat, benchM, x, z);
-    const back = new THREE.BoxGeometry(1.8, 0.42, 0.07);
-    back.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw));
-    back.translate(x - Math.sin(yaw + Math.PI / 2) * 0.22, gy + 0.76,
-      z - Math.cos(yaw + Math.PI / 2) * 0.22);
-    merger.add(back, benchM, x, z);
+    const b = _benchGeo.clone();
+    b.scale(0.85, 0.85, 0.85);              // unit-height model -> 0.85m bench
+    b.applyMatrix4(new THREE.Matrix4().makeRotationY(yaw));
+    b.translate(x, gy, z);
+    merger.add(b, benchM, x, z);
     out.walkBenches++;
   };
 
@@ -1623,6 +1631,20 @@ export async function buildAttractions(world, data, Y = null) {
   const rockDark = new THREE.MeshLambertMaterial({ color: 0x6e675d });
   rockM.userData.groyneInWater = true;
   rockDark.userData.groyneInWater = true;
+  // the boulders themselves are Quaternius rock shapes now (CC0, part of
+  // the owner's 2026-08-22 full pack restyle) — same surveyed placement,
+  // same two materials and W2 exemptions, just real rock silhouettes
+  // instead of squashed dodecahedra. Positions only; the colors stay the
+  // groyne palette above.
+  const _rockGeo = (d) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(d.p, 3));
+    g.setIndex(d.i);
+    g.computeVertexNormals();
+    return g;
+  };
+  const rockShapeA = _rockGeo(QLIFE.rockB);   // rounded boulder
+  const rockShapeB = _rockGeo(QLIFE.rockA);   // low angular slab
   for (const rk of (data.rocks || [])) {
     await YY();
     const g2 = rk.g || [];
@@ -1636,11 +1658,17 @@ export async function buildAttractions(world, data, Y = null) {
         const hh = ((px * 7.7 + pz * 3.3) % 1);
         const r = 1.0 + hh * 1.4;
         const gy = groundAt(px, pz);
-        const b = new THREE.DodecahedronGeometry(r, 0);
+        const b = (hh > 0.5 ? rockShapeA : rockShapeB).clone();
+        // SCALE BY FOOTPRINT, NOT HEIGHT: the dark slab shape is 3.8x wider
+        // than tall, and height-scaling it built 10m boulders that sealed a
+        // 2,048 m2 pocket — opencheck refused the first deploy of this
+        // change. Match the old dodecahedron's ~2r footprint per shape.
+        const _asp = hh > 0.5 ? 1.1 : 3.8;
+        const _s = (r * 2.1) / _asp;
+        b.scale(_s, Math.min(r * 1.45, _s * 1.2), _s);
         b.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(
-          new THREE.Euler(hh * 2.1, hh * 3.7, hh * 1.3, 'YXZ')));
-        b.scale(1, 0.72, 1);
-        b.translate(px + (hh - 0.5) * 2.2, gy + r * 0.45, pz + (hh - 0.5) * 2.2);
+          new THREE.Euler(0, hh * 6.1, 0, 'YXZ')));
+        b.translate(px + (hh - 0.5) * 2.2, gy - r * 0.15, pz + (hh - 0.5) * 2.2);
         merger.add(b, hh > 0.5 ? rockM : rockDark, px, pz);
         out.rocks = (out.rocks || 0) + 1;
         // A GROYNE HEAD IS WOODED. In the reference photographs the rocky

@@ -115,8 +115,8 @@ export function buildQLife(world, data, T) {
   // anchors near the swimming lagoons; each anchor scans a small ring for
   // real water and seeds a school there
   const anchors = [[-2350, 12430], [-2180, 12520], [-950, 13140]];
-  const fishKinds = ['clown', 'redfish', 'puffer', 'butter'];
-  const fishList = { clown: [], redfish: [], puffer: [], butter: [] };
+  const fishKinds = ['clown', 'redfish', 'puffer', 'butter', 'tang', 'grouper'];
+  const fishList = { clown: [], redfish: [], puffer: [], butter: [], tang: [], grouper: [] };
   for (const [ax, az] of anchors) {
     const wfAt = (x, z) => (T.waterFloor ? T.waterFloor(x, z) : null);
     let wx = null, wz = null;
