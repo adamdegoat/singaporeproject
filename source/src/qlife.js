@@ -268,7 +268,101 @@ export function buildQLife(world, data, T) {
   }
   addInstanced(world, 'pigeon', pigeons, { anim: 'creature' });
 
-  return { boats, fish, creatures, shoreRocks: shore, barProps, pigeons: pigeons.length };
+  // ---- PEAFOWL + WATER MONITORS (batch 7) --------------------------------
+  // Sentosa's real free-roaming animals, authored meshes (no CC0 peacock
+  // exists — scratchpad authored_fauna.py). Spots are the real roam places:
+  // the Capella lawns (home of the famous white peacock), the Palawan
+  // Amphitheatre greens, Sentosa Nature Discovery, Tanjong Beach. All
+  // hand-probed clear of roads/footprints, code-guarded anyway.
+  const PEAS = [
+    ['peacock',  -1000, 12990, 0.92], ['peacock', -1018, 12983, 0.88],
+    ['peawhite', -1005, 12998, 0.95],
+    ['peafan',   -1012, 13006, 1.50],
+    ['peacock',  -1360, 12845, 0.90], ['peacock', -1349, 12836, 0.86],
+    ['peafan',   -1382, 12820, 1.45],
+    ['peacock',  -1755, 12250, 0.90], ['peawhite', -1748, 12262, 0.93],
+    ['peacock',   -590, 13620, 0.90], ['peacock',  -585, 13598, 0.87],
+  ];
+  const peaLists = new Map();
+  let peas = 0;
+  for (const [kind, x, z, sc] of PEAS) {
+    if (x < bx0 || x > bx1 || z < bz0 || z > bz1) continue;
+    const gy = at(x, z);
+    if (gy < 0.4) continue;
+    if (window.__onRoad && window.__onRoad(x, z, 0.4)) continue;
+    if (window.__inFootprint && window.__inFootprint(x, z)) continue;
+    if (window.__onPath && window.__onPath(x, z)) continue;   // lawns, not paths
+    let a = peaLists.get(kind);
+    if (!a) peaLists.set(kind, a = []);
+    a.push([x, gy, z, ((hash2(x, z) % 628) / 100), sc]);
+    peas++;
+  }
+  for (const [kind, list] of peaLists) {
+    addInstanced(world, kind, list, { anim: 'strut', shadow: true, tag: 'creature',
+      mat: kind === 'peafan' ? { side: THREE.DoubleSide } : {} });
+  }
+
+  // monitors sun themselves on the lagoon banks: from each lagoon anchor,
+  // ring-scan outward for the first LAND point (the anchors themselves read
+  // as water — probed) and lay the lizard along the bank there.
+  // maxG: the Cove/ONE°15 quays read 7-10m (the documented land-smear plus
+  // genuinely raised quaysides), so the otter scan accepts higher ground and
+  // takes the LOWEST land point found — the closest thing to the waterline.
+  const bankNear = (mx, mz, maxG = 2.2) => {
+    if (mx < bx0 || mx > bx1 || mz < bz0 || mz > bz1) return null;
+    let best = null;
+    for (let rr = 4; rr <= 80; rr += 4) {
+      for (let aa = 0; aa < 6.28; aa += 0.6) {
+        const x = mx + Math.cos(aa) * rr, z = mz + Math.sin(aa) * rr;
+        const gy = at(x, z);
+        if (gy < 0.35 || gy > maxG) continue;
+        if (T.waterFloor && T.waterFloor(x, z) !== null) continue;
+        if (window.__onRoad && window.__onRoad(x, z, 0.4)) continue;
+        if (window.__inFootprint && window.__inFootprint(x, z)) continue;
+        if (gy < 2.2) return [x, gy, z];        // true low bank: take it
+        if (!best || gy < best[1]) best = [x, gy, z];
+      }
+    }
+    return best;
+  };
+  const MONS = [[-2350, 12430], [-2180, 12520], [-950, 13140]];
+  const monitors = [];
+  for (const [mx, mz] of MONS) {
+    const found = bankNear(mx, mz);
+    if (!found) continue;
+    const h = hash2(found[0], found[2]);
+    monitors.push([found[0], found[1], found[2], (h % 628) / 100,
+      0.18 + (h % 5) / 100]);
+  }
+  addInstanced(world, 'monitor', monitors, { anim: 'strut', shadow: true, tag: 'creature' });
+
+  // otters — Sentosa Cove's famous smooth-coated romp, loping on the marina
+  // banks with one lookout periscoping. Same bank-scan as the monitors.
+  const OTTS = [[490, 13710], [1180, 12850]];
+  const otters = [], lookouts = [];
+  for (const [mx, mz] of OTTS) {
+    const found = bankNear(mx, mz, 12);
+    if (!found) continue;
+    const [fx, fy, fz] = found;
+    const h0 = hash2(fx, fz);
+    const n = 2 + (h0 % 2);
+    for (let k = 0; k < n; k++) {
+      const hk = hash2(fx + k * 17, fz - k * 11);
+      const px = fx + ((hk % 70) / 10 - 3.5), pz = fz + (((hk >>> 8) % 70) / 10 - 3.5);
+      const gy = at(px, pz);
+      if (gy < 0.3 || Math.abs(gy - fy) > 1.2) continue;   // stay on the quay level
+      if (T.waterFloor && T.waterFloor(px, pz) !== null) continue;
+      if (window.__inFootprint && window.__inFootprint(px, pz)) continue;
+      otters.push([px, gy, pz, ((hk >>> 5) % 628) / 100, 0.27 + (hk % 4) / 100]);
+    }
+    lookouts.push([fx, fy, fz, (h0 % 628) / 100, 0.5]);
+  }
+  addInstanced(world, 'otter', otters, { anim: 'strut', shadow: true, tag: 'creature' });
+  addInstanced(world, 'otterup', lookouts, { anim: 'strut', shadow: true, tag: 'creature' });
+
+  return { boats, fish, creatures, shoreRocks: shore, barProps,
+    pigeons: pigeons.length, peas, monitors: monitors.length,
+    otters: otters.length + lookouts.length };
 }
 
 // ~15Hz gentle life: fish cruise a small circle, boats heave, creatures
@@ -297,6 +391,9 @@ export function qlifeTick(nowMs) {
     } else if (e.kind === 'ghost') {
       y += Math.sin(t * 1.1 + e.ph) * 0.35;
       yaw += Math.sin(t * 0.4 + e.ph) * 0.5;
+    } else if (e.kind === 'strut') {          // ground animal: slow look-around,
+      yaw += Math.sin(t * 0.35 + e.ph) * 0.55; // no hop (a peacock struts, a
+      y += Math.abs(Math.sin(t * 1.2 + e.ph)) * 0.015; // monitor never hops)
     } else {                                  // creature: idle bob + look-around
       y += Math.abs(Math.sin(t * 1.6 + e.ph)) * 0.10;
       yaw += Math.sin(t * 0.5 + e.ph) * 0.35;
