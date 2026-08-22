@@ -5405,14 +5405,59 @@ export async function buildRoads(world, data, Y = null) {
       }
       if (!runAloft.has(root)) runAloft.set(root, false);
     });
-    // fill BRTRIM from byEnd: an end is trimmable when it is a TERMINAL —
-    // only its own fragment touches that endpoint cell
-    bws.forEach((r, i) => {
-      const term = (p) => {
-        const e = byEnd.get(endKey(cls[i], Math.round(p[0] / 2), Math.round(p[1] / 2)));
-        return !e || e.frags.size === 1;
+    // fill BRTRIM: a barrier end is trimmable only at a genuine JUNCTION —
+    // two or more OTHER carriageway ways (bridge or not) meeting the end.
+    // The first rule ("terminal = no same-class bridge fragment continues")
+    // ALSO trimmed where a bridge run flows into the same road's ordinary
+    // segment, opening a 9m gap in the barrier line at every bridge-to-road
+    // seam — the owner's 2026-08-22 phone report, "kerbs all breaking apart
+    // not linking": the Cove island bridges shed their barrier ends at both
+    // abutments. A continuation (exactly one other way) keeps its barrier;
+    // a dead end keeps it too; only a merge apron (2+) loses the last 9m,
+    // which is the gore point the trim was written for.
+    const allCw = data.roads.filter((r) => r.p && r.p.length >= 2
+      && r.k !== 'footway' && r.k !== 'pedestrian' && r.k !== 'path' && r.k !== 'steps');
+    const cwEnds = new Map();
+    for (const r of allCw) {
+      for (const p of [r.p[0], r.p[r.p.length - 1]]) {
+        const k = Math.round(p[0] / 2) + ':' + Math.round(p[1] / 2);
+        let a = cwEnds.get(k);
+        if (!a) cwEnds.set(k, a = new Set());
+        a.add(r);
+      }
+    }
+    bws.forEach((r) => {
+      const joiners = (p) => {
+        const seen2 = new Set();
+        const cx = Math.round(p[0] / 2), cz = Math.round(p[1] / 2);
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dz = -1; dz <= 1; dz++) {
+            for (const o of (cwEnds.get((cx + dx) + ':' + (cz + dz)) || [])) {
+              if (o !== r) seen2.add(o);
+            }
+          }
+        }
+        // ...plus ways whose AXIS passes close to the end (a slip road's
+        // mapped end lands on the main way's line, not on a shared node —
+        // the Brani gore's slip is 11.7m from the shared endpoint but 3.3m
+        // from the end by axis). (half + 2) keeps a parallel dual
+        // carriageway 15m away from counting as a junction.
+        for (const o of allCw) {
+          if (o === r || seen2.has(o)) continue;
+          const reach = (o.w || 6) / 2 + 2;
+          const pts = o.p;
+          for (let i = 0; i < pts.length - 1; i++) {
+            const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+            const ex = bx - ax, ez = bz - az, L2 = ex * ex + ez * ez || 1;
+            let t = ((p[0] - ax) * ex + (p[1] - az) * ez) / L2;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            const dx2 = p[0] - (ax + ex * t), dz2 = p[1] - (az + ez * t);
+            if (dx2 * dx2 + dz2 * dz2 < reach * reach) { seen2.add(o); break; }
+          }
+        }
+        return seen2.size;
       };
-      BRTRIM.set(r, { t0: term(r.p[0]), t1: term(r.p[r.p.length - 1]) });
+      BRTRIM.set(r, { t0: joiners(r.p[0]) >= 2, t1: joiners(r.p[r.p.length - 1]) >= 2 });
     });
     const RAMP = 20;
     bws.forEach((r, i) => {
@@ -6256,7 +6301,11 @@ export class TreeField {
     // -1). Full-size trees must clear the mapped tarmac entirely;
     // undergrowth keeps the looser per-pass rule, a bush at the kerb is a
     // verge.
-    if (!low && scale >= 0.5 && window.__onRoad && window.__onRoad(x, z, 0)) return;
+    // margin 0.5, was 0: at margin 0 a trunk could stand ON the kerb line,
+    // and the pack trees' thicker boles read as "trees in middle of road"
+    // (owner report 2026-08-22, sweep 030/188). Half a metre of daylight
+    // between bark and tarmac is what a real road verge gives a trunk.
+    if (!low && scale >= 0.5 && window.__onRoad && window.__onRoad(x, z, 0.5)) return;
     this.items.push([x, z, scale, low]);
     // AND THE CHASE CAMERA NEEDS TO KNOW WHERE THE TRUNKS ARE. Trees are
     // InstancedMeshes and solid.js deliberately skips those, so a trunk is

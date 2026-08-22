@@ -992,7 +992,84 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     window.__kerbCrossDropped = (window.__kerbCrossDropped || 0) + (list.length - out.length);
     return out;
   };
-  emit(new THREE.BoxGeometry(0.38, 0.3, 4.7), MAT.kerb, kerbCross(dedupeProps(kerbClear, 0.6)), kerbSeat);
+  // ...AND A KERB LYING DEEP INSIDE ANOTHER ROAD'S TARMAC IS NOT A KERB.
+  // kerbCross catches crossing PAIRS, but at the Cove Way roundabout each
+  // arm's kerb and drain run straight on across the circulating carriageway
+  // metres apart from each other — nothing crossed, everything wrong
+  // (owner 2026-08-22 "kerbs all breaking apart", sweep 143/118/121). A
+  // piece whose centre is more than 1.2m INSIDE any carriageway is in the
+  // junction apron; its own road's edge can never put it there (kerbs sit
+  // 0.19m outside their own edge, and a curve's self-overlap stays shy of
+  // 1.2m deep).
+  // Two tests, because the apron exists in two forms: mapped carriageway
+  // (strict-interior __onRoad) and the PAINTED junction box that is not a
+  // mapped way at all. For the second, junction points are where one
+  // carriageway's END meets another carriageway — end-to-end or end-on-mid
+  // (a roundabout arm ends ON the ring's polyline, never on its endpoint).
+  const juncPts = [];
+  {
+    const cw = (data.roads || []).filter((r) => r.p && r.p.length >= 2
+      && r.k !== 'footway' && r.k !== 'pedestrian' && r.k !== 'path' && r.k !== 'steps');
+    for (const r of cw) {
+      for (const [p, endIdx] of [[r.p[0], 0], [r.p[r.p.length - 1], r.p.length - 1]]) {
+        for (const o of cw) {
+          const self = o === r;
+          const P2 = o.p;
+          let hit = false;
+          for (let i = 0; i < P2.length - 1 && !hit; i++) {
+            // a way that loops (a roundabout drawn as one way with its own
+            // arms) joins ITSELF mid-line; skip only the segments adjacent
+            // to the end being tested, not the whole way
+            if (self && (Math.min(Math.abs(i - endIdx), Math.abs(i + 1 - endIdx)) < 3
+                || P2.length < 6)) continue;
+            const ax = P2[i][0], az = P2[i][1], bx = P2[i + 1][0], bz = P2[i + 1][1];
+            const vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz || 1;
+            let t = ((p[0] - ax) * vx + (p[1] - az) * vz) / L2;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            const dx = p[0] - (ax + vx * t), dz = p[1] - (az + vz * t);
+            if (dx * dx + dz * dz < 9) hit = true;
+          }
+          if (hit) {
+            const rad = Math.max(4.5, (Math.max(r.w || 6, o.w || 6)) / 2 + 1.5);
+            juncPts.push([p[0], p[1], rad * rad]);
+            break;
+          }
+        }
+      }
+    }
+    // A WEB IS BIGGER THAN A CORNER. Where several ends land on one spot
+    // (the Cove Way ring: a closed loop plus a fan of one-way stubs, all
+    // sharing the name), the paved circle spans tens of metres and a
+    // per-pair radius leaves furniture standing mid-plaza. Cluster the
+    // nodes within 6m; three or more joins grow the cull to 15m.
+    const clustered = [];
+    for (const [jx, jz, r2] of juncPts) {
+      let hitC = null;
+      for (const c of clustered) {
+        if ((c[0] - jx) ** 2 + (c[1] - jz) ** 2 < 36) { hitC = c; break; }
+      }
+      if (hitC) { hitC[3]++; hitC[2] = Math.max(hitC[2], r2); }
+      else clustered.push([jx, jz, r2, 1]);
+    }
+    juncPts.length = 0;
+    for (const [jx, jz, r2, n] of clustered) {
+      juncPts.push([jx, jz, n >= 3 ? 225 : r2]);
+    }
+  }
+  const nearJn = (x, z) => {
+    for (const [jx, jz, r2] of juncPts) {
+      const dx = x - jx, dz = z - jz;
+      if (dx * dx + dz * dz < r2) return true;
+    }
+    return false;
+  };
+  const offApron = (list) => {
+    const out = list.filter((r) => !(window.__onRoad && window.__onRoad(r[0], r[2], -1.2))
+      && !nearJn(r[0], r[2]));
+    window.__kerbApronDropped = (window.__kerbApronDropped || 0) + (list.length - out.length);
+    return out;
+  };
+  emit(new THREE.BoxGeometry(0.38, 0.3, 4.7), MAT.kerb, offApron(kerbCross(dedupeProps(kerbClear, 0.6))), kerbSeat);
   // ...AND THE DRAIN BESIDE IT, IN THREE PARTS THAT SHARE ONE LIST.
   //
   // 600mm channel between two 150mm lips, per LTA/SDRE14/2/DRA3. The lateral
@@ -1007,7 +1084,10 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
   // after two blocked-route regressions went into the ledger. The deploy gate
   // reports `BLOCKED runs >20m` and is the arbiter.
   {
-    const dSeat = dedupeProps(drain, 0.6);
+    // the drain list never had the crossing rule the kerbs got — at any
+    // multi-arm junction each arm's drain lips ran through at their own
+    // angle (the beams of sweep 143). Same two rules as the kerbs.
+    const dSeat = offApron(kerbCross(dedupeProps(drain, 0.6)));
     const lip = (sx2) => {
       const g2 = new THREE.BoxGeometry(0.15, 0.30, 4.7);
       g2.translate(sx2, 0, 0);

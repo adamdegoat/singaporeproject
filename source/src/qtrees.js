@@ -55,7 +55,7 @@ export function buildQTrees(world, items, terrainAt) {
     if (!t) continue;
     let a = byType.get(t);
     if (!a) byType.set(t, a = []);
-    a.push([x, z, scale]);
+    a.push([x, z, scale, low]);
   }
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
   const m = new THREE.Matrix4(), p = new THREE.Vector3();
@@ -67,10 +67,17 @@ export function buildQTrees(world, items, terrainAt) {
     inst.castShadow = true;
     inst.userData.treeTrunk = true;
     inst.userData.treeFoliage = true;
-    list.forEach(([x, z, scale], i) => {
+    list.forEach(([x, z, scale, low], i) => {
       const gy = terrainAt(x, z);
-      // unit-height model; match the procedural sizing band (13-17.5m)
-      const h = (13.5 + ((Math.imul(Math.round(x * 8) | 0, 0x85EBCA77) >>> 0) % 40) / 10) * scale;
+      // unit-height model; match the procedural sizing band (13-17.5m).
+      // UNDERGROWTH IS A BUSH, NOT A MINI TREE: drawn at tree proportions a
+      // kerb-side bush (which the looser road rule legally allows at the
+      // edge) read as "trees in middle of road" — the owner's 2026-08-22
+      // report from his phone. Bushes hug the ground the way the old
+      // procedural undergrowth did.
+      const h = low
+        ? 1.1 + 3.4 * scale
+        : (13.5 + ((Math.imul(Math.round(x * 8) | 0, 0x85EBCA77) >>> 0) % 40) / 10) * scale;
       const hz = (Math.imul(Math.round(z * 8) | 0, 0x9E3779B1) >>> 0);
       const yaw = ((hz % 628) / 100);
       // slight non-uniform footprint so twins standing together read apart

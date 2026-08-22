@@ -4,6 +4,7 @@ import { MAT, badGeoCount, buildBuildings, buildRoads, TreeField, aoPatch, setTe
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, lambertise, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
+import { buildQLife, qlifeTick } from './qlife.js';
 import { Solid } from './solid.js';
 import { buildVespa, buildRider, buildCar, buildSkate, buildSkater, SKATE_WHEEL_X as SK_WHEEL_X, newState, step, RIDE, CAR, SKATE, SURFACES, SURF_ROAD } from './vespa.js';
 import { SkidMarks } from './skid.js';
@@ -222,28 +223,11 @@ scene.add(sun, sun.target);
 // pavements, north faces — stops going to ink. Vetted at four CBD canyon
 // spots and in open Orchard so the fix cannot be one that only works where
 // the problem was.
-const hemi = new THREE.HemisphereLight(0xbcc8d2, 0x9a8d78, 1.62);
-scene.add(hemi);
-
-// ?qlook=1 — STAGE 3 PREVIEW of the pack restyle (owner art direction,
-// 2026-08-22): the warm-soft grade that moves the whole island toward the
-// Quaternius reference — warmer, slightly dimmer sun so contrast softens,
-// lifted warm hemisphere so shadows stop going cold, warmed haze and sky,
-// a touch more exposure. Numbers-only: zero geometry, zero placement, and
-// with the flag off this block does not run.
-if (P.has('qlook')) {
-  sun.color.setHex(0xffe7bd);
-  sun.intensity = 2.35;
-  hemi.color.setHex(0xc9cec6);
-  hemi.groundColor.setHex(0xa89678);
-  hemi.intensity = 1.78;
-  renderer.toneMappingExposure = 1.06;
-  const warmHaze = 0xc4d3d2;
-  scene.fog.color.setHex(warmHaze);
-  sky.material.uniforms.haze.value.setHex(warmHaze);
-  sky.material.uniforms.mid.value.setHex(0x93bdd3);
-  sky.material.uniforms.top.value.setHex(0x3d74a8);
-}
+// The warm "golden afternoon" grade was A/B'd here on 2026-08-22 (?qlook)
+// and the owner picked the EXISTING lighting ("current looks nicer, second
+// pic abit too yellowish") — the grade is removed, not parked; the island's
+// mood is settled and this comment is the record of the decision.
+scene.add(new THREE.HemisphereLight(0xbcc8d2, 0x9a8d78, 1.62));
 
 const world = new THREE.Group();
 scene.add(world);
@@ -2085,6 +2069,7 @@ async function addChunk(ch, id, Y, rec = {}) {
   if (!P.has('nowater')) buildPiers(g, ch);
   if (!P.has('notowers')) { statAdd(buildSupertrees(g, ch)); statAdd(buildTowers(g, ch, null)); statAdd(buildCranes(g, ch)); }
   if (!P.has('nofoliage')) statAdd(await plantSurveyed(g, ch, place, Y));
+  if (!P.has('nofoliage')) statAdd(buildQLife(g, ch, terrain));
   await Y();
   mk('buildings');
   if (!P.has('nobuild')) await buildBuildings(g, ch, Y);
@@ -3508,6 +3493,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   if (!P.has('notowers')) statAdd(buildTowers(world, data, null));
   if (!P.has('notowers')) buildCranes(world, data);
   const surveyed = P.has('nofoliage') ? { surveyedTrees: 0 } : await plantSurveyed(world, data, place);
+  if (!P.has('nofoliage')) buildQLife(world, data, terrain);
   // SUB-MARKS, because this phase had none and its name is a lie.
   //
   // 'surround' reads as "the city beyond the box" and that part costs 65ms.
@@ -5360,6 +5346,11 @@ function loop(now) {
   // stalling on the very shader compiles the warm-up exists to overlap — and
   // reportHud would overwrite the loading text with "0 fps".
   if (!ready) { requestAnimationFrame(loop); return; }
+
+  // the island's gentle life (fish, moored boats, creatures) — one shared
+  // site before the mode branches, so no branch tail can forget it. Frozen
+  // under ?district= boots to keep the golden/perf gates pixel-stable.
+  if (!P.has('district')) qlifeTick(now);
 
   // IDLE COOLDOWN, phones only: parked and untouched for six seconds, the
   // render drops to ~24fps. A phone reading the street name was working

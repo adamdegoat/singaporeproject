@@ -2356,6 +2356,10 @@ export async function buildTrails(world, data, Y = null) {
   // trodden earth lip against a forest trail. Darker than what they edge, or
   // they do not read as an edge at all.
   const paveEdgeM = grainy(new THREE.MeshLambertMaterial({ color: 0x928b7e }), 0.10, 3.0);
+  // crossing tone for paved ribbons inside junction zones: a shade over the
+  // asphalt (0x6a6957), so a footway through a junction reads as painted
+  // crossing surface rather than pale furniture
+  const juncPaveM = grainy(new THREE.MeshLambertMaterial({ color: 0x7d7c74 }), 0.10, 3.2);
   const earthEdgeM = grainy(new THREE.MeshLambertMaterial({ color: 0x7d6b52 }), 0.14, 2.4);
   // THE USS ZONE PATH SURFACES — one grainy Lambert per zone, colours off
   // universal-zones.md's own palette lines (see data/usspaving.py's header
@@ -2491,6 +2495,32 @@ export async function buildTrails(world, data, Y = null) {
         const dx = ends[i][0] - ends[j][0], dz = ends[i][1] - ends[j][1];
         if (dx * dx + dz * dz < 9) { _juncNodes.push([ends[i][0], ends[i][1]]); break; }
       }
+    }
+    // ...AND WHERE AN END LANDS ON ANOTHER WAY MID-LINE. End-to-end pairs
+    // miss every T-junction and every roundabout, where an arm's endpoint
+    // sits on the ring's polyline, not on its endpoints — the Cove Way
+    // roundabout kept all its lips and the 2026-08-22 owner report ("kerbs
+    // all breaking apart") photographed them crisscrossing the whole circle
+    // (sweep 143, and the junction clusters at 117-121/126). An endpoint
+    // within 3m of ANY segment of a different carriageway is a junction.
+    for (const [ex, ez, er] of ends) {
+      let hit = false;
+      for (const _r of (data.roads || [])) {
+        if (hit || _r === er || !_r.p || _r.p.length < 2) continue;
+        if (_r.k === 'footway' || _r.k === 'pedestrian' || _r.k === 'steps'
+            || _r.k === 'path') continue;
+        const P2 = _r.p;
+        for (let i = 0; i < P2.length - 1 && !hit; i++) {
+          const ax = P2[i][0], az = P2[i][1];
+          const bx = P2[i + 1][0], bz = P2[i + 1][1];
+          const vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz || 1;
+          let t = ((ex - ax) * vx + (ez - az) * vz) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const dx = ex - (ax + vx * t), dz = ez - (az + vz * t);
+          if (dx * dx + dz * dz < 9) hit = true;
+        }
+      }
+      if (hit) _juncNodes.push([ex, ez]);
     }
   }
   const _JCELL = 32;
@@ -2691,6 +2721,18 @@ export async function buildTrails(world, data, Y = null) {
       if (kind === 'pave') {
         const zk = ussZonePaveAt(mx, mz);
         if (zk) mat = zk;
+      }
+      // A CROSSING INSIDE A JUNCTION READS AS PAINT, NOT PAVING. The Cove
+      // Way roundabout carries a web of mapped footways; drawn in paveM's
+      // pale khaki over the dark junction apron they read as beams
+      // crisscrossing the road (owner report 2026-08-22 + sweep 143/118 —
+      // the 30p lip fix removed the lips but the pale ribbon itself was the
+      // remaining read). Near a junction node a paved ribbon takes the
+      // asphalt-adjacent crossing tone instead; earth/deck keep their
+      // nature, and the zone paving above still wins inside USS.
+      if (kind === 'pave' && mat === paveM
+          && nearJunc((ax + bx) / 2, (az + bz) / 2, 22)) {
+        mat = juncPaveM;
       }
       if (kind === 'deck' || kind === 'waterdeck') out.boardwalk++;
       else if (kind === 'earth') out.forestTrail++;
@@ -3255,15 +3297,24 @@ export async function buildWalkable(world, data, Y = null) {
       }
       if (hits) { out.offRoad++; continue; }
       const ang = Math.atan2(x1 - x0, z1 - z0);
-      const base = surfaceAt(mx, mz);
+      // A WALL ON A SLOPE FOLLOWS THE SLOPE. One level box at the midpoint
+      // height turned every hillside wall into a row of stepped blocks with
+      // wedge gaps between segments — the owner's 2026-08-22 report ("kerbs
+      // all breaking apart not linking"), photographed on the Siloso Road
+      // retaining wall (sweep 198/199/205). Pitch each slab between its own
+      // end heights; the length stretches by 1/cos so the runs keep meeting.
+      const y0s = surfaceAt(x0, z0), y1s = surfaceAt(x1, z1);
+      const base = (y0s + y1s) / 2;
+      const pitch = Math.atan2(y1s - y0s, L);
+      const Ls = L / Math.max(0.5, Math.cos(pitch));
       if (solid || b.k === 'hedge') {
-        const g = new THREE.BoxGeometry(b.k === 'hedge' ? 0.7 : 0.28, h, L);
-        g.rotateY(ang); g.translate(mx, base + h / 2, mz);
+        const g = new THREE.BoxGeometry(b.k === 'hedge' ? 0.7 : 0.28, h, Ls);
+        g.rotateX(-pitch); g.rotateY(ang); g.translate(mx, base + h / 2, mz);
         merger.add(g, mat, mx, mz);
       } else {
         for (const yy of [h * 0.95, h * 0.45]) {
-          const g = new THREE.BoxGeometry(0.05, 0.07, L);
-          g.rotateY(ang); g.translate(mx, base + yy, mz);
+          const g = new THREE.BoxGeometry(0.05, 0.07, Ls);
+          g.rotateX(-pitch); g.rotateY(ang); g.translate(mx, base + yy, mz);
           merger.add(g, mat, mx, mz);
         }
         // posts every ~2.4m so it reads as a fence and not two floating wires
