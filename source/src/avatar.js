@@ -75,7 +75,10 @@ export function buildAvatar(hat) {
   // the pack character is authored 4.84 units tall (measured in
   // glbavatar.py's source GLB); the player is 1.72m like the old figures —
   // one uniform scale on the root, poses and clips untouched
-  root.scale.setScalar(1.72 / 4.841);
+  // 1.60 not 1.72: the old skater CROUCHES to ~1.45m head height and the
+  // first trial read a full head too tall beside the 0.85m board (owner:
+  // "too big") — 1.60 standing + the stance crouch matches his presence
+  root.scale.setScalar(1.60 / 4.841);
   root.add(arm);
   root.add(mesh);
 
@@ -161,6 +164,34 @@ export function buildAvatar(hat) {
       bn.position.z + z);
   };
 
+  // SNAP THE FEET TO THE SHINS. The rig has no runtime IK: rotating the
+  // leg chains moves the shins but the root-parented Foot bones stay put,
+  // so the shoes detach from the legs (the owner's "not stepping properly
+  // on the board"). After any hand-posed legs, put each Foot bone exactly
+  // at its shin's end. Bones extend along local +Y; shin length measured
+  // from the rest pose at build time.
+  const _w = new THREE.Vector3(), _w2 = new THREE.Vector3();
+  const _q = new THREE.Quaternion();
+  const shinLen = {};
+  for (const s of ['L', 'R']) {
+    byName['LowerLeg.' + s].getWorldPosition(_w);
+    byName['Foot.' + s].getWorldPosition(_w2);
+    shinLen[s] = _w.distanceTo(_w2);
+  }
+  const snapFeet = () => {
+    root.updateMatrixWorld(true);
+    for (const s of ['L', 'R']) {
+      const low = byName['LowerLeg.' + s];
+      const foot = byName['Foot.' + s];
+      low.getWorldPosition(_w);
+      low.getWorldQuaternion(_q);
+      _w2.set(0, 1, 0).applyQuaternion(_q).multiplyScalar(shinLen[s]);
+      _w.add(_w2);
+      foot.parent.worldToLocal(_w);
+      foot.position.copy(_w);
+    }
+  };
+
   return {
     group: root,
     bones: byName,
@@ -203,6 +234,7 @@ export function buildAvatar(hat) {
       rot('LowerLeg.L', draw * 0.55);
       rot('LowerLeg.R', draw * 0.55);
       rot('Head', -1.0);
+      snapFeet();
     },
     // seated on the vespa — the sit clip held at its settled frame, knees
     // and arms then pulled to the bars/floorboard by main.js offsets
@@ -215,41 +247,37 @@ export function buildAvatar(hat) {
     // the group, exactly as the old skater worked.
     skatePose(lean = 0, crouch = 0, kick = 0, reach = 0) {
       resetPose();
-      // side-on stance comes from yawing the WHOLE figure: the rest-pose
-      // feet then point across the deck, which is the read that matters
-      // (vespa.js's old skater note: feet ACROSS the deck over the trucks).
-      // Regular stance, left foot to the nose (+z of the board).
+      // side-on stance comes from yawing the WHOLE figure: the body then
+      // faces across the deck (vespa.js's old skater note). Regular
+      // stance, left foot to the nose (+z of the board). The stance
+      // itself is the LEGS splitting in the body's own left/right —
+      // exactly what a surfer does — and snapFeet() then bolts each shoe
+      // to its shin's end, wherever the leg put it.
       root.rotation.y = -1.18;
-      const c = 0.2 + crouch * 0.45;
-      // the IK feet are Bone-parented; Bone space ~ character space
-      // (0.01 units ~ 0.355m). Spread the stance along the board line —
-      // after the yaw that is mostly the character's local x.
-      mov('Foot.L', 0.0032, 0, 0.0008);         // front foot to the nose
-      mov('Foot.R', -0.0026, 0, 0.0004);
-      // knees bend and the torso drops + counter-rotates back to the nose
-      rot('UpperLeg.L', -0.35 - c * 0.5, 0.25, 0);
-      rot('LowerLeg.L', 0.6 + c * 0.7);
-      rot('UpperLeg.R', -0.3 - c * 0.5, -0.25, 0);
-      rot('LowerLeg.R', 0.55 + c * 0.7);
-      mov('Body', 0, -c * 0.003, 0);            // hips ride down with the bend
-      rot('Torso', 0.22 + c * 0.3, 0.75, 0);    // shoulders open to the nose
-      rot('Head', -0.15, 0.4, 0);               // eyes down the road
-      rot('UpperArm.L', -0.3, 0, 0.45 + lean);  // arms out, surf style
-      rot('UpperArm.R', -0.28, 0, -0.5 + lean);
-      rot('LowerArm.L', -0.3);
-      rot('LowerArm.R', -0.25);
-      // THE PUSH, ported from the old skater (ride.js: "a push runs out"):
-      // reach carries the back foot forward and DOWN to the road (the deck
-      // top is 0.16m up = 0.0045 bone units), kick drives it back. Phase
-      // comes from main.js, distance-advanced, deterministic.
+      const c = 0.25 + crouch * 0.45;
+      rot('UpperLeg.L', -0.12 - c * 0.35, 0, 0.72);  // front leg to the nose
+      rot('LowerLeg.L', 0.45 + c * 0.6);
+      rot('UpperLeg.R', -0.08 - c * 0.35, 0, -0.65); // back leg to the tail
+      rot('LowerLeg.R', 0.4 + c * 0.6);
+      mov('Body', 0, -c * 0.0035, 0);           // hips ride down with the bend
+      rot('Torso', 0.18 + c * 0.25, 0.55, 0);   // shoulders open to the nose
+      rot('Head', -0.12, 0.42, 0);              // eyes down the road
+      // arms DOWN into a cruise, not out into a T (the old skater's own
+      // hard-won lesson — from the chase camera a T reads as a scarecrow)
+      rot('UpperArm.L', -0.12, 0, 0.22 + lean);
+      rot('UpperArm.R', -0.1, 0, -0.28 + lean);
+      rot('LowerArm.L', -0.35);
+      rot('LowerArm.R', -0.3);
+      // THE PUSH (ride.js: "a push runs out"): the back LEG swings and
+      // straightens toward the road; snapFeet carries the shoe with it.
       if (kick > 0 || reach > 0) {
         const drop = Math.min(1, reach + Math.max(0, kick));
-        mov('Foot.R', reach * 0.002 - Math.max(0, kick) * 0.0035,
-          -0.0045 * drop, 0);
-        rot('UpperLeg.R', reach * 0.25 - Math.max(0, kick) * 0.45, 0, 0);
-        rot('LowerLeg.R', -0.35 * drop);
+        rot('UpperLeg.R', reach * 0.3 - Math.max(0, kick) * 0.5, 0,
+          -0.3 * drop);
+        rot('LowerLeg.R', -(0.4 + c * 0.6) * drop * 0.75);
         rot('Torso', reach * 0.1, 0, 0);       // body dips over the plant
       }
+      snapFeet();
     },
   };
 }
