@@ -78,8 +78,21 @@ export function buildAvatar(hat) {
   // 1.60 not 1.72: the old skater CROUCHES to ~1.45m head height and the
   // first trial read a full head too tall beside the 0.85m board (owner:
   // "too big", then still tall at 1.60) — 1.55 standing + the stance
-  // crouch matches the old rider's presence
-  root.scale.setScalar(1.55 / 4.841);
+  // crouch matches the old rider's presence.
+  // WIDER than authored: the pack figure is lanky with a small head and
+  // the owner read it as "weird alien" — 14% broader in x/z plus a
+  // bigger head (below) puts him back at the old rider's chunky presence.
+  const K = 1.55 / 4.841;
+  root.scale.set(K * 1.14, K, K * 1.14);
+  byName.Head.scale.setScalar(1.16);
+  // and the twig ARMS fill out a touch: bones run +Y so x/z is thickness.
+  // 1.18 with the palms counter-scaled — the scale rides down the chain
+  // and unchecked it ballooned the hands into mitts; legs were tried at
+  // 1.18 too and REVERTED (the skinned shorts balloon into capris).
+  for (const s of ['L', 'R']) {
+    byName['UpperArm.' + s].scale.set(1.18, 1, 1.18);
+    byName['Palm.' + s].scale.set(1 / 1.18, 1, 1 / 1.18);
+  }
   root.add(arm);
   root.add(mesh);
 
