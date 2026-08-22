@@ -58,6 +58,12 @@ export function scatterVerges(world, trailSegs, blocked, groundAt) {
     }
     acc = (acc + L) % 11;
   }
+  return instantiate(world, spots, groundAt);
+}
+
+// the shared instancing tail — scatterVerges and scatterFoundations both
+// place [x, z, kind, scale, yaw] spot lists
+function instantiate(world, spots, groundAt) {
   const byKind = new Map();
   for (const sp of spots) {
     let a = byKind.get(sp[2]);
@@ -84,4 +90,75 @@ export function scatterVerges(world, trailSegs, blocked, groundAt) {
     total += list.length;
   }
   return total;
+}
+
+// B13 FOUNDATION GREENING (research/beauty-sweep-2026-08-23.md): all five
+// sweep reviewers said the same thing — blank walls meeting bare grass is
+// the island's most repeated sterile look. Bushes/ferns/flowers along
+// building wall bases, ONLY inside the flagged zones (the tris budget has
+// ~75k headroom; dressing every wall on the island would cost megatris).
+const ZONES = [
+  // FOUR zones only this batch — the tris budget allows ~450 plants and
+  // nine zones diluted to specks (vet 2026-08-23). The other five
+  // (Sandy/Pearl, Ocean Dr east, RWS lanes, Knolls, khaki belt) are in
+  // the research file, queued behind the perf work that frees budget.
+  [-1070, 12900, 160, 180],   // Ironside estate (frames 178-182, 192)
+  [-845, 12900, 90, 90],      // sunken corridor (071/072, the worst pair)
+  [-1360, 12865, 120, 90],    // Palawan Beach Walk village (218, 219)
+  [610, 13250, 200, 200],     // Cove Way colonnade + Carrhill (008, 012, 177)
+];
+
+const inRing = (ring, x, z) => {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, zi] = ring[i], [xj, zj] = ring[j];
+    if ((zi > z) !== (zj > z)
+        && x < (xj - xi) * (z - zi) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+};
+
+export function scatterFoundations(world, buildings, blocked, groundAt) {
+  const inZone = (x, z) => ZONES.some(([zx, zz, hw, hh]) =>
+    Math.abs(x - zx) <= hw && Math.abs(z - zz) <= hh);
+  const spots = [];
+  for (const b of (buildings || [])) {
+    if (!b.p || b.p.length < 3) continue;
+    if (!inZone(b.p[0][0], b.p[0][1])) continue;
+    for (let i = 0; i < b.p.length; i++) {
+      const [ax, az] = b.p[i], [bx, bz] = b.p[(i + 1) % b.p.length];
+      const L = Math.hypot(bx - ax, bz - az);
+      if (L < 3.5) continue;                     // estate cottages have short walls
+      const ux = (bx - ax) / L, uz = (bz - az) / L;
+      // outward side DERIVED per edge, never argued (the coastline
+      // winding lesson): probe both normals against this ring
+      let nx = uz, nz = -ux;
+      const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+      if (inRing(b.p, mx + nx * 1.2, mz + nz * 1.2)) { nx = -nx; nz = -nz; }
+      for (let s = 3; s <= L - 3; s += 5) {
+        const h = (Math.imul(Math.round((ax + ux * s) * 4) | 0, 0x9E3779B1)
+                 ^ Math.imul(Math.round((az + uz * s) * 4) | 0, 0x85EBCA77)) >>> 0;
+        if ((h % 10) < 3) continue;              // ~70% fill
+        // 1.7-2.6m out: SOLID rasterizes drawn walls with margin and ate
+        // everything closer (Ironside vet x3, 2026-08-23)
+        const px = ax + ux * s + nx * (1.7 + ((h >>> 4) % 9) / 10);
+        const pz = az + uz * s + nz * (1.7 + ((h >>> 7) % 9) / 10);
+        if (window.__inFootprint && window.__inFootprint(px, pz)) continue;
+        if (blocked && blocked(px, pz)) continue;
+        if (window.__inWater && window.__inWater(px, pz)) continue;
+        if (window.__onRoad && window.__onRoad(px, pz, 0.4)) continue;
+        if (window.__onPath && window.__onPath(px, pz)) continue;
+        const r = ((h >>> 8) % 1000) / 1000;
+        const kind = r < 0.38 ? 'fern' : r < 0.58 ? 'plant'
+          : r < 0.72 ? 'flowerP' : r < 0.86 ? 'flowerR' : 'flowerB';
+        spots.push([px, pz, kind, 0.55 + ((h >>> 12) % 25) / 100,
+          ((h >>> 5) % 628) / 100]);
+      }
+    }
+  }
+  // hard tris cap: keep ~520 spots, dropped deterministically
+  const kept = spots.length > 450
+    ? spots.filter((_, i) => i % Math.ceil(spots.length / 450) === 0)
+    : spots;
+  return instantiate(world, kept, groundAt);
 }
