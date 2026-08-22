@@ -217,6 +217,77 @@ export function buildQLife(world, data, T) {
   addInstanced(world, 'rockA', shoreRocks.rockA, { shadow: true });
   addInstanced(world, 'rockB', shoreRocks.rockB, { shadow: true });
 
+  // ---- THE SILOSO CLIFF FACE (batch 8) ------------------------------------
+  // The published rock section runs from the Siloso Jetty ruin round the
+  // cape and down the EIA arc (research/tanjong-rimau.md: Tanjong Rimau
+  // Formation, "reddish to pale-pink" sub-vertical banded sandstone, logged
+  // "from the Siloso Jetty to Sarang Rimau"; cliff band ~5-10m under a
+  // wooded crest). Authored strata slabs (crag/ledge, authored_rocks.py in
+  // research/qlifegen) walk the shore-boulder polyline EXTENDED north-east
+  // to the jetty, then march INLAND to seat only where the bank is
+  // genuinely cliff-steep. Inland direction is DERIVED per segment (the
+  // side that climbs at 15m), never argued — the coastline-winding lesson.
+  const CLIFF = [[-2623, 11799], [-2700, 11796], [-2770, 11797], ...RIMAU];
+  const cliffRocks = { crag: [], ledge: [] };
+  let cliff = 0;
+  for (let i = 0; i < CLIFF.length - 1; i++) {
+    const [ax, az] = CLIFF[i], [bx, bz] = CLIFF[i + 1];
+    const L = Math.hypot(bx - ax, bz - az);
+    const ux = (bx - ax) / L, uz = (bz - az) / L;
+    let nx = -uz, nz = ux;
+    const midx = (ax + bx) / 2, midz = (az + bz) / 2;
+    if (at(midx + nx * 15, midz + nz * 15) < at(midx - nx * 15, midz - nz * 15)) {
+      nx = -nx; nz = -nz;
+    }
+    for (let s = 0; s < L; s += 6) {
+      const t = s / L;
+      const sx = ax + (bx - ax) * t, sz = az + (bz - az) * t;
+      const h = hash2(sx + 3, sz - 3);
+      // dStart hash-varies where the march begins so the found seats spread
+      // instead of chaining one level row (the first vet's giveaway rhythm)
+      const dStart = (h % 4) - 6;                    // may start seaward: the
+      let seated = 0;                                // hand polyline is ±10m off
+      for (let d = dStart; d <= 24 && seated < 2; d += 2) {  // march up the bank
+        const px = sx + nx * d + ((h % 30) / 10 - 1.5);
+        const pz = sz + nz * d + (((h >>> 6) % 30) / 10 - 1.5);
+        const gy = at(px, pz);
+        // TOE BAND ONLY, gy 2.8-6.5. Two failed vets taught this: a band up
+        // to gy 12-15 colonises the SAME steep grass the skater bombs down
+        // (the rimau-shore golden camera stands at gy 7.9 mid-slope and
+        // twice ended up inside a crag). The published geology agrees — the
+        // outcrop "crops out along the TIDAL TERRACE", i.e. the base, with
+        // wooded slope above. Only break once genuinely past the band (the
+        // north-shore stations START above it — bank rises ~2m per 5m there).
+        if (gy > 6.5) { if (d > 2) break; else continue; }
+        if (gy < 2.8) continue;                      // shore flat: boulders' turf
+        const slope = (at(px + nx * 3, pz + nz * 3) - at(px - nx * 3, pz - nz * 3)) / 6;
+        if (slope < 0.3) continue;                   // only the climbing bank
+        if (px < bx0 - 40 || px > bx1 + 40 || pz < bz0 - 40 || pz > bz1 + 40) break;
+        if (window.__inFootprint && window.__inFootprint(px, pz)) continue;
+        if (window.__onPath && window.__onPath(px, pz)) continue;
+        if (window.__onRoad && window.__onRoad(px, pz, 0.4)) continue;
+        // a crag wall chunk with a toe ledge below it on the second seat —
+        // pairs chain into a broken wall band rather than lone lumps
+        const hk = hash2(px, pz);
+        const kind = (seated === 0 && (hk & 3) !== 0) ? 'crag' : 'ledge';
+        const sc = kind === 'crag'
+          ? 2.6 + ((hk >>> 10) % 16) / 10            // 2.6-4.2m wall chunks
+          : 1.6 + ((hk >>> 10) % 16) / 10;           // 1.6-3.2m toe ledges
+        // crag's authored lean is local +x: yaw it INTO the hill so the
+        // slab reads embedded, with a small along-shore jitter
+        // embed into the slope, but P3 calls a prop sunk past 1.2m a
+        // blocker (first gate run: 24 crags at 0.25*sc) — cap the sink
+        cliffRocks[kind].push([px, gy - Math.min(1.1, sc * 0.25), pz,
+          Math.atan2(-nz, nx) + ((hk >>> 4) % 100) / 100 - 0.5, sc]);
+        cliff++;
+        seated++;
+        d += 3;                                      // hop before the second seat
+      }
+    }
+  }
+  addInstanced(world, 'crag', cliffRocks.crag, { shadow: true });
+  addInstanced(world, 'ledge', cliffRocks.ledge, { shadow: true });
+
   // ---- BEACH-BAR PROPS ----------------------------------------------------
   // barrels and buckets beside the named beach bars' own drawn buildings —
   // the venues are surveyed footprints, the dressing sits on their apron.
@@ -360,8 +431,8 @@ export function buildQLife(world, data, T) {
   addInstanced(world, 'otter', otters, { anim: 'strut', shadow: true, tag: 'creature' });
   addInstanced(world, 'otterup', lookouts, { anim: 'strut', shadow: true, tag: 'creature' });
 
-  return { boats, fish, creatures, shoreRocks: shore, barProps,
-    pigeons: pigeons.length, peas, monitors: monitors.length,
+  return { boats, fish, creatures, shoreRocks: shore, cliffRocks: cliff,
+    barProps, pigeons: pigeons.length, peas, monitors: monitors.length,
     otters: otters.length + lookouts.length };
 }
 
