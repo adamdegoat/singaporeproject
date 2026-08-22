@@ -300,7 +300,7 @@ export function buildQLife(world, data, T) {
   // barrels and buckets beside the named beach bars' own drawn buildings —
   // the venues are surveyed footprints, the dressing sits on their apron.
   const BARS = /coastes|ola beach|tanjong beach club|sand bar|rumours|bikini/i;
-  const props = { barrel: [], bucket: [] };
+  const props = { barrel: [], bucket: [], crate: [], lantern: [] };
   let barProps = 0;
   for (const b of (data.buildings || [])) {
     if (!b.n || !BARS.test(b.n) || !b.p || b.p.length < 3) continue;
@@ -308,7 +308,10 @@ export function buildQLife(world, data, T) {
     for (const [qx, qz] of b.p) { cx += qx; cz += qz; }
     cx /= b.p.length; cz /= b.p.length;
     const h0 = hash2(cx, cz);
-    for (let k = 0; k < 3; k++) {
+    // batch 12 widens the dressing: crates + standing lanterns join the
+    // barrels/buckets on the same apron ring (crate CC0 Quaternius,
+    // lantern CC0 KayKit — atlas-baked)
+    for (let k = 0; k < 5; k++) {
       const hk = hash2(cx + k * 11, cz - k * 7);
       const aa = ((hk >>> 3) % 628) / 100;
       const rr = 7 + (hk % 40) / 10;
@@ -317,14 +320,16 @@ export function buildQLife(world, data, T) {
       if (gy < 0.5) continue;
       if (window.__inFootprint && window.__inFootprint(px, pz)) continue;
       if (window.__onRoad && window.__onRoad(px, pz, 0.4)) continue;
-      const kind = (hk & 2) ? 'barrel' : 'bucket';
-      props[kind].push([px, gy, pz, ((hk >>> 6) % 628) / 100,
-        kind === 'barrel' ? 0.9 : 0.45]);
+      const kind = ['barrel', 'bucket', 'crate', 'lantern', 'crate'][k % 5];
+      const sc = { barrel: 0.9, bucket: 0.45, crate: 0.75, lantern: 0.85 }[kind];
+      props[kind].push([px, gy, pz, ((hk >>> 6) % 628) / 100, sc]);
       barProps++;
     }
   }
   addInstanced(world, 'barrel', props.barrel, { shadow: true });
   addInstanced(world, 'bucket', props.bucket, { shadow: true });
+  addInstanced(world, 'crate', props.crate, { shadow: true });
+  addInstanced(world, 'lantern', props.lantern, { shadow: true });
 
   // ---- PIGEON FLOCKS (animals approved in the owner's revamp mandate; a
   // true peacock has no CC0 model yet and is queued as custom work) — small
