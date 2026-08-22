@@ -70,6 +70,18 @@ const isWater = (T, x, z) => {
 export function buildQLife(world, data, T) {
   const at = (x, z) => T.at(x, z);
   let boats = 0, fish = 0, creatures = 0;
+  // a spot belongs to the chunk whose CONTENT covers it — a global once-set
+  // would lose the creature forever when its chunk unloads and rebuilds
+  let bx0 = Infinity, bz0 = Infinity, bx1 = -Infinity, bz1 = -Infinity;
+  for (const layer of [data.roads, data.buildings]) {
+    for (const r of (layer || [])) {
+      for (const p of (r.p || [])) {
+        if (p[0] < bx0) bx0 = p[0]; if (p[0] > bx1) bx1 = p[0];
+        if (p[1] < bz0) bz0 = p[1]; if (p[1] > bz1) bz1 = p[1];
+      }
+    }
+  }
+
   // ---- BOATS at the piers -------------------------------------------------
   const boatKinds = ['sailboat', 'boatA', 'boatB', 'raft'];
   const boatList = { sailboat: [], boatA: [], boatB: [], raft: [] };
@@ -105,6 +117,31 @@ export function buildQLife(world, data, T) {
   // PROVEN wet, the terrain is the bank") — the audit caught exactly the
   // smear this batch's isWater already handles, 10 findings on the first
   // gate run.
+  // B14 (beauty sweep): hand-anchored boats where the reviewers found dead
+  // water — the causeway channel both sides (the island's front door was
+  // its emptiest view), Brani pier, Ocean Drive offshore. Same isWater
+  // proof, same afloat exemption; ring-scan finds the wet cell so a
+  // slightly-off anchor cannot beach a hull.
+  const MOORINGS = [[-1130, 11900], [-1140, 12030], [-980, 11880],
+    [-975, 12060], [-920, 11960], [1180, 13470], [1250, 13430],
+    [-1160, 12150]];
+  for (const [mx, mz] of MOORINGS) {
+    if (mx < bx0 - 60 || mx > bx1 + 60 || mz < bz0 - 60 || mz > bz1 + 60) continue;
+    const h = hash2(mx, mz);
+    let wet = null;
+    for (let rr = 0; rr <= 60 && !wet; rr += 12) {
+      for (let aa = 0; aa < 6.28; aa += 0.8) {
+        const x = mx + Math.cos(aa) * rr, z = mz + Math.sin(aa) * rr;
+        if (isWater(T, x, z)) { wet = [x, z]; break; }
+      }
+    }
+    if (!wet) continue;
+    const kind = boatKinds[(h >>> 6) % boatKinds.length];
+    const len = 6.5 + ((h >>> 9) % 30) / 10;
+    boatList[kind].push([wet[0], 0.35, wet[1], ((h >>> 3) % 628) / 100,
+      len / (QLIFE[kind === 'sailboat' ? 'sailhull' : kind].az || 4.5)]);
+    boats++;
+  }
   const boatOpts = { anim: 'boat', shadow: true, tag: 'moored', afloat: true };
   addInstanced(world, 'sailhull', boatList.sailboat, boatOpts);
   addInstanced(world, 'boatA', boatList.boatA, boatOpts);
@@ -155,17 +192,6 @@ export function buildQLife(world, data, T) {
     ['blob',    -1918, 12238, 1.1],   // MegaZip forest clearing
     ['spiky',   -1620, 13480, 1.0],   // Tanjong ridge scrub
   ];
-  // a spot belongs to the chunk whose CONTENT covers it — a global once-set
-  // would lose the creature forever when its chunk unloads and rebuilds
-  let bx0 = Infinity, bz0 = Infinity, bx1 = -Infinity, bz1 = -Infinity;
-  for (const layer of [data.roads, data.buildings]) {
-    for (const r of (layer || [])) {
-      for (const p of (r.p || [])) {
-        if (p[0] < bx0) bx0 = p[0]; if (p[0] > bx1) bx1 = p[0];
-        if (p[1] < bz0) bz0 = p[1]; if (p[1] > bz1) bz1 = p[1];
-      }
-    }
-  }
   const creatureLists = new Map();
   for (const [kind, x, z, sc] of SPOTS) {
     if (x < bx0 || x > bx1 || z < bz0 || z > bz1) continue;   // not this chunk's ground
@@ -366,6 +392,10 @@ export function buildQLife(world, data, T) {
     ['peafan',   -1382, 12820, 1.45],
     ['peacock',  -1755, 12250, 0.90], ['peawhite', -1748, 12262, 0.93],
     ['peacock',   -590, 13620, 0.90], ['peacock',  -585, 13598, 0.87],
+    // B14: the sweep's 220 frames showed ZERO animals — spawns were all
+    // tucked away. These face the reviewers' open-lawn frames.
+    ['peacock',  -1045, 12255, 0.90], ['peawhite', -1055, 12242, 0.93],
+    ['peacock',    330, 13318, 0.89], ['peafan',    342, 13306, 1.45],
   ];
   const peaLists = new Map();
   let peas = 0;
@@ -447,7 +477,8 @@ export function buildQLife(world, data, T) {
   // kingfishers (batch 9, the first atlas-baked fauna — collared
   // kingfishers are all over Sentosa's shorelines): perched on the banks
   // near water, same bankNear scan as the monitors.
-  const KFS = [[-1368, 12852], [-2350, 12430], [490, 13710], [-600, 13640]];
+  const KFS = [[-1368, 12852], [-2350, 12430], [490, 13710], [-600, 13640],
+    [-1674, 12906]];   // B14: the beach-bend viewpoint frame
   const kingfishers = [];
   for (const [mx, mz] of KFS) {
     const found = bankNear(mx, mz, 6);
@@ -486,6 +517,64 @@ export function buildQLife(world, data, T) {
   }
   addInstanced(world, 'macaque', macs.macaque, { anim: 'strut', shadow: true, tag: 'creature' });
   addInstanced(world, 'macsit', macs.macsit, { anim: 'strut', shadow: true, tag: 'creature' });
+
+  // ---- B14 VIEWPOINTS + LAWN BREAKERS (beauty sweep, research/
+  // beauty-sweep-2026-08-23.md) — a bench+lantern pair at each scenic
+  // spot the reviewers said "nothing invites you to stop", and rock
+  // clusters breaking the flattest lawns. All existing models.
+  const VIEWS = [[-2838, 11869], [-2098, 12014], [-1674, 12906],
+    [1190, 13420], [-98, 14169], [-825, 13349]];
+  const vBench = [], vLant = [];
+  for (const [vx, vz] of VIEWS) {
+    if (vx < bx0 || vx > bx1 || vz < bz0 || vz > bz1) continue;
+    const h = hash2(vx, vz);
+    // ring-scan for open standable ground near the anchor
+    let seat = null;
+    for (let rr = 0; rr <= 24 && !seat; rr += 4) {
+      for (let aa = 0; aa < 6.28; aa += 0.7) {
+        const x = vx + Math.cos(aa) * rr, z = vz + Math.sin(aa) * rr;
+        const gy = at(x, z);
+        if (gy < 0.6) continue;
+        if (window.__inFootprint && window.__inFootprint(x, z)) continue;
+        if (window.__onRoad && window.__onRoad(x, z, 0.4)) continue;
+        if (window.__onPath && window.__onPath(x, z)) continue;
+        seat = [x, gy, z];
+        break;
+      }
+    }
+    if (!seat) continue;
+    const yaw = ((h >>> 3) % 628) / 100;
+    vBench.push([seat[0], seat[1], seat[2], yaw, 1.0]);
+    vLant.push([seat[0] + Math.cos(yaw) * 1.6, at(seat[0] + Math.cos(yaw) * 1.6,
+      seat[2] - Math.sin(yaw) * 1.6), seat[2] - Math.sin(yaw) * 1.6,
+      yaw, 0.85]);
+  }
+  addInstanced(world, 'bench', vBench, { shadow: true });
+  addInstanced(world, 'lantern', vLant, { shadow: true });
+
+  const LAWNS = [[-891, 12469], [-1049, 12249], [334, 13312],
+    [309, 13103], [-691, 13154]];
+  const lawnRocks = { rockA: [], mkrockA: [], mkrockB: [] };
+  for (const [lx2, lz2] of LAWNS) {
+    if (lx2 < bx0 || lx2 > bx1 || lz2 < bz0 || lz2 > bz1) continue;
+    const h0 = hash2(lx2, lz2);
+    const n = 3 + (h0 % 3);
+    for (let k = 0; k < n; k++) {
+      const hk = hash2(lx2 + k * 19, lz2 - k * 13);
+      const px = lx2 + ((hk % 240) / 10 - 12), pz = lz2 + (((hk >>> 8) % 240) / 10 - 12);
+      const gy = at(px, pz);
+      if (gy < 0.6) continue;
+      if (window.__inFootprint && window.__inFootprint(px, pz)) continue;
+      if (window.__onRoad && window.__onRoad(px, pz, 0.4)) continue;
+      if (window.__onPath && window.__onPath(px, pz)) continue;
+      const kind = ['rockA', 'mkrockA', 'mkrockB'][hk % 3];
+      lawnRocks[kind].push([px, gy - 0.15, pz, ((hk >>> 5) % 628) / 100,
+        0.8 + ((hk >>> 10) % 14) / 10]);
+    }
+  }
+  for (const k of Object.keys(lawnRocks)) {
+    addInstanced(world, k, lawnRocks[k], { shadow: true });
+  }
 
   return { boats, fish, creatures, shoreRocks: shore, cliffRocks: cliff,
     barProps, pigeons: pigeons.length, peas, monitors: monitors.length,
