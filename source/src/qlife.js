@@ -576,6 +576,48 @@ export function buildQLife(world, data, T) {
     addInstanced(world, k, lawnRocks[k], { shadow: true });
   }
 
+  // ---- B15 ARRIVAL FLAGS (beauty sweep: the causeway was the island's
+  // barest, most-seen stretch — 12+ frames). Authored pennant poles
+  // (authored_props.py) along both parapet lines, seated on the DECK via
+  // __surfaceAt (the two-datums lesson: at() answers the SEA under a
+  // bridge), plus the blank RWS park wall line the reviewers flagged.
+  // the causeway CENTERLINE is hand-known; the deck EDGE is found per
+  // station by scanning outward — a guessed parapet line missed the deck
+  // (vet 2026-08-23: one pole out of thirty)
+  const FLAGAXES = [
+    { a: [-1056, 11810], b: [-1046, 12148], step: 35, edge: true },
+    { a: [-950, 12310], b: [-1065, 12470], step: 28, edge: false },
+  ];
+  const flags = { flagT: [], flagC: [] };
+  for (const { a, b, step, edge } of FLAGAXES) {
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L;
+    for (let s = 0; s <= L; s += step) {
+      const cx2 = a[0] + ux * s, cz2 = a[1] + uz * s;
+      if (cx2 < bx0 - 40 || cx2 > bx1 + 40 || cz2 < bz0 - 40 || cz2 > bz1 + 40) continue;
+      const sides = edge ? [1, -1] : [0];
+      for (const side of sides) {
+        let placed = false;
+        const offs = edge ? [11, 10, 9, 8, 7] : [0];
+        for (const off of offs) {
+          const px = cx2 - uz * side * off, pz = cz2 + ux * side * off;
+          const h = hash2(px, pz);
+          const gy = window.__surfaceAt ? window.__surfaceAt(px, pz) : at(px, pz);
+          if (gy === null || gy === undefined || gy < 0.3) continue;
+          if (window.__inFootprint && window.__inFootprint(px, pz)) continue;
+          if (window.__onRoad && window.__onRoad(px, pz, 0.2)) continue;
+          const kind = (h & 1) ? 'flagT' : 'flagC';
+          flags[kind].push([px, gy, pz, ((h >>> 3) % 628) / 100, 6.0]);
+          placed = true;
+          break;
+        }
+        void placed;
+      }
+    }
+  }
+  addInstanced(world, 'flagT', flags.flagT, { shadow: true });
+  addInstanced(world, 'flagC', flags.flagC, { shadow: true });
+
   return { boats, fish, creatures, shoreRocks: shore, cliffRocks: cliff,
     barProps, pigeons: pigeons.length, peas, monitors: monitors.length,
     otters: otters.length + lookouts.length };
