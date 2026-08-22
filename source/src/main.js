@@ -11,6 +11,7 @@ import { SkidMarks } from './skid.js';
 import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
 import { Net } from './net.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
+import { buildAvatar } from './avatar.js';
 import { axisSpec, buildMarkings, dressSideStreets, selectSideStreets, dedupeProps } from './markings.js';
 import { buildSgDetail, buildTransit, buildBeachLife, buildBoats, buildAnchorage, buildUssVocab } from './sgdetail.js';
 import { buildRides, BOARD_REACH, EYE } from './rides.js';
@@ -1151,8 +1152,19 @@ async function dressStreet(data, axis, target = world, Y = null) {
 }
 
 /* ---------------- boot ---------------- */
+// ?newavatar=1 — the RIGGED avatar trial (owner-approved revamp item,
+// src/avatar.js): one skinned figure plays walker, skater and rider.
+// Default OFF so the goldens (the skater is in every frame) are untouched
+// until the owner approves the look; flip = one sanctioned island re-bless.
+const NEWAVATAR = P.has('newavatar');
 const vespa = buildVespa();
-const rider = buildRider();
+const rider = NEWAVATAR ? (() => {
+  const av = buildAvatar('helmet');
+  av.sitPose();
+  av.group.position.set(0, 0.42, -0.10);
+  av.group.userData.av = av;
+  return av.group;
+})() : buildRider();
 vespa.group.add(rider);
 // THE CAR, riding the exact same state and step() with its own numbers.
 // Both rigs live in the one `bike` group so every placement, collision and
@@ -1168,7 +1180,13 @@ const skateRig = buildSkate();
 // the push stroke's phase — module scope because it must survive frames,
 // and it is advanced by DISTANCE rather than by a clock (see the push block)
 let pushPhase = 0;
-const skater = buildSkater();
+const skater = NEWAVATAR ? (() => {
+  const av = buildAvatar('cap');
+  av.group.position.y = 0.16;         // feet on the deck top
+  av.skatePose(0, 0.3);
+  av.group.userData.av = av;
+  return av.group;
+})() : buildSkater();
 skateRig.group.add(skater);
 skateRig.group.visible = false;
 // THE VEHICLES, IN ONE PLACE. Adding a fourth means adding a row, not hunting
@@ -1814,7 +1832,12 @@ for (const ev of ['touchstart', 'touchend', 'pointerdown', 'mousedown', 'keydown
 }
 let camYaw = 0, camPitch = 0.16;   // free look, walk mode
 const walker = newWalker();
-const walkerRig = buildWalker();
+const walkerRig = NEWAVATAR ? (() => {
+  const av = buildAvatar('cap');
+  return { group: av.group,
+    pose: (ph, sp) => av.pose(ph, sp),
+    swimPose: (ph) => av.swimPose(ph) };
+})() : buildWalker();
 walkerRig.group.visible = false;
 scene.add(walkerRig.group);
 let clock = 0;
@@ -5839,6 +5862,15 @@ function loop(now) {
       //   slip    the drift angle: he looks further round than he leans,
       //           which is what makes a slide read as intended rather than as
       //           the board sliding out from under a passenger.
+      const AV = skater.userData.av;
+      if (AV) {
+        // the rigged trial figure: same deterministic inputs, driven onto
+        // bones. Push stroke folds into the crouch for now (v1).
+        const v = Math.min(1, S.speed / SKATE.vMax);
+        const carve = Math.max(-1, Math.min(1, S.lean / SKATE.leanMax));
+        const crouch = Math.min(1, v * 0.5 + Math.abs(carve) * 0.5 + (S.drifting ? 0.3 : 0));
+        AV.skatePose(carve * 0.35, crouch);
+      }
       const RG = skater.userData.rig;
       if (RG) {
         const v = Math.min(1, S.speed / SKATE.vMax);
