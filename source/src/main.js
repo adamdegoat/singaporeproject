@@ -183,10 +183,9 @@ sky.frustumCulled = false;
 // the sky correctly) — see the far-plane note in the vertex shader
 sky.renderOrder = 1;
 scene.add(sky);
-// SKY TRIAL: 3D pack clouds under the dome, ?clouds=1 only (src/qsky.js —
-// owner decides sky mood before this ever defaults). STATIC import like
-// qtrees; the bundler owns the module graph.
-if (P.has('clouds')) buildClouds(scene);
+// 3D pack clouds under the dome — DEFAULT since 2026-08-22 night (owner
+// approved the A/B: "all need do"); ?noclouds=1 is the escape/A-B.
+if (!P.has('noclouds')) buildClouds(scene);
 
 const sun = new THREE.DirectionalLight(0xfff0d6, 2.6);
 sun.castShadow = true;

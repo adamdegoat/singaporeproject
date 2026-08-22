@@ -915,6 +915,7 @@ window.__auditWorld = async function auditWorld() {
                    // is answered by the water test at placement, not by the
                    // terrain under its keel (P3's own two-datums note)
                    afloat: !!o.userData.afloat,
+                   cloud: !!o.userData.cloud,
                    flat: g.type === 'PlaneGeometry' });
     }
   });
@@ -1404,6 +1405,10 @@ window.__auditWorld = async function auditWorld() {
       // height of ground that is not drawn. 323 findings on the day the
       // marina was moored, every one of them this.
       if (p.afloat) continue;
+      // A CLOUD IS IN THE SKY. Declared at the mesh (userData.cloud,
+      // buildClouds): 100m of air under it is the whole point, not a
+      // placement defect — the boats' argument, one datum higher.
+      if (p.cloud) continue;
       const d = p.y - terr.at(p.x, p.z);
       if (d > 19) {
         if ((CANOPY.has(p.sig) || p.flat) && overATree(p, 1.6)) continue;

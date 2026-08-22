@@ -42,6 +42,7 @@ export function buildClouds(world) {
     const mat = new THREE.MeshLambertMaterial({ color: 0xf4f6f8,
       emissive: 0x6a707a, transparent: true, opacity: 0.92 });
     const inst = new THREE.InstancedMesh(geoFor(kind), mat, list.length);
+    inst.userData.cloud = true;                    // P3's sky exemption
     inst.castShadow = false;                       // a 50m cloud shadow would
     const m = new THREE.Matrix4(), p = new THREE.Vector3();  // repaint the town
     const q = new THREE.Quaternion(), s = new THREE.Vector3();
