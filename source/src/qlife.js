@@ -454,6 +454,34 @@ export function buildQLife(world, data, T) {
   addInstanced(world, 'kingfisher', kingfishers,
     { anim: 'strut', shadow: true, tag: 'creature' });
 
+  // macaque troops (batch 11 — Sentosa's actual long-tailed macaques;
+  // AUTHORED, no CC0 monkey exists). Small troops at jungle anchors:
+  // Imbiah trail, Fort Siloso greens, Mount Serapong forest edge.
+  const TROOPS = [[-1790, 12290], [-2740, 11950], [700, 12930]];
+  const macs = { macaque: [], macsit: [] };
+  let macCount = 0;
+  for (const [mx, mz] of TROOPS) {
+    if (mx < bx0 || mx > bx1 || mz < bz0 || mz > bz1) continue;
+    const h0 = hash2(mx, mz);
+    const n = 2 + (h0 % 3);
+    for (let k = 0; k < n; k++) {
+      const hk = hash2(mx + k * 13, mz - k * 9);
+      const px = mx + ((hk % 90) / 10 - 4.5), pz = mz + (((hk >>> 7) % 90) / 10 - 4.5);
+      const gy = at(px, pz);
+      if (gy < 0.5) continue;
+      if (window.__inFootprint && window.__inFootprint(px, pz)) continue;
+      if (window.__onRoad && window.__onRoad(px, pz, 0.4)) continue;
+      if (window.__onPath && window.__onPath(px, pz)) continue;
+      const kind = (hk & 3) === 0 ? 'macsit' : 'macaque';
+      // unit height ~0.6/0.5: sc 0.55 = a half-metre monkey
+      macs[kind].push([px, gy, pz, ((hk >>> 5) % 628) / 100,
+        0.5 + (hk % 3) / 20]);
+      macCount++;
+    }
+  }
+  addInstanced(world, 'macaque', macs.macaque, { anim: 'strut', shadow: true, tag: 'creature' });
+  addInstanced(world, 'macsit', macs.macsit, { anim: 'strut', shadow: true, tag: 'creature' });
+
   return { boats, fish, creatures, shoreRocks: shore, cliffRocks: cliff,
     barProps, pigeons: pigeons.length, peas, monitors: monitors.length,
     otters: otters.length + lookouts.length };
