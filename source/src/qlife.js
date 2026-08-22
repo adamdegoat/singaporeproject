@@ -183,7 +183,92 @@ export function buildQLife(world, data, T) {
     addInstanced(world, kind, list, { anim: kind === 'ghost' ? 'ghost' : 'creature',
       shadow: true, tag: 'creature' });
   }
-  return { boats, fish, creatures };
+
+  // ---- THE TANJONG RIMAU ROCKY SHORE --------------------------------------
+  // The one stretch of NATURAL rocky coast on the island (research/
+  // tanjong-rimau.md: the arc from the Jetty Ruin side x-2837,z11799 round
+  // the cape node x-2968,z11858 to x-2836,z12018 is published natural
+  // shore; everything else is engineered sand or seawall). Boulders walk
+  // that arc, INSTANCED so Solid never rasterizes them — a rock line that
+  // cannot wall the shore, the same safety argument the drains use.
+  const RIMAU = [[-2837, 11799], [-2905, 11822], [-2955, 11852], [-2960, 11895],
+                 [-2925, 11945], [-2870, 11990], [-2836, 12018]];
+  const shoreRocks = { rockA: [], rockB: [] };
+  let shore = 0;
+  for (let i = 0; i < RIMAU.length - 1; i++) {
+    const [ax, az] = RIMAU[i], [bx, bz] = RIMAU[i + 1];
+    const L = Math.hypot(bx - ax, bz - az);
+    for (let s = 0; s < L; s += 6.5) {
+      const t = s / L;
+      const h = hash2(ax + (bx - ax) * t, az + (bz - az) * t);
+      const px = ax + (bx - ax) * t + ((h % 90) / 10 - 4.5);
+      const pz = az + (bz - az) * t + (((h >>> 7) % 90) / 10 - 4.5);
+      const gy = at(px, pz);
+      if (gy < -0.6 || gy > 4.5) continue;           // intertidal / low bank only
+      if (px < bx0 - 40 || px > bx1 + 40 || pz < bz0 - 40 || pz > bz1 + 40) continue;
+      if (window.__inFootprint && window.__inFootprint(px, pz)) continue;
+      const kind = (h & 1) ? 'rockA' : 'rockB';
+      const sc = 0.9 + ((h >>> 10) % 25) / 10;       // 0.9 - 3.3m rocks
+      shoreRocks[kind].push([px, Math.max(gy - sc * 0.18, -0.6), pz,
+        ((h >>> 4) % 628) / 100, sc]);
+      shore++;
+    }
+  }
+  addInstanced(world, 'rockA', shoreRocks.rockA, { shadow: true });
+  addInstanced(world, 'rockB', shoreRocks.rockB, { shadow: true });
+
+  // ---- BEACH-BAR PROPS ----------------------------------------------------
+  // barrels and buckets beside the named beach bars' own drawn buildings —
+  // the venues are surveyed footprints, the dressing sits on their apron.
+  const BARS = /coastes|ola beach|tanjong beach club|sand bar|rumours|bikini/i;
+  const props = { barrel: [], bucket: [] };
+  let barProps = 0;
+  for (const b of (data.buildings || [])) {
+    if (!b.n || !BARS.test(b.n) || !b.p || b.p.length < 3) continue;
+    let cx = 0, cz = 0;
+    for (const [qx, qz] of b.p) { cx += qx; cz += qz; }
+    cx /= b.p.length; cz /= b.p.length;
+    const h0 = hash2(cx, cz);
+    for (let k = 0; k < 3; k++) {
+      const hk = hash2(cx + k * 11, cz - k * 7);
+      const aa = ((hk >>> 3) % 628) / 100;
+      const rr = 7 + (hk % 40) / 10;
+      const px = cx + Math.cos(aa) * rr, pz = cz + Math.sin(aa) * rr;
+      const gy = at(px, pz);
+      if (gy < 0.5) continue;
+      if (window.__inFootprint && window.__inFootprint(px, pz)) continue;
+      if (window.__onRoad && window.__onRoad(px, pz, 0.4)) continue;
+      const kind = (hk & 2) ? 'barrel' : 'bucket';
+      props[kind].push([px, gy, pz, ((hk >>> 6) % 628) / 100,
+        kind === 'barrel' ? 0.9 : 0.45]);
+      barProps++;
+    }
+  }
+  addInstanced(world, 'barrel', props.barrel, { shadow: true });
+  addInstanced(world, 'bucket', props.bucket, { shadow: true });
+
+  // ---- PIGEON FLOCKS (animals approved in the owner's revamp mandate; a
+  // true peacock has no CC0 model yet and is queued as custom work) — small
+  // flocks at the walked plazas, idle-bobbing on the creature tick.
+  const FLOCKS = [[-1700, 12722], [-1085, 12760], [530, 13700], [-2180, 12480]];
+  const pigeons = [];
+  for (const [fx, fz] of FLOCKS) {
+    if (fx < bx0 || fx > bx1 || fz < bz0 || fz > bz1) continue;
+    const h0 = hash2(fx, fz);
+    const n = 3 + (h0 % 3);
+    for (let k = 0; k < n; k++) {
+      const hk = hash2(fx + k * 13, fz + k * 9);
+      const px = fx + ((hk % 120) / 10 - 6), pz = fz + (((hk >>> 8) % 120) / 10 - 6);
+      const gy = at(px, pz);
+      if (gy < 0.4) continue;
+      if (window.__inFootprint && window.__inFootprint(px, pz)) continue;
+      if (window.__inWater && window.__inWater(px, pz)) continue;
+      pigeons.push([px, gy, pz, ((hk >>> 5) % 628) / 100, 0.28]);
+    }
+  }
+  addInstanced(world, 'pigeon', pigeons, { anim: 'creature' });
+
+  return { boats, fish, creatures, shoreRocks: shore, barProps, pigeons: pigeons.length };
 }
 
 // ~15Hz gentle life: fish cruise a small circle, boats heave, creatures
