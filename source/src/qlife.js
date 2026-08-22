@@ -193,7 +193,11 @@ export function buildQLife(world, data, T) {
   // cannot wall the shore, the same safety argument the drains use.
   const RIMAU = [[-2837, 11799], [-2905, 11822], [-2955, 11852], [-2960, 11895],
                  [-2925, 11945], [-2870, 11990], [-2836, 12018]];
-  const shoreRocks = { rockA: [], rockB: [] };
+  // four boulder shapes since batch 9: the two Quaternius greys + two
+  // MegaKit atlas-browns (the photo survey's cobble is #58432E brown —
+  // the mix is truer than all-grey; atlas bake = glbatlas.py)
+  const SHORE_KINDS = ['rockA', 'rockB', 'mkrockA', 'mkrockB'];
+  const shoreRocks = { rockA: [], rockB: [], mkrockA: [], mkrockB: [] };
   let shore = 0;
   for (let i = 0; i < RIMAU.length - 1; i++) {
     const [ax, az] = RIMAU[i], [bx, bz] = RIMAU[i + 1];
@@ -207,15 +211,19 @@ export function buildQLife(world, data, T) {
       if (gy < -0.6 || gy > 4.5) continue;           // intertidal / low bank only
       if (px < bx0 - 40 || px > bx1 + 40 || pz < bz0 - 40 || pz > bz1 + 40) continue;
       if (window.__inFootprint && window.__inFootprint(px, pz)) continue;
-      const kind = (h & 1) ? 'rockA' : 'rockB';
       const sc = 0.9 + ((h >>> 10) % 25) / 10;       // 0.9 - 3.3m rocks
+      // MegaKit shapes only at boulder size: a small rock shows ONE atlas
+      // face and pops as a solid red lump (vet 2026-08-22)
+      const kind = sc >= 1.8 ? SHORE_KINDS[h & 3]
+        : SHORE_KINDS[h & 1];
       shoreRocks[kind].push([px, Math.max(gy - sc * 0.18, -0.6), pz,
         ((h >>> 4) % 628) / 100, sc]);
       shore++;
     }
   }
-  addInstanced(world, 'rockA', shoreRocks.rockA, { shadow: true });
-  addInstanced(world, 'rockB', shoreRocks.rockB, { shadow: true });
+  for (const k of SHORE_KINDS) {
+    addInstanced(world, k, shoreRocks[k], { shadow: true });
+  }
 
   // ---- THE SILOSO CLIFF FACE (batch 8) ------------------------------------
   // The published rock section runs from the Siloso Jetty ruin round the
@@ -430,6 +438,21 @@ export function buildQLife(world, data, T) {
   }
   addInstanced(world, 'otter', otters, { anim: 'strut', shadow: true, tag: 'creature' });
   addInstanced(world, 'otterup', lookouts, { anim: 'strut', shadow: true, tag: 'creature' });
+
+  // kingfishers (batch 9, the first atlas-baked fauna — collared
+  // kingfishers are all over Sentosa's shorelines): perched on the banks
+  // near water, same bankNear scan as the monitors.
+  const KFS = [[-1368, 12852], [-2350, 12430], [490, 13710], [-600, 13640]];
+  const kingfishers = [];
+  for (const [mx, mz] of KFS) {
+    const found = bankNear(mx, mz, 6);
+    if (!found) continue;
+    const h = hash2(found[0], found[2]);
+    kingfishers.push([found[0], found[1], found[2], (h % 628) / 100,
+      0.26 + (h % 4) / 100]);
+  }
+  addInstanced(world, 'kingfisher', kingfishers,
+    { anim: 'strut', shadow: true, tag: 'creature' });
 
   return { boats, fish, creatures, shoreRocks: shore, cliffRocks: cliff,
     barProps, pigeons: pigeons.length, peas, monitors: monitors.length,
