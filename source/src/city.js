@@ -6600,8 +6600,33 @@ export class TreeField {
     // ?oldtrees=1 keeps the procedural set for A/B.
     if (typeof window === 'undefined'
         || !new URLSearchParams(location.search).has('oldtrees')) {
-      buildQTrees(world, this.items, (x, z) => TERRAIN.at(x, z));
-      return this.items.length;
+      // B16 street trees (beauty sweep): the Ocean Drive east grid and the
+      // parking canyon were the only genuinely TREELESS streets in 220
+      // frames. Hand zones scanned on a grid, kept only where NEAR a road
+      // but the trunk clears the tarmac — a separate deterministic list
+      // APPENDED at draw time; the placement RNG stream is untouched.
+      const B16 = [[1450, 12580, 1620, 12920], [-380, 13020, -260, 13130]];
+      const extra = [];
+      for (const [x0, z0, x1, z1] of B16) {
+        for (let x = x0; x <= x1; x += 17) {
+          for (let z = z0; z <= z1; z += 17) {
+            const h = (Math.imul(Math.round(x * 4) | 0, 0x9E3779B1)
+                     ^ Math.imul(Math.round(z * 4) | 0, 0x85EBCA77)) >>> 0;
+            if ((h % 10) < 4) continue;
+            const px = x + ((h >>> 4) % 80) / 10 - 4;
+            const pz = z + ((h >>> 9) % 80) / 10 - 4;
+            if (!window.__onRoad || !window.__onRoad(px, pz, 7)) continue;   // street trees, not forest
+            if (window.__onRoad(px, pz, -1.2)) continue;                    // trunk clears tarmac
+            if (window.__inFootprint && window.__inFootprint(px, pz)) continue;
+            if (window.__onPath && window.__onPath(px, pz)) continue;
+            if (window.__inWater && window.__inWater(px, pz)) continue;
+            if (TERRAIN.at(px, pz) < 0.6) continue;
+            extra.push([px, pz, 0.85 + ((h >>> 12) % 30) / 100, false]);
+          }
+        }
+      }
+      buildQTrees(world, this.items.concat(extra), (x, z) => TERRAIN.at(x, z));
+      return this.items.length + extra.length;
     }
     c.branches.count = c.bi; c.blobs.count = c.li; c.cards.count = c.ci;
     world.add(c.trunks, c.branches, c.blobs, c.cards);
