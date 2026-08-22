@@ -5865,11 +5865,16 @@ function loop(now) {
       const AV = skater.userData.av;
       if (AV) {
         // the rigged trial figure: same deterministic inputs, driven onto
-        // bones. Push stroke folds into the crouch for now (v1).
+        // bones — including the push (same window and distance-advanced
+        // phase as the old skater's block below)
         const v = Math.min(1, S.speed / SKATE.vMax);
         const carve = Math.max(-1, Math.min(1, S.lean / SKATE.leanMax));
         const crouch = Math.min(1, v * 0.5 + Math.abs(carve) * 0.5 + (S.drifting ? 0.3 : 0));
-        AV.skatePose(carve * 0.35, crouch);
+        const pushingAV = inp.throttle > 0.15 && S.speed < SKATE.vMax * 0.66 && !S.drifting;
+        pushPhase = pushingAV ? (pushPhase + (0.9 + S.speed) * dt * 0.62) % 1 : 0;
+        const kickAV = pushingAV ? Math.sin(pushPhase * Math.PI * 2) : 0;
+        const reachAV = pushingAV ? (0.5 - 0.5 * Math.cos(pushPhase * Math.PI * 2)) : 0;
+        AV.skatePose(carve * 0.35, crouch, kickAV, reachAV);
       }
       const RG = skater.userData.rig;
       if (RG) {

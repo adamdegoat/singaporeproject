@@ -213,7 +213,7 @@ export function buildAvatar(hat) {
     // surf-skate stance — side-on crouch, front foot forward. Hand-posed
     // on the bones (no clip); the lean/pump comes from main.js rotating
     // the group, exactly as the old skater worked.
-    skatePose(lean = 0, crouch = 0) {
+    skatePose(lean = 0, crouch = 0, kick = 0, reach = 0) {
       resetPose();
       // side-on stance comes from yawing the WHOLE figure: the rest-pose
       // feet then point across the deck, which is the read that matters
@@ -238,6 +238,18 @@ export function buildAvatar(hat) {
       rot('UpperArm.R', -0.28, 0, -0.5 + lean);
       rot('LowerArm.L', -0.3);
       rot('LowerArm.R', -0.25);
+      // THE PUSH, ported from the old skater (ride.js: "a push runs out"):
+      // reach carries the back foot forward and DOWN to the road (the deck
+      // top is 0.16m up = 0.0045 bone units), kick drives it back. Phase
+      // comes from main.js, distance-advanced, deterministic.
+      if (kick > 0 || reach > 0) {
+        const drop = Math.min(1, reach + Math.max(0, kick));
+        mov('Foot.R', reach * 0.002 - Math.max(0, kick) * 0.0035,
+          -0.0045 * drop, 0);
+        rot('UpperLeg.R', reach * 0.25 - Math.max(0, kick) * 0.45, 0, 0);
+        rot('LowerLeg.R', -0.35 * drop);
+        rot('Torso', reach * 0.1, 0, 0);       // body dips over the plant
+      }
     },
   };
 }
