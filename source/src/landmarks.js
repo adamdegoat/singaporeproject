@@ -6514,6 +6514,15 @@ function sofitelSentosa(api, b) {
   const doorMat = new THREE.MeshStandardMaterial({ color: 0x2c2f33, roughness: 0.6 });
   const jambMat = new THREE.MeshStandardMaterial({ color: 0xd9d0bc, roughness: 0.85 });
   api.world.add(api.extrude(b.p, WALL, cream));
+  // A SOFFIT UNDER THE TOP CAP. The mapped interior footway is carved, so a
+  // walker passes INSIDE this extrusion and looks up at the top cap's
+  // underside — which carries the punched-window facade texture (2026-08-22
+  // sweep frame 060: "window panels on the ceiling"). Same answer as the
+  // lifted-mass path in city.js: a pale slab just under the cap is the
+  // ceiling anyone under the mass actually sees.
+  api.merge(api.extrudeGeo(b.p, 0.3, WALL - 0.34), new THREE.MeshStandardMaterial({
+    color: 0xe6e2d8, roughness: 0.95, emissive: 0x2a2825, emissiveIntensity: 0.55 }),
+    ob.cx, ob.cz);
   // the hip: deep eave first, then constant-meter insets rising to the ridge
   api.merge(api.extrudeGeo(api.growM(b.p, 1.7), 0.4, WALL), tile, ob.cx, ob.cz);
   for (const [inset, y, h] of [[-0.4, WALL + 0.4, 1.2], [-2.2, WALL + 1.6, 1.2],
@@ -6604,6 +6613,11 @@ function casinoPodium(api, b) {
   const bronzeTrim = new THREE.MeshStandardMaterial({
     color: 0x8a6a45, roughness: 0.5, metalness: 0.4 });
   api.world.add(api.extrude(b.p, H, RWS_WALL));
+  // soffit under the top cap — 139m of Festive Walk footway is carved through
+  // this podium, and a walker inside otherwise sees the wall texture overhead
+  api.merge(api.extrudeGeo(b.p, 0.3, H - 0.34), new THREE.MeshStandardMaterial({
+    color: 0xe6e2d8, roughness: 0.95, emissive: 0x2a2825, emissiveIntensity: 0.55 }),
+    ob.cx, ob.cz);
   // bronze cornice under the dome line
   api.merge(api.extrudeGeo(api.growM(b.p, 0.6), 0.5, H), bronzeTrim, ob.cx, ob.cz);
   // the tortoise-shell dome range: squashed spheres on a grid inside the
