@@ -222,7 +222,28 @@ scene.add(sun, sun.target);
 // pavements, north faces — stops going to ink. Vetted at four CBD canyon
 // spots and in open Orchard so the fix cannot be one that only works where
 // the problem was.
-scene.add(new THREE.HemisphereLight(0xbcc8d2, 0x9a8d78, 1.62));
+const hemi = new THREE.HemisphereLight(0xbcc8d2, 0x9a8d78, 1.62);
+scene.add(hemi);
+
+// ?qlook=1 — STAGE 3 PREVIEW of the pack restyle (owner art direction,
+// 2026-08-22): the warm-soft grade that moves the whole island toward the
+// Quaternius reference — warmer, slightly dimmer sun so contrast softens,
+// lifted warm hemisphere so shadows stop going cold, warmed haze and sky,
+// a touch more exposure. Numbers-only: zero geometry, zero placement, and
+// with the flag off this block does not run.
+if (P.has('qlook')) {
+  sun.color.setHex(0xffe7bd);
+  sun.intensity = 2.35;
+  hemi.color.setHex(0xc9cec6);
+  hemi.groundColor.setHex(0xa89678);
+  hemi.intensity = 1.78;
+  renderer.toneMappingExposure = 1.06;
+  const warmHaze = 0xc4d3d2;
+  scene.fog.color.setHex(warmHaze);
+  sky.material.uniforms.haze.value.setHex(warmHaze);
+  sky.material.uniforms.mid.value.setHex(0x93bdd3);
+  sky.material.uniforms.top.value.setHex(0x3d74a8);
+}
 
 const world = new THREE.Group();
 scene.add(world);

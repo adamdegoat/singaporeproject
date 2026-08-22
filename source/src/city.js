@@ -3,6 +3,7 @@
 import * as THREE from '../lib/three.module.js';
 import { TOUCH } from './input.js';
 import { buildQTrees } from './qtrees.js';
+import { scatterVerges } from './qground.js';
 import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws } from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV,
          constructionSite } from './landmarks.js';
@@ -8264,9 +8265,15 @@ export async function plantSurveyed(world, data, blocked, Y = null) {
   }
 
   pmark('wild');
-  if (!surveyed && !jungle && !halo && !shrubs && !wild) return { surveyedTrees: 0, jungleTrees: 0, haloTrees: 0, shrubClumps: 0, wildTrees: 0 };
+  // STAGE 2 of the pack restyle: ground life along the walked verges —
+  // deterministic from position hashes, guarded by this pass's own blocked()
+  // plus the water/footprint/road chokepoints inside scatterVerges. Placed
+  // from trailSegs, the same footway index the trail-clear rule uses.
+  const verge = scatterVerges(world, trailSegs, blocked, (x, z) => TERRAIN.at(x, z));
+  pmark('verge');
+  if (!surveyed && !jungle && !halo && !shrubs && !wild) return { surveyedTrees: 0, jungleTrees: 0, haloTrees: 0, shrubClumps: 0, wildTrees: 0, vergeLife: verge };
   const built = await f.buildY(world, Y);
-  return { surveyedTrees: built - jungle - halo - shrubs - wild, jungleTrees: jungle, haloTrees: halo, shrubClumps: shrubs, wildTrees: wild };
+  return { surveyedTrees: built - jungle - halo - shrubs - wild, jungleTrees: jungle, haloTrees: halo, shrubClumps: shrubs, wildTrees: wild, vergeLife: verge };
 }
 
 // THE KEPPEL QUAY CRANES — the district's horizon, and it was empty sky.
