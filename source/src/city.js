@@ -2,6 +2,7 @@
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
 import { TOUCH } from './input.js';
+import { buildQTrees } from './qtrees.js';
 import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws } from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV,
          constructionSite } from './landmarks.js';
@@ -6540,6 +6541,18 @@ export class TreeField {
     }
   }
   _finish(c, world) {
+    // THE QUATERNIUS TREES ARE THE WORLD'S TREES (owner art direction,
+    // 2026-08-22: "this is actually what I imagined for my world" — staged
+    // pack restyle, stage 1). _tree still runs in full first, so the
+    // placement RNG stream is byte-identical to the procedural era;
+    // buildQTrees only changes what is DRAWN. Models are quadric-slimmed to
+    // fit the 1600k tris budget (measured 1576k at the fps probe, 20fps).
+    // ?oldtrees=1 keeps the procedural set for A/B.
+    if (typeof window === 'undefined'
+        || !new URLSearchParams(location.search).has('oldtrees')) {
+      buildQTrees(world, this.items, (x, z) => TERRAIN.at(x, z));
+      return this.items.length;
+    }
     c.branches.count = c.bi; c.blobs.count = c.li; c.cards.count = c.ci;
     world.add(c.trunks, c.branches, c.blobs, c.cards);
     return this.items.length;
