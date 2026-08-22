@@ -77,8 +77,9 @@ export function buildAvatar(hat) {
   // one uniform scale on the root, poses and clips untouched
   // 1.60 not 1.72: the old skater CROUCHES to ~1.45m head height and the
   // first trial read a full head too tall beside the 0.85m board (owner:
-  // "too big") — 1.60 standing + the stance crouch matches his presence
-  root.scale.setScalar(1.60 / 4.841);
+  // "too big", then still tall at 1.60) — 1.55 standing + the stance
+  // crouch matches the old rider's presence
+  root.scale.setScalar(1.55 / 4.841);
   root.add(arm);
   root.add(mesh);
 
@@ -224,8 +225,8 @@ export function buildAvatar(hat) {
       const reach = -2.35 + pull * 1.45;
       rot('UpperArm.L', reach, 0, 0.28 + pull * 0.5);
       rot('UpperArm.R', reach, 0, -0.28 - pull * 0.5);
-      rot('LowerArm.L', -0.15 - pull * 0.7);
-      rot('LowerArm.R', -0.15 - pull * 0.7);
+      rot('LowerArm.L', 0.15 + pull * 0.7);
+      rot('LowerArm.R', 0.15 + pull * 0.7);
       // legs stay LOW amplitude: the IK feet are root-parented, so big leg
       // swings would leave them behind; the kick is underwater anyway and
       // the breaststroke read lives in the arm sweep + head
@@ -266,8 +267,8 @@ export function buildAvatar(hat) {
       // hard-won lesson — from the chase camera a T reads as a scarecrow)
       rot('UpperArm.L', -0.12, 0, 0.22 + lean);
       rot('UpperArm.R', -0.1, 0, -0.28 + lean);
-      rot('LowerArm.L', -0.35);
-      rot('LowerArm.R', -0.3);
+      rot('LowerArm.L', 0.35);
+      rot('LowerArm.R', 0.3);
       // THE PUSH (ride.js: "a push runs out"): the back LEG swings and
       // straightens toward the road; snapFeet carries the shoe with it.
       if (kick > 0 || reach > 0) {

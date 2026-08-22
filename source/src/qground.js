@@ -20,8 +20,15 @@ function geoFor(name) {
   return g;
 }
 
-const KINDS = [[0.30, 'grass', 0.5], [0.48, 'plant', 0.55], [0.66, 'flowerP', 0.55],
-               [0.84, 'flowerG', 0.5], [1.01, 'flowerW', 0.5]];
+// batch 10: fern + tall grass join, and the flowers grow to FIVE bright
+// recolors of the proven model (the atlas clump pack was tried and
+// REJECTED — its gradient atlas bakes muddy; glbground.py records it).
+// Same placement hash, richer draw.
+const KINDS = [[0.20, 'grass', 0.5], [0.32, 'tallgrass', 0.55],
+               [0.44, 'plant', 0.55], [0.56, 'fern', 0.5],
+               [0.66, 'flowerP', 0.55], [0.76, 'flowerG', 0.5],
+               [0.85, 'flowerW', 0.5], [0.93, 'flowerB', 0.5],
+               [1.01, 'flowerR', 0.5]];
 
 // Walk the footway segments; every ~11m of arc, offset to one verge and, if
 // every guard passes, place one clump. `blocked` is plantSurveyed's own

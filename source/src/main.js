@@ -1156,7 +1156,10 @@ async function dressStreet(data, axis, target = world, Y = null) {
 // src/avatar.js): one skinned figure plays walker, skater and rider.
 // Default OFF so the goldens (the skater is in every frame) are untouched
 // until the owner approves the look; flip = one sanctioned island re-bless.
-const NEWAVATAR = P.has('newavatar');
+// DEFAULT since 2026-08-22 evening (owner: "why is it not the real
+// link") — ?oldavatar=1 is the escape/A-B, the ?oldtrees pattern.
+// ?newavatar=1 still accepted so his test link keeps working.
+const NEWAVATAR = !P.has('oldavatar');
 const vespa = buildVespa();
 const rider = NEWAVATAR ? (() => {
   const av = buildAvatar('helmet');
