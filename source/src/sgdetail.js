@@ -10265,6 +10265,14 @@ export function buildUssVocab(world, data, blocked) {
     let wedges = 0;
     for (const b of (data.buildings || [])) {
       if (!b.p || b.p.length < 4 || (b.h || 0) < 8 || (b.a || 0) < 500) continue;
+      // A RECIPE-OWNED BUILDING DRAWS ITS OWN ARCHITECTURE. This pass mounts
+      // pieces at fractions of the DATA height, but a recipe is free to draw
+      // a different mass — battlestar's station shed is 12m under a mapped
+      // calib 27.2, so its wedge (0.62 x 27.2) and port hung 5-8m above the
+      // drawn roof in open air beside the coaster: the floating green box of
+      // sweep frame 080, still there after the behindOK fix because the wall
+      // test passed against the surveyed footprint, not the drawn one.
+      if (recipeFor(b.n)) continue;
       let cx = 0, cz = 0;
       for (const [qx, qz] of b.p) { cx += qx; cz += qz; }
       cx /= b.p.length; cz /= b.p.length;

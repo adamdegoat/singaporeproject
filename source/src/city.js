@@ -1088,16 +1088,41 @@ function boxGeo(w, h, l, cx, cy, cz, yaw) {
 
 export const BRIDGE_PIERS = { built: 0, skipped: 0, nudged: 0, atGrade: 0 };
 
-export function bridgeFabric(pts, width, deck, deckGeos, pierGeos, ownName) {
+export function bridgeFabric(pts, width, deck, deckGeos, pierGeos, ownName, deckFn, trims) {
   if (!pts || pts.length < 2 || !deck) return;
   const half = width / 2;
+  // which ends may lose their last 9m of barrier — TERMINAL ends only (see
+  // BRTRIM in buildRoads); a mid-run way boundary keeps its barrier so a
+  // chained causeway wall stays continuous
+  const trim0 = trims ? !!trims.t0 : true;
+  const trim1 = trims ? !!trims.t1 : true;
+  // THE FABRIC MUST FOLLOW THE RAMP THE TARMAC ALREADY TAKES. `deck` is the
+  // run's flat `runMax + 1.2`, but the registry/ribbon height fn (BRDECK's f)
+  // eases down to each landing over its last 20m — built flat, the deck slab
+  // and parapets stood 0.8m PROUD of their own ramped tarmac at the Brani
+  // causeway landing, surfacing mid-carriageway as a white dome (sweep frame
+  // 093). Segments where the fn actually varies are split to ~10m pieces,
+  // each at its own height; everywhere the fn is flat the geometry is
+  // byte-identical to before.
+  const dAt = (typeof deckFn === 'function') ? deckFn : null;
   const segs = [];
   let total = 0;
   for (let i = 0; i < pts.length - 1; i++) {
     const dx = pts[i + 1][0] - pts[i][0], dz = pts[i + 1][1] - pts[i][1];
     const L = Math.hypot(dx, dz);
     if (L < 0.05) continue;
-    segs.push({ x: pts[i][0], z: pts[i][1], dx, dz, L, yaw: Math.atan2(dx, dz), s0: total });
+    const varies = dAt && Math.abs(dAt(pts[i][0], pts[i][1])
+      - dAt(pts[i + 1][0], pts[i + 1][1])) > 0.05;
+    const nPieces = varies ? Math.max(1, Math.ceil(L / 10)) : 1;
+    for (let k = 0; k < nPieces; k++) {
+      const t0 = k / nPieces, t1 = (k + 1) / nPieces;
+      const px = pts[i][0] + dx * t0, pz = pts[i][1] + dz * t0;
+      const pdx = dx * (t1 - t0), pdz = dz * (t1 - t0);
+      const pL = L * (t1 - t0);
+      segs.push({ x: px, z: pz, dx: pdx, dz: pdz, L: pL,
+        yaw: Math.atan2(dx, dz), s0: total + L * t0,
+        dv: dAt ? dAt(px + pdx / 2, pz + pdz / 2) : deck });
+    }
     total += L;
   }
   if (!segs.length) return;
@@ -1123,7 +1148,7 @@ export function bridgeFabric(pts, width, deck, deckGeos, pierGeos, ownName) {
   // for the whole way, using the maximum clearance anywhere along it — which
   // is how harbourfront kept building parapets on the parts of a viaduct that
   // come back down to grade at its abutments while the middle was 8m up.
-  const clearAt = (sg, t) => deck - DECK_T - TERRAIN.at(sg.x + sg.dx * t, sg.z + sg.dz * t);
+  const clearAt = (sg, t) => sg.dv - DECK_T - TERRAIN.at(sg.x + sg.dx * t, sg.z + sg.dz * t);
   for (const sg of segs) {
     if (Math.min(clearAt(sg, 0), clearAt(sg, 0.5), clearAt(sg, 1)) < LOW_CLEAR) {
       BRIDGE_PIERS.atGrade++;
@@ -1146,7 +1171,7 @@ export function bridgeFabric(pts, width, deck, deckGeos, pierGeos, ownName) {
           if (TERRAIN.at(ex, ez) < 0.4) water++;
         }
         if (water) {
-          const deckY = deck - DECK_T / 2 - 0.02;
+          const deckY = sg.dv - DECK_T / 2 - 0.02;
           for (const sgn of [-1, 1]) {
             const ex = mx + cy * sgn * (half + 3.5), ez = mz - sy * sgn * (half + 3.5);
             if (TERRAIN.at(ex, ez) >= 0.4) continue;   // this edge meets land
@@ -1157,10 +1182,23 @@ export function bridgeFabric(pts, width, deck, deckGeos, pierGeos, ownName) {
             skirt.translate(mx + cy * sgn * (half + 1.15), deckY - 0.85,
                             mz - sy * sgn * (half + 1.15));
             pierGeos.push(skirt);
-            // and the barrier the rider sees
-            deckGeos.push(boxGeo(0.26, 0.92, sg.L + 0.35,
-              mx + cy * sgn * (half + 0.36), deck + 0.42,
-              mz - sy * sgn * (half + 0.36), sg.yaw));
+            // and the barrier the rider sees — held back 9m from the way's
+            // ends: the way ends at its junction with the rest of the road
+            // network, and a barrier run to the very end stands its end-cap
+            // in the merge apron the other lanes drive through (the white
+            // "dome" mid-carriageway at the Brani gore point, sweep frame
+            // 093, chased to the last barrier box's corner at -905.6,11900.8).
+            // A real barrier tapers off before the gore point.
+            {
+              const b0 = Math.max(sg.s0, trim0 ? 9 : 0);
+              const b1 = Math.min(sg.s0 + sg.L, total - (trim1 ? 9 : 0));
+              if (b1 > b0) {
+                const tm = (b0 + b1) / 2 - sg.s0;
+                deckGeos.push(boxGeo(0.26, 0.92, (b1 - b0) + 0.35,
+                  sg.x + sg.dx * (tm / sg.L) + cy * sgn * (half + 0.36), sg.dv + 0.42,
+                  sg.z + sg.dz * (tm / sg.L) - sy * sgn * (half + 0.36), sg.yaw));
+              }
+            }
           }
         }
       }
@@ -1171,11 +1209,11 @@ export function bridgeFabric(pts, width, deck, deckGeos, pierGeos, ownName) {
     // The spans overlap by 0.35m so a bend in the way does not open a slot of
     // daylight at every vertex — the same trick the ribbon itself uses.
     deckGeos.push(boxGeo(width + 0.9, DECK_T, sg.L + 0.35,
-      mx, deck - DECK_T / 2 - 0.02, mz, sg.yaw));
+      mx, sg.dv - DECK_T / 2 - 0.02, mz, sg.yaw));
     for (const sgn of [-1, 1]) {
       const ox = sgn * (half + 0.36);
       deckGeos.push(boxGeo(0.26, 0.92, sg.L + 0.35,
-        mx + cy * ox, deck + 0.42, mz - sy * ox, sg.yaw));
+        mx + cy * ox, sg.dv + 0.42, mz - sy * ox, sg.yaw));
     }
   }
   // PIERS, walked by arc length so the spacing is even across a way whose
@@ -1206,7 +1244,7 @@ export function bridgeFabric(pts, width, deck, deckGeos, pierGeos, ownName) {
       const t = Math.max(0, Math.min(1, (at - sg.s0) / sg.L));
       const px = sg.x + sg.dx * t, pz = sg.z + sg.dz * t;
       const g = TERRAIN.at(px, pz);
-      const clear = deck - DECK_T - g;
+      const clear = sg.dv - DECK_T - g;
       if (clear < PIER_MIN) break;             // on fill here: no bent wanted
       const cy = Math.cos(sg.yaw), sy = Math.sin(sg.yaw);
       const ox = half * 0.58;
@@ -1222,18 +1260,18 @@ export function bridgeFabric(pts, width, deck, deckGeos, pierGeos, ownName) {
         if (!clearOf(px + cy * bw * f, pz - sy * bw * f)) { ok = false; break; }
       }
       if (!ok) continue;
-      placed = { px, pz, g, clear, cy, sy, ox, yaw: sg.yaw };
+      placed = { px, pz, g, clear, cy, sy, ox, yaw: sg.yaw, dv: sg.dv };
       if (nudge) BRIDGE_PIERS.nudged++;
       break;
     }
     if (!placed) { BRIDGE_PIERS.skipped++; continue; }
-    const { px, pz, g, clear, cy, sy, ox, yaw } = placed;
+    const { px, pz, g, clear, cy, sy, ox, yaw, dv } = placed;
     // a bent: two columns under the deck edges, plus the crosshead they carry
     for (const sgn of [-1, 1]) {
       pierGeos.push(boxGeo(0.92, clear, 0.92,
         px + cy * sgn * ox, g + clear / 2, pz - sy * sgn * ox, yaw));
     }
-    pierGeos.push(boxGeo(width * 0.92, 0.5, 1.15, px, deck - DECK_T - 0.22, pz, yaw));
+    pierGeos.push(boxGeo(width * 0.92, 0.5, 1.15, px, dv - DECK_T - 0.22, pz, yaw));
     BRIDGE_PIERS.built++;
   }
 }
@@ -2026,19 +2064,21 @@ function extrude(pts, h, mat, y0 = 0) {
 // describe in metres — eaves, awnings, cornices, canopies — uses growM.
 function growM(pts, m) {
   const n = pts.length;
-  const c = centroid(pts);
-  // outward normal of each edge, taking the ring's own winding from the
-  // centroid rather than assuming one: these footprints come from OSM and
-  // arrive in both windings.
+  // outward normal of each edge from the ring's GLOBAL winding (signedArea),
+  // not from the centroid: the per-edge centroid test flips on the
+  // courtyard-facing edges of a concave multi-arm ring (47 of Sofitel's 115
+  // edges), which pushed "inset" hip layers ACROSS the courtyard notch and
+  // earcut filled the crossing — a roof cap spanning the open court read as
+  // a ceiling from inside it (sweep frame 060). Winding decides the outward
+  // side for every edge of a simple ring, convex or not; OSM rings arrive
+  // in both windings and signedArea's sign carries exactly that.
+  const wind = signedArea(pts) > 0 ? 1 : -1;
   const out = [];
   for (let i = 0; i < n; i++) {
     const [ax, az] = pts[i], [bx, bz] = pts[(i + 1) % n];
     const ex = bx - ax, ez = bz - az;
     const L = Math.hypot(ex, ez) || 1;
-    let nx = ez / L, nz = -ex / L;
-    const mx = (ax + bx) / 2 - c[0], mz = (az + bz) / 2 - c[1];
-    if (nx * mx + nz * mz < 0) { nx = -nx; nz = -nz; }
-    out.push([nx, nz]);
+    out.push([(ez / L) * wind, (-ex / L) * wind]);
   }
   return pts.map(([x, z], i) => {
     // mitre: average the normals of the two edges meeting at this vertex, and
@@ -5158,6 +5198,13 @@ export async function buildRoads(world, data, Y = null) {
   //     from, the height function slopes the last 20m down to the landing
   //     terrain — an approach ramp, which is what the real bridge has.
   const BRDECK = new Map();
+  // Per-way: is each END a true terminal (no same-class bridge fragment
+  // continues) — the same byEnd notion the approach ramp uses. The causeway
+  // barrier trims back from TERMINAL ends only: a mapped road is a chain of
+  // OSM ways, and trimming at every way end opened an 18m phantom gap in the
+  // Gateway's continuous barrier at each mid-run way boundary (golden
+  // arrival-causeway, first gate run of this fix).
+  const BRTRIM = new Map();
   {
     // A CARRIAGEWAY WHOSE OWN GROUND IS AWASH IS PART OF THE BRIDGE, whatever
     // OSM tags. The Gateway's parallel arrival lanes are bridge-tagged only
@@ -5356,6 +5403,15 @@ export async function buildRoads(world, data, Y = null) {
       }
       if (!runAloft.has(root)) runAloft.set(root, false);
     });
+    // fill BRTRIM from byEnd: an end is trimmable when it is a TERMINAL —
+    // only its own fragment touches that endpoint cell
+    bws.forEach((r, i) => {
+      const term = (p) => {
+        const e = byEnd.get(endKey(cls[i], Math.round(p[0] / 2), Math.round(p[1] / 2)));
+        return !e || e.frags.size === 1;
+      };
+      BRTRIM.set(r, { t0: term(r.p[0]), t1: term(r.p[r.p.length - 1]) });
+    });
     const RAMP = 20;
     bws.forEach((r, i) => {
       const root = find(i);
@@ -5506,7 +5562,8 @@ export async function buildRoads(world, data, Y = null) {
       // The deck height comes back from the registry rather than being worked
       // out again here: ribbon() already computes the same `max terrain + 1.2`
       // independently, and a third copy of that rule is a third thing to drift.
-      bridgeFabric(r.p, r.w, addBridgeWay(r.p, r.w, BRDECK.get(r)), bridgeGeos, pierGeos, r.n);
+      bridgeFabric(r.p, r.w, addBridgeWay(r.p, r.w, BRDECK.get(r)), bridgeGeos,
+        pierGeos, r.n, BRDECK.get(r), BRTRIM.get(r));
     }
     // ...and here is where a footpath stops: registered above, drawn by
     // buildTrails, not surfaced twice.

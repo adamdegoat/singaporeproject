@@ -6513,7 +6513,28 @@ function sofitelSentosa(api, b) {
   const tile = new THREE.MeshStandardMaterial({ color: 0xb15733, roughness: 0.78 });
   const doorMat = new THREE.MeshStandardMaterial({ color: 0x2c2f33, roughness: 0.6 });
   const jambMat = new THREE.MeshStandardMaterial({ color: 0xd9d0bc, roughness: 0.85 });
-  api.world.add(api.extrude(b.p, WALL, cream));
+  // FILL THE FALL. h=12.5 gives this ring the STREET seat (Bukit Manis, the
+  // ring's high side) and the site drops under the seaward wings, so the
+  // mass floated with daylight beneath it and its texture-mapped bottom cap
+  // read as a punched-window ceiling from the pool court (sweep frame 060 —
+  // the visible half of that finding; the earcut courtyard fill was the
+  // other). The wall keeps its top at seat + 10.2 and extends DOWN to the
+  // ring's own lowest perimeter ground — the Beaufort really does show more
+  // storeys downhill. api.footingY answers with the SEAT inside a recipe
+  // (one building, one number), so the low ground is walked here with
+  // api.groundAt, the same 6m perimeter sampling footingY itself uses.
+  let low = Infinity;
+  for (let i = 0; i < b.p.length; i++) {
+    const [ax, az] = b.p[i], [bx2, bz2] = b.p[(i + 1) % b.p.length];
+    const L = Math.hypot(bx2 - ax, bz2 - az);
+    const n = Math.max(1, Math.min(24, Math.floor(L / 6)));
+    for (let k = 0; k <= n; k++) {
+      const t = k / n;
+      low = Math.min(low, api.groundAt(ax + (bx2 - ax) * t, az + (bz2 - az) * t));
+    }
+  }
+  const drop = Math.max(0, g0 - (low - 0.9));
+  api.world.add(api.extrude(b.p, WALL + drop, cream, -drop));
   // A SOFFIT UNDER THE TOP CAP. The mapped interior footway is carved, so a
   // walker passes INSIDE this extrusion and looks up at the top cap's
   // underside — which carries the punched-window facade texture (2026-08-22
@@ -6523,17 +6544,88 @@ function sofitelSentosa(api, b) {
   api.merge(api.extrudeGeo(b.p, 0.3, WALL - 0.34), new THREE.MeshStandardMaterial({
     color: 0xe6e2d8, roughness: 0.95, emissive: 0x2a2825, emissiveIntensity: 0.55 }),
     ob.cx, ob.cz);
-  // the hip: deep eave first, then constant-meter insets rising to the ridge
+  // the hip: deep eave first, then constant-meter insets rising to the ridge.
+  // The eave's 1.7m overhang into the courtyards is honest (a real eave
+  // overhangs the court); the INSETS are clipped to the base ring because a
+  // deep inset of this multi-arm ring self-crosses where an arm is narrower
+  // than 2x the inset, and earcut fills the crossing — with growM's old
+  // centroid normals that filled cap spanned the open courts at 10.6-14.8m
+  // and read as a coffered ceiling from inside them (sweep frame 060).
   api.merge(api.extrudeGeo(api.growM(b.p, 1.7), 0.4, WALL), tile, ob.cx, ob.cz);
   for (const [inset, y, h] of [[-0.4, WALL + 0.4, 1.2], [-2.2, WALL + 1.6, 1.2],
                                [-4.0, WALL + 2.8, 1.2], [-5.6, WALL + 4.0, 0.8]]) {
-    api.merge(api.extrudeGeo(api.growM(b.p, inset), h, y), tile, ob.cx, ob.cz);
+    api.merge(clipToRing(api.extrudeGeo(api.growM(b.p, inset), h, y), b.p),
+      tile, ob.cx, ob.cz);
   }
   // doors where the mapped routes cross the facade: walk the ring, and at
   // every edge a carved route passes within its own half-width, stand a
   // recessed opening facing outward — walkers get a doorway, drives get a
   // porte-cochere mouth under the eave
   routeDoors(api, b.p, doorMat, jambMat);
+}
+
+// Drop every triangle of a non-indexed extrusion whose plan footprint leaves
+// the base ring. A roof INSET belongs strictly inside its own building; even
+// with winding-correct normals, a deep constant-meter inset self-crosses
+// where a ring arm is narrower than 2x the inset, and earcut fills the
+// crossing. The test is exact, not sampled (7-point sampling still let 66
+// grid points of phantom ridge through at -5.6): a triangle survives iff
+// all three vertices are inside the ring (5cm boundary tolerance) AND none
+// of its edges properly crosses a ring edge — for a simple ring that is
+// exactly "triangle contained in polygon".
+function clipToRing(geo, ring) {
+  const pos = geo.getAttribute('position');
+  const uv = geo.getAttribute('uv');
+  const nor = geo.getAttribute('normal');
+  const inside = (x, z) => {
+    let hit = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0], zi = ring[i][1], xj = ring[j][0], zj = ring[j][1];
+      if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
+    }
+    if (hit) return true;
+    for (let i = 0; i < ring.length; i++) {
+      const [ax, az] = ring[i], [bx, bz] = ring[(i + 1) % ring.length];
+      const ex = bx - ax, ez = bz - az, L2 = ex * ex + ez * ez || 1;
+      let t = ((x - ax) * ex + (z - az) * ez) / L2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const dx = x - (ax + ex * t), dz = z - (az + ez * t);
+      if (dx * dx + dz * dz < 0.0025) return true;
+    }
+    return false;
+  };
+  const cross = (ax, az, bx, bz, cx, cz, dx, dz) => {
+    const d1 = (bx - ax) * (cz - az) - (bz - az) * (cx - ax);
+    const d2 = (bx - ax) * (dz - az) - (bz - az) * (dx - ax);
+    const d3 = (dx - cx) * (az - cz) - (dz - cz) * (ax - cx);
+    const d4 = (dx - cx) * (bz - cz) - (dz - cz) * (bx - cx);
+    return ((d1 > 1e-9 && d2 < -1e-9) || (d1 < -1e-9 && d2 > 1e-9)) &&
+           ((d3 > 1e-9 && d4 < -1e-9) || (d3 < -1e-9 && d4 > 1e-9));
+  };
+  const keepP = [], keepU = [], keepN = [];
+  for (let t = 0; t < pos.count; t += 3) {
+    const xs = [pos.getX(t), pos.getX(t + 1), pos.getX(t + 2)];
+    const zs = [pos.getZ(t), pos.getZ(t + 1), pos.getZ(t + 2)];
+    let ok = inside(xs[0], zs[0]) && inside(xs[1], zs[1]) && inside(xs[2], zs[2]);
+    for (let i = 0; i < 3 && ok; i++) {
+      const j = (i + 1) % 3;
+      for (let e = 0; e < ring.length && ok; e++) {
+        const [ax, az] = ring[e], [bx, bz] = ring[(e + 1) % ring.length];
+        if (cross(xs[i], zs[i], xs[j], zs[j], ax, az, bx, bz)) ok = false;
+      }
+    }
+    if (!ok) continue;
+    for (let i = 0; i < 3; i++) {
+      keepP.push(pos.getX(t + i), pos.getY(t + i), pos.getZ(t + i));
+      if (uv) keepU.push(uv.getX(t + i), uv.getY(t + i));
+      if (nor) keepN.push(nor.getX(t + i), nor.getY(t + i), nor.getZ(t + i));
+    }
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(keepP, 3));
+  if (uv) out.setAttribute('uv', new THREE.Float32BufferAttribute(keepU, 2));
+  if (nor) out.setAttribute('normal', new THREE.Float32BufferAttribute(keepN, 3));
+  return out;
 }
 
 // Doors where mapped routes cross a facade — the garage-door idiom applied
