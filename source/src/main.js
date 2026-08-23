@@ -2,7 +2,7 @@ import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance, resetSignAtlas, hashRand } from './tex.js';
 import { MAT, badGeoCount, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, footbridgeIdOf, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, plantSurveyed, openGroundAt, openGroundPolys } from './city.js';
 import { Terrain } from './terrain.js';
-import { dedupeMaterials, lambertise, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
+import { dedupeMaterials, lambertise, flattenFlatColours, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
 import { buildQLife, qlifeTick } from './qlife.js';
 import { Solid } from './solid.js';
@@ -2287,6 +2287,9 @@ async function addChunk(ch, id, Y, rec = {}) {
     dedupeMaterials(world);
     // the cheap shader, on every device — see lambertise()
     if (!P.has('rich')) lambertise(g, THREE);
+    // ...then colour out of the material and into the mesh, so the merge
+    // below can actually batch the island's thousand wall greys
+    if (!P.has('noflat')) flattenFlatColours(g, THREE);
     await Y();
     await consolidate(g, Y);
     await Y();
@@ -3926,8 +3929,17 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     window.__lam = lam;
     if (window.__stats) Object.assign(window.__stats, lam);
   }
+  // FLATTEN AFTER LAMBERTISE, NOT BEFORE. lambertise() rebuilds matte
+  // Standard materials as Lambert, and those rebuilt ones are a third of the
+  // flat-colour population at the worst view — running this first would walk
+  // straight past them.
+  const flat = (RAW || P.has('noflat')) ? { flattened: 0, shared: 0, verts: 0 }
+    : flattenFlatColours(world, THREE);
+  window.__flat = flat;
+  if (window.__stats) Object.assign(window.__stats, flat);
   const cons = RAW ? { removed: 0, merged: 0 } : await consolidate(world);
   bmark('dedupe+consolidate');
+  stats.flattened = flat.flattened; stats.flatShared = flat.shared;
   stats.matsBefore = dedupe.before; stats.matsAfter = dedupe.after;
   const shad = RAW ? { kept: 0, dropped: 0 } : trimShadowCasters(world);
   stats.batched = cons.removed; stats.batches = cons.merged;

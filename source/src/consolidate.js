@@ -47,6 +47,51 @@ import { TOUCH } from './input.js';
 // Desktop stays at 110: it is not draw-call bound, so the trade buys nothing
 // there and finer culling is the better default. ?tile=N overrides both.
 const TILE = +new URLSearchParams(location.search).get('tile') || (TOUCH ? 240 : 110);
+// THE TWO BATCHING KNOBS, MEASURED ON THE ISLAND 2026-08-23 at the coverage
+// sweep's worst view (Tanjong Beach Walk, -885/13290) with touch forced —
+// the deploy gate only ever reads the SPAWN frame, and spawn was 237 draws
+// while that view was 1,630 against a 680 budget.
+//
+//   flatten  vcap  csmall   spawn          Tanjong Beach Walk
+//   off      3000  2        245d/ 690k     1630d/1445k   <- shipped until now
+//   on       3000  2        171d/ 692k     1093d/1479k
+//   on       3000  6        196d/ 842k      781d/1559k
+//   on       3000 12        196d/ 941k      699d/1629k
+//   on       3000 20        190d/ 956k      682d/1642k   <- TAKEN
+//   on       3000 32        192d/1008k      672d/1652k   knee passed
+//   on       3000 48        191d/1056k      661d/1655k
+//   on      20000  2        155d/ 719k      951d/1484k
+//   on      20000  6        180d/ 896k      646d/1577k   REJECTED, see below
+//
+// csmall costs TRIANGLES to buy DRAWS — a coarse batch carries geometry that
+// is off screen — and it costs ZERO pixels: an A/B at csmall 2 vs 6 moved
+// not one golden frame. Past 20 the curve is flat (11 more draws for another
+// 50k triangles at spawn), so 20 is the knee. Spawn triangles rise 690k ->
+// 956k, which is real and comes out of the asset headroom; it buys the worst
+// view going from 1,630 draws to 682, and on this device draw submission is
+// the phone's bottleneck (the owner's own report: ?dpr=1 changed nothing,
+// which ruled out fill rate).
+//
+// VCAP WAS TRIED AT 20000 AND REJECTED ON THE PICTURE, not on the numbers.
+// Letting meshes of 3000-20000 vertices bake is worth another ~135 draws at
+// the worst view, and it visibly RUINS the big low-poly boulders: at skypark
+// the rock facets collapse from a dozen distinctly-lit planes into a nearly
+// uniform blob (golden skypark moved 10.9%, eyeballed side by side at 3x).
+// Whatever the mechanism — three candidates were measured and disproved:
+// negative-determinant mirroring (there are ZERO in the scene), Int8 normal
+// packing (an A/B with Float32 moved MORE frames, because it also un-blesses
+// the meshes that were already baked), and shiny Standard materials — the
+// trade is a worse-looking island for 8% fewer draws, so it is not taken.
+// Left at 3000. If someone finds the mechanism, this is worth revisiting.
+//
+// csmall 6 is the last row where BOTH budgets hold at the worst view. TILE
+// is deliberately NOT touched: its 110/240 split carries a real measured
+// table from July (+26% fps on a throttled phone) and re-tuning it needs a
+// real device, which this environment is not — a 4x-throttled headless run
+// read 0.74 / 0.63 / 0.75 / 0.25 fps across four configs, which is noise, not
+// evidence. Left as the next session's lever.
+const VCAP = +new URLSearchParams(location.search).get('vcap') || 3000;
+const CSMALL = +new URLSearchParams(location.search).get('csmall') || 20;
 
 // Everything that changes how a material renders. Two materials with the same
 // signature are interchangeable, so one can stand in for all of them.
@@ -137,6 +182,95 @@ export function lambertise(root, THREE) {
   return { lambertised: done, keptStandard: kept };
 }
 
+// COLOUR IS THE REASON THE ISLAND DRAWS 1,630 TIMES AT TANJONG BEACH.
+//
+// consolidate() merges meshes that share a material AND a tile. Measured at
+// the sweep's worst view (2026-08-23): 1,585 meshes in frustum wearing 469
+// DISTINCT MATERIALS — 292 of them flat untextured Lambert covering 1,023 of
+// those meshes, differing from each other by nothing but a colour hex
+// (#928b7e, #8a8377, #b0a898, #a9a498 ... the island's wall greys). No tile
+// size can fix that: raising TILE from 240 to 640 only took the view from
+// 1,630 draws to 1,166, because the groups were never split by geometry in
+// the first place. They were split by paint.
+//
+// So take the colour out of the material and put it in the mesh. A flat
+// colour baked into a per-vertex colour attribute, with one shared
+// `vertexColors: true` material standing in for all of them, renders
+// IDENTICALLY — three's Lambert shader does `diffuseColor.rgb *= vColor`, so
+// white * colour is the colour — and it lets the existing tile merge collapse
+// a thousand meshes into a handful of draws. The merge already carries a
+// colour attribute through (see the note in consolidate); this pass is what
+// gives it one to carry.
+//
+// WHAT IS DELIBERATELY LEFT ALONE:
+//   * anything textured, transparent, or carrying an onBeforeCompile hook —
+//     the ground's procedural shader lives on one of those, and lambertise()
+//     already paid for dropping it once.
+//   * anything not `bakeable()`: instanced, skinned, dyn-flagged, or already
+//     a big batch. Those never merge, so a colour attribute would be pure
+//     memory for no draw saved.
+//   * the material NAME is part of the bucket key. Several checks identify
+//     geometry by it (busLane, centreLine, streetLamp, quayCrane,
+//     bridgeDeck) and lambertise() guards the same thing — collapsing two
+//     differently-named materials together would blind those checks.
+//
+// Vertex colours are consumed LINEAR (the stage-1 washed-pastel lesson), and
+// Color.r/g/b are already the working-space components three hands the
+// shader, so they are copied straight across with no conversion.
+export function flattenFlatColours(root, THREE) {
+  const shared = new Map();
+  let flattened = 0, verts = 0;
+  // `!m.onBeforeCompile` IS ALWAYS FALSE. three.js defines the hook as a
+  // no-op on Material.prototype, so every material has one and the first
+  // version of this predicate matched NOTHING — the pass ran, reported
+  // nothing flattened, and the draw counts did not move by a single call.
+  // A hooked material is one that does not inherit the prototype's.
+  const DEFAULT_HOOK = THREE.Material.prototype.onBeforeCompile;
+  // Standard and Phong are in as well as Lambert. lambertise() only converts
+  // MATTE Standard — anything shiny stays Standard on purpose — and at the
+  // worst view those shiny leftovers were still 60 materials over 213 meshes.
+  // They flatten exactly the same way; the shading terms that make them
+  // shiny just have to be part of the bucket key below, not thrown away.
+  const TYPES = new Set(['MeshLambertMaterial', 'MeshBasicMaterial',
+    'MeshStandardMaterial', 'MeshPhongMaterial']);
+  const flat = (m) => !!m && TYPES.has(m.type)
+    && !m.map && !m.emissiveMap && !m.alphaMap && !m.normalMap && !m.roughnessMap
+    && !m.metalnessMap && !m.aoMap && !m.lightMap && !m.specularMap
+    && !m.envMap && !m.transparent && !m.vertexColors
+    && m.onBeforeCompile === DEFAULT_HOOK
+    && (!m.emissive || m.emissive.getHex() === 0);
+  root.traverse((o) => {
+    if (!bakeable(o)) return;
+    const m = o.material;
+    if (!flat(m)) return;
+    const key = [m.type, m.name || '-', m.side, m.opacity, m.alphaTest,
+      m.depthWrite ? 1 : 0, m.depthTest ? 1 : 0, m.blending,
+      m.flatShading ? 1 : 0, m.toneMapped ? 1 : 0, m.fog ? 1 : 0,
+      m.wireframe ? 1 : 0,
+      // everything that makes a surface shine: two materials only share a
+      // batch if the light does the same thing to both of them
+      m.roughness ?? '-', m.metalness ?? '-', m.envMapIntensity ?? '-',
+      m.shininess ?? '-', m.specular ? m.specular.getHexString() : '-',
+      m.reflectivity ?? '-'].join('|');
+    let sm = shared.get(key);
+    if (!sm) {
+      sm = m.clone();
+      sm.color.setRGB(1, 1, 1);
+      sm.vertexColors = true;
+      sm.name = m.name;
+      shared.set(key, sm);
+    }
+    const n = o.geometry.attributes.position.count;
+    const c = new Float32Array(n * 3);
+    const { r, g, b } = m.color;
+    for (let i = 0; i < n; i++) { c[i * 3] = r; c[i * 3 + 1] = g; c[i * 3 + 2] = b; }
+    o.geometry.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
+    o.material = sm;
+    flattened++; verts += n;
+  });
+  return { flattened, shared: shared.size, verts };
+}
+
 export function dedupeMaterials(root) {
   const canon = new Map();
   // sig() builds a 25-field string; computed per MESH it ran 7,000+ times
@@ -180,7 +314,12 @@ function bakeable(o) {
   if (!o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return false;
   if (o.geometry.morphAttributes && Object.keys(o.geometry.morphAttributes).length) return false;
   if (o.children.length) return false;           // keep parents, they carry children
-  if (o.geometry.attributes.position.count > 3000) return false;  // already a big batch
+  // ALREADY A BIG BATCH — but 3000 was never measured against this island.
+  // At the sweep's worst view 147 meshes clear the old cap and cost 147 draws
+  // for 384k triangles, which is the worst draws-per-triangle ratio in the
+  // frame. The tile key bounds how far a batch can span whatever this is set
+  // to, so the only real cost of raising it is a longer merge. ?vcap=N.
+  if (o.geometry.attributes.position.count > VCAP) return false;
   return true;
 }
 
@@ -231,15 +370,20 @@ export async function consolidate(root, Y = null) {
   // with this pass off moved pixels in 31 of 43 goldens (z-fight winners on
   // coplanar trim re-rolled); with it on, 13 frames of edge noise, eyeballed
   // and re-blessed. ?nocoarse disables for A/B.
+  // SMALL GROUPS, not just singletons. The original test was `length >= 2`,
+  // i.e. only a group of one went to the coarse tier. But a tile holding
+  // three benches is the same problem as a tile holding one: it is a draw
+  // call for almost no triangles. CSMALL is the size below which a group is
+  // better off merged coarsely. ?csmall=N to A/B.
   const coarse = new Map();
   for (const [key, list] of (new URLSearchParams(location.search).has('nocoarse') ? [] : groups)) {
-    if (list.length >= 2) continue;
+    if (list.length >= CSMALL) continue;
     groups.delete(key);
     const parts = key.split(',');
     parts[0] = Math.floor(+parts[0] / 5); parts[1] = Math.floor(+parts[1] / 5);
     const ck = parts.join(',');
     if (!coarse.has(ck)) coarse.set(ck, []);
-    coarse.get(ck).push(list[0]);
+    for (const o of list) coarse.get(ck).push(o);
   }
   for (const [ck, list] of coarse) groups.set('c' + ck, list);
 
@@ -309,7 +453,22 @@ export async function consolidate(root, Y = null) {
     }
     geo.setAttribute('normal', new THREE.Int8BufferAttribute(_n8, 3, true));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    if (col) geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    // COLOUR PACKED TO UINT16, for the same reason normals are packed to
+    // Int8 above. flattenFlatColours() moves the island's wall greys out of
+    // 292 materials and into a per-vertex attribute, and that attribute is
+    // real memory: measured with a forced-GC A/B, three runs each, +15 MB
+    // (242/242/242 -> 257/257/257). The live island settles near a ~206 MB
+    // iOS ceiling, so 15 MB is not free. Float32 is 12 bytes a vertex for a
+    // value that started life as a 24-bit hex; normalised Uint16 is 6, half
+    // the memory, and its 1/65535 step is ~0.004 of a 0-255 channel — three
+    // orders below the golden comparer's 0.1 threshold, so nothing moves.
+    if (col) {
+      const c16 = new Uint16Array(col.length);
+      for (let i = 0; i < col.length; i++) {
+        c16[i] = Math.max(0, Math.min(65535, Math.round(col[i] * 65535)));
+      }
+      geo.setAttribute('color', new THREE.Uint16BufferAttribute(c16, 3, true));
+    }
     geo.computeBoundingSphere();
 
     const first = list[0];
