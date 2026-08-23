@@ -98,14 +98,18 @@ function instantiate(world, spots, groundAt) {
 // building wall bases, ONLY inside the flagged zones (the tris budget has
 // ~75k headroom; dressing every wall on the island would cost megatris).
 const ZONES = [
-  // FOUR zones only this batch — the tris budget allows ~450 plants and
-  // nine zones diluted to specks (vet 2026-08-23). The other five
-  // (Sandy/Pearl, Ocean Dr east, RWS lanes, Knolls, khaki belt) are in
-  // the research file, queued behind the perf work that frees budget.
+  // ALL NINE sweep zones since 2026-08-23 morning — the far-tree
+  // imposters freed ~535k/frame, so the deferred five come off the bench
+  // (they were held back when the budget sat at 1598/1600k).
   [-1070, 12900, 160, 180],   // Ironside estate (frames 178-182, 192)
   [-845, 12900, 90, 90],      // sunken corridor (071/072, the worst pair)
   [-1360, 12865, 120, 90],    // Palawan Beach Walk village (218, 219)
   [610, 13250, 200, 200],     // Cove Way colonnade + Carrhill (008, 012, 177)
+  [1000, 13600, 400, 300],    // Sandy/Pearl Island (016, 027)
+  [1520, 12800, 120, 200],    // Ocean Drive east walls (129-131, 134-136)
+  [-1700, 12050, 200, 150],   // RWS colonnades/lanes (074, 075)
+  [-560, 13390, 100, 100],    // The Knolls wall (026)
+  [-1150, 12580, 250, 120],   // khaki belt kerbs (080-085)
 ];
 
 const inRing = (ring, x, z) => {
@@ -156,9 +160,9 @@ export function scatterFoundations(world, buildings, blocked, groundAt) {
       }
     }
   }
-  // hard tris cap: keep ~520 spots, dropped deterministically
-  const kept = spots.length > 450
-    ? spots.filter((_, i) => i % Math.ceil(spots.length / 450) === 0)
+  // hard tris cap: ~1000 spots (~165k tris) since the imposter headroom
+  const kept = spots.length > 1000
+    ? spots.filter((_, i) => i % Math.ceil(spots.length / 1000) === 0)
     : spots;
   return instantiate(world, kept, groundAt);
 }
