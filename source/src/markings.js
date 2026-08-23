@@ -577,6 +577,73 @@ export function selectSideStreets(data, axis, reach = 230) {
 // is unaffected.
 const LAMPS_DONE = new WeakSet();
 
+// SENTOSA HAS NO SURVEYED LAMP POSTS, AND ITS ROADS ARE LIT.
+//
+// `data.lamps` is the LTA survey, and it is the input the pass below was
+// built around — 126,144 posts island-wide, thousands per mainland district
+// (see the 2026-08-02 note there: 8,282 of them went unbuilt once, and every
+// street outside Orchard was unlit). Sentosa's scene file carries ZERO of
+// them. Measured 2026-08-23: 1,678 ways, 390 of them carriageways, 27km of
+// road, `lamps: 0`. So the emitter has been complete and STARVED since the
+// island shipped, and every road frame in the 220-frame coverage sweep shows
+// kerbs, markings, trees and NOTHING VERTICAL beside the tarmac. Real Sentosa
+// roads are lit like any other Singapore road: this is a hole in the survey,
+// not a fact about the island.
+//
+// So synthesise the posts and hand them to the EXISTING emitter unchanged:
+// same 7.2m column, same arm, same clearance and arm-swing rules, same
+// `streetLamp` material name several checks key off. Nothing about how a lamp
+// is drawn, cleared or vetted changes — only where the list comes from. A
+// real survey, if one ever lands in the data, still wins outright.
+//
+// Deterministic by construction: arc-length stepping and a position hash for
+// the side, no RNG involvement at all (the tree and actor streams must stay
+// byte-identical — the standing rule for every placement pass here).
+//
+// FOOTWAYS AND SERVICE WAYS ARE EXCLUDED. A car-park aisle is not a lit road,
+// and the beach walks already carry their own lamps from sgdetail's walk pass
+// (black pole + white globe — a different, real, Sentosa piece; do not merge
+// the two, see the 2026-08-22 street-lamp-swap decision).
+const LIT_KINDS = new Set(['residential', 'unclassified', 'tertiary', 'secondary']);
+const LAMP_SPACING = 32;
+export function lampSpots(data) {
+  if (data.lamps && data.lamps.length) return data.lamps;   // a real survey wins
+  if (new URLSearchParams(location.search).has('nolamps')) return [];   // A/B
+
+  // Without the road raster there is no way to find the verge, and a guessed
+  // offset stands posts in live lanes. No raster, no lamps.
+  if (!window.__onRoad) return [];
+  const out = [];
+  for (const r of (data.roads || [])) {
+    if (!LIT_KINDS.has(r.k) || !r.p || r.p.length < 2) continue;
+    let acc = 0;
+    for (let i = 0; i < r.p.length - 1; i++) {
+      const [ax, az] = r.p[i], [bx, bz] = r.p[i + 1];
+      const L = Math.hypot(bx - ax, bz - az);
+      if (L < 0.5) continue;
+      const ux = (bx - ax) / L, uz = (bz - az) / L;
+      for (let s2 = LAMP_SPACING - acc; s2 <= L; s2 += LAMP_SPACING) {
+        const px = ax + ux * s2, pz = az + uz * s2;
+        const h = (Math.imul(Math.round(px * 4) | 0, 0x9E3779B1)
+                 ^ Math.imul(Math.round(pz * 4) | 0, 0x85EBCA77)) >>> 0;
+        const side = (h & 1) ? 1 : -1;
+        // STEP OUT UNTIL THE TARMAC ENDS rather than guessing a half-width.
+        // These ways run from 4m lanes to a dual carriageway, so one fixed
+        // offset either puts a post in a live lane or parks it in the trees.
+        const nx = -uz * side, nz = ux * side;
+        let off = null;
+        for (let d = 2.5; d <= 14; d += 0.5) {
+          if (!window.__onRoad(px + nx * d, pz + nz * d, 0.3)) { off = d + 0.9; break; }
+        }
+        if (off === null) continue;               // never found an edge: skip
+        out.push([px + nx * off, pz + nz * off]);
+      }
+      acc = (acc + L) % LAMP_SPACING;
+    }
+  }
+  return out;
+}
+
 export async function dressSideStreets(world, data, axis, blockedIn, TreeField, done = null, reachOverride = 0, Y = null) {
   const trees = new TreeField();
   const kerb = [], lamp = [], lampArm = [], drain = [];
@@ -1188,22 +1255,29 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     // why `side` still froze for 199ms after the street loop was already
     // pausing.
     let _lt = performance.now();
-    for (const [lx, lz] of (data.lamps || [])) {
+    // WHY A LAMP DID NOT APPEAR, countable. Six guards can drop a post and
+    // they are all silent; when Sentosa's synthesised list first ran, 566 of
+    // 641 candidates survived and a probe still reported "0 lamps" (it was
+    // reading material.name — emit() names the MESH). Cheap enough to leave
+    // in: seven integers, written once per district build.
+    const _dbg = (window.__lampDbg = { cand: 0, blocked: 0, onroad: 0, claim: 0, nodir: 0, arm: 0, kept: 0 });
+    for (const [lx, lz] of lampSpots(data)) {
+      _dbg.cand++;
       if (Y && performance.now() - _lt > 6) { await Y(); _lt = performance.now(); }
       // `blockedIn` is the parameter; `isBlocked` is an alias declared inside
       // the per-road loop and is not in scope out here.
-      if (blockedIn(lx, lz)) continue;
+      if (blockedIn(lx, lz)) { _dbg.blocked++; continue; }
       // A SURVEYED POST INSIDE OUR DRAWN CARRIAGEWAY IS A RASTER CONFLICT,
       // not a lamp: Allanbrooke Road's median posts sit between twin
       // carriageways our ribbons cover (28 of the widened box's 29 lamps
       // stood in live lanes, P1). Refuse rather than stand in traffic —
       // the same rule every failed clearance search follows.
-      if (window.__onRoad && window.__onRoad(lx, lz, 0.3)) continue;
-      if (!claim('lamp', lx, lz, 3)) continue;
+      if (window.__onRoad && window.__onRoad(lx, lz, 0.3)) { _dbg.onroad++; continue; }
+      if (!claim('lamp', lx, lz, 3)) { _dbg.claim++; continue; }
       // the arm reaches toward the carriageway: take the road direction here and
       // decide the side from which way the road actually lies
       const dir = dirAt(lx, lz);
-      if (!dir) continue;
+      if (!dir) { _dbg.nodir++; continue; }
       const [ux2, uz2] = dir;
       const ang2 = Math.atan2(ux2, uz2);
       const nx2 = -uz2, nz2 = ux2;
@@ -1219,8 +1293,9 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
       const armClear = (sg) => !blockedIn(lx - nx2 * 0.9 * sg, lz - nz2 * 0.9 * sg);
       if (!armClear(sgn2)) {
         if (armClear(-sgn2)) sgn2 = -sgn2;
-        else continue;
+        else { _dbg.arm++; continue; }
       }
+      _dbg.kept++;
       lamp.push([lx, 3.6, lz, ang2]);
       // the arm grounds at the POLE (lx, lz), not at its own offset — the
       // Leonie Hill floating-luminaire class
