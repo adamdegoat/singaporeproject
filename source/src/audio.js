@@ -390,6 +390,33 @@ export class Sound {
     }
   }
 
+  // THE LANDING, and it is not just a loud footstep.
+  //
+  // A hop that arrives in silence reads as the character being teleported
+  // down rather than falling. The same noise bed does the work, but the
+  // shaping is the opposite of a step: slower playback and a LOW-PASS
+  // instead of the footstep's 1150Hz bandpass, so it lands as a body
+  // arriving rather than a shoe scuffing, and it decays over 0.22s rather
+  // than 0.13s. Scaled by the speed the feet were actually doing — stepping
+  // off a kerb should not sound like coming off a wall.
+  land(impact) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const v = Math.min(1, Math.max(0, impact / 6));
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.playbackRate.value = 0.55;
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = 320 + v * 180; f.Q.value = 0.8;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0, t);
+    g.gain.linearRampToValueAtTime(0.075 * v, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    src.connect(f); f.connect(g); g.connect(this.master);
+    src.start(t, Math.random() * 1.5);
+    src.stop(t + 0.26);
+  }
+
   _footstep(intensity) {
     const ctx = this.ctx, t = ctx.currentTime;
     const src = ctx.createBufferSource();

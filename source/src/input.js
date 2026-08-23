@@ -16,6 +16,18 @@ export const input = {
   stickActive: false, stickDX: 0, stickDY: 0,
 };
 
+// RUNNING ON A PHONE HAD NO CONTROL AT ALL. `run` was Shift-only, so on the
+// device the game is actually played on the walker could never do more than
+// 1.85 m/s — and the avatar's run clip never played. Pushing the stick past
+// this fraction of its radius is the run, which is the standard twin-stick
+// pattern and costs no second button: a nudge walks, a full push runs.
+const RUN_AT = 0.72;
+
+// THE JUMP IS EDGE-TRIGGERED, NOT LEVEL-READ. Holding the button must not
+// re-fire the moment the feet touch down — that turns a held thumb into a
+// pogo stick. The press sets this flag, one readInput consumes it.
+let jumpQueued = false;
+
 // The walk stick is PINNED to a fixed spot so you can see where it is, rather
 // than appearing wherever your thumb happens to land.
 export const STICK = { x: 92, yFromBottom: 92, radius: 54 };
@@ -24,9 +36,17 @@ function stickCentre() {
 }
 
 let mouseLookDX = 0, mouseLookDY = 0;
+// how far the TOUCH stick is pushed, 0..1. Kept separate from moveX/moveY
+// because the keyboard writes those as a full-deflection +/-1 and a diagonal
+// WASD walk would otherwise score 1.41 and run without Shift.
+let stickMag = 0;
 
 const keys = new Set();
 addEventListener('keydown', (e) => {
+  // A HELD KEY REPEATS. Space is the desktop jump, so the queue has to be
+  // fed on the first press only, or an auto-repeat at ~30Hz queues thirty
+  // jumps a second and the walker never leaves the ground state cleanly.
+  if (e.code === 'Space' && !keys.has('Space')) jumpQueued = true;
   keys.add(e.code);
   if (e.code === 'KeyE' || e.code === 'KeyF') input.toggleMode = true;
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
@@ -62,6 +82,31 @@ export function attachTouch(el) {
   el.addEventListener('touchcancel', end, { passive: true });
 }
 
+// THE JUMP BUTTON, and why it is a real DOM element rather than a screen
+// zone like the throttle and the brake.
+//
+// The right half of the screen is the look-drag. A zone-based jump inside it
+// would fire on every camera pan, and a "tap versus drag" test would put a
+// timing puzzle in front of the one control that has to feel instant. A
+// button element takes its own touchstart and the canvas below never sees
+// it, so looking around and jumping cannot collide.
+export function attachJumpButton(el) {
+  if (!el) return;
+  const fire = (e) => {
+    jumpQueued = true;
+    el.classList.add('hot');
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const cool = () => el.classList.remove('hot');
+  el.addEventListener('touchstart', fire, { passive: false });
+  el.addEventListener('touchend', cool, { passive: true });
+  el.addEventListener('touchcancel', cool, { passive: true });
+  // desktop click, so the button is testable without a touch device
+  el.addEventListener('mousedown', fire);
+  addEventListener('mouseup', cool);
+}
+
 // desktop: drag with the mouse to look around, in either mode
 export function attachMouse(el) {
   let down = false, mx = 0, my = 0;
@@ -79,6 +124,7 @@ export function readInput(mode) {
   let steer = 0, throttle = 0, brake = 0;
   input.stickActive = false;
   let moveX = 0, moveY = 0;
+  stickMag = 0;
   let lookDX = mouseLookDX, lookDY = mouseLookDY;
   mouseLookDX = 0; mouseLookDY = 0;
 
@@ -93,6 +139,7 @@ export function readInput(mode) {
         moveX = dx / STICK.radius;
         moveY = dy / STICK.radius;
         input.stickActive = true; input.stickDX = dx; input.stickDY = dy;
+        stickMag = clamped / STICK.radius;
       } else if (rec.y < innerHeight * 0.62) throttle = 1;
       else brake = 1;
     } else if (mode === 'walk') {
@@ -120,8 +167,11 @@ export function readInput(mode) {
 
   input.steer = steer; input.throttle = throttle; input.brake = brake;
   input.moveX = moveX; input.moveY = moveY;
-  input.run = keys.has('ShiftLeft') || keys.has('ShiftRight');
-  return { steer, throttle, brake, moveX, moveY, lookDX, lookDY, run: input.run };
+  // full stick = run, on touch; Shift still runs on the keyboard
+  input.run = keys.has('ShiftLeft') || keys.has('ShiftRight') || stickMag > RUN_AT;
+  const jump = jumpQueued;
+  jumpQueued = false;
+  return { steer, throttle, brake, moveX, moveY, lookDX, lookDY, run: input.run, jump };
 }
 
 export function touchDebug() {

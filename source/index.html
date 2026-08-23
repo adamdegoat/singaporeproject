@@ -67,7 +67,7 @@
   body.mapopen #hud,body.mapopen #place,body.mapopen #map,
   body.mapopen #maphint,body.mapopen #modebtn,body.mapopen #vehiclebtn,
   body.mapopen #pedals,body.mapopen #steerhint,
-  body.mapopen #stick,body.mapopen #lookhint{display:none}
+  body.mapopen #stick,body.mapopen #lookhint,body.mapopen #jumpbtn{display:none}
   #bigmap{position:absolute;inset:0;width:100%;height:100%}
   #bigclose{position:absolute;right:calc(12px + env(safe-area-inset-right));
     top:12px;font:600 12px/1 ui-sans-serif,system-ui,Helvetica,Arial;
@@ -168,6 +168,33 @@
   #knob{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;
     border-radius:50%;background:rgba(232,221,198,.82);
     box-shadow:0 2px 8px rgba(0,0,0,.35);transition:transform .04s linear}
+  /* THE JUMP BUTTON. Sits above the mode pill in the bottom-right, where a
+     right thumb already rests, and it is a REAL button so its touch never
+     reaches the look-drag layer on the canvas underneath (see
+     attachJumpButton in input.js). 76px across: the 44px accessibility
+     minimum is for a considered tap, and this one is pressed at a run. */
+  #jumpbtn{position:fixed;display:none;
+    /* INBOARD OF THE PILL STACK, not on the edge. The first placement put it
+       at right:20px and it sat straight on top of Friends / Vehicle / Skate,
+       which live at right:10px and stack up the bottom-right corner (caught
+       in the 844x390 vet frame, not by reading the CSS). Those three are
+       menus; this is the one control pressed at a run, so it takes the thumb
+       position and they keep the corner. Centred 92px off the bottom, which
+       is exactly the walk stick's centre on the other side. */
+    right:calc(104px + env(safe-area-inset-right));
+    bottom:calc(54px + env(safe-area-inset-bottom));
+    width:76px;height:76px;border-radius:50%;border:2px solid rgba(232,221,198,.42);
+    background:rgba(12,16,20,.30);padding:0;-webkit-tap-highlight-color:transparent;
+    place-items:center;touch-action:none;z-index:6}
+  #jumpbtn.on{display:grid}
+  #jumpbtn i{display:block;width:0;height:0;border-left:11px solid transparent;
+    border-right:11px solid transparent;border-bottom:15px solid rgba(232,221,198,.72);
+    margin-bottom:3px}
+  #jumpbtn b{position:absolute;bottom:15px;left:0;right:0;text-align:center;
+    font:700 9px/1 ui-sans-serif,system-ui,-apple-system,Helvetica,Arial;
+    letter-spacing:.14em;color:rgba(232,221,198,.55)}
+  #jumpbtn.hot{background:rgba(232,221,198,.16);border-color:rgba(232,221,198,.85)}
+  #jumpbtn.hot i{border-bottom-color:rgba(240,235,222,.95)}
   #lookhint{position:fixed;right:0;top:0;bottom:0;width:50%;display:none;
     pointer-events:none;align-items:center;justify-content:center;
     font:600 12px/1.4 ui-sans-serif,system-ui,Helvetica,Arial;
@@ -206,7 +233,7 @@
     margin:-6px 0 0 -6px;border-radius:50%;background:rgba(232,221,198,.42);
     transition:none}
   @media (orientation:portrait){ #pedals,#steerhint{display:none !important} }
-  @media (orientation:portrait){ #rotate{display:grid} #place,#map,#maphint,#big,#modebtn,#stick,#lookhint{display:none} }
+  @media (orientation:portrait){ #rotate{display:grid} #place,#map,#maphint,#big,#modebtn,#stick,#lookhint,#jumpbtn{display:none} }
   /* The boot screen. The build blocks the main thread for seconds at a time,
      and a static "loading" line reads as a crash — so boot yields between
      phases (see bstep in main.js) and this bar moves with named steps. The
@@ -288,6 +315,7 @@
 </div>
 <div id="steerhint"><div id="steertrack"></div><div id="steerdot"></div></div>
 <div id="lookhint">drag to look</div>
+<button id="jumpbtn" type="button" aria-label="Jump"><i></i><b>JUMP</b></button>
 <button id="vehiclebtn" type="button">Car</button>
 <button id="friendsbtn" type="button">Friends</button>
 <div id="roompanel">

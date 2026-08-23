@@ -8,9 +8,9 @@ import { buildQLife, qlifeTick } from './qlife.js';
 import { Solid } from './solid.js';
 import { buildVespa, buildRider, buildCar, buildSkate, buildSkater, SKATE_WHEEL_X as SK_WHEEL_X, newState, step, RIDE, CAR, SKATE, SURFACES, SURF_ROAD } from './vespa.js';
 import { SkidMarks } from './skid.js';
-import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from './input.js';
+import { TOUCH, input, attachTouch, attachMouse, attachJumpButton, readInput, touchDebug } from './input.js';
 import { Net } from './net.js';
-import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
+import { newWalker, stepWalk, canJump, beginJump, buildWalker, WALK } from './player.js';
 import { buildAvatar } from './avatar.js';
 import { qtreesTick } from './qtrees.js';
 import { buildClouds } from './qsky.js';
@@ -1844,6 +1844,7 @@ const walkerRig = NEWAVATAR ? (() => {
   const av = buildAvatar('cap');
   return { group: av.group,
     pose: (ph, sp) => av.pose(ph, sp),
+    jumpPose: (u) => av.jumpPose(u),
     swimPose: (ph) => av.swimPose(ph) };
 })() : buildWalker();
 walkerRig.group.visible = false;
@@ -4538,14 +4539,15 @@ function toggleMode() {
   // if you walked to the cable car you meant to ride the cable car.
   if (mode === 'walk') {
     const hit = nearestRide();
-    if (hit && boardRide(hit)) return;
+    // boarding mid-hop is allowed; the flight just does not survive it
+    if (hit) { groundWalker(); if (boardRide(hit)) return; }
   }
   if (mode === 'ride') {
     // step off to the left of the scooter, onto the kerb side
     const nx = Math.cos(S.heading), nz = -Math.sin(S.heading);
     let wx = S.x + nx * 1.2, wz = S.z + nz * 1.2;
     if (blocked(wx, wz)) { wx = S.x - nx * 1.2; wz = S.z - nz * 1.2; }
-    walker.x = wx; walker.z = wz; walker.heading = S.heading; walker.speed = 0; walker.y = null; walker.seat.id = null;
+    walker.x = wx; walker.z = wz; walker.heading = S.heading; walker.speed = 0; walker.y = null; walker.seat.id = null; groundWalker();
     S.speed = 0; S.reversing = false;
     camYaw = S.heading; camPitch = 0.16;
     walkerRig.group.visible = true;
@@ -4579,6 +4581,7 @@ function toggleMode() {
     rider.visible = vehicleKind === 'bike';
     skater.visible = vehicleKind === 'skate';
     camInit = false;
+    groundWalker();          // getting on the board ends any hop
     mode = 'ride';
   }
   updateHelp();
@@ -4587,10 +4590,13 @@ function toggleMode() {
 const stickEl = document.getElementById('stick');
 const knobEl = document.getElementById('knob');
 const lookHintEl = document.getElementById('lookhint');
+const jumpBtnEl = document.getElementById('jumpbtn');
+if (TOUCH) attachJumpButton(jumpBtnEl);
 
 function updateHelp() {
   if (stickEl) stickEl.classList.toggle('on', mode === 'walk');
   if (lookHintEl) lookHintEl.classList.toggle('on', mode === 'walk');
+  if (jumpBtnEl) jumpBtnEl.classList.toggle('on', mode === 'walk' && TOUCH);
   const ped = document.getElementById('pedals'), sh = document.getElementById('steerhint');
   if (ped) ped.classList.toggle('on', mode === 'ride' && TOUCH);
   if (sh) sh.classList.toggle('on', mode === 'ride' && TOUCH);
@@ -4726,7 +4732,7 @@ function alightRide() {
     wx = home.x; wz = home.z;
     if (home.platform) wy = home.y;
   }
-  walker.x = wx; walker.z = wz; walker.speed = 0; walker.y = wy; walker.seat.id = null;
+  walker.x = wx; walker.z = wz; walker.speed = 0; walker.y = wy; walker.seat.id = null; groundWalker();
   walkerRig.group.visible = true;
   onRide = null;
   mode = 'walk';
@@ -4784,7 +4790,7 @@ function rideStep(dt) {
   // the walker rides along invisibly under the seat: crowd, traffic, streaming
   // and the wayfinder all key off walker.x/z, and a frozen walker would freeze
   // the island around a moving player
-  walker.x = p.x; walker.z = p.z; walker.y = null; walker.seat.id = null;
+  walker.x = p.x; walker.z = p.z; walker.y = null; walker.seat.id = null; groundWalker();
   const yaw = Math.atan2(p.dir.x * onRide.dir, p.dir.z * onRide.dir);
   r.carrier.position.set(p.x, p.y - (r.hang || 0), p.z);
   r.carrier.rotation.set(0, yaw, 0);
@@ -4797,27 +4803,101 @@ function rideStep(dt) {
   camera.fov = 68; camera.updateProjectionMatrix();
 }
 
+// PUTTING THE WALKER SOMEWHERE ENDS ANY FLIGHT. Five places move the walker
+// without walking them — dismounting, the district jump, the wayfinder's
+// place-me, the respawn and the sea rescue — and each one already clears
+// `walker.y` so the next frame re-seats on the surface. A hop in progress is
+// the same kind of stale state: land the walker before it is teleported, or
+// it arrives still falling with whatever vertical speed it had.
+function groundWalker() {
+  walker.air = false; walker.vy = 0;
+  walker.airT = 0; walker.landT = 0; walker.offT = 0;
+}
+
+// HOW LONG THE LANDING READS FOR. Short on purpose: the owner asked for a
+// hop you can chain, so this is a settle you can jump out of, not a recovery
+// that takes the controls away. Nothing gates input on it — it only drives
+// the pose and the camera dip.
+const LAND_SETTLE = 0.17;
+
+// THE WALK CAMERA IS A THIRD-PERSON CHASE CAM (2026-08-23).
+//
+// It used to sit 2.15m back at eye height and aim 12m along the look
+// direction, which is an over-the-shoulder FIRST-person shot: the avatar was
+// a shoulder and a cap brim at the bottom of the frame. That was fine while
+// walking was a way to get between rides. It is not fine now the walker is a
+// rigged character who runs, jumps and lands, because you cannot see any of
+// it. The owner asked for a third-person follow cam and this is it.
+//
+// The rig is an ORBIT: camYaw/camPitch are the look-drag exactly as before,
+// but they now swing a boom around a pivot at the walker's chest rather than
+// aiming a head. Three things it borrows from the ride camera, because they
+// were solved there and the same problems are here:
+//   * boomClear() — a trunk or a wall in the boom shortens it instead of
+//     filling the frame with bark. This island is mostly trees.
+//   * a floor under the lens, so the camera never dips into a slope.
+//   * a lerp, so the camera follows rather than being welded to the walker.
+// `?closecam=1` restores the old shoulder shot as an A/B.
+const CLOSECAM = P.has('closecam');
+const WALKCAM = {
+  pivot: 1.22,     // chest height above the feet — what the lens orbits
+  back: 4.35,      // full boom; boomClear() shortens it when something is there
+  side: 0.62,      // shoulder offset, so the avatar is not dead-centre
+  aim: 2.6,        // aim this far ahead of the pivot: puts the walker low in frame
+  fov: 62,
+};
+const _wcPos = new THREE.Vector3(), _wcAim = new THREE.Vector3();
+const _wcWant = new THREE.Vector3(), _wcLook = new THREE.Vector3();
+let _wcInit = false;
 function walkCamera(dt) {
-  // just above head height and offset to the shoulder, so the view forward is
-  // clear but you can still see who you are
-  const back = 2.15, side = 0.66, eye = 1.78;
   const fx = Math.sin(camYaw), fz = Math.cos(camYaw);
   const rx = -fz, rz = fx;                     // screen-right in world space
   const sy = Math.sin(camPitch), cy = Math.cos(camPitch);
-  const wy = terrain.at(walker.x, walker.z);
-  camera.position.set(
-    walker.x - fx * back * cy + rx * side,
-    wy + eye + back * sy * 0.75,
-    walker.z - fz * back * cy + rz * side
-  );
-  // aim along the look direction, not at the walker, so it reads first-person
-  const AHEAD = 12;
-  camera.lookAt(
-    walker.x + fx * AHEAD * cy + rx * side,
-    wy + eye - sy * AHEAD,
-    walker.z + fz * AHEAD * cy + rz * side
-  );
-  camera.fov = 65; camera.updateProjectionMatrix();
+  // THE PIVOT RIDES THE WALKER, INCLUDING THROUGH THE AIR. This read
+  // terrain.at() — the heightfield — which is the same defect the ride
+  // camera was carrying on 2026-08-02: on a bridge the deck and the terrain
+  // differ by the whole span and the camera ends up under the soffit.
+  // walker.y is the surface the walker is actually standing on, and during a
+  // jump it is the walker's real height, so the camera rises with the hop.
+  const feet = walker.y != null ? walker.y : terrain.at(walker.x, walker.z);
+  if (CLOSECAM) {
+    const back = 2.15, side = 0.66, eye = 1.78, AHEAD = 12;
+    camera.position.set(
+      walker.x - fx * back * cy + rx * side,
+      feet + eye + back * sy * 0.75,
+      walker.z - fz * back * cy + rz * side);
+    camera.lookAt(
+      walker.x + fx * AHEAD * cy + rx * side,
+      feet + eye - sy * AHEAD,
+      walker.z + fz * AHEAD * cy + rz * side);
+    camera.fov = 65; camera.updateProjectionMatrix();
+    return;
+  }
+  // A LANDING HAS TO BE FELT, NOT JUST SEEN. A 9cm dip over the settle is
+  // the cheapest weight cue there is and it costs no animation: without it a
+  // hop reads as the character sliding up and down a pole.
+  const dip = walker.landT > 0
+    ? Math.sin((1 - walker.landT / LAND_SETTLE) * Math.PI) * 0.09 : 0;
+  const px = walker.x + rx * WALKCAM.side;
+  const pz = walker.z + rz * WALKCAM.side;
+  const py = feet + WALKCAM.pivot - dip;
+  const back = boomClear(px, pz, -fx, -fz, WALKCAM.back);
+  _wcWant.set(px - fx * back * cy, py + back * sy, pz - fz * back * cy);
+  // never let the lens go under the ground on a fall-away slope
+  _wcWant.y = Math.max(_wcWant.y, surfaceAt(_wcWant.x, _wcWant.z) + 0.85);
+  _wcLook.set(px + fx * WALKCAM.aim * cy, py - sy * WALKCAM.aim, pz + fz * WALKCAM.aim * cy);
+  // A TELEPORT IS NOT A CAMERA MOVE. The district jump and the dismount both
+  // move the walker hundreds of metres in one frame; lerping across that
+  // would fly the lens over the island. Anything past a few metres snaps.
+  if (!_wcInit || _wcPos.distanceToSquared(_wcWant) > 64) {
+    _wcPos.copy(_wcWant); _wcAim.copy(_wcLook); _wcInit = true;
+  } else {
+    _wcPos.lerp(_wcWant, Math.min(1, dt * 9.0));
+    _wcAim.lerp(_wcLook, Math.min(1, dt * 12.0));
+  }
+  camera.position.copy(_wcPos);
+  camera.lookAt(_wcAim);
+  camera.fov = WALKCAM.fov; camera.updateProjectionMatrix();
 }
 
 const camPos = new THREE.Vector3(), camAim = new THREE.Vector3();
@@ -5536,6 +5616,17 @@ function loop(now) {
       inp.brake = window.__force.brake ?? inp.brake;
       inp.steer = window.__force.steer ?? inp.steer;
     }
+    // ...and the same door for the WALKER, which had none: every walk-side
+    // check in data/ so far has teleported and measured a standing frame,
+    // because there was no way to press the stick from a script. A jump is
+    // pure motion and cannot be checked any other way.
+    if (window.__forceWalk) {
+      const f = window.__forceWalk;
+      inp.moveX = f.moveX ?? inp.moveX;
+      inp.moveY = f.moveY ?? inp.moveY;
+      if (f.run != null) inp.run = f.run;
+    }
+    if (window.__forceJump) { window.__forceJump = false; inp.jump = true; }
 
     if (mode === 'onride') {
       // A COMPLETE BRANCH, ending in its own render and return.
@@ -5609,7 +5700,12 @@ function loop(now) {
       const mx = -inp.moveY * fx - inp.moveX * fz;
       const mz = -inp.moveY * fz + inp.moveX * fx;
       const wx = walker.x, wz = walker.z;
-      stepWalk(walker, dt, mx, mz, inp.run);
+      // JUMP. The edge is consumed BEFORE the step so the launch and the
+      // first air step land in the same frame — reading it after would put
+      // one frame of ground movement between the press and the lift-off,
+      // which is exactly the mush that makes a jump button feel dead.
+      if (inp.jump && canJump(walker)) beginJump(walker);
+      stepWalk(walker, dt, mx, mz, inp.run, walker.air);
       // SWIMMING IS A SUB-STATE OF WALKING. You wade in from the beach; at
       // swimming depth the walk becomes a breaststroke; swim to where you
       // can stand and you come out WALKING — the owner's rule, "ppl get out
@@ -5653,6 +5749,9 @@ function loop(now) {
         // whole figure and the vet frame showed empty sea.
         const sy = (window.__seaY ?? 0.1);
         walker.y = sy - 0.12 + Math.sin(clock * 1.4) * 0.045;
+        // a jump cannot survive into the water: hitting the sea mid-hop ends
+        // the flight rather than leaving the swimmer with vertical speed
+        walker.air = false; walker.vy = 0; walker.landT = 0; walker.offT = 0;
       } else {
         if (walker.y == null) walker.y = terrain.at(walker.x, walker.z);
         // the seat's direction is the walker's ACTUAL displacement this frame
@@ -5662,12 +5761,73 @@ function loop(now) {
         const sdl = Math.hypot(sdx, sdz);
         if (sdl > 1e-4) { walker.seat.hx = sdx / sdl; walker.seat.hz = sdz / sdl; }
         else { walker.seat.hx = 0; walker.seat.hz = 0; }
-        walker.y = surfaceAt(walker.x, walker.z, walker.y, walker.seat);
+        // THE SURFACE IS NOW A FLOOR, NOT A RAIL. Before the jump this line
+        // WAS the walker's height: whatever surfaceAt said, the feet were
+        // there. It still answers where the ground is — asked at the height
+        // the walker actually occupies, so decks and treads resolve exactly
+        // as they always did — but airborne frames only use it to find out
+        // when the flight ends.
+        const gy = surfaceAt(walker.x, walker.z, walker.y, walker.seat);
+        if (walker.air) {
+          walker.airT += dt;
+          walker.offT += dt;
+          // EXACT FOR CONSTANT ACCELERATION, AND IT HAS TO BE.
+          //
+          // The obvious integration — subtract gravity, then add the new
+          // velocity — is plain Euler and it makes the JUMP HEIGHT DEPEND ON
+          // THE FRAME RATE. Measured with data/jumpcheck.mjs on the first
+          // build: a 0.75m hop reached 0.74m at 60fps, 0.625m at 20fps and
+          // exactly 0.500m at 10fps, which is the dt clamp. A third of the
+          // jump, gone, on the slowest device — and this world caps at 20fps
+          // on a phone, which is the device that matters (the owner plays on
+          // an iPhone). A player would have found it as "I can clear that
+          // kerb at home and not on the bus".
+          //
+          //     y += v*dt - g*dt^2/2      then      v -= g*dt
+          //
+          // is the closed form of the same motion, so apex and flight time
+          // are identical at 10fps and at 120fps. Free: one extra multiply.
+          walker.y += walker.vy * dt - 0.5 * WALK.gravity * dt * dt;
+          walker.vy -= WALK.gravity * dt;
+          // Only a DESCENDING walker lands. Testing height alone would end
+          // the flight on the launch frame, and would also stop a hop dead
+          // against the underside of a deck it was rising past.
+          if (walker.vy <= 0 && walker.y <= gy) {
+            // the speed the feet were doing when they hit, BEFORE it is
+            // cleared — it is what the landing sound is scaled by
+            sound.land(-walker.vy);
+            walker.y = gy;
+            walker.vy = 0;
+            walker.air = false;
+            walker.offT = 0;
+            walker.landT = LAND_SETTLE;
+          }
+        } else if (gy < walker.y - WALK.stepOff) {
+          // walked off a real ledge — fall from a standstill, with the
+          // coyote clock running so a jump taken at the lip still fires
+          walker.air = true;
+          walker.vy = 0;
+          walker.airT = 0;
+          walker.airMax = (2 * WALK.jumpV) / WALK.gravity;
+          walker.offT = 0;
+        } else {
+          walker.y = gy;
+          walker.offT = 0;
+          if (walker.landT > 0) walker.landT = Math.max(0, walker.landT - dt);
+        }
       }
       walkerRig.group.position.set(walker.x, walker.y, walker.z);
       walkerRig.group.rotation.y = walker.heading;
       if (walker.swim) walkerRig.swimPose(walker.phase, walker.speed);
-      else walkerRig.pose(walker.phase, walker.speed);
+      else if (walker.air || walker.landT > 0) {
+        // 0 at launch, 1 at touchdown, past 1 through the settle. A long
+        // fall off a ledge simply saturates at 1, which is the legs-reaching
+        // -down end of the clip and the right pose to fall in.
+        const u = walker.air
+          ? Math.min(1, walker.airT / Math.max(0.18, walker.airMax))
+          : 1 + (1 - walker.landT / LAND_SETTLE) * 0.5;
+        walkerRig.jumpPose(u);
+      } else walkerRig.pose(walker.phase, walker.speed);
       const wgy = terrain.at(walker.x, walker.z);
       sun.position.set(walker.x + SUNDIR.x * 150, wgy + SUNDIR.y * 150, walker.z + SUNDIR.z * 150);
       sun.target.position.set(walker.x, wgy, walker.z);
@@ -5804,7 +5964,7 @@ function loop(now) {
           && Math.abs(S.speed) > 0.4 && !rideBlocked(px, pz)) {
         walker.x = px; walker.z = pz; walker.heading = S.heading;
         walker.speed = Math.min(1.2, Math.abs(S.speed) * 0.3);
-        walker.y = null; walker.seat.id = null; walker.swim = false;
+        walker.y = null; walker.seat.id = null; walker.swim = false; groundWalker();
         S.x = px; S.z = pz; S.speed = 0; S.reversing = false;
         camYaw = S.heading; camPitch = 0.16;
         walkerRig.group.visible = true;
@@ -6267,7 +6427,7 @@ window.__teleport = (x, z, heading) => {
     updateHelp();
   }
   walker.x = S.x; walker.z = S.z; walker.heading = S.heading;
-  walker.speed = 0; walker.y = null; walker.seat.id = null; walker.swim = false;
+  walker.speed = 0; walker.y = null; walker.seat.id = null; walker.swim = false; groundWalker();
   if (TA) TA.cancel(clock);   // a jump across the island abandons a live run
   if (crowdSys) crowdSys.update(clock, 0, S.x, S.z, signals);
   for (const c of extraCrowds) c.update(clock, 0, S.x, S.z, signals);
@@ -6312,7 +6472,7 @@ window.__cam = (x, y, z, tx, ty, tz, fov) => {
 // Hide the interface so a frame can be compared against a photograph without a
 // minimap and a control legend sitting on top of it.
 window.__ui = (on) => {
-  for (const id of ['hud', 'place', 'map', 'maphint', 'modebtn', 'stick', 'lookhint']) {
+  for (const id of ['hud', 'place', 'map', 'maphint', 'modebtn', 'stick', 'lookhint', 'jumpbtn']) {
     const el = document.getElementById(id);
     if (el) el.style.visibility = on ? '' : 'hidden';
   }
@@ -6461,6 +6621,27 @@ window.__rider = () => {
 };
 window.__toggle = () => toggleMode();
 window.__walker = () => ({ x: +walker.x.toFixed(1), z: +walker.z.toFixed(1), h: +walker.heading.toFixed(3), sp: +walker.speed.toFixed(2) });
+// THE WALK SIDE OF `__drive`. Holds the stick for a while and resolves when
+// it lets go, so a harness can await a walk the way stuckcheck awaits a ride.
+window.__walkDrive = (moveX, moveY, run, seconds) => {
+  window.__forceWalk = { moveX, moveY, run };
+  return new Promise((res) => setTimeout(() => { window.__forceWalk = null; res(); },
+    seconds * 1000));
+};
+// The tuning the arc is supposed to hit, so a gate never hard-codes a copy
+// of numbers that live in player.js.
+window.__WALK = WALK;
+// One jump, on the next frame that reads input.
+window.__jump = () => { window.__forceJump = true; };
+// The full vertical state, which __walkState deliberately does not carry
+// (it is the swim checks' shape and they are keyed on it).
+window.__airState = () => ({
+  air: !!walker.air, vy: +(walker.vy || 0).toFixed(3),
+  y: walker.y == null ? null : +walker.y.toFixed(3),
+  gy: +terrain.at(walker.x, walker.z).toFixed(3),
+  airT: +(walker.airT || 0).toFixed(3), landT: +(walker.landT || 0).toFixed(3),
+  sp: +walker.speed.toFixed(3), swim: !!walker.swim,
+});
 // heading included: a probe that wants to stand in front of the rider rather
 // than behind them cannot work it out from x/z alone (data/avatar.mjs)
 window.__state = () => ({ x: +S.x.toFixed(1), z: +S.z.toFixed(1), h: +S.heading.toFixed(3), kmh: +(S.speed * 3.6).toFixed(1) });

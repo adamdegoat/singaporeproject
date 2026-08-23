@@ -8,6 +8,42 @@ export const WALK = {
   runSpeed: 4.1,
   accel: 9.0,
   turnRate: 9.0,
+
+  // ---- JUMPING (2026-08-23, the owner's "real game mechanics" ask) ----
+  //
+  // Tuned as a LIGHT, CHAINABLE hop, which is the owner's call: press again
+  // the instant you land, no recovery lockout. Sentosa is a walkable island,
+  // not a platformer, so the hop's job is to clear a kerb, a low wall or a
+  // step and to feel responsive — not to reach a ledge.
+  //
+  // Gravity is deliberately about 1.7x real. At 9.8 the same 0.75m apex hangs
+  // for 0.78s and reads floaty, like the moon; at 17 it is 0.59s and the hop
+  // snaps. This is the standard game-feel trade and it is why almost no game
+  // uses real gravity for a character.
+  //     apex = jumpV^2 / (2*gravity) = 0.75m       (avatar is 1.55m tall)
+  //     air  = 2*jumpV / gravity     = 0.59s
+  jumpV: 5.05,
+  gravity: 17.0,
+  // AIR CONTROL IS PARTIAL, WHICH IS THE WHOLE POINT OF "CARRIES MOMENTUM".
+  // Full control in the air means the jump is just walking with a different
+  // pose and the run-up counts for nothing. A quarter of the ground figures
+  // lets you steer the landing without letting you turn a sprint into a
+  // standstill mid-flight.
+  airAccel: 2.2,
+  airTurnRate: 2.4,
+  // Releasing the stick in mid-air must NOT brake. Below this stick
+  // magnitude the air step leaves the speed exactly alone, so a running jump
+  // travels its full arc even if the thumb comes off the stick.
+  airDeadzone: 0.05,
+  // WALKING OFF A LEDGE FALLS. The threshold is generous on purpose: every
+  // kerb, step and stair tread on the island is a drop under this, and
+  // triggering a fall on each of them would have the walker hopping down the
+  // Imbiah steps. Only a real ledge clears it.
+  stepOff: 0.45,
+  // The forgiveness window after walking off an edge in which the jump
+  // button still works. Every platformer has one; without it a jump taken at
+  // the lip of a drop silently does nothing and reads as a dropped input.
+  coyote: 0.11,
 };
 
 export function newWalker(x = 0, z = 0, heading = 0) {
@@ -15,25 +51,69 @@ export function newWalker(x = 0, z = 0, heading = 0) {
   // they are travelling — surfaceAt reads and writes it (directional
   // seating). Cleared with walker.y wherever the walker is placed rather
   // than walked.
-  return { x, z, heading, speed: 0, phase: 0, seat: { id: null, hx: 0, hz: 0 } };
+  return { x, z, heading, speed: 0, phase: 0, seat: { id: null, hx: 0, hz: 0 },
+    // ---- vertical state, owned by the walk block in main.js ----
+    // `air` is the airborne flag; `vy` the vertical speed in m/s; `airT` how
+    // long this flight has lasted and `airMax` the flight time the launch
+    // was worth, which together give the pose its 0..1 progress; `landT`
+    // counts down the landing settle; `offT` is the coyote-time clock since
+    // the feet last had ground under them.
+    air: false, vy: 0, airT: 0, airMax: 0, landT: 0, offT: 0 };
 }
 
-// move is a vector in world space (already rotated by the camera yaw)
-export function stepWalk(w, dt, moveX, moveZ, running) {
+// move is a vector in world space (already rotated by the camera yaw).
+// `air` switches to the reduced-authority air step: see WALK.airAccel.
+export function stepWalk(w, dt, moveX, moveZ, running, air = false) {
   const mag = Math.min(1, Math.hypot(moveX, moveZ));
-  const target = mag * (running ? WALK.runSpeed : WALK.speed);
-  w.speed += (target - w.speed) * Math.min(1, WALK.accel * dt);
-  if (mag > 0.05) {
-    const want = Math.atan2(moveX, moveZ);
-    let d = want - w.heading;
-    while (d > Math.PI) d -= Math.PI * 2;
-    while (d < -Math.PI) d += Math.PI * 2;
-    w.heading += d * Math.min(1, WALK.turnRate * dt);
+  if (air) {
+    // MOMENTUM. No stick, no change — the arc keeps whatever the run-up
+    // bought it. With stick, ease toward the target at air authority, so a
+    // standing jump can be nudged forward and a sprint can be trimmed, but
+    // neither can be reversed inside one hop.
+    if (mag > WALK.airDeadzone) {
+      const target = mag * (running ? WALK.runSpeed : WALK.speed);
+      w.speed += (target - w.speed) * Math.min(1, WALK.airAccel * dt);
+      const want = Math.atan2(moveX, moveZ);
+      let d = want - w.heading;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      w.heading += d * Math.min(1, WALK.airTurnRate * dt);
+    }
+    // the step phase is frozen in the air: the jump pose owns the figure and
+    // an advancing walk phase would have the legs cycling on landing from
+    // wherever the stride happened to stop
+  } else {
+    const target = mag * (running ? WALK.runSpeed : WALK.speed);
+    w.speed += (target - w.speed) * Math.min(1, WALK.accel * dt);
+    if (mag > 0.05) {
+      const want = Math.atan2(moveX, moveZ);
+      let d = want - w.heading;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      w.heading += d * Math.min(1, WALK.turnRate * dt);
+    }
+    w.phase += w.speed * dt * 2.4;
   }
-  w.phase += w.speed * dt * 2.4;
   w.x += Math.sin(w.heading) * w.speed * dt;
   w.z += Math.cos(w.heading) * w.speed * dt;
   return w;
+}
+
+// CAN THIS WALKER JUMP RIGHT NOW? Grounded, or inside the coyote window
+// after stepping off an edge, and not already in the air or swimming.
+export function canJump(w) {
+  return !w.swim && (!w.air || w.offT <= WALK.coyote);
+}
+
+// Launch. Kept here with the constants rather than inline in the loop so the
+// hop's shape is one thing in one place.
+export function beginJump(w) {
+  w.air = true;
+  w.vy = WALK.jumpV;
+  w.airT = 0;
+  w.airMax = (2 * WALK.jumpV) / WALK.gravity;
+  w.offT = WALK.coyote + 1;      // spend the coyote window on this jump
+  w.landT = 0;
 }
 
 export function buildWalker() {
@@ -196,6 +276,40 @@ export function buildWalker() {
       body.rotation.z = moving ? Math.sin(t) * 0.022 : 0;
       body.rotation.x = moving ? 0.045 : 0;
       headPivot.rotation.y = moving ? Math.sin(t * 0.5) * 0.06 : 0;
+      void head;
+    },
+    // JUMPING, hand-posed. The new avatar has the pack's jump clip
+    // (avatar.js jumpPose); this figure is the ?oldavatar fallback and has
+    // no clips at all, so the same 0..1 airborne progress drives a tuck.
+    // `u`: 0 launch, ~0.5 apex, 1 touchdown, past 1 = the settle.
+    jumpPose(u) {
+      const air = Math.max(0, Math.min(1, u));
+      const settle = Math.max(0, Math.min(1, (u - 1) / 0.5));
+      // reset everything the swim pose touches, exactly as pose() does —
+      // you can jump straight out of a wade
+      armL.sh.rotation.z = 0; armR.sh.rotation.z = 0;
+      body.position.z = 0; body.rotation.z = 0;
+      headPivot.rotation.y = 0;
+      // tuck peaks at the apex and unfolds into the reach-down
+      const tuck = Math.sin(air * Math.PI);
+      // ...then the knees soak up the landing for a moment
+      const absorb = Math.sin(settle * Math.PI) * 0.9;
+      legL.hip.rotation.x = -tuck * 0.85 - absorb * 0.55;
+      legR.hip.rotation.x = -tuck * 0.70 - absorb * 0.55;
+      legL.kn.rotation.x = tuck * 1.25 + absorb * 1.10;
+      legR.kn.rotation.x = tuck * 1.05 + absorb * 1.10;
+      legL.foot.rotation.x = -legL.hip.rotation.x - legL.kn.rotation.x + 0.25;
+      legR.foot.rotation.x = -legR.hip.rotation.x - legR.kn.rotation.x + 0.25;
+      legL.foot.rotation.z = 0; legR.foot.rotation.z = 0;
+      // arms swing up on the launch and come down with the fall
+      armL.sh.rotation.x = -1.05 * (1 - air) - 0.15;
+      armR.sh.rotation.x = -1.05 * (1 - air) - 0.15;
+      armL.el.rotation.x = -0.35 - tuck * 0.45;
+      armR.el.rotation.x = -0.35 - tuck * 0.45;
+      // rise onto the toes at the top, fold at the hips on the landing
+      body.position.y = tuck * 0.03;
+      body.rotation.x = 0.045 + absorb * 0.22;
+      headPivot.rotation.x = -tuck * 0.12;
       void head;
     },
     // BREASTSTROKE (the owner's pick, 2026-08-14 — over freestyle, because

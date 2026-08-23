@@ -168,6 +168,26 @@ export function buildAvatar(hat) {
     if (bn) bn.rotation.set(bn.rotation.x + x, bn.rotation.y + y,
       bn.rotation.z + z);
   };
+  // ADDING TO AN EULER ONLY WORKS FROM THE REST POSE, AND THAT IS A TRAP.
+  //
+  // `rot` above adds to bone.rotation, which three.js derives from the
+  // quaternion in XYZ order. From the rest pose that is fine and it is what
+  // swimPose and skatePose have always done. Applied ON TOP OF A SAMPLED
+  // CLIP it silently does the wrong thing: the jump clip leaves UpperArm at
+  // a quaternion whose XYZ decomposition is nothing like a single X angle,
+  // so `rot('UpperArm.L', -1.3)` moved the arm barely at all while the same
+  // call on LowerArm (near-zero y/z) worked — which is exactly what the vet
+  // frame showed, forearms folding and the shoulders still overhead.
+  //
+  // Post-multiplying a quaternion turns the correction in the bone's OWN
+  // frame after whatever the clip said, which is what "bend this joint
+  // further" actually means, and it is correct from any starting pose.
+  const _qd = new THREE.Quaternion(), _ax = new THREE.Vector3();
+  const qrot = (name, ax, ay, az, angle) => {
+    const bn = byName[name];
+    if (!bn || !angle) return;
+    bn.quaternion.multiply(_qd.setFromAxisAngle(_ax.set(ax, ay, az), angle));
+  };
   // the rig is a Blender IK export: Foot.L/R are SIBLINGS of the leg
   // chain, parented to the root bone. Clips animate them directly; any
   // hand pose must move them too or the feet stay nailed to the floor
@@ -249,6 +269,74 @@ export function buildAvatar(hat) {
       rot('LowerLeg.R', draw * 0.55);
       rot('Head', -1.0);
       snapFeet();
+    },
+    // JUMPING — the pack's jump clip, but the GAME owns the height.
+    //
+    // The clip carries no root translation (checked: zero translation tracks
+    // on `Bone`), so it is a pure pose cycle and the physics in main.js is
+    // free to decide how high and how long. That is the whole reason a
+    // game-driven jump works here at all: an AnimationMixer playing the clip
+    // at its own 1.04s would fight the arc every time the hop was shorter or
+    // longer than the animator's.
+    //
+    // The clip's own phases, read off its Body:translation curve:
+    //     0.00-0.21  crouch (anticipation)
+    //     0.21-0.29  extend, feet leave the floor
+    //     0.29-0.54  airborne, knees tucking up
+    //     0.54-0.66  falling, legs reaching down
+    //     0.66-0.71  contact
+    //     0.71-0.83  settle
+    // `u` is the airborne progress the physics reports: 0 at launch, ~0.5 at
+    // apex, 1 at touchdown, then past 1 for the short settle. The crouch is
+    // deliberately NOT played — a hop that waits 0.2s for the anticipation
+    // before it leaves the ground feels like lag, and the owner asked for a
+    // hop you can chain.
+    jumpPose(u) {
+      resetPose();
+      const air = Math.max(0, Math.min(1, u));
+      const settle = Math.min(0.5, Math.max(0, u - 1));
+      // The settle stops SHORT of the clip's own recovery: past 0.75 the
+      // clip swings the arms behind the back on its way to rest, and the
+      // owner has already rejected one avatar pose for "arms folded
+      // backwards". 0.20 keeps the landing inside the reach-down.
+      sample('jump', 0.29 + air * 0.33 + settle * 0.20);
+      // THE PACK'S JUMP IS A CHEER, AND A HOP IS NOT.
+      //
+      // Read off the clip's own curves: the arms throw overhead at 0.29 and
+      // then HOLD at 121 degrees for the entire airborne stretch, only
+      // dropping at 0.75 — an animator's big celebratory leap. Played
+      // straight it gave the vet frame a stiff Y-pose floating across the
+      // beach walk, arms up, legs dead straight, which is exactly the
+      // "weird alien" register the owner rejected the avatar for in August.
+      //
+      // The legs are RIGHT (crouch, tuck at the apex, reach down to land),
+      // so the clip keeps the legs and the arms get corrected on top of it:
+      // they swing up on the launch as the clip says, then come down through
+      // the flight to a low forward guard by touchdown. `rot` ADDS to
+      // whatever sample() set — three.js keeps rotation and quaternion in
+      // sync both ways — so this rides the clip rather than replacing it.
+      //
+      // THE SHOULDER'S SWING AXIS ON THIS RIG IS LOCAL Z, NOT X, and it is
+      // MIRRORED: +Z lowers the left arm, -Z the right. Measured, not
+      // guessed — an X rotation moved the hand 10cm and a Z rotation moved
+      // it 54cm from the same pose (scratchpad axis probe). The X guess
+      // shipped a frame with the forearms folding and the shoulders still
+      // overhead, which is what sent me to measure.
+      //
+      // A constant trim at u=0 as well as a ramp: the clip's launch throws
+      // the arms to 104 degrees on the first airborne frame, and taking 29
+      // of those off keeps the energy of the throw without the cheer.
+      const down = 0.50 + air * 0.95 + settle * 0.70;
+      qrot('UpperArm.L', 0, 0, 1, down);
+      qrot('UpperArm.R', 0, 0, 1, -down);
+      // ...and a little elbow, because the clip's arms are poker-straight
+      // and a straight arm on a low-poly figure reads as a mannequin
+      const el = 0.30 * air + 0.25 * settle;
+      qrot('LowerArm.L', 0, 0, 1, el);
+      qrot('LowerArm.R', 0, 0, 1, -el);
+      // the IK feet are root-parented siblings of the leg chain (see the
+      // note on `mov`): the clip animates them directly, so they travel with
+      // the tuck on their own and must NOT be snapped to the shins here.
     },
     // seated on the vespa — the sit clip held at its settled frame, knees
     // and arms then pulled to the bars/floorboard by main.js offsets
