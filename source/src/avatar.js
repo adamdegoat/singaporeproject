@@ -347,39 +347,186 @@ export function buildAvatar(hat) {
     // surf-skate stance — side-on crouch, front foot forward. Hand-posed
     // on the bones (no clip); the lean/pump comes from main.js rotating
     // the group, exactly as the old skater worked.
+    // THE SKATE STANCE, REBUILT 2026-08-23 on the owner's report: "the
+    // avatar arms when skating why like backwards? the animation of skating
+    // can be more natural like longboarder or surfskaters? also the body
+    // positions all."
+    //
+    // He was right on every count, and measuring the old pose in the BOARD'S
+    // OWN FRAME (+z nose, +x toe side) said why:
+    //
+    //     Foot.L  (-0.230, 0.147, -0.161)   Foot.R (0.181, 0.138, -0.147)
+    //     Palm.L  ( 0.276, 0.772, -0.262)   Palm.R (-0.345, 0.727, 0.055)
+    //
+    // The feet were 0.41m apart ACROSS the deck and 0.01m apart ALONG it —
+    // he was standing astride the board with his feet side by side, not
+    // riding it. And the left hand sat 27cm BEHIND its own shoulder, which is
+    // the "arms backwards".
+    //
+    // THE CAUSE was the trick the old pose was built on: yaw the whole root
+    // by -1.18 so the figure faces across the deck. It does give a side-on
+    // torso, and it takes the FEET across the deck with it, because the legs
+    // hang off the same root. A real rider is the other way round — feet
+    // square to the board, upper body twisted open. So the root now stays
+    // facing the nose and the TORSO does the turning: `Body`/`Torso` local Y
+    // is the twist axis (measured — rotating it moves the head almost not at
+    // all, which is exactly what a twist looks like on a landmark that sits
+    // on the axis).
+    //
+    // AXES ARE MEASURED, NEVER NAMED. On this rig, from the rest pose:
+    //     shoulder swing  = local Z, MIRRORED (L -Z forward, R +Z forward)
+    //     shoulder raise  = local X, mirrored
+    //     elbow flex      = local Z, mirrored (X only splays it sideways)
+    //     hip swing       = local X, NOT mirrored (+X sends the knee back)
+    //     hip spread      = local Z, NOT mirrored (+Z moves the knee to -x)
+    //     torso twist     = local Y;  pitch = X;  side bend = Z
+    // The old pose wrote the arms as X-and-Z Euler adds and got a scarecrow.
     skatePose(lean = 0, crouch = 0, kick = 0, reach = 0) {
       resetPose();
-      // side-on stance comes from yawing the WHOLE figure: the body then
-      // faces across the deck (vespa.js's old skater note). Regular
-      // stance, left foot to the nose (+z of the board). The stance
-      // itself is the LEGS splitting in the body's own left/right —
-      // exactly what a surfer does — and snapFeet() then bolts each shoe
-      // to its shin's end, wherever the leg put it.
-      root.rotation.y = -1.18;
-      const c = 0.25 + crouch * 0.45;
-      rot('UpperLeg.L', -0.12 - c * 0.35, 0, 0.72);  // front leg to the nose
-      rot('LowerLeg.L', 0.45 + c * 0.6);
-      rot('UpperLeg.R', -0.08 - c * 0.35, 0, -0.65); // back leg to the tail
-      rot('LowerLeg.R', 0.4 + c * 0.6);
-      mov('Body', 0, -c * 0.0035, 0);           // hips ride down with the bend
-      rot('Torso', 0.18 + c * 0.25, 0.55, 0);   // shoulders open to the nose
-      rot('Head', -0.12, 0.42, 0);              // eyes down the road
-      // arms DOWN into a cruise, not out into a T (the old skater's own
-      // hard-won lesson — from the chase camera a T reads as a scarecrow)
-      rot('UpperArm.L', -0.12, 0, 0.22 + lean);
-      rot('UpperArm.R', -0.1, 0, -0.28 + lean);
-      rot('LowerArm.L', 0.35);
-      rot('LowerArm.R', 0.3);
-      // THE PUSH (ride.js: "a push runs out"): the back LEG swings and
-      // straightens toward the road; snapFeet carries the shoe with it.
-      if (kick > 0 || reach > 0) {
-        const drop = Math.min(1, reach + Math.max(0, kick));
-        rot('UpperLeg.R', reach * 0.3 - Math.max(0, kick) * 0.5, 0,
-          -0.3 * drop);
-        rot('LowerLeg.R', -(0.4 + c * 0.6) * drop * 0.75);
-        rot('Torso', reach * 0.1, 0, 0);       // body dips over the plant
+      // FEET SQUARE TO THE BOARD. The old -1.18 root yaw is gone; anything
+      // that reads this rig gets a figure facing the nose.
+      root.rotation.y = 0;
+      const c = Math.max(0, Math.min(1, crouch));
+
+      // ---- legs: SOLVED, not chosen ----
+      //
+      // The two feet have to sit on the SAME deck while the knees stay bent,
+      // and the only shared control over that is how far the hips sit down —
+      // which is why picking hip angles by hand cannot work and did not
+      // (first attempt: back foot 0.54m out to the side and 0.38m in the
+      // air). These six angles and the hip drop come from a coordinate
+      // descent (scratchpad stancesolve.mjs) against foot targets 0.035m
+      // either side of the deck centreline and 0.50m apart along it, run
+      // twice: once standing and once at full crouch. Interpolating between
+      // two solved poses is what keeps the shoes ON the board through the
+      // whole crouch range instead of only at one end of it.
+      //
+      //   standing  hipX -0.820 / +0.126   hipZ +0.194 / -0.222   knee 0.61 / 0.40
+      //   crouched  hipX -1.189 / -0.040   hipZ +0.291 / -0.288   knee 1.08 / 0.77
+      //
+      // Re-solve rather than nudge if the stance targets ever change.
+      const lx = -0.820 + c * -0.369, lz = 0.194 + c * 0.097, lk = 0.613 + c * 0.468;
+      const rx = 0.126 + c * -0.166, rz = -0.222 + c * -0.066, rk = 0.402 + c * 0.372;
+      qrot('UpperLeg.L', 1, 0, 0, lx);
+      qrot('UpperLeg.L', 0, 0, 1, lz);
+      qrot('LowerLeg.L', 1, 0, 0, lk);
+      qrot('UpperLeg.R', 1, 0, 0, rx);
+      qrot('UpperLeg.R', 0, 0, 1, rz);
+      qrot('LowerLeg.R', 1, 0, 0, rk);
+      mov('Body', 0, -(0.00281 + c * 0.00279), 0);   // the solved hip drop
+
+      // ---- upper body: chest opens, HIPS DO NOT ----
+      //
+      // The twist goes on `Torso` and nothing goes on `Body`, and that is a
+      // hierarchy fact, not a style choice: UpperLeg.L/R are CHILDREN OF
+      // BODY, so a Body rotation swings the solved legs with it and the feet
+      // leave the deck (measured: a 0.62 Body twist moved the back foot
+      // 0.25m off its mark). Torso hangs off Abdomen and carries the chest,
+      // arms and head only — which is also what a rider actually does: the
+      // hips stay square to the board and the shoulders open.
+      qrot('Torso', 0, 1, 0, 0.92);             // chest opens toward the toe side
+      qrot('Torso', 1, 0, 0, 0.16 + c * 0.22);  // and folds down into the ride
+      qrot('Torso', 0, 0, 1, lean * 0.55);      // carve leans the chest in
+      // eyes down the road: the twist turned his chest across the deck, so
+      // the head has to come BACK toward the nose by most of it
+      qrot('Head', 0, 1, 0, -0.80);
+      qrot('Head', 1, 0, 0, -0.12 - c * 0.08);
+
+      // ---- arms: SOLVED to a surf carry, not hand-picked ----
+      //
+      // The first rebuild fixed "backwards" — both hands ended up ahead of
+      // their shoulders — and still looked wrong in the render: they hung
+      // together near the centreline at hip height and read as CLASPED
+      // HANDS. Numbers being right is necessary and not sufficient; the
+      // frame is the check.
+      //
+      // So the arms are solved the same way the legs were, against the carry
+      // a longboarder actually rides with: leading arm out over the nose at
+      // chest height, trailing arm out behind at hip height. Solved twice,
+      // standing and crouched, with the crouched target dropped by the
+      // 0.107m the shoulders themselves drop — hold the target still and the
+      // solver reaches for it with a wrenched shoulder (-2.27 rad) instead.
+      //
+      // AND THE ELBOW ANGLE IS PART OF THE OBJECTIVE, not a by-product.
+      // Solving for the hand alone let the trailing arm stay LOCKED STRAIGHT
+      // — measured 172 degrees — and still hit its target: a plank that ends
+      // in the right place. The eye reads the bend, so the solve carries a
+      // penalty on missing it (128 deg leading, 148 deg trailing; a walk
+      // swings through 124-136, idle sits at 161-169).
+      //
+      //   standing  L shX -1.275 shZ -0.708 elZ -0.562 | R -0.696 -0.140 -0.604
+      //   crouched  L shX -1.694 shZ -0.698 elZ -0.570 | R -0.607  0.011 -0.612
+      //
+      // `lean` then swings both arms as a counterweight, which is the thing a
+      // carve actually looks like from the chase camera.
+      const alx = -1.275 + c * -0.419, alz = -0.708 + c * 0.010, ale = -0.562 + c * -0.008;
+      const arx = -0.696 + c * 0.089, arz = -0.140 + c * 0.151, are = -0.604 + c * -0.008;
+      qrot('UpperArm.L', 1, 0, 0, alx);
+      qrot('UpperArm.L', 0, 0, 1, alz - lean * 0.30);
+      qrot('LowerArm.L', 0, 0, 1, ale);
+      qrot('UpperArm.R', 1, 0, 0, arx);
+      qrot('UpperArm.R', 0, 0, 1, arz - lean * 0.30);
+      qrot('LowerArm.R', 0, 0, 1, are);
+
+      // ---- the push, SOLVED onto the road (ride.js: "a push runs out") ----
+      //
+      // Measured, the old push sent the back foot BEHIND correctly and then
+      // UP: 0.287m above the deck at full drive. That is a backwards
+      // air-kick, not a push. A push puts the shoe DOWN — the rig rides
+      // 0.16m over the deck top, so the road is y = -0.16 here.
+      //
+      // Solved as a WHOLE BODY, because the back foot cannot reach the road
+      // from the cruise hip height (it fell 15cm short) and that shortfall is
+      // exactly why a real push drops deep on the standing leg. Front foot
+      // pinned to its deck mark, back foot to the road, hip drop and both
+      // knees free:
+      //
+      //   PLANT  L[-1.231, 0.308, 1.129]  R[-0.054, -0.508, 0.246]  drop .00596
+      //   DRIVE  L[-1.044, 0.243, 0.910]  R[ 0.410, -0.445, 0.024]  drop .00443
+      //
+      // HONEST LIMIT: at full drive the shoe trails at DECK level, not on the
+      // road (solved error 0.19m). This figure is 1.55m with short legs and
+      // cannot reach 0.38m back AND 0.15m down without dragging the front
+      // foot off the board. It reads as a foot skimming just behind the tail,
+      // which is the best the proportions allow; a longer reach needs the
+      // stance shortened, and the stance is what the owner actually sees.
+      if (kick !== 0 || reach > 0) {
+        // RECOVER THE STROKE PHASE. main.js hands over two derived numbers —
+        // reach = 0.5 - 0.5cos(2*pi*p) and kick = sin(2*pi*p) — and blending
+        // on them directly gets the timing wrong: the foot is most extended
+        // when it is only half off the deck. Both come from one phase, and
+        // cos/sin of it are recoverable exactly, so recover it and drive a
+        // real cycle: down to the PLANT, sweep back to the DRIVE, return.
+        const ph = Math.atan2(kick, 1 - 2 * reach) / (Math.PI * 2);
+        const p01 = ph - Math.floor(ph);
+        const t = Math.sin(Math.PI * p01);        // 0 on the deck, 1 committed
+        // the stance angles this pose already applied, to blend away from
+        const cur = [lx, lz, lk, rx, rz, rk, 0.00281 + c * 0.00279];
+        const PLANT = [-1.231, 0.308, 1.129, -0.054, -0.508, 0.246, 0.00596];
+        const DRIVE = [-1.044, 0.243, 0.910, 0.410, -0.445, 0.024, 0.00443];
+        // first half of the commitment lifts the shoe off the deck and puts
+        // it DOWN beside the board; the second half sweeps it back
+        const d = cur.map((cv, i) => (t < 0.5
+          ? (PLANT[i] - cv) * (t * 2)
+          : (PLANT[i] - cv) + (DRIVE[i] - PLANT[i]) * ((t - 0.5) * 2)));
+        qrot('UpperLeg.L', 1, 0, 0, d[0]);
+        qrot('UpperLeg.L', 0, 0, 1, d[1]);
+        qrot('LowerLeg.L', 1, 0, 0, d[2]);
+        qrot('UpperLeg.R', 1, 0, 0, d[3]);
+        qrot('UpperLeg.R', 0, 0, 1, d[4]);
+        qrot('LowerLeg.R', 1, 0, 0, d[5]);
+        mov('Body', 0, -d[6], 0);
+        qrot('Torso', 1, 0, 0, t * 0.14);         // body dips over the plant
       }
+
+      // the IK feet are root-parented siblings of the leg chain, so they
+      // must be bolted to the shin ends AFTER the legs move (see snapFeet)
       snapFeet();
+      // ...and only THEN can they be turned across the deck, which is how a
+      // rider's shoes actually sit: the front foot angled toward the nose,
+      // the back foot much closer to square across the tail.
+      byName['Foot.L'].rotation.y += 0.62;
+      byName['Foot.R'].rotation.y += 1.15;
     },
   };
 }
