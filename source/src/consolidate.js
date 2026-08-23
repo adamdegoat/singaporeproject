@@ -202,7 +202,15 @@ export async function consolidate(root, Y = null) {
   const groups = new Map();
   const _wp = new THREE.Vector3();
   for (const o of targets) {
-    const p = o.getWorldPosition(_wp);
+    // Tile by where the GEOMETRY is, not where the object's origin is. Many
+    // builders write world-space vertices into a mesh parked at (0,0,0), so
+    // keying on getWorldPosition put every such mesh in tile 0,0 — measured
+    // 2026-08-23: 160 "tile" batches with bounding radii of 400-2961m, all
+    // origin-anchored, carrying 939k of the 916k drawn tile triangles. A
+    // batch spanning the island is never frustum-culled, which defeats the
+    // whole point of tiling (see the header note).
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    const p = _wp.copy(o.geometry.boundingSphere.center).applyMatrix4(o.matrixWorld);
     const key = [
       Math.floor(p.x / TILE), Math.floor(p.z / TILE),
       o.material.uuid,
@@ -212,6 +220,28 @@ export async function consolidate(root, Y = null) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(o);
   }
+
+  // Second pass, coarser: geometry-true tiling leaves thousands of SINGLETON
+  // groups (one bench per tile, one sign per tile...) that the old origin
+  // keying used to sweep into the giant batches — measured 2026-08-23: fixing
+  // the key alone took the spawn frame 1670k->778k tris but 249->370 draws.
+  // Singletons re-group at 5x the tile and merge there: still coarse enough
+  // to frustum-cull as a block, small enough never to span the island. It is
+  // also what keeps the batch draw order close to the blessed look — an A/B
+  // with this pass off moved pixels in 31 of 43 goldens (z-fight winners on
+  // coplanar trim re-rolled); with it on, 13 frames of edge noise, eyeballed
+  // and re-blessed. ?nocoarse disables for A/B.
+  const coarse = new Map();
+  for (const [key, list] of (new URLSearchParams(location.search).has('nocoarse') ? [] : groups)) {
+    if (list.length >= 2) continue;
+    groups.delete(key);
+    const parts = key.split(',');
+    parts[0] = Math.floor(+parts[0] / 5); parts[1] = Math.floor(+parts[1] / 5);
+    const ck = parts.join(',');
+    if (!coarse.has(ck)) coarse.set(ck, []);
+    coarse.get(ck).push(list[0]);
+  }
+  for (const [ck, list] of coarse) groups.set('c' + ck, list);
 
   let merged = 0, removed = 0;
   let _ct = performance.now();
