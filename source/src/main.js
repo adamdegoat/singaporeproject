@@ -12,6 +12,7 @@ import { TOUCH, input, attachTouch, attachMouse, readInput, touchDebug } from '.
 import { Net } from './net.js';
 import { newWalker, stepWalk, buildWalker, WALK } from './player.js';
 import { buildAvatar } from './avatar.js';
+import { qtreesTick } from './qtrees.js';
 import { buildClouds } from './qsky.js';
 import { axisSpec, buildMarkings, dressSideStreets, selectSideStreets, dedupeProps } from './markings.js';
 import { buildSgDetail, buildTransit, buildBeachLife, buildBoats, buildAnchorage, buildUssVocab } from './sgdetail.js';
@@ -5381,6 +5382,10 @@ function loop(now) {
   // site before the mode branches, so no branch tail can forget it. Frozen
   // under ?district= boots to keep the golden/perf gates pixel-stable.
   if (!P.has('district')) qlifeTick(now);
+  // far-tree imposter partition (qtrees.js): pure function of the camera
+  // position, so it runs in EVERY mode including goldens — a fixed pose
+  // always partitions identically. Internally a no-op until 40m of travel.
+  qtreesTick(camera.position.x, camera.position.z);
 
   // IDLE COOLDOWN, phones only: parked and untouched for six seconds, the
   // render drops to ~24fps. A phone reading the street name was working
