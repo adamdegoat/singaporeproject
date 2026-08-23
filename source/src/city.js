@@ -74,6 +74,8 @@ const RENDER_TEX_SHOW = texRenderShow();
 // than a mall. Same method as the height calibration and the green fraction:
 // let the place set its own default instead of inheriting the CBD's.
 let RESORTISH = false;
+const NOROOFKIT = new URLSearchParams(location.search).has('noroofkit');   // A/B the small-roof plant kit
+
 export function setDistrictCharacter(buildings) {
   let home = 0, comm = 0;
   for (const b of (buildings || [])) {
@@ -4583,9 +4585,23 @@ export async function buildBuildings(world, data, Y = null) {
     const _btLow = (b.bt || '').toLowerCase();
     const _domestic = _isCove || _isBeach
       || /^(apartments|residential|house|terrace|dormitory|bungalow|hotel|villa)$/.test(_btLow);
+    // The footprint test and the roof height are wanted by BOTH roof passes
+    // below, and neither depends on the RNG, so they are hoisted out of the
+    // big-block branch rather than computed twice.
+    const _rc = centroid(pts);
+    const _roofY = FOOT + h;
+    // ...AND IT ALL HAS TO LAND ON THE ROOF (see the long note below).
+    const inFoot = (x, z) => {
+      let hit = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const xi = pts[i][0], zi = pts[i][1], xj = pts[j][0], zj = pts[j][1];
+        if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
+      }
+      return hit;
+    };
     if (b.a > 900 && h > 12 && !_domestic) {
-      const c = centroid(pts);
-      const roof = FOOT + h;
+      const c = _rc;
+      const roof = _roofY;
       // ...AND IT ALL HAS TO LAND ON THE ROOF.
       //
       // Every piece below was offset from the CENTROID by up to nine metres,
@@ -4595,14 +4611,6 @@ export async function buildBuildings(world, data, Y = null) {
       // tank was left hanging over the edge in mid-air (vetted from above at
       // 990,13215). Ask the footprint: try a few offsets and keep the first
       // that is genuinely inside it, with a margin so nothing overhangs.
-      const inFoot = (x, z) => {
-        let hit = false;
-        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-          const xi = pts[i][0], zi = pts[i][1], xj = pts[j][0], zj = pts[j][1];
-          if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
-        }
-        return hit;
-      };
       // spiral in toward the centroid until the point sits inside: the
       // centroid of a concave footprint can itself be outside, so the last
       // resort is "do not place this piece" rather than "place it anywhere"
@@ -4653,6 +4661,77 @@ export async function buildBuildings(world, data, Y = null) {
           const dz = new THREE.BoxGeometry(L2, 0.7, 0.7);
           dz.translate(at[0], roof + 0.9, at[1]);
           merger.add(dz, MAT.metal, c[0], c[1]);
+        }
+      }
+    } else if (!_domestic && b.a > 250 && h > 4 && !NOROOFKIT) {
+      stats.smallRoofs = (stats.smallRoofs || 0) + 1;
+      // THE SMALL ROOF, which the branch above has always skipped.
+      //
+      // That gate is `area > 900 AND height > 12`, and it is right for what
+      // it builds: three plant boxes, a stair housing, two tanks and a duct
+      // run is a CBD service roof and it belongs on a block. Measured
+      // 2026-08-23 though, of 1,095 buildings on the island: 499 are exempt
+      // as homes or hotels, 45 are too low, and **472 are excluded for
+      // nothing but being under 900 square metres** — leaving 79 that get
+      // anything. Everything east of Ocean Drive is in that 472, and an
+      // aerial from Imbiah shows forty bare white planes in one frame.
+      //
+      // A 15x20m shop unit or workshop in Singapore is not a clean roof. It
+      // carries a water tank and a vent or two. So: the same idea, a much
+      // smaller kit, and never on a home (the Cove-residences lesson above
+      // still governs — `_domestic` is tested here too).
+      //
+      // POSITION HASH, NOT `rand()`. The branch above draws from the shared
+      // stream, and every placement pass written since is hash-driven for one
+      // reason: another rand() call here shifts every facade, tree and detail
+      // downstream of it and re-rolls the whole island. This one must be able
+      // to be added and removed without moving anything else.
+      const hk = (Math.imul(Math.round(_rc[0] * 8) | 0, 0x9E3779B1)
+                ^ Math.imul(Math.round(_rc[1] * 8) | 0, 0x85EBCA77)) >>> 0;
+      const hf = (i) => (((hk >>> (i * 3)) ^ Math.imul(hk + i * 2654435761, 0x27D4EB2F)) >>> 8) % 1000 / 1000;
+      const hr = (i, lo, hi) => lo + hf(i) * (hi - lo);
+      // Same spiral-inward search as the big kit, and the same last resort:
+      // a concave footprint's centroid can be outside it, so a piece that
+      // cannot be proved inside is not placed at all.
+      const spot = (i, reach, need) => {
+        for (let k = 0; k < 6; k++) {
+          const f = 1 - k / 6;
+          const x = _rc[0] + (hr(i + k * 7, -1, 1) * reach) * f;
+          const z = _rc[1] + (hr(i + k * 7 + 3, -1, 1) * reach) * f;
+          if (inFoot(x, z) && inFoot(x + need, z) && inFoot(x - need, z)
+              && inFoot(x, z + need) && inFoot(x, z - need)) return [x, z];
+        }
+        return null;
+      };
+      const reach = Math.min(9, Math.sqrt(b.a) * 0.28);
+      // one water tank, always — the piece every small roof here really has
+      {
+        const r2 = hr(1, 0.7, 1.05);
+        const at = spot(1, reach, r2 + 0.5);
+        if (at) {
+          const tk = new THREE.CylinderGeometry(r2, r2, 1.5, 10);
+          tk.translate(at[0], _roofY + 0.8, at[1]);
+          merger.add(tk, MAT.trim, _rc[0], _rc[1]);
+        }
+      }
+      // a condenser / vent box on most of them
+      if (hf(2) < 0.72) {
+        const w2 = hr(4, 1.0, 1.8), d2 = hr(5, 0.8, 1.4);
+        const at = spot(11, reach, Math.max(w2, d2) / 2 + 0.5);
+        if (at) {
+          const g2 = new THREE.BoxGeometry(w2, hr(6, 0.8, 1.3), d2);
+          g2.translate(at[0], _roofY + 0.5, at[1]);
+          merger.add(g2, MAT.metal, _rc[0], _rc[1]);
+        }
+      }
+      // and a stair or plant housing on the bigger third of them
+      if (hf(7) < 0.34 && b.a > 450) {
+        const w2 = hr(8, 2.2, 3.2), d2 = hr(9, 2.0, 2.8);
+        const at = spot(21, reach * 0.7, Math.max(w2, d2) / 2 + 0.5);
+        if (at) {
+          const sh = new THREE.BoxGeometry(w2, hr(10, 2.2, 2.9), d2);
+          sh.translate(at[0], _roofY + 1.3, at[1]);
+          merger.add(sh, MAT.trim, _rc[0], _rc[1]);
         }
       }
     }

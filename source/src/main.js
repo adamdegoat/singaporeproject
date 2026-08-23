@@ -3282,6 +3282,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
 
   await bstep(0.09, `raising ${(data.buildings || []).length.toLocaleString()} buildings`);
   const bs = P.has('nobuild') ? { count: 0, tall: 0 } : await buildBuildings(world, data);
+  window.__bstats = bs;          // what the building pass actually built
   bmark('buildings');
   // PLANTING GETS ITS OWN STREAM, SO WHAT IS BUILT CANNOT MOVE A TREE.
   //
