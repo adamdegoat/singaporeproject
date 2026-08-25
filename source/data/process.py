@@ -5543,6 +5543,63 @@ def main():
             pass
         barriers.append({"p": [[round(x, 1), round(z, 1)] for x, z in pts],
                          "k": k, "h": h, "L": round(L, 1)})
+    # ...AND THE ONES THAT ARE NODES, WHICH THE LOOP ABOVE THROWS AWAY.
+    #
+    # `e["type"] != "way"` is right for a wall or a fence and it silently drops
+    # every barrier Singapore actually puts ACROSS a road: 46 gates, 23
+    # lift_gates (the red-and-white boom at a car-park or a Cove street) and 2
+    # bollards on Sentosa alone, all of them surveyed, all of them invisible.
+    # Found 2026-08-24 the same way `lamps: 0` was — by counting the tags in the
+    # extract against the layers the scene file carries.
+    #
+    # THE BEARING IS DERIVED, NOT INVENTED. A boom lies ACROSS its road, so it
+    # needs the road's direction, and our extract carries way `geometry` but no
+    # node ids — so there is nothing to join on but the coordinate. The barrier
+    # node sits exactly on one of its way's vertices, so: match within 0.6m and
+    # take the direction of the two vertices either side. 68 of the 71 match a
+    # highway way; the 3 that do not are dropped rather than pointed at a
+    # guess.
+    gates = []
+    _hw = []
+    for e in els:
+        t = e.get("tags") or {}
+        if e["type"] != "way" or "highway" not in t or not e.get("geometry"):
+            continue
+        _hw.append((t, [proj(q["lat"], q["lon"]) for q in e["geometry"] if "lat" in q]))
+    _GK = {"gate", "lift_gate", "bollard"}
+    for e in els:
+        t = e.get("tags") or {}
+        k = t.get("barrier")
+        if k not in _GK or e["type"] != "node":
+            continue
+        x, z = proj(e["lat"], e["lon"])
+        best = None
+        for wt, pts in _hw:
+            for i, (px, pz) in enumerate(pts):
+                dd = math.hypot(px - x, pz - z)
+                if dd >= 0.6 or (best is not None and dd >= best[0]):
+                    continue
+                a, b = pts[max(0, i - 1)], pts[min(len(pts) - 1, i + 1)]
+                if a == b:
+                    continue
+                best = (dd, math.atan2(b[0] - a[0], b[1] - a[1]), wt)
+        if best is None:
+            continue
+        _wt = best[2]
+        gates.append({"p": [round(x, 1), round(z, 1)],
+                      "k": k,
+                      "a": round(best[1], 4),
+                      "hw": _wt.get("highway"),
+                      # the access tag decides how it is DRAWN: a private or
+                      # no-access gate is shut, a permissive one stands open
+                      "acc": t.get("access") or t.get("motor_vehicle") or "",
+                      "n": _wt.get("name")})
+    if gates:
+        from collections import Counter as _GC
+        _gc = _GC(g["k"] for g in gates)
+        print(f"  gates: {len(gates)} nodes "
+              f"({', '.join(f'{k} {n}' for k, n in _gc.most_common())})")
+
     if barriers:
         from collections import Counter as _CB
         _bc = _CB(b["k"] for b in barriers)
@@ -6065,6 +6122,7 @@ def main():
         "piers": piers,
         "steps": steps_out,
         "barriers": barriers,
+        "gates": gates,
         "parkfurn": parkfurn,
         "towers": towers,
         "cranes": cranes,

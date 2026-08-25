@@ -61,7 +61,13 @@ MIN_PIECE = 8.0
 # route that the water itself does not.
 POINT_LAYERS = ["trees", "lamps", "busstops", "crossings", "signals", "taxis",
                 "parkfurn", "attractions", "shops", "mrt", "towers",
-                "gantries"]
+                # `gates` added 2026-08-24 with the layer itself. A layer that
+                # is not in one of these three lists is not clipped, and an
+                # unclipped point layer puts its objects on Pulau Brani and the
+                # Keppel terminal — the ledger at the end of this file prints
+                # every key it did not read, which is how that would be caught,
+                # but it is cheaper to add the name here than to read a ledger.
+                "gantries", "gates"]
 WAY_LAYERS = ["roads", "steps", "bridges", "monorail"]
 AREA_LAYERS = ["green", "covered", "barriers", "land", "piers"]
 

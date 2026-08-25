@@ -1182,3 +1182,36 @@ export function texRender(shutter = false) {
   // beats the reasoning.
   return finish(c, [1, 1]);
 }
+
+
+// THE BOOM BARRIER'S DIAGONAL BANDING, which is the one thing that identifies
+// it from thirty metres. No RNG at all: a boom is a painted, regular pattern,
+// and this file's standing rule is that a texture must never be able to move a
+// bus stop (see the note above `grain`).
+//
+// Drawn on a WIDE, SHORT canvas and repeated along the arm, so the bands stay
+// the same physical size whether the boom is a 3m Cove barrier or a 6m car
+// park one. LTA's booms are red on white with the bands leaning about 30
+// degrees; drawn as parallelograms rather than rotated rectangles so the ends
+// meet the edge cleanly and the tile repeats without a seam.
+export function texBoomBand() {
+  const W = 128, H = 32;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.fillStyle = '#e8e4dc'; x.fillRect(0, 0, W, H);          // weathered white
+  x.fillStyle = '#c0392b';                                   // signal red
+  const lean = H * 0.6, band = W / 4;
+  for (let i = -1; i < 4; i++) {
+    const x0 = i * band;
+    x.beginPath();
+    x.moveTo(x0, H); x.lineTo(x0 + band * 0.5, H);
+    x.lineTo(x0 + band * 0.5 + lean, 0); x.lineTo(x0 + lean, 0);
+    x.closePath(); x.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}

@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance, resetSignAtlas, hashRand } from './tex.js';
-import { MAT, badGeoCount, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, footbridgeIdOf, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, plantSurveyed, openGroundAt, openGroundPolys } from './city.js';
+import { MAT, badGeoCount, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, footbridgeIdOf, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, buildPools, plantSurveyed, openGroundAt, openGroundPolys } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, lambertise, flattenFlatColours, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
@@ -319,6 +319,7 @@ window.__underCanopy = (x, z) => {
 // building test below, because they are supposed to be on the road.
 let ROADIX = null;
 let PATHIX = null;      // footways/pedestrian/steps, for the surface model
+let DRAWNIX = null;     // carriageways PLUS the junction discs and tapers city.js draws
 // the whole region's data, unioned at boot, for passes that must see across a
 // chunk boundary (see the shopfront index)
 let REGIONB = null;
@@ -3030,6 +3031,15 @@ async function buildRegion(data, opts = {}) {
   // standing in the street, including the row you meet at the spawn point.
   ROADIX = buildRoadIndex(opts.regionData || data, data.axis || null);
   window.__onRoad = (x, z, m, ex) => ROADIX.onRoad(x, z, m || 0, ex || null);
+  // ...and the DRAWN carriageway: the same ways plus the junction discs and
+  // width tapers city.js actually lays down (see ROAD_JUNCTION_PAD in
+  // roads.js). ROADIX answers "is this in a mapped way"; this one answers "is
+  // this on tarmac the player can see", which is the question a trunk, a post
+  // or a bollard is really asking. Kept SEPARATE rather than widening ROADIX,
+  // because every existing placement pass is tuned against ROADIX and moving
+  // it would move all of them at once.
+  DRAWNIX = buildRoadIndex(opts.regionData || data, data.axis || null, { drawn: true });
+  window.__onDrawnRoad = (x, z, m, ex) => DRAWNIX.onRoad(x, z, m || 0, ex || null);
   // ...and the footways, for the surface model. See surfaceKindAt().
   PATHIX = buildRoadIndex(opts.regionData || data, null, { paths: true });
   window.__onPath = (x, z, m) => PATHIX.onRoad(x, z, m || 0, null);
@@ -3262,6 +3272,9 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   bmark('sw:buildWater');
   if (!P.has('nowater')) buildPiers(world, data);
   bmark('sw:buildPiers');
+  // the Cove's villa pools — see buildPools: 123 surveyed, nothing read them
+  buildPools(world, data);
+  bmark('sw:buildPools');
   if (!P.has('nowater')) {
     // A LAGOON WITH AN ISLAND IN IT. `hp` carries a water body's inner rings —
     // see data/relparcels.py, which refused three of them outright until the

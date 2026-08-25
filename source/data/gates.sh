@@ -84,6 +84,23 @@ hr "exploratory defects (not a gate)"
 # no world payload left to boot, so this was an exploratory pass over nothing.
 SG_SCENE=sentosa node data/defects.mjs 2>&1 | grep -E "FOUND|findings" | sed 's/^/  /' || true
 
+hr "facade on the roof"
+# The roof cap is the only thing between a flat top and its own wall texture,
+# and it silently skipped 165 of them until 2026-08-24. Counted in FAILED: the
+# defect is invisible from the street and only ever shows from above.
+# NOT `| tail -6 || FAILED=1`: in a pipeline the status is tail's, and this
+# file already records what that costs ("A gate that cannot fail is not a
+# gate", the behaviour note above). Run it, keep the status, then trim.
+_roof=$(SG_SCENE=sentosa node data/roofcheck.mjs 2>&1); [ $? -ne 0 ] && FAILED=1
+echo "$_roof" | tail -6
+
+hr "trees in the road, trees in the sea"
+# Reported by the owner twice (2026-08-22, 2026-08-24). Same pipeline shape as
+# the roof check above: ask the DRAWN world, not the index the placement guard
+# already consults.
+_tree=$(SG_SCENE=sentosa node data/treecheck.mjs 2>&1); [ $? -ne 0 ] && FAILED=1
+echo "$_tree" | tail -6
+
 hr "venue signs"
 SG_SCENE=sentosa node data/signcheck.mjs 2>&1 | tail -12 || FAILED=1
 

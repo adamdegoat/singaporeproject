@@ -45,6 +45,12 @@ const SPOTS = [
   ['siloso-lagoon',  -2231, 12610, 0.6],
   ['groyne-islet',   -2450, 12420, -0.9],
   ['arrival-causeway', -1050, 11700, 0.02],
+  // A NEW LAYER WITH NO GOLDEN IS A LAYER THAT CAN BREAK IN SILENCE. The 44
+  // surveyed gates and boom barriers shipped 2026-08-24 and all 43 frames
+  // MATCHED — which proved the placement stream was untouched and also proved
+  // that not one vantage here could see the new layer. This one looks along
+  // Lakeshore View at a raised boom and its cabinet.
+  ['cove-boom',        726, 13067, -2.36],
   ['fort-siloso',    -2721, 11967, -0.8],
   ['headland-sea',   -3150, 11700, 1.12],
   ['imbiah-trail',   -2070, 12300, 0.4],
@@ -66,6 +72,14 @@ const SPOTS = [
   ['rws-globe',      -1330, 12192, -2.45],
   ['sensoryscape',   -1420, 12480, 0.6],
   ['serapong',       7, 12890, 2.4],
+  // A NEW LAYER WITH NO GOLDEN IS A LAYER THAT CAN BREAK IN SILENCE — the
+  // seventh time this file has made that argument. 175 street lamps shipped on
+  // 2026-08-25 when named `service` ways started being lit (8,046m of Sentosa's
+  // real named streets are tagged that way) and ONE of the 44 frames moved,
+  // because not one camera here stood on any of them. This is Serapong Hill
+  // Road at its own midpoint, aimed down the hill: kerbs, drains, the forest
+  // and a lamp column with its arm over the carriageway.
+  ['serapong-hill',  299.7, 12910.9, -2.18],
   // the owner's own 2026-08-04 screenshot spot: the guideway must never fly
   // unsupported down Gateway Avenue again
   ['gateway-viaduct', -1700, 12690, -0.5],

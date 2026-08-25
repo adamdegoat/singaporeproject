@@ -44,7 +44,10 @@ const browser = await chromium.launch({ headless: true, args: [
 ] });
 const page = await browser.newPage({ viewport: { width: 640, height: 380 }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.log('  page error: ' + e.message.slice(0, 140)));
-await page.goto(`http://localhost:${PORT}/?district=sentosa&nostream&reseed=1&cb=${Date.now()}`,
+// SG_XPARAMS appends URL params, so a failing check can be A/B'd against one
+// flag instead of argued about.
+const XPARAMS = process.env.SG_XPARAMS ? '&' + process.env.SG_XPARAMS : '';
+await page.goto(`http://localhost:${PORT}/?district=sentosa&nostream&reseed=1${XPARAMS}&cb=${Date.now()}`,
   { waitUntil: 'load' });
 await page.waitForFunction(() => window.__ready === true, null, { timeout: 300000, polling: 300 });
 await page.evaluate(() => { window.__noArrive = true; });
@@ -126,7 +129,16 @@ const flight = async (x, z, h, hold, release, doubleTap) => page.evaluate(
         if (doubleTap && a.air && !doubled && a.vy < 1.0) { doubled = true; window.__jump(); }
         // stop one beat after the feet are down again
         if (samples.length > 4 && !a.air && samples[2].air) return done();
-        if (performance.now() - t0 > 4000) return done();
+        // THE WATCHDOG COUNTS FRAMES, NOT MILLISECONDS, and that is the same
+        // lesson this file already teaches two comments above about
+        // performance.now(). Headless renders this world at 2-10fps, so a
+        // 4000ms guard can expire in the middle of a SIX-FRAME hop: it fired
+        // at t=0.5s of a 0.6s flight, the last sample was still 0.400m in the
+        // air, and `land` scored that as where the feet came down. J3 had
+        // been red on a build whose jump traces exactly to spec — launch
+        // 9.476, apex +0.750, land 9.476, drift 0.000 — measured 2026-08-24.
+        // 240 frames is forty times the hop and cannot expire inside one.
+        if (samples.length > 240) return done();
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
@@ -187,7 +199,17 @@ for (const [i, [x, z, h, name]] of sites.entries()) {
   const iUp = r.samples.findIndex((s) => s.air);
   const iDown = r.samples.findIndex((s, k) => k > iUp && !s.air);
   const airT = iDown > 0 ? r.samples[iDown].t : Math.max(0, ...r.samples.map((s) => s.t));
-  const land = r.samples[r.samples.length - 1].y - r.y0;
+  // AND THE LANDING IS READ FROM THE FIRST GROUNDED SAMPLE, not the last
+  // sample of the array. If the loop ever ends while the walker is still in
+  // the air, the last sample is a point on the ARC and scoring it as a landing
+  // reports a hop that worked as a 0.4m error. `null` if the flight never
+  // closed, and a site with no landing is skipped rather than scored.
+  const iLand = r.samples.findIndex((s, k) => k > iUp && !s.air);
+  const land = iLand > 0 ? r.samples[iLand].y - r.y0 : null;
+  if (land === null) {
+    console.log(`      ${name.slice(0, 22).padEnd(22)} skipped (flight never closed in ${r.samples.length} frames)`);
+    continue;
+  }
   apexes.push(apex); airs.push(airT); lands.push(land);
   if (!good++) {
     usable = [x, z, h];

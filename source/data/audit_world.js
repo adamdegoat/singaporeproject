@@ -916,6 +916,11 @@ window.__auditWorld = async function auditWorld() {
                    // terrain under its keel (P3's own two-datums note)
                    afloat: !!o.userData.afloat,
                    cloud: !!o.userData.cloud,
+                   // declared over water on purpose — the boardwalk's own
+                   // fabric flag, read by W2's mesh loop since it existed and
+                   // never by its props loop
+                   bwater: !!(o.material && o.material.userData
+                              && o.material.userData.boardwalkOverWater),
                    flat: g.type === 'PlaneGeometry' });
     }
   });
@@ -1668,9 +1673,18 @@ window.__auditWorld = async function auditWorld() {
   // junction. Only the stretch inside the dressed radius is judged — a street
   // that runs 400m out of the district is not undressed for the part nobody
   // built, and testing its far end reported a bare street that was not bare.
+  // 230 WAS THE DRESSING'S REACH IN JULY AND HAS NOT BEEN SINCE 2026-07-29.
+  // markings.js moved DRESS_REACH to 1200 and then to 2400 under a comment
+  // reading "HALF THE ISLAND HAD NO KERBS", and this literal stayed. On
+  // Sentosa, whose only axis is Sentosa Gateway, that band contains FOUR named
+  // streets — so every C-family finding this island has ever produced was
+  // about the causeway corridor and the Brani port, and Siloso Road, Imbiah
+  // Road, Ocean Drive, Cove Drive and every beach walk were never graded at
+  // all. The dressing publishes the reach it actually used; read it.
+  const REACH = window.__dressReach || 230;
   const dressed = [...streets.entries()]
-    .filter(([, e]) => e.len >= 45 && e.pts.some((p) => axisDist(p[0], p[1]) <= 230))
-    .map(([n, e]) => [n, { len: e.len, pts: e.pts.filter((p) => axisDist(p[0], p[1]) <= 230) }]);
+    .filter(([, e]) => e.len >= 45 && e.pts.some((p) => axisDist(p[0], p[1]) <= REACH))
+    .map(([n, e]) => [n, { len: e.len, pts: e.pts.filter((p) => axisDist(p[0], p[1]) <= REACH) }]);
 
   const propGrid = new Map();
   for (const p of props) {
@@ -1693,7 +1707,8 @@ window.__auditWorld = async function auditWorld() {
     }
     return false;
   };
-  const isKerb = (s) => s === 'BoxGeometry(0.38,0.3,4)' || s === 'BoxGeometry(0.42,0.3,2)';
+  const isKerb = (s, nm) => nm === 'streetKerb'
+    || s === 'BoxGeometry(0.38,0.3,4)' || s === 'BoxGeometry(0.42,0.3,2)';
   // BY NAME FIRST, THEN BY SHAPE. The signature list below is the fifth in
   // this project to rot: it only matches while the mesh still carries its
   // geometry parameters, and a STREAMED district runs consolidate, the LOD
@@ -1703,7 +1718,8 @@ window.__auditWorld = async function auditWorld() {
   const isLamp = (s, nm) => nm === 'streetLamp'
     || s === 'CylinderGeometry(0.11,9)' || s === 'BoxGeometry(0.9,0.16,0.4)'
     || s === 'BoxGeometry(1,0.2,0.44)' || s === 'CylinderGeometry(0.05,2.6)';
-  const isTree = (s) => s === 'SphereGeometry(0.66)' || s === 'IcosahedronGeometry(1)';
+  const isTree = (s, nm) => nm === 'qtree'
+    || s === 'SphereGeometry(0.66)' || s === 'IcosahedronGeometry(1)';
 
   {
     // A street tagged sidewalk=no or sidewalk=separate has no kerbside pavement
@@ -2537,6 +2553,37 @@ window.__auditWorld = async function auditWorld() {
         // read 79 one run and 85 the next with nothing changed in the world.
         // Exempt by mechanism, like P1 and P4 — not by listing car dimensions.
         if (p.actor) continue;
+        // FOUR FLAGS THIS CHECK ALREADY COLLECTED AND NEVER READ, 2026-08-24.
+        //
+        // W2 stood at 960 on sentosa against a recorded baseline of 250, its
+        // budget retired so nothing printed, and its 40 examples all read
+        // "BufferGeometry() in open water" — a signature that names nothing.
+        // Broken down by name, material and userData, the ENTIRE 636-prop half
+        // was these four, every one of them correct by design:
+        //
+        //   415  AFLOAT   moored vessels in the Cove basin and the strait. The
+        //                 props record has carried `afloat` since P3 needed it,
+        //                 for this exact reason: "a moored vessel floats on the
+        //                 sea; its ground question is answered by the water
+        //                 test at placement".
+        //   115  cloud    at y = 130 m. A cloud has not been BUILT in the water.
+        //   106  boardwalk posts and rails, standing on deck fabric that has
+        //                 declared `boardwalkOverWater` all along — W2's own
+        //                 mesh loop honours that flag and its props loop did
+        //                 not, so one structure answered two ways.
+        //     -  foliage  by MECHANISM, replacing the job the OVERHANGS
+        //                 signature list above was doing: it names the three
+        //                 PROCEDURAL tree shapes, and the Quaternius pack trees
+        //                 that replaced them on 2026-08-22 are all
+        //                 `BufferGeometry()`. That cutover is most of why this
+        //                 number tripled, and it is the fourth time a signature
+        //                 allowlist in this file has failed closed on a shape
+        //                 change. The list stays for the old shapes; the flag
+        //                 is what actually holds.
+        //
+        // Nothing about the WORLD changed here. What changed is that the number
+        // now means something: whatever it reports is a thing to look at.
+        if (p.afloat || p.cloud || p.foliage || p.bwater) continue;
         if (OVERHANGS.has(p.sig)) continue;
         if (!inWater(p.x, p.z)) continue;
         // A PROP ON A BRIDGE DECK IS ON THE BRIDGE, and this loop never knew

@@ -43,7 +43,10 @@ page.setDefaultTimeout(120000);
 // lines. Three caps sat between a failing check and its evidence.
 await page.addInitScript((c) => { window.__auditEx = c; },
   +(process.env.SG_EX_CAP || 8));
-await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/?dpr=1&raw=1&streamall=1&scene=${process.env.SG_SCENE || 'sentosa'}`
+// SG_XPARAMS appends URL params, so a pass can be run as an A/B of one flag
+// and a moved defect count attributed instead of guessed at.
+const XPARAMS = process.env.SG_XPARAMS ? '&' + process.env.SG_XPARAMS : '';
+await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/?dpr=1&raw=1&streamall=1&scene=${process.env.SG_SCENE || 'sentosa'}${XPARAMS}`
   + (process.env.SG_EXTRA ? '&' + process.env.SG_EXTRA : ''), { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true || window.__bootError', null, { timeout: 120000 });
 const bootErr = await page.evaluate(() => window.__bootError || null);

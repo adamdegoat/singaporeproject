@@ -35,7 +35,12 @@ const page = await browser.newPage({ viewport: { width: 1400, height: 800 }, dev
 page.on('pageerror', (e) => console.log('  page error:', e.message));
 // SG_EXTRA appends query flags (?far=1400, ?noaa, ?lowpower) so an atmosphere
 // or LOD change can be A/B'd from the same camera without editing the source.
-await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/index.html?dpr=1&scene=${SCENE}`
+// SG_XPARAMS appends URL params, so a look can be taken as an A/B of a flag
+// without editing this file. Added 2026-08-24: two "before and after" aerials
+// came back 174,238 and 174,239 bytes, which is one frame twice — the flag was
+// being passed to a script that had nowhere to put it.
+const XPARAMS = process.env.SG_XPARAMS ? '&' + process.env.SG_XPARAMS : '';
+await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/index.html?dpr=1&scene=${SCENE}${XPARAMS}`
   + (process.env.SG_EXTRA ? '&' + process.env.SG_EXTRA : ''),
   { waitUntil: 'load' });
 await page.waitForFunction('window.__ready === true', null, { polling: 300, timeout: 300000 });

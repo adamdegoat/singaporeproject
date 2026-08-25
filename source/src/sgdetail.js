@@ -2984,6 +2984,17 @@ export async function buildTrails(world, data, Y = null) {
     await YY();
     const RAIL_H = 1.05;
     const timber = new THREE.MeshLambertMaterial({ color: 0x8a6f4e });
+    // A BOARDWALK PILE STANDS IN THE WATER. THAT IS WHAT MAKES IT A PILE.
+    //
+    // The deck these posts carry has declared `boardwalkOverWater` since the
+    // flag existed (waterDeckM above), and W2 honours it on the FABRIC and
+    // counted 106 of the posts and rails standing on that same fabric — the
+    // two halves of one structure answering differently, which is the exact
+    // shape of the bug the flag was invented to end. The contract is unchanged:
+    // these are emitted only along boardwalk deck pieces, so a railing that
+    // appears over water without a deck under it is still a defect and is
+    // still nothing this material can excuse.
+    timber.userData.boardwalkOverWater = true;
     const postG = new THREE.CylinderGeometry(0.055, 0.06, RAIL_H, 5);
     postG.translate(0, RAIL_H / 2, 0);
     const posts = new THREE.InstancedMesh(postG, timber, railPosts.length);

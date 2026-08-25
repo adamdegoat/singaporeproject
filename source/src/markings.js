@@ -9,7 +9,7 @@ import { R, rand, chance, hashRand } from './tex.js';
 // need the same treatment threaded through four placement paths", and that was
 // true when it was written — surfaceAt() is exported now and answers both the
 // 6cm road offset and the deck in one call, so the threading is an import.
-import { MAT, groundAt, surfaceAt } from './city.js';
+import { MAT, groundAt, surfaceAt, bridgeDeckAt, standable } from './city.js';
 import { claim } from './roads.js';
 import { texStreetName, plateTaken } from './wayfind.js';
 
@@ -39,9 +39,34 @@ const YELLOW = new THREE.MeshStandardMaterial({ color: 0xd6ae44, roughness: 0.86
 // drawn on the bay, which the new W2 check caught the first time it ran against
 // real water. One guard at the emit point covers every marking type, rather
 // than threading a water test through six placement loops.
+// NOT `inWater` — `standable`. A CAUSEWAY IS DRY GROUND.
+//
+// This filter is the last thing between a placement list and the world, and it
+// asked the water polygons alone: anything inside one was dropped, deck or no
+// deck. city.js's standable() was written for exactly this and names this file
+// in its own comment ("street.js and markings.js already filtered their
+// furniture by inWater alone, which was right until decks existed and is now
+// too blunt"). It was never wired up here.
+//
+// What it cost: every kerb, drain, gate and lamp on Sentosa Gateway's 390m
+// crossing — the island's only road in — was built, counted as kept, and then
+// silently dropped at the emitter. The deck-lamp pass below reported 23 posts
+// placed while the render showed none, which is how this was found; the
+// counters upstream had no way to see it.
+//
+// It is bounded by construction: standable() says yes over water ONLY where
+// bridgeDeckAt() answers, so a piece 3.6m off the deck edge (a drain, say) is
+// refused exactly as before. Nothing gains permission to stand in open water.
+// `?olddry` restores the blunt test, so anything this change puts in the world
+// can be A/B'd from one camera without editing the file.
+let _OLDDRY = null;
 function dry(list) {
-  if (!window.__inWater) return list;
-  return list.filter((r) => !window.__inWater(r[0], r[2]));
+  if (_OLDDRY === null) _OLDDRY = new URLSearchParams(location.search).has('olddry');
+  if (_OLDDRY) {
+    if (!window.__inWater) return list;
+    return list.filter((r) => !window.__inWater(r[0], r[2]));
+  }
+  return list.filter((r) => standable(r[0], r[2]));
 }
 
 // A ROAD MARKING BELONGS ON THE ROAD.
@@ -605,6 +630,23 @@ const LAMPS_DONE = new WeakSet();
 // (black pole + white globe — a different, real, Sentosa piece; do not merge
 // the two, see the 2026-08-22 street-lamp-swap decision).
 const LIT_KINDS = new Set(['residential', 'unclassified', 'tertiary', 'secondary']);
+// A ROAD WITH A NAME IS A ROAD, whatever OSM classes it as.
+//
+// `service` was excluded outright when the lamps were synthesised, on the
+// argument that a car-park aisle is not a lit road. True of an UNNAMED one. On
+// Sentosa, where most of the estate is private, OSM tags 8,046 metres of the
+// island's actual named streets `service` — Beach View (1,455m), Serapong
+// Course Road, Ironside Road, Woolwich Road, Serapong Hill Road, Imbiah Road,
+// Siloso Road, Larkhill Road, Gunner Lane, Bukit Manis Road, Artillery Avenue
+// — against 14,667m of genuinely unnamed aisles and set-downs. So the rule is
+// the NAME, which is the only thing in the data that separates the two, and it
+// is the same shape of finding as `lamps: 0`: a real distinction the map
+// already carries and nothing was reading.
+//
+// Found by fixing audit_world's C3, not by looking: the check was grading four
+// streets in a 230m band and reported "0 streets unlit" while Gunner Lane,
+// Bird Cage Walk and Serapong Hill Road had no post on them at all.
+const lit = (r) => LIT_KINDS.has(r.k) || (r.k === 'service' && !!r.n);
 const LAMP_SPACING = 32;
 export function lampSpots(data) {
   if (data.lamps && data.lamps.length) return data.lamps;   // a real survey wins
@@ -615,7 +657,7 @@ export function lampSpots(data) {
   if (!window.__onRoad) return [];
   const out = [];
   for (const r of (data.roads || [])) {
-    if (!LIT_KINDS.has(r.k) || !r.p || r.p.length < 2) continue;
+    if (!lit(r) || !r.p || r.p.length < 2) continue;
     let acc = 0;
     for (let i = 0; i < r.p.length - 1; i++) {
       const [ax, az] = r.p[i], [bx, bz] = r.p[i + 1];
@@ -647,6 +689,10 @@ export function lampSpots(data) {
 export async function dressSideStreets(world, data, axis, blockedIn, TreeField, done = null, reachOverride = 0, Y = null) {
   const trees = new TreeField();
   const kerb = [], lamp = [], lampArm = [], drain = [];
+  // the surveyed node barriers: see the gate pass below the lamp loop
+  const boomPost = [], boomArm = [], gatePost = [], gateLeaf = [], gateBollard = [];
+  // the bracket between a post and its luminaire — see the emit below
+  const lampNeck = [];
   // AT THE TOP OF THE SCOPE THAT USES IT, not beside the other kerb constants
   // 120 lines below where it is read. That is the temporal-dead-zone trap this
   // project has already taken a boot down with twice (HANDOFF: "the USS arch
@@ -691,6 +737,14 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
   // after the first frame -- see the deferred pass in main.js.
   const REACH = reachOverride
     || +(new URLSearchParams(location.search).get('reach')) || DRESS_REACH;
+  // ...AND THE AUDIT HAS TO JUDGE THE SAME BAND THE DRESSING BUILT. C1/C2/C3/C5
+  // carried a private literal of 230 — the value this reach had before
+  // 2026-07-29 — so on Sentosa they graded FOUR streets out of forty and every
+  // finding was about the causeway corridor. Third time a copy of this number
+  // has drifted (shopfront.js's StreetGrid was the second, and its comment
+  // says "Import THIS, never copy it"); the audit is injected as raw script
+  // and cannot import, so it reads the number the run actually used.
+  window.__dressReach = Math.max(window.__dressReach || 0, REACH);
   const A = axis.p;
   const nearAxis = (x, z, reach = REACH) => {
     for (let i = 0; i < A.length - 1; i++) {
@@ -1136,7 +1190,15 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     window.__kerbApronDropped = (window.__kerbApronDropped || 0) + (list.length - out.length);
     return out;
   };
-  emit(new THREE.BoxGeometry(0.38, 0.3, 4.7), MAT.kerb, offApron(kerbCross(dedupeProps(kerbClear, 0.6))), kerbSeat);
+  // NAMED. audit_world's C1 ("streets with no kerbs") recognised a kerb by the
+  // signature `BoxGeometry(0.38,0.3,4)` and this box has been 4.7m long for
+  // longer than anyone can date, so C1 matched NOTHING and reported every
+  // dressed street as kerbless — a BLOCKER-severity check held quiet only by a
+  // per-district baseline. Sixth signature list in this project to rot. The
+  // name survives consolidate, the LOD compactor and the material dedupe;
+  // the shape does not.
+  emit(new THREE.BoxGeometry(0.38, 0.3, 4.7), MAT.kerb,
+       offApron(kerbCross(dedupeProps(kerbClear, 0.6))), kerbSeat, 'streetKerb');
   // ...AND THE DRAIN BESIDE IT, IN THREE PARTS THAT SHARE ONE LIST.
   //
   // 600mm channel between two 150mm lips, per LTA/SDRE14/2/DRA3. The lateral
@@ -1261,23 +1323,30 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     // reading material.name — emit() names the MESH). Cheap enough to leave
     // in: seven integers, written once per district build.
     const _dbg = (window.__lampDbg = { cand: 0, blocked: 0, onroad: 0, claim: 0, nodir: 0, arm: 0, kept: 0 });
+    // ...AND WHERE. The counters above say six guards dropped 75 posts and
+    // cannot say which stretch of road went dark. The causeway went dark and
+    // it took a hand-written replica of lampSpots() to find out why — a
+    // replica that then disagreed with the real loop, because it called
+    // __blockedAt (a movement test) and not this pass's own `blockedIn`.
+    // One array of [x, z, reason] costs nothing and answers it directly.
+    const _rej = (window.__lampRej = []);
     for (const [lx, lz] of lampSpots(data)) {
       _dbg.cand++;
       if (Y && performance.now() - _lt > 6) { await Y(); _lt = performance.now(); }
       // `blockedIn` is the parameter; `isBlocked` is an alias declared inside
       // the per-road loop and is not in scope out here.
-      if (blockedIn(lx, lz)) { _dbg.blocked++; continue; }
+      if (blockedIn(lx, lz)) { _dbg.blocked++; _rej.push([+lx.toFixed(1), +lz.toFixed(1), 'blocked']); continue; }
       // A SURVEYED POST INSIDE OUR DRAWN CARRIAGEWAY IS A RASTER CONFLICT,
       // not a lamp: Allanbrooke Road's median posts sit between twin
       // carriageways our ribbons cover (28 of the widened box's 29 lamps
       // stood in live lanes, P1). Refuse rather than stand in traffic —
       // the same rule every failed clearance search follows.
-      if (window.__onRoad && window.__onRoad(lx, lz, 0.3)) { _dbg.onroad++; continue; }
-      if (!claim('lamp', lx, lz, 3)) { _dbg.claim++; continue; }
+      if (window.__onRoad && window.__onRoad(lx, lz, 0.3)) { _dbg.onroad++; _rej.push([+lx.toFixed(1), +lz.toFixed(1), 'onroad']); continue; }
+      if (!claim('lamp', lx, lz, 3)) { _dbg.claim++; _rej.push([+lx.toFixed(1), +lz.toFixed(1), 'claim']); continue; }
       // the arm reaches toward the carriageway: take the road direction here and
       // decide the side from which way the road actually lies
       const dir = dirAt(lx, lz);
-      if (!dir) { _dbg.nodir++; continue; }
+      if (!dir) { _dbg.nodir++; _rej.push([+lx.toFixed(1), +lz.toFixed(1), 'nodir']); continue; }
       const [ux2, uz2] = dir;
       const ang2 = Math.atan2(ux2, uz2);
       const nx2 = -uz2, nz2 = ux2;
@@ -1293,20 +1362,247 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
       const armClear = (sg) => !blockedIn(lx - nx2 * 0.9 * sg, lz - nz2 * 0.9 * sg);
       if (!armClear(sgn2)) {
         if (armClear(-sgn2)) sgn2 = -sgn2;
-        else { _dbg.arm++; continue; }
+        else { _dbg.arm++; _rej.push([+lx.toFixed(1), +lz.toFixed(1), 'arm']); continue; }
       }
       _dbg.kept++;
       lamp.push([lx, 3.6, lz, ang2]);
       // the arm grounds at the POLE (lx, lz), not at its own offset — the
       // Leonie Hill floating-luminaire class
       lampArm.push([lx - nx2 * 0.9 * sgn2, 7.0, lz - nz2 * 0.9 * sgn2, ang2, sgn2, lx, lz]);
+      lampNeck.push([lx - nx2 * 0.45 * sgn2, 7.0, lz - nz2 * 0.45 * sgn2, ang2, sgn2, lx, lz]);
+    }
+
+    // ---- THE ONE ROAD THIS PASS COULD NEVER LIGHT WAS THE ISLAND'S ONLY
+    // ROAD IN.
+    //
+    // 27 of the 46 posts `blockedIn` refused above are Sentosa Gateway's, and
+    // the guard was right every time. lampSpots() finds the verge by stepping
+    // out until the tarmac ends and then standing 0.9m clear of it, and 0.9m
+    // clear of a causeway is the sea — every candidate landed in open water,
+    // where main.js's blocked() correctly calls water a wall. So the 390m
+    // crossing carried no lamp and nothing else vertical either, which is
+    // exactly what three coverage sweeps have called "a bare concrete
+    // corridor, and it is the island's front door".
+    //
+    // NOT FOUND BY LOOKING AT IT — the sweeps had said "bare" three times and
+    // nobody could say why. Found by recording WHERE each guard fired
+    // (`window.__lampRej`, added with this) and by probing the whole deck box
+    // in the built scene, which returned boardwalk posts and nothing else.
+    //
+    // A BRIDGE HAS NO VERGE; IT HAS AN EDGE BEAM, AND THAT IS WHERE ITS
+    // LIGHTING STANDS. bridgeFabric lays the parapet at `half + 0.36`, so the
+    // column goes on that same line — outside the carriageway by construction,
+    // so there is no raster search to get wrong and nothing for T1 or P1b to
+    // read as an obstruction in a live lane.
+    //
+    // THIS IS THE BOUNDED UNBLOCK main.js ASKS FOR, AND ONLY THAT. blocked()'s
+    // note says water may stop being a wall only once the dressing is bounded
+    // to the deck's own footprint. This loop never leaves the deck: the post is
+    // refused unless bridgeDeckAt() answers under it AND that answer is the
+    // same deck the centreline stands on. One placement loop, not the
+    // predicate — the predicate stays exactly as it is.
+    //
+    // ZERO rand() DRAWS. The side is the same position hash lampSpots uses, so
+    // every facade and tree downstream of this point is untouched.
+    const P2 = new URLSearchParams(location.search);
+    if (!P2.has('nolamps') && !P2.has('nodecklamps')) {
+      const _dl = (window.__deckLampDbg =
+        { cand: 0, notaloft: 0, offdeck: 0, claim: 0, kept: 0 });
+      for (const r of (data.roads || [])) {
+        if (!r.bridge || !lit(r) || !r.p || r.p.length < 2) continue;
+        const half = (r.w || 7) / 2;
+        let acc = 0;
+        for (let i = 0; i < r.p.length - 1; i++) {
+          const [ax, az] = r.p[i], [bx, bz] = r.p[i + 1];
+          const L = Math.hypot(bx - ax, bz - az);
+          if (L < 0.5) continue;
+          const ux = (bx - ax) / L, uz = (bz - az) / L;
+          for (let s2 = LAMP_SPACING - acc; s2 <= L; s2 += LAMP_SPACING) {
+            const px = ax + ux * s2, pz = az + uz * s2;
+            // ALOFT, AND OVER WATER. `bridge=yes` is also how OSM tags
+            // culverts and kerb-height crossings — bridgeFabric refuses those
+            // its own fabric for the same reason — and a bridge over LAND
+            // already has a real verge and a real lamp from the pass above.
+            // Giving it a second one on the edge beam would double it up.
+            const deckY = bridgeDeckAt(px, pz);
+            if (deckY === null || deckY - groundAt(px, pz) < 2.4
+                || groundAt(px, pz) > 0.4) { _dl.notaloft++; continue; }
+            _dl.cand++;
+            const h = (Math.imul(Math.round(px * 4) | 0, 0x9E3779B1)
+                     ^ Math.imul(Math.round(pz * 4) | 0, 0x85EBCA77)) >>> 0;
+            const side = (h & 1) ? 1 : -1;
+            const nx = -uz * side, nz = ux * side;
+            // The parapet line first, then two fallbacks inboard of it: the
+            // deck registry answers within `half + 0.4` and the parapet sits at
+            // `half + 0.36`, which is four centimetres of margin on a number
+            // that comes from a different file. Ask, do not assume.
+            let lx = 0, lz = 0, ok = false;
+            for (const off of [half + 0.36, half + 0.30, half + 0.24]) {
+              const qx = px + nx * off, qz = pz + nz * off;
+              const dy = bridgeDeckAt(qx, qz);
+              if (dy === null || Math.abs(dy - deckY) > 0.35) continue;
+              lx = qx; lz = qz; ok = true; break;
+            }
+            if (!ok) { _dl.offdeck++; continue; }
+            if (!claim('lamp', lx, lz, 3)) { _dl.claim++; continue; }
+            _dl.kept++;
+            const ang2 = Math.atan2(ux, uz);
+            // The arm reaches IN over the carriageway. On a bridge there is no
+            // ambiguity about which side that is — the post stands on the edge
+            // beam, so the road is always back along -n.
+            lamp.push([lx, 3.6, lz, ang2]);
+            lampArm.push([lx - nx * 0.9, 7.0, lz - nz * 0.9, ang2, side, lx, lz]);
+            lampNeck.push([lx - nx * 0.45, 7.0, lz - nz * 0.45, ang2, side, lx, lz]);
+          }
+          acc = (acc + L) % LAMP_SPACING;
+        }
+      }
+    }
+  }
+
+  // SURVEYED GATES AND BOOM BARRIERS — the layer that was never read.
+  //
+  // `barrier=gate` (26), `barrier=lift_gate` (17) and `barrier=bollard` (1)
+  // are OSM NODES, and process.py's barrier pass has always tested
+  // `e["type"] != "way"` — right for a wall or a fence, and it threw away
+  // every barrier Singapore puts ACROSS a road. Found 2026-08-24 by counting
+  // the tags in the extract against the layers the scene file carries, which
+  // is how `lamps: 0` was found and how the roof cap was found. The bearing is
+  // the DIRECTION OF THE WAY the node sits on, matched by coordinate because
+  // our extract has way geometry but no node ids: derived, never invented.
+  //
+  // EVERYTHING IS DRAWN OPEN, and that is a decision, not a shortcut. A boom
+  // lying across the carriageway is a solid object in the riding lane — the
+  // exact thing T1 exists to refuse and the exact thing the owner would ride
+  // into. Real booms at a Cove street or a car park stand UP between vehicles
+  // anyway, so the raised arm is both the honest pose and the playable one.
+  // The gates swing their leaf back along the verge for the same reason.
+  if (data.gates && data.gates.length && !new URLSearchParams(location.search).has('nogates')) {
+    const _gdbg = (window.__gateDbg = { cand: 0, blocked: 0, kept: 0, boom: 0, leaf: 0 });
+    for (const g of data.gates) {
+      _gdbg.cand++;
+      const [gx, gz] = g.p;
+      // the half width of the way it crosses, so a footway gate is not given a
+      // car-park boom's reach. Our roads carry `w`; a node knows only its
+      // way's CLASS, so this is the class default and it is stated once.
+      const HALF = { footway: 1.3, path: 1.3, service: 2.4, residential: 3.2,
+        unclassified: 3.2, tertiary: 3.6, secondary: 4.2 };
+      const half = HALF[g.rk || g.hw] || 2.4;
+      const ang = g.a;                       // along the way
+      const ux = Math.sin(ang), uz = Math.cos(ang);
+      const nx3 = -uz, nz3 = ux;             // across it: where the posts stand
+      // the post stands just OUTSIDE the running surface, on the verge
+      const px1 = gx + nx3 * (half + 0.35), pz1 = gz + nz3 * (half + 0.35);
+      const px2 = gx - nx3 * (half + 0.35), pz2 = gz - nz3 * (half + 0.35);
+      if (blockedIn(px1, pz1) && blockedIn(px2, pz2)) { _gdbg.blocked++; continue; }
+      _gdbg.kept++;
+      if (g.k === 'bollard') { gateBollard.push([gx, 0.45, gz, ang]); continue; }
+      if (g.k === 'lift_gate') {
+        // pedestal on whichever side is clear, boom hinged on it and raised
+        const s1 = blockedIn(px1, pz1) ? -1 : 1;
+        const hx = gx + nx3 * (half + 0.35) * s1, hz = gz + nz3 * (half + 0.35) * s1;
+        boomPost.push([hx, 0.55, hz, ang]);
+        // the arm: hinged at 1.05m, raised 72 degrees, so its tip is over the
+        // verge and nothing of it is in the lane
+        boomArm.push([hx, 1.05, hz, ang, s1, half]);
+        _gdbg.boom++;
+        continue;
+      }
+      // a swing gate: a post each side that is clear, and the leaf folded back
+      for (const [qx, qz] of [[px1, pz1], [px2, pz2]]) {
+        if (blockedIn(qx, qz)) continue;
+        gatePost.push([qx, 0.85, qz, ang]);
+      }
+      const s2 = blockedIn(px1, pz1) ? -1 : 1;
+      const lx2 = gx + nx3 * (half + 0.35) * s2, lz2 = gz + nz3 * (half + 0.35) * s2;
+      gateLeaf.push([lx2, 0.75, lz2, ang, s2, half]);
+      _gdbg.leaf++;
     }
   }
 
   emit(new THREE.CylinderGeometry(0.09, 0.13, 7.2, 8), MAT.metal, lamp, yaw, 'streetLamp');
-  emit(new THREE.BoxGeometry(0.9, 0.16, 0.4), MAT.trim, lampArm, (r) => {
+  const armSeat = (r) => {
     p.set(r[0], surfaceAt(r[5], r[6]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e);
-  }, 'streetLamp');
+  };
+  emit(new THREE.BoxGeometry(0.9, 0.16, 0.4), MAT.trim, lampArm, armSeat, 'streetLamp');
+  // THE LUMINAIRE WAS HANGING IN THE AIR BESIDE ITS OWN POST, on all 589 of
+  // them. The arm is pushed 0.9m across the way and the box is 0.9m long, so it
+  // spans 0.45..1.35m out and the post's surface is at 0.13m: a 32cm gap of
+  // sky, which at 40m is a clearly visible break (golden `arrival-causeway`,
+  // crop at 5x). Nothing was wrong with either number on its own — one is where
+  // the light should fall, the other is how big a lantern is — and neither pass
+  // ever asked what was BETWEEN them.
+  //
+  // A bracket, not a longer lantern: stretching the box to 1.35m would close
+  // the gap and turn a street lamp into a flat bar on a stick. This is the
+  // piece a real post actually has, in the post's own metal rather than the
+  // lantern's trim, spanning 0.13..0.77m so it meets both. One more instanced
+  // mesh, so ONE draw call for every lamp on the island.
+  emit(new THREE.BoxGeometry(0.64, 0.09, 0.09), MAT.metal, lampNeck, armSeat, 'streetLamp');
+  // THE GATES. All instanced, so the whole layer is five draw calls whatever
+  // the count — the same argument the lamps proved on 2026-08-23.
+  //
+  // `boomSeat` and `leafSeat` are their own transforms because both pieces are
+  // HINGED: they are placed at the post and swing out from it, so their
+  // origin is the hinge and not their own centre. Seating them with `yaw`
+  // would put the middle of the arm on the post and half the boom inside it.
+  // FIRST DRAFT, REJECTED AT THE RENDER, and both faults are the same fault:
+  // a number that was reasoned about instead of looked at.
+  //   * the boom was `half * 2 + 0.8` long and raised 72 degrees, so on a
+  //     residential street it was a 7.2m arm whose tip finished ABOVE THE TREE
+  //     LINE — a barber's pole on a mast, not a barrier. An arm only has to
+  //     clear the surface it swings over: half + 0.6, and 82 degrees, which
+  //     keeps the tip inside its own footprint.
+  //   * the gate leaf was a 1.2m x 2.6m PANEL 6cm thick, and an opaque dark
+  //     slab standing on end beside a road reads as a billboard. A Sentosa
+  //     estate gate is a see-through metal frame, so it is drawn as what you
+  //     actually see of one: two horizontal rails between the posts.
+  const boomGeo = new THREE.BoxGeometry(1, 0.11, 0.11);
+  boomGeo.translate(0.5, 0, 0);            // origin at the hinge end
+  const BOOM_LIFT = 1.43;                  // 82 degrees, near upright
+  // THE YAW WAS DERIVED, THEN CHECKED IN A RENDER, AND THE FIRST DERIVATION
+  // WAS WRONG TWICE. This file's convention (see the kerb emitter) is that a
+  // yaw of `atan2(ux, uz)` puts local +Z along the way, so a piece built along
+  // local +X needs a quarter turn — and the sign of it depends on which side
+  // the post stands. Written out once here rather than guessed at each site:
+  //
+  //     way direction u = (sin a, cos a)      across n = (-cos a, sin a)
+  //     a yaw of t sends local +X to (cos t, -sin t)
+  //     the arm must point from its post toward the centre: -s * n
+  //       => t = a for s = +1, t = a + PI for s = -1
+  //
+  // AND THE LIFT IS ALWAYS UP. It was `BOOM_LIFT * r[4]`, which reads as "tilt
+  // it away from the post" and actually pitched every boom on the far side of
+  // its road THROUGH THE GROUND. The render is what said so; the algebra
+  // looked fine.
+  const boomSeat = (r) => {
+    p.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]);
+    e.set(0, r[3] + (r[4] > 0 ? 0 : Math.PI), BOOM_LIFT, 'YZX');
+    q.setFromEuler(e);
+    s.set(r[5] + 0.6, 1, 1);
+  };
+  emit(boomGeo, MAT.boom, boomArm, boomSeat, 'gateBoom');
+  s.set(1, 1, 1);
+  emit(new THREE.BoxGeometry(0.3, 1.1, 0.26), MAT.boomPost, boomPost, yaw, 'gateCabinet');
+  emit(new THREE.CylinderGeometry(0.06, 0.07, 1.5, 8), MAT.gateBar, gatePost, yaw, 'gatePost');
+  const railGeo = new THREE.BoxGeometry(1, 0.07, 0.05);
+  railGeo.translate(0.5, 0, 0);
+  const railSeat = (dy) => (r) => {
+    p.set(r[0], surfaceAt(r[0], r[2]) + dy, r[2]);
+    // folded BACK ALONG THE VERGE: the leaf lies parallel to the way, not
+    // across it, so nothing of it stands in the running surface. Same quarter
+    // turn as the boom above and for the same reason — the first version used
+    // the bare bearing and hung both rails out over the carriageway, which is
+    // what the render at Cove Drive showed.
+    e.set(0, r[3] - Math.PI / 2, 0);
+    q.setFromEuler(e);
+    s.set(Math.min(2.4, r[5] * 1.3), 1, 1);
+  };
+  emit(railGeo, MAT.gateBar, gateLeaf, railSeat(1.16), 'gateLeaf');
+  s.set(1, 1, 1);
+  emit(railGeo, MAT.gateBar, gateLeaf, railSeat(0.52), 'gateLeaf');
+  s.set(1, 1, 1);
+  emit(new THREE.CylinderGeometry(0.075, 0.09, 0.9, 8), MAT.boomPost, gateBollard, yaw, 'gateBollard');
   const treeCount = trees.build(world);
   return { sideRoads: roads, sideSkipped: skipped, sideTrees: treeCount,
            sideKerbs: kerb.length, sideCrossings, sidewalkReal, sidewalkNone,

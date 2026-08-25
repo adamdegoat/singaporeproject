@@ -10,6 +10,48 @@
 
 const CELL = 40;
 
+// THE DRAWN TARMAC IS WIDER THAN THE WAYS IT IS DRAWN FROM, and these are the
+// two numbers by which. city.js lays a DISC at every node two or more ways
+// share, radius = the widest half-width meeting there + ROAD_JUNCTION_PAD, and
+// re-lays a narrow way's first ROAD_TAPER_LEN metres at the wide width where
+// the widths differ by more than a metre. Neither exists in `data.roads`, so
+// an index built from the ways alone reports "not a road" for ground the
+// player can plainly see is road.
+//
+// That gap is what put eighteen full-size trees on the tarmac — the owner's
+// "trees in middle of roads", 2026-08-24, and the SECOND time this has been
+// reported (2026-08-22 was answered by nudging a margin from 0 to 0.5, which
+// is what you do when you have not measured the cause). Measured this time:
+// every one of the eighteen reads onRoad(margin 0) NO and onRoad(margin 2)
+// YES, which is the disc and the taper exactly.
+//
+// They live HERE and city.js imports them, so the shape that is drawn and the
+// shape that is tested cannot drift apart again.
+export const ROAD_JUNCTION_PAD = 0.6;
+export const ROAD_TAPER_LEN = 9;
+export const ROAD_NODE_SNAP = 0.5;
+// ...AND THE THIRD NUMBER, WHICH IS THE ONE THE FIRST PASS MISSED.
+//
+// ribbon() in city.js pushes BOTH ends of every way out past its own terminal
+// node by `half * ROAD_END_EXT`, so junction mouths are covered. The index
+// stopped at the node, so a strip of drawn tarmac up to 6.3m long on an 11.4m
+// way — and 8.1m on the 14.8m Sentosa Gateway — was road that no test knew
+// about.
+//
+// THAT IS BOTH OF THE TWO TREES treecheck has been carrying as a named
+// residue since 2026-08-24 ("cause not pinned down; someone should"). Pinned
+// down 2026-08-25 by REPRODUCING ribbon()'s own polygon — subdivision, end
+// extension, mitred offsets — and testing the trunk against each quad of the
+// strip: (-891.3,12376.4) is inside segment 28 of 29 of an 11.4m service way,
+// (-1063.7,12181.3) inside segment 0 of 17 of Sentosa Gateway. Both END
+// segments, both the extension, neither a disc, a taper or a mitre. Guessing
+// from distances had suggested the mitre and would have been wrong.
+//
+// city.js imports this rather than keeping its own literal, for the reason the
+// block above already gives: the shape that is drawn and the shape that is
+// tested may not drift apart again.
+export const ROAD_END_EXT = 1.1;
+
 // `opts.paths` builds the MIRROR of this index: the footways, pedestrian
 // streets and steps that the carriageway index deliberately excludes. The
 // surface model needs both — a paved footpath rolls like a road, and without
@@ -45,6 +87,74 @@ export function buildRoadIndex(data, axis, opts = {}) {
       add(r.p[i][0], r.p[i][1], r.p[i + 1][0], r.p[i + 1][1], half, r.n || null);
     }
   }
+  // ...AND THE JUNCTION DISCS AND WIDTH TAPERS, when asked for the DRAWN road
+  // rather than the mapped one. `opts.drawn` builds the index a placement test
+  // wants: the surface as it appears, not the centreline data it came from.
+  // Kept opt-in so the carriageway index that every existing pass is tuned
+  // against does not silently move under it.
+  if (opts.drawn && !PATHS) {
+    const nodes = new Map();
+    for (const r of (data.roads || [])) {
+      if (r.k === 'pedestrian' || r.k === 'footway' || r.bridge) continue;
+      const p = r.p || [];
+      if (p.length < 2) continue;
+      const hw = (r.w || 6) / 2;
+      for (const [x, z] of p) {
+        const k = Math.round(x / ROAD_NODE_SNAP) + ',' + Math.round(z / ROAD_NODE_SNAP);
+        const e = nodes.get(k);
+        if (!e) nodes.set(k, { x, z, hw, ways: new Set([r]) });
+        else { e.hw = Math.max(e.hw, hw); e.ways.add(r); }
+      }
+    }
+    for (const e of nodes.values()) {
+      if (e.ways.size < 2) continue;
+      // the disc, as a zero-length segment: onRoad measures distance to the
+      // segment, so a point-segment of radius R IS the disc
+      add(e.x, e.z, e.x, e.z, e.hw + ROAD_JUNCTION_PAD, null);
+      const wide = Math.max(...[...e.ways].map((r) => (r.w || 6)));
+      for (const r of e.ways) {
+        const w = r.w || 6;
+        if (wide - w <= 1.0) continue;
+        const p = r.p || [];
+        if (p.length < 2) continue;
+        const dStart = Math.hypot(p[0][0] - e.x, p[0][1] - e.z);
+        const dEnd = Math.hypot(p[p.length - 1][0] - e.x, p[p.length - 1][1] - e.z);
+        if (Math.min(dStart, dEnd) > ROAD_NODE_SNAP * 4) continue;
+        const seq = dStart <= dEnd ? p : [...p].reverse();
+        let run = 0;
+        for (let i = 1; i < seq.length && run < ROAD_TAPER_LEN; i++) {
+          const d = Math.hypot(seq[i][0] - seq[i - 1][0], seq[i][1] - seq[i - 1][1]);
+          const t = run + d <= ROAD_TAPER_LEN ? 1 : (ROAD_TAPER_LEN - run) / d;
+          add(seq[i - 1][0], seq[i - 1][1],
+              seq[i - 1][0] + (seq[i][0] - seq[i - 1][0]) * t,
+              seq[i - 1][1] + (seq[i][1] - seq[i - 1][1]) * t,
+              wide / 2, r.n || null);
+          run += d;
+        }
+      }
+    }
+    // THE END EXTENSION, on every way including bridges. The disc/taper block
+    // above skips bridge ways because city.js's disc pass does; the extension
+    // is not a junction treatment, it is part of every ribbon ever laid, and
+    // Sentosa Gateway's is what the second stray tree was standing on.
+    for (const r of (data.roads || [])) {
+      if (r.k === 'footway' || r.k === 'pedestrian' || r.k === 'steps') continue;
+      const p = r.p || [];
+      if (p.length < 2) continue;
+      const half = (r.w || 6) / 2;
+      const ext = half * ROAD_END_EXT;
+      // tip, and the point just inside it: the extension runs from the tip
+      // AWAY from the way, which is the direction ribbon() sends it
+      for (const [tip, inner] of [[p[0], p[1]], [p[p.length - 1], p[p.length - 2]]]) {
+        const dx = tip[0] - inner[0], dz = tip[1] - inner[1];
+        const L = Math.hypot(dx, dz);
+        if (L < 1e-6) continue;
+        add(tip[0], tip[1], tip[0] + (dx / L) * ext, tip[1] + (dz / L) * ext,
+            half, r.n || null);
+      }
+    }
+  }
+
   // the stitched main axis is wider than the fragments it was built from
   if (axis && !PATHS) {
     const half = axis.w / 2;

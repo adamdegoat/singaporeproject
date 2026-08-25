@@ -161,6 +161,12 @@ export function buildQTrees(world, items, terrainAt) {
     const nearMesh = new THREE.InstancedMesh(geoFor(t), mat, n);
     const farMesh = new THREE.InstancedMesh(cardFor(t), mat, n);
     for (const mesh of [nearMesh, farMesh]) {
+      // NAMED, for the same reason the kerbs now are: audit_world's C5
+      // ("streets with no greenery") recognised a tree by SphereGeometry(0.66)
+      // / IcosahedronGeometry(1), and the Quaternius pack that replaced the
+      // procedural shapes on 2026-08-22 is all anonymous BufferGeometry. A
+      // check that cannot see the thing it counts reports zero and passes.
+      mesh.name = 'qtree';
       mesh.castShadow = mesh === nearMesh;
       mesh.frustumCulled = false;
       mesh.userData.treeTrunk = true;

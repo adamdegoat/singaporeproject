@@ -1592,6 +1592,15 @@ function shophouse(api, b, overlapped = false) {
       api.merge(gable, trim, cx0, cz0);
     }
   } else {
+    // THE FLAT-ROOFED INFILL NEEDS A DECK, NOT JUST A PARAPET. Variant 3 is
+    // one shophouse in four and it was getting the upstand and nothing under
+    // it, so the mass's own top face — the shophouse WALL texture, three
+    // floors of shuttered windows — lay flat where the roof should be. Found
+    // 2026-08-24 by casting down onto the roof and reading the hit material;
+    // the same defect the flat-roof cap in city.js exists to prevent, in the
+    // one recipe that never reaches it.
+    api.merge(api.extrudeGeo(api.grow(b.p, 0.985), 0.12, b.h - 0.12),
+      api.mat.roofDeck || trim, cx0, cz0);
     api.merge(api.extrudeGeo(api.grow(b.p, 1.05), 0.8, b.h + 0.5), trim, cx0, cz0);
   }
 

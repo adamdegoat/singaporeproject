@@ -2,9 +2,13 @@
 // pavements, canopy trees, covered walkway, crossings, street furniture.
 import * as THREE from '../lib/three.module.js';
 import { TOUCH } from './input.js';
+// ONE NUMBER, ONE HOME. The ribbon's end overhang is a fact the placement
+// index has to know as exactly as the drawing code does — see the note beside
+// it in roads.js, and the two stray trees it cost.
+import { ROAD_END_EXT } from './roads.js';
 import { buildQTrees } from './qtrees.js';
 import { scatterVerges, scatterFoundations } from './qground.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws } from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws, texBoomBand} from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV,
          constructionSite } from './landmarks.js';
 
@@ -75,6 +79,17 @@ const RENDER_TEX_SHOW = texRenderShow();
 // let the place set its own default instead of inheriting the CBD's.
 let RESORTISH = false;
 const NOROOFKIT = new URLSearchParams(location.search).has('noroofkit');   // A/B the small-roof plant kit
+const NOROOFCAP = new URLSearchParams(location.search).has('noroofcap');   // A/B the roof cap itself
+// A/B the 2026-08-24 tree guards, so data/treecheck.mjs can be proven to bite
+const OLDTREEGUARD = new URLSearchParams(location.search).has('oldtreeguard');
+// what the cap decision did, per build — the lamp pass earned this the hard
+// way: count from the placement, never from the scene graph.
+const _CAPDBG = (window.__roofCapDbg = { capped: 0, lifted: 0, grown: 0, small: 0,
+  deckOnly: 0, bare: { canopy: 0, 'own roof': 0, tiny: 0, low: 0, 'thin lift': 0 },
+  // every footprint over 1,000 m2 that ends up WITHOUT a closed top, named
+  // by where it stands — the only way to tell a big bare roof from a
+  // building that simply never reached this pass
+  bigBare: [] });
 
 export function setDistrictCharacter(buildings) {
   let home = 0, comm = 0;
@@ -314,7 +329,12 @@ export const MAT = {
     color: 0xe6e2d8, roughness: 0.95, emissive: 0x2a2825, emissiveIntensity: 0.55,
   }),
   clayTile: new THREE.MeshStandardMaterial({ color: 0x9c5a44, roughness: 0.82 }),
-  asphalt: new THREE.MeshStandardMaterial({ map: TEX.asphalt, roughness: 0.95 }),
+  // NAMED, like busLane already is: all four road materials merge into meshes
+  // called `roadSurface`, and that one name covers the carriageway, a paved
+  // plaza and a concrete apron alike. data/treecheck.mjs has to tell a tree
+  // standing in a traffic lane from one standing in a pedestrian square, and
+  // the material is the only thing left that knows which is which.
+  asphalt: Object.assign(new THREE.MeshStandardMaterial({ map: TEX.asphalt, roughness: 0.95 }), { name: 'asphalt' }),
   // Orchard's granite is 1.8m per tile, so the pavement maps at a real size
   paving: new THREE.MeshStandardMaterial({ map: TEX.paving, roughness: 0.88 }),
   kerb: new THREE.MeshStandardMaterial({ color: PAL.kerb, roughness: 0.86 }),
@@ -390,8 +410,18 @@ export const MAT = {
     // (frames 011/177; raycast says the surface is there, it is this tint).
     // Concrete pavers are warm-neutral; red leads green now.
     color: 0xa2a09b, roughness: 0.92,
+    name: 'unitPave',
   }),
-  roadConc: new THREE.MeshStandardMaterial({ map: texConcrete(0x9d9a94, 0.6), roughness: 0.93 }),
+  // THE BOOM BARRIER AND ITS PEDESTAL. 17 lift_gates are surveyed on Sentosa
+  // and the scene carried none of them until 2026-08-24 — `barrier=lift_gate`
+  // is an OSM NODE and process.py's barrier pass only ever read WAYS.
+  boom: Object.assign(new THREE.MeshStandardMaterial({
+    map: (() => { const t = texBoomBand(); t.repeat.set(6, 1); return t; })(),
+    roughness: 0.6,
+  }), { name: 'boom' }),
+  boomPost: Object.assign(new THREE.MeshStandardMaterial({ color: 0x6d7378, roughness: 0.55, metalness: 0.25 }), { name: 'boomPost' }),
+  gateBar: Object.assign(new THREE.MeshStandardMaterial({ color: 0x3f4a44, roughness: 0.62, metalness: 0.3 }), { name: 'gateBar' }),
+  roadConc: Object.assign(new THREE.MeshStandardMaterial({ map: texConcrete(0x9d9a94, 0.6), roughness: 0.93 }), { name: 'roadConc' }),
   // LTA SDRE Ch.11 BUS5 publishes the bus-stop colour scheme outright, so
   // these are surveyed values rather than chosen ones. RAL 6027 on the back
   // rest is the one a Singaporean recognises without being able to say why.
@@ -3166,7 +3196,7 @@ export async function buildBuildings(world, data, Y = null) {
     // sinks the moment its building is on a grade.
     groundAt: (x, z) => TERRAIN.at(x, z),
     mat: { ...LMAT, trim: MAT.trim, conc: MAT.conc, paving: MAT.paving, metal: MAT.metal,
-           darkMetal: MAT.darkMetal },
+           darkMetal: MAT.darkMetal, roofDeck: MAT.roofDeck },
   };
   // VET MODES. `?solo=<text>` builds only the buildings whose name contains
   // that text, and `?norecipe` forces every one of them through the generic
@@ -3410,6 +3440,88 @@ export async function buildBuildings(world, data, Y = null) {
   }
 
   let _yt = performance.now();
+  // GIVE IT A ROOF. See MAT.roofDeck: the extrusion's top face wore the wall
+  // material, so every flat-topped building was a blank slab from above — the
+  // recurring "big untextured mass" in vet shots across the Cove, the beach
+  // and the resort. A recessed deck plus an upstand round the edge is the
+  // whole fix, and it is what a real flat roof looks like from the cable car.
+  //
+  // IT IS A FUNCTION, AND CALLED FROM TWO PLACES, because the flat top is
+  // reached down two different paths and one of them ends in `continue`.
+  // `_capForm` says whether one of the six roof branches already closed this
+  // top: 0 nothing, 1 a trim parapet with the deck still missing, 2 a real
+  // roof form.
+  //
+  // IT WAS SKIPPING THE THREE THINGS MOST LOOKED DOWN ON, 2026-08-24. The
+  // 2026-08-23 aerial noted "a regular grid of dark ovals" lying flat on two
+  // or three roofs and could not pin them down by eye. Queried from the data
+  // instead, the way `lamps: 0` was found, and it is not an exception to
+  // MAT.roofDeck — it is everything the old test threw away:
+  //
+  //   16  masses with min_height — `!(b.mh && b.mh > 1)` excluded a LIFTED
+  //       mass outright, and the lifted ones here are the big flat tops on the
+  //       east grid: a 7,791 m2 garage at 24 m, a 5,555 m2 hotel at 23.8 m, a
+  //       4,871 m2 deck at 20 m. The lifted branch also ends in `continue`, so
+  //       a cap written inline further down could never have reached them —
+  //       which is exactly the mistake the first attempt at this made, and the
+  //       counter (`lifted: 0` on a build that had 13) is what said so. The
+  //       soffit fix of 2026-08-16 gave a lifted mass a ceiling and left its
+  //       ROOF bare; this is the other half of that same defect.
+  //   `h`, not `b.h` — the deck was laid at the fetched height while the
+  //       hillside rule extruded the mass PAST it, burying the deck inside the
+  //       building and putting the facade back on top. That is why the h/_mh
+  //       block was hoisted above the first roof branch.
+  //   the 300 m2 cut — 503 of 1,095 footprints. It was a TRIANGLE trade made
+  //       before the 2026-08-23 batching work; MAT.roofDeck is a flat colour,
+  //       so it now flattens into the shared vertex-colour material and costs
+  //       zero extra draws. The deck now goes down to 40 m2; the PARAPET
+  //       stops at 90, so a bin store gets its top closed without being given
+  //       an upstand a third of its own width.
+  //
+  // A lifted mass gets one only if the mass is thick enough to carry the
+  // 0.65 m upstand without it hanging below its own soffit.
+  const capFlatRoof = (b, h, _mh, _capForm) => {
+    if (b.roof || _capForm >= 2 || !((b.a || 0) > 40) || !(h > 3) || NOROOFCAP
+        || ((_mh && _mh > 1) && !(h - _mh > 1.6))) {
+      const _why = b.roof ? 'canopy' : _capForm >= 2 ? 'own roof'
+        : (b.a || 0) <= 40 ? 'tiny' : h <= 3 ? 'low' : 'thin lift';
+      _CAPDBG.bare[_why]++;
+      if ((b.a || 0) > 300) _CAPDBG.bigBare.push([Math.round(b.a), +h.toFixed(1), _why,
+        Math.round(b.p[0][0]), Math.round(b.p[0][1])]);
+      return;
+    }
+    const c = centroid(b.p);
+    merger.add(extrudeGeo(grow(b.p, 0.985), 0.12, h - 0.12), MAT.roofDeck, c[0], c[1]);
+    // AN UPSTAND NEVER OVERHANGS A CARRIAGEWAY. The parapet stands 0.6% proud
+    // of the wall so it reads as an edge rather than a change of colour, and
+    // on a building at the kerb that 0.6% is over the road: extending this
+    // pass down to 40 m2 footprints — the ones that actually front a lane —
+    // took P1b from 27 to 29 the first time it ran. Measured, not guessed: the
+    // A/B against ?noroofcap is what named the two. Where the proud ring would
+    // land in the road it simply is not proud, which costs an edge shadow on
+    // that one building and nothing else.
+    const _pOut = grow(b.p, 1.006);
+    let _clear = true;
+    for (const [_px, _pz] of _pOut) if (onCarriageway(_px, _pz, 0)) { _clear = false; break; }
+    // and the upstand, unless the trim ring already drew one — two parapets
+    // 2 mm apart is what the old ordering was quietly building. Nor on a
+    // footprint under 90 m2: a 0.65 m upstand round a 7 m shed is a third of
+    // its own width and reads as a bunker. The DECK still goes on — it is what
+    // takes the facade off the top, and being flat it costs no silhouette.
+    if (_capForm === 0 && (b.a || 0) > 90) {
+      merger.add(extrudeGeo(_clear ? _pOut : b.p, 0.65, h - 0.1), MAT.roofParapet, c[0], c[1]);
+    }
+    _CAPDBG.capped++;
+    if (_mh && _mh > 1) _CAPDBG.lifted++;
+    if (h > (b.h || 0) + 0.05) _CAPDBG.grown++;
+    if ((b.a || 0) <= 300) _CAPDBG.small++;
+    if (_capForm === 1) _CAPDBG.deckOnly++;
+  };
+  // counted fresh per build: the lamp pass learned that a counter which
+  // survives a rebuild reports the sum of every world ever made
+  _CAPDBG.capped = _CAPDBG.lifted = _CAPDBG.grown = _CAPDBG.small = _CAPDBG.deckOnly = 0;
+  _CAPDBG.bigBare.length = 0;
+  for (const k in _CAPDBG.bare) _CAPDBG.bare[k] = 0;
   for (const b of data.buildings) {
     // cooperative yield for the runtime streamer; null during boot
     if (Y && performance.now() - _yt > 8) { await Y(); _yt = performance.now(); }
@@ -3429,6 +3541,16 @@ export async function buildBuildings(world, data, Y = null) {
         ^ Math.imul(Math.round(_shz * 8) | 0, 0x85EBCA77)) >>> 0));
     }
     const pts = b.p;
+    // WHO CLOSES THE TOP OF THIS BUILDING. Six branches below draw a roof
+    // form over the footprint — the Cove villa's pitch or slab, the heritage
+    // hip, the beach pavilion's oversail, the conserved shophouse's tile —
+    // and the flat-roof cap is the FALLBACK for a building none of them
+    // claimed. Before 2026-08-24 the cap ran two hundred lines above all of
+    // them and could not know, so it either duplicated a parapet the trim
+    // ring had already drawn or, on a shophouse, pushed a concrete upstand up
+    // through the tiles. One flag, set where the decision is actually made:
+    //     0 nothing yet   1 a parapet ring, deck still missing   2 a real roof
+    let _capForm = 0;
     if (pts.length < 3) continue;
     if (SOLO && !((b.n || '').toLowerCase().includes(SOLO))) continue;
     // rule 1: the recipe already drew this building's whole form
@@ -3795,6 +3917,7 @@ export async function buildBuildings(world, data, Y = null) {
       // island leans which way, and that is what these follow.
       const _pitchEvery = { coral: 2, treasure: 2, sandy: 0, paradise: 5, pearl: 5, street: 3 };
       const _pe = _pitchEvery[_coveIsleOf.get(b) || 'street'] ?? 3;
+      _capForm = 2;
       if (_pe && Math.abs(_ph) % _pe === 0) {
         merger.add(extrudeGeo(growClear(b.p, 1.08, b), 0.3, _hh), MAT.clayTile, _cc[0], _cc[1]);
         merger.add(extrudeGeo(grow(b.p, 0.82), 1.5, _hh + 0.3), MAT.clayTile, _cc[0], _cc[1]);
@@ -3892,6 +4015,7 @@ export async function buildBuildings(world, data, Y = null) {
       // from the ground without a real hip solve
       merger.add(extrudeGeo(grow(b.p, 1.14), 0.26, _hh), MAT.clayTile, _cc[0], _cc[1]);
       merger.add(extrudeGeo(grow(b.p, 0.72), 1.15, _hh + 0.26), MAT.clayTile, _cc[0], _cc[1]);
+      _capForm = 2;
       // verandah posts along the longest edge, at storey spacing, kept off any
       // carriageway so this cannot become a T1 finding
       let bi = 0, bl = 0;
@@ -3963,6 +4087,7 @@ export async function buildBuildings(world, data, Y = null) {
       for (const [_vx, _vz] of b.p) _vh = (_vh * 31 + ((_vx * 11) | 0) + ((_vz * 7) | 0)) | 0;
       const _variant = Math.abs(_vh) % 4;
       const _roofMat = _variant === 2 ? MAT.beachThatch : MAT.beachRoof;
+      _capForm = 2;
       if (_variant === 1) {
         // flat deck with a raised parapet — the modern white beach club
         merger.add(extrudeGeo(grow(b.p, 1.10), 0.28, _hh), MAT.deckRail, _cc[0], _cc[1]);
@@ -4018,18 +4143,83 @@ export async function buildBuildings(world, data, Y = null) {
         }
       }
     }
-    // GIVE IT A ROOF. See MAT.roofDeck: the extrusion's top face wore the wall
-    // material, so every flat-topped building was a blank slab from above —
-    // the recurring "big untextured mass" in vet shots across the Cove, the
-    // beach and the resort. A recessed deck plus an upstand round the edge is
-    // the whole fix, and it is what a real flat roof looks like from the cable
-    // car. Skipped for canopies (b.roof), for masses that start in the air,
-    // and for anything under 300 m2, where the cost is not worth the pixels.
-    if (!b.roof && !(b.mh && b.mh > 1) && (b.a || 0) > 300 && b.h > 3) {
-      const _rc = centroid(b.p);
-      merger.add(extrudeGeo(grow(b.p, 0.985), 0.12, b.h - 0.12), MAT.roofDeck, _rc[0], _rc[1]);
-      merger.add(extrudeGeo(grow(b.p, 1.006), 0.65, b.h - 0.1), MAT.roofParapet, _rc[0], _rc[1]);
+    // THE TOP OF THE MASS IS DECIDED BEFORE THE ROOF IS PUT ON IT.
+    //
+    // `h` and `_mh` used to be worked out two hundred lines BELOW the roof
+    // cap, so the cap was laid at `b.h` — the height as fetched — while the
+    // mass it is supposed to close was extruded to whatever the hillside rule
+    // and the min_height rule had since made of it. Both readings measured
+    // 2026-08-24: a mass grown to clear its own slope swallowed its deck
+    // whole (the cap ends up INSIDE the building), and a lifted mass was
+    // skipped outright. Same decision, one place, before anything is built.
+    // A BUILDING CANNOT BE SHORTER THAN THE HILL IT STANDS ON.
+    //
+    // The owner, 2026-08-06, on the Tanjong Rimau slope: "the building there
+    // also floating". Measured, Shangri-La's Rasa Sentosa Resort:
+    //
+    //     seat (lowest ground under the ring)   10.1 m
+    //     ground rises across its own footprint to 42.1 m   (a 32 m rise)
+    //     mapped height                         20.4 m
+    //     so the roof sits 11.6 m BELOW its own hillside
+    //
+    // seatY takes the LOWEST ground under the footprint — the right rule, and
+    // the reason the skirt above exists — but a mass extruded `h` from there
+    // is swallowed by the slope at the top end while standing 20m proud at the
+    // bottom. From uphill the resort is a roof in the grass; from downhill it
+    // is a wall with a hillside apparently balanced on it.
+    //
+    // OSM `height` is measured from the ground the building stands on, and on
+    // a slope the honest reading of that is the UPPER ground, not the lowest
+    // corner. So a mass that would be buried grows to clear the high side by
+    // one storey. This is a real trade and it is bounded on purpose: it fires
+    // only where the rise genuinely swallows the building (over half its
+    // height and over 6m), so a normal building on a normal grade is untouched
+    // and the skyline does not move. What it cannot do is STEP down the slope
+    // the way the real resort does — that wants a terraced recipe, and this is
+    // the honest single-mass answer until one exists.
+    let h = b.h;
+    // ...BUT A HUT DOES NOT GROW TO SWALLOW A HILLSIDE.
+    //
+    // This rule is right for a resort block and it silently undid a fix made
+    // the same day. process.py now gives `building=hut` a 4 m default and
+    // heights.py leaves it alone — and the Wings of Time stage set still drew
+    // as a three-storey white block in the SPAWN FRAME, because the ground
+    // under its 78 m span runs 7.8 m to 22.1 m in our heightfield and this
+    // line grew it to 22.1 - 7.8 + 3 = 17.3 m.
+    //
+    // A type whose name states its scale must not be re-scaled by the terrain
+    // either. It is the same list, from the same place, for the third time
+    // (process.py TYPE_DEFAULT, heights.py's banding, here) — which is exactly
+    // why it is a list and not three conditions.
+    if (!SELF_SCALED.has(b.bt)
+        && !(b.mh && b.mh > 1) && !b.con && h > 0 && pts.length > 2) {
+      let hiG = -Infinity;
+      for (const [_x, _z] of pts) { const _g = TERRAIN.at(_x, _z); if (_g > hiG) hiG = _g; }
+      const buried = hiG - (FOOT + h);
+      if (buried > 0 && (hiG - FOOT) > h * 0.5 && (hiG - FOOT) > 6) h = hiG - FOOT + 3;
     }
+    // A MASS THAT STARTS IN THE AIR. `min_height` says the building begins
+    // above the ground -- a sky bridge, a deck, a canopy spanning between
+    // towers. SkyPark is min_height 193 of height 207, so read as a plain
+    // height it is a solid 207m block standing exactly where Marina Bay Sands'
+    // atrium is. Built from its own base, it is the 14m deck everyone knows.
+    // rule 2 (see the note above the loop): a part whose base stands clear of
+    // everything under it is seated on its host's top instead of in the air.
+    // THE RATIO WINS OVER THE STORED METRES, when the data carries one.
+    //
+    // `mh` is absolute and was computed from whatever `h` the footprint had at
+    // the moment process.py read its tags; post-passes then rewrite `h` and
+    // leave `mh` where it was. That is how three Hotel Michael parts came to
+    // carry h 36.6 with mh 40.8 -- a mass whose base stands above its own top,
+    // silently drawn solid here because the `_mh < h - 0.5` test below quietly
+    // rejects it. `mr` is min_level/levels, which is scale-free: derive from it
+    // and any later change to `h` moves the base with it.
+    let _mh = (b.mr && b.mr > 0 && b.mr < 1 && h) ? b.mr * h : b.mh;
+    if (_mh && _mh > 1 && _partHost.has(b)) {
+      const hs = _partHost.get(b);
+      if (hs.top !== null && _mh > hs.top + 0.5) _mh = hs.top;
+    }
+
     // provenance, so the accuracy ledger can say how many facades are a real
     // answer and how many are still a hash
     const fs = (window.__facadeSrc = window.__facadeSrc || {});
@@ -4153,73 +4343,6 @@ export async function buildBuildings(world, data, Y = null) {
       : _isBeach ? tintedMat(wallTex, fam.rough, fam.metal, _beachTint)
                       : sharedMat(wallTex, fam.rough, fam.metal);
     const per = perimeter(pts);
-    // A BUILDING CANNOT BE SHORTER THAN THE HILL IT STANDS ON.
-    //
-    // The owner, 2026-08-06, on the Tanjong Rimau slope: "the building there
-    // also floating". Measured, Shangri-La's Rasa Sentosa Resort:
-    //
-    //     seat (lowest ground under the ring)   10.1 m
-    //     ground rises across its own footprint to 42.1 m   (a 32 m rise)
-    //     mapped height                         20.4 m
-    //     so the roof sits 11.6 m BELOW its own hillside
-    //
-    // seatY takes the LOWEST ground under the footprint — the right rule, and
-    // the reason the skirt above exists — but a mass extruded `h` from there
-    // is swallowed by the slope at the top end while standing 20m proud at the
-    // bottom. From uphill the resort is a roof in the grass; from downhill it
-    // is a wall with a hillside apparently balanced on it.
-    //
-    // OSM `height` is measured from the ground the building stands on, and on
-    // a slope the honest reading of that is the UPPER ground, not the lowest
-    // corner. So a mass that would be buried grows to clear the high side by
-    // one storey. This is a real trade and it is bounded on purpose: it fires
-    // only where the rise genuinely swallows the building (over half its
-    // height and over 6m), so a normal building on a normal grade is untouched
-    // and the skyline does not move. What it cannot do is STEP down the slope
-    // the way the real resort does — that wants a terraced recipe, and this is
-    // the honest single-mass answer until one exists.
-    let h = b.h;
-    // ...BUT A HUT DOES NOT GROW TO SWALLOW A HILLSIDE.
-    //
-    // This rule is right for a resort block and it silently undid a fix made
-    // the same day. process.py now gives `building=hut` a 4 m default and
-    // heights.py leaves it alone — and the Wings of Time stage set still drew
-    // as a three-storey white block in the SPAWN FRAME, because the ground
-    // under its 78 m span runs 7.8 m to 22.1 m in our heightfield and this
-    // line grew it to 22.1 - 7.8 + 3 = 17.3 m.
-    //
-    // A type whose name states its scale must not be re-scaled by the terrain
-    // either. It is the same list, from the same place, for the third time
-    // (process.py TYPE_DEFAULT, heights.py's banding, here) — which is exactly
-    // why it is a list and not three conditions.
-    if (!SELF_SCALED.has(b.bt)
-        && !(b.mh && b.mh > 1) && !b.con && h > 0 && pts.length > 2) {
-      let hiG = -Infinity;
-      for (const [_x, _z] of pts) { const _g = TERRAIN.at(_x, _z); if (_g > hiG) hiG = _g; }
-      const buried = hiG - (FOOT + h);
-      if (buried > 0 && (hiG - FOOT) > h * 0.5 && (hiG - FOOT) > 6) h = hiG - FOOT + 3;
-    }
-    // A MASS THAT STARTS IN THE AIR. `min_height` says the building begins
-    // above the ground -- a sky bridge, a deck, a canopy spanning between
-    // towers. SkyPark is min_height 193 of height 207, so read as a plain
-    // height it is a solid 207m block standing exactly where Marina Bay Sands'
-    // atrium is. Built from its own base, it is the 14m deck everyone knows.
-    // rule 2 (see the note above the loop): a part whose base stands clear of
-    // everything under it is seated on its host's top instead of in the air.
-    // THE RATIO WINS OVER THE STORED METRES, when the data carries one.
-    //
-    // `mh` is absolute and was computed from whatever `h` the footprint had at
-    // the moment process.py read its tags; post-passes then rewrite `h` and
-    // leave `mh` where it was. That is how three Hotel Michael parts came to
-    // carry h 36.6 with mh 40.8 -- a mass whose base stands above its own top,
-    // silently drawn solid here because the `_mh < h - 0.5` test below quietly
-    // rejects it. `mr` is min_level/levels, which is scale-free: derive from it
-    // and any later change to `h` moves the base with it.
-    let _mh = (b.mr && b.mr > 0 && b.mr < 1 && h) ? b.mr * h : b.mh;
-    if (_mh && _mh > 1 && _partHost.has(b)) {
-      const hs = _partHost.get(b);
-      if (hs.top !== null && _mh > hs.top + 0.5) _mh = hs.top;
-    }
     if (_mh && _mh > 1 && _mh < h - 0.5) {
       const lift = extrude(pts, h - _mh, mat, _mh);
       lift.castShadow = true; lift.receiveShadow = true;
@@ -4297,6 +4420,7 @@ export async function buildBuildings(world, data, Y = null) {
           (window.__ogCols || (window.__ogCols = [])).push([px, pz]);
         }
       }
+      capFlatRoof(b, h, _mh, _capForm);
       stats.count++;
       if (h > 40) stats.tall++;
       continue;
@@ -4538,11 +4662,13 @@ export async function buildBuildings(world, data, Y = null) {
         const eave = pts.map(([x, z]) => [c[0] + (x - c[0]) * kOut, c[1] + (z - c[1]) * kOut]);
         merger.add(extrudeGeo(eave, 0.28, h), MAT.clayTile, c[0], c[1]);
         merger.add(extrudeGeo(inset, 1.5, h + 0.28), MAT.clayTile, c[0], c[1]);
+        _capForm = 2;
       } else if (h > 8) {
         // parapet cap so roofs are not a raw extruded edge
         const c = centroid(pts);
         const out = pts.map(([x, z]) => [c[0] + (x - c[0]) * 1.008, c[1] + (z - c[1]) * 1.008]);
         merger.add(extrudeGeo(out, 0.7, h), MAT.trim, c[0], c[1]);
+        _capForm = 1;
       }
     }
 
@@ -4582,6 +4708,7 @@ export async function buildBuildings(world, data, Y = null) {
     // Beach and Cove buildings and anything the district reads as a dwelling
     // or a hotel are exempt; the island's actual commercial and transport
     // blocks still get their plant.
+    capFlatRoof(b, h, _mh, _capForm);
     const _btLow = (b.bt || '').toLowerCase();
     const _domestic = _isCove || _isBeach
       || /^(apartments|residential|house|terrace|dormitory|bungalow|hotel|villa)$/.test(_btLow);
@@ -5132,7 +5259,7 @@ function ribbon(pts, width, y, flat = false, noExt = false) {
   // gap): extending a cut end fans it across the bend it was cut at, which
   // is the ragged red triangle in sweep-2 frame 090.
   if (!noExt) {
-    const EXT = half * 1.1;
+    const EXT = half * ROAD_END_EXT;
     p[0] = [p[0][0] - dir[0][0] * EXT, p[0][1] - dir[0][1] * EXT];
     const dl = dir[dir.length - 1];
     p[p.length - 1] = [p[p.length - 1][0] + dl[0] * EXT, p[p.length - 1][1] + dl[1] * EXT];
@@ -6372,19 +6499,70 @@ export class TreeField {
     if (window.__inWater && window.__inWater(x, z)) return;
     if (window.__inFootprint && window.__inFootprint(x, z)) return;
     if (window.__underCanopy && window.__underCanopy(x, z)) return;
-    // NOR ON A CARRIAGEWAY. The per-pass guards test onRoad at -0.4m, which
-    // is right for street furniture and wrong for a trunk: a tree half a
-    // metre inside the kerb line passed every guard and stood in the riding
-    // lane on Beach View (2026-08-22 sweep frame 189, verified by probing
-    // __treeIx against __onRoad: one full-size tree at margin 0, clear at
-    // -1). Full-size trees must clear the mapped tarmac entirely;
-    // undergrowth keeps the looser per-pass rule, a bush at the kerb is a
-    // verge.
-    // margin 0.5, was 0: at margin 0 a trunk could stand ON the kerb line,
-    // and the pack trees' thicker boles read as "trees in middle of road"
-    // (owner report 2026-08-22, sweep 030/188). Half a metre of daylight
-    // between bark and tarmac is what a real road verge gives a trunk.
-    if (!low && scale >= 0.5 && window.__onRoad && window.__onRoad(x, z, 0.5)) return;
+    // ---- FULL-SIZE TRUNKS: THE TWO PLACES A TREE MUST NOT STAND ----
+    //
+    // (1) ON THE DRAWN TARMAC, and __onRoad is not the test. It answers from
+    //     the mapped ways; city.js then lays a DISC at every shared node and
+    //     re-lays width TAPERS on top of them, and neither is in the data. So
+    //     a trunk beside a junction passed every guard and stood in the road.
+    //     The owner reported this twice — 2026-08-22, answered by nudging a
+    //     margin 0 -> 0.5, and again 2026-08-24. Measured with the ray probe
+    //     that is now data/treecheck.mjs: 64 full-size trunks on drawn tarmac.
+    //     __onDrawnRoad carries the discs and tapers (see ROAD_JUNCTION_PAD in
+    //     roads.js). The extra 1.5m of margin on top is the MITRE: a ribbon's
+    //     outside corner reaches past half its width, so at a bend the tarmac
+    //     is wider than any half-width test knows. Every one of these numbers
+    //     was measured against the probe, none of them chosen.
+    //
+    // (2) IN THE SEA, and __inWater is not that test either. It knows the
+    //     mapped water POLYGONS — the lagoons, the marina basin — and the open
+    //     sea is not one of them: it returned false for all 527 trunks the ray
+    //     found standing on `seaSurface` off Palawan and Tanjong. Nor is at()
+    //     the substitute (it reads 0.45-0.97 there) nor drawnGroundAt/vertexY
+    //     (0.39-0.91) while the drawn skin is at -0.08. The shore is steep and
+    //     the mesh is flat BETWEEN its vertices; `atDrawn` interpolates the
+    //     triangle, which is why terrain.js wrote it: "the audit measures the
+    //     world that is rendered, not the function it was sampled from".
+    //
+    // AND IT MOVES THEM, IT DOES NOT DELETE THEM. Refusing outright was tried
+    // first and cost 1,028 trees: the golden frames showed Sensoryscape's
+    // avenue thinned out and the Palawan islet stripped bare, a 4% frame
+    // change in the wrong direction on an island whose owner is asking for
+    // MORE greenery, not less. A tree 40cm into a kerb belongs on the verge,
+    // not in the bin. Deterministic spiral out from where it was mapped —
+    // position-hashed start angle, no RNG draw, so the shared placement stream
+    // is untouched — and only a trunk that cannot find a legal spot within 12m
+    // is dropped.
+    if (!low && scale >= 0.5) {
+      const _road = OLDTREEGUARD ? window.__onRoad : (window.__onDrawnRoad || window.__onRoad);
+      const _seaY = SEA_LEVEL[0] !== null ? SEA_LEVEL[0] : 0.18;
+      const _margin = OLDTREEGUARD ? 0.5 : 1.5;
+      const _illegal = (px, pz) =>
+        (_road && _road(px, pz, _margin))
+        || (!OLDTREEGUARD && TERRAIN.atDrawn && TERRAIN.atDrawn(px, pz) <= _seaY)
+        || (window.__inWater && window.__inWater(px, pz))
+        || (window.__inFootprint && window.__inFootprint(px, pz))
+        || (window.__underCanopy && window.__underCanopy(px, pz));
+      if (_illegal(x, z)) {
+        let _h = (Math.imul(Math.round(x * 4) | 0, 0x9E3779B1)
+                ^ Math.imul(Math.round(z * 4) | 0, 0x85EBCA77)) >>> 0;
+        const _a0 = (_h % 360) * Math.PI / 180;
+        let _fx = null, _fz = null;
+        for (const _r of [2, 3.5, 5, 7, 9.5, 12]) {
+          for (let _k = 0; _k < 12; _k++) {
+            const _a = _a0 + _k * (Math.PI / 6);
+            const _px = x + Math.cos(_a) * _r, _pz = z + Math.sin(_a) * _r;
+            if (_illegal(_px, _pz)) continue;
+            _fx = _px; _fz = _pz; break;
+          }
+          if (_fx !== null) break;
+        }
+        const _S = (window.__treeMoveDbg = window.__treeMoveDbg || { moved: 0, dropped: 0 });
+        if (_fx === null) { _S.dropped++; return; }
+        _S.moved++;
+        x = _fx; z = _fz;
+      }
+    }
     this.items.push([x, z, scale, low]);
     // AND THE CHASE CAMERA NEEDS TO KNOW WHERE THE TRUNKS ARE. Trees are
     // InstancedMeshes and solid.js deliberately skips those, so a trunk is
@@ -6883,6 +7061,11 @@ function buildSea(world) {
   // reconstructs from `g.sea` and `base`. Reconstructing it is how 14f spent
   // two hours proving an islet was underwater when it was 1.2 m above.
   window.__seaY = SEA_Y;
+  // the DRAWN ground, for probes and gates: the difference between this and
+  // __terrainAt is the entire waterline, and a check that asks the wrong one
+  // measures a shore that is not there (terrain.js: "one authority, three
+  // readers"). data/treecheck.mjs needed a fourth.
+  window.__drawnGroundAt = drawnGroundAt;
   return 1;
 }
 
@@ -7197,6 +7380,70 @@ export function cableProfiles(data) {
 // bay. Same two-datums trap as the bridge decks; the answer is the same, ask
 // the right surface.
 let PIER_TIDAL = 0;
+// THE 123 SWIMMING POOLS NOTHING WAS DRAWING.
+//
+// `leisure=swimming_pool` is surveyed all over Sentosa Cove and the resorts and
+// process.py has always carried it — as `green` kind `pool`, beside grass,
+// scrub and wood. Nothing downstream reads that kind: the green passes filter
+// for `wood` and `scrub`, the water pass reads `data.water`, and a pool falls
+// between them. Measured 2026-08-24 by dropping a ray on all 123 pool
+// centroids: 82 landed on bare `terrainSurface`, 40 under a building or deck,
+// and exactly ONE on `waterSurface`. Every villa pool in the Cove was lawn.
+//
+// This is the same shape as `lamps: 0` and the roof cap: a complete, surveyed
+// layer sitting in the scene file with no reader. Found by counting the data,
+// not by looking at a picture.
+//
+// DRAWN, NOT SWIMMABLE, and that is deliberate. Routing them into `data.water`
+// would have been one line in process.py and it would have made 123 private
+// pools enterable, put them in the swim checks, and handed waterFloor a set of
+// 105 m2 rings scattered through the Cove's gardens. A pool is scenery here:
+// it is what you see from the cable car, the monorail, the hills and the
+// third-person camera, and none of those get in.
+//
+// Three pieces, all flat colours so consolidate's flattenFlatColours folds
+// them into the shared vertex-colour material — measured cost is in the
+// handoff, and it is not draws.
+export function buildPools(world, data) {
+  const polys = (data.green || []).filter((g) => g.k === 'pool' && g.p && g.p.length > 3);
+  if (!polys.length || new URLSearchParams(location.search).has('nopools')) return { pools: 0 };
+  // Sentosa's pool water reads pale aqua over a light plaster tank, not the
+  // strait's teal. The coping is the pale stone the Cove's decks already use.
+  const waterMat = new THREE.MeshLambertMaterial({ color: 0x5fc4c8 });
+  const copingMat = new THREE.MeshLambertMaterial({ color: 0xd9d3c6 });
+  const geos = [], copings = [];
+  let built = 0, skipped = 0;
+  for (const g of polys) {
+    // A POOL IS FLAT. Its ring can cross two heightfield cells, so seat the
+    // whole thing on the HIGHEST ground under it — a pool seated on the lowest
+    // corner has its coping buried at the high end, which is the same defect
+    // the building skirt exists for.
+    let hi = -Infinity, lo = Infinity;
+    for (const [x, z] of g.p) {
+      const y = TERRAIN.at(x, z);
+      if (y > hi) hi = y;
+      if (y < lo) lo = y;
+    }
+    // ...but a "pool" whose ground falls three metres across it is not a pool
+    // in our heightfield, it is a mapped ring on a slope, and decking it would
+    // stand a turquoise shelf out of a hillside. Refuse rather than invent.
+    if (hi - lo > 2.2) { skipped++; continue; }
+    const c = centroid(g.p);
+    // the tank lip sits a little proud of the ground so the coping reads as a
+    // kerb rather than a painted line, and the water sits just under it
+    copings.push(extrudeGeo(grow(g.p, 1.10), 0.18, hi - 0.04));
+    geos.push(extrudeGeo(grow(g.p, 0.97), 0.12, hi + 0.02));
+    built++;
+  }
+  if (!geos.length) return { pools: 0 };
+  const wm = new THREE.Mesh(mergeGeos(geos), waterMat);
+  const cm = new THREE.Mesh(mergeGeos(copings), copingMat);
+  wm.name = 'poolWater'; cm.name = 'poolCoping';
+  for (const m of [wm, cm]) { m.castShadow = false; m.receiveShadow = true; world.add(m); }
+  window.__poolDbg = { mapped: polys.length, built, skippedSlope: skipped };
+  return { pools: built };
+}
+
 export function buildPiers(world, data) {
   PIER_TIDAL = 0;
   const polys = data.piers || [];
