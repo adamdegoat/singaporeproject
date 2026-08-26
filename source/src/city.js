@@ -90,6 +90,56 @@ const _CAPDBG = (window.__roofCapDbg = { capped: 0, lifted: 0, grown: 0, small: 
   // by where it stands — the only way to tell a big bare roof from a
   // building that simply never reached this pass
   bigBare: [] });
+// ...AND THE DECISION FOR EVERY FOOTPRINT, not a histogram of them.
+// `bare` counts five reasons and `bigBare` names the ones over 300 m2, and
+// between them they still could not answer the only question roofcheck ever
+// asks: "this ROOF has the wall texture on it — why?" The counters said the
+// cap declined 4 canopies and 12 tiny tops; roofcheck said 20 roofs are bad,
+// including a 352 m2 residential and two 305 m2 hotel masses. Neither list
+// could be joined to the other. Keyed by the footprint's FIRST VERTEX, which
+// data/roofcheck.mjs reads out of the same sentosa.json, so the join is exact
+// rather than a nearest-centroid guess.
+// Same shape as __lampRej and __plateRej: name the reason, per thing.
+const _CAPWHY = (window.__roofCapWhy = {});
+const _capKey = (b) => `${Math.round(b.p[0][0])},${Math.round(b.p[0][1])}`;
+// AND THE BRANCHES THAT NEVER REACH THE CAP AT ALL. capFlatRoof is called
+// from two places near the END of the building loop, and the loop has EIGHT
+// earlier `continue`s — a bespoke roof recipe, a named recipe, a shophouse, a
+// grandstand, the Wings stage, a construction site, a steep or huge
+// footprint. Every one of those owns its own top and none of them was saying
+// so, which is why roofcheck's ten worst offenders came back as six blanks:
+// "no cap decision recorded" was the honest answer and it was useless.
+// WHERE DO THE BUILDING SECONDS GO? `buildings` is 2,909ms of a 17.2s boot
+// (bootprobe, 2026-08-26) and is the largest phase that gates time-to-playable
+// now that sg:trails is halved — and unlike plantSurveyed, which has carried
+// `__plantMarks` since it was optimised, this loop had no breakdown at all.
+// A phase you cannot split is a phase you optimise by guessing.
+// Accumulated per BRANCH, which is the axis that matters here: a bespoke
+// recipe, a shophouse and a generic extrusion cost very different amounts and
+// the mix is what decides the total.
+const _BM = (window.__buildMarks = {});
+let _bmT = 0;
+// The per-building timing ledger. `_bmStart` opens a building and `_bacc`
+// closes it with the branch that drew it. THE CATCH-ALL MATTERS: the loop body
+// has many `continue` paths that never reach a `_bacc`, so the first version
+// of this only ever explained 198 of ~1,095 footprints -- 458ms of a 1,708ms
+// phase -- and the missing 900 looked like they cost nothing at all. An open
+// building is now closed as 'unmarked (no branch)' by the NEXT `_bmStart`,
+// which catches every early exit without putting a mark on each one.
+let _bmOpen = false;
+const _bmStart = () => {
+  if (_bmOpen) { const e = _BM['unmarked (no branch)'] || (_BM['unmarked (no branch)'] = { n: 0, ms: 0 }); e.n++; e.ms += performance.now() - _bmT; }
+  _bmOpen = true; _bmT = performance.now();
+};
+const _bacc = (kind) => {
+  const dt = performance.now() - _bmT;
+  const e = _BM[kind] || (_BM[kind] = { n: 0, ms: 0 });
+  e.n++; e.ms += dt; _bmOpen = false;
+};
+const _capSkip = (b, tag) => {
+  if (b && b.p && b.p.length) _CAPWHY[_capKey(b)] = 'NOT REACHED: ' + tag
+    + ` [a=${Math.round(b.a || 0)} h=${(b.h || 0).toFixed(1)}]`;
+};
 
 export function setDistrictCharacter(buildings) {
   let home = 0, comm = 0;
@@ -3486,12 +3536,27 @@ export async function buildBuildings(world, data, Y = null) {
       const _why = b.roof ? 'canopy' : _capForm >= 2 ? 'own roof'
         : (b.a || 0) <= 40 ? 'tiny' : h <= 3 ? 'low' : 'thin lift';
       _CAPDBG.bare[_why]++;
+      _CAPWHY[_capKey(b)] = _why + (NOROOFCAP ? ' (?noroofcap)' : '')
+        + ` [a=${Math.round(b.a || 0)} h=${h.toFixed(1)} mh=${(_mh || 0).toFixed(1)}`
+        + ` capForm=${_capForm}]`;
       if ((b.a || 0) > 300) _CAPDBG.bigBare.push([Math.round(b.a), +h.toFixed(1), _why,
         Math.round(b.p[0][0]), Math.round(b.p[0][1])]);
       return;
     }
+    _CAPWHY[_capKey(b)] = `capped [a=${Math.round(b.a || 0)} h=${h.toFixed(1)}`
+      + ` mh=${(_mh || 0).toFixed(1)} capForm=${_capForm}]`;
     const c = centroid(b.p);
-    merger.add(extrudeGeo(grow(b.p, 0.985), 0.12, h - 0.12), MAT.roofDeck, c[0], c[1]);
+    // THE DECK TOP AND THE WALL TOP WERE THE SAME PLANE (fixed 2026-08-26).
+    // `0.12, h - 0.12` puts the deck's top face at EXACTLY h — which is where
+    // the mass's own top face already is. Two coplanar up-facing surfaces:
+    // they z-fight, and which one you see is whichever the depth test happens
+    // to win that frame and that pixel. Found by casting down onto the five
+    // roofs roofcheck reported as `capped` AND STILL BAD and printing every
+    // up-facing hit instead of the first: at each one, two hits at the same
+    // y to the centimetre — MeshLambert 77787a (the deck) and a MAPPED
+    // MeshStandard (the facade). The check was not flaky; the world was.
+    // 2cm of daylight, which is invisible and unambiguous.
+    merger.add(extrudeGeo(grow(b.p, 0.985), 0.12, h - 0.10), MAT.roofDeck, c[0], c[1]);
     // AN UPSTAND NEVER OVERHANGS A CARRIAGEWAY. The parapet stands 0.6% proud
     // of the wall so it reads as an edge rather than a change of colour, and
     // on a building at the kerb that 0.6% is over the road: extending this
@@ -3522,7 +3587,9 @@ export async function buildBuildings(world, data, Y = null) {
   _CAPDBG.capped = _CAPDBG.lifted = _CAPDBG.grown = _CAPDBG.small = _CAPDBG.deckOnly = 0;
   _CAPDBG.bigBare.length = 0;
   for (const k in _CAPDBG.bare) _CAPDBG.bare[k] = 0;
+  for (const k in _CAPWHY) delete _CAPWHY[k];
   for (const b of data.buildings) {
+    _bmStart();
     // cooperative yield for the runtime streamer; null during boot
     if (Y && performance.now() - _yt > 8) { await Y(); _yt = performance.now(); }
     // EVERY DRAW IN THIS BUILDING FROM ITS OWN CENTROID (?planthash=1). The
@@ -3554,7 +3621,11 @@ export async function buildBuildings(world, data, Y = null) {
     if (pts.length < 3) continue;
     if (SOLO && !((b.n || '').toLowerCase().includes(SOLO))) continue;
     // rule 1: the recipe already drew this building's whole form
-    if (_partHost.has(b) && _partHost.get(b).recipeHost) continue;
+    if (_partHost.has(b) && _partHost.get(b).recipeHost) {
+      _capSkip(b, 'recipe drew the whole form');
+      _bacc('recipe drew the whole form');
+      continue;
+    }
 
     // A building=roof IS A CANOPY: a roof held up by columns, open and
     // walkable underneath — RWS's covered walkways ("The Forum"/WEAVE), bus
@@ -3578,6 +3649,8 @@ export async function buildBuildings(world, data, Y = null) {
         _roofRec(api, b);
         FOOT = null; STREET = null;
         stats.count++; stats.bespoke++;
+        _capSkip(b, 'bespoke roof recipe');
+      _bacc('bespoke roof recipe');
         continue;
       }
       FOOT = seatY(b);
@@ -3613,7 +3686,11 @@ export async function buildBuildings(world, data, Y = null) {
       // level roof really would be a lid over a hillside, and still refused
       // over 12,000 m2.
       const fall = gMax - gMin;
-      if (fall > 12 || (b.a || 0) > 12000) { stats.count++; continue; }
+      if (fall > 12 || (b.a || 0) > 12000) {
+        stats.count++; _capSkip(b, fall > 12 ? 'steep ground' : 'huge footprint');
+      _bacc(fall > 12 ? 'steep ground' : 'huge footprint');
+        continue;
+      }
       const canopyH = Math.max(4, Math.min(9, b.h || 5));
       // clear the high side, not the low one
       const topY = (fall > 4 ? gMax : FOOT) + canopyH;
@@ -3669,6 +3746,8 @@ export async function buildBuildings(world, data, Y = null) {
         }
       }
       stats.count++;
+      _capSkip(b, 'canopy (building=roof)');
+      _bacc('canopy (building=roof)');
       continue;
     }
 
@@ -3722,6 +3801,8 @@ export async function buildBuildings(world, data, Y = null) {
       buildGrandstand(pts, merger, world);
       stats.count++;
       if (stats.bespoke !== undefined) stats.bespoke++;
+      _capSkip(b, 'grandstand');
+      _bacc('grandstand');
       continue;
     }
 
@@ -3740,6 +3821,8 @@ export async function buildBuildings(world, data, Y = null) {
       buildWingsStage(pts, merger, data.terrain.sea + 0.18);
       stats.count++;
       if (stats.bespoke !== undefined) stats.bespoke++;
+      _capSkip(b, 'wings stage');
+      _bacc('wings stage');
       continue;
     }
 
@@ -3826,6 +3909,8 @@ export async function buildBuildings(world, data, Y = null) {
       }
       if (!_inWorks) constructionSite(api, b);
       stats.count++; stats.sites = (stats.sites || 0) + 1;
+      _capSkip(b, 'construction site');
+      _bacc('construction site');
       continue;
     }
 
@@ -3871,6 +3956,8 @@ export async function buildBuildings(world, data, Y = null) {
     if (!_rec && !b.k && b.a < 520 && b.h <= 20 && b.p.length <= 64 && _abuts.has(b)) {
       shophouse(api, b, _overlapped.has(b));
       stats.count++; stats.shophouses = (stats.shophouses || 0) + 1;
+      _capSkip(b, 'shophouse');
+      _bacc('shophouse');
       continue;
     }
 
@@ -3880,6 +3967,10 @@ export async function buildBuildings(world, data, Y = null) {
       recipe(api, b);
       if (hasShopfront(b.n)) addShopfront(world, b, perimeter(pts), merger, clearance);
       stats.count++; stats.bespoke++;
+      _capSkip(b, 'named recipe');
+      // by NAME, not by category: 41 recipes at 18.4ms each is 755ms of the
+      // buildings phase, and "named recipe" does not say which of them.
+      _bacc('recipe: ' + (b.n || '(unnamed)'));
       continue;
     }
 
@@ -3918,6 +4009,24 @@ export async function buildBuildings(world, data, Y = null) {
       const _pitchEvery = { coral: 2, treasure: 2, sandy: 0, paradise: 5, pearl: 5, street: 3 };
       const _pe = _pitchEvery[_coveIsleOf.get(b) || 'street'] ?? 3;
       _capForm = 2;
+      // A DECK ON THE TRUE FOOTPRINT, UNDER WHICHEVER FORM IS CHOSEN.
+      //
+      // Both branches below cover the roof with a polygon from `grow`/
+      // `growClear`, and BOTH OF THOSE SCALE ABOUT THE CENTROID — which does
+      // not contain a concave footprint. Measured 2026-08-26 on the one villa
+      // roofcheck still reported (1187,13108): 18 vertices, strongly concave,
+      // and ITS CENTROID LIES OUTSIDE ITS OWN POLYGON. Scaling by 1.08 or
+      // 1.19 about that point leaves SIX of the eighteen corners outside the
+      // result, so the roof is displaced off part of the house and the
+      // building's own wall texture lies flat where it is missing. `_capForm`
+      // is already 2 by then, so the generic flat cap skips it.
+      //
+      // The honest fix for `grow` is edge offsetting rather than a scale, and
+      // that is a change under every recipe in this file. This is the same
+      // answer the shophouse and Hotel Michael got instead: whatever form goes
+      // on top, close the top underneath it first. `b.p` unscaled, because a
+      // concave shape cannot be safely shrunk about that centroid either.
+      merger.add(extrudeGeo(b.p, 0.12, _hh - 0.10), MAT.roofDeck, _cc[0], _cc[1]);
       if (_pe && Math.abs(_ph) % _pe === 0) {
         merger.add(extrudeGeo(growClear(b.p, 1.08, b), 0.3, _hh), MAT.clayTile, _cc[0], _cc[1]);
         merger.add(extrudeGeo(grow(b.p, 0.82), 1.5, _hh + 0.3), MAT.clayTile, _cc[0], _cc[1]);
@@ -4423,6 +4532,7 @@ export async function buildBuildings(world, data, Y = null) {
       capFlatRoof(b, h, _mh, _capForm);
       stats.count++;
       if (h > 40) stats.tall++;
+      _bacc('generic mass');
       continue;
     }
     // Landmarks are podium + tower, which is what the Orchard skyline is made of

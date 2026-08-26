@@ -187,7 +187,12 @@ export async function buildSignage(world, axis, data, isBlocked, Y = null) {
         const rows = [];
         if (crossHere.left) rows.push({ text: crossHere.left.slice(0, 16), dir: 'left' });
         if (crossHere.right) rows.push({ text: crossHere.right.slice(0, 16), dir: 'right' });
-        said.push({ kind: 'gantry', x: px, z: pz,
+        // `obj` so a check can ask HOW HIGH, not only where. S10 ("signage
+        // standing in a carriageway") has to tell a gantry spanning the road
+        // — which is what a gantry is for — from a post planted in a lane,
+        // and without the object it could only guess by KIND, which is the
+        // allowlist trap this project has been bitten by seven times.
+        said.push({ kind: 'gantry', x: px, z: pz, obj: g,
                     text: rows.map((r2) => r2.text).join(' | ') });
         const face = new THREE.Mesh(
           new THREE.PlaneGeometry(4.6, 1.72),

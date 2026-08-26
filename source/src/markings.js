@@ -707,6 +707,19 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
   const segs = [];          // every dressed road segment, for matching crossings
   let sideCrossings = 0, sidewalkReal = 0, sidewalkNone = 0;
   const plated = new Set();
+  // WHY a street ended up with no name on it, not just that it did. C2 has
+  // reported a bare count for months and every diagnosis of it has been a
+  // guess: "probably the bridge", "probably a beach walk". Same shape as
+  // __lampRej, which is what turned "3 dark roads" into 8km of named service
+  // way. Keyed by street name; a street that gets plated is deleted from it,
+  // so what remains at the end is exactly C2's list with a reason attached.
+  const REJ = (window.__plateRej = window.__plateRej || {});
+  const rej = (n, why) => {
+    if (!n) return;
+    const e = REJ[n] = REJ[n] || { spots: 0, blocked: 0, nearerOther: 0, taken: 0, chosen: 0 };
+    if (why) e[why] = (e[why] || 0) + 1;
+    return e;
+  };
 
   // HOW FAR FROM THE ROUTE THE WORLD GETS DRESSED.
   //
@@ -781,6 +794,120 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     return n === 0 || inside / n < 0.7;
   });
   skipped = data.roads.length - chosen.length;
+  // A street can also fail to get a plate by never reaching the plating code
+  // at all — selectSideStreets dropped it, or the inside-another-carriageway
+  // filter above did. That is invisible from inside the loop, and it is the
+  // first thing you want to know about a street C2 says has no name on it.
+  // Only roads that are actually within the dressing reach are recorded; the
+  // rest are undressed on purpose and C2 does not grade them.
+  {
+    const inLoop = new Set(chosen.map((r) => r.n).filter(Boolean));
+    for (const r of data.roads) {
+      if (!r.n || inLoop.has(r.n)) continue;
+      if (!r.p || !r.p.some((q) => nearAxis(q[0], q[1]))) continue;
+      rej(r.n, 'notChosen');
+    }
+  }
+  // ONE PLACE THAT PUTS A NAME ON A STREET. It used to live inline in the
+  // dressing loop below, which meant a street could only be named if it was
+  // also being PAINTED — see the plate-only pass after that loop for what that
+  // cost. Returns true if a plate went up.
+  const placePlate = (r) => {
+    const pts = r.p, half = r.w / 2, isBlocked = blockedIn;
+    if (!r.n || plated.has(r.n) || pts.length < 2) return false;
+    // walk along the street looking for a clear kerbside spot. One attempt at
+    // the very first metre failed on 12 streets, which is how a street ends
+    // up with no name on it anywhere.
+    const e = rej(r.n, 'tried');
+    const spots = [];
+    for (const along of [16, 34, 58, 90, 130]) {
+      let acc2 = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const ax = pts[i + 1][0] - pts[i][0], az = pts[i + 1][1] - pts[i][1];
+        const L = Math.hypot(ax, az) || 1;
+        if (acc2 + L < along) { acc2 += L; continue; }
+        const t2 = (along - acc2) / L;
+        spots.push([pts[i][0] + ax * t2, pts[i][1] + az * t2, ax / L, az / L]);
+        break;
+      }
+    }
+    if (e) e.spots = Math.max(e.spots, spots.length);
+    for (const [bx0, bz0, u0x, u0z] of spots)
+    for (const sgn of [1, -1]) {
+      const sx = bx0 + -u0z * (half + 2.2) * sgn;
+      const sz = bz0 + u0x * (half + 2.2) * sgn;
+      if (isBlocked(sx, sz)) { if (e) e.blocked++; continue; }
+      // NOT ON THE TARMAC. `half + 2.2` is measured from the OSM way's
+      // NOMINAL width, and the drawn ribbon is wider than its mapped way by
+      // three documented numbers (ROAD_JUNCTION_PAD, ROAD_TAPER_LEN and
+      // ROAD_END_EXT, all in roads.js) plus the junction discs — so the
+      // offset that clears a mapped way does not always clear a drawn one.
+      // Measured 2026-08-25: two of the world's 36 plates stood IN a live
+      // carriageway, Siloso Road and Tanjong Beach Walk, and nothing could
+      // see it — P1 ("props in a carriageway") walks instanced meshes only
+      // and a plate is a Group of three. Same lesson as the lamp's "step out
+      // until the tarmac ends rather than guessing a half-width", applied as
+      // a REJECTION so the 34 plates that are already right do not move.
+      if (window.__onRoad && window.__onRoad(sx, sz, 0.3)) { if (e) e.onRoad = (e.onRoad || 0) + 1; continue; }
+      // A PLATE MUST BE NEARER ITS OWN STREET THAN ANY OTHER, measured the
+      // way S2 measures it.
+      //
+      // The guard here asked window.__nearestStreet, which answers a
+      // different question from S2's -- and the two disagreed on exactly the
+      // streets you would expect: parallel dual-carriageway pairs. Eu Tong
+      // Sen Street's plate stood 19m from Eu Tong Sen and 10m from New
+      // Bridge Road; likewise Raffles Quay against Telegraph Street and
+      // Shenton Way against Boon Tat Street. Two measures of one fact is the
+      // most repeated bug in this project, so this now computes the same
+      // distance S2 does and cannot disagree with it.
+      if (nearerOtherStreet(data, r.n, sx, sz)) { if (e) e.nearerOther++; continue; }
+      // see plateTaken() in wayfind.js: `plated` above is local to this
+      // call, so a street reached from two chunks was plated twice
+      if (plateTaken(r.n, sx, sz)) { if (e) e.taken++; continue; }
+      const g = new THREE.Group();
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 6), MAT.metal);
+      pole.position.y = 1.3; g.add(pole);
+      // TWO BACK-TO-BACK FACES, not one DoubleSide plane.
+      //
+      // A DoubleSide plane shows the SAME texture from behind, which means
+      // mirrored lettering -- so every name plate in the world read
+      // backwards from one side, and with the dressing reach raised there
+      // are now 288 of them. A real plate is printed on both faces. Found by
+      // riding Tew Chew Street, which no camera had ever visited.
+      //
+      // ONE MATERIAL FOR BOTH FACES. They were built as two materials over one
+      // texture, which is two draws consolidate cannot merge; a plate is one
+      // printed sign and one material says so.
+      const faceMat = new THREE.MeshBasicMaterial({ map: texStreetName(r.n) });
+      for (const face of [1, -1]) {
+        const plate = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.38), faceMat);
+        plate.position.set(0, 2.5, 0.012 * face);
+        if (face < 0) plate.rotation.y = Math.PI;
+        g.add(plate);
+      }
+      g.position.set(sx, surfaceAt(sx, sz), sz);
+      g.rotation.y = Math.atan2(u0x, u0z) + Math.PI / 2;
+      world.add(g);
+      (window.__signage = window.__signage || [])
+        .push({ kind: 'plate', x: sx, z: sz, text: r.n, obj: g });
+      plated.add(r.n);
+      delete REJ[r.n];
+      return true;
+    }
+    return false;
+  };
+
+  // WHERE DO THE SIDE-STREET MILLISECONDS GO? `sideStreets` is 1,347ms of a
+  // 16.4s boot and the largest phase gating time-to-playable that has never
+  // been split — the same gap `__buildMarks` and `__plantMarks` fill for their
+  // own loops. A phase you cannot split is a phase you optimise by guessing.
+  const _SM = (window.__sideMarks = []);
+  let _smT = performance.now();
+  const smark = (name) => {
+    const t = performance.now();
+    _SM.push([name, Math.round(t - _smT)]);
+    _smT = t;
+  };
   let _dt = performance.now();
   for (const r of chosen) {
     if (Y && performance.now() - _dt > 6) { await Y(); _dt = performance.now(); }
@@ -807,70 +934,7 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     // C2: a street with no name plate is a street you cannot identify. One
     // plate per named street, at its first clear kerbside spot, reading the
     // name OSM records for it.
-    if (!plated.has(r.n)) {
-      // walk along the street looking for a clear kerbside spot. One attempt at
-      // the very first metre failed on 12 streets, which is how a street ends
-      // up with no name on it anywhere.
-      const spots = [];
-      for (const along of [16, 34, 58, 90, 130]) {
-        let acc2 = 0;
-        for (let i = 0; i < pts.length - 1; i++) {
-          const ax = pts[i + 1][0] - pts[i][0], az = pts[i + 1][1] - pts[i][1];
-          const L = Math.hypot(ax, az) || 1;
-          if (acc2 + L < along) { acc2 += L; continue; }
-          const t2 = (along - acc2) / L;
-          spots.push([pts[i][0] + ax * t2, pts[i][1] + az * t2, ax / L, az / L]);
-          break;
-        }
-      }
-      outer:
-      for (const [bx0, bz0, u0x, u0z] of spots)
-      for (const sgn of [1, -1]) {
-        const sx = bx0 + -u0z * (half + 2.2) * sgn;
-        const sz = bz0 + u0x * (half + 2.2) * sgn;
-        if (isBlocked(sx, sz)) continue;
-        // A PLATE MUST BE NEARER ITS OWN STREET THAN ANY OTHER, measured the
-        // way S2 measures it.
-        //
-        // The guard here asked window.__nearestStreet, which answers a
-        // different question from S2's -- and the two disagreed on exactly the
-        // streets you would expect: parallel dual-carriageway pairs. Eu Tong
-        // Sen Street's plate stood 19m from Eu Tong Sen and 10m from New
-        // Bridge Road; likewise Raffles Quay against Telegraph Street and
-        // Shenton Way against Boon Tat Street. Two measures of one fact is the
-        // most repeated bug in this project, so this now computes the same
-        // distance S2 does and cannot disagree with it.
-        if (nearerOtherStreet(data, r.n, sx, sz)) continue;
-        // see plateTaken() in wayfind.js: `plated` above is local to this
-        // call, so a street reached from two chunks was plated twice
-        if (plateTaken(r.n, sx, sz)) continue;
-        const g = new THREE.Group();
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 6), MAT.metal);
-        pole.position.y = 1.3; g.add(pole);
-        // TWO BACK-TO-BACK FACES, not one DoubleSide plane.
-        //
-        // A DoubleSide plane shows the SAME texture from behind, which means
-        // mirrored lettering -- so every name plate in the world read
-        // backwards from one side, and with the dressing reach raised there
-        // are now 288 of them. A real plate is printed on both faces. Found by
-        // riding Tew Chew Street, which no camera had ever visited.
-        for (const face of [1, -1]) {
-          const plate = new THREE.Mesh(
-            new THREE.PlaneGeometry(1.5, 0.38),
-            new THREE.MeshBasicMaterial({ map: texStreetName(r.n) }));
-          plate.position.set(0, 2.5, 0.012 * face);
-          if (face < 0) plate.rotation.y = Math.PI;
-          g.add(plate);
-        }
-        g.position.set(sx, surfaceAt(sx, sz), sz);
-        g.rotation.y = Math.atan2(u0x, u0z) + Math.PI / 2;
-        world.add(g);
-        (window.__signage = window.__signage || [])
-          .push({ kind: 'plate', x: sx, z: sz, text: r.n, obj: g });
-        plated.add(r.n);
-        break outer;
-      }
-    }
+    placePlate(r);
     if (sw) sidewalkReal++;
     if (!doLeft && !doRight) sidewalkNone++;
 
@@ -933,6 +997,68 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     }
   }
 
+  smark('dress loop');
+  // A STREET CAN BE UNPAINTABLE AND STILL HAVE TO BE IDENTIFIABLE.
+  //
+  // C2 has reported "streets with no name plate" for months and every guess at
+  // the cause was about the streets. It was about the PLATE'S ADDRESS: the
+  // plate was emitted inside the dressing loop above, so a street could only
+  // be named if it was also being painted — and selectSideStreets drops
+  // streets for two reasons that are, in its own comments, entirely about
+  // paint:
+  //
+  //   `/beach walk$/i`  "a beachfront promenade takes no lane paint"
+  //   `r.bridge`        "markings are placed at groundAt(), and a bridge deck
+  //                      is by definition not at ground level"
+  //
+  // Both are right about paint and neither says anything about a name. On
+  // Sentosa those two lines were the WHOLE of C2: Siloso, Palawan and Tanjong
+  // Beach Walk, plus Sentosa Gateway and the two Brani port roads. And the
+  // beach walks are not promenades in the sense that rule means — they are
+  // gazetted roads with postal addresses on them (50 Siloso Beach Walk is the
+  // Beach Station bus terminal; 54 Palawan Beach Walk is The Palawan) and a
+  // Singapore road with numbered addresses carries a road-name sign.
+  //
+  // So: one more pass, plates only, over every named carriageway that the
+  // dressing skipped. Same spot search, same three guards, no paint.
+  {
+    const byName = new Map();
+    for (const r of data.roads) {
+      if (!r.n || /orchard road/i.test(r.n)) continue;
+      if (r.k === 'footway' || r.k === 'pedestrian') continue;
+      if (!r.p || r.p.length < 2) continue;
+      let len = 0;
+      for (let i = 0; i < r.p.length - 1; i++)
+        len += Math.hypot(r.p[i + 1][0] - r.p[i][0], r.p[i + 1][1] - r.p[i][1]);
+      const e2 = byName.get(r.n) || { len: 0, ways: [] };
+      e2.len += len; e2.ways.push({ r, len });
+      byName.set(r.n, e2);
+    }
+    for (const [n, e2] of byName) {
+      if (plated.has(n) || e2.len < 45) continue;
+      // THE BRIDGE RULE SURVIVES, for the plate's own reason rather than the
+      // paint's: the pole is set down at surfaceAt(), which under a bridge way
+      // is the seabed, and 2.2m off the deck edge there is no deck to stand
+      // on. So plate the street on a way that is ON THE GROUND. Sentosa
+      // Gateway and both Brani port roads are bridge end to end inside this
+      // bbox and keep no ground way at all — recorded as `bridgeOnly` rather
+      // than left as a bare count, because putting a sign on a parapet is a
+      // different piece of furniture and inventing one here would be inventing
+      // structure.
+      // TWO REASONS, NAMED SEPARATELY. Collapsing them reported "Sentosa cove
+      // private area" as bridge-only when not one of its ways is a bridge —
+      // it is simply outside the dressing reach, which is not a defect at all.
+      // A wrong reason is worse than a bare count; that is this file's thesis.
+      const onGround = e2.ways.filter(({ r }) => !r.bridge);
+      const ground = onGround
+        .filter(({ r }) => r.p.some((q) => nearAxis(q[0], q[1])))
+        .sort((a, b) => b.len - a.len);
+      if (!ground.length) { rej(n, onGround.length ? 'outOfReach' : 'bridgeOnly'); continue; }
+      for (const { r } of ground) if (placePlate(r)) break;
+    }
+  }
+
+  smark('plates-only pass');
   // OSM maps a node for every pedestrian crossing in the district, and only the
   // 35 on Orchard Road itself were being used. The other 465 are on the streets
   // running off it, which is exactly where you meet them when you turn a corner.
@@ -1017,6 +1143,7 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     world.add(im);
   };
   const yaw = (r) => { p.set(r[0], surfaceAt(r[0], r[2]) + r[1], r[2]); e.set(0, r[3], 0); q.setFromEuler(e); };
+  smark('crossings');
   // THE SIDE-STREET KERB FOLLOWS ITS ROAD'S GRADE — see the long note at
   // seatKerb in main.js, which fixes the same defect on the axis kerbs. These
   // are the bigger half of it: a side-street kerb is a FOUR metre box, so on a
@@ -1177,8 +1304,33 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
       juncPts.push([jx, jz, n >= 3 ? 225 : r2]);
     }
   }
+  // INDEXED, because this is called once per kerb and once per drain and it
+  // used to walk EVERY junction on the island each time. That scan was the
+  // single biggest cost in this pass -- the `kerb+junction dedupe` span
+  // measured 410ms of a ~1,300ms `dressSideStreets`, and `offApron` runs
+  // `nearJn` over thousands of props against hundreds of junction points.
+  // The sixth O(n) scan this project has paid for in the same shape.
+  //
+  // EXACT, not approximate: each junction is registered into every cell its
+  // own radius reaches, so a point inside that radius is guaranteed to land
+  // in a cell where the junction is listed. The radii differ per junction
+  // (225 for a 3+ arm cluster, smaller otherwise), which is why the registered
+  // range is computed from each junction's OWN r2 rather than a shared one.
+  const JCELL = 32;
+  const jnGrid = new Map();
+  for (const j of juncPts) {
+    const R = Math.sqrt(j[2]);
+    for (let cx = Math.floor((j[0] - R) / JCELL); cx <= Math.floor((j[0] + R) / JCELL); cx++)
+      for (let cz = Math.floor((j[1] - R) / JCELL); cz <= Math.floor((j[1] + R) / JCELL); cz++) {
+        const k = cx + ',' + cz;
+        let a = jnGrid.get(k); if (!a) jnGrid.set(k, a = []);
+        a.push(j);
+      }
+  }
   const nearJn = (x, z) => {
-    for (const [jx, jz, r2] of juncPts) {
+    const cell = jnGrid.get(Math.floor(x / JCELL) + ',' + Math.floor(z / JCELL));
+    if (!cell) return false;
+    for (const [jx, jz, r2] of cell) {
       const dx = x - jx, dz = z - jz;
       if (dx * dx + dz * dz < r2) return true;
     }
@@ -1212,6 +1364,7 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
   // way — its boardwalk handrails are instanced for exactly the same reason
   // after two blocked-route regressions went into the ledger. The deploy gate
   // reports `BLOCKED runs >20m` and is the arbiter.
+    smark('kerb+junction dedupe');
   {
     // the drain list never had the crossing rule the kerbs got — at any
     // multi-arm junction each arm's drain lips ran through at their own
@@ -1274,6 +1427,7 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
   // once PER AXIS with the same chunk, which is the double-lamp case the
   // original guard existed to stop, and addChunk calls it once per district
   // with a different chunk each time. One WeakSet answers both.
+    smark('drain+zebra emit');
   if (!LAMPS_DONE.has(data)) {
     LAMPS_DONE.add(data);
     // Its own spatial index. `__roadDirsNear` walks every road in the district
@@ -1290,6 +1444,29 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
         const a = r.p[i], c = r.p[i + 1];
         const mnx = Math.min(a[0], c[0]), mxx = Math.max(a[0], c[0]);
         const mnz = Math.min(a[1], c[1]), mxz = Math.max(a[1], c[1]);
+        // NOTE ON THE `lamps` SMARK ABOVE: IT IS NOT THE LAMPS. It closes a
+        // 475-line span (from `crossings`), and the lamp loop inside it is
+        // **52ms of the ~830ms** — measured 2026-08-26. The bulk is the
+        // kerb/drain/zebra emit and the dedupe pipeline around it. Two
+        // earlier guesses at the cause were both WRONG and are recorded so
+        // they are not retried: (1) `lampSpots` stepping out to find the
+        // verge does 5,250 probes for 839 lamps, **6.3 each, not the 24 the
+        // loop bound allows** — nowhere near 830ms; (2) the `await Y()` in
+        // the lamp loop never fires, because `Y` is NULL during boot.
+        // If you sub-instrument this span, put the marks at fixed points in
+        // the LINEAR flow. Putting one inside `kerbCross` produced two
+        // meaningless labels, because the helper is called twice and each
+        // mark then closed whatever ran before that call.
+        // THE PAD LOOKS REDUNDANT AND IS NOT WORTH REMOVING — TESTED
+        // 2026-08-26. `dirAt` below already searches the 3x3 block around its
+        // query cell, so padding every segment by a full cell buys the same
+        // reach twice and pushes a 1m segment into nine buckets. Removing it
+        // was measured: the lamp phase went 840ms -> 829ms, **11ms, 1.3%** —
+        // the index build was never the cost. It also NARROWS the effective
+        // search from two cells to one, which is a behaviour change for
+        // nothing. Left as it was; recorded so the next reader does not spend
+        // the same twenty minutes on it. The 829ms is in `lampSpots` stepping
+        // out to find the verge and in the 741 per-lamp clearance checks.
         for (let cx = Math.floor((mnx - LC) / LC); cx <= Math.floor((mxx + LC) / LC); cx++)
           for (let cz = Math.floor((mnz - LC) / LC); cz <= Math.floor((mxz + LC) / LC); cz++) {
             const k = cx + ',' + cz;
@@ -1330,6 +1507,7 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
     // __blockedAt (a movement test) and not this pass's own `blockedIn`.
     // One array of [x, z, reason] costs nothing and answers it directly.
     const _rej = (window.__lampRej = []);
+    smark('lamp index');
     for (const [lx, lz] of lampSpots(data)) {
       _dbg.cand++;
       if (Y && performance.now() - _lt > 6) { await Y(); _lt = performance.now(); }
@@ -1476,6 +1654,7 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
   // exact thing T1 exists to refuse and the exact thing the owner would ride
   // into. Real booms at a Cove street or a car park stand UP between vehicles
   // anyway, so the raised arm is both the honest pose and the playable one.
+  smark('lamps');
   // The gates swing their leaf back along the verge for the same reason.
   if (data.gates && data.gates.length && !new URLSearchParams(location.search).has('nogates')) {
     const _gdbg = (window.__gateDbg = { cand: 0, blocked: 0, kept: 0, boom: 0, leaf: 0 });
@@ -1604,6 +1783,7 @@ export async function dressSideStreets(world, data, axis, blockedIn, TreeField, 
   s.set(1, 1, 1);
   emit(new THREE.CylinderGeometry(0.075, 0.09, 0.9, 8), MAT.boomPost, gateBollard, yaw, 'gateBollard');
   const treeCount = trees.build(world);
+  smark('gates+pools+emit');
   return { sideRoads: roads, sideSkipped: skipped, sideTrees: treeCount,
            sideKerbs: kerb.length, sideCrossings, sidewalkReal, sidewalkNone,
            sidePlates: plated.size,

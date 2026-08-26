@@ -380,6 +380,14 @@ const SPOTS = [
   // nothing watches. From the sand at the beach abutment, looking across
   // the span to the islet, with the lifeguard hut in frame.
   ['siloso-bridge', -2345, 12315, -0.785],
+  // RWS FROM THE IMBIAH SLOPE — THE FIRST FRAME IN THIS SET THAT CAN SEE A
+  // ROOF. A free camera, not a rider: see the note in the shoot loop for why
+  // the roof cap could be rewritten three times without moving a single
+  // frame. Holds Hotel Michael's punched-window range and its verdigris
+  // barrel-vault run, the deck between those vaults (the 2026-08-26 fix),
+  // Crockfords' ribbed dome, the Oceanarium range and the FFA castle roofs
+  // behind — most of the island's bespoke roof geometry in one frame.
+  ['rws-roofs', 0, 0, 0, [-1700, 87, 12420, -1437, 38, 12318, 45]]
 ];
 
 mkdirSync(ACT, { recursive: true });
@@ -432,8 +440,29 @@ await page.waitForTimeout(4000);
 await page.addStyleTag({ content:
   '#hud,#place,#map,#maphint,#big,#friendsbtn,#modebtn,#vehiclebtn,#stick,#lookhint,#nettoast{display:none!important}' });
 
-for (const [name, x, z, h] of SPOTS) {
-  await page.evaluate(([x2, z2, h2]) => window.__teleport(x2, z2, h2), [x, z, h]);
+for (const [name, x, z, h, aim] of SPOTS) {
+  // TWO KINDS OF FRAME. Four numbers is the rider: teleport and shoot what
+  // they see, which is every frame this set has ever held. A fifth entry
+  // [ex, ey, ez, ax, ay, az] is a FREE CAMERA, and it exists because a whole
+  // class of geometry has no rider view at all.
+  //
+  // THE ROOFS. The flat-roof cap has been changed three times — 2026-08-24
+  // (165 roofs), and twice on 2026-08-26 (the shophouse pitch, then every
+  // deck on the island z-fighting with the wall under it) — and on each
+  // occasion ALL 45 FRAMES CAME BACK AT 0.000%, because a roof is only
+  // visible from above and every camera here stands on the ground. Tested
+  // rather than assumed: from the Imbiah slope at rider height, 280m from
+  // Hotel Michael and 40m above it, the trees close the view completely.
+  // Ninth time this file has had to make the "a golden set is only as good as
+  // what its cameras can see" argument, and the first time the answer was a
+  // camera the harness could not express.
+  if (aim) {
+    await page.evaluate(([a]) => window.__cam(a[0], a[1], a[2], a[3], a[4], a[5], a[6] || 45),
+      [aim]);
+  } else {
+    await page.evaluate(() => window.__cam && window.__cam(null));
+    await page.evaluate(([x2, z2, h2]) => window.__teleport(x2, z2, h2), [x, z, h]);
+  }
   await page.waitForTimeout(1100);
   // Playwright's 30s default is a DEV-MACHINE timeout, not a world timeout.
   // On 2026-08-07 this threw four times in a row — an uncaught TimeoutError
@@ -445,6 +474,7 @@ for (const [name, x, z, h] of SPOTS) {
   // else is using.
   await page.screenshot({ path: join(ACT, `${name}.png`), timeout: 180000 });
 }
+await page.evaluate(() => window.__cam && window.__cam(null));
 await browser.close();
 
 if (BLESS) {

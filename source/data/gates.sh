@@ -35,16 +35,26 @@ SCENES=${1:-"$(python3 -c "import json,os,sys; h=os.path.dirname(os.path.abspath
 # by hand refused an otherwise-green deploy on 2026-07-30.
 export SG_STREAM_BUDGET=${SG_STREAM_BUDGET:-1500000}
 FAILED=0
+# EVERY gate below must record failure with `; [ ${PIPESTATUS[0]} -ne 0 ] &&
+# FAILED=1`, NOT with `| tail -N || FAILED=1`. In a pipeline `$?` is the LAST
+# command's status, so `|| FAILED=1` after a pipe tests `tail`, which succeeds
+# whatever it was fed. Fixed 2026-08-26 after finding FIVE gates dead this way
+# -- check.py, groundcheck.py, ride.test.mjs, behaviour.mjs and signcheck.mjs
+# could not fail the run. behaviour.mjs was the worst of them: the comment
+# above it already described this exact trap and said "counted in FAILED now",
+# but the line under it still used the broken form, so the gate stayed dead
+# while its own note claimed it was fixed. Proven before and after: a command
+# exiting 3 through `| tail -3 || FAILED=1` leaves FAILED=0.
 
 hr() { printf '\n== %s\n' "$1"; }
 
 hr "data gate"
 for s in $SCENES; do
-  python3 data/check.py "$s" 2>&1 | tail -3 || FAILED=1
+  python3 data/check.py "$s" 2>&1 | tail -3; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
 done
 
 hr "ground vs published levels"
-python3 data/groundcheck.py 2>&1 | tail -3 || FAILED=1
+python3 data/groundcheck.py 2>&1 | tail -3; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
 
 hr "road overlap (analytic)"
 for s in $SCENES; do
@@ -52,7 +62,7 @@ for s in $SCENES; do
 done
 
 hr "ride model"
-node test/ride.test.mjs 2>&1 | tail -1 || FAILED=1
+node test/ride.test.mjs 2>&1 | tail -1; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
 
 hr "world audit"
 for s in $SCENES; do
@@ -74,7 +84,7 @@ hr "behaviour"
 # 2026-08-19, and `| tail -1` swallowed the non-zero status both times, so
 # the only line anyone saw was "Node.js v25.9.0" and the run stayed green.
 # A gate that cannot fail is not a gate — counted in FAILED now.
-SG_SCENE=sentosa node data/behaviour.mjs 2>&1 | tail -3 || FAILED=1
+SG_SCENE=sentosa node data/behaviour.mjs 2>&1 | tail -3; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
 
 echo "== determinism (streaming prerequisite)"
 node data/determinism.mjs || exit 1
@@ -102,7 +112,30 @@ _tree=$(SG_SCENE=sentosa node data/treecheck.mjs 2>&1); [ $? -ne 0 ] && FAILED=1
 echo "$_tree" | tail -6
 
 hr "venue signs"
-SG_SCENE=sentosa node data/signcheck.mjs 2>&1 | tail -12 || FAILED=1
+SG_SCENE=sentosa node data/signcheck.mjs 2>&1 | tail -12; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
+
+hr "blocked site data"
+# iOS private browsing makes localStorage THROW. One unguarded read took the
+# whole time-attack layer down silently on 2026-08-26. Asserts on a positive
+# signal (4 courses build) with a storage-working control, because the failure
+# mode is something NOT appearing and that produces no error.
+SG_SCENE=sentosa node data/storagecheck.mjs 2>&1 | tail -5; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
+
+hr "foot through the board"
+# The owner's "no clipping" rule, guarded for the case that is easy to get
+# wrong and impossible to judge from a screenshot: side-on the deck OCCLUDES
+# the far-side foot, so a correct push looks identical to a leg through the
+# board. Tested in the DECK'S OWN space, deck identified by its grip-tape
+# colour. See the header in data/footcheck.mjs.
+SG_SCENE=sentosa node data/footcheck.mjs 2>&1 | tail -5; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
+
+hr "mobile frame rate"
+# The mobile-first mandate's viewport, and the only honest fps number the
+# project has: sweep.mjs measures the harness (it teleports and screenshots
+# between samples, and prints "worst 20 median 20 best 20" for a world that
+# actually runs at 60). This touches nothing while it counts. Fails under
+# 50fps or on any console error.
+SG_SCENE=sentosa node data/mobilefps.mjs 2>&1 | tail -6; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
 
 hr "accuracy ledger"
 python3 data/accuracy.py sentosa 2>/dev/null | tail -2

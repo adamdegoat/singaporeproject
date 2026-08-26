@@ -1043,8 +1043,22 @@ export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
       back.rotateY(rot);
       back.translate(mx + (oX / oL) * 0.85, sy, mz + (oZ / oL) * 0.85);
       signs.add(back, SIGN_TRAY, mx, mz);
+      // `above` — HEIGHT ABOVE THE GROUND UNDER IT, and the name says which
+      // datum. A building name sign is fixed to a facade a storey up and is
+      // legitimately over tarmac wherever a drawn ribbon overruns a forecourt;
+      // S10 needs the height to tell that from a post planted in a lane. There
+      // is no Group to hand it — the tray joins the `signs` merger, which is
+      // flushed with flushY and therefore lifted to local ground — so a number
+      // is recorded instead of an object.
+      //
+      // IT IS NOT A WORLD Y AND MUST NOT BE READ AS ONE. `sy` is built from
+      // `b.h`, the building's own height above its footing. Recorded as a
+      // world y for one run, it made Capella Colonial Block — which stands on
+      // a 37m hill — report its sign as 37 metres UNDERGROUND. Two datums for
+      // one fact is the most repeated bug in this project and this field is
+      // named so it cannot happen again.
       (window.__signage = window.__signage || [])
-        .push({ kind: 'name', x: mx, z: mz, text: b.n });
+        .push({ kind: 'name', x: mx, z: mz, text: b.n, above: sy - boardH / 2 - 0.25 });
       stats.nameSigns = (stats.nameSigns || 0) + 1;
     }
 
@@ -2345,6 +2359,12 @@ const surfaced = (m, { amt = 0.16, grain = 2.6, planks = 0, edge = 0.26 } = {}) 
 export async function buildTrails(world, data, Y = null) {
   const YY = Y || (async () => {});
   const out = { trails: 0, trailSegs: 0, boardwalk: 0, forestTrail: 0, pavedPath: 0 };
+  // TIMING ONLY -- added 2026-08-26. `sg:trails` is the single biggest
+  // sub-phase left in boot (1,364ms, already down from 3,560). Each trmark
+  // closes the section ABOVE it. performance.now() only, no geometry touched.
+  const _tr = []; let _trT = performance.now();
+  const trmark = (k) => { const n = performance.now(); _tr.push([k, n - _trT]); _trT = n; };
+  window.__trailMarks = _tr;
   const merger = new Merger();
   // boardwalk handrails, gathered while the deck is drawn and emitted as two
   // instanced meshes at the end — see the note at the collection site
@@ -2636,11 +2656,46 @@ export async function buildTrails(world, data, Y = null) {
   const sandsReachB = sands.map((g) => [g.p, _bbox(g.p, BOARDWALK_REACH)]);
   const woodsB = woods.map((g) => [g.p, _bbox(g.p)]);
   const _inB = (x, z, b) => x >= b[0] && x <= b[1] && z >= b[2] && z <= b[3];
+  // ...AND A CELL GRID OVER THE BOXES, because the box test is still O(rings)
+  // PER SAMPLE. The 2026-08-19 note above took this phase from a full
+  // point-in-polygon per ring to a box test per ring, and `sg:trails` is still
+  // the single most expensive phase of the boot — 3,560ms of a 17.2s load
+  // (bootprobe, 2026-08-26), more than buildings or terrain. A trail sample
+  // can only be inside a ring whose box covers its cell, so bucket the boxes
+  // once and test a handful instead of all of them.
+  //
+  // SAME ANSWERS BY CONSTRUCTION: a ring is registered in every cell its box
+  // touches, so the candidate set is a superset of the boxes that could match,
+  // and the ring test that follows is unchanged. The four collections stay
+  // SEPARATE and are queried in the same order — waterdeck, deck, deck-by-
+  // reach, earth — because that order is the priority, not an accident.
+  const SCELL = 48;
+  const _grid = (list) => {
+    const g = new Map();
+    list.forEach((entry, i) => {
+      const b = entry[1];
+      for (let cx = Math.floor(b[0] / SCELL); cx <= Math.floor(b[1] / SCELL); cx++)
+        for (let cz = Math.floor(b[2] / SCELL); cz <= Math.floor(b[3] / SCELL); cz++) {
+          const k = cx + ',' + cz;
+          let a = g.get(k); if (!a) g.set(k, a = []);
+          a.push(i);
+        }
+    });
+    return g;
+  };
+  const wpolysG = _grid(wpolysB), sandsG = _grid(sandsB);
+  const sandsReachG = _grid(sandsReachB), woodsG = _grid(woodsB);
+  const _cellOf = (x, z) => Math.floor(x / SCELL) + ',' + Math.floor(z / SCELL);
   const surfaceFor = (x, z) => {
-    for (const [p, b] of wpolysB) if (_inB(x, z, b) && inRing(x, z, p)) return 'waterdeck';
-    for (const [p, b] of sandsB) if (_inB(x, z, b) && inRing(x, z, p)) return 'deck';
-    for (const [p, b] of sandsReachB) if (_inB(x, z, b) && edgeDistTo(x, z, p) < BOARDWALK_REACH) return 'deck';
-    for (const [p, b] of woodsB) if (_inB(x, z, b) && inRing(x, z, p)) return 'earth';
+    const k = _cellOf(x, z);
+    const w = wpolysG.get(k);
+    if (w) for (const i of w) { const [p, b] = wpolysB[i]; if (_inB(x, z, b) && inRing(x, z, p)) return 'waterdeck'; }
+    const sa = sandsG.get(k);
+    if (sa) for (const i of sa) { const [p, b] = sandsB[i]; if (_inB(x, z, b) && inRing(x, z, p)) return 'deck'; }
+    const sr = sandsReachG.get(k);
+    if (sr) for (const i of sr) { const [p, b] = sandsReachB[i]; if (_inB(x, z, b) && edgeDistTo(x, z, p) < BOARDWALK_REACH) return 'deck'; }
+    const wo = woodsG.get(k);
+    if (wo) for (const i of wo) { const [p, b] = woodsB[i]; if (_inB(x, z, b) && inRing(x, z, p)) return 'earth'; }
     return 'pave';
   };
 
@@ -2676,6 +2731,7 @@ export async function buildTrails(world, data, Y = null) {
     return out;
   };
 
+  trmark('setup+grids');
   for (const r of (data.roads || [])) {
     const k = r.k || '';
     if (k !== 'footway' && k !== 'pedestrian') continue;
@@ -2787,14 +2843,17 @@ export async function buildTrails(world, data, Y = null) {
         // and at both edges of its own width — the same nine-sample shape the
         // kerb emitters use — and at the same -0.3 margin, so a pavement
         // legitimately running along a kerb line is not thrown away.
+        // The nine samples, written out. This is the hottest loop in the
+        // whole boot (`sg:trails` road loop, 1,235ms) and the array-literal
+        // form built TWO fresh arrays per step, every step, purely to iterate
+        // three constants. Same nine points, same order, same early-outs.
         let onRoad = false;
-        {
-          for (const tt of [0, 0.5, 1]) {
-            const sx = p0x + (p1x - p0x) * tt, sz = p0z + (p1z - p0z) * tt;
-            for (const off of [0, half, -half]) {
-              if (onAnyRoadT(sx + nx * off, sz + nz * off, 0.8)) { onRoad = true; break; }
-            }
-            if (onRoad) break;
+        for (let ti = 0; ti < 3 && !onRoad; ti++) {
+          const tt = ti * 0.5;
+          const sx = p0x + (p1x - p0x) * tt, sz = p0z + (p1z - p0z) * tt;
+          for (let oi = 0; oi < 3; oi++) {
+            const off = oi === 0 ? 0 : oi === 1 ? half : -half;
+            if (onAnyRoadT(sx + nx * off, sz + nz * off, 0.8)) { onRoad = true; break; }
           }
         }
         if (onRoad) continue;
@@ -2980,6 +3039,7 @@ export async function buildTrails(world, data, Y = null) {
   }
   // THE BOARDWALK HANDRAILS. Two InstancedMeshes for the whole island, so this
   // is two draw calls and nothing at all in the collision grid.
+  trmark('the road loop');
   if (railPosts.length) {
     await YY();
     const RAIL_H = 1.05;
@@ -3027,6 +3087,7 @@ export async function buildTrails(world, data, Y = null) {
     out.railBars = railBars.length;
   }
   await merger.flushY(world, {}, Y);
+  trmark('railings');
   return out;
 }
 
@@ -3738,6 +3799,16 @@ export async function buildWalkable(world, data, Y = null) {
 export async function buildTransit(world, data, Y = null) {
   const YY = Y || (async () => {});
   const out = { monorail: 0, cablePylons: 0, cableCabins: 0 };
+  // TIMING ONLY -- added 2026-08-26. `transit` is ~1.1s of boot and was the
+  // last pre-ready phase with NO breakdown at all: this one function is 3,580
+  // lines carrying roughly twenty unrelated features (monorail, cableway,
+  // bridges, arcades, the wheel, the zipline...) behind a single bmark. Each
+  // tmark closes the section ABOVE it, so a label names the work that just
+  // finished. performance.now() and an array push -- no geometry touched.
+  // Read it with the scratchpad harness; see HANDOFF.
+  const _tm = []; let _tmT = performance.now();
+  const tmark = (k) => { const n = performance.now(); _tm.push([k, n - _tmT]); _tmT = n; };
+  window.__transitMarks = _tm;
 
   // OVERHEAD-BY-MECHANISM: materials used ONLY for fabric that hangs above
   // the world (guideway beams, cables, cabins, pylon arms) carry
@@ -3966,6 +4037,7 @@ export async function buildTransit(world, data, Y = null) {
   }
 
   // -- the cable car: pylons, catenary cables, resting cabins --------------
+  tmark('monorail');
   const cw = data.cableway || {};
   const lines = cw.lines || [];
   // plausibility. Kept here as the DOCUMENTATION of the numbers; the profile
@@ -4057,6 +4129,7 @@ export async function buildTransit(world, data, Y = null) {
     }
     return false;
   };
+  tmark('cableway setup');
   for (const st of stationList) {
     await YY();
     let [sx, sz] = st.p;
@@ -4190,6 +4263,7 @@ export async function buildTransit(world, data, Y = null) {
   }
 
   // pylons: a tapered steel tower up to the cable it carries
+  tmark('stations');
   for (const py of (cw.pylons || [])) {
     await YY();
     const [x, z] = py.p;
@@ -4206,6 +4280,7 @@ export async function buildTransit(world, data, Y = null) {
     out.cablePylons++;
   }
   // cables: two parallel lines per way segment with a shallow midpoint sag
+  tmark('pylons');
   for (let li = 0; li < lines.length; li++) {
     const ln = lines[li], hs = profiles[li];
     const gauge = ln.k === 'chair_lift' ? 1.6 : 2.6;   // cabin track spacing
@@ -4257,6 +4332,7 @@ export async function buildTransit(world, data, Y = null) {
   // declared and took it down again, in the temporal dead zone — the same
   // mistake wearing a different hat. Shared resources go at the top of the
   // scope that uses them.
+  tmark('cable lines');
   const gateAtlas = sharedSignAtlas(THREE);
   const gateSigns = new Merger();
 
@@ -4271,6 +4347,7 @@ export async function buildTransit(world, data, Y = null) {
   // The spine and the garden positions are surveyed (data/sensoryscape.py);
   // the basket's size and which gardens carry one are authored, and the file
   // says so.
+  tmark('gate signs');
   const ss = data.sensoryscape;
   // THE CONNECTOR IS A WALK, AND NOTHING WAS DRAWING THE WALK.
   //
@@ -4670,6 +4747,7 @@ export async function buildTransit(world, data, Y = null) {
   // the whole reason people stand around watching. Built as: the flow deck,
   // the two waves, the terrace, and the roof over them.
   const wh = data.wavehouse;
+  tmark('sensoryscape');
   if (wh && wh.p) {
     await YY();
     const [wx, wz] = wh.p;
@@ -4847,6 +4925,7 @@ export async function buildTransit(world, data, Y = null) {
   // The heights are AUTHORED and `layer` is never read as metres — that is the
   // monorail lesson, and data/lookoutloop.py's header carries it.
   const ll = data.lookoutloop;
+  tmark('wheel');
   if (ll && ll.decks && ll.decks.length) {
     const deckMat = surfaced(new THREE.MeshLambertMaterial({ color: 0xd9d3c6 }),
                              { amt: 0.07, grain: 0.9, edge: 0.22 });
@@ -5022,6 +5101,7 @@ export async function buildTransit(world, data, Y = null) {
   // 2026 and is gone. The research flags it precisely because it is the trap a
   // photo-led build falls into.
   const glow = ss && ss.glow;
+  tmark('luge decks');
   if (glow && glow.p) {
     await YY();
     const [gx5, gz5] = glow.p;
@@ -5159,6 +5239,7 @@ export async function buildTransit(world, data, Y = null) {
   // data/ussgate.py for the reference and for which parts are measured
   // (position) and which are authored (every dimension).
   const ug = data.ussgate;
+  tmark('glow');
   if (ug && ug.p) {
     await YY();
     const [gx, gz] = ug.p;
@@ -5239,6 +5320,7 @@ export async function buildTransit(world, data, Y = null) {
   // this project keeps paying for. Every radius below is scaled per-petal from
   // the ellipse, never from one radius.
   const br = data.bullring;
+  tmark('underground');
   if (br && br.p) {
     await YY();
     const [bx, bz] = br.p;
@@ -5813,6 +5895,7 @@ export async function buildTransit(world, data, Y = null) {
   // edge walks at Resorts World and the Cove.
   const bwDeck = new THREE.MeshLambertMaterial({ color: 0x8b7355 });
   const bwPile = new THREE.MeshLambertMaterial({ color: 0x6b5a44 });
+  tmark('boardwalk');
   for (const arc of (data.arcades || [])) {
     if (arc.k !== 'deck' || !arc.p || arc.p.length < 2) continue;
     await YY();
@@ -5852,6 +5935,7 @@ export async function buildTransit(world, data, Y = null) {
   // arrival passes under it; the world drew nothing because the 17 m2 tower
   // footprints are under every area filter.
   const ga = data.gatewayarch;
+  tmark('arcades a');
   if (ga && ga.a && ga.b) {
     await YY();
     const stone = new THREE.MeshStandardMaterial({ color: 0xcfc4ae, roughness: 0.85 });
@@ -5933,6 +6017,7 @@ export async function buildTransit(world, data, Y = null) {
   // real one is about forty and a published 43m deck would float. See
   // data/skywalk.py for the whole argument.
   const sw = data.skywalk;
+  tmark('gateway arch');
   if (sw && sw.p && sw.p.length === 2) {
     await YY();
     const [[ax, az], [bx, bz]] = sw.p;
@@ -6035,6 +6120,7 @@ export async function buildTransit(world, data, Y = null) {
   // was actually drawn. 14f burned two hours proving an islet was underwater
   // because it rebuilt sea level out of `g.sea` and `base` instead of asking.
   const pb = data.palawanbridge;
+  tmark('skywalk');
   if (pb && pb.p && pb.p.length >= 2) {
     await YY();
     const P = pb.p;
@@ -6230,6 +6316,7 @@ export async function buildTransit(world, data, Y = null) {
   // built — overhead imagery cannot resolve it, half a source buys half a
   // change. The old TripAdvisor "floating bridge" is the PREVIOUS structure.
   const sb = data.silosobridge;
+  tmark('promenade bridge');
   if (sb && sb.p && sb.p.length >= 2) {
     await YY();
     const A3 = sb.p[0], B3 = sb.p[sb.p.length - 1];
@@ -6354,6 +6441,7 @@ export async function buildTransit(world, data, Y = null) {
   // spiral. Palette: chocolate shingle, honey-brown columns, dark red-brown
   // rails — no white, no render, no metal.
   const pt = data.palawantowers;
+  tmark('south bridge');
   if (pt && pt.p && pt.p.length === 2) {
     await YY();
     const ROOF = pt.roof || 10.7, DECKH = pt.deck || 6.5;
@@ -6486,6 +6574,7 @@ export async function buildTransit(world, data, Y = null) {
   // roads. Collect every corridor segment once; a column lands only where
   // no corridor passes.
   const _corr = [];
+  tmark('point-to-point');
   for (const a2 of (data.arcades || [])) {
     if (!a2.p || a2.p.length < 2) continue;
     const h2 = (a2.w || 3.6) / 2 + 0.6;
@@ -6504,6 +6593,7 @@ export async function buildTransit(world, data, Y = null) {
     }
     return false;
   };
+  tmark('arcades b');
   for (const arc of (data.arcades || [])) {
     if (arc.k !== 'drive' || !arc.p || arc.p.length < 2) continue;
     await YY();
@@ -6543,6 +6633,7 @@ export async function buildTransit(world, data, Y = null) {
     }
     out.porteCochere = (out.porteCochere || 0) + 1;
   }
+  tmark('porte-cochere');
 
   // -- GARAGE DOORS: a mapped service road that ENDS inside a footprint ----
   //
@@ -6563,15 +6654,56 @@ export async function buildTransit(world, data, Y = null) {
       }
       return hit;
     };
+    // 604ms OF A 1,030ms BOOT PHASE LIVED HERE (fixed 2026-08-26). This drew
+    // a handful of roller doors and cost 59% of `transit`: every service-road
+    // END (two per road) walked ALL 1,095 buildings, and each of those walked
+    // its whole ring again for the "cheap reject". The reject was cheap per
+    // building and ruinous in aggregate -- the same O(n) scan this project has
+    // now paid for in five separate places.
+    //
+    // Index the buildings ONCE into a cell grid, then only look at the ones
+    // near the road end. Two things are load-bearing:
+    //   1. The per-vertex 90m test is KEPT. A bbox overlapping the query box
+    //      does not prove a VERTEX sits inside it, so the grid is a superset
+    //      filter and the exact test still decides. Behaviour is unchanged.
+    //   2. Candidates are visited in ASCENDING BUILDING INDEX. The loop
+    //      `break`s on its first match, so iteration order picks which
+    //      building gets the door -- a Set's insertion order would have
+    //      quietly moved doors to different walls.
+    const GC = 96;
+    const _bl = data.buildings || [];
+    const bgrid = new Map();
+    for (let bi = 0; bi < _bl.length; bi++) {
+      const bl = _bl[bi];
+      if (!bl.p || bl.p.length < 3 || bl.roof) continue;   // same skips as before
+      let bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity;
+      for (const q of bl.p) {
+        if (q[0] < bx0) bx0 = q[0]; if (q[0] > bx1) bx1 = q[0];
+        if (q[1] < bz0) bz0 = q[1]; if (q[1] > bz1) bz1 = q[1];
+      }
+      for (let cx = Math.floor(bx0 / GC); cx <= Math.floor(bx1 / GC); cx++)
+        for (let cz = Math.floor(bz0 / GC); cz <= Math.floor(bz1 / GC); cz++) {
+          const k = cx + ',' + cz;
+          let a = bgrid.get(k); if (!a) bgrid.set(k, a = []);
+          a.push(bi);
+        }
+    }
+    const nearBuildings = (x, z) => {
+      const seen = new Set();
+      for (let cx = Math.floor((x - 90) / GC); cx <= Math.floor((x + 90) / GC); cx++)
+        for (let cz = Math.floor((z - 90) / GC); cz <= Math.floor((z + 90) / GC); cz++)
+          for (const bi of bgrid.get(cx + ',' + cz) || []) seen.add(bi);
+      return [...seen].sort((a, b) => a - b);
+    };
     let doors = 0;
     for (const r of (data.roads || [])) {
       if (r.k !== 'service' || !r.p || r.p.length < 2) continue;
       for (const endIdx of [0, r.p.length - 1]) {
         const pe = r.p[endIdx];
         const po = r.p[endIdx === 0 ? 1 : r.p.length - 2];
-        for (const bl of (data.buildings || [])) {
-          if (!bl.p || bl.p.length < 3 || bl.roof) continue;
-          // cheap reject before the ring test
+        for (const bi of nearBuildings(pe[0], pe[1])) {
+          const bl = _bl[bi];
+          // the exact reject, unchanged -- the grid only narrowed the field
           let close = false;
           for (const q of bl.p) {
             if (Math.abs(q[0] - pe[0]) < 90 && Math.abs(q[1] - pe[1]) < 90) { close = true; break; }
@@ -6605,6 +6737,7 @@ export async function buildTransit(world, data, Y = null) {
     }
     out.garageDoors = doors;
   }
+  tmark('garage doors');
 
   // -- ATTRACTION ENTRANCES: a gate, a name, and a guide -------------------
   //
@@ -6668,6 +6801,7 @@ export async function buildTransit(world, data, Y = null) {
   const pylonBody = new THREE.MeshLambertMaterial({ color: 0x2a2e33 });
   const pylonBase = new THREE.MeshLambertMaterial({ color: 0x9a9184 });
   const pylonCap = new THREE.MeshLambertMaterial({ color: 0x2f7d78 });
+  tmark('arcades c');
   for (const e of (data.entrances || [])) {
     await YY();
     const [ex, ez] = e.p;
@@ -7177,6 +7311,7 @@ export async function buildTransit(world, data, Y = null) {
     out.venueShared = shared;
   }
 
+  tmark('entrances');
   if ((data.entrances && data.entrances.length) || out.venueNames || out.venuePylons) {
     await gateSigns.flushY(world, {}, Y);
   }
@@ -7188,6 +7323,7 @@ export async function buildTransit(world, data, Y = null) {
   // A real path that ends has a reason — a viewing deck, a turning head — and
   // giving it one is both the honest fix for "it just stops halfway" and a
   // better place to arrive at than a severed kerb.
+  tmark('entrance signs');
   for (const t of (data.termini || [])) {
     await YY();
     const [tx, tz] = t.p;
@@ -7259,6 +7395,7 @@ export async function buildTransit(world, data, Y = null) {
   // figures (450m, 75m, Imbiah-to-island). The proof it is the right islet is
   // that the span falls out at 424m without being forced.
   const zip = data.zipline;
+  tmark('termini');
   if (zip && zip.p && zip.p.length === 2) {
     const [[ax, az], [bx, bz]] = zip.p;
     const y0 = zip.y0, y1 = zip.y1;
@@ -7318,6 +7455,7 @@ export async function buildTransit(world, data, Y = null) {
 
   await merger.flushY(world, {}, Y);
   await cables.flushY(world, { cast: false }, Y);
+  tmark('zipline');
   return out;
 }
 

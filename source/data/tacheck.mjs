@@ -169,7 +169,21 @@ async function ride(id, lapMs) {
       return (e && e.style.display !== 'none') ? e.textContent : ''; };
 
     const out = { id, hudSeen: [], cps: [], startedAt: null, finishText: null,
-                  stall: null, offcourse: false, samples: 0, ghostMoved: 0, ghostSeen: 0 };
+                  stall: null, offcourse: false, samples: 0, ghostMoved: 0, ghostSeen: 0,
+                  // HOW FAR ALONG IT GOT, AND HOW FAR OFF THE LINE IT STRAYED.
+                  // A3 said "no finish in 240s" and A2 said "saw CP 0", which
+                  // between them describe the SYMPTOM twice and the cause not
+                  // at all: a board that never finishes may be stuck, lost,
+                  // slow or driving in a circle, and nothing here could tell
+                  // those apart. Same fix as __lampRej / __plateRej /
+                  // __roofCapWhy — record the thing, not a verdict about it.
+                  maxS: 0, worstOff: 0, worstOffAt: null, endS: 0,
+                  // THE LAST FEW SECONDS BEFORE IT DIED. Three different sets
+                  // of driving parameters put the board at the SAME stall
+                  // coordinate to the decimal, which is not what momentum
+                  // looks like — something steers it there. A verdict cannot
+                  // say which; a trace can.
+                  tail: [] };
     let s = 0, last = performance.now(), t0 = performance.now();
     let stillSince = null, prevHud = '', prevGhost = null;
     // the ghost rig is the one translucent skater in the scene; find it once
@@ -187,7 +201,49 @@ async function ride(id, lapMs) {
       const now = performance.now();
       const dt = (now - last) / 1000; last = now;
       s = nearestS(st.x, st.z, s);
-      const aim = at(s + 14);
+      // LOOKAHEAD SHORTENS INTO A BEND. A fixed 14m aim point steers the board
+      // STRAIGHT AT a spot 14m along the line, so on a curve it travels inside
+      // the arc — and Siloso Beach Walk is 8m wide, which gives 4m of room.
+      // Measured 2026-08-26: on the siloso lap the board ended up 6.95m from
+      // its own centreline at 774m, nearly 3m beyond the edge of the tarmac,
+      // and stopped against a retail unit that is 2m CLEAR of the road. A7
+      // duly reported "board stopped 3s" and every conclusion drawn from that
+      // was about the world, which was innocent.
+      //
+      // So the aim point walks back when the line bends: compare the heading
+      // of the next 7m with the 7m after it, and halve the lookahead when they
+      // disagree by more than ~20 degrees. A7 then means what it says — "a
+      // board sitting still mid-run is something standing in the way" — rather
+      // than "our robot cannot drive".
+      const a0 = at(s), a1 = at(s + 7), a2 = at(s + 14);
+      const h1 = Math.atan2(a1[0] - a0[0], a1[1] - a0[1]);
+      const h2 = Math.atan2(a2[0] - a1[0], a2[1] - a1[1]);
+      let db = h2 - h1;
+      while (db > Math.PI) db -= 2 * Math.PI;
+      while (db < -Math.PI) db += 2 * Math.PI;
+      // CONTINUOUS, NOT A STEP. The first version used `|db| > 0.35` as a
+      // boolean, and the failure that survived it landed on a bend of almost
+      // exactly 0.35 rad (the line runs 37deg then 17deg around s=755): just
+      // under the threshold, so the board took it at full lookahead and full
+      // throttle and ran 7m wide — three metres outside its own 8m road — into
+      // the shopfront at 774m. A threshold on a continuous quantity always has
+      // a case sitting on it. Ramp everything off the same number instead.
+      // ...AND IT LOOKS PAST THE NEXT 14 METRES. Traced 2026-08-26: the board
+      // enters the siloso bend at 57 km/h with a heading error of only 0.13
+      // rad, so neither the `e` rule nor a 14m-window bend asks it to slow,
+      // and it then TRANSLATES sideways off the line — 0.8m, 1.7m, 3.5m, 5m,
+      // 6.8m — while still pointed roughly the right way. That is understeer,
+      // not mis-steering, and no amount of extra steer fixes it: at 10 m/s it
+      // has 12m of travel to recover 7m of lateral error. The cure is to
+      // arrive slower, which means seeing the bend from further out.
+      // Take the worst of the next 14m and the 14m after that.
+      const a3 = at(s + 28);
+      const h3 = Math.atan2(a3[0] - a2[0], a3[1] - a2[1]);
+      let db2 = h3 - h2;
+      while (db2 > Math.PI) db2 -= 2 * Math.PI;
+      while (db2 < -Math.PI) db2 += 2 * Math.PI;
+      const bend = Math.min(1, Math.max(Math.abs(db), Math.abs(db2) * 0.8) / 0.55);
+      const aim = at(s + (14 - 8 * bend));
       const want = Math.atan2(aim[0] - st.x, aim[1] - st.z);
       let e = want - st.h;
       while (e > Math.PI) e -= 2 * Math.PI;
@@ -196,7 +252,45 @@ async function ride(id, lapMs) {
       const steer = Math.max(-1, Math.min(1, -e * 1.6));
       // ease off the throttle in a hard correction so the board does not
       // understeer straight past a bend at full speed
-      window.__force = { throttle: Math.abs(e) > 0.5 ? 0.45 : 1, steer, brake: 0 };
+      // AND IT SLOWS BEFORE THE CORNER, NOT DURING IT. Throttling on the
+      // CURRENT heading error only reacts once the board is already pointing
+      // the wrong way, which on a board with momentum is too late: it
+      // overshoots the elbow, ends up OUTSIDE it, and then `nearestS` pins the
+      // arc-length to the corner vertex for good — the board keeps moving
+      // (A7 passes) while `s` never advances again. Measured on siloso: the
+      // run stops progressing at 57m of 921m, which is exactly the first
+      // 50-degree elbow.
+      //
+      // The run lines are coarse: siloso is 154 points over 921m with NINE
+      // segments longer than 25m, so a bend arrives as a sudden corner rather
+      // than a curve. `db` already looks 14m ahead; use it.
+      window.__force = {
+        throttle: Math.min(Math.abs(e) > 0.5 ? 0.35 : 1, 1 - 0.7 * bend),
+        steer,
+        brake: bend > 0.25 && st.kmh > 18 ? 0.7 * bend : 0,
+      };
+
+      {
+        const on = at(s);
+        const off = Math.hypot(st.x - on[0], st.z - on[1]);
+        // SAMPLED BY DISTANCE, NOT BY FRAME. Ninety frames of a board that has
+        // been stationary for three seconds is ninety copies of the stall and
+        // nothing about how it got there — the first version of this trace
+        // printed the same line twelve times.
+        const prev = out.tail[out.tail.length - 1];
+        if (!prev || Math.hypot(st.x - prev[1], st.z - prev[2]) > 2) {
+          out.tail.push([Math.round(s), +st.x.toFixed(1), +st.z.toFixed(1),
+                         +st.kmh.toFixed(1), +bend.toFixed(2), +e.toFixed(2),
+                         +off.toFixed(1), +aim[0].toFixed(0), +aim[1].toFixed(0)]);
+          if (out.tail.length > 40) out.tail.shift();
+        }
+        if (s > out.maxS) out.maxS = Math.round(s);
+        if (off > out.worstOff) {
+          out.worstOff = +off.toFixed(1);
+          out.worstOffAt = { x: Math.round(st.x), z: Math.round(st.z), s: Math.round(s) };
+        }
+        out.endS = Math.round(s);
+      }
 
       // A7: a board sitting still mid-run is something standing in the way
       if (st.kmh < 1.5) { if (stillSince == null) stillSince = now; }
@@ -259,7 +353,19 @@ for (const r of runs) {
   note(a.cps.join(',') === '0,1,2', `A2 ${r.id} checkpoints`,
     `saw CP ${a.cps.join(' -> ') || 'none'} (want 0 -> 1 -> 2)`);
   note(!!a.finishText && !a.offcourse, `A3 ${r.id} finish`,
-    a.finishText || `no finish in ${(a.elapsed / 1000).toFixed(0)}s` + (a.offcourse ? ' (went off course)' : ''));
+    a.finishText || `no finish in ${(a.elapsed / 1000).toFixed(0)}s`
+      + (a.offcourse ? ' (went off course)' : '')
+      + ` — reached ${a.maxS}m of ${Math.round(r.length)}m, ended at ${a.endS}m,`
+      + ` worst ${a.worstOff}m off the line`
+      + (a.worstOffAt ? ` at ${a.worstOffAt.x},${a.worstOffAt.z} (${a.worstOffAt.s}m)` : ''));
+  if (!a.finishText && a.tail && a.tail.length) {
+    console.log('         last samples  s / x,z / kmh / bend / err / off-line / aim');
+    for (const t of a.tail.slice(-16)) {
+      console.log(`           ${String(t[0]).padStart(4)}  ${t[1]},${t[2]}`
+        + `  ${String(t[3]).padStart(5)}km/h  bend ${t[4]}  e ${t[5]}`
+        + `  off ${t[6]}m  aim ${t[7]},${t[8]}`);
+    }
+  }
   note(!!a.best, `A4 ${r.id} best saved`, a.best ? `${a.best}ms in localStorage` : 'nothing written');
   note(typeof a.ghostSamples === 'number' && a.ghostSamples > 1, `A5 ${r.id} ghost saved`,
     `${a.ghostSamples} samples`);

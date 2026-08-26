@@ -41,9 +41,23 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SCENE = process.env.SG_SCENE || 'sentosa';
 const PORT = process.env.SG_PORT || 8933;
 const XP = process.env.ROOF_XPARAMS ? '&' + process.env.ROOF_XPARAMS : '';
-// how many footprints may wear their own facade on top. 0 is not reachable:
-// see the residue note at the bottom of the run.
-const BUDGET = +(process.env.ROOF_BUDGET || 30);
+// how many footprints may wear their own facade on top.
+//
+// 30 -> 0 on 2026-08-26. The old note here said "0 is not reachable"; it was
+// reachable, and what made it so was the check learning to say WHY rather than
+// only WHICH (window.__roofCapWhy, and _capSkip on the eight branches that
+// never reach the cap). Four distinct defects came out of that:
+//   the shophouse pitch covering two-thirds of its own roof;
+//   every roof piece in that recipe laid at b.h while the mass rose to topY;
+//   EVERY flat deck on the island coplanar with the wall top and z-fighting;
+//   Hotel Michael's barrel vaults, and a Cove villa whose concave plan does
+//   not contain the centroid `grow()` scales about.
+// 20 roofs / 2,609 m2 -> 0 / 0.
+//
+// A BUDGET YOU CAN HOLD AT ZERO IS WORTH MORE THAN A RESIDUE YOU CAN NAME —
+// the same argument treecheck's road budget won on 2026-08-25. If this ever
+// fails, something put a facade back on a roof; read the reason it prints.
+const BUDGET = +(process.env.ROOF_BUDGET || 0);
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 800, height: 600 }, deviceScaleFactor: 1 });
@@ -87,6 +101,8 @@ try {
       roof: !!b.roof, n: b.n || null, bt: b.bt || null,
       // the far side of the longest edge, for the inward ray
       ex: b.p[0][0], ez: b.p[0][1],
+      // the key city.js's cap decision is filed under (window.__roofCapWhy)
+      key: `${Math.round(b.p[0][0])},${Math.round(b.p[0][1])}`,
       // and this footprint's own bounds, so a wall sample that lands on the
       // NEIGHBOUR is thrown away rather than compared. The facade pool is a
       // handful of textures shared across hundreds of buildings, so a
@@ -161,6 +177,7 @@ try {
       return { ...p, bad: wallMap !== null && wallMap === roofMap, roofY: +roofY.toFixed(2) };
     });
   }, probes);
+  const capWhy = await page.evaluate(() => window.__roofCapWhy || null);
 
   const judged = out.filter((r) => !r.skip);
   bad = judged.filter((r) => r.bad);
@@ -172,9 +189,16 @@ try {
   const by = {};
   for (const r of bad) by[kind(r)] = (by[kind(r)] || 0) + 1;
   console.log(`     by kind: ${JSON.stringify(by)}`);
+  // WHY, from the cap itself. This printed a size, a height and a coordinate
+  // and left "so why is the facade on it?" to be re-derived by hand every
+  // time — the same gap __lampRej and __plateRej were built to close.
+  // city.js keys its decision by the footprint's first vertex; so do we, out
+  // of the same sentosa.json, so the join is exact.
   for (const r of bad.sort((x, y) => y.a - x.a).slice(0, 10)) {
+    const why = (capWhy && capWhy[r.key]) || 'no cap decision recorded';
     console.log(`       a=${String(Math.round(r.a)).padStart(5)} h=${String(r.h).padStart(5)}`
       + ` ${kind(r).padEnd(6)} ${String(r.n || r.bt || '').padEnd(16)} at ${r.cx.toFixed(0)},${r.cz.toFixed(0)}`);
+    console.log(`             ${why}`);
   }
   console.log(`   ROOF {"bad":${bad.length},"areaM2":${area}}`);
 } finally {

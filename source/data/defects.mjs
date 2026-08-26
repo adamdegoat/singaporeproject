@@ -27,8 +27,17 @@ await page.waitForFunction('window.__ready === true', null, { timeout: 180000 })
 const found = await page.evaluate(() => {
   const T = window.__THREE, sc = window.__scene, data = window.__data;
   const out = [];
-  const report = (id, what, list, note) =>
-    out.push({ id, what, n: list.length, note, ex: list.slice(0, 6) });
+  // THE COUNT IS NOT THE NUMBER OF EXAMPLES. `n` was `list.length`, and five
+  // classes here build their example list under `if (ex.length < 6)` — so
+  // those five reported "6" no matter how many they found. D27 gave it away
+  // by printing both: the headline said **6 instanced props buried more than
+  // 1.2m** and its own note, one line below, said **363 across 6 signatures**.
+  // The run summary ("11 findings across 40 classes") was counting examples
+  // too. An optional `count` overrides it; everything that passes an uncapped
+  // list is unchanged.
+  const report = (id, what, list, note, count) =>
+    out.push({ id, what, n: count === undefined ? list.length : count,
+               note, ex: list.slice(0, 6) });
 
   const inPoly = (poly, x, z) => {
     let hit = false;
@@ -391,6 +400,17 @@ const found = await page.evaluate(() => {
         // all three Marina Bay Sands towers, so judged on height alone it
         // "contains" them. process.py's own burial rule already skips these;
         // this probe did not, and reported two of the three towers.
+        // A FOOTPRINT INSIDE ITS OWN BUILDING IS A PART OF IT, NOT A
+        // DUPLICATE OF IT. OSM maps `building:part=yes` polygons that carry
+        // the SAME NAME as the mass they belong to — Hotel Michael is six
+        // entries in sentosa.json: the hotel (4,169 m2) and five parts of
+        // 307-339 m2 describing its own roof vaults. city.js already knows
+        // this ("a named recipe owns its building's whole form", the
+        // `_partHost` rule) and skips them; this probe did not, and reported
+        // three of them plus The Galleria as buried duplication. A report that
+        // is right about the geometry and wrong about the meaning still costs
+        // whoever reads it the same time as a real one.
+        if (o && o !== b && o.n && b.n && o.n === b.n) continue;
         if (o && o !== b && !o.mh && area(o.p) > area(b.p) * 1.05
             && (o.h || 0) >= (b.h || 0)) inside++;
       }
@@ -1116,20 +1136,72 @@ const found = await page.evaluate(() => {
         // The question this check means to ask is whether a prop is below the
         // ground IT STANDS ON. So when a deck exists ABOVE the prop, the deck
         // is not that ground; the terrain is.
-        const _deck = window.__bridgeDeckAt(p4.x, p4.z);
-        const _surf = (_deck !== null && p4.y < _deck)
-          ? window.__terrain.at(p4.x, p4.z)
-          : window.__surfaceAt(p4.x, p4.z);
-        const d = _surf - p4.y;
+        // ANY DECK, NOT JUST A BRIDGE. The note above fixed this for bridge
+        // decks and stopped there, so the same mistake came back twice more:
+        //   * a hillside — the Sensoryscape ring walkway's columns are seated
+        //     correctly at the low end of ground that falls 13m in 20m, and
+        //     read as 8-10m "buried" measured against the ground above them;
+        //   * a QUAY — 209 unit cubes at 801,13314 are the Sentosa Cove
+        //     marina's pontoons and moored boats at water level, with the
+        //     quay deck 10.9m overhead.
+        // Between them that was 364 findings and essentially none of them was
+        // a defect. `__anyDeckAt` is the same question asked of every deck the
+        // world has, and W2 already uses it for exactly this reason.
+        // MEASURE AGAINST THE TERRAIN, FULL STOP.
+        //
+        // The deck special-case above was the right instinct and the wrong
+        // shape: it asked "is something stacked above this prop", which has to
+        // be extended once per KIND of stacked thing, and it duly was —
+        // bridges only, then `__anyDeckAt`, and it still missed two whole
+        // classes worth 364 findings between them:
+        //   * a HILLSIDE. The Sensoryscape ring walkway's columns are seated
+        //     correctly at the low end of ground falling 13m in 20m and read
+        //     as 8-10m under the surface directly above them.
+        //   * a QUAY. 209 unit cubes at 801,13314 are the Sentosa Cove
+        //     marina's pontoons and moored boats sitting at water level, with
+        //     the quay deck 10.9m overhead.
+        // Neither is a deck this world registers, and neither is buried.
+        //
+        // "Buried" means BELOW THE GROUND, and the ground is the terrain.
+        // Anything between the terrain and whatever is stacked over it — a
+        // bridge, a walkway, a quay, a building — is underneath something,
+        // which is a different and legitimate thing to be. Asking the terrain
+        // needs no list of exceptions and cannot grow one.
+        // ...AND THE GROUND IS `__drawnGroundAt`, NOT `__terrain.at`. The raw
+        // heightfield is not what the world draws: at the Sentosa Cove marina
+        // (801,13314) it reads 10.9 where the canal is drawn as water, so 333
+        // pontoons and moored boats sitting correctly at water level came back
+        // as "9-10m buried". This is the datum note the project already
+        // carries — stored h for open sea is 0.00, not SEA_SINK; ask
+        // `__drawnGroundAt`.
+        const _gnd = window.__drawnGroundAt
+          ? window.__drawnGroundAt(p4.x, p4.z)
+          : window.__terrain.at(p4.x, p4.z);
+        const d = (_gnd === null || _gnd === undefined
+          ? window.__terrain.at(p4.x, p4.z) : _gnd) - p4.y;
         if (d > 1.2) {
-          bad[sig] = (bad[sig] || 0) + 1;
-          if (ex.length < 6) ex.push(`${sig} ${d.toFixed(1)}m under the surface at ${p4.x | 0},${p4.z | 0}`);
+          // BY SIGNATURE, WITH ITS WORST AND ITS COUNT. Six loose examples
+          // out of 364 named one prop each and told you nothing about the
+          // shape of the finding; `bad` was already grouping them and the
+          // grouping was thrown away in favour of "6 signatures". A colour is
+          // carried too, because every one of these is an anonymous
+          // BufferGeometry after consolidate and the signature alone cannot
+          // say what it is (P1 learned the same thing on 2026-08-26).
+          const b = bad[sig] || (bad[sig] = { n: 0, worst: 0, at: null,
+            col: o.material && o.material.color ? o.material.color.getHexString() : '' });
+          b.n++;
+          if (d > b.worst) { b.worst = +d.toFixed(1); b.at = `${p4.x | 0},${p4.z | 0}`; }
         }
       }
     });
-    const n = Object.values(bad).reduce((a, b) => a + b, 0);
+    const n = Object.values(bad).reduce((a, b) => a + b.n, 0);
+    for (const sig of Object.keys(bad).sort((a, b) => bad[b].n - bad[a].n)) {
+      const b = bad[sig];
+      ex.push(`${String(b.n).padStart(4)} x ${sig} col=${b.col || '-'}`
+        + `  worst ${b.worst}m under at ${b.at}`);
+    }
     report('D27', 'instanced props buried more than 1.2m', n ? ex : [],
-           n ? `${n} across ${Object.keys(bad).length} signatures` : undefined);
+           n ? `${n} across ${Object.keys(bad).length} signatures` : undefined, n);
   }
 
   /* D28  a pedestrian route that goes through a wall.
@@ -1163,7 +1235,7 @@ const found = await page.evaluate(() => {
       }
     }
     report('D28', 'crowd path vertices inside a drawn wall', inside ? ex : [],
-           `${n} vertices over ${paths.length} paths` + (inside ? `, ${inside} in a wall` : ''));
+           `${n} vertices over ${paths.length} paths` + (inside ? `, ${inside} in a wall` : ''), inside);
   }
 
   /* D29  props sitting exactly on the world origin.
@@ -1395,7 +1467,7 @@ const found = await page.evaluate(() => {
     }
     report('D33', 'pedestrians standing inside each other', pairs ? ex : [],
            `${pos.length} walkers, ${farPairs} more pairs beyond the ${SEEN}m draw range `
-           + `(separated before they are drawn -- see the note in defects.mjs)`);
+           + `(separated before they are drawn -- see the note in defects.mjs)`, pairs);
   }
 
   /* D34  two vehicles in the same place.
@@ -1638,7 +1710,7 @@ const found = await page.evaluate(() => {
       }
     }
     report('D36', 'pedestrians standing in a carriageway', onRoad ? ex : [],
-           `${pos.length} walkers, crossers excluded`);
+           `${pos.length} walkers, crossers excluded`, onRoad);
   }
 
   /* D37  a street tree growing through a wall.

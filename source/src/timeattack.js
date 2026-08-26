@@ -232,8 +232,17 @@ export function buildTimeAttack({ THREE, scene, data, groundAt, sound, ghostRig 
     group.add(flag(gates[1], halves[1]));
     group.add(flag(gates[2], halves[2]));
     group.add(arch(gates[3], true, halves[3]));
-    runs.push({ id, label, wayName, line, length, gates,
-      best: +(localStorage.getItem('sg_ta_' + id) || 0) || null });
+    // GUARDED, like the ghost read and the two writes below. This one read
+    // was the only unguarded localStorage access left in the file, and it sat
+    // inside the run-BUILDING loop: on iOS private browsing (and anywhere the
+    // user has blocked site data) `getItem` throws, the first course aborted
+    // the loop, and **the entire time-attack layer silently did not exist** --
+    // no start arches, no clock, no ghosts, and NOT ONE console error. Proved
+    // by A/B with the same harness: storage working builds 4 courses, storage
+    // throwing builds 0. A missing best time just means no best time yet.
+    let best = null;
+    try { best = +(localStorage.getItem('sg_ta_' + id) || 0) || null; } catch (e) { /* private mode */ }
+    runs.push({ id, label, wayName, line, length, gates, best });
     console.log(`timeattack: ${label} on "${wayName}" ${Math.round(length)}m` +
       (dropped ? ` (${dropped} spur fragment${dropped > 1 ? 's' : ''} dropped)` : ''));
   }

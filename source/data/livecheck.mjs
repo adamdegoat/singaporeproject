@@ -70,7 +70,7 @@ page.on('console', (m) => {
 });
 
 const t0 = Date.now();
-let ready = false, info = {};
+let ready = false, info = {}, bootReadyMs = null;
 try {
   // streamall: by default districts build by rider proximity and the far
   // ones legitimately never load — the check builds EVERYTHING so the drain
@@ -97,6 +97,15 @@ try {
   // times the poller rather than the boot.
   await page.waitForFunction('window.__ready === true || window.__bootError',
     null, { timeout: BUDGET_MS, polling: 100 });
+  // BOOT IS MEASURED HERE, WHERE THE BOOT ENDS.
+  //
+  // `bootMs` was computed AFTER the settle and the whole gc sampling loop, so
+  // the number this gate has been reporting — and budgeting at 30,000ms — was
+  // boot PLUS the measurement: about 2.5s of settle and another 2-6s of gc
+  // reads. The published "boot 26.8s" was ~19s of boot and ~8s of stopwatch.
+  // Found 2026-08-26 when lengthening the settle pushed the reported boot to
+  // 38s on a world whose boot had not changed at all.
+  bootReadyMs = Date.now() - t0;
   // HEAP, MEASURED AFTER A COLLECTION, BECAUSE THE RAW NUMBER IS BIMODAL.
   //
   // This read usedJSHeapSize the instant the world came up, which counts
@@ -129,7 +138,40 @@ try {
   // NOTE FOR WHOEVER READS THE OLD NOTE: --use-gl=angle was blamed for this and
   // that was WRONG. It was tested directly afterwards and the GPU path gives
   // the same stable 228. Timing, not the renderer.
-  await page.waitForTimeout(2500);
+  // 2500 -> 12000, AND THE STABILITY RULE BELOW IS STRICTER (2026-08-26).
+  //
+  // THE FOURTH TIME THIS FILE HAS MEASURED A CLIMB AND CALLED IT A PLATEAU.
+  // The notes below already record three: sampling before a collection,
+  // sampling before the boot finished, and "accepting a plateau that is only a
+  // slow stretch of a climb" — which was answered with THREE consecutive
+  // agreements within 1%. Three was not enough either.
+  //
+  // Proved by bisection, not by argument. A hand-written probe using this
+  // file's EXACT measurement read 242 MB where this file read 415, and every
+  // difference between the two scripts was ruled out one at a time — the URL,
+  // `nostream`, the console listeners, the launch flags, machine load (three
+  // probe runs: 242/242/242), a transient (measured twice in one page: 415
+  // then 415), and even the render scale the game picks. Then this file was
+  // truncated to the measurement and run with ONE thing changed:
+  //
+  //     settle 2500ms -> heap 415 MB "settled"
+  //     settle 20000ms -> heap 242 MB "settled"
+  //
+  // Same script, same page, same rule. The world is still allocating at 2.5s
+  // past __ready, and 1.5s of quiet inside that climb passes the test.
+  //
+  // So: a longer settle BEFORE sampling starts. And it is the SETTLE that
+  // matters, not the sampling window — tested: 12s of settle still reads
+  // 347-368 even when sampled over 30s, because the world is still allocating
+  // while it is sampled and `gc()` cannot reclaim what is still live. 20s of
+  // quiet first is what gets 242. See perfbudget.json's _heapMB_note.
+  await page.waitForTimeout(20000);
+  // SG_HEAP_PROBE=1 takes a SECOND settled reading, to tell a transient from a
+  // real difference. Off by default: this is an investigation aid, not a gate,
+  // and a deploy log does not need it. See the heap entry in HANDOFF.md.
+  if (process.env.SG_HEAP_PROBE) {
+    await page.evaluate(() => { window.__heapProbe2 = true; });
+  }
   info = await page.evaluate(async () => {
     let mem = null, settled = false;
     if (performance.memory) {
@@ -179,7 +221,14 @@ try {
         // between the allocation bursts that were passing as flat.
         const reads = [];
         let stable = false, agree = 0;
-        for (let i = 0; i < 24 && !stable; i++) {
+        // 24 reads (12s) -> 60 (30s), and `stable` cannot be true before 30 of
+        // them. A plateau test alone cannot tell a settled heap from a pause
+        // in a climb — that is what 2500ms/3-agreements got wrong — so the
+        // floor is now WALL TIME, and the answer is the MINIMUM across it.
+        // Measured: the same page reads 415 at 2.5s, 347-368 at 12s and 242
+        // at 20s+. The gate costs ~20s more and reports a number that means
+        // something.
+        for (let i = 0; i < 60 && !stable; i++) {
           window.gc(); window.gc();
           await new Promise((r) => setTimeout(r, 500));
           reads.push(performance.memory.usedJSHeapSize);
@@ -188,10 +237,28 @@ try {
             const a = reads[n - 1], b = reads[n - 2];
             agree = Math.abs(a - b) <= Math.max(a, b) * 0.01 ? agree + 1 : 0;
           }
-          stable = agree >= 3 && n >= 4;
+          stable = agree >= 6 && n >= 10;
         }
         mem = Math.round(Math.min(...reads) / 1048576);
         settled = stable;
+        // TEMP PROBE 2026-08-26: measure a SECOND time after a longer quiet,
+        // to tell a transient from a real difference.
+        if (window.__heapProbe2) {
+          const r2 = []; let ag2 = 0, st2 = false;
+          for (let i = 0; i < 24 && !st2; i++) {
+            window.gc(); window.gc();
+            await new Promise((r) => setTimeout(r, 500));
+            r2.push(performance.memory.usedJSHeapSize);
+            const n2 = r2.length;
+            if (n2 >= 2) {
+              const a = r2[n2 - 1], b = r2[n2 - 2];
+              ag2 = Math.abs(a - b) <= Math.max(a, b) * 0.01 ? ag2 + 1 : 0;
+            }
+            st2 = ag2 >= 3 && n2 >= 4;
+          }
+          window.__mem2 = Math.round(Math.min(...r2) / 1048576);
+          window.__mem2settled = st2;
+        }
       } else {
         mem = Math.round(performance.memory.usedJSHeapSize / 1048576);
       }
@@ -201,6 +268,8 @@ try {
       bootError: window.__bootError ? String(window.__bootError).slice(0, 300) : null,
       hud: (document.querySelector('#hud') || {}).textContent || '',
       mem, memSettled: settled,
+      mem2: window.__mem2 ?? null, mem2settled: window.__mem2settled ?? null,
+      dpr: window.devicePixelRatio,
     };
   });
   // the loading overlay removes itself 600ms after ready; still standing
@@ -260,13 +329,17 @@ try {
 } catch (e) {
   errors.push('never became ready: ' + String(e.message).slice(0, 160));
 }
-const bootMs = Date.now() - t0;
+const bootMs = bootReadyMs ?? (Date.now() - t0);
 
 // Let it run a moment. The failure this exists to catch happens in the FRAME
 // LOOP, not during boot, so a check that stops the instant __ready flips would
 // have sailed straight past it.
 await page.waitForTimeout(2500);
 
+if (process.env.SG_HEAP_PROBE) {
+  console.log(`   HEAP PROBE   first ${info.mem} MB (settled=${info.memSettled})`
+    + `   second ${info.mem2} MB (settled=${info.mem2settled})   dpr ${info.dpr}`);
+}
 console.log(`   boot ${bootMs} ms   ready ${ready}   heap ${info.mem ?? '?'} MB`
   + (info.memSettled ? ' (settled)' : ' (NOT settled — --expose-gc missing)'));
 if (info.hud) console.log(`   hud "${info.hud.slice(0, 70)}"`);

@@ -885,6 +885,13 @@ window.__auditWorld = async function auditWorld() {
     // appending the material there would silently revoke every one of them —
     // the allowlist trap this file already documents. Only P4 reads .mat.
     const matId = o.material ? (o.material.name || o.material.uuid.slice(0, 6)) : '';
+    // ...AND THE COLOUR, WHICH IS STABLE ACROSS RUNS. `matId` falls back to a
+    // uuid fragment, which is regenerated every boot: printed in a finding it
+    // looks like identifying information and is not — two runs of the same
+    // world gave `a09e21` and `3ce78d` for the same five props. A hex colour
+    // is the same in every run and is the one thing that tells a shrub from a
+    // bollard at a glance.
+    const matCol = o.material && o.material.color ? o.material.color.getHexString() : '';
     for (let i = 0; i < o.count; i++) {
       o.getMatrixAt(i, m4);
       v3.setFromMatrixPosition(m4).applyMatrix4(o.matrixWorld);
@@ -900,10 +907,23 @@ window.__auditWorld = async function auditWorld() {
       // tree branch, the lamp bracket, and now the crowd. The note at ROAD_OK
       // already says a signature list "fails CLOSED for changed ones"; the
       // answer is to stop describing a person by their measurements.
-      props.push({ sig, nm: o.name || '', mat: matId, x: v3.x, y: v3.y, z: v3.z, sy: sc3.y,
+      props.push({ sig, nm: o.name || '', mat: matId, col: matCol, x: v3.x, y: v3.y, z: v3.z, sy: sc3.y,
                    crowd: !!o.userData.crowdPart,
                    // leaves and branches are not paint; see P7
                    foliage: !!o.userData.treeFoliage,
+                   // AND THE TRUNK, for the same reason and by the same
+                   // mechanism. city.js has set this since 2026-08-01 (read the
+                   // note at `trunks.userData.treeTrunk`, which is itself about
+                   // a check that tried to find trees by signature and found
+                   // colonnade piers). It was set at the mesh and read by
+                   // treecheck.mjs and by nothing in this file.
+                   trunk: !!o.userData.treeTrunk,
+                   // LIVING THINGS. Set by addInstanced's `tag: 'creature'`
+                   // in qlife.js -- peacocks, monitor lizards and (since
+                   // 2026-08-26) pigeons, which were the one animal carrying
+                   // no flag because their block passed `anim: 'creature'`,
+                   // and `anim` only feeds the animation list, never userData.
+                   creature: !!o.userData.creature,
                    // A PARKED CAR BELONGS IN THE CARRIAGEWAY. It is placed from
                    // the map's own `parking:lane:*` tags, in the bay the map
                    // says is there, so it is as legitimate on the tarmac as a
@@ -1076,15 +1096,45 @@ window.__auditWorld = async function auditWorld() {
         const up = terr ? p.y - terr.at(p.x, p.z) : 99;
         if (up >= OVERHEAD_MIN) continue;
       }
+      // ANYTHING WELL ABOVE THE ROAD IS NOT IN THE ROAD, whatever it is.
+      // The clearance test was written twice — once for `foliage` above, once
+      // for `ROAD_OK` below — and a prop that is neither got neither. Sentosa's
+      // worst P1 finding was a construction crane's jib at **+100.18m** over
+      // Allanbrooke Road, reported as a prop a rider could hit. A gate whose
+      // top finding is a hundred metres in the air is one people learn to
+      // scroll past. `OVERHEAD_MIN` already states the rule; it just was not
+      // being asked in the general case.
+      const _up = terr ? p.y - terr.at(p.x, p.z) : 99;
+      if (_up >= OVERHEAD_MIN) continue;
       if (ROAD_OK.has(p.sig)) {
-        const up = terr ? p.y - terr.at(p.x, p.z) : 99;
-        if (LOW_OK.has(p.sig) || up >= OVERHEAD_MIN) continue;
+        if (LOW_OK.has(p.sig)) continue;
         // on the list, but low enough to hit: not excused
       }
+      // A BIRD IN THE ROAD IS NOT STREET FURNITURE. P1 exists to catch a bin,
+      // a bollard or a planter left in a live lane -- something a rider hits
+      // and something a person put there by mistake. Five pigeons from the
+      // plaza flocks were being reported as that, and the first fix tried was
+      // a road guard on the flocks: it deleted the birds from the walked
+      // plazas the feature exists to populate (the beach-walk golden caught
+      // two vanishing from Central Beach pavement) and was reverted. The
+      // world is right and the check was wrong. Exempted on the mechanism
+      // flag, so peacocks and monitor lizards are covered by the same rule
+      // and a NEW animal gets it for free the moment it is tagged.
+      if (p.creature) continue;
       const rd = roadAt(p.x, p.z, -0.5);
       if (!rd) continue;
       bad[p.sig] = (bad[p.sig] || 0) + 1;
-      ex.push(`${p.sig} in "${rd}" at ${p.x | 0},${p.z | 0}`);
+      // NAME IT. `sig` is `BufferGeometry()` for everything that has been
+      // through consolidate, so all seven of sentosa's findings printed the
+      // same nine characters and a coordinate — enough to know something is in
+      // the road, never enough to know WHAT. P1b has printed material, colour
+      // and bounds since it was written; this is the same line. (The material
+      // and the height above ground are what tell a bollard from a kerb from
+      // a bin, and `sy` is already collected.)
+      ex.push(`${p.sig} in "${rd}" at ${p.x | 0},${p.z | 0}`
+        + ` [col=${p.col} y=+${_up.toFixed(2)}`
+        + ` scaleY=${p.sy.toFixed(2)}${p.foliage ? ' foliage' : ''}`
+        + `${p.trunk ? ' trunk' : ''}${p.actor ? ' actor' : ''}]`);
     }
     const n = Object.values(bad).reduce((a, b) => a + b, 0);
     add('P1', 'props in a carriageway', 'BLOCKER', n, 0,
@@ -1100,6 +1150,11 @@ window.__auditWorld = async function auditWorld() {
     const v = new T.Vector3();
     const bad = {}, ex = [];
     const RIDE_HEIGHT = 9;          // what you can actually hit on a scooter
+    // Same number as P1's OVERHEAD_MIN, which is declared inside P1's own
+    // block and not visible here. Kept as its own const rather than hoisting
+    // P1's: the two checks are independent and a shared mutable would let a
+    // future edit to one silently change the other.
+    const OVERHEAD_MIN = 4.8;      // headroom you ride under, not into
     sc.traverse((o) => {
       if (!o.isMesh || o.isInstancedMesh) return;
       const pos = o.geometry.attributes.position;
@@ -1125,6 +1180,7 @@ window.__auditWorld = async function auditWorld() {
       if (o.geometry.type === 'PlaneGeometry'
           && o.geometry.parameters.width > 500) return;     // ground fallback plane
       let hit = null, worstX = 0, worstZ = 0, worstY = 0, minY = 1e9, maxY = -1e9, n = 0;
+      let worstDeep = 0, upMaxOn = -1e9, upMinOn = 1e9;
       // DETERMINISTIC sampling.
       //
       // This skipped any mesh over 6,000 vertices and took a fixed 80 samples
@@ -1165,11 +1221,80 @@ window.__auditWorld = async function auditWorld() {
         // service lanes are skipped for the same reason P5 skips them: a hotel
         // set-down or a loading bay is what a service road is for
         const rd = roadAt(v.x, v.z, -1.0, true);
-        if (rd) { hit = rd; worstX = v.x; worstZ = v.z; worstY = v.y; }
+        // HOW FAR IN, not just "in". Every finding here reads the same in a
+        // list -- "structure in a carriageway" -- and they are not the same
+        // thing: a wall vertex 1m past the kerb of a 7m road is a modelling
+        // edge artefact, while a column 4m in is standing in the lane the
+        // rider uses. The check tested ONE shrink margin (-1.0) and so could
+        // not tell them apart, which is how 29 findings sat here unsorted
+        // with no way to know which mattered. Widen the shrink until the
+        // point falls out; the last margin that still holds is the depth past
+        // the kerb, in metres. Reported per finding, and the DEEPEST vertex
+        // is the one kept -- previously it was simply the last one sampled.
+        if (rd) {
+          let deep = 1;
+          for (const mgn of [2, 3, 4, 5, 6]) { if (!roadAt(v.x, v.z, -mgn, true)) break; deep = mgn; }
+          if (up > upMaxOn) upMaxOn = up;
+          if (up < upMinOn) upMinOn = up;
+          if (deep >= worstDeep) { worstDeep = deep; hit = rd; worstX = v.x; worstZ = v.z; worstY = v.y; }
+        }
       }
       // Nothing under 40cm is something you ride into: those are aprons,
       // thresholds and paving trim that sit flush with the road on purpose.
-      if (!hit || !n || maxY - minY < 0.4) return;
+      //
+      // THICKNESS, MEASURED RELATIVE TO THE GROUND UNDER EACH VERTEX.
+      //
+      // Two wrong rulers were tried here before this one, and both are worth
+      // recording because each looked obviously right:
+      //
+      // 1. `maxY - minY` of the mesh -- WRONG for merged geometry. After
+      //    consolidate this mesh is every gate apron on a street in one
+      //    buffer. The Imbiah Road aprons are FLAT slabs 4cm thick laid over
+      //    78m of hillside, so this came back as **1.7m of ground slope** and
+      //    excused nothing: the worst-looking finding in the whole class was
+      //    a piece of flat paving.
+      // 2. `upMaxOn` (height above terrain) -- WRONG for anything standing on
+      //    a DECK. A 0.2m trim on the Siloso boardwalk is 0.6m above the
+      //    terrain buried under the deck, so this caught 26 pieces of thin
+      //    trim that the 40cm rule exists to excuse. 29 findings became 55.
+      //
+      // The quantity actually wanted is the object's OWN vertical thickness,
+      // and `up` spread gives it: subtracting the terrain cancels the slope,
+      // and taking max-minus-min cancels however high the deck is. A flat
+      // apron on a hill spreads 0.04; a 0.2m trim on a boardwalk spreads 0.2;
+      // a column spreads its whole height and is still caught.
+      // THICKNESS = THE THINNER OF THE TWO HONEST MEASURES.
+      // `up` spread is the only thing available for merged geometry, but it
+      // has one known blind spot: a LONG HORIZONTAL bar spreads with the
+      // ground beneath it, so the time-attack start lines (`BoxGeometry(
+      // 9.4x0.22x0.1)`, flat plates laid across a course) measured 0.4m+ of
+      // hillside and read as obstructions. Geometry that has NOT been through
+      // consolidate still carries its real dimensions, so when a box's own
+      // height is available, use whichever measure says thin. A column is
+      // thick by both and is still caught; nothing is excused unless at least
+      // one honest measure says it is flat.
+      const _gp = o.geometry.parameters || {};
+      const _boxH = (o.geometry.type === 'BoxGeometry' && typeof _gp.height === 'number')
+        ? _gp.height : Infinity;
+      const thick = Math.min(upMaxOn - upMinOn, _boxH);
+      if (!hit || !n || thick < 0.4) return;
+      // YOU CANNOT HIT WHAT YOU RIDE UNDER -- THE SAME RULE P1 ALREADY HAS.
+      // `RIDE_HEIGHT` is 9m, deliberately generous, so this band includes
+      // every canopy on the island: a porte-cochere fascia with 5m of
+      // clearance is "in the carriageway" by this check and is something a
+      // rider passes comfortably beneath. P1 hit exactly this (a crane jib at
+      // +100m reported as a prop) and gained a general clearance test;
+      // P1b never got one. It has only a hardcoded list of SHAPES -- signal
+      // heads, gantry backers, bridge decks by exact dimensions -- and after
+      // consolidate every one of those is `BufferGeometry()` with no
+      // parameters left to match, so the list cannot fire for merged
+      // geometry at all.
+      //
+      // Measured, not listed: if the LOWEST on-road vertex of this structure
+      // still leaves OVERHEAD_MIN of headroom, it is a canopy and not an
+      // obstruction. A column runs from the ground up, so its minimum is ~0
+      // and it is still caught.
+      if (upMinOn >= OVERHEAD_MIN) return;
       // Structures that are SUPPOSED to be over a carriageway. A traffic signal
       // that does not hang over the road is not a traffic signal, and a
       // direction gantry spans it by definition. Same reasoning as P1's list.
@@ -1268,12 +1393,17 @@ window.__auditWorld = async function auditWorld() {
       const gp = o.geometry.parameters || {};
       const dims = [gp.radiusTop, gp.width, gp.height, gp.depth]
         .filter((q) => q != null).map((q) => +q.toFixed(2)).join('x');
-      const key = `${o.geometry.type}(${dims})|${(maxY - minY).toFixed(1)}m tall`;
+      // LABEL THE THICKNESS THAT WAS ACTUALLY MEASURED, not `maxY - minY`.
+      // The gate above stopped using the merged extent (it is ground slope,
+      // not height) but this line still printed it, so a FLAT white plate
+      // 0.1m thick was reported as "25.5m tall" -- a number that sends the
+      // reader hunting for a tower. Same quantity the check decides on.
+      const key = `${o.geometry.type}(${dims})|${thick.toFixed(1)}m thick`;
       bad[key] = (bad[key] || 0) + 1;
       if (ex.length < 200) {
         const bb2 = new T.Box3().setFromObject(o);
         const mm = o.material || {};
-        ex.push(`${key} in "${hit}" at ${worstX | 0},${worstZ | 0}`
+        ex.push(`${key} in "${hit}" ${worstDeep}m past the kerb at ${worstX | 0},${worstZ | 0}`
           + ` [verts=${pos.count} name=${o.name || '-'} mat=${mm.type || '-'}`
           + `/${(mm.map && (mm.map.name || 'map')) || 'nomap'}`
           + ` col=${mm.color ? mm.color.getHexString() : '-'}`
@@ -1693,6 +1823,11 @@ window.__auditWorld = async function auditWorld() {
     if (!propGrid.has(k)) propGrid.set(k, []);
     propGrid.get(k).push(p);
   }
+  // THE TEST TAKES THE WHOLE PROP, not (sig, nm). It used to take the two
+  // things a mesh can be described BY, which is exactly the framing that has
+  // now rotted seven signature lists in this project — and it locked the C
+  // family out of the one field that cannot rot, the flag the emitting system
+  // sets on its own mesh (`userData.treeTrunk`, `userData.treeFoliage`).
   const nearAny = (pts, test, reach) => {
     const R2 = reach * reach, span = Math.ceil(reach / 20);
     for (const q of pts) {
@@ -1702,12 +1837,12 @@ window.__auditWorld = async function auditWorld() {
           const list = propGrid.get((cx + dx) + ',' + (cz + dz));
           if (!list) continue;
           for (const p of list)
-            if (test(p.sig, p.nm) && (p.x - q[0]) ** 2 + (p.z - q[1]) ** 2 < R2) return true;
+            if (test(p) && (p.x - q[0]) ** 2 + (p.z - q[1]) ** 2 < R2) return true;
         }
     }
     return false;
   };
-  const isKerb = (s, nm) => nm === 'streetKerb'
+  const isKerb = ({ sig: s, nm }) => nm === 'streetKerb'
     || s === 'BoxGeometry(0.38,0.3,4)' || s === 'BoxGeometry(0.42,0.3,2)';
   // BY NAME FIRST, THEN BY SHAPE. The signature list below is the fifth in
   // this project to rot: it only matches while the mesh still carries its
@@ -1715,10 +1850,19 @@ window.__auditWorld = async function auditWorld() {
   // compactor and a material dedupe over its group, after which a lamp is an
   // anonymous BufferGeometry. The signatures are kept for the boot-built
   // district and for anything older that has not been named yet.
-  const isLamp = (s, nm) => nm === 'streetLamp'
+  const isLamp = ({ sig: s, nm }) => nm === 'streetLamp'
     || s === 'CylinderGeometry(0.11,9)' || s === 'BoxGeometry(0.9,0.16,0.4)'
     || s === 'BoxGeometry(1,0.2,0.44)' || s === 'CylinderGeometry(0.05,2.6)';
-  const isTree = (s, nm) => nm === 'qtree'
+  // BY MECHANISM FIRST, THEN BY NAME, THEN BY SHAPE — and the mechanism is
+  // what was missing. Sentosa draws its trees from TWO systems: qtrees.js
+  // (named `qtree`) and city.js's procedural canopy, whose trunk / branch /
+  // blob / card meshes carry NO NAME AT ALL and whose geometry parameters are
+  // gone the moment a streamed district runs consolidate. Measured 2026-08-25
+  // on the eleven streets C5 called bare: Ocean Drive has 10,799 foliage
+  // instances within 45m and this test recognised ZERO of them. Every
+  // Sentosa-proper finding C5 has ever produced was a false positive.
+  const isTree = ({ sig: s, nm, foliage, trunk }) => foliage || trunk
+    || nm === 'qtree'
     || s === 'SphereGeometry(0.66)' || s === 'IcosahedronGeometry(1)';
 
   {
@@ -1744,11 +1888,31 @@ window.__auditWorld = async function auditWorld() {
   }
   {
     const signs = window.__signage || [];
-    const missing = dressed.filter(([n]) =>
-      !signs.some((s) => s.kind === 'plate' && s.text === n)).map(([n, e]) => `${n} (${e.len | 0}m)`);
+    // EXEMPT A STREET THAT CANNOT PHYSICALLY CARRY A PLATE, BY MEASUREMENT.
+    // Three streets sat in this list permanently -- Sentosa Gateway (916m),
+    // Brani Terminal Avenue (183m) and Brani Causeway (69m) -- and the reason
+    // is structural, not an oversight: EVERY segment of each is bridge deck.
+    // A name plate stands on the verge, and a bridge has no verge, so the
+    // placer reports `spots: 0` for them (see window.__plateRej, which records
+    // `bridgeOnly` and the candidate count per street).
+    //
+    // Exempted the S10 way: on the placer's own MEASURED verdict for that
+    // street, never on a list of names. If a bridge street ever gains a verge
+    // the exemption evaporates on its own, and a NEW nameless street still
+    // fails this check. `spots > 0` is required as well as `bridgeOnly`, so a
+    // street that had somewhere to put a plate and simply missed it is still
+    // reported.
+    const rej = window.__plateRej || {};
+    const cannot = (n) => { const r = rej[n]; return !!r && r.bridgeOnly && !r.spots; };
+    const nameless = dressed.filter(([n]) =>
+      !signs.some((s) => s.kind === 'plate' && s.text === n));
+    const exempt = nameless.filter(([n]) => cannot(n)).map(([n]) => n);
+    const missing = nameless.filter(([n]) => !cannot(n)).map(([n, e]) => `${n} (${e.len | 0}m)`);
     add('C2', 'streets with no name plate', 'MAJOR', missing.length,
         Math.ceil(dressed.length * 0.10),
-        `${missing.length} of ${dressed.length} cannot be identified on the ground`, missing);
+        `${missing.length} of ${dressed.length} cannot be identified on the ground`
+        + (exempt.length ? `; ${exempt.length} exempt, no verge to stand one on (${exempt.join(', ')})` : ''),
+        missing);
   }
   {
     const dark = dressed.filter(([, e]) => !nearAny(e.pts, isLamp, 45))
@@ -1780,9 +1944,24 @@ window.__auditWorld = async function auditWorld() {
     }
   }
   {
-    const bare = dressed.filter(([, e]) => !nearAny(e.pts, isTree, 45)).map(([n]) => n);
+    // Same measured exemption as C2, and the same two streets: Brani Terminal
+    // Avenue and Brani Causeway are entirely bridge deck (`bridgeOnly` with
+    // `spots: 0` in window.__plateRej). Nothing grows on a bridge over water,
+    // and there is no ground within reach of one to grow on either. Sentosa
+    // Gateway is deliberately NOT exempt here even though it is also a
+    // bridge -- it has trees within 45m at its landward ends, so it passes on
+    // its own merit and never needed excusing. That is the test working:
+    // exempt on the measurement, and a street that can be green still has to
+    // be.
+    const rejG = window.__plateRej || {};
+    const noGround = (n) => { const r = rejG[n]; return !!r && r.bridgeOnly && !r.spots; };
+    const bareAll = dressed.filter(([, e]) => !nearAny(e.pts, isTree, 45)).map(([n]) => n);
+    const exemptG = bareAll.filter(noGround);
+    const bare = bareAll.filter((n) => !noGround(n));
     add('C5', 'streets with no greenery', 'MINOR', bare.length, null,
-        `${bare.length} of ${dressed.length}`, bare);
+        `${bare.length} of ${dressed.length}`
+        + (exemptG.length ? `; ${exemptG.length} exempt, bridge deck over water with no ground to plant (${exemptG.join(', ')})` : ''),
+        bare);
   }
   {
     const layers = ['crossings', 'signals', 'busstops', 'mrt', 'taxis', 'trees', 'shops'];
@@ -1951,6 +2130,55 @@ window.__auditWorld = async function auditWorld() {
     }
     add('S2', 'name plates on the wrong street', 'BLOCKER', wrong.length, 0,
         `${plates.length} plates checked`, wrong);
+
+    // S10: A SIGN STANDING IN A LIVE LANE, and nothing in this file could see
+    // one. P1 ("props in a carriageway") walks `props`, and `props` is built
+    // from InstancedMesh only — a street name plate is a Group of three plain
+    // meshes, so every sign the world has ever put on the tarmac has been
+    // invisible to every gate. Found 2026-08-25 while vetting three new
+    // plates: two of the then-36 were on the drawn carriageway (Siloso Road
+    // and Tanjong Beach Walk).
+    //
+    // Asked of the DRAWN road, not of the mapped way: the ribbon is wider
+    // than its way by ROAD_JUNCTION_PAD, ROAD_TAPER_LEN and ROAD_END_EXT, and
+    // it is the drawn tarmac a rider actually meets. Skipped rather than
+    // guessed if the raster is absent.
+    if (window.__onRoad) {
+      // STANDING, and that word is the whole check. A gantry spans a
+      // carriageway by construction and a building name sign is fixed to a
+      // facade a storey up; both are legitimately over tarmac and neither is
+      // something a rider meets. The first run of this check reported all four
+      // of them.
+      //
+      // NOT BY A LIST OF KINDS. This file has now had SEVEN signature/category
+      // allowlists rot (see isTree above, and P1's LOW_OK note), and a list of
+      // sign kinds would be the eighth — it fails closed on every kind added
+      // after it was written. Ask the object how low it hangs instead: the
+      // same question P1 asks of a lamp arm, and the same answer.
+      const CLEAR = 2.6;             // a rider on the board, arms up
+      const box = new T.Box3();
+      const inLane = [];
+      for (const sg of (window.__signage || [])) {
+        if (!window.__onRoad(sg.x, sg.z, 0.3)) continue;
+        // the ground UNDER the sign, from the drawn world, so the clearance is
+        // measured against what a rider rides on rather than against terrain
+        // the sign may not be standing on
+        const g0 = window.__drawnGroundAt ? (window.__drawnGroundAt(sg.x, sg.z) || 0) : 0;
+        let low = null;
+        // TWO SOURCES, TWO DATUMS, AND THE FIELD NAMES SAY WHICH. `obj` is a
+        // scene Group and its box is a world y, so the ground comes off it.
+        // `above` is already a height above the ground under the sign (see the
+        // note where sgdetail.js records it) and subtracting the ground again
+        // put Capella Colonial Block's sign 37m below the road.
+        if (sg.obj) { box.setFromObject(sg.obj); low = box.min.y - g0; }
+        else if (typeof sg.above === 'number') low = sg.above;
+        if (low !== null && low > CLEAR) continue;   // overhead: a gantry, a facade sign
+        inLane.push(`${sg.kind} "${sg.text}" at ${sg.x | 0},${sg.z | 0}`
+          + (low === null ? ' [height not recorded]' : ` [lowest ${low.toFixed(1)}m over the road]`));
+      }
+      add('S10', 'signage standing in a carriageway', 'MAJOR', inLane.length, 0,
+          `${(window.__signage || []).length} signs checked against the drawn road`, inLane);
+    }
   }
   {
     // S3: a name sign is fixed to a facade, so the nearest named building to it
@@ -2532,6 +2760,8 @@ window.__auditWorld = async function auditWorld() {
     // W2: nothing built in the water. The surround in particular fills empty
     // ground with grey massing and has no idea a reservoir is not empty ground.
     let inW = 0; const exW2 = []; const wSrc = { props: 0, mesh: 0 };
+    // props grouped by signature+colour: see the note at the push below
+    const w2By = new Map();
     if (wpolys.length) {
       // A TREE ON THE BANK OVERHANGS THE WATER, and that is what a tree by a
       // river does. W2 asks what has been BUILT in open water; a branch or a
@@ -2609,7 +2839,18 @@ window.__auditWorld = async function auditWorld() {
         // 40 here too. Raising only the MESH loop's cap left this one at 6,
         // so a 114-finding failure still showed eight lines and the props
         // half — which turned out to be ~106 of them — stayed invisible.
-        if (exW2.length < 40) exW2.push(`${p.sig} in open water at ${p.x | 0},${p.z | 0}`);
+        // NAME IT, AND GROUP IT. Forty lines of `BufferGeometry() in open water
+        // at x,z` name forty props out of 410 and describe none of them —
+        // every one is anonymous after consolidate. Grouped by signature and
+        // colour with a count and one location, the whole finding fits in a
+        // few lines and can be triaged without rendering the coast. (Checked
+        // by rendering it once, 2026-08-26: the biggest cluster is the
+        // boulder revetment at Tanjong Rimau, correctly at the waterline.
+        // That is what this label is for — so the next person need not.)
+        const _k = `${p.sig}|${p.col}`;
+        const _g = w2By.get(_k) || { sig: p.sig, col: p.col, n: 0, at: null };
+        _g.n++; if (!_g.at) _g.at = `${p.x | 0},${p.z | 0}`;
+        w2By.set(_k, _g);
       }
       const vv2 = new T.Vector3();
       sc.traverse((o) => {
@@ -2739,8 +2980,13 @@ window.__auditWorld = async function auditWorld() {
         }
       });
     }
+    // the grouped props go FIRST — they are the half that was 40 anonymous
+    // lines — then whatever the mesh loop collected, which names itself
+    const _w2ex = [...w2By.values()].sort((a, b) => b.n - a.n)
+      .map((g) => `${String(g.n).padStart(4)} x ${g.sig} col=${g.col || '-'} in open water, e.g. ${g.at}`)
+      .concat(exW2);
     add('W2', 'things built in open water [props=' + wSrc.props + ' mesh=' + wSrc.mesh + ']', 'MAJOR', inW, 12,
-        wpolys.length ? `${wpolys.length} polygons tested` : 'no water in this scene', exW2);
+        wpolys.length ? `${wpolys.length} polygons tested` : 'no water in this scene', _w2ex);
 
     // W3: you must not be able to ride into the bay. Collision is built from
     // drawn walls and water is not a wall, so this is the one check that would

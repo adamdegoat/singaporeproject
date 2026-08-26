@@ -73,7 +73,25 @@ for (const f of r.findings) {
   // exW2's — so diagnosing sentosa's W2 meant rebuilding the check's
   // filters in a probe and getting them subtly wrong twice.
   const EXN = +(process.env.SG_EX_CAP || 4);
-  if (!ok) for (const e of f.examples.slice(0, EXN)) console.log(`        ${e}`);
+  // THE FOURTH CAP, and the one that hurt most: `if (!ok)`. An UNGATED check
+  // (budget null) is always "ok", so a retired check that had found thirteen
+  // named streets printed the number and not one name — the exact shape this
+  // file's other three comments are about. Every C-family finding since the
+  // family was retired had to be re-derived in a hand probe to learn what it
+  // was pointing at. A finding with a nonzero count prints its evidence
+  // whether or not anything is gating it.
+  // THE FIFTH CAP: `f.detail` was NEVER PRINTED, by any path. Every check
+  // builds a sentence explaining its own number and all of them went to the
+  // JSON and nowhere a human looks. That matters most for a check that
+  // reports ZERO because it EXEMPTED something -- C2 exempts the three
+  // bridge-only streets that have no verge to stand a plate on, and without
+  // this line the exemption is indistinguishable from the check simply
+  // passing, which is how a silent exemption turns into a lie later.
+  // Printed when the finding is worth reading: it failed, it counted
+  // something, or it earned its zero by excusing something.
+  if (f.detail && (!ok || f.count > 0 || /exempt/i.test(f.detail)))
+    console.log(`        ${f.detail}`);
+  if (!ok || f.count > 0) for (const e of f.examples.slice(0, EXN)) console.log(`        ${e}`);
 }
 console.log(r.pass
   ? `   PASS  ${r.findings.length} checks, no blockers, nothing over budget`

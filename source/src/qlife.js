@@ -345,6 +345,15 @@ export function buildQLife(world, data, T) {
       const gy = at(px, pz);
       if (gy < 0.5) continue;
       if (window.__inFootprint && window.__inFootprint(px, pz)) continue;
+      // LEFT AT 0.4 DELIBERATELY. A size-aware margin was tried here while
+      // chasing the P1 lantern (0.4 + sc*0.6) and REVERTED: the lantern turned
+      // out to come from the viewpoint bench block further down, not from
+      // here, so this was a speculative change fixing nothing -- and it
+      // silently deleted two bar props from the Central Beach plaza that no
+      // check had complained about (caught by the beach-walk golden, which is
+      // what that frame is for). Bar clutter sitting at the edge of a plaza
+      // outside a beach bar is wanted; do not tighten this without a defect
+      // that names it.
       if (window.__onRoad && window.__onRoad(px, pz, 0.4)) continue;
       const kind = ['barrel', 'bucket', 'crate', 'lantern', 'crate'][k % 5];
       const sc = { barrel: 0.9, bucket: 0.45, crate: 0.75, lantern: 0.85 }[kind];
@@ -373,10 +382,21 @@ export function buildQLife(world, data, T) {
       if (gy < 0.4) continue;
       if (window.__inFootprint && window.__inFootprint(px, pz)) continue;
       if (window.__inWater && window.__inWater(px, pz)) continue;
+      // NO ROAD GUARD HERE, AND THAT IS DELIBERATE. One was added while
+      // clearing audit P1 ("props in a carriageway") and REVERTED the same
+      // hour: `__onRoad` also matches the paved plazas, so the guard deleted
+      // the flocks from the walked plazas this feature exists to populate --
+      // caught by the beach-walk golden, where two birds simply vanished from
+      // the Central Beach pavement. A pigeon standing on tarmac is not a
+      // defect, it is a pigeon; P1 is about street furniture left in the
+      // road, and it now exempts anything tagged `creature` instead.
       pigeons.push([px, gy, pz, ((hk >>> 5) % 628) / 100, 0.28]);
     }
   }
-  addInstanced(world, 'pigeon', pigeons, { anim: 'creature' });
+  // tag: 'creature' to match the peacocks and monitors. `anim` never reaches
+  // userData (it only feeds the ANIM list), so the pigeons were the one
+  // living thing in the world carrying no creature flag for a check to read.
+  addInstanced(world, 'pigeon', pigeons, { anim: 'creature', tag: 'creature' });
 
   // ---- PEAFOWL + WATER MONITORS (batch 7) --------------------------------
   // Sentosa's real free-roaming animals, authored meshes (no CC0 peacock
@@ -536,7 +556,13 @@ export function buildQLife(world, data, T) {
         const gy = at(x, z);
         if (gy < 0.6) continue;
         if (window.__inFootprint && window.__inFootprint(x, z)) continue;
-        if (window.__onRoad && window.__onRoad(x, z, 0.4)) continue;
+        // 1.2, not 0.4: the bench MODEL is 2.11m long by 0.77m deep, so a
+        // seat centred 0.4m off the tarmac still has half a bench lying in
+        // it. That is what put the Tanjong pair in the middle of Tanjong
+        // Beach Walk (audit P1) with both spots passing their checks
+        // honestly. Clearance has to be measured against the thing being
+        // placed, not against a number that predates it.
+        if (window.__onRoad && window.__onRoad(x, z, 1.2)) continue;
         if (window.__onPath && window.__onPath(x, z)) continue;
         seat = [x, gy, z];
         break;
@@ -545,9 +571,22 @@ export function buildQLife(world, data, T) {
     if (!seat) continue;
     const yaw = ((h >>> 3) % 628) / 100;
     vBench.push([seat[0], seat[1], seat[2], yaw, 1.0]);
-    vLant.push([seat[0] + Math.cos(yaw) * 1.6, at(seat[0] + Math.cos(yaw) * 1.6,
-      seat[2] - Math.sin(yaw) * 1.6), seat[2] - Math.sin(yaw) * 1.6,
-      yaw, 0.85]);
+    // THE LANTERN GOT NO CHECKS AT ALL. The seat was ring-scanned against
+    // footprints, roads and paths, and then the lantern was dropped 1.6m in
+    // front of it with nothing tested -- the anchor was validated and its
+    // satellite was assumed to be fine, the same shape of mistake as the
+    // pigeon flocks scattered +-6m from a validated centre. Try in front,
+    // then behind, and if neither is clear the bench simply stands alone.
+    const lampOk = (x, z) => !(window.__inFootprint && window.__inFootprint(x, z))
+      && !(window.__onRoad && window.__onRoad(x, z, 0.9))
+      && !(window.__onPath && window.__onPath(x, z));
+    for (const sgn of [1, -1]) {
+      const lx = seat[0] + Math.cos(yaw) * 1.6 * sgn;
+      const lz = seat[2] - Math.sin(yaw) * 1.6 * sgn;
+      if (!lampOk(lx, lz)) continue;
+      vLant.push([lx, at(lx, lz), lz, yaw, 0.85]);
+      break;
+    }
   }
   addInstanced(world, 'bench', vBench, { shadow: true });
   addInstanced(world, 'lantern', vLant, { shadow: true });

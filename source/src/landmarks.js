@@ -1381,6 +1381,21 @@ function shophouse(api, b, overlapped = false) {
   const hasAwning = (hh % 5) < 3;
   const groundH = 4.2;
   const upper = Math.max(3.4, b.h - groundH);
+  // THE TOP OF THE WALL IS NOT b.h, AND EVERY ROOF PIECE HERE WAS PLACED AT
+  // b.h (2026-08-26). `upper` has a 3.4m FLOOR — a shophouse needs a
+  // plausible upper storey — so a footprint OSM records at 6.8m is extruded
+  // to 4.2 + 3.4 = 7.6, and one at 3.4m is extruded to 7.6 as well. The deck,
+  // the eaves trim, the ridge and the gables were all laid at b.h, i.e. up to
+  // 4.2m INSIDE the mass they are meant to cap: the wall stood proud of its
+  // own eaves and a ray down onto the roof landed on facade.
+  //
+  // This is the same bug city.js's cap comment already names — "the deck was
+  // laid at the fetched height while the hillside rule extruded the mass PAST
+  // it, burying the deck inside the building and putting the facade back on
+  // top" — in the one recipe that never reaches that cap. Adding a deck at
+  // b.h on 2026-08-26 moved roofcheck 20 -> 19 and no further, which is what
+  // said the deck itself was being buried.
+  const topY = groundH + upper;
   const cx0 = ob.cx, cz0 = ob.cz;
 
   // the mass, set back at the ground floor to leave a covered walkway.
@@ -1393,7 +1408,7 @@ function shophouse(api, b, overlapped = false) {
   api.merge(api.scaleUV(api.extrudeGeo(b.p, upper, groundH),
     1 / 8, 1 / 11), wall, cx0, cz0);
   api.merge(api.extrudeGeo(api.grow(b.p, 1.03), 0.34, groundH - 0.34), trim, cx0, cz0);
-  api.merge(api.extrudeGeo(api.grow(b.p, 1.04), 0.5, b.h), trim, cx0, cz0);
+  api.merge(api.extrudeGeo(api.grow(b.p, 1.04), 0.5, topY), trim, cx0, cz0);
 
   // THE GROUND FLOOR IS INHABITED. The set-back base rendered as a blank
   // warmStone band, which the sweep reviewers read as a burying plinth
@@ -1573,7 +1588,7 @@ function shophouse(api, b, overlapped = false) {
     // `rad <= halfShort * 0.77` is what keeps the roof inside the walls, and
     // the walls are the only thing that makes the rectClear guard below sound.
     rg.rotateY(-ob.ang);
-    rg.translate(sx, b.h + rad * 0.30, sz);
+    rg.translate(sx, topY + rad * 0.30, sz);
     api.merge(rg, roofMat, cx0, cz0);
   }
   const pitched = anyRoof;
@@ -1588,20 +1603,41 @@ function shophouse(api, b, overlapped = false) {
       gable.rotateY(Math.PI / 2);
       gable.rotateZ(Math.PI / 2);
       gable.rotateY(-ob.ang);
-      gable.translate(gx, b.h + rad * 0.30, gz);
+      gable.translate(gx, topY + rad * 0.30, gz);
       api.merge(gable, trim, cx0, cz0);
     }
-  } else {
-    // THE FLAT-ROOFED INFILL NEEDS A DECK, NOT JUST A PARAPET. Variant 3 is
-    // one shophouse in four and it was getting the upstand and nothing under
-    // it, so the mass's own top face — the shophouse WALL texture, three
-    // floors of shuttered windows — lay flat where the roof should be. Found
-    // 2026-08-24 by casting down onto the roof and reading the hit material;
-    // the same defect the flat-roof cap in city.js exists to prevent, in the
-    // one recipe that never reaches it.
-    api.merge(api.extrudeGeo(api.grow(b.p, 0.985), 0.12, b.h - 0.12),
-      api.mat.roofDeck || trim, cx0, cz0);
-    api.merge(api.extrudeGeo(api.grow(b.p, 1.05), 0.8, b.h + 0.5), trim, cx0, cz0);
+  }
+  // THE DECK GOES ON EITHER WAY, AND THAT IS THE 2026-08-26 FIX.
+  //
+  // It used to live in the `else` — flat-roofed infill only. Variant 3 is one
+  // shophouse in four and it was getting the upstand and nothing under it, so
+  // the mass's own top face (the shophouse WALL texture, three floors of
+  // shuttered windows) lay flat where the roof should be. Found 2026-08-24 by
+  // casting down onto the roof and reading the hit material.
+  //
+  // THE PITCHED THREE-QUARTERS HAVE THE SAME HOLE, and putting the deck in
+  // the `else` is what hid it. A pitch here is a narrow prism on the ridge
+  // line: `rad` is at most `halfShort * 0.77` and the eaves reach 0.87 of
+  // that, so the roof is barely two-thirds of the width of the footprint
+  // carrying it — deliberately, because that is what keeps it inside the
+  // walls (read the note at `rad`). Everything either side of the eaves is
+  // the mass's own flat top, in facade texture, and a ray straight down onto
+  // any of it lands on a wall. Segments refused by rectClear leave a whole
+  // BAY of it. Five of roofcheck's ten worst offenders on 2026-08-26 were
+  // shophouses at 120-239 m2, all pitched, and the reason they were invisible
+  // to the count for two days is that `bad` said WHICH and never WHY.
+  //
+  // The deck is flat, shares MAT.roofDeck with the city.js cap and goes
+  // through the merger, so it costs no draw of its own. The pitch sits on it.
+  // top at topY + 0.02, never AT topY: a deck whose top face is the same plane
+  // as the wall top z-fights with it (see the note at capFlatRoof in city.js,
+  // which had the identical bug and the same 2cm fix).
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.985), 0.12, topY - 0.10),
+    api.mat.roofDeck || trim, cx0, cz0);
+  if (!pitched) {
+    // the upstand belongs only to the flat infill: a parapet round a pitched
+    // roof is a different building
+    api.merge(api.extrudeGeo(api.grow(b.p, 1.05), 0.8, topY + 0.5), trim, cx0, cz0);
   }
 
   // a canvas awning over the five-foot-way on most of them
@@ -5608,6 +5644,23 @@ function hotelMichael(api, b) {
   const g0 = api.footingY(b.p);
   const H = Math.max(8, b.h || 55);
   api.world.add(api.extrude(b.p, H, RWS_PUNCHED));
+  // A DECK UNDER THE VAULTS (2026-08-26). The vault run below is the roof, and
+  // like every roof form in this file it is NARROWER than the mass carrying
+  // it: `rad` is capped at `halfShort * 0.92` and at 9m absolute, there are at
+  // most six of them, and each is drawn at 0.94 of its own share of the span —
+  // so there is bare mass between every pair of vaults and down both flanks.
+  // That bare mass is RWS_PUNCHED, the hotel's own window wall, lying flat
+  // where the roof should be, and roofcheck reported both of the building
+  // parts over this footprint for exactly that reason.
+  //
+  // Third instance of one pattern this session — the shophouse pitch and the
+  // city.js flat cap were the others — so it is worth stating plainly: A ROOF
+  // FORM IS NOT A ROOF. Anything that puts a pitch, a vault or a dome on a
+  // mass has to close the top underneath it as well, or the facade shows
+  // through the gaps. Top at H + 0.02, never AT H: see the z-fighting note at
+  // capFlatRoof.
+  api.merge(api.extrudeGeo(api.grow(b.p, 0.99), 0.12, H - 0.10),
+    api.mat.roofDeck || RWS_FRAME, ob.cx, ob.cz);
   // a shallow cornice band, the "regular, evenly spaced elements" reading
   api.merge(api.extrudeGeo(api.growM(b.p, 0.7), 0.5, H - 0.5), RWS_FRAME, ob.cx, ob.cz);
   const span = ob.halfLong * 2, rad = Math.min(ob.halfShort * 0.92, 9);
@@ -6582,23 +6635,58 @@ function sofitelSentosa(api, b) {
 // all three vertices are inside the ring (5cm boundary tolerance) AND none
 // of its edges properly crosses a ring edge — for a simple ring that is
 // exactly "triangle contained in polygon".
+// THE EDGE TABLE IS BUILT ONCE, AND EVERY REJECT IS A BOX TEST FIRST.
+//
+// Measured 2026-08-26: this function is why ONE BUILDING cost 496ms of a
+// 17.2s boot. The Sofitel is the island's largest footprint — 115 vertices,
+// 19,229 m2 — and this recipe clips against it FOUR times. Per triangle that
+// was three `inside()` calls (each a 115-edge point-in-polygon and then, when
+// that missed, a 115-edge distance loop) plus 3 x 115 segment-crossing tests,
+// with every edge's ex/ez/L2 recomputed inside the innermost loop. About 2.5
+// million operations for one hotel.
+//
+// Nothing about the ANSWERS changes here. The edge arithmetic is hoisted out
+// of the loops that used to redo it per vertex, and two rejects are added
+// that cannot change a result: a point outside the ring's box by more than the
+// 0.05m edge tolerance is neither inside nor near an edge, and two segments
+// whose boxes do not overlap cannot cross.
 function clipToRing(geo, ring) {
   const pos = geo.getAttribute('position');
   const uv = geo.getAttribute('uv');
   const nor = geo.getAttribute('normal');
+  const RN = ring.length;
+  const EAX = new Float64Array(RN), EAZ = new Float64Array(RN);
+  const EBX = new Float64Array(RN), EBZ = new Float64Array(RN);
+  const EEX = new Float64Array(RN), EEZ = new Float64Array(RN), EL2 = new Float64Array(RN);
+  const EX0 = new Float64Array(RN), EX1 = new Float64Array(RN);
+  const EZ0 = new Float64Array(RN), EZ1 = new Float64Array(RN);
+  let RX0 = Infinity, RX1 = -Infinity, RZ0 = Infinity, RZ1 = -Infinity;
+  for (let i = 0; i < RN; i++) {
+    const a = ring[i], b2 = ring[(i + 1) % RN];
+    EAX[i] = a[0]; EAZ[i] = a[1]; EBX[i] = b2[0]; EBZ[i] = b2[1];
+    const ex = b2[0] - a[0], ez = b2[1] - a[1];
+    EEX[i] = ex; EEZ[i] = ez; EL2[i] = ex * ex + ez * ez || 1;
+    EX0[i] = Math.min(a[0], b2[0]); EX1[i] = Math.max(a[0], b2[0]);
+    EZ0[i] = Math.min(a[1], b2[1]); EZ1[i] = Math.max(a[1], b2[1]);
+    if (a[0] < RX0) RX0 = a[0]; if (a[0] > RX1) RX1 = a[0];
+    if (a[1] < RZ0) RZ0 = a[1]; if (a[1] > RZ1) RZ1 = a[1];
+  }
+  const NEAR = 0.05;                    // the 0.0025 below is NEAR squared
   const inside = (x, z) => {
+    if (x < RX0 - NEAR || x > RX1 + NEAR || z < RZ0 - NEAR || z > RZ1 + NEAR) return false;
     let hit = false;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      const xi = ring[i][0], zi = ring[i][1], xj = ring[j][0], zj = ring[j][1];
-      if (((zi > z) !== (zj > z)) && (x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)) hit = !hit;
+    for (let i = 0, j = RN - 1; i < RN; j = i++) {
+      const zi = EAZ[i], zj = EAZ[j];
+      if ((zi > z) !== (zj > z)
+          && x < ((EAX[j] - EAX[i]) * (z - zi)) / (zj - zi) + EAX[i]) hit = !hit;
     }
     if (hit) return true;
-    for (let i = 0; i < ring.length; i++) {
-      const [ax, az] = ring[i], [bx, bz] = ring[(i + 1) % ring.length];
-      const ex = bx - ax, ez = bz - az, L2 = ex * ex + ez * ez || 1;
-      let t = ((x - ax) * ex + (z - az) * ez) / L2;
+    for (let i = 0; i < RN; i++) {
+      if (x < EX0[i] - NEAR || x > EX1[i] + NEAR
+          || z < EZ0[i] - NEAR || z > EZ1[i] + NEAR) continue;
+      let t = ((x - EAX[i]) * EEX[i] + (z - EAZ[i]) * EEZ[i]) / EL2[i];
       t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const dx = x - (ax + ex * t), dz = z - (az + ez * t);
+      const dx = x - (EAX[i] + EEX[i] * t), dz = z - (EAZ[i] + EEZ[i] * t);
       if (dx * dx + dz * dz < 0.0025) return true;
     }
     return false;
@@ -6618,9 +6706,12 @@ function clipToRing(geo, ring) {
     let ok = inside(xs[0], zs[0]) && inside(xs[1], zs[1]) && inside(xs[2], zs[2]);
     for (let i = 0; i < 3 && ok; i++) {
       const j = (i + 1) % 3;
-      for (let e = 0; e < ring.length && ok; e++) {
-        const [ax, az] = ring[e], [bx, bz] = ring[(e + 1) % ring.length];
-        if (cross(xs[i], zs[i], xs[j], zs[j], ax, az, bx, bz)) ok = false;
+      // two segments whose boxes do not overlap cannot cross
+      const sx0 = xs[i] < xs[j] ? xs[i] : xs[j], sx1 = xs[i] < xs[j] ? xs[j] : xs[i];
+      const sz0 = zs[i] < zs[j] ? zs[i] : zs[j], sz1 = zs[i] < zs[j] ? zs[j] : zs[i];
+      for (let e = 0; e < RN && ok; e++) {
+        if (EX1[e] < sx0 || EX0[e] > sx1 || EZ1[e] < sz0 || EZ0[e] > sz1) continue;
+        if (cross(xs[i], zs[i], xs[j], zs[j], EAX[e], EAZ[e], EBX[e], EBZ[e])) ok = false;
       }
     }
     if (!ok) continue;
@@ -6643,9 +6734,35 @@ function clipToRing(geo, ring) {
 // of a walkway or carriageway with the ring. Shared by Sofitel and the
 // casino podium; the carve opens movement, this is what the eye enters.
 function routeDoors(api, ring, doorMat, jambMat, scaleW = 1) {
+  // ONLY THE ROUTES THAT COULD REACH THIS BUILDING.
+  //
+  // This walked EVERY walkway and EVERY drive on the island — every segment,
+  // nine samples per segment — for EVERY edge of the footprint. On the
+  // Sofitel (115 vertices, the island's largest plan) that was the single
+  // most expensive thing in the boot after sg:trails: **458ms for one
+  // building**, measured 2026-08-26 with the new `window.__buildMarks`.
+  //
+  // A route whose own box, grown by the half-width this function would use
+  // for it, does not touch the footprint's box cannot put a door on any edge
+  // of it — so the answers cannot change. Almost the whole island is rejected
+  // for any one building.
+  let rx0 = Infinity, rx1 = -Infinity, rz0 = Infinity, rz1 = -Infinity;
+  for (const [qx, qz] of ring) {
+    if (qx < rx0) rx0 = qx; if (qx > rx1) rx1 = qx;
+    if (qz < rz0) rz0 = qz; if (qz > rz1) rz1 = qz;
+  }
   const routes = [];
   for (const r of [...(api.walkways || []), ...(api.drives || [])]) {
-    if (r.p && r.p.length > 1) routes.push(r);
+    if (!r.p || r.p.length <= 1) continue;
+    const isDrive = r.k !== 'footway' && r.k !== 'pedestrian';
+    const pad = ((r.w || (isDrive ? 6 : 3.4)) / 2) + 0.6;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const [qx, qz] of r.p) {
+      if (qx < x0) x0 = qx; if (qx > x1) x1 = qx;
+      if (qz < z0) z0 = qz; if (qz > z1) z1 = qz;
+    }
+    if (x1 + pad < rx0 || x0 - pad > rx1 || z1 + pad < rz0 || z0 - pad > rz1) continue;
+    routes.push(r);
   }
   const doors = [];
   for (let i = 0; i < ring.length; i++) {

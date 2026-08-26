@@ -44,6 +44,50 @@ const renderer = new THREE.WebGLRenderer({
   powerPreference: P.has('lowpower') ? 'default' : 'high-performance',
 });
 window.__renderer = renderer;   // probes read info.programs / info.memory
+
+// WHEN THE PHONE TAKES THE GPU BACK.
+//
+// iOS drops the WebGL context under memory pressure and sometimes on the
+// return from an app-switch. Nothing here listened for it, and the result was
+// measured on 2026-08-26: the canvas goes **blank white**, the HUD and the
+// buttons keep drawing on top of nothing, the render loop keeps ticking and
+// reporting triangles, and there is **no error and no way back**. The player
+// gets a white void with a working Friends button. That is the worst shape a
+// failure can take -- it looks like the game broke for no reason.
+//
+// TWO THINGS ARE REQUIRED AND ONLY ONE IS OBVIOUS. `preventDefault()` on the
+// lost event is what tells the browser it MAY restore the context; without it
+// restoration is never attempted, so the default behaviour is permanent. And
+// the loop has to stop: WebGL calls against a lost context are silent no-ops,
+// so it burns battery drawing nothing.
+//
+// It does NOT try to rebuild and carry on. Three.js needs every texture,
+// geometry and program re-uploaded, and a half-restored scene renders garbage
+// that looks like a different bug. A reload is honest, takes the boot time we
+// already measure, and puts the rider back on the island.
+window.__ctxLost = false;
+canvas.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();               // without this, restoration is never even attempted
+  window.__ctxLost = true;
+  if (document.getElementById('ctxlost')) return;
+  const w = document.createElement('div');
+  w.id = 'ctxlost';
+  w.style.cssText = 'position:fixed;inset:0;z-index:90;display:flex;align-items:center;'
+    + 'justify-content:center;background:rgba(12,16,20,.82)';
+  w.innerHTML = '<div style="background:#e8ddc6;border-radius:14px;padding:22px 20px;max-width:300px;'
+    + 'text-align:center;font:15px/1.45 ui-sans-serif,system-ui;color:#12161b">'
+    + '<div style="font-weight:700;margin-bottom:8px">The graphics stopped</div>'
+    + '<div style="margin-bottom:14px">Your phone took the graphics memory back. Reload to keep riding.</div>'
+    + '<button id="ctxgo" style="font:600 15px ui-sans-serif;background:#12161b;color:#e8ddc6;'
+    + 'border:0;border-radius:9px;padding:10px 26px">Reload</button></div>';
+  document.body.appendChild(w);
+  w.querySelector('#ctxgo').addEventListener('click', () => location.reload());
+}, false);
+canvas.addEventListener('webglcontextrestored', () => {
+  // The browser gave it back. Everything on the GPU is gone, so the panel
+  // stays up and the reload is still the route: see the note above.
+  console.warn('webgl context restored — reload required to rebuild the scene');
+}, false);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
@@ -1850,6 +1894,13 @@ const walkerRig = NEWAVATAR ? (() => {
 })() : buildWalker();
 walkerRig.group.visible = false;
 scene.add(walkerRig.group);
+// EXPOSED FOR THE VET SHEET, and for the same reason __ridePos and __state
+// are. The walker's JUMP is a hand-posed clip-free pose since 2026-08-26 (the
+// women's pack ships no jump clip) and nothing could photograph it: the sheet
+// could reach the rider's avatar through userData.av but the walker's rig is
+// a closure. A pose no harness can see is a pose that regresses in silence —
+// which is the whole argument this repo keeps having with itself.
+window.__walkRig = walkerRig;
 let clock = 0;
 
 // THE GAME IS ONE DISTRICT: sentosa (the 2026-08-03 pivot — district-select,
@@ -2969,7 +3020,32 @@ function smoothWays(data) {
   return { ways, lengthDelta: before ? +((after - before) / before * 100).toFixed(2) : 0 };
 }
 
+// ONE FOOTPRINT IN 1,095 IS STORED CLOSED. `data/defects.mjs` D13 found it:
+// "Capella Colonial Block" repeats its first point to close its ring while
+// every other footprint is stored open. That is a fetch-normalisation quirk,
+// and a repeated vertex is not harmless — it makes a ZERO-LENGTH EDGE, which
+// extrudes to degenerate triangles with an undefined normal, and every
+// consumer of `b.p` (extrudeGeo, grow, growClear, centroid, the point-in-poly
+// tests, the oriented box) has to be right about it independently.
+//
+// Normalised HERE, at the one place the payload is parsed, rather than in
+// process.py: the data on disk is what a deploy publishes and regenerating it
+// needs the fetch pipeline, while this makes any payload safe including ones
+// already published. Cheap — it walks each ring once at load.
+function openRings(data) {
+  let closed = 0;
+  for (const b of (data.buildings || [])) {
+    const p = b.p;
+    if (!p || p.length < 4) continue;
+    const a = p[0], z = p[p.length - 1];
+    if (Math.abs(a[0] - z[0]) < 1e-6 && Math.abs(a[1] - z[1]) < 1e-6) { p.pop(); closed++; }
+  }
+  if (closed) (window.__ringsOpened = closed);
+  return data;
+}
+
 async function buildRegion(data, opts = {}) {
+  openRings(data);
   // A FRESH SIGN ATLAS PER REGION BUILD. The shared atlas hands out materials
   // that belong to THIS scene's textures; carrying them into a second build
   // would hand out materials whose textures went with the old scene, and the
@@ -4325,7 +4401,16 @@ window.__placeBlocked = (x, z) => blocked(x, z);
       // THE NAME ASK — once, ever. Without it every floating tag reads
       // "rider" and hide and seek cannot tell anyone apart. Deliberately
       // plain (the designed join screen waits for the landing-page phase).
-      let name = (P.get('name') || localStorage.getItem('sg_name') || '').slice(0, 16);
+      // Read guarded on its own, not left to the outer catch. On iOS private
+      // browsing `getItem` THROWS, and from inside this try that took the
+      // whole multiplayer block down to "net init failed (solo ride
+      // continues)" -- Friends silently unavailable because a REMEMBERED NAME
+      // could not be read. Same shape as the timeattack bug fixed the same
+      // day; there the failure was fully silent, here it at least warns.
+      // A name we cannot recall just means we ask for it again.
+      let savedName = '';
+      try { savedName = localStorage.getItem('sg_name') || ''; } catch (e) { /* private mode */ }
+      let name = (P.get('name') || savedName || '').slice(0, 16);
       if (!name) {
         name = await new Promise((done) => {
           const wrap = document.createElement('div');
@@ -4349,7 +4434,9 @@ window.__placeBlocked = (x, z) => blocked(x, z);
         });
       }
       try { localStorage.setItem('sg_name', name); } catch {}
-      const hue = +(P.get('hue') || localStorage.getItem('sg_hue') || (Math.random() * 360) | 0);
+      let savedHue = '';
+      try { savedHue = localStorage.getItem('sg_hue') || ''; } catch (e) { /* private mode */ }
+      const hue = +(P.get('hue') || savedHue || (Math.random() * 360) | 0);
       try { localStorage.setItem('sg_hue', String(hue | 0)); } catch {}
       NET = new Net(P.get('relay') || SG_RELAY_URL, P.get('room'), { id: sid, name, hue }, {
         scene, camera,
@@ -5474,6 +5561,12 @@ function loop(now) {
   // Stop rendering entirely when the page is not visible. A 60fps WebGL loop is
   // a real power draw — it pegged two CPU cores on this laptop — and on a phone
   // it is battery and heat for nothing.
+  // Context gone: stop entirely. Every WebGL call against a lost context is a
+  // silent no-op, so continuing burns battery drawing nothing while the HUD
+  // cheerfully reports triangles that were never rasterised (which is exactly
+  // what the 2026-08-26 measurement caught). Not re-armed: the panel the lost
+  // handler puts up owns the reload.
+  if (window.__ctxLost) return;
   if (document.hidden) { requestAnimationFrame(loop); return; }
   resizeIfStale();
 

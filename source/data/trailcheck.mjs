@@ -30,10 +30,12 @@ const out = await page.evaluate(() => {
   const res = {
     ways: 0, pts: 0, noSurface: 0, steps: 0, bigSteps: 0, floating: 0,
     longBlocks: 0, midBlocks: 0, tinyBlocks: 0, exBlock: [], exMid: [],
-    exNoSurface: [], exStep: [], exFloat: [],
+    exNoSurface: [], exStep: [], exFloat: [], floatBy: new Map(),
   };
 
+  let _wi = -1;
   for (const r of (window.__data.roads || [])) {
+    _wi++;
     const k = r.k || '';
     if (k !== 'footway' && k !== 'pedestrian') continue;
     const p = r.p || [];
@@ -174,11 +176,37 @@ const out = await page.evaluate(() => {
           else res.tinyBlocks++;
           blockRun = 0;
         }
-        if (surf - g > 1.5) {
+        // NOT ON A BRIDGE. `surf - g` is "how far the walking surface is above
+        // the terrain beside it", and that is EXACTLY WHAT A BRIDGE DECK IS —
+        // so this reported 329 samples across five ways and every one of them
+        // was correct: Imbiah Station's elevated walkway (worst 7.91m, built
+        // with columns, parapets and ramps, vetted by render) and the Sentosa
+        // Gateway pavement over the Keppel Channel (347m at up to 3m, where
+        // the "terrain" underneath is the seabed). A report that is wrong 329
+        // times out of 329 teaches people to skip the section it prints in.
+        // The map already says which ways are decks; read it.
+        if (!r.bridge && surf - g > 1.5) {
           res.floating++;
-          if (res.exFloat.length < 8) {
-            res.exFloat.push({ n: r.n || k, x: x | 0, z: z | 0, up: +(surf - g).toFixed(2) });
+          // BY WAY, NOT BY SAMPLE, AND NOT CAPPED AT EIGHT. This pushed one
+          // entry per 1.5m SAMPLE and stopped at 8, so a run of 329 floating
+          // samples printed eight lines from a single ten-metre stretch of one
+          // footway and said nothing at all about the other 321. That is the
+          // fourth cap in this project found sitting between a check and its
+          // own evidence (see audit_run.mjs, exW2, and the RETIRED-check
+          // printer). Grouped per way with its worst height and how far it
+          // runs, which is the shape you can actually act on.
+          // BY THE WAY'S INDEX. Keying on `r.n || k` collapsed all 329
+          // samples into ONE row, because every floating way here is an
+          // unnamed footway and none of them carries an id — a grouping that
+          // groups everything is the same as no grouping.
+          const key = _wi;
+          let f = res.floatBy.get(key);
+          if (!f) {
+            f = { n: r.n || k, k, x: x | 0, z: z | 0, up: 0, n1: 0 };
+            res.floatBy.set(key, f);
           }
+          f.n1++;
+          if (surf - g > f.up) { f.up = +(surf - g).toFixed(2); f.x = x | 0; f.z = z | 0; }
         }
       }
     }
@@ -203,6 +231,10 @@ const out = await page.evaluate(() => {
       blockRun = 0;
     }
   }
+  // a Map does not survive the structured clone out of page.evaluate; the
+  // first run of this returned {} and printed nothing at all.
+  res.exFloat = [...res.floatBy.values()].sort((a, b) => b.n1 - a.n1);
+  delete res.floatBy;
   return res;
 });
 console.log(`ways ${out.ways}  sample points ${out.pts}`);
@@ -225,5 +257,10 @@ if (out.longBlocks > N4_BUDGET) {
 console.log(`   PASS  no walking route blocked for over 20m`);
 for (const e of out.exMid) console.log(`    MID ${e.m}m of ${e.n} from ${e.x},${e.z}`);
 for (const e of out.exStep) console.log(`    STEP   ${e.n} at ${e.x},${e.z} d=${e.d} (local grade ${e.trend}m/sample)`);
-for (const e of out.exFloat) console.log(`    FLOAT  ${e.n} at ${e.x},${e.z} up=${e.up}`);
+for (const e of out.exFloat.slice(0, +(process.env.SG_EX_CAP || 20))) {
+  console.log(`    FLOAT  ${String(e.n).padEnd(26)} ${String(e.k).padEnd(11)}`
+    + ` ${String(e.n1).padStart(4)} samples (${(e.n1 * 1.5).toFixed(0)}m), worst up=${e.up}`
+    + ` at ${e.x},${e.z}`);
+}
+if (out.exFloat.length > 20) console.log(`    ... and ${out.exFloat.length - 20} more ways`);
 await browser.close();
