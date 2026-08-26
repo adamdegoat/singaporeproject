@@ -8,7 +8,7 @@ import { TOUCH } from './input.js';
 import { ROAD_END_EXT } from './roads.js';
 import { buildQTrees } from './qtrees.js';
 import { scatterVerges, scatterFoundations } from './qground.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws, texBoomBand} from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texAshlar, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws, texBoomBand} from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV,
          constructionSite } from './landmarks.js';
 
@@ -45,6 +45,32 @@ const RENDER_TEX = texRender(false);
 const RENDER_TEX_SHUTTER = texRender(true);
 // a painted ride shed: panel joints, plinth, service doors, no window grid
 const RENDER_TEX_SHOW = texRenderShow();
+// ANCIENT EGYPT IS COURSED STONE, NOT PAINTED PANEL. Its show walls carried
+// texRenderShow like every other zone's, and under the zone's dark sampled
+// ochre that texture's 0.22-alpha joints are invisible: photographed head-on,
+// a three-storey wall with nothing on it but the 12m tile seam. See texAshlar.
+// Keyed by tint so each of the zone's three sampled stones keeps its own map.
+// TWO STONES, ONE DRAWING. Egypt is large-format ashlar (§4: "the joint grid
+// *is* the texture"); New York is "face brick with real coursing" (§6, and the
+// same section is explicit that the tone change BETWEEN buildings is the whole
+// trick — which the zone tint already gives us, one map per sampled tone).
+//
+// New York gets brick COURSING and no openings. §6's relief vocabulary leads
+// with window rhythm, and that is deliberately NOT built: the show-building
+// pass removed window grids from this park on purpose (see the long note at
+// _inUss), and putting them back on a hunch would undo a researched decision.
+// The coursing is the material; the openings are a separate, owner-level call.
+const _COURSED = new Map();
+const COURSING = {
+  ashlar: [3, 2, 3.6, 1.0],     // 1.2m stones, hard joints
+  brick: [16, 6, 2.4, 0.45],    // 0.15m courses, soft joints
+};
+const coursedTex = (tint, kind) => {
+  const key = tint + '|' + kind;
+  let t = _COURSED.get(key);
+  if (!t) { t = texAshlar(tint, ...COURSING[kind]); _COURSED.set(key, t); }
+  return t;
+};
 // WHAT A BUILDING IS MADE OF, FROM THE MAP.
 //
 // This used to hash the footprint and pick a family from the remainder, which is
@@ -2303,8 +2329,8 @@ function growClear(pts, f, self) {
 // with no masonry pattern on them at all, and every textured pool in this file
 // puts one there.
 const _RENDER = new Map();
-function renderMat(hex, shutter = false, show = false) {
-  const key = hex + (shutter ? '|s' : '') + (show ? '|w' : '');
+function renderMat(hex, shutter = false, show = false, coursed = null) {
+  const key = hex + (shutter ? '|s' : '') + (show ? '|w' : '') + (coursed ? '|' + coursed : '');
   let m = _RENDER.get(key);
   if (!m) {
     // A WALL WITH NOTHING ON IT IS A BLOCKOUT BOX. This returned a flat colour
@@ -2314,10 +2340,19 @@ function renderMat(hex, shutter = false, show = false) {
     // tint, and the openings stay dark through the same multiply. That is the
     // failure the previous stone-map attempts hit, designed out.
     m = new THREE.MeshStandardMaterial({
-      map: show ? RENDER_TEX_SHOW : shutter ? RENDER_TEX_SHUTTER : RENDER_TEX,
+      map: coursed ? coursedTex(hex, coursed)
+        : show ? RENDER_TEX_SHOW : shutter ? RENDER_TEX_SHUTTER : RENDER_TEX,
       roughness: 0.9,
     });
-    m.color = new THREE.Color(hex);
+    // A COURSED MAP IS DRAWN ON THE STONE'S OWN COLOUR, so it must NOT be
+    // multiplied by it a second time. Every other map here is drawn on white
+    // precisely so the tint lands through the multiply; these are not.
+    m.color = new THREE.Color(coursed ? 0xffffff : hex);
+    // NO TILE STATED HERE ON PURPOSE — the coursed maps carry their own scale in the
+    // map's repeat. Setting material.userData.tile did not reach autoUV (the
+    // mesh came back with geometry uvTile [12,12] and material tile null), and
+    // a scale that silently does not apply is worse than one that lives beside
+    // the drawing it scales. See the tail of texAshlar().
     _RENDER.set(key, m);
   }
   return m;
@@ -3443,6 +3478,10 @@ export async function buildBuildings(world, data, Y = null) {
   // the zone a footprint stands in, or null. `_zoneTint` answered a COLOUR and
   // nothing could ask WHICH ZONE — which is why paint was the only thing a
   // zone could change about a building.
+  // WHICH ZONES ARE MADE OF COURSED MASONRY, from research/universal-zones.md.
+  // A zone not listed keeps the painted-shed map, which is the right answer for
+  // Sci-Fi City (ETFE and diagrid) and Minion Land (a cartoon).
+  const _COURSED_ZONE = { 'Ancient Egypt': 'ashlar', 'New York': 'brick' };
   const _zoneOf = (pts) => {
     if (!_ussZones.length) return null;
     const c = centroid(pts);
@@ -4444,7 +4483,9 @@ export async function buildBuildings(world, data, Y = null) {
         || [0xd8cbb6, 0xcdb79c, 0xc9c3b2, 0xd9c3a8, 0xc2b6a4][Math.abs(_sh) % 5];
     }
     const mat = b.col ? tintedMat(wallTex, fam.rough, fam.metal, b.col)
-      : _isShow ? renderMat(_showTint, false, true)
+      // `_zoneOf` returns the ZONE OBJECT, not its name — comparing it to a
+      // string is always false and the coursing would silently never appear.
+      : _isShow ? renderMat(_showTint, false, true, _COURSED_ZONE[(_zoneOf(b.p) || {}).n] || null)
       : _isVilla ? renderMat(_coveTint)
       : _isHeritage ? renderMat(0xf4efe4, true)
       : _isSmallBeach ? renderMat(_beachTint)

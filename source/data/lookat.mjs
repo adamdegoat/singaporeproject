@@ -40,10 +40,16 @@ page.on('pageerror', (e) => console.log('  page error:', e.message));
 // came back 174,238 and 174,239 bytes, which is one frame twice — the flag was
 // being passed to a script that had nowhere to put it.
 const XPARAMS = process.env.SG_XPARAMS ? '&' + process.env.SG_XPARAMS : '';
-await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/index.html?dpr=1&scene=${SCENE}${XPARAMS}`
+// `?scene=<name>` IS DEAD. This file asked for `?dpr=1&scene=world`, which no
+// district loader answers any more, so __ready never came true and every run
+// ended in a five-minute timeout with no frame. The working shape — the one
+// golden.mjs and avatar.mjs use — is `?district=<name>`. Cost two timeouts on
+// 2026-08-27, one here and one in a new tool that copied this line.
+await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/?district=${SCENE === 'world' ? 'sentosa' : SCENE}&reseed=1${XPARAMS}`
   + (process.env.SG_EXTRA ? '&' + process.env.SG_EXTRA : ''),
   { waitUntil: 'load' });
-await page.waitForFunction('window.__ready === true', null, { polling: 300, timeout: 300000 });
+await page.waitForFunction(() => window.__teleport && window.__ready === true,
+  null, { polling: 300, timeout: 300000 });
 await page.evaluate(() => window.__ui(false));
 
 for (const p of pairs) {

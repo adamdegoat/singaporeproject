@@ -1128,6 +1128,95 @@ export function texRenderShow() {
   return finish(c, [1, 1]);
 }
 
+// COURSED ASHLAR, for the Ancient Egypt show buildings.
+//
+// research/universal-zones.md §4 "Materials and surface", first bullet:
+//   "Large-format coursed ashlar with clearly expressed joints, laid in
+//    regular courses over the whole show-building wall. The joint grid *is*
+//    the texture."
+// and §4 opens by calling Egypt "the zone with the highest relief-per-square-
+// metre in the park and the easiest to get 80% right cheaply, because it is
+// one material and one grammar". This is that, and it costs no triangles —
+// which matters, the hot view sits at 1666k of a 1750k budget.
+//
+// WHY NOT texRenderShow. That texture is right for a painted shed and it is
+// what these walls had, but its joints are 0.20-0.22 alpha drawn on white.
+// White survives a PALE tint; under Egypt's sampled greyed sandstone-ochre
+// (#938778) a 6% darkening is invisible, and the wall reads as a flat dark
+// slab with nothing on it but the 12m tile seam. Photographed head-on at
+// -1201,12480 before this change: one unbroken brown mass three storeys high.
+// So the joints here are drawn HARD — a wall whose whole texture is its joint
+// grid cannot whisper them.
+//
+// Drawn on the sampled colour rather than on white, because ashlar is stone,
+// not paint over stone: the tint multiply would otherwise wash the per-block
+// variation out. Callers pass the zone tint as `base`.
+// PARAMETERISED because brick is the same grammar at a finer course: New York
+// is specified as "face brick with real coursing" (§6) and differs from Egypt's
+// ashlar only in course height, block count and how hard the joint reads. One
+// drawing, two stones, rather than two near-copies that drift apart.
+//   courses/per  blocks in the tile          tileM  metres across the tile
+//   joint        0..1, how dark the bed joint cuts
+export function texAshlar(base = 0x938778, courses = 3, per = 2, tileM = 3.6, joint = 1) {
+  const r2 = rng(0x6173686c ^ base ^ courses ^ (per << 8) ^ ((tileM * 10) | 0));
+  const rand = (a, b) => a + r2() * (b - a);
+  const S = 256, [c, x] = cvs(S);
+  const br = (base >> 16) & 255, bg = (base >> 8) & 255, bb = base & 255;
+  x.fillStyle = hex(base); x.fillRect(0, 0, S, S);
+  const ch = S / courses, bw = S / per;
+  for (let i = 0; i < courses; i++) {
+    // ALTERNATE COURSES BREAK JOINT. Stacked perpends read as tiling; a
+    // running bond is what coursed ashlar is.
+    const off = (i % 2) ? bw * 0.5 : 0;
+    for (let b = -1; b <= per; b++) {
+      // per-block tone, kept narrow: the sampled sunlit and shaded reads are
+      // only ~17 grey levels apart, so anything wider is invention.
+      // NARROW. The sampled sunlit/shaded pair for Egypt's stone is only ~17
+      // grey levels apart, so a wide swing is invention — and the green-only
+      // `w` term is a HUE shift, which at +/-4 threw occasional mauve blocks
+      // into a brown wall. Value does the work; hue barely moves.
+      const v = rand(-8, 8), w = rand(-1.5, 1.5);
+      x.fillStyle = `rgb(${br + v},${bg + v + w},${bb + v})`;
+      x.fillRect(b * bw + off, i * ch, bw - 1, ch - 1);
+    }
+  }
+  // THE JOINTS: a recessed shadow line with a lit arris under it, which is
+  // what a chiselled bed joint does in Singapore's overhead light.
+  for (let i = 0; i <= courses; i++) {
+    const y = i * ch;
+    x.fillStyle = `rgba(38,32,25,${0.55 * joint})`; x.fillRect(0, y - 1.6 * joint, S, 3.2 * joint);
+    x.fillStyle = `rgba(255,248,232,${0.22 * joint})`; x.fillRect(0, y + 1.6 * joint, S, 1.4 * joint);
+  }
+  for (let i = 0; i < courses; i++) {
+    const off = (i % 2) ? bw * 0.5 : 0;
+    for (let b = -1; b <= per; b++) {
+      x.fillStyle = `rgba(38,32,25,${0.48 * joint})`;
+      x.fillRect(b * bw + off - 1.4 * joint, i * ch, 2.8 * joint, ch);
+    }
+  }
+  // Weathering runs DOWN from the bed joints. §4 builds the zone as an
+  // interwar excavation camp, not a new build.
+  for (let i = 0; i < 22; i++) {
+    const sy = ((rand(0, courses) | 0)) * ch, h = rand(10, 46);
+    const g = x.createLinearGradient(0, sy, 0, sy + h);
+    g.addColorStop(0, `rgba(64,52,38,${rand(0.06, 0.16)})`);
+    g.addColorStop(1, 'rgba(64,52,38,0)');
+    x.fillStyle = g; x.fillRect(rand(0, S), sy, rand(4, 18), h);
+  }
+  grain(x, 2600, 16, S, r2);
+  // THE SCALE IS CARRIED HERE, NOT ON THE MATERIAL. autoUV (landmarks.js:163)
+  // reads `material.userData.tile` and falls back to 12 metres; stating a tile
+  // on the material did NOT take — probed in the running world, the show mesh
+  // came back with geometry uvTile [12,12] and material tile null — so the
+  // stone came out four metres across, which is a megalith, not ashlar.
+  // Rather than chase that plumbing, scale the map: the facade UVs are metres
+  // (measured, see the note at texRender) and autoUV divides them by 12, so a
+  // repeat of 12/tileM puts the tile back at tileM metres. Egypt: three
+  // courses over 3.6m = 1.2m stones, the "large format" §4 asks for, still
+  // readable across a plaza. If autoUV's default ever changes, change this.
+  return finish(c, [12 / tileM, 12 / tileM]);
+}
+
 export function texRender(shutter = false) {
   const r2 = rng(0x726e6472 ^ (shutter ? 1 : 0)), rand = (a, b) => a + r2() * (b - a);
   const S = 256, [c, x] = cvs(S);
