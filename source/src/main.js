@@ -1230,6 +1230,8 @@ carRig.group.visible = false;
 // note. The skater is parented to the board so a carve leans them together,
 // which is exactly what happens on a real one.
 const skateRig = buildSkate();
+// The fraction of top speed above which she stops pushing and just rides.
+const PUSH_MAX_V = 0.40;
 // the push stroke's phase — module scope because it must survive frames,
 // and it is advanced by DISTANCE rather than by a clock (see the push block)
 let pushPhase = 0;
@@ -6161,11 +6163,29 @@ function loop(now) {
         const v = Math.min(1, S.speed / SKATE.vMax);
         const carve = Math.max(-1, Math.min(1, S.lean / SKATE.leanMax));
         const crouch = Math.min(1, v * 0.5 + Math.abs(carve) * 0.5 + (S.drifting ? 0.3 : 0));
-        const pushingAV = inp.throttle > 0.15 && S.speed < SKATE.vMax * 0.66 && !S.drifting;
+        // THE PUSH WINDOW, NARROWED 2026-08-27. It was 0.66 of vMax, and
+        // SKATE.vMax is 16.667 m/s (the owner's 60 km/h), so she was still
+        // kicking at the road at 39.6 km/h — most of the speed range this
+        // island is ridden at, and it reads as scrabbling rather than skating.
+        // Every guide describes the push as the thing you STOP doing once you
+        // are rolling ("as you start to gain speed, put your back foot back
+        // onto the tail" — sidewalkmag's basics). 0.40 puts the ceiling at
+        // 24 km/h: a believable pushing speed, and above it she rides.
+        const pushingAV = inp.throttle > 0.15 && S.speed < SKATE.vMax * PUSH_MAX_V && !S.drifting;
         pushPhase = pushingAV ? (pushPhase + (0.9 + S.speed) * dt * 0.62) % 1 : 0;
         const kickAV = pushingAV ? Math.sin(pushPhase * Math.PI * 2) : 0;
         const reachAV = pushingAV ? (0.5 - 0.5 * Math.cos(pushPhase * Math.PI * 2)) : 0;
         AV.skatePose(carve * 0.35, crouch, kickAV, reachAV);
+        // WHAT THE FIGURE WAS ACTUALLY TOLD TO DO, published for the vet.
+        // window.__rider() read `skater.userData.rig` — the OLD box figure —
+        // so on the woman every pose field it returned was null, and a sheet
+        // of eight frames captioned itself "crouch null, push null" without
+        // anything noticing. It is the seventh check in this project found
+        // reporting on a thing it could not see. These are the inputs the
+        // pose actually received this frame, not a re-derivation.
+        window.__avPose = { carve: +(carve * 0.35).toFixed(3), crouch: +crouch.toFixed(3),
+          kick: +kickAV.toFixed(3), reach: +reachAV.toFixed(3),
+          pushing: pushingAV, phase: +pushPhase.toFixed(3) };
       }
       const RG = skater.userData.rig;
       if (RG) {
@@ -6727,11 +6747,19 @@ window.__rideState = () => (onRide ? {
 // like motion, and this project's own law is that motion is verified in REAL
 // PLAYBACK at wall-clock. This hands the harness the numbers behind the frame.
 window.__rider = () => {
-  const R = skater.userData.rig;
+  const R = skater.userData.rig;        // the OLD box figure; null on the woman
+  const A = window.__avPose || null;    // the rigged avatar's actual pose inputs
   return {
     kmh: +(S.speed * 3.6).toFixed(1), lean: +S.lean.toFixed(3),
     slip: +(S.slip || 0).toFixed(3), drifting: !!S.drifting,
-    crouch: R ? +(1 - R.low.scale.y).toFixed(3) : null,
+    // WHICH FIGURE IS ON SCREEN. Without this a null pose field is ambiguous
+    // between "not posed" and "this build has no such rig", and that ambiguity
+    // is what let the woman be photographed for a day with every number blank.
+    figure: R ? 'boxrig' : (A ? 'avatar' : 'none'),
+    crouch: A ? A.crouch : (R ? +(1 - R.low.scale.y).toFixed(3) : null),
+    carve: A ? A.carve : null,
+    pushing: A ? A.pushing : (R ? null : null),
+    kick: A ? A.kick : null, reach: A ? A.reach : null,
     fold: R ? +R.up.rotation.x.toFixed(3) : null,
     roll: R ? +R.up.rotation.z.toFixed(3) : null,
     look: R ? +R.head.rotation.y.toFixed(3) : null,

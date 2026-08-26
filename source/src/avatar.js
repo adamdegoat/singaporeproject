@@ -61,21 +61,54 @@ const SIT_POSE = [-0.45, -1.3736, 0.5835, 1.431, -1.1202, -0.1562, 1.487,
   0.45, -0.1125, -0.0773, 0.0101, 0.2014, -0.3883, -0.45, -0.675, -0.3204,
   -1.0137, 0.938, 0.5625, 0.2391, -0.3722, 0.5902];
 
-const SKATE_STAND = [-0.3953, -0.5516, 0.3719, 0.4313, 0.3656, 0.0703,
-  0.3969, -0.8953, -0.1891, 0.0875, 1.3969, 0.1078, -0.0875, 0.2078, -0.5016,
-  0.0078, 0.0672, -0.05, -0.1047, -0.2453, 0.1234, -0.3031];
-const SKATE_DELTA = [0.0434, -0.267, 0.1151, 0.3832, -0.145, -0.0107,
-  0.3899, -0.0334, 0.0674, -0.0264, -0.0008, 0.0539, 0.0885, 0.2845, -0.0645,
-  -0.0374, -0.3209, 0.1225, 0.104, 0.0729, 0.0803, 0.2537];
+// RE-SOLVED 2026-08-27 ONTO THE DECK SHE IS ACTUALLY STANDING ON. The table
+// this replaces was solved against a deck height that had never been measured
+// against the board mesh, so the whole figure rode 55mm ABOVE her own board in
+// every state that is not a push — visible from any angle, and the owner's
+// "the body all contorted". data/stancecheck.mjs measures the sole against the
+// grip-tape mesh itself and is the gate that would have caught it.
+//
+// AND THE CHEST IS OPEN NOW. The old table put the shoulder line 16.7 deg off
+// the deck — nearly a photo-pose 90 deg of chest — which forced 79 deg of NECK
+// to look down the road. That is the "cannot tell which side she is facing":
+// the body reads sideways and the head reads forward at the same time. The
+// shoulder line opens to 35 deg, chest about -55, neck about 60. Nothing below
+// the waist moved. See data/rigsolve/stance.mjs `shoulderAxis`.
+const SKATE_STAND = [-0.45, -0.7078, 0.4016, 0.6609, 0.3719, 0.0016,
+  0.525, -0.5125, -0.1641, 0.0422, 1.0719, 0.1281, -0.0453, 0.0703, -0.325,
+  0.0422, 0.0531, -0.0703, -0.1266, -0.0594, 0.1203, -0.3281];
+const SKATE_DELTA = [0.001, -0.2534, 0.1188, 0.3341, -0.1165, -0.006,
+  0.3472, 0.0063, 0.0996, -0.023, -0.0092, 0.0275, 0.1291, 0.2112, -0.0712,
+  0.0078, -0.3354, 0.156, 0.0683, 0.0762, 0.0823, 0.277];
 // How far the pelvis rides below its rest height, in METRES, cruising and at
 // full carve. IMPOSED, not solved — see the note in skatePose.
-const SKATE_HIP = [0.055, 0.150];
+// ...and the pelvis came down the same 55mm with them. Dropping the feet
+// alone straightened the knees to 142/149 deg — a rider standing to attention
+// on a moving board — because feet and hips are one coupling, which is the
+// same fact the note in skatePose() records from the other end. Knees read
+// 122/129 deg cruising and 100/106 in the carve, as before.
+// HOW FAR ACROSS THE DECK EACH SHOE POINTS, in degrees from the nose. 90 is
+// square across the plank. Front foot slightly open toward the nose, back foot
+// all but square on the tail — the surfskate pair. See aimFoot().
+const FOOT_YAW = [62, 88];
+const SKATE_HIP = [0.160, 0.255];
 // THE PUSH, solved onto the road for this rig: the six leg angles in the
 // order [UpperLeg.L X, UpperLeg.L Z, LowerLeg.L X, UpperLeg.R X,
 // UpperLeg.R Z, LowerLeg.R X] plus the pelvis drop in METRES. PLANT is the
 // shoe down beside the board, DRIVE is the sweep behind it.
-const PUSH_PLANT = [-0.8169, 0.4653, 0.8437, 0.3364, 0.1982, -0.196, 0.150];
-const PUSH_DRIVE = [-0.7493, 0.4345, 0.7517, 0.6608, 0.2521, -0.2, 0.125];
+// RE-SOLVED 2026-08-27 against a MEASURED deck and a MEASURED road. The pair
+// this replaces aimed the pushing shoe at a road 62mm below the real one (the
+// solver held deck +0.037 / road -0.160, 197mm apart; measured, the deck sits
+// 135mm over the road and is at -0.018). PLANT now reaches the road exactly —
+// solver cost 0.0000 — so the shoe PLANTS instead of skimming. See the note at
+// the foot of data/rigsolve/push.mjs.
+// HOW FAR THE CHEST UNWINDS INTO A PUSH, in radians. The cruising chest sits
+// about -55 deg across the deck; 0.72 rad brings it to roughly -14 deg, which
+// is "forward facing" without snapping her square to the nose like a scooter
+// rider. Measured by data/stancecheck.mjs as `chest` in the push row.
+const PUSH_OPEN = 0.72;
+const PUSH_PLANT = [-0.9525, 0.516, 1.0169, -0.1549, 0.2848, 0.6947, 0.255];
+const PUSH_DRIVE = [-0.8862, 0.4782, 0.9347, 0.5851, 0.3116, 0.0079, 0.230];
 
 export function buildAvatar(hat) {
   // ---- bones: the armature subtree verbatim, so clips need no retarget
@@ -313,6 +346,46 @@ export function buildAvatar(hat) {
     }
   };
 
+  // POINT A SHOE A GIVEN NUMBER OF DEGREES ACROSS THE DECK — absolutely, not
+  // as a nudge off the rest pose. `yaw` is measured from the board's NOSE
+  // (+z in the rig's frame): 0 would lay the shoe along the plank, 90 puts it
+  // square across, and the toes always point to the TOE side (-x).
+  //
+  // The shoe's own long axis is NOT assumed to be the bone's +y: it is read
+  // from where the toe bone actually sits, so a different character with a
+  // different rest foot cannot silently rotate every shoe by whatever the
+  // difference happens to be. skatePose zeroes root.rotation.y and the root
+  // hangs off the board with only a height offset, so the root's axes ARE the
+  // board's axes and a yaw stated here is a yaw you could protractor off an
+  // overhead frame.
+  const _toeAxis = {};
+  for (const s of ['L', 'R']) {
+    const toe = byName['Foot.' + s + '_end'] || byName['Toe.' + s];
+    _toeAxis[s] = toe ? toe.position.clone().normalize() : new THREE.Vector3(0, 1, 0);
+  }
+  // own scratch quaternions — `_qa`/`_qb` are already taken by sample()
+  const _fq = new THREE.Quaternion(), _fq2 = new THREE.Quaternion();
+  const _d = new THREE.Vector3(), _dw = new THREE.Vector3();
+  const aimFoot = (name, yawDeg) => {
+    const b = byName[name];
+    if (!b) return;
+    const side = name.endsWith('.L') ? 'L' : 'R';
+    root.updateMatrixWorld(true);
+    const a = yawDeg * Math.PI / 180;
+    // where the toes should point, in the ROOT (= board) frame, then in world
+    _d.set(-Math.sin(a), 0, Math.cos(a));
+    _dw.copy(_d).applyQuaternion(root.getWorldQuaternion(_fq));
+    // where they point NOW
+    b.getWorldQuaternion(_fq2);
+    const cur = _toeAxis[side].clone().applyQuaternion(_fq2).normalize();
+    // the minimal world rotation from one to the other keeps the sole as flat
+    // as the rest pose had it, which is what a foot on a deck wants
+    const fix = new THREE.Quaternion().setFromUnitVectors(cur, _dw.normalize());
+    const want = fix.multiply(_fq2);
+    b.parent.getWorldQuaternion(_fq);
+    b.quaternion.copy(_fq.invert().multiply(want));
+  };
+
   return {
     group: root,
     bones: byName,
@@ -512,16 +585,18 @@ export function buildAvatar(hat) {
       // road, both knees and the hip drop free; solved ON the cruising pose
       // it blends out of rather than on a rest figure.
       //
-      //   PLANT  reaches the road at -0.143 against a road at -0.160
-      //   DRIVE  reaches -0.048 and z -0.354 against -0.160 / -0.400
+      //   PLANT  reaches the road EXACTLY (solver cost 0.0000)
+      //   DRIVE  reaches it too, cost 0.0000, once she rides low enough
       //
-      // HONEST LIMIT, and it is the same one the previous figure had: at full
-      // drive the shoe trails at about DECK level, not on the road. This
-      // figure is 1.55m and cannot reach 0.40m back AND 0.20m down without
-      // dragging the front foot off the board. It reads as a foot skimming
-      // just behind the tail, which is what the proportions allow; a longer
-      // reach needs a shorter stance, and the stance is what the owner
-      // actually looks at.
+      // THE "HONEST LIMIT" THAT USED TO BE RECORDED HERE WAS NOT A LIMIT. It
+      // said a 1.55m figure could not reach the road and so the shoe had to
+      // skim behind the tail. In fact the push was being solved against a road
+      // 62mm below the real one, and once the road is measured the plant lands
+      // on it with nothing left over. The real remaining limit is smaller and
+      // With the deeper surfskate ride (SKATE_HIP 160/255mm) even the full
+      // drive lands: there is no remaining reach limit. Worth keeping as a
+      // lesson — a plausible note about proportions hid a wrong number for a
+      // fortnight, and "the figure is too short" was never true.
       if (kick !== 0 || reach > 0) {
         // RECOVER THE STROKE PHASE. main.js hands over two derived numbers —
         // reach = 0.5 - 0.5cos(2*pi*p) and kick = sin(2*pi*p) — and blending
@@ -560,16 +635,49 @@ export function buildAvatar(hat) {
         qrot('LowerLeg.R', 1, 0, 0, d[5]);
         mov('Body', 0, -d[6] / BODY_UNIT, 0);
         qrot('Torso', 1, 0, 0, t * 0.14);         // body dips over the plant
+        // AND SHE TURNS TO FACE WHERE SHE IS GOING WHILE SHE PUSHES.
+        // nollieskateboarding's push tutorial: "Your body and your line of
+        // sight should be forward facing as you push." That is the opposite of
+        // the cruising stance, where the chest sits across the deck — and it
+        // is right, because a push is a stride and you cannot stride sideways.
+        // The shipped pose held the full cruising twist through the whole
+        // stroke, so she kicked at the road with her chest pointing at the
+        // kerb. Unwinds with the commitment `t` and winds back as the foot
+        // returns to the deck.
+        //
+        // The head is a CHILD of the torso, so it takes this rotation too and
+        // has to be given it back, or she turns to face forward and keeps on
+        // turning until she is looking at the pavement beside her.
+        qrot('Torso', 0, 1, 0, t * PUSH_OPEN);
+        qrot('Head', 0, 1, 0, -t * PUSH_OPEN);
       }
 
       // the IK feet are root-parented siblings of the leg chain, so they
       // must be bolted to the shin ends AFTER the legs move (see snapFeet)
       snapFeet();
-      // ...and only THEN can they be turned across the deck, which is how a
-      // rider's shoes actually sit: the front foot angled toward the nose,
-      // the back foot much closer to square across the tail.
-      byName['Foot.L'].rotation.y += 0.62;
-      byName['Foot.R'].rotation.y += 1.15;
+      // ...and only THEN can they be AIMED across the deck.
+      //
+      // THIS USED TO BE `Foot.L.rotation.y += 0.62` / `Foot.R += 1.15` and it
+      // is the owner's "the feet placement all facing weird". A `+=` on
+      // rotation.y is a DELTA on the rest orientation, in the bone's own
+      // parent frame — which has the rig's pre-rotation on it and no relation
+      // to the board. So the two numbers were not "35 and 66 degrees across
+      // the deck"; they were 35 and 66 degrees away from wherever the rest
+      // foot happened to point, and shot from overhead both shoes lay ALONG
+      // the plank, pointing at the nose. Nobody had ever looked from above.
+      //
+      // AND IT IS A SURFSKATE, WHICH IS ITS OWN DISCIPLINE. The guides for it
+      // (surfskate.love's foot-position guide; the surf stance it copies) say
+      // the feet ride essentially PERPENDICULAR to the deck: the front foot
+      // just behind the front bolts with the toes on the rail and only a
+      // slight angle toward the nose, the back foot square across the tail.
+      // Traditional surfing states the same pair as 45 deg front / 90 deg back
+      // to the stringer; a surfskate sits between, nearer the square end.
+      //
+      // Aimed ABSOLUTELY now, in the board's frame, so the number in the code
+      // is the angle you would measure in a photograph.
+      aimFoot('Foot.L', FOOT_YAW[0]);
+      aimFoot('Foot.R', FOOT_YAW[1]);
     },
   };
 }

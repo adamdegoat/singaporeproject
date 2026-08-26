@@ -111,6 +111,20 @@ hr "trees in the road, trees in the sea"
 _tree=$(SG_SCENE=sentosa node data/treecheck.mjs 2>&1); [ $? -ne 0 ] && FAILED=1
 echo "$_tree" | tail -6
 
+hr "the rider, on her board"
+# THE FIGURE IS THE ONE THING ON SCREEN IN EVERY FRAME AND NOTHING MEASURED IT.
+# Three checks looked at the avatar and all three were blind to what the owner
+# actually reported (2026-08-26/27): data/avatar.mjs poses her on a blank stage
+# with NO BOARD, the 46 goldens show her a few dozen pixels tall, and
+# window.__rider() was reading the OLD box rig so every pose field it printed
+# was null. Between them they passed a rider standing 55mm ABOVE her deck with
+# both shoes pointing along the plank instead of across it.
+#
+# stancecheck measures her against the grip-tape mesh itself: soles on the
+# deck, shoes across it, toes on the rail, neck inside what a neck does.
+_stance=$(node data/stancecheck.mjs 2>&1); [ $? -ne 0 ] && FAILED=1
+echo "$_stance" | tail -24
+
 hr "venue signs"
 SG_SCENE=sentosa node data/signcheck.mjs 2>&1 | tail -12; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
 
