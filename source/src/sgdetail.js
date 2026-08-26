@@ -4,7 +4,7 @@
 //
 // No brand marks anywhere: signage is colour and form only.
 import * as THREE from '../lib/three.module.js';
-import { R, rand, pick, chance, rng, sharedSignAtlas } from './tex.js';
+import { R, rand, pick, chance, rng, sharedSignAtlas, texAshlar } from './tex.js';
 // surfaceAt, NOT groundAt. Everything this file places stands on the ROAD, and
 // the road is not the terrain: it is drawn 6cm above it, and where a bridge
 // crosses it is the DECK, which can be metres above the ground. Using groundAt
@@ -10180,6 +10180,19 @@ export function buildUssVocab(world, data, blocked) {
     if (castle && castle.p && castle.p.length >= 4) {
       const FF = {
         stone: new THREE.MeshLambertMaterial({ color: 0xb2a07d }),
+        // THE DRUM SHAFTS ARE COURSED, and the brief says why in one line:
+        // §7 materials, "Cast limestone ashlar with expressed coursing, laid in
+        // regular narrow courses that curve around the drum towers. THE
+        // COURSING ON A CYLINDER IS WHAT MAKES THE TOWERS READ AS STONE RATHER
+        // THAN AS TUBES." They were flat colour, and they read as tubes.
+        //
+        // Its own material, not `stone`: the merlons and the machicolation are
+        // small boxes whose UVs run 0..1 across the whole block, so a map on
+        // the shared material would stretch one course over each merlon. The
+        // map is drawn on the stone's own colour, so the material is white.
+        stoneCoursed: new THREE.MeshLambertMaterial({
+          color: 0xffffff, map: texAshlar(0xb2a07d, 7, 3, 3.0, 0.7),
+        }),
         stoneLit: new THREE.MeshLambertMaterial({ color: 0xc9ba97 }),
         terra: new THREE.MeshLambertMaterial({ color: 0xa8683f }),
         copper: new THREE.MeshLambertMaterial({ color: 0xb06a3c }),
@@ -10209,8 +10222,24 @@ export function buildUssVocab(world, data, blocked) {
       const drum = (px, pz, r, top, capH, cap = 'cone') => {
         const g2 = drawnGroundAt(px, pz);
         const shaft = new THREE.CylinderGeometry(r, r + 0.2, top, 14);
+        // COURSES THAT ARE THE SAME HEIGHT ON EVERY TOWER. A cylinder's UVs run
+        // 0..1 around and 0..1 up whatever its size, so one shared map would
+        // give a fat tower fat stones and a thin one thin stones. Scale each
+        // shaft's own UVs into metres first — circumference across, height up —
+        // and the shared material then lays identical 0.43m courses on all of
+        // them. texAshlar's own repeat is for the metre-UV facades and must be
+        // undone here, hence the divide.
+        {
+          const uvS = shaft.attributes.uv, TILE = 3.0;
+          const rep = texAshlar.tile || 1;
+          const su = (2 * Math.PI * r) / TILE, sv = top / TILE;
+          for (let i = 0; i < uvS.count; i++) {
+            uvS.setXY(i, uvS.getX(i) * su / rep, uvS.getY(i) * sv / rep);
+          }
+          uvS.needsUpdate = true;
+        }
         shaft.translate(px, g2 + top / 2, pz);
-        merger.add(shaft, FF.stone, px, pz);
+        merger.add(shaft, FF.stoneCoursed, px, pz);
         // machicolation: the projecting corbel band under the crenellation —
         // §6.3, "the one band that separates a castle from a cylinder"
         const mach = new THREE.CylinderGeometry(r + 0.6, r + 0.2, 1.0, 14);

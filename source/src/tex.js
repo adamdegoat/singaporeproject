@@ -1214,7 +1214,97 @@ export function texAshlar(base = 0x938778, courses = 3, per = 2, tileM = 3.6, jo
   // repeat of 12/tileM puts the tile back at tileM metres. Egypt: three
   // courses over 3.6m = 1.2m stones, the "large format" §4 asks for, still
   // readable across a plaza. If autoUV's default ever changes, change this.
-  return finish(c, [12 / tileM, 12 / tileM]);
+  const t = finish(c, [12 / tileM, 12 / tileM]);
+  // WHAT THAT REPEAT IS, published. The facades want it (their UVs are metres
+  // divided by autoUV's 12m default); a CYLINDER does not — its UVs are 0..1
+  // and it scales its own. sgdetail.js's castle drums divide it back out, and
+  // without this they would have to hard-code 12/3.0 and drift.
+  texAshlar.tile = 12 / tileM;
+  return t;
+}
+
+// SALVAGED CORRUGATED IRON, hung shingle-wise — the WaterWorld set.
+//
+// research/universal-zones.md, WaterWorld "Materials and surface", first
+// bullet, which also says how to build it:
+//   "Overlapping salvaged corrugated-iron sheets, hung shingle-wise. Not flat
+//    cladding — hundreds of irregular torn rectangles at varied angles, each a
+//    slightly different weathered tone, layered over each other so the edges
+//    cast shadow. This is the entire look and it is very cheap as a tiling
+//    material."
+// Taken at its word: this is a patchwork, not a panel. Tones are the sampled
+// ones — verdigris #6A746E-#7C9792 dominant, with faded turquoise, chalk
+// white, oxide brown and bleached grey "mixed into the same patchwork".
+//
+// Drawn on its own colours rather than on white, like the coursed maps, and
+// for the same reason: a patchwork whose whole point is that no two sheets
+// match cannot be a tint multiplied over one grey.
+export function texSalvage() {
+  const r2 = rng(0x73616c76), rand = (a, b) => a + r2() * (b - a);
+  const S = 256, [c, x] = cvs(S);
+  // WEIGHTED, not uniform. The brief's palette table names verdigris as "the
+  // dominant tone" and lists faded turquoise, chalk white, oxide brown and
+  // bleached grey as "mixed INTO the same patchwork" — i.e. accents. Picking
+  // uniformly from eight tones put white and brown on ~40% of the wall and the
+  // stadium came out as camouflage, a hard chequerboard rather than salvage.
+  // The verdigris family is repeated to weight the pick, which is the same
+  // trick the livery and facade pools use.
+  const V = [[0x6a, 0x74, 0x6e], [0x7c, 0x97, 0x92], [0x74, 0x8a, 0x84],
+    [0x8e, 0xa6, 0x9e], [0x5e, 0x6b, 0x66], [0x84, 0x9a, 0x94]];
+  const TONES = [...V, ...V, ...V, [0x9a, 0x9d, 0x95], [0xc9, 0xc6, 0xba],
+    [0x8a, 0x6a, 0x4c]];
+  x.fillStyle = '#6a746e'; x.fillRect(0, 0, S, S);
+  // SHEETS, hung in overlapping rows from the top down so the lower edge of
+  // each course laps the one under it — which is what "shingle-wise" means and
+  // what makes the shadow line read.
+  const rows = 7, rh = S / rows;
+  for (let r = 0; r < rows + 1; r++) {
+    let px = rand(-40, -10);
+    while (px < S) {
+      const w = rand(22, 68), h = rh * rand(1.10, 1.55);
+      // stagger each ROW as well as each sheet, or the laps line up across the
+      // wall and the patchwork reads as a grid
+      const y = r * rh - rand(0, rh * 0.55);
+      const t = TONES[(r2() * TONES.length) | 0];
+      const j = rand(-7, 7);          // "SLIGHTLY different weathered tone"
+      x.save();
+      x.translate(px + w / 2, y + h / 2);
+      x.rotate(rand(-0.045, 0.045));           // "at varied angles"
+      x.fillStyle = `rgb(${t[0] + j},${t[1] + j},${t[2] + j})`;
+      x.fillRect(-w / 2, -h / 2, w, h);
+      // CORRUGATION, along the sheet. Cheap: alternating light and dark ribs.
+      const rib = rand(3.0, 4.6);
+      for (let k = -w / 2; k < w / 2; k += rib) {
+        x.fillStyle = `rgba(255,255,255,${rand(0.04, 0.10)})`;
+        x.fillRect(k, -h / 2, rib * 0.42, h);
+        x.fillStyle = `rgba(0,0,0,${rand(0.05, 0.12)})`;
+        x.fillRect(k + rib * 0.5, -h / 2, rib * 0.32, h);
+      }
+      // the lap shadow under the sheet's bottom edge, which is the whole
+      // reason this reads as layered salvage and not as a painted pattern
+      x.fillStyle = 'rgba(20,26,24,0.34)';
+      x.fillRect(-w / 2, h / 2 - 2.0, w, 2.6);
+      // torn/rusted edge at one side, sometimes
+      if (r2() < 0.45) {
+        x.fillStyle = `rgba(122,66,32,${rand(0.18, 0.42)})`;
+        x.fillRect(-w / 2, -h / 2, rand(1.5, 4), h);
+      }
+      x.restore();
+      px += w * rand(0.72, 0.94);              // overlap, never butt-jointed
+    }
+  }
+  // rust bleeding down from the laps
+  for (let i = 0; i < 26; i++) {
+    const sy = rand(0, S), h = rand(10, 40);
+    const g = x.createLinearGradient(0, sy, 0, sy + h);
+    g.addColorStop(0, `rgba(126,66,30,${rand(0.10, 0.26)})`);
+    g.addColorStop(1, 'rgba(126,66,30,0)');
+    x.fillStyle = g; x.fillRect(rand(0, S), sy, rand(2, 9), h);
+  }
+  grain(x, 3000, 18, S, r2);
+  // 4.2m tile: a salvaged sheet is about 0.6m wide and there are seven rows
+  // of them here. Same repeat trick as texAshlar — autoUV's default is 12m.
+  return finish(c, [12 / 4.2, 12 / 4.2]);
 }
 
 export function texRender(shutter = false) {

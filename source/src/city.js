@@ -8,7 +8,7 @@ import { TOUCH } from './input.js';
 import { ROAD_END_EXT } from './roads.js';
 import { buildQTrees } from './qtrees.js';
 import { scatterVerges, scatterFoundations } from './qground.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texAshlar, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws, texBoomBand} from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texAshlar, texSalvage, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws, texBoomBand} from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV,
          constructionSite } from './landmarks.js';
 
@@ -62,10 +62,23 @@ const RENDER_TEX_SHOW = texRenderShow();
 // The coursing is the material; the openings are a separate, owner-level call.
 const _COURSED = new Map();
 const COURSING = {
-  ashlar: [3, 2, 3.6, 1.0],     // 1.2m stones, hard joints
-  brick: [16, 6, 2.4, 0.45],    // 0.15m courses, soft joints
+  ashlar: [3, 2, 3.6, 1.0],     // 1.2m stones, hard joints        — Egypt
+  brick: [16, 6, 2.4, 0.45],    // 0.15m courses, soft joints      — New York
+  // §7: "Cast limestone ashlar with expressed coursing, laid in regular NARROW
+  // courses that curve around the drum towers. The coursing on a cylinder is
+  // what makes the towers read as stone rather than as tubes." Narrower than
+  // Egypt's large format and a softer joint — cast stone, not quarried block.
+  limestone: [7, 3, 3.0, 0.7],  // 0.43m courses                   — Far Far Away
 };
+// WaterWorld is not coursed anything — it is a patchwork of salvaged sheets,
+// so it gets its own drawing and ignores the tint entirely (the brief's whole
+// point is that no two sheets match). One map, shared.
+let _SALVAGE = null;
 const coursedTex = (tint, kind) => {
+  if (kind === 'salvage') {
+    if (!_SALVAGE) _SALVAGE = texSalvage();
+    return _SALVAGE;
+  }
   const key = tint + '|' + kind;
   let t = _COURSED.get(key);
   if (!t) { t = texAshlar(tint, ...COURSING[kind]); _COURSED.set(key, t); }
@@ -3481,7 +3494,10 @@ export async function buildBuildings(world, data, Y = null) {
   // WHICH ZONES ARE MADE OF COURSED MASONRY, from research/universal-zones.md.
   // A zone not listed keeps the painted-shed map, which is the right answer for
   // Sci-Fi City (ETFE and diagrid) and Minion Land (a cartoon).
-  const _COURSED_ZONE = { 'Ancient Egypt': 'ashlar', 'New York': 'brick' };
+  const _COURSED_ZONE = {
+    'Ancient Egypt': 'ashlar', 'New York': 'brick', 'Far Far Away': 'limestone',
+    WaterWorld: 'salvage',
+  };
   const _zoneOf = (pts) => {
     if (!_ussZones.length) return null;
     const c = centroid(pts);
