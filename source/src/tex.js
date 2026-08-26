@@ -1307,6 +1307,53 @@ export function texSalvage() {
   return finish(c, [12 / 4.2, 12 / 4.2]);
 }
 
+// SAWN TIMBER BOARD, vertical — The Lost World's infill walls.
+//
+// research/universal-zones.md, The Lost World "Materials and surface":
+// "Round pole timber, lashed... Sawn timber board for infill walls and
+// signage." The lashed pole columns are the zone's strongest motif but they
+// are GEOMETRY and are not attempted here; this is the wall between them.
+// Palette row: "Secondary timber — weathered grey-brown board and sawn beams",
+// against the "saturated orange-brown stained pole timber" of the structure.
+//
+// Boards run VERTICALLY, which is what a jungle-lodge infill wall does and is
+// also what distinguishes it at a glance from Egypt's horizontal coursing 200m
+// away. Drawn on the zone tint, like the coursed maps, so the material is
+// white at the call site.
+export function texBoard(base = 0x8a7358) {
+  const r2 = rng(0x62726472), rand = (a, b) => a + r2() * (b - a);
+  const S = 256, [c, x] = cvs(S);
+  const br = (base >> 16) & 255, bg = (base >> 8) & 255, bb = base & 255;
+  x.fillStyle = hex(base); x.fillRect(0, 0, S, S);
+  let px = 0;
+  while (px < S) {
+    const w = rand(14, 26);                    // sawn board, not milled: uneven
+    const v = rand(-14, 10);
+    x.fillStyle = `rgb(${br + v},${bg + v * 0.9},${bb + v * 0.8})`;
+    x.fillRect(px, 0, w - 1, S);
+    // GRAIN, along the board. A few long streaks, not noise: sawn softwood
+    // reads as stripes at any distance you can see the board at all.
+    for (let g = 0; g < 5; g++) {
+      const gv = rand(-16, 8);
+      x.fillStyle = `rgba(${br + gv},${bg + gv},${bb + gv},${rand(0.2, 0.5)})`;
+      x.fillRect(px + rand(1, w - 3), rand(-20, S * 0.5), rand(0.8, 2.0), rand(40, S));
+    }
+    // the shadowed gap between boards, and a lit arris on the other side
+    x.fillStyle = 'rgba(28,20,12,0.42)'; x.fillRect(px + w - 2.2, 0, 2.4, S);
+    x.fillStyle = 'rgba(255,244,220,0.10)'; x.fillRect(px, 0, 1.0, S);
+    px += w;
+  }
+  // weathering: boards grey off from the bottom up where the rain splashes
+  const g2 = x.createLinearGradient(0, S, 0, S * 0.45);
+  g2.addColorStop(0, 'rgba(96,96,88,0.30)');
+  g2.addColorStop(1, 'rgba(96,96,88,0)');
+  x.fillStyle = g2; x.fillRect(0, 0, S, S);
+  grain(x, 2200, 14, S, r2);
+  // 2.6m tile: about a dozen boards, so each is ~0.2m — a real board width.
+  texBoard.tile = 12 / 2.6;
+  return finish(c, [12 / 2.6, 12 / 2.6]);
+}
+
 export function texRender(shutter = false) {
   const r2 = rng(0x726e6472 ^ (shutter ? 1 : 0)), rand = (a, b) => a + r2() * (b - a);
   const S = 256, [c, x] = cvs(S);

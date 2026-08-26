@@ -8,7 +8,7 @@ import { TOUCH } from './input.js';
 import { ROAD_END_EXT } from './roads.js';
 import { buildQTrees } from './qtrees.js';
 import { scatterVerges, scatterFoundations } from './qground.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texAshlar, texSalvage, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws, texBoomBand} from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texAshlar, texSalvage, texBoard, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws, texBoomBand} from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV,
          constructionSite } from './landmarks.js';
 
@@ -78,6 +78,12 @@ const coursedTex = (tint, kind) => {
   if (kind === 'salvage') {
     if (!_SALVAGE) _SALVAGE = texSalvage();
     return _SALVAGE;
+  }
+  if (kind === 'board') {
+    const bk = 'b' + tint;
+    let bt = _COURSED.get(bk);
+    if (!bt) { bt = texBoard(tint); _COURSED.set(bk, bt); }
+    return bt;
   }
   const key = tint + '|' + kind;
   let t = _COURSED.get(key);
@@ -3496,7 +3502,7 @@ export async function buildBuildings(world, data, Y = null) {
   // Sci-Fi City (ETFE and diagrid) and Minion Land (a cartoon).
   const _COURSED_ZONE = {
     'Ancient Egypt': 'ashlar', 'New York': 'brick', 'Far Far Away': 'limestone',
-    WaterWorld: 'salvage',
+    WaterWorld: 'salvage', 'The Lost World': 'board',
   };
   const _zoneOf = (pts) => {
     if (!_ussZones.length) return null;
