@@ -1223,6 +1223,140 @@ export function texAshlar(base = 0x938778, courses = 3, per = 2, tileM = 3.6, jo
   return t;
 }
 
+// LASHED POLE TIMBER — The Lost World's frame, and the zone's whole identity.
+//
+// research/universal-zones.md §5A, "Materials and surface", first bullet, which
+// also says what to do about it:
+//   "Round pole timber, lashed. Big stained logs used as columns and as
+//    X-braced diagonal panels between them, with rope/cord lashings at every
+//    joint. THIS IS THE ZONE'S SINGLE STRONGEST MOTIF."
+// and the relief list opens with: "Lashed X-brace panels repeated between every
+// pair of pole columns, on two levels. AUTHOR ONE, TILE IT." This is that one.
+//
+// It replaces texBoard on the zone. Board was not wrong — §5A does list sawn
+// board for infill walls, and it is drawn here as the infill BEHIND the frame —
+// but a wall of nothing but pale board is the secondary material standing in
+// for the primary one, and photographed at the Rapids the zone reads as orange
+// pole frame first and board second.
+//
+// COLOURS ARE THE BRIEF'S, NOT INVENTED: structural timber "saturated
+// orange-brown stained pole timber, near terracotta"; secondary "weathered
+// grey-brown board"; lashings are hemp cord.
+//
+// ONE BAY PER TILE, AND THE TILE IS SQUARE because the repeat is a single
+// scalar (see the tail of texAshlar). 4.5m gives a bay about the width of a
+// real pole frame and a storey about its height, so a two-storey pavilion gets
+// the "two levels" §5A asks for by tiling rather than by being drawn twice.
+// The columns are drawn HALF AT EACH EDGE so consecutive bays share one pole
+// instead of standing two of them a millimetre apart.
+export function texPoleFrame() {
+  const r2 = rng(0x706f6c65), rand = (a, b) => a + r2() * (b - a);
+  const S = 256, [c, x] = cvs(S);
+  const TILE_M = 4.5, PX = S / TILE_M;
+  // --- infill: weathered grey-brown sawn board, vertical -------------------
+  x.fillStyle = '#6f6353'; x.fillRect(0, 0, S, S);
+  for (let px = 0; px < S; ) {
+    const w = rand(9, 15);                        // ~0.2m boards
+    const v = rand(-13, 9);
+    x.fillStyle = `rgb(${111 + v},${99 + v * 0.9},${83 + v * 0.8})`;
+    x.fillRect(px, 0, w - 1, S);
+    x.fillStyle = 'rgba(26,20,14,0.38)'; x.fillRect(px + w - 1.8, 0, 2.0, S);
+    px += w;
+  }
+  // the infill is in the frame's shadow, so it sits back
+  x.fillStyle = 'rgba(24,20,14,0.20)'; x.fillRect(0, 0, S, S);
+
+  // --- the frame ------------------------------------------------------------
+  // A ROUND POLE IS DRAWN AS A GRADIENT, NOT AS A BAR. The whole reason the
+  // brief calls this "pole timber" rather than "timber" is that the members are
+  // logs: lit along one side, dark at both edges. A flat rectangle reads as
+  // planed lumber and the zone loses the thing that distinguishes it.
+  const pole = (x1, y1, x2, y2, w) => {
+    const a2 = Math.atan2(y2 - y1, x2 - x1);
+    const nx2 = -Math.sin(a2), ny2 = Math.cos(a2);
+    const g = x.createLinearGradient(x1 - nx2 * w / 2, y1 - ny2 * w / 2,
+                                     x1 + nx2 * w / 2, y1 + ny2 * w / 2);
+    // First cut read as bright plastic orange in the frame. §5A says "saturated
+    // orange-brown stained pole timber, NEAR TERRACOTTA" — terracotta is a
+    // fired earth, not a highlighter — so the lit side comes down and the
+    // whole ramp keeps more brown in it.
+    g.addColorStop(0.00, '#552d15');
+    g.addColorStop(0.32, '#94522b');
+    g.addColorStop(0.55, '#a9663a');
+    g.addColorStop(1.00, '#5f3419');
+    x.save();
+    x.strokeStyle = g; x.lineWidth = w; x.lineCap = 'round';
+    x.beginPath(); x.moveTo(x1, y1); x.lineTo(x2, y2); x.stroke();
+    x.restore();
+  };
+  // ...AND A LASHING IS WHAT MAKES IT LASHED. Hemp cord, three or four turns,
+  // wrapped square across the member. Drawn last at every joint, because in
+  // life the rope is the outermost thing on the frame.
+  const lash = (cx, cy, ang, w, turns = 4) => {
+    x.save();
+    x.translate(cx, cy); x.rotate(ang);
+    for (let i = 0; i < turns; i++) {
+      const o = (i - (turns - 1) / 2) * (w * 0.30);
+      // 0.78, not 0.92, and the turns are narrower: at full strength the hemp
+      // squares are the brightest thing on the wall and the frame reads as
+      // wallpaper rather than as timber with rope on it.
+      x.fillStyle = i % 2 ? 'rgba(198,175,131,0.78)' : 'rgba(170,146,106,0.78)';
+      x.fillRect(o - w * 0.095, -w * 0.55, w * 0.19, w * 1.10);
+    }
+    x.fillStyle = 'rgba(40,30,18,0.30)';
+    x.fillRect(-w * 0.62, w * 0.50, w * 1.24, w * 0.16);
+    x.restore();
+  };
+
+  const COL = 0.34 * PX;             // 340mm columns
+  const BRACE = 0.22 * PX;           // 220mm diagonals
+  const RAIL = 0.26 * PX;
+  // head and sill rails first, so the columns and braces land on top of them
+  pole(-4, RAIL * 0.75, S + 4, RAIL * 0.75, RAIL);
+  pole(-4, S - RAIL * 0.75, S + 4, S - RAIL * 0.75, RAIL);
+  // the X, corner to corner inside the rails
+  const m = COL * 0.55, t2 = RAIL * 1.5, b2 = S - RAIL * 1.5;
+  pole(m, t2, S - m, b2, BRACE);
+  pole(S - m, t2, m, b2, BRACE);
+  // the columns, half a pole at each edge so the bays share one
+  pole(0, -4, 0, S + 4, COL);
+  pole(S, -4, S, S + 4, COL);
+  // lashings: where each diagonal meets a column, and where the two cross
+  const dAng = Math.atan2(b2 - t2, S - 2 * m);
+  lash(S / 2, S / 2, dAng, BRACE * 1.9, 5);
+  lash(m + 6, t2 + 6 * Math.tan(dAng), dAng, BRACE * 1.7);
+  lash(S - m - 6, t2 + 6 * Math.tan(dAng), -dAng, BRACE * 1.7);
+  lash(m + 6, b2 - 6 * Math.tan(dAng), -dAng, BRACE * 1.7);
+  lash(S - m - 6, b2 - 6 * Math.tan(dAng), dAng, BRACE * 1.7);
+  // and where the rails meet the columns
+  lash(0, RAIL * 0.75, Math.PI / 2, RAIL * 1.7);
+  lash(S, RAIL * 0.75, Math.PI / 2, RAIL * 1.7);
+  lash(0, S - RAIL * 0.75, Math.PI / 2, RAIL * 1.7);
+  lash(S, S - RAIL * 0.75, Math.PI / 2, RAIL * 1.7);
+
+  grain(x, 2000, 13, S, r2);
+  // THE REPEAT IS MEASURED, NOT DERIVED, AND THAT IS DELIBERATE.
+  //
+  // texAshlar's tail derives its scale from "the facade UVs are metres and
+  // autoUV divides them by 12". Probed on The Lost World's show walls that is
+  // NOT what these meshes carry: `geo.userData.uvTile` is UNSET on all of
+  // them, so autoUV never ran, and their u range measures ~520 on walls of
+  // 17.5m, 31.3m, 65.1m and 130.2m alike — the same number whatever the wall
+  // is, which is what a normalized face UV looks like and is exactly what
+  // tex.js's own older comment says ("a tile stretches across a whole wall
+  // face"). The 2026-08-27 note calling that comment stale was measured on a
+  // different family of mesh. BOTH are true, for different geometry, which is
+  // why nothing here should be derived from a rule.
+  //
+  // So: 12/4.5 put ONE bay on a 13m wall, photographed. x3 puts the bay near
+  // the 4.5m it is drawn at on the walls this zone actually has. If this map
+  // is ever hung on a mesh autoUV has touched, this number is wrong for it.
+  const REP = (12 / TILE_M) * 3;
+  const t = finish(c, [REP, REP]);
+  texPoleFrame.tile = REP;
+  return t;
+}
+
 // SALVAGED CORRUGATED IRON, hung shingle-wise — the WaterWorld set.
 //
 // research/universal-zones.md, WaterWorld "Materials and surface", first
@@ -1372,10 +1506,52 @@ export function texRender(shutter = false) {
       // panel, so the head is darker than the sill end
       const w = cw * 0.52, h = rh * 0.44;
       const px = ox + (cw - w) / 2, py = oy + rh * 0.20;
-      x.fillStyle = shutter ? '#5c6a63' : '#39434b';
+      // GLASS REFLECTS THE SKY, AND THIS USED TO DO THE OPPOSITE.
+      //
+      // The old fill was one flat dark colour with the HEAD DARKENED, on the
+      // reasoning that "it must read as a hole rather than a panel". That is
+      // true of an opening with no glass in it — a doorway, an arcade — and it
+      // is backwards for a window: outdoors on a bright day the top of the
+      // pane is the brightest thing on the wall because it is a mirror aimed
+      // at the sky, and only the lower part shows the dark room behind. Every
+      // vet frame of the Cove villas and the Tanjong garrison stock shows the
+      // same thing, a wall with black rectangles punched in it.
+      //
+      // So: sky at the head, room at the sill. It still reads as a hole —
+      // holes are what have this gradient — and it stops reading as a sticker.
+      const gw = x.createLinearGradient(0, py, 0, py + h);
+      if (shutter) {
+        // the garrison stock's greener glazing keeps its own family
+        gw.addColorStop(0.00, '#adc3b6');
+        gw.addColorStop(0.42, '#7d8d83');
+        gw.addColorStop(1.00, '#4a564f');
+      } else {
+        // BRIGHTER THAN THE PHYSICS OF THE MAP SUGGESTS, ON PURPOSE. The map
+        // is diffuse, so a wall facing away from the sun darkens everything on
+        // it — but a pane of glass is a MIRROR aimed at the sky, and the sky
+        // is just as bright on the shaded side of a building. Baked at a
+        // realistic level the shaded elevations came back as black rectangles
+        // again (photographed at Quayside Isle). The head is lifted so it
+        // survives being in shade.
+        gw.addColorStop(0.00, '#b3c8d6');
+        gw.addColorStop(0.40, '#7c8d99');
+        gw.addColorStop(1.00, '#3a444c');
+      }
+      x.fillStyle = gw;
       x.fillRect(px, py, w, h);
-      x.fillStyle = 'rgba(18,22,26,0.45)';
-      x.fillRect(px, py, w, h * 0.22);
+      // ...AND ONE RAKING HIGHLIGHT ACROSS THE PANE. A gradient alone is a
+      // gradient; the thing that says GLASS is a hard-edged diagonal, because
+      // a flat sheet reflects the sky as a shape with an edge on it.
+      x.save();
+      x.beginPath(); x.rect(px, py, w, h); x.clip();
+      x.fillStyle = 'rgba(232,243,250,0.26)';
+      x.beginPath();
+      x.moveTo(px + w * 0.10, py + h);
+      x.lineTo(px + w * 0.62, py);
+      x.lineTo(px + w * 0.88, py);
+      x.lineTo(px + w * 0.36, py + h);
+      x.closePath(); x.fill();
+      x.restore();
       // a reveal on the left, so the opening has depth in raking light
       x.fillStyle = 'rgba(120,116,108,0.30)';
       x.fillRect(px - cw * 0.02, py, cw * 0.02, h);
@@ -1397,15 +1573,33 @@ export function texRender(shutter = false) {
     x.fillStyle = `rgba(214,210,202,${rand(0.05, 0.16)})`;
     x.fillRect(rand(0, S), rand(0, S), rand(1, 3), rand(1, 2));
   }
-  // [1,1], like every other facade texture in this file.
+  // [1,1], like every other facade texture in this file — and the reason is
+  // NOT the one this comment used to give.
   //
-  // I reasoned that ExtrudeGeometry's UVs are world units and set this to
-  // 1/12.6 to make one tile a 3.2m storey. The walls came back FLAT WHITE:
-  // the facade UVs are not metres, so that scaled the tile twelve times finer
-  // than intended and the openings fell below a pixel, averaging out to the
-  // base colour. texPunched, texBalcony and texShophouse all use [1,1] and all
-  // land their floors at a plausible size — that is the measurement, and it
-  // beats the reasoning.
+  // What it said: "the facade UVs are not metres". CORRECTED 2026-08-27, and
+  // it matters because several tile densities were chosen on the strength of
+  // it. Measured headlessly in node, no browser, on a bare ExtrudeGeometry:
+  //
+  //     footprint  10x 8m h  5m   u 0.00..10.00   v  -4.00.. 8.00
+  //     footprint  80x40m h 25m   u 0.00..80.00   v -24.00..40.00
+  //
+  // The spans grow with the building. three.js's default WorldUVGenerator
+  // builds side-wall UVs straight out of vertex positions, so THE FACADE UVs
+  // ARE METRES. city.js's own "UV RULE" (~4540) says so too; this file was the
+  // one out of step.
+  //
+  // Why [1,1] is still right: autoUV (landmarks.js) has ALREADY divided those
+  // metres by a 12m tile before the map is sampled, so [1,1] here IS a 12m
+  // tile — five floors across 12m is a 2.4m storey, which is why the floors
+  // land plausibly. And it explains the flat-white walls honestly: [1/12.6]
+  // did not make the tile finer, it made it 12 x 12.6 = 151 METRES, so a 15m
+  // wall showed a tenth of one tile and averaged to the base colour.
+  //
+  // The original note ended "that is the measurement, and it beats the
+  // reasoning". The measurement was real; the explanation attached to it was
+  // not, and a wrong explanation for a right value is a trap for whoever
+  // changes it next. texAshlar/texSalvage/texBoard scale by dividing 12 by the
+  // metre tile they want — see the tail of texAshlar.
   return finish(c, [1, 1]);
 }
 

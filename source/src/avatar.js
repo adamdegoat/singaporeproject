@@ -74,12 +74,26 @@ const SIT_POSE = [-0.45, -1.3736, 0.5835, 1.431, -1.1202, -0.1562, 1.487,
 // the body reads sideways and the head reads forward at the same time. The
 // shoulder line opens to 35 deg, chest about -55, neck about 60. Nothing below
 // the waist moved. See data/rigsolve/stance.mjs `shoulderAxis`.
-const SKATE_STAND = [-0.45, -0.7078, 0.4016, 0.6609, 0.3719, 0.0016,
-  0.525, -0.5125, -0.1641, 0.0422, 1.0719, 0.1281, -0.0453, 0.0703, -0.325,
-  0.0422, 0.0531, -0.0703, -0.1266, -0.0594, 0.1203, -0.3281];
-const SKATE_DELTA = [0.001, -0.2534, 0.1188, 0.3341, -0.1165, -0.006,
-  0.3472, 0.0063, 0.0996, -0.023, -0.0092, 0.0275, 0.1291, 0.2112, -0.0712,
-  0.0078, -0.3354, 0.156, 0.0683, 0.0762, 0.0823, 0.277];
+// RE-SOLVED AGAIN 2026-08-27 (evening) — THE FIGURE TILTS NOW. The owner, on
+// the build above: "the body pls more naturual dont like forced to face
+// straight ... surfskating is like surfing their position tilted one direction
+// more and standing like surfing." He is right and the frame proves it:
+// shots/ridecam/base0.cruise.front.jpg is a woman standing dead square to the
+// camera, shoulders level, both arms straight down. Four targets changed in
+// data/rigsolve/stance.mjs, each with its own note there:
+//   * the HEAD sits over the front foot and out toward the toe rail, so the
+//     spine inclines about 9 deg across and 17 along instead of standing plumb
+//   * the SHOULDER LINE is no longer horizontal — the leading shoulder drops
+//   * the ARMS come up to waist level and out over the rails (surfskate.love:
+//     "hold your arms up parallel to the ground"), asymmetric, elbows soft
+//   * she LOOKS DOWN THE LINE, canted to the toe side with her chest, which
+//     also takes the neck from 61 deg to about 44
+const SKATE_STAND = [-0.4625, -0.332, 0.2965, 0.1355, 0.5793, -0.0047, -0.0609,
+  -0.6051, -0.1074, 0.048, 0.9719, 0.0664, -0.1461, -0.0508, -0.1125, 0.0934,
+  0.0488, -0.2461, -0.1176, 1.0047, -0.1059, -0.5789];
+const SKATE_DELTA = [0.201, -0.6645, 0.3334, 0.9656, -0.4093, -0.1564, 1.0512,
+  0.1014, 0.0797, -0.1813, -0.2798, 0.0012, 0.8071, 0.1605, -0.3483, 0.5066,
+  -0.5016, 0.6, 0.0589, 0.1953, 0.2265, 0.8443];
 // How far the pelvis rides below its rest height, in METRES, cruising and at
 // full carve. IMPOSED, not solved — see the note in skatePose.
 // ...and the pelvis came down the same 55mm with them. Dropping the feet
@@ -91,7 +105,7 @@ const SKATE_DELTA = [0.001, -0.2534, 0.1188, 0.3341, -0.1165, -0.006,
 // square across the plank. Front foot slightly open toward the nose, back foot
 // all but square on the tail — the surfskate pair. See aimFoot().
 const FOOT_YAW = [62, 88];
-const SKATE_HIP = [0.160, 0.255];
+const SKATE_HIP = [0.035, 0.270];
 // THE PUSH, solved onto the road for this rig: the six leg angles in the
 // order [UpperLeg.L X, UpperLeg.L Z, LowerLeg.L X, UpperLeg.R X,
 // UpperLeg.R Z, LowerLeg.R X] plus the pelvis drop in METRES. PLANT is the
@@ -106,9 +120,21 @@ const SKATE_HIP = [0.160, 0.255];
 // about -55 deg across the deck; 0.72 rad brings it to roughly -14 deg, which
 // is "forward facing" without snapping her square to the nose like a scooter
 // rider. Measured by data/stancecheck.mjs as `chest` in the push row.
-const PUSH_OPEN = 0.72;
-const PUSH_PLANT = [-0.9525, 0.516, 1.0169, -0.1549, 0.2848, 0.6947, 0.255];
-const PUSH_DRIVE = [-0.8862, 0.4782, 0.9347, 0.5851, 0.3116, 0.0079, 0.230];
+// CUT WITH THE MOVE TO A HEEL-SIDE PUSH, and the two are one decision. 0.72
+// rad took the chest from about -55 deg across the deck to -14, all but square
+// to the nose, on nollieskateboarding's "your body and your line of sight
+// should be forward facing as you push". That is right for a TOE-side push,
+// where the leg goes down on the side the rider has just turned to face. The
+// owner's call is the heel side (2026-08-27: "heel pushing foot"), which is
+// the side her BACK faces — so unwinding her toward the nose first turns a
+// reach behind into a reach across the body. 0.24 keeps a hint of the turn
+// without fighting the leg. See the note at the foot of data/rigsolve/push.mjs.
+const PUSH_OPEN = 0.24;
+const PUSH_PLANT = [-0.8051, 0.4315, 0.8692, 0.3696, -0.2711, 0.0505, 0.190];
+// DRIVE HOLDS THE PLANT'S DEPTH (0.255, not 0.230). She was rising 25mm while
+// still driving the foot back, which left the sole 22mm over the road at full
+// stretch — measured, not guessed. See the note in data/rigsolve/push.mjs.
+const PUSH_DRIVE = [-0.8053, 0.4315, 0.8696, 0.8036, -0.1232, -0.1893, 0.190];
 
 export function buildAvatar(hat) {
   // ---- bones: the armature subtree verbatim, so clips need no retarget
@@ -212,8 +238,18 @@ export function buildAvatar(hat) {
     dome.castShadow = true;
     hg.add(dome);
     if (hat === 'cap') {
-      const peak = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.02, 0.09), hmat);
-      peak.position.set(0, -0.01, 0.12);
+      // THINNER AND CLOSER IN. At 0.02 thick and 0.09 long standing 0.12 out
+      // from the head's centre, the peak cleared her face by 30mm and caught
+      // the sun as a flat white slab across it whenever the head turned —
+      // visible in every carve frame. A real cap peak is a thin curve that
+      // sits ON the brow.
+      const peak = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.012, 0.075), hmat);
+      peak.position.set(0, -0.022, 0.105);
+      // ANGLED DOWN OVER THE BROW. Flat, it stood out horizontally and cut a
+      // white bar across her eye in every frame where the head was turned at
+      // all — the crown is white and the peak caught the sun the same way, so
+      // it read as a slab through her face rather than as a cap.
+      peak.rotation.x = 0.30;
       peak.castShadow = true;
       hg.add(peak);
     }
@@ -554,9 +590,20 @@ export function buildAvatar(hat) {
       resetPose();
       root.rotation.y = 0;
       const c = Math.max(0, Math.min(1, crouch));
+      // THE ARMS OPEN WITH THE TURN, THE LEGS FOLD WITH THE WORK. One blend
+      // scalar drove both and it was the wrong one for the arms: `crouch` is
+      // mostly SPEED (main.js: v*0.5 + |carve|*0.5), so coasting through a
+      // full-lock turn it sits near 0.5 and the arms only ever got half way
+      // out — which is why the trailing hand still hung by the deck in
+      // shots/ridecam/t8.carve-hard.heel.jpg after the runtime swing was
+      // removed. A rider throws their arms out because they are TURNING, not
+      // because they are going fast. `lean` is the signed carve; its
+      // magnitude is what the arms answer to.
+      const armOpen = Math.min(1, Math.abs(lean) / 0.30);
       for (let i = 0; i < SKATE_KNOBS.length; i++) {
         const k = SKATE_KNOBS[i];
-        const a = SKATE_STAND[i] + c * SKATE_DELTA[i];
+        const w = /Arm/.test(k[0]) ? Math.max(c, armOpen) : c;
+        const a = SKATE_STAND[i] + w * SKATE_DELTA[i];
         qrot(k[0], k[1], k[2], k[3], a);
       }
       // THE PELVIS RIDES LOW, AND IT IS IMPOSED RATHER THAN SOLVED. As a
@@ -572,9 +619,44 @@ export function buildAvatar(hat) {
       // the carve, on top of the solved stance: the chest rolls into the
       // turn and the arms swing across as a counterweight. Unchanged in
       // spirit from the pose this replaces — it was never the complaint.
-      qrot('Torso', 0, 0, 1, lean * 0.55);
-      qrot('UpperArm.L', 0, 0, 1, -lean * 0.30);
-      qrot('UpperArm.R', 0, 0, 1, -lean * 0.30);
+      // DEEPER 2026-08-27. `lean` arrives as carve*0.35, so 0.55 capped the
+      // roll at 11 degrees at full lock — a lean you have to look for. The
+      // owner's whole note is that the figure does not tilt ("their position
+      // tilted one direction more"), and a surfskate turn IS the rider's
+      // incline: the board cannot lean far, the person does. 0.95 puts full
+      // lock at 19 deg on top of the stance's own resting tilt, and the arms
+      // counter across the deck a little harder with it.
+      // THE RIDER COUNTERS THE BOARD, SHE DOES NOT ADD TO IT.
+      //
+      // main.js:6205 rolls the WHOLE skate rig by S.lean, and SKATE.leanMax is
+      // 0.80 rad — the board goes over 46 degrees at full lock, deliberately
+      // ("it goes right over"). The avatar rides inside that rig, so she is
+      // already leaning 46 degrees before this line runs. Rolling her a further
+      // 0.45 of the carve in the SAME direction stacked her to about 55, and
+      // from behind she read as falling off the side rather than carving.
+      //
+      // A board tilts further than the rider standing on it: the deck rolls
+      // under them while the upper body stays nearer the turn's centre. So
+      // this counters, and she comes out around 37 degrees to the board's 46.
+      qrot('Torso', 0, 0, 1, -lean * 0.45);
+      // THE ARMS ARE THE STANCE'S JOB NOW, NOT A RUNTIME NUDGE.
+      //
+      // This block used to swing the back arm across on top of the solved
+      // pose: a yaw, a roll and a forearm roll, all scaled by lean. It was
+      // written when the stance held ONE arm shape for every state, so the
+      // carve had to be faked here. It is not needed any more — the solve has
+      // two real shapes now, arms hanging at cruise and thrown wide at full
+      // carve, taken off photographs — and worse, it FOUGHT them: at full lock
+      // the extra yaw dragged the trailing hand back down beside the deck,
+      // which is the limb the owner read as a lunging leg
+      // (shots/ridecam/t7.carve-hard.heel.jpg).
+      //
+      // What is left is the small counter-roll of the leading arm, and the
+      // head leading the turn — both things the stance cannot know, because
+      // it only sees how HARD she is working, never which way.
+      qrot('UpperArm.L', 0, 0, 1, -lean * 0.16);
+      qrot('Torso', 0, 1, 0, lean * 0.22);
+      qrot('Head', 0, 1, 0, lean * 0.26);
 
       // ---- the push, SOLVED onto the road (ride.js: "a push runs out") ----
       //

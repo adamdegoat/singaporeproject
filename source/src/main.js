@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance, resetSignAtlas, hashRand } from './tex.js';
-import { MAT, badGeoCount, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, footbridgeIdOf, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, buildPools, plantSurveyed, openGroundAt, openGroundPolys } from './city.js';
+import { MAT, badGeoCount, buildContactShade, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, footbridgeIdOf, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, buildPools, plantSurveyed, openGroundAt, openGroundPolys } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, lambertise, flattenFlatColours, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
@@ -1673,7 +1673,14 @@ function registerLod(root) {
     if (!o.isMesh || !o.userData.tileBatch || o.userData.lodRegistered) return;
     if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
     bb.copy(o.geometry.boundingBox);
-    if (bb.max.y - bb.min.y >= 4) return;
+    // The 4m test asks "is this tile made of small things", and it asks it of
+    // the BOUNDING BOX, which on sloping ground is the hill and not the thing.
+    // The contact-shade tiles are 240m squares of flat 2.4m bands and their
+    // boxes are tens of metres deep at Serapong and Imbiah — so they were
+    // silently never registered, and setting lodFar on them changed nothing
+    // (measured: 690 draws before, 689 after, which is noise). A tile that
+    // NAMES its own range has already answered the question this test asks.
+    if (bb.max.y - bb.min.y >= 4 && !o.userData.lodFar) return;
     if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
     o.userData.lodRegistered = true;
     LODT.push(o);
@@ -3431,6 +3438,15 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   const groundMat = new THREE.MeshStandardMaterial({
     color: 0x9d9e99, roughness: 0.95, vertexColors: true,
   });
+  // NAMED, because every probe of the ground has had to guess at it. The
+  // terrain's meshes do not survive with their own name — consolidate() merges
+  // them into unnamed tile batches and lambertise() swaps the material for a
+  // Lambert clone — so `terrainSurface` finds NOTHING in the finished scene and
+  // three separate probes on 2026-08-27 reported "0 ground meshes" while the
+  // ground was plainly on screen. lambertise copies material.name, so this
+  // survives both passes and `o.material.name === 'ground'` is a reliable
+  // handle on the finished world.
+  groundMat.name = 'ground';
   // THE GROUND HAD NO TEXTURE AT ALL — one flat colour per vertex tint across
   // the whole island. Every probe of a "big blank untextured mass" in a vet
   // shot came back as this material (`#9d9e99 no-map`), and on Sentosa that is
@@ -3446,10 +3462,12 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // per ground pixel and nothing at all in memory or geometry, and being
   // position-keyed it is deterministic and identical on every device.
   groundMat.onBeforeCompile = (sh) => {
-    sh.vertexShader = 'varying vec3 vGPos;\n' + sh.vertexShader.replace(
-      '#include <begin_vertex>',
-      '#include <begin_vertex>\n  vGPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = 'varying vec3 vGPos;\n'
+    sh.vertexShader = 'varying vec3 vGPos;\nattribute float aPaved;\nvarying float vPaved;\n'
+      + sh.vertexShader.replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\n  vGPos = (modelMatrix * vec4(transformed, 1.0)).xyz;'
+        + '\n  vPaved = aPaved;');
+    sh.fragmentShader = 'varying vec3 vGPos;\nvarying float vPaved;\n'
       + 'float gHash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }\n'
       + 'float gNoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);\n'
       + '  return mix(mix(gHash(i),gHash(i+vec2(1,0)),f.x), mix(gHash(i+vec2(0,1)),gHash(i+vec2(1,1)),f.x), f.y); }\n'
@@ -3514,14 +3532,109 @@ window.__placeBlocked = (x, z) => blocked(x, z);
           // their cool end untouched.
           float paved = 1.0 - smoothstep(0.05, 0.12,
             abs(vColor.r - vColor.g) + abs(vColor.g - vColor.b));
-          float keepHue = max(sandish, paved);
+          // ...AND THREE OF UNIVERSAL'S EIGHT ZONE FLOORS FELL STRAIGHT THROUGH
+          // BOTH TESTS (2026-08-28). Both of the rules above are GUESSES made
+          // from the vertex colour, and a WARM GREY satisfies neither: it is
+          // not chromatic enough to be sand and not neutral enough to be
+          // pavement. Worked out against the tints terrain.js actually ships:
+          //
+          //   pv_lw     0.58 0.53 0.47   sandish 0.09  paved 0.07  -> 91% green
+          //   pv_ffa    0.79 0.71 0.66   sandish 0.30  paved 0.00  -> 70% green
+          //   pv_minion 0.53 0.49 0.45   sandish 0.00  paved 0.64  -> 36% green
+          //
+          // The Lost World's researched "warm grey stamped stone" and Far Far
+          // Away's "cream and dusty pink" were both arriving on screen olive.
+          // It is the sand story a third time and the asphalt story a second.
+          //
+          // THE GUESSING STOPS HERE, because the ground already KNOWS. aPaved
+          // is set from terrain.js's SLABBED list — plaza plus every pv_* zone
+          // floor — and a laid floor is never grass, whatever colour it was
+          // painted. It is the same byte the slab joints ride on, so this costs
+          // nothing at all.
+          float laid = max(paved, vPaved);
+          float keepHue = max(sandish, laid);
           vec3 cool = mix(vec3(0.88, 1.00, 0.90), vec3(0.93, 0.93, 0.91), keepHue);
           // the WARM end is the other half of the same filter: x0.86 on blue
           // turns neutral asphalt YELLOW-olive in every sunlit patch. Sand
           // stays warm (it is warm); pavement's warm end goes near-neutral.
-          vec3 warmv = mix(warm, vec3(1.04, 1.02, 0.99), paved);
+          vec3 warmv = mix(warm, vec3(1.04, 1.02, 0.99), laid);
           diffuseColor.rgb *= mix(cool, warmv, smoothstep(0.25, 0.75, broad * 0.65 + mid * 0.35));
-        }`);
+        }
+        // GROUND THAT WAS LAID GETS ITS JOINTS (2026-08-27).
+        //
+        // (No backticks below this line: this whole block lives inside a JS
+        // TEMPLATE LITERAL, and the first draft quoted the class names in
+        // backticks the way the rest of this file does. Each one closed the
+        // string, and the page died on a parse error with no file and no line
+        // — "missing ) after argument list". Quote code in here with " marks.)
+        //
+        // The blankest views in this world are inside Universal, and after the
+        // masonry pass put relief on the walls the remaining blankness is the
+        // FLOOR: egypt-columns still scores 63% flat cells and most of that is
+        // forecourt. A theme-park apron is not a poured field, it is slabs, and
+        // the joint grid is the whole of what the eye reads at walking pace.
+        //
+        // THIS IS THE SECOND ATTEMPT AND THE FIRST ONE WAS REVERTED. It was
+        // built the same way, measured, and thrown away on 2026-08-27 because
+        // it keyed on the "plaza" ground class and the big USS aprons are not
+        // "plaza" — so the slabs landed on a few small mapped polygons at the
+        // edge of frame and the actual blank thing did not change. That was
+        // read as "the ground has no class". It has one: data/usspaving.py has
+        // painted the whole park floor in "pv_*" cells since 2026-08-21. The
+        // class list lives in terrain.js as SLABBED and every entry in it was
+        // already declared pavement there; the flag rides as one NORMALIZED
+        // BYTE per vertex, not the Float32 the first attempt spent.
+        //
+        // THE JOINT WIDTH FOLLOWS THE PIXEL, not the metre. A fixed 20mm line
+        // is a sub-pixel line by 40m, and a sub-pixel line crawls — which is
+        // the failure mode a slab grid over a whole park would be judged on
+        // first, on a phone, in motion. fwidth() gives the footprint of one
+        // pixel in slab units, so the joint never gets thinner than it can be
+        // drawn; and it fades out entirely past 45-95m so the far floor is the
+        // clean tint it always was rather than a fizzing grid.
+        if (vPaved > 0.02) {
+          float pd = length(vGPos - cameraPosition);
+          float amt = vPaved * (1.0 - smoothstep(45.0, 95.0, pd));
+          if (amt > 0.004) {
+            // ITS OWN gp, AND THIS IS THE WHOLE BUG THAT COST AN AFTERNOON.
+            // The first draft read "gp / 1.20", borrowing the "vec2 gp" the
+            // detail block above declares — but that block is braced, so gp
+            // dies with it and this line is outside. The fragment shader then
+            // failed to compile with "'gp' : undeclared identifier", three.js
+            // refused the program, and THE GROUND OF THE ENTIRE ISLAND DREW
+            // NOTHING: roads, trees and buildings floating over open sea, the
+            // sea showing through every gap. A broken ground shader does not
+            // look like a broken shader; it looks like missing land.
+            vec2 sp = vGPos.xz / 1.20;                  // 1.2m slabs
+            vec2 sf = fract(sp);
+            vec2 se = min(sf, 1.0 - sf);               // distance to the nearest joint
+            // EACH AXIS IS FILTERED ON ITS OWN FOOTPRINT, and the first cut
+            // was not: it took max(fwidth.x, fwidth.y) as one width for both.
+            // The ground is a floor, so at eye level the two axes are never
+            // alike — the one running away from you covers many metres per
+            // pixel while the one across you covers centimetres. One shared
+            // width takes the larger, which smears the near joints into bands
+            // and breaks the far ones into dashes: shots/street/plaza.shot1
+            // is a floor of long grooves with dots between them, not slabs.
+            //
+            // ...AND AN AXIS WHOSE JOINTS NO LONGER FIT IN A PIXEL IS DROPPED
+            // rather than widened. Past about half a slab per pixel there is
+            // no line left to draw, only aliasing, so that axis fades out and
+            // the floor keeps the joints it can still resolve.
+            float wx = fwidth(sp.x), wz = fwidth(sp.y);
+            float jx = (1.0 - smoothstep(max(0.017, wx) * 0.45, max(0.017, wx) * 1.6, se.x))
+              * (1.0 - smoothstep(0.22, 0.48, wx));
+            float jz = (1.0 - smoothstep(max(0.017, wz) * 0.45, max(0.017, wz) * 1.6, se.y))
+              * (1.0 - smoothstep(0.22, 0.48, wz));
+            float joint = max(jx, jz);
+            // ...and no two slabs are the same tone. Without this the grid is
+            // a wireframe over a flat field; with it the field is made OF the
+            // slabs, which is the thing being drawn.
+            float tone = gHash(floor(sp)) - 0.5;
+            diffuseColor.rgb *= 1.0 + amt * (tone * 0.085 - joint * 0.32);
+          }
+        }
+        `);
   };
   await bstep(0.31, 'shaping the ground');
   // EVERY district's green, not just the spawn one: the ground mesh is built
@@ -4037,6 +4150,19 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   stats.batched = cons.removed; stats.batches = cons.merged;
   stats.casters = shad.kept; stats.castersDropped = shad.dropped;
   stats.prunedFromRoads = pruned;
+
+  // SEAT EVERY BUILDING ON THE FLOOR IT STANDS ON. See the long note on
+  // buildContactShade() in city.js. It runs HERE, after consolidate and after
+  // the collision grid, on purpose: it is a decal lying on the ground, and
+  // every pass upstream of this point would have had an opinion about it —
+  // Solid rasterises any non-instanced mesh, lambertise rebuilds materials,
+  // flattenFlatColours moves flat colour into vertex colour, and this
+  // material's colour IS its vertex colour. It builds its own tiles instead.
+  if (!RAW && !P.has('noshade')) {
+    const cshade = buildContactShade(world, data);
+    Object.assign(stats, cshade);
+  }
+  bmark('contact-shade');
 
   // LOD v1: a merged tile whose contents are all under 4m — kerb runs, road
   // markings, bins, bollards, planters — subtends about a pixel at 500m and
@@ -5683,7 +5809,12 @@ function loop(now) {
     for (const o of LODT) {
       const s2 = o.geometry.boundingSphere;
       const d = Math.hypot(s2.center.x - cx, s2.center.z - cz) - s2.radius;
-      o.visible = d < LOD_FAR;
+      // ...AND A TILE MAY NAME ITS OWN RANGE. LOD_FAR is 500m because that is
+      // where a kerb run or a bin stops subtending a pixel. The contact shade
+      // is a 2.4m band of 0.62 grey lying flat on the ground: it is gone long
+      // before that, and measured on the hot views it was 29 of the worst
+      // view's 690 draw calls, all of them hundreds of metres away.
+      o.visible = d < (o.userData.lodFar || LOD_FAR);
     }
     // compact each static instanced set down to the instances within range
     for (const L of LODI) {

@@ -48,6 +48,26 @@ FAILED=0
 
 hr() { printf '\n== %s\n' "$1"; }
 
+hr "does it even parse"
+# ONE SECOND, AND IT WOULD HAVE SAVED TWO BROWSER ROUND TRIPS on 2026-08-27.
+# A GLSL comment inside main.js's ground shader quoted a class name in
+# BACKTICKS, the way every other comment in this project does — but that block
+# lives inside a JS template literal, so each backtick closed the string. The
+# page threw "missing ) after argument list" with no file and no line, and
+# every gate below this one reports on a world that never booted, which reads
+# as a hang rather than as a syntax error. `node --check` needs the file to be
+# named .mjs to parse it as a module, which is why this copies first.
+_TMP=$(mktemp -d)
+for f in src/*.js; do
+  cp "$f" "$_TMP/chk.mjs"
+  # `; [ ${PIPESTATUS[0]} -ne 0 ]`, NOT `|| FAILED=1` — in a pipeline $? is
+  # sed's, and sed always succeeds. This file's own header records five gates
+  # found dead this exact way.
+  node --check "$_TMP/chk.mjs" 2>&1 | sed "s|$_TMP/chk.mjs|$f|"
+  [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
+done
+rm -rf "$_TMP"
+
 hr "data gate"
 for s in $SCENES; do
   python3 data/check.py "$s" 2>&1 | tail -3; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1

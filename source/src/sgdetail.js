@@ -9004,7 +9004,8 @@ export function buildUssVocab(world, data, blocked) {
       anchors.push({ n: a.n, x: a.p[0], z: a.p[1] });
     }
   }
-  const out = { harlequin: 0, obelisk: 0 };
+  const out = { harlequin: 0, obelisk: 0,
+    plazaPlanters: 0, plazaBenches: 0, plazaBins: 0 };
   if (!anchors.length) return out;
   // THE PARK RING GUARD. The nearest-anchor rule reaches 240m, and 240m
   // from the Sci-Fi anchor is the Amara Sanctuary Resort — a real hotel
@@ -10820,6 +10821,173 @@ export function buildUssVocab(world, data, blocked) {
         break;
       }
     }
+  }
+
+  // ── THE FORECOURTS ARE DRESSED (2026-08-27) ─────────────────────────────
+  //
+  // WHY, AND IT IS THE SAME FINDING THE SLAB PAVING CAME OUT OF. A blankness
+  // ranking over the 46 goldens (flat-cell fraction of the non-sky frame) put
+  // SEVEN of the fourteen emptiest views inside Universal. The masonry pass
+  // fixed the walls; egypt-columns still scored 63% flat afterwards and the
+  // handover named what was left: "the blankest USS frames are blank because
+  // of the GROUND, not the walls ... a theme-park plaza is dense with planters,
+  // benches, bins, and these are empty." It was left for the owner because it
+  // is partly a taste call about how busy the park should feel. He made it on
+  // 2026-08-27: "also do what u need."
+  //
+  // WHAT IS HERE AND WHAT IS DELIBERATELY NOT. Planters, benches and bins —
+  // the furniture EVERY theme park has, in every zone, which is why it can be
+  // placed without inventing anything about Universal in particular. Queue
+  // rails and food carts were on the same list and are NOT here: both belong
+  // at a specific ride entrance or a specific stand, and we do not know where
+  // those are. Scattering them over open apron would be furniture pretending
+  // to be information. Better absent than wrong.
+  //
+  // THE ZONES STAY DISTINCT. The planter tub takes its zone's own material —
+  // New York's is the "dark bottle green, not black" ironwork the research
+  // singles out for that zone (§2's palette table), Hollywood and Minion Land
+  // terracotta, the Lost World and WaterWorld painted green, Egypt / Sci-Fi /
+  // Far Far Away cast stone. Leaves and timber are shared: a shrub is a shrub.
+  //
+  // PLACEMENT IS THE ORDINARY GUARD SET used by every other piece of dressing
+  // in this file — inside the surveyed park ring, inside a zone cell, never on
+  // a carriageway, never where the placement test says blocked, never anywhere
+  // unstandable — plus a jittered grid so it never reads as a lattice. It is
+  // POSITION-HASHED, not random: the same island seeds the same furniture, or
+  // the goldens would move under their own baselines every boot.
+  {
+    const PM = {
+      stone: new THREE.MeshLambertMaterial({ color: 0xbfae92 }),   // cast stone
+      green: new THREE.MeshLambertMaterial({ color: 0x6f7a5e }),   // painted
+      terra: new THREE.MeshLambertMaterial({ color: 0x9a6a52 }),   // terracotta
+      iron: new THREE.MeshLambertMaterial({ color: 0x2b3a33 }),    // §2 bottle green
+      leafA: new THREE.MeshLambertMaterial({ color: 0x47632f }),
+      leafB: new THREE.MeshLambertMaterial({ color: 0x5a7a3d }),
+      slat: new THREE.MeshLambertMaterial({ color: 0x7a6247 }),    // timber
+      bin: new THREE.MeshLambertMaterial({ color: 0x4a4a44 }),
+    };
+    const TUB = {
+      'Hollywood': PM.terra, 'New York': PM.iron, 'Sci-Fi City': PM.stone,
+      'Ancient Egypt': PM.stone, 'The Lost World': PM.green,
+      'Jurassic World': PM.green, 'Far Far Away': PM.stone,
+      'Minion Land': PM.terra, 'Madagascar': PM.terra, 'WaterWorld': PM.green,
+    };
+    // A POSITION HASH, not a sequence. main.js:4066 states the rule this
+    // follows: "identically hash identically; one relocated bench does not."
+    const hsh = (x, z, k) => {
+      let h = Math.imul((Math.round(x * 8) | 0) ^ 0x9e3779b9, 0x85ebca6b)
+        ^ Math.imul((Math.round(z * 8) | 0) ^ (k * 0x27d4eb2d), 0xc2b2ae35);
+      h ^= h >>> 15; h = Math.imul(h, 0x2545f491); h ^= h >>> 13;
+      return (h >>> 0) / 4294967296;
+    };
+    const free = (x, z, r) => standable(x, z) && !(blocked && blocked(x, z))
+      && !(window.__onRoad && window.__onRoad(x, z, r));
+    // local geometry, then the shared yaw, then out to the world — the order
+    // the WaterWorld catwalk rails above use, and the only one that puts a
+    // rotated offset where it was meant to go.
+    const put = (geo, mat, ox, oy, oz, ry, cx, cz, gy) => {
+      geo.translate(ox, oy, oz); geo.rotateY(ry); geo.translate(cx, gy, cz);
+      merger.add(geo, mat, cx, cz);
+    };
+    const planter = (px, pz, mat) => {
+      const g0 = drawnGroundAt(px, pz);
+      const tub = new THREE.CylinderGeometry(0.66, 0.54, 0.66, 6);
+      tub.translate(px, g0 + 0.33, pz);
+      merger.add(tub, mat, px, pz);
+      // two overlapping blobs, not one ball: a single sphere on a tub reads
+      // as a lollipop at any distance you can see it from.
+      for (let i = 0; i < 2; i++) {
+        const rr = 0.34 + hsh(px, pz, 20 + i) * 0.20;
+        const b = new THREE.IcosahedronGeometry(rr, 0);
+        b.scale(1.15, 0.85, 1.15);
+        b.translate(px + (hsh(px, pz, 30 + i) - 0.5) * 0.46,
+          g0 + 0.70 + rr * 0.55, pz + (hsh(px, pz, 40 + i) - 0.5) * 0.46);
+        merger.add(b, i ? PM.leafB : PM.leafA, px, pz);
+      }
+    };
+    const bench = (px, pz, ry) => {
+      const g0 = drawnGroundAt(px, pz);
+      put(new THREE.BoxGeometry(1.80, 0.08, 0.46), PM.slat, 0, 0.45, 0, ry, px, pz, g0);
+      put(new THREE.BoxGeometry(1.80, 0.30, 0.07), PM.slat, 0, 0.72, -0.21, ry, px, pz, g0);
+      for (const ox of [-0.72, 0.72]) {
+        put(new THREE.BoxGeometry(0.09, 0.45, 0.40), PM.iron, ox, 0.22, 0, ry, px, pz, g0);
+      }
+    };
+    const bin = (px, pz) => {
+      const g0 = drawnGroundAt(px, pz);
+      const body = new THREE.CylinderGeometry(0.25, 0.21, 0.80, 6);
+      body.translate(px, g0 + 0.40, pz);
+      merger.add(body, PM.bin, px, pz);
+      const lid = new THREE.CylinderGeometry(0.29, 0.29, 0.07, 6);
+      lid.translate(px, g0 + 0.83, pz);
+      merger.add(lid, PM.iron, px, pz);
+    };
+
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const [rx, rz] of (_ussRing || [])) {
+      if (rx < x0) x0 = rx; if (rx > x1) x1 = rx;
+      if (rz < z0) z0 = rz; if (rz > z1) z1 = rz;
+    }
+    const STEP = 13;
+    // A CEILING, AND IT THINS RATHER THAN TRUNCATES. The park ring's box is
+    // about 400m square, so the grid offers ~950 cells before any guard runs.
+    // A cap applied INSIDE the sweep would stop at whatever the loop reached
+    // first — the loop runs x ascending, so the west half of the park would be
+    // dressed and the east half bare, which is worse than either extreme and
+    // reads as a bug rather than a budget. So the candidates are collected,
+    // and if there are more than the cap they are thinned by their own hash:
+    // an even scatter at lower density, everywhere, instead of a full job on
+    // one side. `out.plazaCapped` says how many were dropped that way.
+    // MEASURED, THEN SET (2026-08-27): at a 0.62 acceptance the sweep offered
+    // 378 spots that passed every guard and the 210 cap dropped 168 of them —
+    // it BOUND, which means the density on screen was being decided by the
+    // safety net rather than by the choice above it. The acceptance comes down
+    // to 0.42 so about 250 spots survive the guards on their own, and the cap
+    // goes up to a level it should never reach; if `capped` is ever non-zero
+    // again, something upstream changed and the number says so.
+    const CAP = 400;
+    const cand = [];
+    if (isFinite(x0)) {
+      for (let gx = Math.floor(x0 / STEP) * STEP; gx <= x1; gx += STEP) {
+        for (let gz = Math.floor(z0 / STEP) * STEP; gz <= z1; gz += STEP) {
+          if (hsh(gx, gz, 1) > 0.42) continue;          // not every cell
+          const px = gx + (hsh(gx, gz, 2) - 0.5) * 7.5;
+          const pz = gz + (hsh(gx, gz, 3) - 0.5) * 7.5;
+          if (!inPark(px, pz)) continue;
+          const zn = zoneOf(px, pz);
+          if (!zn) continue;
+          if (!free(px, pz, 2.4)) continue;
+          cand.push({ gx, gz, px, pz, zn, r: hsh(gx, gz, 7) });
+        }
+      }
+    }
+    let capped = 0;
+    if (cand.length > CAP) {
+      cand.sort((a, b) => a.r - b.r);
+      capped = cand.length - CAP;
+      cand.length = CAP;
+    }
+    for (const { gx, gz, px, pz, zn } of cand) {
+      const ry = hsh(gx, gz, 4) * Math.PI * 2;
+      planter(px, pz, TUB[zn] || PM.stone);
+      out.plazaPlanters++;
+      // the bench and the bin sit off the planter, each cleared on its OWN
+      // point — a cluster whose centre is clear can still have an arm of it
+      // inside a wall.
+      const bx = px + Math.cos(ry) * 2.7, bz = pz + Math.sin(ry) * 2.7;
+      if (hsh(gx, gz, 5) < 0.72 && free(bx, bz, 2.2)) {
+        bench(bx, bz, ry + Math.PI / 2);
+        out.plazaBenches++;
+      }
+      const nx = px - Math.cos(ry) * 1.9, nz = pz - Math.sin(ry) * 1.9;
+      if (hsh(gx, gz, 6) < 0.55 && free(nx, nz, 2.0)) {
+        bin(nx, nz);
+        out.plazaBins++;
+      }
+    }
+    out.plazaCapped = capped;
+    window.__ussPlaza = { planters: out.plazaPlanters, benches: out.plazaBenches,
+      bins: out.plazaBins, candidates: cand.length + capped, capped };
   }
 
   merger.flush(world);

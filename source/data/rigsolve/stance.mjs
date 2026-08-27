@@ -38,7 +38,11 @@ const ARM = Math.hypot(...P('LowerArm.L').map((v,i)=>v-shL[i]))
 // honest move is to subtract the float that was MEASURED in the board frame
 // and then re-measure. Loop: solve -> paste -> stancecheck -> adjust.
 //   pass 1: DECK 0.060/0.073 -> float +55/+59mm
-const DECK_L = 0.005, DECK_R = 0.014;
+// RAISED 15mm, 2026-08-27 evening. With the pelvis brought up to a standing
+// height the legs run near full extension and both soles settled 10-20mm
+// THROUGH the grip tape (data/stancecheck.mjs). The file's own loop applies:
+// solve -> paste -> stancecheck -> adjust, and this is the adjust.
+const DECK_L = 0.020, DECK_R = 0.029;
 const HIPY  = P('Hips')[1];
 const HEADY = P('Head')[1];
 const nrm = (v) => { const L = Math.hypot(...v); return v.map(x=>x/L); };
@@ -50,7 +54,17 @@ const ang = (a,b,cc) => {
 };
 const D = (x)=>x*Math.PI/180;
 
-// ---- THE STANCE, as world targets in the board's frame (+z nose, +x toe) --
+// ---- THE STANCE, as world targets in the board's frame ---------------------
+// AND THE AXES, MEASURED, BECAUSE THE LINE THIS REPLACES HAD THEM BACKWARDS.
+// It read "(+z nose, +x toe)". +z IS the nose (data/footcheck2.mjs dots the
+// travel vector against the rig's own axes: dotZ = 1.000). But +x is the HEEL
+// side, not the toe side: data/stancecheck.mjs says so in its own header and
+// then RELIES on it -- its toes-over-the-rail test is `-toeX - rail`, which
+// only means anything if the toes are at negative x. The foot targets below
+// have always been at POSITIVE x with the shoes aimed across to negative,
+// i.e. ankles on the heel rail and toes on the toe rail, which is what the
+// note beside them says. So the numbers were right and the axis legend on top
+// of them was wrong -- the exact failure mode the handover keeps recording.
 // Regular footed: LEFT foot forward. `c` is the crouch, 0 cruising, 1 working.
 // HOW LOW THE PELVIS RIDES, and it is arithmetic, not taste. This rig's leg
 // is 0.79m from hip to ankle. With the feet 0.30m either side of centre and
@@ -60,95 +74,111 @@ const D = (x)=>x*Math.PI/180;
 // A skater with a wide stance rides LOW; that is the same fact from the other
 // end. So the pelvis starts 55mm down and drops another 95mm into the carve.
 const STANCE = (c) => {
-  // MUST MATCH THE `pre(...)` DROPS AT THE FOOT OF THIS FILE. The pre imposes
-  // the pelvis height and this target grades it; when the feet came down 55mm
-  // the pre was updated and this was not, so the cost spent every pass pulling
-  // the hips back UP against the pre that had just put them down (cost 0.007
-  // -> 0.291, hips 55mm off target in the report). Two places, one number.
-  // DEEPER 2026-08-27. A surfskate is ridden LOW — the whole point of the
-  // front truck is that you pump it, and you pump from bent knees. At a 110mm
-  // drop the knees solved to 121/135 deg, and 135 on the back leg reads as a
-  // straight leg in a side frame: standing on a board rather than riding one.
-  // 160mm brings both nearer 110 and puts her weight where a surfskater's is.
-  const hipDrop = 0.160 + c * 0.095;
-  // ---- THE ARMS HANG AT HER SIDES. ----------------------------------------
-  // Checked against how it is actually taught, after the owner rejected the
-  // first two attempts ("the arms still like forward and backward in such
-  // fucking weird positions"): Sikana's skater stance and the beginner guides
-  // all say the same thing — "your arms usually stay by your sides", hanging
-  // naturally, extending only SLIGHTLY for balance, shoulders relaxed.
+  // ================= REBUILT FROM PHOTOGRAPHS, 2026-08-27 =================
   //
-  // Both previous solves reached the hands out to 0.285-0.300m from a 0.37m
-  // shoulder — near full extension, one forward over the nose and one back
-  // past the hip. That is a surf-dance pose, not a cruise, and it is exactly
-  // what he kept seeing. The hands now hang about 0.30m BELOW the shoulder,
-  // barely off the hip, and only open out into the carve.
-  // as a FRACTION OF ARM LENGTH, so "hanging" means hanging on any figure:
-  // 0.94 of full reach is a soft-elbowed hang (~160 deg), 0.80 is the bent,
-  // slightly-open arm of a balancing carve (~125 deg).
-  const outC  = ARM * (0.16 + c * 0.22);   // how far the hands swing off the body
-  const dropC = ARM * (0.94 - c * 0.14);   // ...and lift a little as they do
+  // Every version of this stance before now was built from PROSE — coaching
+  // articles read and turned into numbers — because I believed I could not
+  // look at a picture. I can: an image fetched to disk can be viewed like any
+  // render. Months of this project have done exactly that with its own frames.
+  // The whole afternoon of "stiff and contorted" came out of that one wrong
+  // belief, and the owner had to say so four times.
+  //
+  // The two references, both photographs, in scratchpad/ref/:
+  //
+  //   CRUISING (a man rolling on a longboard, side-on)
+  //     * legs very nearly STRAIGHT. Not a crouch. He is standing.
+  //     * spine UPRIGHT — no forward lean at all
+  //     * arms HANGING at his sides, elbows almost straight, hands by the
+  //       thigh. The "dead arm" I kept designing away from is what cruising
+  //       actually looks like.
+  //     * feet close together and well INBOARD of the trucks
+  //
+  //   CARVING (a slalom rider between cones, from behind)
+  //     * knees deeply bent, hips low, the whole body compressed
+  //     * torso inclined and twisted into the turn
+  //     * arms STRAIGHT OUT AND WIDE, near shoulder height, one leading one
+  //       trailing — wings, not the bent guard I built
+  //
+  // So the pose is not one shape with a crouch dialled in. It is two shapes,
+  // and `c` walks between them. That is also exactly what the owner said when
+  // asked which he wanted: "both".
+  const hipDrop = 0.035 + c * 0.235;
+  // ARMS. Cruise: hanging, a hand's width off the thigh, elbow all but
+  // straight. Carve: thrown out along the shoulder line, nearly horizontal.
+  // `side` is along the shoulder axis (+ toward the leading side), `drop` is
+  // below the shoulder, `fwd` is out in front of the chest — small at both
+  // ends, because in neither photograph does a hand sit in front of the body.
+  const dropC = ARM * (0.94 - c * 0.72);
+  const sideC = ARM * (0.12 + c * 0.74);
+  const fwdC  = ARM * (0.04 + c * 0.10);
+  const SAX = nrm([0.55 + c * 0.55, -0.05 - c * 0.30, 1]);
+  const CF  = [-SAX[2], 0, SAX[0]];
+  const hand = (fwd, side, drop) => [CF[0] * fwd + SAX[0] * side, -drop,
+                                     CF[2] * fwd + SAX[2] * side];
   return {
     pts: {
-      // over the trucks, which sit at z +/-0.375 on a 1.18m deck
-      // ACROSS the deck as well as along it. The ankle sits toward the HEEL
-      // rail so that the shoe — aimed 62/88 deg across by aimFoot() — reaches
-      // the toe rail without hanging over it ("your toes should be placed
-      // right on the edge of the board rather than hanging off",
-      // surfskate.love). The back foot also goes further back: a surfskate's
-      // back foot lives on the tail pocket, and -0.300 left it 121mm forward
-      // of its own truck.
-      'LowerLeg.L_end': [ 0.030, DECK_L,  0.300],
-      'LowerLeg.R_end': [ 0.055, DECK_R, -0.330],
+      // FEET CLOSER TOGETHER. 0.30/-0.33 put them 630mm apart on a 1.55m
+      // figure, out over the trucks — and at that spread one leg has to lock
+      // straight while the other folds, which is the lunge the owner kept
+      // seeing. The photographs have both feet well inboard. 480mm apart.
+      // 550mm apart, not 480. 480 read beautifully but put the back foot
+      // 178mm from its own truck, and data/stancecheck.mjs budgets 140 —
+      // a rider stands OVER the trucks or the board does not turn. The
+      // photograph's feet are inboard because a cruiser deck is long; this
+      // deck's trucks are 750mm apart, so 550 is as close in as the check
+      // allows and still far tighter than the 630 that lunged.
+      'LowerLeg.L_end': [ 0.030, DECK_L,  0.265],
+      'LowerLeg.R_end': [ 0.055, DECK_R, -0.285],
+      // ...AND THE HIPS END UP BETWEEN THEM. There is no knob that moves the
+      // pelvis along the deck — `Body` translates in y only — so pinning it in
+      // z just buys unreachable cost. Narrowing the feet is what centres it:
+      // at 630mm apart the back leg had to reach 400mm behind the pelvis and
+      // locked straight (the lunge); at 480mm both knees share the bend.
       'Hips':           [ null, HIPY - hipDrop, null ],
-      // leading hand a touch forward of the hip, trailing hand a touch behind:
-      // the small natural offset of a body turned across the deck, NOT a reach
-      // (the wrists are NOT here: they hang off wherever the shoulder ends
-      //  up, which is a relative offset — see `hang` below)
-      // AND WHERE THE HEAD ENDS UP, not only where it points. Without this
-      // the solver was free to buy head-direction with a 36-degree fold at
-      // the waist, and did: the first vet frame was a woman bent double.
-      'Head': [0.045, HEADY - hipDrop*0.85 - c*0.02, 0.075 + c*0.055],
+      // Upright over the board when cruising; inclines forward and out over
+      // the toe rail only as she works.
+      // THE CARVE FOLDS AT THE KNEES, NOT AT THE WAIST. First cut put the head
+      // 150mm forward and 55mm lower at full carve on top of a 270mm hip drop,
+      // and she came out bent double, face over the nose, diving off the front
+      // (shots/ridecam/t6.carve-hard.*). In the slalom photograph the rider's
+      // torso is inclined maybe 30 degrees off vertical, no more — the height
+      // he loses is ALL knee. So the head barely travels: it stays near the
+      // shoulders' own line and the legs do the compressing.
+      // ...and 0.055 of forward travel still pitched the chest about 40 deg
+      // off vertical at full lock where the slalom rider sits nearer 30.
+      'Head': [-0.010 - c * 0.045, HEADY - hipDrop * 0.94 - c * 0.010,
+               0.020 + c * 0.032],
     },
-    // WHERE EACH HAND SITS RELATIVE TO ITS OWN SHOULDER, in world axes.
-    // Absolute points fixed to the REST shoulder position were the second
-    // mistake: once the chest turns, a hand pinned in space is no longer at
-    // the side of the body it belongs to, and the arm folds to reach it
-    // (elbow 114 deg on what is meant to be a hanging arm).
-    hang: { L: [ outC, -dropC, ARM * (0.20 + c * 0.10)],
-            R: [-outC, -dropC, -ARM * (0.14 + c * 0.10)] },
-    // SHOULDERS IN LINE WITH THE FEET — the one thing every guide says and
-    // the thing both earlier solves lost. Left foot forward, so the left
-    // shoulder leads: the shoulder line runs along the deck and the chest
-    // faces the toe side. With the arms no longer reaching for anything the
-    // solver had no reason to turn the chest at all and left it square to the
-    // nose, which is a scooter rider, not a skater.
-    // OPENED 2026-08-27, and this is a correction to how the guide was READ.
-    // "Shoulders in line with your feet" is right, and [0.30, 0, 1] obeyed it
-    // almost exactly — 16.7 deg off the deck's long axis. But a shoulder line
-    // along the deck puts the CHEST square across it, and a rider still has to
-    // look where she is going: measured on the shipped build, chest -73.3 deg,
-    // head +5.7, so the NECK was carrying 79 degrees. No neck turns 79 degrees,
-    // and it is why the owner said he could not tell which way she was facing —
-    // from behind the body reads sideways and the head reads forward, two
-    // contradictory cues on one figure.
-    //
-    // A cruising skater does not hold the photo-pose 90 deg; the chest is
-    // QUARTERED toward the direction of travel and the neck does the rest. So
-    // the shoulder line opens to 35 deg off the deck, which puts the chest near
-    // -55 and the neck around 60 — inside what a neck actually does — while
-    // still reading as a stance across the board rather than a scooter rider's
-    // square-on shoulders. The stance is unchanged from the waist down.
-    shoulderAxis: [0.70, 0, 1],
-    // knees: a CEILING, not a target — pinning the feet and the pelvis
-    // already decides how far they fold. All that is left to say is "do not
-    // lock straight", which is the thing the eye reads.
-    knee: { L: D(150 - c*28), R: D(148 - c*28) },
-    // a hanging arm is nearly straight; a balancing one is not. Ceilings, so
-    // the solver may bend more but never lock out.
-    elbow: { L: D(168 - c*38), R: D(168 - c*38) },
-    // the head looks down the road however far the chest has turned away
-    headFwd: [0.10, -0.10 - c*0.10, 1.0],
+    hang: { L: hand(fwdC,        sideC,         dropC),
+            // ...and the trailing hand rides HIGH. In the slalom photograph
+            // both arms are up around shoulder height; ours came out 43mm
+            // below its own target and angled at the tarmac, which is the
+            // limb that kept reading as a lunging leg. 0.55 puts it level
+            // with the leading one.
+            // ...and the multiplier has to RIDE ON c, not sit flat. At a
+            // flat 0.55 it also lifted the cruising hand off her thigh, where
+            // the photograph plainly has it hanging — cruise cost went 0.02
+            // -> 0.17 in one edit. Level with the leading hand at full carve,
+            // identical to it at rest.
+            R: hand(fwdC * 0.85, -sideC * 0.95, dropC * (1.0 - c * 0.62)) },
+    shoulderAxis: [0.55 + c * 0.55, -0.05 - c * 0.30, 1],
+    // KNEES: a ceiling, and at cruise it is nearly straight because the
+    // photograph is nearly straight. 168 standing, 104 in the carve.
+    knee: { L: D(168 - c * 64), R: D(166 - c * 62) },
+    // ELBOWS STAY LONG AT BOTH ENDS. Hanging arms are straight; thrown-wide
+    // arms are straight. The 118-degree floor I put under them was invented
+    // to stop a fold that only existed because the hands were being asked to
+    // sit in front of the chest, which no reference does.
+    // ELBOWS: long at cruise, ALLOWED TO BEND in the carve. The 150-degree
+    // floor held at both ends was wrong and it is what pointed the trailing
+    // hand at the tarmac: the thrown-wide target sits about 0.87 of full reach
+    // away, which a straight arm cannot land on — it needs roughly 140 — so
+    // the solver obeyed the floor, kept the arm straight, and let the hand
+    // fall where it fell. A floor that forbids the target is not a limit on
+    // the pose, it is a bug in the constraint.
+    elbow: { L: D(174 - c * 10), R: D(174 - c * 10) },
+    elbowMin: { L: D(152 - c * 30), R: D(152 - c * 32) },
+    headFwd: [-0.10, -0.06 - c * 0.16, 1.0],
   };
 };
 
@@ -190,6 +220,12 @@ const cost = (S, seed, wReg) => (r, v) => {
     e += ((wr.x-sh.x-h[0])**2 + (wr.y-sh.y-h[1])**2 + (wr.z-sh.z-h[2])**2) * 6;
     const el = ang(r.world('UpperArm.'+s).toArray(), r.world('LowerArm.'+s).toArray(), r.world('Wrist.'+s).toArray());
     e += Math.max(0, el - S.elbow[s])**2 * 0.8;
+    // ...AND THE FLOOR, added 2026-08-27. Without it the hand target is the
+    // only thing the arm answers to, and a folded elbow reaches any point a
+    // straight one can — so raising the hands to waist level bought itself an
+    // 88-degree elbow instead of a shoulder that moved. Weighted the same as
+    // the ceiling: this is one band, not a preference.
+    if (S.elbowMin) e += Math.max(0, S.elbowMin[s] - el)**2 * 0.8;
     // THE KNEE IS NOT GIVEN AN ANGLE, IT IS GIVEN A FLOOR. Pinning the feet
     // AND the pelvis already determines how far the knee has to fold — an
     // independent angle target just fights them, and it won: the pelvis
@@ -245,8 +281,19 @@ const report = (tag, res, S) => {
     console.log('    shoulder axis', v.map(x=>(x/L).toFixed(2)).join(','), ' want', nrm(S.shoulderAxis).map(x=>x.toFixed(2)).join(',')); }
   for (const s of ['L','R'])
     console.log(`    elbow${s} ${(ang(r.world('UpperArm.'+s).toArray(), r.world('LowerArm.'+s).toArray(), r.world('Wrist.'+s).toArray())*180/Math.PI).toFixed(0)}deg  knee${s} ${(ang(r.world(KNEE[s][0]).toArray(), r.world(KNEE[s][1]).toArray(), r.world(KNEE[s][2]).toArray())*180/Math.PI).toFixed(0)}deg`);
-  const hq = r.worldQ('Head'); const fv = new r.THREE.Vector3(0,1,0).applyQuaternion(hq);
-  console.log('    head fwd', fv.toArray().map(x=>x.toFixed(2)).join(','));
+  // THE FACE IS LOCAL +Z, NOT +Y — the same measurement bug the cost function
+  // above records having made once already, still live in the REPORT: this
+  // line printed the top of her skull and captioned it "head fwd", so every
+  // solve since has been signed off against a number that described which way
+  // she was standing up. Read the same axis the cost is graded on.
+  console.log('    Head', f('Head'), ' want', (S.pts.Head||[]).map(x=>x.toFixed(3)).join(','));
+  { const h=r.world('Hips'), hd=r.world('Head');
+    const dx=hd.x-h.x, dy=hd.y-h.y, dz=hd.z-h.z;
+    console.log('    spine tilt', (Math.atan2(Math.hypot(dx,dz), dy)*180/Math.PI).toFixed(1),
+      'deg off vertical  (dx',dx.toFixed(3),'dz',dz.toFixed(3),')'); }
+  const hq = r.worldQ('Head'); const fv = new r.THREE.Vector3(0,0,1).applyQuaternion(hq);
+  console.log('    head fwd', fv.toArray().map(x=>x.toFixed(2)).join(','),
+    ' want', nrm(S.headFwd).map(x=>x.toFixed(2)).join(','));
 };
 
 console.log('UNIT (m per bone unit)', UNIT.toFixed(2), ' ARM', ARM.toFixed(3));
@@ -257,10 +304,10 @@ const S0 = STANCE(0);
 // already documents from the other direction: feet and pelvis have to move
 // together or the knees pay for it. Both figures below are the old ones plus
 // the 55mm the feet came down.
-const A = solve(buildRig, KNOBS, cost(S0), { passes: 110, step: 0.4, pre: pre(0.160) });
+const A = solve(buildRig, KNOBS, cost(S0), { passes: 110, step: 0.4, pre: pre(0.035) });
 report('crouch 0', A, S0);
 const S1 = STANCE(1);
-const B = solve(buildRig, KNOBS.map((k,i)=>k.concat([A.v[i]])), cost(S1, A.v, 0.05), { passes: 110, step: 0.3, pre: pre(0.255) });
+const B = solve(buildRig, KNOBS.map((k,i)=>k.concat([A.v[i]])), cost(S1, A.v, 0.05), { passes: 110, step: 0.3, pre: pre(0.270) });
 report('crouch 1', B, S1);
 console.log('\nSTAND', JSON.stringify(A.v.map(x=>+x.toFixed(4))));
 console.log('DELTA', JSON.stringify(B.v.map((x,i)=>+(x-A.v[i]).toFixed(4))));

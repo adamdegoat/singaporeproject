@@ -8,7 +8,7 @@ import { TOUCH } from './input.js';
 import { ROAD_END_EXT } from './roads.js';
 import { buildQTrees } from './qtrees.js';
 import { scatterVerges, scatterFoundations } from './qground.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texAshlar, texSalvage, texBoard, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws, texBoomBand} from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texAshlar, texSalvage, texBoard, texPoleFrame, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws, texBoomBand} from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV,
          constructionSite } from './landmarks.js';
 
@@ -74,10 +74,19 @@ const COURSING = {
 // so it gets its own drawing and ignores the tint entirely (the brief's whole
 // point is that no two sheets match). One map, shared.
 let _SALVAGE = null;
+// The Lost World is not coursed anything either — it is a LASHED POLE FRAME
+// over board infill (§5A: "the zone's single strongest motif"), drawn in its
+// own stained-timber colours, so it ignores the zone tint the same way the
+// salvage patchwork does. One map, shared.
+let _POLE = null;
 const coursedTex = (tint, kind) => {
   if (kind === 'salvage') {
     if (!_SALVAGE) _SALVAGE = texSalvage();
     return _SALVAGE;
+  }
+  if (kind === 'pole') {
+    if (!_POLE) _POLE = texPoleFrame();
+    return _POLE;
   }
   if (kind === 'board') {
     const bk = 'b' + tint;
@@ -3502,7 +3511,10 @@ export async function buildBuildings(world, data, Y = null) {
   // Sci-Fi City (ETFE and diagrid) and Minion Land (a cartoon).
   const _COURSED_ZONE = {
     'Ancient Egypt': 'ashlar', 'New York': 'brick', 'Far Far Away': 'limestone',
-    WaterWorld: 'salvage', 'The Lost World': 'board',
+    // 'The Lost World' WAS 'board' and board is the zone's SECONDARY material.
+    // §5A names the pole frame first and calls it the strongest motif; a wall
+    // of pale sawn board was the infill standing in for the structure.
+    WaterWorld: 'salvage', 'The Lost World': 'pole',
   };
   const _zoneOf = (pts) => {
     if (!_ussZones.length) return null;
@@ -7064,6 +7076,203 @@ export class TreeField {
   }
 }
 
+// NOTHING ON THIS ISLAND IS SEATED ON THE GROUND IT STANDS ON (2026-08-28).
+//
+// Shadows are OFF, by the owner's own A/B — "make all smooth for gameplay",
+// main.js:100 — and that decision stands; it bought 3 fps on the phone and it
+// is not being reopened here. What it costs is the ONE cue that says a thing
+// is standing on a surface rather than pasted in front of it: the darkening in
+// the angle where a wall meets the floor. Every vet frame of this world shows
+// buildings meeting the ground on a hard bright line. shots of tanjong-wall,
+// cove-villa and lostworld-timber are all the same picture of it.
+//
+// A CONTACT SHADE IS NOT A SHADOW. It does not know where the sun is, it never
+// moves, it is the same on every device and it is the same in every frame —
+// which is the whole reason it can be geometry instead of a shadow map, and
+// why the golden gate stays deterministic with it in.
+//
+// THE FIRST ATTEMPT BAKED IT INTO THE TERRAIN'S VERTEX COLOUR and it cannot
+// work, for a reason worth writing down because it is invisible until you
+// measure it: THE GROUND MESH IS FAR TOO COARSE. The heightfield is 35m cells
+// and 8,028 of the island's 13,064 cells are drawn at subdiv 1 — one quad, 35m
+// across. A 2.6m halo has nowhere to live in that mesh; the run reported 7,779
+// vertices touched out of 150,381, and what it drew was 35m smears, not
+// contact. (A byte-per-vertex attribute plus its carry through consolidate was
+// written, run, measured and deleted. The measurement is the useful part.)
+//
+// So it is drawn: one quad strip per footprint edge, mitred at the corners so
+// convex angles do not double-darken, MULTIPLY blended, white at the outer lip
+// so it fades to no change at all. Batched into 240m tiles and flagged
+// tileBatch, so the LOD pass culls them past 500m like every other flat
+// detail. `?noshade` turns it off for an A/B.
+export function buildContactShade(world, data) {
+  // THREE LIPS, NOT TWO, AND THE MIDDLE ONE IS THE WHOLE DIFFERENCE. A single
+  // quad interpolates linearly, and a linear ramp ending flat has a kink in it
+  // that the eye reads as a drawn line running parallel to the wall — a Mach
+  // band, photographed on the first cut at Quayside Isle. Three lips give the
+  // falloff a curve: most of the darkness is spent in the first metre, which
+  // is also where contact actually lives.
+  //
+  // The inner lip is pushed 0.25m INSIDE the footprint because a wall is not
+  // drawn on its footprint line — plinths, skirts and facade thickness all put
+  // fabric a little outside it, and a band that starts exactly on the line
+  // leaves a lit sliver at the very base, which is the one place this effect
+  // exists to darken.
+  const LIPS = [[-0.25, 0.62], [0.85, 0.80], [2.4, 1.0]];
+  const TILE = 240;
+  const tiles = new Map();
+  let rings = 0, quads = 0, orphan = 0;
+  const seaY = SEA_LEVEL[0];
+  const SOLIDQ = typeof window !== 'undefined' ? window.__solid : null;
+  for (const b of (data.buildings || [])) {
+    let p = b.p;
+    if (!p || p.length < 3) continue;
+    // A FOOTPRINT IS NOT ALWAYS A WALL, and the first cut drew bands across
+    // open plaza inside Universal where nothing stands at all (photographed at
+    // The Lost World, -1075,12520: two dark ribbons crossing bare paving).
+    // Three kinds of footprint have no wall meeting the floor along their
+    // outline, and they are the same three city.js already pages out when it
+    // decides that covered ground is paved rather than mown:
+    //   b.og            an open ground storey — columns, not walls
+    //   b.roof / bt     a canopy, which is a roof on posts
+    //   b.mh > 1        a LIFTED mass; the ground under it is open
+    if (b.og || b.roof || b.bt === 'roof' || (b.mh && b.mh > 1)) continue;
+    // rings arrive both closed and open; a repeated last point makes a
+    // zero-length edge whose normal is NaN, and one NaN vertex takes the
+    // whole merged tile out of the frustum test
+    if (p.length > 3 && p[0][0] === p[p.length - 1][0] && p[0][1] === p[p.length - 1][1]) {
+      p = p.slice(0, -1);
+    }
+    const n = p.length;
+    if (n < 3) continue;
+    // WHICH WAY IS OUT. Taken from the ring's own signed area rather than
+    // assumed: OSM ways are not consistently wound, and a band pushed the
+    // wrong way lies UNDER the building where nobody can see it — a silent
+    // half-failure, which is the kind this project keeps paying for.
+    let area2 = 0;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      area2 += p[j][0] * p[i][1] - p[i][0] * p[j][1];
+    }
+    const sgn = area2 > 0 ? 1 : -1;
+    const nx = new Float64Array(n), nz = new Float64Array(n);   // outward normal of edge i -> i+1
+    let ok = true;
+    for (let i = 0; i < n; i++) {
+      const a = p[i], c = p[(i + 1) % n];
+      const dx = c[0] - a[0], dz = c[1] - a[1];
+      const L = Math.hypot(dx, dz);
+      if (!(L > 1e-6)) { ok = false; break; }
+      nx[i] = sgn * dz / L; nz[i] = -sgn * dx / L;
+    }
+    if (!ok) continue;
+    const ox = new Float64Array(n), oz = new Float64Array(n);   // mitred offset at vertex i
+    for (let i = 0; i < n; i++) {
+      const k = (i + n - 1) % n;
+      let mx = nx[k] + nx[i], mz = nz[k] + nz[i];
+      const d = 1 + (nx[k] * nx[i] + nz[k] * nz[i]);
+      // a spike thinner than ~25 degrees would throw its mitre metres out;
+      // those corners get the bevel a plain average gives instead
+      if (d > 0.1) { mx /= d; mz /= d; } else {
+        const L2 = Math.hypot(mx, mz) || 1; mx /= L2; mz /= L2;
+      }
+      ox[i] = mx; oz[i] = mz;          // unit mitre; each lip scales it
+    }
+    rings++;
+    for (let i = 0; i < n; i++) {
+      const a = p[i], c = p[(i + 1) % n];
+      const ay = drawnGroundAt(a[0], a[1]), cy = drawnGroundAt(c[0], c[1]);
+      // a wall standing in water gets no contact shade — there is no floor
+      if (seaY != null && ay < seaY + 0.15 && cy < seaY + 0.15) continue;
+      const j = (i + 1) % n;
+      // IS THERE ACTUALLY A WALL ALONG THIS EDGE? The footprint is what the
+      // map says; what the eye sees is what the recipes DREW, and on the USS
+      // show buildings those are not the same outline. Photographed at The
+      // Lost World: two dark ribbons running across bare plaza, each of them a
+      // real edge of a real 1,695 m2 footprint whose drawn shed sits inside it.
+      //
+      // Asked of the collision grid rather than of the data, because the
+      // collision grid is rasterised FROM THE DRAWN MESHES — it is the one
+      // record of where fabric ended up rather than where it was specified.
+      // (This is why the whole pass runs after the solid grid, and it is the
+      // second reason after the material one.) Sampled a little inside the
+      // line, since the grid is 0.75m cells and the wall straddles the edge.
+      if (SOLIDQ) {
+        const mx2 = (a[0] + c[0]) / 2, mz2 = (a[1] + c[1]) / 2;
+        const inx = -(nx[i]), inz = -(nz[i]);
+        let hit = false;
+        for (const s2 of [0.35, 0.9]) {
+          if (SOLIDQ(mx2 + inx * s2, mz2 + inz * s2)
+            || SOLIDQ(a[0] + inx * s2, a[1] + inz * s2)
+            || SOLIDQ(c[0] + inx * s2, c[1] + inz * s2)) { hit = true; break; }
+        }
+        if (!hit) { orphan++; continue; }
+      }
+      const key = Math.floor(a[0] / TILE) + ',' + Math.floor(a[1] / TILE);
+      let t = tiles.get(key);
+      if (!t) tiles.set(key, t = { pos: [], col: [], idx: [] });
+      const v0 = t.pos.length / 3;
+      // 0.075 clears the carriageway (terrain + 0.061) and the footway
+      // (+0.024), so the shade lands on the pavement beside a building and not
+      // under it. Every lip takes its own ground height, so the band follows a
+      // slope instead of cutting into it.
+      for (let L = 0; L < LIPS.length; L++) {
+        const [d, v] = LIPS[L];
+        const px1 = a[0] + ox[i] * d, pz1 = a[1] + oz[i] * d;
+        const px2 = c[0] + ox[j] * d, pz2 = c[1] + oz[j] * d;
+        t.pos.push(px1, (L === 0 ? ay : drawnGroundAt(px1, pz1)) + 0.075, pz1,
+                   px2, (L === 0 ? cy : drawnGroundAt(px2, pz2)) + 0.075, pz2);
+        t.col.push(v, v, v, v, v, v);
+      }
+      for (let L = 0; L < LIPS.length - 1; L++) {
+        const r = v0 + L * 2;
+        t.idx.push(r, r + 2, r + 1, r + 1, r + 2, r + 3);
+        quads++;
+      }
+    }
+  }
+  if (!tiles.size) return { contactTiles: 0, contactRings: 0, contactQuads: 0, contactOrphanEdges: orphan };
+  // ONE material for the whole island: MULTIPLY, so the outer lip at pure
+  // white is arithmetically no change and the band needs no alpha and no
+  // sorting against itself. depthWrite off because it is a decal lying on a
+  // surface that is already in the depth buffer.
+  //
+  // premultipliedAlpha IS NOT OPTIONAL HERE, and leaving it off does not
+  // throw — three.js writes "MultiplyBlending requires
+  // material.premultipliedAlpha = true" to the console and then LEAVES
+  // WHATEVER BLEND FUNC WAS ALREADY BOUND. The band drew as flat 214-grey
+  // paint over the ground: not a shade, not transparent, just opaque strips
+  // beside every building, and nothing errored. (Measured: the ground pixel
+  // read (135,143,110) with the band off and (214,214,214) with it on —
+  // exactly sRGB of the 0.66 vertex colour, which is what "no blending at
+  // all" looks like.) Alpha is 1 everywhere, so premultiplied costs nothing
+  // and the blend is exactly src * dst.
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, vertexColors: true, transparent: true,
+    blending: THREE.MultiplyBlending, premultipliedAlpha: true, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  });
+  mat.name = 'contactShade';
+  for (const [, t] of tiles) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(t.pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(t.col, 3));
+    g.setIndex(t.idx);
+    g.computeBoundingSphere();
+    const m = new THREE.Mesh(g, mat);
+    m.name = 'contactShade';
+    m.renderOrder = -1;             // after the opaque ground, before the props
+    m.matrixAutoUpdate = false;
+    // flat and under 4m, so registerLod() takes it; 170m rather than the
+    // shared 500m because this is a 2.4m band of grey on the floor and it has
+    // nothing left to say at a distance. Measured on the hot views: at 500m it
+    // cost 29 draws of 690, at 170m it costs a handful.
+    m.userData.tileBatch = true;
+    m.userData.lodFar = 170;
+    world.add(m);
+  }
+  return { contactTiles: tiles.size, contactRings: rings, contactQuads: quads,
+    contactOrphanEdges: orphan };
+}
+
 export function aoPatch(world, x, z, size) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size), MAT.ao);
   m.rotation.x = -Math.PI / 2; m.position.set(x, TERRAIN.at(x, z) + 0.17, z);
@@ -7128,6 +7337,10 @@ const SEA_SINK = -2.0;                            // terrain.py's open-water lev
 // channel polygon levelled at 1.6 against a sea sheet at 2.18, which puts a
 // 0.6m step across water that is one body in life)
 const SEA_LEVEL = [null];
+// ?flatsea puts the sea back on one flat normal, so the swell can be A/B'd for
+// fill-rate on the phone profile without editing the file. Same standing as
+// ?noshade and ?rich.
+const SEA_FLAT = typeof location !== 'undefined' && /[?&]flatsea/.test(location.search);
 function buildSea(world) {
   const g = TERRAIN.grid && TERRAIN.grid();
   if (!g) return 0;
@@ -7209,6 +7422,47 @@ function buildSea(world) {
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>',
                  '#include <common>\nvarying vec3 vSeaW;\nuniform sampler2D uShore;\nuniform vec4 uGrid;')
+        // THE SEA IS TWO TRIANGLES AND ONE FLAT NORMAL, WHICH IS WHY IT READS
+        // AS LINO (2026-08-28).
+        //
+        // Ranked by flat-cell fraction over the 46 golden frames, the four
+        // emptiest views on this island are all sea: siloso-lagoon 89.8%,
+        // headland-sea 89.3%, groyne-islet 85.7%, waterline 80.8%. The colour
+        // is right and the swell texture is right — what is missing is that
+        // every pixel of a kilometre of water shares ONE normal, so the
+        // material's specular term is one hotspot in one place and the rest is
+        // a matte plane. Water is legible almost entirely by its highlights.
+        //
+        // So the normal is perturbed from WORLD POSITION: two crossed
+        // wavelengths, no time uniform, no vertex count, no map. Position-keyed
+        // keeps the golden gate deterministic and costs no memory. It is a
+        // fragment-only change to a mesh with six vertices.
+        //
+        // FADED OUT WITH DISTANCE, and that is not an optimisation. A slope
+        // pattern finer than a pixel does not average to calm water, it
+        // sparkles at whatever the rasteriser happens to hit — the same
+        // crawling the slab joints were given fwidth() to avoid. Past ~700m
+        // the sea goes back to its flat normal, which at that range is what
+        // haze and the horizon want anyway.
+        .replace(SEA_FLAT ? '\u0000never' : '#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+        {
+          float swd = length(vSeaW - cameraPosition);
+          float swamp = 1.0 - smoothstep(180.0, 700.0, swd);
+          if (swamp > 0.02) {
+            vec2 sw = vSeaW.xz;
+            // ~11m swell and a ~3.7m chop across it, at an angle to each other
+            // so the pattern does not read as corduroy
+            float a1 = sin(sw.x * 0.55 + sw.y * 0.31);
+            float b1 = cos(sw.x * 0.31 - sw.y * 0.55);
+            float a2 = sin(sw.x * 1.70 - sw.y * 1.10);
+            float b2 = cos(sw.x * 1.10 + sw.y * 1.70);
+            vec3 swn = normalize(vec3((a1 * 0.17 + a2 * 0.07) * swamp, 1.0,
+                                      (b1 * 0.17 + b2 * 0.07) * swamp));
+            // world -> view: the sheet is axis-aligned and unrotated, so the
+            // view matrix alone is the whole transform
+            normal = normalize((viewMatrix * vec4(swn, 0.0)).xyz);
+          }
+        }`)
         .replace('#include <map_fragment>', `#include <map_fragment>
         {
           vec2 uvg = clamp((vSeaW.xz - uGrid.xy) / uGrid.zw, 0.0, 1.0);

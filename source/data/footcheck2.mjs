@@ -27,7 +27,7 @@ const PORT = process.env.SG_PORT || 8933;
 const browser = await chromium.launch({ args: ['--use-gl=angle'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
 page.on('pageerror', (e) => console.log('  page error:', e.message));
-await page.goto(`http://localhost:${PORT}/?district=sentosa&reseed=1`, { waitUntil: 'load' });
+await page.goto(`http://localhost:${PORT}/?scene=sentosa&reseed=1`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__teleport && window.__ready === true,
   null, { polling: 300, timeout: 300000 });
 await page.evaluate(() => window.__ui(false));

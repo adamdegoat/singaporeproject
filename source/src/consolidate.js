@@ -415,11 +415,21 @@ export async function consolidate(root, Y = null) {
     // Batched by material, and `vertexColors` is part of the material key, so
     // every part in a batch either has colour or none does; the fallback fills
     // white, which multiplies to no change.
+    // ...AND SO DOES THE PAVING FLAG, for exactly the reason written above.
+    // The note about colour ends "a merge that drops an attribute it does not
+    // recognise is a merge that decides what the world is allowed to have",
+    // and then the fix was applied to colour ALONE. `aPaved` (terrain.js, the
+    // slab joints) is the next attribute that had to come through here, and it
+    // did not: the ground kept its colour, lost its paving byte, and the slab
+    // grid drew on nothing anywhere in the world while the shader that draws
+    // it compiled perfectly. Carried the same way, one byte a vertex.
     const anyCol = parts.some((g) => g.attributes.color);
+    const anyPav = parts.some((g) => g.attributes.aPaved);
     const pos = new Float32Array(total * 3);
     const nor = new Float32Array(total * 3);
     const uv = new Float32Array(total * 2);
     const col = anyCol ? new Float32Array(total * 3) : null;
+    const pav = anyPav ? new Uint8Array(total) : null;
     let o3 = 0, o2 = 0;
     for (const g of parts) {
       const n = g.attributes.position.count;
@@ -430,6 +440,9 @@ export async function consolidate(root, Y = null) {
         if (g.attributes.color) col.set(g.attributes.color.array.subarray(0, n * 3), o3);
         else col.fill(1, o3, o3 + n * 3);
       }
+      // a part with no flag is not paved — 0 is the same answer the missing
+      // attribute would have given the shader, so nothing changes for it
+      if (pav && g.attributes.aPaved) pav.set(g.attributes.aPaved.array.subarray(0, n), o3 / 3);
       o3 += n * 3; o2 += n * 2;
       g.dispose();
     }
@@ -469,6 +482,7 @@ export async function consolidate(root, Y = null) {
       }
       geo.setAttribute('color', new THREE.Uint16BufferAttribute(c16, 3, true));
     }
+    if (pav) geo.setAttribute('aPaved', new THREE.Uint8BufferAttribute(pav, 1, true));
     geo.computeBoundingSphere();
 
     const first = list[0];

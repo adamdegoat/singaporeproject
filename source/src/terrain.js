@@ -50,6 +50,29 @@ const NOT_GREEN = new Set(['pool', 'track', 'deck', 'gbunker', 'ghazard',
   'pv_holly', 'pv_ny', 'pv_scifi', 'pv_egypt', 'pv_lw', 'pv_ffa',
   'pv_minion', 'pv_ww']);
 
+// GROUND THAT IS LAID, NOT GROWN — the classes that get slab joints drawn on
+// them by the ground shader (see groundMat.onBeforeCompile in main.js).
+//
+// WHY THIS EXISTS, and it is a DATA answer to a question that was mistaken for
+// a graphics one. A slab grid was built on 2026-08-27, measured, and reverted,
+// because it keyed on the `plaza` class and the huge blank aprons in Universal
+// are not `plaza` — photographed at -1201,12480 the slabs appeared only on
+// small mapped polygons at the frame edge while the forecourt that makes the
+// frame score 63% flat stayed exactly as it was. The handover wrote it up as
+// "ground with NO CLASS" and left the question for the owner.
+//
+// It is not classless. data/usspaving.py has covered that whole floor since
+// 2026-08-21 — one `pv_*` cell per themed zone, Voronoi-split from the park
+// ring — and NOT_GREEN directly above has listed those cells as pavement ever
+// since. The reverted experiment simply asked the wrong class. Everything in
+// this set is already declared pavement one line up, or is the `plaza` class
+// the first attempt used; nothing new is being asserted about any ground.
+//
+// `deck` is deliberately absent: a boardwalk is boards, and it has its own
+// planking. So is `track`.
+const SLABBED = new Set(['plaza', 'pv_holly', 'pv_ny', 'pv_scifi', 'pv_egypt',
+  'pv_lw', 'pv_ffa', 'pv_minion', 'pv_ww']);
+
 // PARITY NEEDS ONLY THE EDGES WHOSE z-SPAN CROSSES THE QUERY'S z. waterFloor
 // and greenAt ran the even-odd walk over EVERY vertex of every candidate ring
 // — the strait mega-ring included — once per drawn terrain vertex, and the CPU
@@ -1349,6 +1372,7 @@ export class Terrain {
         const verts = new Map();   // "qx,qz" -> index within THIS tile
         const pos = [], idx = [], col = [];
         const clsOf = [];          // canopy class per vertex, for applyCanopy()
+        const pavOf = [];          // is this a LAID floor — see SLABBED
         // one tint per green kind; white leaves the ground material untouched
         // Green reads as green; the built-up kinds only shift the sand a little,
         // because the point is to stop a condo garden, a car-park apron and a
@@ -1757,6 +1781,13 @@ pv_ny:     [0.42, 0.42, 0.43],  // asphalt, §2
             const cls = this.gGrid ? this.greenAt(x, z) : null;
             clsOf.push(cls === 'wood' ? 2 : cls === 'scrub' ? 1
               : (!cls || CANOPYABLE.has(cls)) ? 0 : 255);
+            // ...and whether it is a LAID floor, which the shader draws joints
+            // on. One byte a vertex, uploaded normalized, riding beside the
+            // canopy byte above rather than as a second full-fat float
+            // attribute: the reverted experiment spent a Float32 on 493k
+            // vertices for this and the size of that bill was half of why it
+            // was reverted. A Uint8 is a quarter of it.
+            pavOf.push(SLABBED.has(cls) ? 255 : 0);
             if (false) {
               // THE CANOPY IS THE WOOD POLYGON, NOT THE SURVEYED TREES.
               //
@@ -1805,6 +1836,8 @@ pv_ny:     [0.42, 0.42, 0.43],  // asphalt, §2
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
         geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        geo.setAttribute('aPaved',
+          new THREE.Uint8BufferAttribute(Uint8Array.from(pavOf), 1, true));
         geo.setIndex(idx);
         geo.computeVertexNormals();
         // kept so applyCanopy() can shade this tile once the forest exists

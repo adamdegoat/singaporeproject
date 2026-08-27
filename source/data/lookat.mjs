@@ -14,7 +14,7 @@ import { mkdirSync } from 'fs';
 
 const OUT = 'shots/street';
 mkdirSync(OUT, { recursive: true });
-const SCENE = process.env.SG_SCENE || 'world';
+const SCENE = process.env.SG_SCENE || 'sentosa';
 const TAG = process.env.SG_TAG || 'look';
 const FOV = +(process.env.SG_FOV || 55);
 
@@ -40,12 +40,20 @@ page.on('pageerror', (e) => console.log('  page error:', e.message));
 // came back 174,238 and 174,239 bytes, which is one frame twice — the flag was
 // being passed to a script that had nowhere to put it.
 const XPARAMS = process.env.SG_XPARAMS ? '&' + process.env.SG_XPARAMS : '';
-// `?scene=<name>` IS DEAD. This file asked for `?dpr=1&scene=world`, which no
-// district loader answers any more, so __ready never came true and every run
-// ended in a five-minute timeout with no frame. The working shape — the one
-// golden.mjs and avatar.mjs use — is `?district=<name>`. Cost two timeouts on
-// 2026-08-27, one here and one in a new tool that copied this line.
-await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/?district=${SCENE === 'world' ? 'sentosa' : SCENE}&reseed=1${XPARAMS}`
+// THE DEFAULT WAS THE BUG, NOT THE PARAMETER. This file asked for
+// `?dpr=1&scene=world`, ran for five minutes and timed out with no frame, and
+// my first diagnosis — "`?scene=` is dead, the working shape is `?district=`"
+// — was WRONG, and wrong in the way this project keeps warning about: it fit
+// the evidence and named the wrong cause.
+//
+// main.js:1913 reads `P.get('scene') || 'sentosa'`. So `?scene=` IS the live
+// parameter, `?district=` is not read at all, and the tools that pass
+// `?district=sentosa` work only because the DEFAULT is sentosa. What broke
+// here was the value: SCENE defaulted to 'world', and there is no district
+// called world, so __ready never came true.
+//
+// Fixed at the default. Any real scene id still works through SG_SCENE.
+await page.goto(`http://localhost:${process.env.SG_PORT || 8933}/index.html?dpr=1&scene=${SCENE}${XPARAMS}`
   + (process.env.SG_EXTRA ? '&' + process.env.SG_EXTRA : ''),
   { waitUntil: 'load' });
 await page.waitForFunction(() => window.__teleport && window.__ready === true,

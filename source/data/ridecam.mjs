@@ -91,11 +91,13 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.log('  page error:', e.message));
 const XPARAMS = process.env.SG_XPARAMS ? '&' + process.env.SG_XPARAMS : '';
-// THE URL SHAPE IS `?district=sentosa`, not lookat.mjs's `?scene=world`.
-// Copying lookat's line cost one 5-minute timeout: __ready never comes true
-// because no district is ever asked for. Streaming is left ON (no `nostream`)
-// because she has to RIDE through the world, not stand in a pre-built cube.
-await page.goto(`http://localhost:${PORT}/?district=sentosa&reseed=1${XPARAMS}`, { waitUntil: 'load' });
+// `?scene=` IS THE PARAMETER (main.js:1913 reads `P.get('scene') || 'sentosa'`).
+// Copying lookat.mjs's line cost one 5-minute timeout, because ITS default was
+// `scene=world` and there is no district called world. `?district=` is not read
+// at all — tools that pass it work only on the sentosa default, which is a
+// coincidence worth not relying on. Streaming stays ON (no `nostream`) because
+// she has to RIDE through the world, not stand in a pre-built cube.
+await page.goto(`http://localhost:${PORT}/?scene=sentosa&reseed=1${XPARAMS}`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__teleport && window.__ready === true,
   null, { polling: 300, timeout: 300000 });
 await page.evaluate(() => window.__ui(false));

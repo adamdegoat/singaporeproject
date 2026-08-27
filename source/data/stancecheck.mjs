@@ -52,7 +52,8 @@ const WANT = (process.env.SG_STATES || 'cruise,carve,fast,push').split(',');
 const browser = await chromium.launch({ args: ['--use-gl=angle'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
 page.on('pageerror', (e) => console.log('  page error:', e.message));
-await page.goto(`http://localhost:${PORT}/?district=sentosa&reseed=1`, { waitUntil: 'load' });
+// `?scene=` is the live parameter; `?district=` is ignored (main.js:1913).
+await page.goto(`http://localhost:${PORT}/?scene=sentosa&reseed=1`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__teleport && window.__ready === true,
   null, { polling: 300, timeout: 300000 });
 const START = (process.env.SG_START || '1180,7250,0').split(',').map(Number);
