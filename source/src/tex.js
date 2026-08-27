@@ -1223,6 +1223,124 @@ export function texAshlar(base = 0x938778, courses = 3, per = 2, tileM = 3.6, jo
   return t;
 }
 
+// SUNKEN HIEROGLYPH REGISTER BAND — Ancient Egypt, §4 relief item 2.
+//
+// research/universal-zones.md §4, "Relief vocabulary", item 2:
+//   "Sunken hieroglyph register bands — horizontal strips of cartouches and
+//    glyphs at parapet level and at door head level, in sunken relief with
+//    faded pigment."
+// The zone already has its coursed ashlar (2026-08-27) and its crown; this is
+// the band that runs along the top of the wall, and it is the thing that says
+// EGYPT rather than "large sandstone blocks".
+//
+// SUNKEN relief, not raised, and that is the whole drawing: the glyph is cut
+// INTO the stone, so its outline is a shadow on the sun side and a lit arris
+// on the other, and the pigment inside it is faded almost out. A band drawn as
+// bright painted symbols on a wall is a decal; a band drawn as cut stone with
+// colour left in the cuts is carving.
+//
+// NOTHING HERE IS A REAL HIEROGLYPH AND NOTHING IS BRANDED. They are the
+// ordinary furniture of the style — cartouche ovals, seated figures, birds,
+// reeds, water lines, ankhs, eyes — drawn as blocky glyph-shaped marks. The
+// brief's own rule for this zone is the theme's architecture, not any park's
+// artwork.
+export function texGlyphBand(base = 0xb9a678) {
+  const r2 = rng(0x676c7970), rand = (a, b) => a + r2() * (b - a);
+  const W = 256, H = 64;                 // 2.4m x 0.6m of wall
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.fillStyle = hex(base); x.fillRect(0, 0, W, H);
+  // the bead-and-torus lines that close the register top and bottom (§4.7
+  // names the pairing; every band in the zone's photographs has them)
+  const rule = (y, h2) => {
+    x.fillStyle = 'rgba(58,44,26,0.42)'; x.fillRect(0, y, W, h2);
+    x.fillStyle = 'rgba(255,246,224,0.28)'; x.fillRect(0, y + h2, W, 1);
+  };
+  rule(2, 2.2); rule(H - 6, 2.2);
+  // FADED PIGMENT, and the point is FADED. Sampled from the brief's palette
+  // for the zone's few saturated accents; each glyph takes one and then most
+  // of it is washed back out by the stone drawn over it below.
+  const INK = ['#7d6a3a', '#5d6f63', '#8a5238', '#4f5a6b', '#6d5c33'];
+  const gy = 9, gh = H - 18;
+  let px = 3;
+  while (px < W) {
+    const kind = (r2() * 6) | 0;
+    const gw = kind === 0 ? rand(20, 26) : rand(8, 15);
+    const ink = INK[(r2() * INK.length) | 0];
+    x.save();
+    x.translate(px, gy);
+    x.fillStyle = ink;
+    if (kind === 0) {
+      // a cartouche: an oval ring with two or three marks inside it
+      x.strokeStyle = ink; x.lineWidth = 2.2;
+      x.beginPath();
+      if (x.roundRect) x.roundRect(1, 1, gw - 3, gh - 2, (gh - 2) / 2);
+      else x.rect(1, 1, gw - 3, gh - 2);
+      x.stroke();
+      for (let i = 0; i < 3; i++) x.fillRect(4 + i * 0.5, 5 + i * (gh - 12) / 3, gw - 9, 2.4);
+    } else if (kind === 1) {
+      // a seated figure: block body, small head, a knee
+      x.fillRect(2, gh * 0.30, gw - 6, gh * 0.16);
+      x.fillRect(2, gh * 0.46, gw * 0.34, gh * 0.42);
+      x.fillRect(2, gh * 0.10, gw * 0.30, gh * 0.18);
+    } else if (kind === 2) {
+      // a bird: body bar, a wing wedge, two legs
+      x.fillRect(1, gh * 0.34, gw - 4, gh * 0.18);
+      x.beginPath(); x.moveTo(2, gh * 0.34); x.lineTo(gw - 5, gh * 0.34);
+      x.lineTo(gw * 0.5, gh * 0.06); x.closePath(); x.fill();
+      x.fillRect(gw * 0.28, gh * 0.52, 1.8, gh * 0.34);
+      x.fillRect(gw * 0.60, gh * 0.52, 1.8, gh * 0.34);
+    } else if (kind === 3) {
+      // reeds / a feather pair
+      for (let i = 0; i < 2; i++) x.fillRect(2 + i * (gw * 0.45), gh * 0.08, 2.4, gh * 0.84);
+      x.fillRect(1, gh * 0.06, gw - 3, 2.2);
+    } else if (kind === 4) {
+      // an ankh
+      x.fillRect(gw * 0.36, gh * 0.30, 2.6, gh * 0.62);
+      x.fillRect(gw * 0.10, gh * 0.46, gw * 0.66, 2.6);
+      x.strokeStyle = ink; x.lineWidth = 2.4;
+      x.beginPath(); x.arc(gw * 0.47, gh * 0.20, gh * 0.13, 0, Math.PI * 2); x.stroke();
+    } else {
+      // water: three stacked zigzag lines, the commonest mark in any register
+      for (let i = 0; i < 3; i++) {
+        x.beginPath();
+        for (let k = 0; k <= 4; k++) {
+          const xx = 1 + (k / 4) * (gw - 4), yy = gh * (0.22 + i * 0.24) + (k % 2 ? 2.4 : 0);
+          k ? x.lineTo(xx, yy) : x.moveTo(xx, yy);
+        }
+        x.strokeStyle = ink; x.lineWidth = 1.9; x.stroke();
+      }
+    }
+    x.restore();
+    // ...AND NOW BURY IT. The pigment is faded, so most of the stone comes
+    // back over the top of the mark; what survives is the cut, drawn next.
+    // 0.26, not 0.42: FADED is not GONE. At 0.42 the register read as blank
+    // stone from the plaza and the whole band was a pinstripe of nothing.
+    x.fillStyle = `rgba(${(base >> 16) & 255},${(base >> 8) & 255},${base & 255},0.26)`;
+    x.fillRect(px, gy, gw, gh);
+    // THE CUT ITSELF: a shadow along the left and top of the glyph cell and a
+    // lit arris opposite, which is what "sunken" means at this distance.
+    x.fillStyle = 'rgba(46,34,20,0.46)';
+    x.fillRect(px, gy, 2.0, gh); x.fillRect(px, gy, gw, 2.0);
+    x.fillStyle = 'rgba(255,247,226,0.26)';
+    x.fillRect(px + gw - 1.6, gy, 1.6, gh); x.fillRect(px, gy + gh - 1.6, gw, 1.6);
+    px += gw + rand(2.5, 5);
+  }
+  // grain() is square (it scatters over size x size) and this canvas is not,
+  // so it would put nine tenths of its specks off the bottom of a 64px strip
+  for (let i = 0; i < 700; i++) {
+    const g = (r2() * 2 - 1) * 12;
+    x.fillStyle = `rgba(${g > 0 ? 255 : 0},${g > 0 ? 255 : 0},${g > 0 ? 255 : 0},${Math.abs(g) / 255})`;
+    x.fillRect((r2() * W) | 0, (r2() * H) | 0, 1 + ((r2() * 2) | 0), 1);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
 // LASHED POLE TIMBER — The Lost World's frame, and the zone's whole identity.
 //
 // research/universal-zones.md §5A, "Materials and surface", first bullet, which

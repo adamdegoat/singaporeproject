@@ -2115,16 +2115,65 @@ export async function buildAttractions(world, data, Y = null) {
     const ang = ((Math.abs(h) % 360) / 360) * Math.PI * 2;
     // four fragments of a wall that no longer joins up
     const seg = [[-4.2, -2.6, 5.0, 2.3], [1.4, -3.0, 3.2, 1.35], [3.6, 1.8, 2.4, 0.85], [-2.0, 2.9, 3.6, 1.7]];
+    // A RUIN IS COURSED MASONRY WITH THE TOP MISSING (2026-08-28).
+    //
+    // Each fragment used to be ONE BoxGeometry. Photographed from the golden
+    // `serapong` vantage that is what it looked like: two flat grey rectangles
+    // standing in mown grass with a clean straight top and no thickness in
+    // them — a blockout, and it read as an untextured modelling error rather
+    // than as Fort Serapong. The comment above already says what a ruin is —
+    // "broken masonry at falling heights" — and a clean rectangle is neither
+    // broken nor masonry.
+    //
+    // So the fragment is laid as COURSES OF BLOCKS: ~0.55m courses of ~0.95m
+    // stones, alternate courses breaking joint, each block jittered a few
+    // centimetres in depth and yaw so the face is not a plane. The top course
+    // steps DOWN across the run and drops blocks, which is the whole silhouette
+    // — a ruin is read by its broken edge long before any texture on it.
+    //
+    // Deterministic: every jitter comes from the fragment's own index and the
+    // name hash that already seeds the piece, so two builds place identical
+    // stones and the golden gate stays stable.
+    // 0.38 x 0.62 — SMALLER THAN THE FIRST CUT, which used 0.55 x 0.95 and
+    // photographed as giant Lego from three metres away. A 19th-century
+    // British coastal battery is granite ashlar at roughly half a metre; at
+    // 0.95 the stones were bigger than the fallen blocks lying beside them,
+    // which is the one comparison in frame.
+    const CH = 0.38, CW = 0.62;
+    let sN = 0;
     for (const [u, v, len, hh] of seg) {
       const px = x + u * Math.cos(ang) - v * Math.sin(ang);
       const pz = z + u * Math.sin(ang) + v * Math.cos(ang);
       if (window.__onRoad && window.__onRoad(px, pz, 0.6)) continue;
       const gy = surfaceAt(px, pz);
       if (gy < 0.8) continue;
-      const w = new THREE.BoxGeometry(len, hh, 0.75);
-      w.rotateY(ang + (u + v) * 0.05);
-      w.translate(px, gy + hh / 2, pz);
-      merger.add(w, ruinStone, x, z);
+      sN++;
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      const rows = Math.max(1, Math.round(hh / CH));
+      const cols = Math.max(2, Math.round(len / CW));
+      // the broken edge: a run that falls away from one end, so the fragment
+      // has a high shoulder and a low tail rather than a level parapet
+      const fall = ((Math.abs(h) >> (sN * 2)) & 1) ? 1 : -1;
+      for (let r = 0; r < rows; r++) {
+        for (let cN = 0; cN < cols; cN++) {
+          const t = cols > 1 ? cN / (cols - 1) : 0;
+          // how many courses survive at this point along the run
+          const keep = rows - Math.round((rows - 1) * 0.55 * (fall > 0 ? t : 1 - t));
+          if (r >= keep) continue;
+          const q = ((Math.abs(h) + sN * 37 + r * 13 + cN * 7) % 97) / 97;   // 0..1, deterministic
+          if (r === keep - 1 && q < 0.22) continue;      // a gap in the top course
+          // ALWAYS SMALLER THAN ITS CELL, so there is a joint. The first cut
+          // let blocks run to 1.06x and neighbours merged into one slab again.
+          const bw = CW * (0.80 + q * 0.13);
+          const off = (r % 2 ? CW * 0.5 : 0) + (q - 0.5) * 0.06;
+          const cx = (cN + 0.5) * CW - len / 2 + off;
+          if (Math.abs(cx) > len / 2 + CW * 0.4) continue;
+          const bl = new THREE.BoxGeometry(bw, CH * 0.86, 0.75 * (0.88 + q * 0.24));
+          bl.rotateY(ang + (u + v) * 0.05 + (q - 0.5) * 0.09);
+          bl.translate(px + ca * cx, gy + r * CH + CH * 0.47, pz + sa * cx);
+          merger.add(bl, r === 0 && q < 0.34 ? ruinMoss : ruinStone, x, z);
+        }
+      }
       // a course of fallen blocks at its foot, which is what tells you it fell
       const blk = new THREE.BoxGeometry(0.8, 0.34, 0.7);
       blk.rotateY(ang + 0.7);

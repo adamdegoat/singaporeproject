@@ -8,7 +8,7 @@ import { TOUCH } from './input.js';
 import { ROAD_END_EXT } from './roads.js';
 import { buildQTrees } from './qtrees.js';
 import { scatterVerges, scatterFoundations } from './qground.js';
-import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texAshlar, texSalvage, texBoard, texPoleFrame, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws, texBoomBand} from './tex.js';
+import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texAshlar, texSalvage, texBoard, texPoleFrame, texGlyphBand, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws, texBoomBand} from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV,
          constructionSite } from './landmarks.js';
 
@@ -482,8 +482,17 @@ export const MAT = {
   // never still. NO PUBLISHED COLOUR EXISTS for it, so this is an observed
   // value and is labelled as one — deeper and bluer than the reservoir,
   // rougher so the sky scatters across it instead of mirroring.
+  // ROUGHNESS 0.44, NOT 0.30, AND THE WAVE NORMALS ARE WHY (2026-08-28).
+  //
+  // At 0.30 the specular lobe is narrow, so once the sea was given a real
+  // normal (the swell in buildSea's shader) every patch of it near the sun's
+  // mirror angle went to SATURATED WHITE and the surface read as a field of
+  // hard blobs rather than as glitter. Photographed at 90m over Siloso: a
+  // dalmatian sea. A flat normal hid it — one uniform bright patch has no
+  // pattern in it — which is why this number was fine for a year and is not
+  // any more. A wider lobe is also what a wind-roughened sea has.
   openSea: new THREE.MeshStandardMaterial({
-    map: texWater(), color: 0x5a8296, roughness: 0.30, metalness: 0.42,
+    map: texWater(), color: 0x5a8296, roughness: 0.44, metalness: 0.42,
   }),
   // the beach pavilion: boarded roof and timber posts, the finish every bar on
   // Siloso and Palawan actually has. Not clay tile, which is the shophouse and
@@ -2356,6 +2365,27 @@ function growClear(pts, f, self) {
 // Plain painted render, cached per colour. Beach bars are flat white walls
 // with no masonry pattern on them at all, and every textured pool in this file
 // puts one there.
+// THE REGISTER BAND'S MATERIAL, keyed on the band's own height in metres.
+//
+// The map has to sit ON the band once, not tile up it: the strip is 2.4m of
+// wall by 0.6m as drawn, and the extruded ring's side-wall UVs are METRES (the
+// measured rule — see the tail of texRender), so repeat.y is 0.6/thick and the
+// glyphs land the right way up at the right size whatever ring is asked for.
+// One material per distinct thickness, which in practice is one.
+const _GLYPH = new Map();
+function glyphMat(thick) {
+  const key = thick.toFixed(2);
+  let m = _GLYPH.get(key);
+  if (!m) {
+    const t = texGlyphBand();
+    t.repeat.set(1 / 2.4, 0.6 / Math.max(thick, 0.05));   // the strip is 2.4m x 0.6m as drawn
+    m = new THREE.MeshStandardMaterial({ map: t, roughness: 0.92, color: 0xffffff });
+    m.name = 'glyphBand';
+    _GLYPH.set(key, m);
+  }
+  return m;
+}
+
 const _RENDER = new Map();
 function renderMat(hex, shutter = false, show = false, coursed = null) {
   const key = hex + (shutter ? '|s' : '') + (show ? '|w' : '') + (coursed ? '|' + coursed : '');
@@ -4691,8 +4721,23 @@ export async function buildBuildings(world, data, Y = null) {
         // a plain deep fascia because a boulevard show building IS a flat
         // parapet with signage on it.
         const CROWN = {
+          // ...AND EGYPT ALONE CARRIES A REGISTER BAND, §4 relief item 2:
+          // "horizontal strips of cartouches and glyphs at parapet level and
+          // at door head level, in sunken relief with faded pigment". `band`
+          // is a ring like the others but drawn with texGlyphBand instead of
+          // the crown's stone, so it is one extra batch for the zone and no
+          // extra rings anywhere else. Set just under the crown, which is
+          // parapet level; the door-head band the brief also names needs a
+          // door height nothing here knows, and is not guessed at.
           'Ancient Egypt': { col: 0xc2a469, top: [[0.35, 0.55, -2.30], [0.80, 0.55, -1.75],
                                                   [1.25, 0.75, -1.20], [1.40, 0.45, -0.45]],
+                             // 1.05m deep, and that is a MEASURED number, not
+                             // a guess: at 0.72 the band was built, correctly
+                             // placed and effectively invisible — rendered with
+                             // the map swapped for flat red it showed as a hair
+                             // line under the crown on a 15m wall. A register
+                             // band is a course of the wall, not a pinstripe.
+                             band: [[0.42, 1.05, -3.45]],
                              foot: [[0.85, 0.55, 0.0], [0.55, 0.55, 0.55], [0.25, 0.55, 1.10]] },
           // A CROWN IS A ROOF, SO IT TAKES THE ROOF'S SAMPLED COLOUR.
           //
@@ -4742,6 +4787,11 @@ export async function buildBuildings(world, data, Y = null) {
           }
           for (const [out, thick, at] of (_c.foot || [])) {
             merger.add(extrudeGeo(growM(pts, out), thick, at), trimMat, cB[0], cB[1]);
+          }
+          for (const [out, thick, at] of (_c.band || [])) {
+            merger.add(extrudeGeo(growM(pts, out), thick, h + at), glyphMat(thick),
+              cB[0], cB[1]);
+            stats.zoneBand = (stats.zoneBand || 0) + 1;
           }
           stats.zoneCrown = (stats.zoneCrown || 0) + 1;
         }
@@ -7446,18 +7496,57 @@ function buildSea(world) {
         // haze and the horizon want anyway.
         .replace(SEA_FLAT ? '\u0000never' : '#include <normal_fragment_begin>', `#include <normal_fragment_begin>
         {
-          float swd = length(vSeaW - cameraPosition);
+          vec3 swv = vSeaW - cameraPosition;
+          float swd = length(swv);
           float swamp = 1.0 - smoothstep(180.0, 700.0, swd);
+          // ...AND IT FADES WHEN YOU LOOK DOWN ON IT, WHICH IS NOT A HACK.
+          //
+          // Wave slope is what makes water read AT A GRAZING ANGLE: from the
+          // board you see the sides of the swell and the sky sliding along
+          // them. Looking straight down you are inside the sun's mirror patch,
+          // where every slope in the field maps onto the same bright reflection
+          // and the specular saturates — the sea came back as a criss-cross of
+          // hard white blobs from 90m over Siloso, and no amount of breaking
+          // the frequencies or widening the lobe fixed it, because the pattern
+          // was not the problem. The angle was. Real glitter at that angle is
+          // sub-pixel anyway.
+          //
+          // Driven off the view vector, so it is continuous: horizontal view
+          // full strength, 45 degrees down mostly gone, straight down nothing.
+          // The cable car and the Skypark are the views this exists for.
+          swamp *= smoothstep(0.22, 0.62, 1.0 - abs(normalize(swv).y));
           if (swamp > 0.02) {
             vec2 sw = vSeaW.xz;
-            // ~11m swell and a ~3.7m chop across it, at an angle to each other
-            // so the pattern does not read as corduroy
-            float a1 = sin(sw.x * 0.55 + sw.y * 0.31);
-            float b1 = cos(sw.x * 0.31 - sw.y * 0.55);
-            float a2 = sin(sw.x * 1.70 - sw.y * 1.10);
-            float b2 = cos(sw.x * 1.10 + sw.y * 1.70);
-            vec3 swn = normalize(vec3((a1 * 0.17 + a2 * 0.07) * swamp, 1.0,
-                                      (b1 * 0.17 + b2 * 0.07) * swamp));
+            // FOUR WAVES, NOT TWO, AND THE FOURTH IS THE WHOLE POINT.
+            //
+            // The first cut used one 11m swell and one 3.7m chop, each as a
+            // sin/cos PAIR sharing the same two frequencies. Two pairs of
+            // commensurate waves do not make a sea, they make a LATTICE: seen
+            // from above — the cable car, the Skypark, any aerial — the
+            // specular broke into a regular grid of white crosses marching
+            // across the whole strait. Photographed at 90m over Siloso. At eye
+            // level it looked fine, which is why it shipped: every frame
+            // checked was taken from the board.
+            //
+            // The fix is incommensurate frequencies at angles that do not
+            // share a common period, and one long slow wave that skews the
+            // other three so no cell repeats within sight.
+            float sk = sin(sw.x * 0.037 - sw.y * 0.029) * 2.4;
+            vec2 swk = sw + vec2(sk, sk * 0.6);
+            float a1 = sin(swk.x * 0.53 + swk.y * 0.29);
+            float b1 = cos(swk.x * 0.31 - swk.y * 0.47);
+            float a2 = sin(swk.x * 1.13 - swk.y * 1.61);
+            float b2 = cos(swk.x * 1.79 + swk.y * 0.97);
+            float a3 = sin(swk.x * 0.19 + swk.y * 0.23);
+            float b3 = cos(swk.x * 0.23 - swk.y * 0.17);
+            // ...AND HALF THE AMPLITUDE THE FIRST CUT USED. Breaking the
+            // frequencies stopped it being a LATTICE and left it a field of
+            // blown-out white blobs, because at roughness 0.30 a big swing in
+            // the normal drives the specular straight to saturation over a
+            // wide band of angles. The slope is what makes water read; the
+            // saturation is what makes it read as spots.
+            vec3 swn = normalize(vec3((a1 * 0.062 + a2 * 0.024 + a3 * 0.042) * swamp, 1.0,
+                                      (b1 * 0.062 + b2 * 0.024 + b3 * 0.042) * swamp));
             // world -> view: the sheet is axis-aligned and unrotated, so the
             // view matrix alone is the whole transform
             normal = normalize((viewMatrix * vec4(swn, 0.0)).xyz);
@@ -7536,6 +7625,37 @@ function buildSurf(world, data, seaY) {
   // coast alone breaks white out on the strait and leaves the beach the player
   // is standing on exactly as it was. Both lists are walked; the sand test does
   // the filtering either way, so a reservoir or a hotel pool cannot pick it up.
+  // BOTH SOURCES, AND THE SECOND ONE IS THE ONE A SWIMMER SEES. `data.coast` is
+  // the island's outer shoreline; Siloso and Palawan's swimming water is inside
+  // the groynes and is mapped as WATER RINGS, so a surf line drawn from the
+  // coast alone breaks white out on the strait and leaves the beach the player
+  // is standing on exactly as it was. Both lists are walked; the sand test does
+  // the filtering either way, so a reservoir or a hotel pool cannot pick it up.
+  //
+  // A DAY WAS SPENT TRYING TO MOVE THIS TO THE DRAWN WATERLINE AND IT WAS
+  // REVERTED (2026-08-28). Recorded so the next person does not repeat it.
+  //
+  // The observation that started it is real and still stands: photographed from
+  // the sand at Siloso, the beach a player actually stands on has NO foam on
+  // it, while 306 segments are built somewhere. Three sources were tried —
+  // marching the coast chains to where `drawnGroundAt` crosses sea level,
+  // marching the water rings, and walking the SAND RINGS' own boundary at a
+  // fixed 6m step and marching each sample. All three put white bands 30-60m
+  // out in open water, photographed with the map swapped for flat red.
+  //
+  // WHY, AND THIS IS THE PART TO KEEP: `drawnGroundAt` and the DRAWN PICTURE
+  // disagree along this shore. Probed on a transect out from the camera at
+  // (-2226,12447), the drawn ground reads 1.29, 1.24, 1.17, 0.92, 0.23, -0.79
+  // — so it only crosses the 0.18 sea level about 30m out — while the render
+  // plainly shows water lapping a third of that distance away, and a
+  // straight-down raycast at (-2250,12423) returns the ground mesh at y=0.20,
+  // ABOVE the sea sheet at 0.18, on a spot that is drawn as sea. One of those
+  // two is lying and it was not settled. Until it is, the surveyed chains are
+  // the honest source: they are at least ON a real line, and where they carry
+  // foam it lands.
+  //
+  // Do not re-attempt this from the geometry. Settle the instrument first:
+  // find out why a point the picture draws as water measures as land.
   const chains = [...(data.coast || []).map((c) => c.p || []),
                   ...(data.water || []).map((w) => (w.p || []).concat([w.p && w.p[0]].filter(Boolean)))];
   for (const p of chains) {
@@ -7559,8 +7679,20 @@ function buildSurf(world, data, seaY) {
       // meets the beach and gone a few metres out, so the band carries its own
       // alpha: opaque on the LANDWARD edge, zero on the seaward one. RGBA
       // vertex colours, which three.js takes as an itemSize-4 colour attribute.
+      //
+      // ...AND THE STRIP IS LAID FLAT AT SEA LEVEL, WHICH LOOKS WRONG AND IS
+      // THE LESSER WRONG. Half of every band is buried under the beach it is
+      // drawn to meet, because a beach is a ramp and this plane is not. Riding
+      // `drawnGroundAt` instead was tried and REVERTED THE SAME HOUR: it
+      // works, and what it lifts out of the ground is a wide white wash lying
+      // across the DRY SAND with a hard diagonal seam through it (golden
+      // `waterline`, 33.7% of pixels changed, and `skypark` with it). That is
+      // the same defect the note above describes — the surveyed coast runs
+      // across this beach, not along its waterline — seen from the other side.
+      // Burying it is not a fix; it is the only thing keeping a known-wrong
+      // line out of the picture, and it stays until the line is right.
       const A = 0.9, B = 0.0;                    // landward, seaward
-      const push = (x, z, a) => { pos.push(x, Y, z); col.push(1, 1, 1, a); };
+      const push = (x, z, al) => { pos.push(x, Y, z); col.push(1, 1, 1, al); };
       push(c0x + ox, c0z + oz, A); push(c0x - ox, c0z - oz, B); push(c1x + ox, c1z + oz, A);
       push(c1x + ox, c1z + oz, A); push(c0x - ox, c0z - oz, B); push(c1x - ox, c1z - oz, B);
       n++;
@@ -7570,8 +7702,10 @@ function buildSurf(world, data, seaY) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  const _SD = typeof location !== 'undefined' && /[?&]surfdbg/.test(location.search);
   const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
-    color: 0xeef5f6, vertexColors: true, transparent: true, opacity: 0.72, depthWrite: false,
+    color: _SD ? 0xff0000 : 0xeef5f6, vertexColors: !_SD, transparent: !_SD,
+    opacity: _SD ? 1 : 0.72, depthWrite: false,
   }));
   m.name = 'surfLine';
   m.renderOrder = 1;
