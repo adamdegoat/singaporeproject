@@ -3467,7 +3467,14 @@ window.__placeBlocked = (x, z) => blocked(x, z);
         '#include <begin_vertex>',
         '#include <begin_vertex>\n  vGPos = (modelMatrix * vec4(transformed, 1.0)).xyz;'
         + '\n  vPaved = aPaved;');
-    sh.fragmentShader = 'varying vec3 vGPos;\nvarying float vPaved;\n'
+    // sea level, for the wet-sand band below. Read at compile time, which is
+    // the first frame — buildSea has long since run and set it — with the
+    // district default as a fallback so a scene with no sea still compiles.
+    sh.uniforms.uSeaY = { value: (window.__seaY === undefined ? 0.18 : window.__seaY) };
+    // ?nowet turns the damp band off for an A/B, the same way ?flatsea and
+    // ?noshade do for the other two ground-level changes of this day
+    sh.uniforms.uWet = { value: P.has('nowet') ? 0.0 : 1.0 };
+    sh.fragmentShader = 'varying vec3 vGPos;\nvarying float vPaved;\nuniform float uSeaY;\nuniform float uWet;\n'
       + 'float gHash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }\n'
       + 'float gNoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);\n'
       + '  return mix(mix(gHash(i),gHash(i+vec2(1,0)),f.x), mix(gHash(i+vec2(0,1)),gHash(i+vec2(1,1)),f.x), f.y); }\n'
@@ -3559,6 +3566,47 @@ window.__placeBlocked = (x, z) => blocked(x, z);
           // stays warm (it is warm); pavement's warm end goes near-neutral.
           vec3 warmv = mix(warm, vec3(1.04, 1.02, 0.99), laid);
           diffuseColor.rgb *= mix(cool, warmv, smoothstep(0.25, 0.75, broad * 0.65 + mid * 0.35));
+          // THE SAND AT THE WATER'S EDGE IS WET, AND IT WAS NOT (2026-08-28).
+          //
+          // Every beach on this island meets the sea on a hard colour boundary
+          // — dry sand, then water, nothing between. buildSurf exists to break
+          // that line with foam and cannot reach it: measured six ways, the
+          // surveyed coast runs 10-30m seaward of the line the player sees, so
+          // no curve in the map is near enough to draw on (see the long note
+          // there). This is the same problem answered from the other side, and
+          // it needs no curve at all: THE SHADER ALREADY KNOWS HOW HIGH THIS
+          // PIECE OF GROUND IS. Sea level is one number. Sand within half a
+          // metre of it is sand the tide has been over.
+          //
+          // Wet sand is darker and cooler — the water fills the gaps between
+          // the grains, so less light scatters back out. It is not a stripe
+          // laid on the beach, it is the beach's own colour where it is damp,
+          // which means it follows the true waterline exactly, on every beach,
+          // for nothing: no geometry, no draw call, no data.
+          if (sandish > 0.02 && uWet > 0.5) {
+            float wet = 1.0 - smoothstep(uSeaY + 0.02, uSeaY + 0.50, vGPos.y);
+            wet *= sandish;
+            // MOSTLY DARKER, ONLY A LITTLE COOLER. The first cut went to
+            // (0.72,0.75,0.79) and the damp band came out grey-blue, which is
+            // what wet sand looks like on a cold coast. Tropical sand this
+            // colour goes darker and stays tan; blue in the band reads as a
+            // painted stripe.
+            diffuseColor.rgb *= mix(vec3(1.0), vec3(0.74, 0.735, 0.725), wet * 0.9);
+            // AND THE SAND ITSELF HAS A GRAIN TO IT AT WALKING PACE. The three
+            // octaves above are 30m, 4.5m and underfoot-hash — nothing between
+            // half a metre and four, which is the scale a beach actually reads
+            // at when you are standing on it: ripples left by the last tide,
+            // running along the shore. One sine, warped by the existing noise
+            // so it is not a corduroy, at 2% — any stronger and it is a
+            // pattern rather than a surface.
+            //
+            // FADED OUT BY 70m for the reason the slab joints are: a ripple
+            // finer than a pixel does not average to smooth sand, it crawls.
+            float rd = length(vGPos - cameraPosition);
+            float rip = sin(gp.x * 1.9 + gp.y * 0.8 + gNoise(gp * 0.09) * 7.0);
+            diffuseColor.rgb *= 1.0 + sandish * rip * 0.021
+              * (1.0 - smoothstep(20.0, 70.0, rd));
+          }
         }
         // GROUND THAT WAS LAID GETS ITS JOINTS (2026-08-27).
         //

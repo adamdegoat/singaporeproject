@@ -7602,6 +7602,51 @@ function buildSea(world) {
 // mapped sand ring get foam — a quay, a seawall and a cliff do not break white,
 // and Sentosa has plenty of all three. Unlit white, so it reads as spray rather
 // than as a lit surface, and 4cm over the sea sheet so nothing z-fights.
+// THE SURF LINE, and it is drawn from the COASTLINE, not from the shore field.
+//
+// Every beach on this island met the sea on a hard colour boundary — sand, then
+// water, nothing between. The cheap idea was to do it in the sea shader, which
+// already samples a shore-distance texture two lines from where the foam would
+// go: no geometry, no draw call. TRIED, RENDERED, REJECTED. That field is a BFS
+// over the HEIGHTFIELD at 35m to a cell, so the narrowest band it can express
+// is twenty-odd metres with straight polygonal edges — a milky shelf lying off
+// the beach, worse than the hard boundary it replaced.
+//
+// SIX ATTEMPTS TO MOVE IT ONTO THE DRAWN WATERLINE HAVE BEEN REVERTED
+// (2026-08-28). Read this before starting a seventh; the handover carries the
+// long version.
+//
+// THE DEFECT: photographed from the sand at Siloso, the beach a player stands
+// on has NO foam on it, while 306 segments are built.
+//
+// THE INSTRUMENT IS INNOCENT, and the first write-up of this wrongly blamed it.
+// Settled by picking PIXELS out of the rendered frame and raycasting through
+// them — the only probe here that starts from the picture and so cannot argue
+// with it. At the golden `waterline` camera the last sand pixel is
+// (-2229.2, 0.6, 12454.5) and the first sea pixel is (-2232.0, 0.2, 12458.7);
+// `drawnGroundAt` reads 0.82 and -0.12 there. It is 0.2-0.3m high on a beach
+// and otherwise right. The claimed "30m disagreement" was a transect aimed by
+// eye from the camera heading, and it missed the shore. A probe pointed by
+// guesswork is not a measurement.
+//
+// WHAT IS ACTUALLY WRONG, measured (`window.__surfWhy` reports the live
+// numbers): of 3,553 chain segments, 2,973 fail "is the landward side sand"
+// and 306 pass. Marched to where the drawn ground crosses sea level, at +-14m
+// only 46 of those 306 find a crossing at all; at +-30m, 202 still find none
+// and 96 of the rest land outside the sand ring they came from. The surveyed
+// coast runs 10-30m seaward of the line the player sees.
+//
+// AND TRACING THE LINE PROPERLY IS NOT THE ANSWER EITHER, WHICH IS THE NEW
+// PART. Marching squares over `drawnGroundAt - seaY` on a 6m grid around each
+// sand ring works and is cheap — 46k samples, 300ms, 1,154 segments — and
+// rendered with the map swapped for flat red, the traced line appears on the
+// FAR shore and not on the near one, in the same frame. So the mapped sand
+// rings and the beach the terrain actually draws are not the same thing, and
+// that mismatch defeats the sand test whichever curve you hand it. **The next
+// attempt starts there: find out what paints the drawn beach, because it is
+// not `data.green` k='sand'.** Until then the surveyed chains stay: they are at
+// least on a real line, and the foam they carry is laid flat at sea level, so
+// where the line is wrong the band is under the sand rather than across it.
 function buildSurf(world, data, seaY) {
   const sand = (data.green || []).filter((g) => g.k === 'sand' && g.p && g.p.length > 3).map((g) => g.p);
   if (!sand.length) return 0;
@@ -7632,30 +7677,12 @@ function buildSurf(world, data, seaY) {
   // is standing on exactly as it was. Both lists are walked; the sand test does
   // the filtering either way, so a reservoir or a hotel pool cannot pick it up.
   //
-  // A DAY WAS SPENT TRYING TO MOVE THIS TO THE DRAWN WATERLINE AND IT WAS
-  // REVERTED (2026-08-28). Recorded so the next person does not repeat it.
-  //
-  // The observation that started it is real and still stands: photographed from
-  // the sand at Siloso, the beach a player actually stands on has NO foam on
-  // it, while 306 segments are built somewhere. Three sources were tried —
-  // marching the coast chains to where `drawnGroundAt` crosses sea level,
-  // marching the water rings, and walking the SAND RINGS' own boundary at a
-  // fixed 6m step and marching each sample. All three put white bands 30-60m
-  // out in open water, photographed with the map swapped for flat red.
-  //
-  // WHY, AND THIS IS THE PART TO KEEP: `drawnGroundAt` and the DRAWN PICTURE
-  // disagree along this shore. Probed on a transect out from the camera at
-  // (-2226,12447), the drawn ground reads 1.29, 1.24, 1.17, 0.92, 0.23, -0.79
-  // — so it only crosses the 0.18 sea level about 30m out — while the render
-  // plainly shows water lapping a third of that distance away, and a
-  // straight-down raycast at (-2250,12423) returns the ground mesh at y=0.20,
-  // ABOVE the sea sheet at 0.18, on a spot that is drawn as sea. One of those
-  // two is lying and it was not settled. Until it is, the surveyed chains are
-  // the honest source: they are at least ON a real line, and where they carry
-  // foam it lands.
-  //
-  // Do not re-attempt this from the geometry. Settle the instrument first:
-  // find out why a point the picture draws as water measures as land.
+  // BOTH SOURCES, AND THE SECOND ONE IS THE ONE A SWIMMER SEES. `data.coast` is
+  // the island's outer shoreline; Siloso and Palawan's swimming water is inside
+  // the groynes and is mapped as WATER RINGS. Both lists are walked; the sand
+  // test does the filtering either way, so a reservoir or a hotel pool cannot
+  // pick it up.
+  const why = { seg: 0, len: 0, noSand: 0, ok: 0 };
   const chains = [...(data.coast || []).map((c) => c.p || []),
                   ...(data.water || []).map((w) => (w.p || []).concat([w.p && w.p[0]].filter(Boolean)))];
   for (const p of chains) {
@@ -7663,13 +7690,14 @@ function buildSurf(world, data, seaY) {
       const [x1, z1] = p[i], [x2, z2] = p[i + 1];
       const dx = x2 - x1, dz = z2 - z1;
       const L = Math.hypot(dx, dz);
-      if (L < 0.5 || L > 60) continue;
+      why.seg++;
+      if (L < 0.5 || L > 60) { why.len++; continue; }
       const nx = -dz / L, nz = dx / L;
       const mx = (x1 + x2) / 2, mz = (z1 + z2) / 2;
       // which side is land, and is that land a beach
       const a = TERRAIN.at(mx + nx * 4, mz + nz * 4), b = TERRAIN.at(mx - nx * 4, mz - nz * 4);
       const s = a > b ? 1 : -1;
-      if (!inSand(mx + nx * 4 * s, mz + nz * 4 * s)) continue;
+      if (!inSand(mx + nx * 4 * s, mz + nz * 4 * s)) { why.noSand++; continue; }
       // a band straddling the line, pushed a little seaward of it
       const c0x = x1 - nx * s * W * 0.15, c0z = z1 - nz * s * W * 0.15;
       const c1x = x2 - nx * s * W * 0.15, c1z = z2 - nz * s * W * 0.15;
@@ -7679,25 +7707,14 @@ function buildSurf(world, data, seaY) {
       // meets the beach and gone a few metres out, so the band carries its own
       // alpha: opaque on the LANDWARD edge, zero on the seaward one. RGBA
       // vertex colours, which three.js takes as an itemSize-4 colour attribute.
-      //
-      // ...AND THE STRIP IS LAID FLAT AT SEA LEVEL, WHICH LOOKS WRONG AND IS
-      // THE LESSER WRONG. Half of every band is buried under the beach it is
-      // drawn to meet, because a beach is a ramp and this plane is not. Riding
-      // `drawnGroundAt` instead was tried and REVERTED THE SAME HOUR: it
-      // works, and what it lifts out of the ground is a wide white wash lying
-      // across the DRY SAND with a hard diagonal seam through it (golden
-      // `waterline`, 33.7% of pixels changed, and `skypark` with it). That is
-      // the same defect the note above describes — the surveyed coast runs
-      // across this beach, not along its waterline — seen from the other side.
-      // Burying it is not a fix; it is the only thing keeping a known-wrong
-      // line out of the picture, and it stays until the line is right.
       const A = 0.9, B = 0.0;                    // landward, seaward
       const push = (x, z, al) => { pos.push(x, Y, z); col.push(1, 1, 1, al); };
       push(c0x + ox, c0z + oz, A); push(c0x - ox, c0z - oz, B); push(c1x + ox, c1z + oz, A);
       push(c1x + ox, c1z + oz, A); push(c0x - ox, c0z - oz, B); push(c1x - ox, c1z - oz, B);
-      n++;
+      n++; why.ok++;
     }
   }
+  window.__surfWhy = why;
   if (!n) return 0;
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
