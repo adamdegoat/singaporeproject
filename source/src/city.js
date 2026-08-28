@@ -7585,6 +7585,170 @@ function buildSea(world) {
   return 1;
 }
 
+// THE SOUTHERN ANCHORAGE — the thing you actually see from Sentosa's coast.
+//
+// Every sea frame in this world is empty water to a bare horizon, and that is
+// the one view of Singapore nobody would recognise. The Strait south of the
+// island is the busiest anchorage on earth: the MPA's own figure is about
+// **1,000 vessels in the port at any one time**, and the southern anchorages
+// lie along the Singapore Strait, off Sentosa. Standing on Tanjong or Palawan
+// the horizon is a row of bulk carriers and tankers sitting at anchor. It is
+// as characteristic of the place as the beach itself.
+//   mpa.gov.sg/port-marine-ops/operations/port-infrastructure/anchorages
+//
+// WHAT IS SOURCED AND WHAT IS AUTHORED, stated because this file's rule is
+// that the difference has to be. Sourced: that they are there, in numbers, in
+// the strait to the south, at anchor. Authored: how many are in view (no
+// figure exists for one vantage), which vessels, and every dimension — though
+// the hull is drawn at Panamax proportions (a ~200m hull at a 1:7 beam ratio),
+// which is the ordinary bulk carrier of this anchorage rather than a shape
+// chosen by eye. No name, no funnel mark, no flag: nothing here claims to be
+// a particular ship or a particular line.
+//
+// PLACED FROM THE HEIGHTFIELD, NOT FROM COORDINATES. Every candidate has to
+// stand in water at least 3m below sea level and 950m clear of the island
+// centre, so a ship can never end up on a reef, in a lagoon or on the beach —
+// the same discipline the piers and groynes are placed with.
+function buildAnchorage(world, seaY) {
+  const g = TERRAIN.grid && TERRAIN.grid();
+  if (g == null || seaY == null) return 0;
+  const cx = g.x0 + g.cell * g.nx * 0.5, cz = g.z0 + g.cell * g.nz * 0.5;
+  const R = rng(0x73686970);                       // "ship"
+  const rnd = (a, b) => a + R() * (b - a);
+  const merger = new Merger();
+  const M = {
+    hullA: new THREE.MeshLambertMaterial({ color: 0x2b3035 }),   // black hull
+    hullB: new THREE.MeshLambertMaterial({ color: 0x6f3229 }),   // oxide red
+    boot: new THREE.MeshLambertMaterial({ color: 0x8d3b2f }),
+    house: new THREE.MeshLambertMaterial({ color: 0xe4e1d8 }),
+    funnel: new THREE.MeshLambertMaterial({ color: 0x33373b }),
+    deck: new THREE.MeshLambertMaterial({ color: 0x585c55 }),
+  };
+  const BOX = [0xb4443a, 0x2f6ea8, 0x3f7d55, 0xc09338, 0x8d8f93];
+  const CONT = BOX.map((c) => new THREE.MeshLambertMaterial({ color: c }));
+  // A SHIP IN WATER IS A SHIP. W2 counts anything standing in open water as a
+  // defect and exempts the groynes by a flag on the material for exactly this
+  // reason; this is the second such case and it is declared the same way.
+  //
+  // ...AND THE FLAG HAS TO SURVIVE dedupeMaterials, WHICH IT DID NOT. Its
+  // signature is 25 render fields and does NOT include userData or name, so a
+  // hull material that happens to match a city grey is collapsed into it — and
+  // then the flag is either lost or, worse, handed to every wall sharing that
+  // grey. Probed: 158 meshes came back carrying `vesselInWater`, one of them a
+  // 1,567m-wide batch on the island. Each material is given a unique
+  // emissiveIntensity against a BLACK emissive: it is in the signature, so
+  // nothing can merge with it, and with emissive black it cannot change a
+  // pixel. The alternative — exempting by proximity to the anchorage list —
+  // fails for the same reason in reverse, because a merged batch's bbox centre
+  // is not where its parts are.
+  let _u = 0;
+  for (const m of [...Object.values(M), ...CONT]) {
+    m.userData.vesselInWater = true;
+    m.emissive = new THREE.Color(0x000000);
+    m.emissiveIntensity = 0.001 + (_u++) * 0.0001;
+  }
+
+  const kept = [];
+  const TRIES = 1400, WANT = 22;
+  for (let i = 0; i < TRIES && kept.length < WANT; i++) {
+    const a = R() * Math.PI * 2, d = 900 + R() * 2200;
+    const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
+    // OPEN WATER, ASKED PROPERLY. The first cut wanted the bed 3m below sea
+    // level and placed NOTHING: probed on this island the drawn seabed off
+    // Siloso reads -0.79 against a sea at 0.18, so "3m deep" excludes the
+    // whole strait. The honest test is not depth, it is EXTENT — a ship needs
+    // water around it, not under it — so the point and four others 180m out
+    // must all be wet.
+    // ...AND OUTSIDE THE HEIGHTFIELD IS SEA BY CONSTRUCTION, which is the
+    // second thing that placed nothing. The sea sheet reaches 2,200m past the
+    // grid on every side; `drawnGroundAt` past the grid edge returns 0, and 0
+    // is ABOVE sea level, so every candidate in exactly the open water this
+    // is for was scored as land. Most of the anchorage is out there.
+    const wetAt = (px, pz) => (px < g.x0 || pz < g.z0
+      || px > g.x0 + g.cell * g.nx || pz > g.z0 + g.cell * g.nz)
+      || drawnGroundAt(px, pz) < seaY - 0.5;
+    if (!wetAt(x, z)) continue;
+    let wet = true;
+    for (const [ox, oz] of [[180, 0], [-180, 0], [0, 180], [0, -180]]) {
+      if (!wetAt(x + ox, z + oz)) { wet = false; break; }
+    }
+    if (!wet) continue;
+    // HOW FAR OFF THE SHORE, MEASURED, NOT ASSUMED. Distance from the island
+    // CENTRE is not distance from the beach — Sentosa is 5km by 3km and a
+    // fixed radius puts a ship aground at one end and over the horizon at the
+    // other. The first cut did that and the ships were real, placed, and
+    // INVISIBLE: the seaside far plane is 1600m and the fog is tuned to it, so
+    // anything much past a kilometre is gone. Marched to the shore instead.
+    let shore = 0;
+    for (let m = 50; m <= 1500; m += 50) {
+      const t2 = m / d;
+      if (!wetAt(x + (cx - x) * t2, z + (cz - z) * t2)) { shore = m; break; }
+    }
+    // 380-820m, AND THE UPPER BOUND IS THE FOG, not the anchorage. The real
+    // southern anchorages stand kilometres out; at this world's seaside far
+    // plane (1600m) with the fog tuned to it, a ship at 1,300m is gone and a
+    // ship at 1,800m is clipped. The first placement respected the geography
+    // and put 22 correctly-built vessels where nothing can ever see them.
+    // Inside 820m they read as the pale grey silhouettes they are from the
+    // beach in life, which is the honest compromise: the right picture at the
+    // wrong range rather than the right range and an empty sea.
+    if (shore < 380 || shore > 820) continue;
+    let clear = true;
+    for (const k of kept) if (Math.hypot(k[0] - x, k[1] - z) < 300) { clear = false; break; }
+    if (!clear) continue;
+    kept.push([x, z]);
+  }
+  if (!kept.length) return 0;
+
+  for (const [x, z] of kept) {
+    // anchored ships lie roughly with the stream, so they share a heading with
+    // only a little spread — a scatter of random headings reads as a car park
+    const yaw = 0.55 + rnd(-0.42, 0.42);
+    const L = rnd(120, 235), B = L * rnd(0.13, 0.16), FB = rnd(6.5, 10.5);
+    const kind = R();                                      // bulker / boxship
+    const put = (geo, mat, u, y, v) => {                   // u across, v along
+      geo.rotateY(yaw);
+      geo.translate(x + Math.cos(yaw) * u + Math.sin(yaw) * v,
+        seaY + y, z - Math.sin(yaw) * u + Math.cos(yaw) * v);
+      merger.add(geo, mat, x, z);
+    };
+    const hull = kind < 0.5 ? M.hullA : M.hullB;
+    put(new THREE.BoxGeometry(B, FB, L * 0.88), hull, 0, FB * 0.5, -L * 0.03);
+    // the bow: a box turned 45 degrees in plan reads as a stem from any
+    // distance this is ever seen at, and this is only ever seen at distance
+    const bow = new THREE.BoxGeometry(B * 0.72, FB, B * 0.72);
+    bow.rotateY(Math.PI / 4);
+    put(bow, hull, 0, FB * 0.5, L * 0.44);
+    put(new THREE.BoxGeometry(B * 1.03, FB * 0.16, L * 0.88), M.boot, 0, FB * 0.09, -L * 0.03);
+    // the accommodation block and the funnel, both aft
+    put(new THREE.BoxGeometry(B * 0.74, 13, L * 0.09), M.house, 0, FB + 6.5, -L * 0.36);
+    put(new THREE.BoxGeometry(B * 1.06, 1.6, 3.2), M.house, 0, FB + 12, -L * 0.36);
+    put(new THREE.BoxGeometry(B * 0.2, 8.5, B * 0.26), M.funnel, 0, FB + 17, -L * 0.42);
+    if (kind < 0.5) {
+      // a bulk carrier: hatch covers down the working deck
+      for (let h = 0; h < 5; h++) {
+        put(new THREE.BoxGeometry(B * 0.62, 1.7, L * 0.09), M.deck,
+          0, FB + 0.85, L * (0.30 - h * 0.135));
+      }
+    } else {
+      // a container ship: three tiers of boxes, and the colour variety IS the
+      // read at this range
+      for (let h = 0; h < 4; h++) {
+        for (let t = 0; t < 3; t++) {
+          const m = CONT[((h * 3 + t) * 7 + ((x | 0) + (z | 0))) % CONT.length];
+          put(new THREE.BoxGeometry(B * (0.86 - t * 0.10), 5.4, L * 0.15),
+            m, 0, FB + 2.7 + t * 5.5, L * (0.28 - h * 0.155));
+        }
+      }
+    }
+    // a mast forward, which is the last thing that leaves the eye
+    put(new THREE.BoxGeometry(1.2, 16, 1.2), M.deck, 0, FB + 8, L * 0.36);
+  }
+  merger.flush(world);
+  window.__anchorageAt = kept.map(([x, z]) => [Math.round(x), Math.round(z)]);
+  return kept.length;
+}
+
 // THE SURF LINE, and it is drawn from the COASTLINE, not from the shore field.
 //
 // Every beach on this island met the sea on a hard colour boundary — sand, then
@@ -7734,6 +7898,7 @@ export function buildWater(world, data) {
   const polys = data.water || [];
   const sea = buildSea(world);
   window.__surf = buildSurf(world, data, window.__seaY || 0.18);
+  window.__anchorage = sea ? buildAnchorage(world, SEA_LEVEL[0]) : 0;
   if (!polys.length) return { water: 0, waterArea: 0, sea };
   const geos = [];
   let area = 0;

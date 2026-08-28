@@ -10753,6 +10753,9 @@ export function buildUssVocab(world, data, blocked) {
       valance: new THREE.MeshLambertMaterial({ color: 0xece6d8 }),
       iron: new THREE.MeshLambertMaterial({ color: 0x1e3a2c }),
       stoneTrim: new THREE.MeshLambertMaterial({ color: 0xc3aa8e }),
+      // the opening under each awning: dark glass with a sky lift at the head,
+      // the same reading texRender's panes were given today
+      glass: new THREE.MeshLambertMaterial({ color: 0x39434c }),
     };
     // A WALL-MOUNTED PIECE NEEDS A WALL BEHIND IT. The "outward = away
     // from the centroid" normal guess fails on concave footprints, and
@@ -10778,6 +10781,17 @@ export function buildUssVocab(world, data, blocked) {
     const blvd = [];
     for (const b of (data.buildings || [])) {
       if (!b.p || b.p.length < 4 || (b.h || 0) < 7 || (b.a || 0) < 400) continue;
+      // A CANOPY HAS NO WALL TO HANG AN AWNING ON, and this pass has been
+      // hanging them in mid-air (2026-08-28). Photographed at the golden
+      // `egypt-camp` vantage: the Hollywood colonnade's upper row of awnings
+      // stands against open sky with the building's roof soffit above and
+      // daylight behind. It was invisible while the awning was a lone red
+      // scallop; the moment each one was given the window it shelters, the
+      // openings floated too and the frame reported it. Same three kinds the
+      // contact shade pages out for the same reason: an open ground storey is
+      // columns, a canopy is a roof on posts, and a lifted mass has nothing at
+      // the bottom.
+      if (b.og || b.roof || b.bt === 'roof' || (b.mh && b.mh > 1)) continue;
       let cx = 0, cz = 0;
       for (const [qx, qz] of b.p) { cx += qx; cz += qz; }
       cx /= b.p.length; cz /= b.p.length;
@@ -10811,7 +10825,27 @@ export function buildUssVocab(world, data, blocked) {
         const mx = (ax + bx) / 2, mz = (az + bz) / 2;
         if (nx * (mx - cx) + nz * (mz - cz) < 0) { nx = -nx; nz = -nz; }
         const eyaw = Math.atan2(-uz, ux);
-        const levels = (b.h || 10) > 9 ? [3.6, 6.8] : [3.6];
+        // ONE ROW, AT THE SHOPFRONT, AND THE SECOND ONE IS GONE (2026-08-28).
+        //
+        // The upper row sat at 6.8m on any building with `b.h > 9`, and
+        // photographed at the golden `egypt-camp` vantage it is a row of
+        // awnings, windows and sills hanging in OPEN SKY with daylight between
+        // them — the tagged height is not the height of the wall that got
+        // drawn, and there is nothing available here that knows the drawn one.
+        // (Raising the threshold to 9.6 and paging out canopies and lifted
+        // masses were both tried first and neither moved a pixel: the
+        // buildings in that frame pass all three tests.)
+        //
+        // It was invisible while an awning was a lone red scallop against the
+        // sky. Giving each one the window it shelters is what made the frame
+        // report it — the same way the beach foam only became a problem once
+        // it was lifted out of the sand.
+        //
+        // A street-level row cannot float: if the building is tall enough to
+        // be in this pass at all (7m) there is certainly wall at 3.6m. §2.6
+        // wants the rhythm "repeated across a whole facade" and one storey of
+        // it, running the full length, still reads as texture at distance.
+        const levels = [3.6];
         for (const lv of levels) {
           for (let s = 2.5; s <= L - 2.5; s += 3.5) {
             const px = ax + ux * s + nx * 0.55;
@@ -10828,6 +10862,28 @@ export function buildUssVocab(world, data, blocked) {
             vl.rotateY(eyaw);
             vl.translate(px + nx * 0.7, gy - 0.08, pz + nz * 0.7);
             merger.add(vl, BW.valance, px, pz);
+            // ...AND THE OPENING IT SHELTERS, because an awning without one is
+            // a mistake (2026-08-28).
+            //
+            // §2.6 puts these "over the window rhythm", and the show-building
+            // pass removed window grids from this park ON PURPOSE — so the
+            // awnings went up over a rhythm that does not exist. Photographed
+            // from the golden `newyork-awnings` vantage: about thirty red
+            // scallops stuck to bare brick with nothing under any of them,
+            // which reads as a bug rather than as a street.
+            //
+            // This is not the window grid coming back. It is one opening per
+            // awning already placed — the vocabulary finished rather than a
+            // facade invented — and it exists only where an awning does, so
+            // the walls that were deliberately left plain stay plain.
+            const win = new THREE.BoxGeometry(1.75, 1.65, 0.10);
+            win.rotateY(eyaw);
+            win.translate(px - nx * 0.50, gy - 1.02, pz - nz * 0.50);
+            merger.add(win, BW.glass, px, pz);
+            const sill = new THREE.BoxGeometry(2.0, 0.13, 0.26);
+            sill.rotateY(eyaw);
+            sill.translate(px - nx * 0.44, gy - 1.92, pz - nz * 0.44);
+            merger.add(sill, BW.stoneTrim, px, pz);
             awnings++;
           }
         }
