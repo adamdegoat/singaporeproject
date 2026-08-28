@@ -48,6 +48,14 @@ FAILED=0
 
 hr() { printf '\n== %s\n' "$1"; }
 
+hr "is every gate wired to anything"
+# ONE SECOND, NO BROWSER, AND IT RUNS FIRST because it answers the question
+# every line below it assumes. On 2026-08-29 three rider checks and stuckcheck
+# were found referenced by NOTHING that ships -- see the header of
+# data/wiring.mjs. A check nobody runs is worse than no check: it is a line in
+# a handover saying the ground is guarded.
+node data/wiring.mjs 2>&1 | tail -20; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
+
 hr "does it even parse"
 # ONE SECOND, AND IT WOULD HAVE SAVED TWO BROWSER ROUND TRIPS on 2026-08-27.
 # A GLSL comment inside main.js's ground shader quoted a class name in
@@ -172,6 +180,22 @@ hr "the ground under the board"
 # must fire somewhere, and must be silent on a settled straight.
 _jolt=$(node data/joltcheck.mjs 2>&1); [ $? -ne 0 ] && FAILED=1
 echo "$_jolt" | tail -14
+
+hr "the surfaces, the markings and the arc"
+# SIX CHECKS THAT EXISTED AND RAN NOWHERE, all found by data/wiring.mjs on
+# 2026-08-29 and all green the day they were wired. They are cheap and they
+# guard things a player sees directly: what the board rolls on, whether paint
+# and paving sit on the surface under them, and the shape of the jump arc.
+#
+# In gates.sh and NOT in deploy.sh, deliberately: six browser boots is about
+# nine minutes on a thirty-minute deploy, and that is the owner's time to
+# spend, not mine. data/wiring.mjs asks only that a gate be reachable from one
+# runner; moving any of these into the deploy path is a separate decision with
+# a measured price.
+for _c in surfcheck standcheck pavecheck paintcheck kerbcheck jumpcheck; do
+  # `[ ${PIPESTATUS[0]} -ne 0 ]`, never `|| FAILED=1` -- see this file's header.
+  node "data/$_c.mjs" 2>&1 | tail -3; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
+done
 
 hr "venue signs"
 SG_SCENE=sentosa node data/signcheck.mjs 2>&1 | tail -12; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
