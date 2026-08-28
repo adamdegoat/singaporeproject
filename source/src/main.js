@@ -1236,6 +1236,48 @@ const PUSH_MAX_V = 0.40;
 // and it is advanced by DISTANCE rather than by a clock (see the push block)
 let pushPhase = 0;
 let ridePhase = 0;
+// ---- THE BUMP STATE, so a kerb is something that happens TO her -------------
+// The board is seated on `surfaceAt` every frame with nothing between it and
+// the ground, so a kerb, a ramp lip or a stair nosing arrives as an
+// instantaneous step in the deck's height and the rider rides it like a
+// photograph on a stick. What a body does instead is ABSORB: the knees take
+// the step and the head keeps its line.
+//
+// The signal has to be the SUDDEN part of the vertical motion and nothing
+// else. A hill is not a bump: a plain low-pass of the deck's height, or a
+// spring hung off it, both settle to a constant offset under a constant slope
+// (a critically damped spring under a ramp holds C/K * rate, which on a 5%
+// grade at 13 m/s is 99mm -- a permanent crouch for riding downhill). So the
+// deck's vertical SPEED is split into a sustained part and a sudden one, and
+// only the sudden one is used. On a constant grade the two converge within
+// ~0.35s and the term goes to zero by construction.
+// ...AND THE HEIGHT SHE IS ACTUALLY SEATED AT, carried frame to frame.
+//
+// `surfaceAt(x, z)` with no `fromY` asks "what is the highest thing here", and
+// its stair clause answers with the TOP TREAD of any flight whose footprint
+// covers the point -- the one place in that function that has no height to
+// judge reach against (city.js: `else if (best === null || y > best)`).
+// Measured on the road at -1757: terrain 42.5, surfaceAt 54.768 for a
+// fourteen-metre stretch, with `bridgeDecksAt` reporting no deck at all. It is
+// the stair flight up to the cable-car station, and riding that road threw the
+// board and the chase camera 12.3m into the sky. The owner has a name for it:
+// "i like glitching in mid air again. Cant even see myself."
+//
+// Passed her own last height, the same clause refuses anything more than a
+// stride away and she stays on the road. Null means "no history" -- at a
+// teleport and at boot, where the ground itself is the only answer.
+let rideY = null;
+let rideFallVY = 0;     // metres/second of fall, while the ground has gone
+const RIDE_REACH = 0.45;
+let deckPrevY = null;   // the deck's height last frame
+let deckVYSlow = 0;     // the sustained part: the grade she is riding
+let deckShock = 0;      // the sudden part, smoothed -- what a kerb is
+// HOW MUCH OF A CROUCH A BUMP IS WORTH. Both numbers are set from measured
+// ground (data/joltcheck.mjs weaves across kerbs and verges and prints the
+// shock it sees); they are here rather than inline so the measurement and the
+// number it produced sit in one place.
+const JOLT_GAIN = 0.55;    // m/s of sudden vertical -> 1.0 of jolt
+const JOLT_CROUCH = 0.35;  // ...and 1.0 of jolt is worth this much crouch
 const skater = NEWAVATAR ? (() => {
   const av = buildAvatar('cap');
   av.group.position.y = 0.16;         // feet on the deck top
@@ -3166,6 +3208,12 @@ async function buildRegion(data, opts = {}) {
   // the same question asked from a stated height, which is the only way to see
   // whether a raised deck is being offered to someone who could not reach it
   window.__surfaceAtFrom = (x, z, fromY, seat) => surfaceAt(x, z, fromY, seat);
+  // WHAT THE BOARD IS SEATED ON, asked exactly the way the board asks it --
+  // the same fromY and the same RIDE_REACH. A probe that reconstructs the call
+  // is a probe that can be right about a function nothing calls that way:
+  // data/joltcheck.mjs measured a 14.582m step through __surfaceAtFrom that
+  // the rider cannot experience, because it was missing the reach argument.
+  window.__rideSurfaceAt = (x, z, fromY) => surfaceAt(x, z, fromY, null, RIDE_REACH);
   window.__footbridgeIdOf = (pts) => footbridgeIdOf(pts);
   window.__inFootprint = (x, z) => inFootprint(x, z);
   // the solidity test the ride and the walker actually use, so a check can ask
@@ -5407,7 +5455,13 @@ function driveCamera(dt) {
   // 2026-08-02 made it visible immediately, and pulling the camera in from
   // 3.05m to 2.45m made it worse: "i teleport to sentosa now i like glitching
   // in mid air again. Cant even see myself. Like im under the bridge."
-  const gy = surfaceAt(S.x, S.z);
+  // THE CAMERA SITS ON THE SAME SURFACE THE BOARD DOES, and it has to read the
+  // board's own seat rather than re-ask: `surfaceAt` without a fromY answers
+  // with the top tread of any stair flight over the point (see `rideY`), so
+  // re-asking here would leave the rider on the road and put the camera 12m
+  // above her -- the same "under the bridge" family as the terrain/deck bug
+  // recorded below, from the other end.
+  const gy = rideY != null ? rideY : surfaceAt(S.x, S.z);
   // HOW CLOSE THE CHASE CAMERA SITS, PER VEHICLE, AND IT LIVES WITH THE
   // VEHICLE. It used to be two `vehicleKind === 'car' ? a : b` ternaries here,
   // which is fine for two vehicles and wrong for three — the board would have
@@ -6284,7 +6338,66 @@ function loop(now) {
     }
 
     const gy = terrain.at(S.x, S.z);
-    bike.position.set(S.x, surfaceAt(S.x, S.z), S.z);
+    // SEATED FROM WHERE SHE ALREADY IS. See the note at `rideY`: without a
+    // fromY the stair clause hands back the top tread of any flight the point
+    // falls inside, which is a 12.3m launch on the cable-car station road.
+    // THE SEED IS THE UNGATED ANSWER, and seeding from the terrain was a
+    // REGRESSION that the golden gate caught in one frame. `rideY` is a
+    // history and a teleport has none; seeded with `terrain.at` at a point on
+    // a causeway, the deck 5m overhead is out of reach on the first frame and
+    // therefore out of reach on every frame after it, so she is stranded on
+    // the seabed under the bridge for as long as she stays there.
+    // `golden/arrival-causeway.png` is shot from exactly such a spot and went
+    // from a rider on the road to the top of a helmet below the parapet
+    // (78.65% of pixels). Arriving somewhere, she is on whatever that place
+    // offers -- the gate is about what may happen to her while she RIDES.
+    if (rideY == null) rideY = surfaceAt(S.x, S.z);
+    // RIDE_REACH: how far ABOVE her own wheels a surface may be and still be
+    // the surface she is on. A board rolls onto a kerb or a ramp lip; it does
+    // not step onto a viaduct. 0.45m is a high kerb and a tall stair riser and
+    // nothing else on this island. See the `reach` clause in city.js.
+    const wantY = surfaceAt(S.x, S.z, rideY, null, RIDE_REACH);
+    // ...AND A DROP SHE CANNOT ROLL DOWN IS A FALL, NOT A TELEPORT.
+    //
+    // The reach argument refuses to lift her onto things; it says nothing
+    // about the ground going away underneath. Measured by driving (see
+    // data/joltcheck.mjs, the driven seat sweep -- the game supplies the seat,
+    // so there is nothing to guess): at the Boardwalk landings the board's own
+    // y moved 2.346m in ONE FRAME at 54 km/h, off the end of a promenade deck
+    // onto the drawn shore shelf below it. Five other spots across the island
+    // measured 0.046m or less, so this is not slope, it is a substitution.
+    //
+    // Small steps still SNAP, deliberately: a kerb lip, a ramp joint and every
+    // metre of ordinary road are inside RIDE_REACH, so nothing that behaved
+    // before behaves differently now and no resting frame can move. Past that
+    // she falls at g, which is both what happens and what makes the landing
+    // something the bump term can see.
+    const drop = rideY - wantY;
+    if (drop > RIDE_REACH) {
+      rideFallVY = Math.min(28, rideFallVY + 9.81 * dt);
+      rideY = Math.max(wantY, rideY - rideFallVY * dt);
+    } else {
+      rideY = wantY; rideFallVY = 0;
+    }
+    bike.position.set(S.x, rideY, S.z);
+    // WHAT THE GROUND JUST DID TO THE DECK, in metres per second, split into
+    // the grade (sustained) and the bump (sudden). See the note at deckPrevY.
+    {
+      const dy = bike.position.y;
+      if (deckPrevY == null) deckPrevY = dy;
+      const vy = dt > 0 ? (dy - deckPrevY) / dt : 0;
+      deckPrevY = dy;
+      // 0.35s to learn the grade. Shorter and a long ramp starts to read as a
+      // bump; longer and a kerb's tail gets counted as grade.
+      deckVYSlow += (vy - deckVYSlow) * Math.min(1, dt / 0.35);
+      // ...and the sudden part, clamped and then smoothed over ~0.12s. The
+      // clamp is not cosmetic: `surfaceAt` steps a 150mm kerb in ONE frame, so
+      // the raw figure there is 150mm/16ms = 9 m/s, which is not a speed
+      // anything experiences -- it is a discontinuity. +/-3 m/s is the fastest
+      // real vertical the board sees on this island's grades and ramps.
+      const shock = Math.max(-3, Math.min(3, vy - deckVYSlow));
+      deckShock += (shock - deckShock) * Math.min(1, dt / 0.12);
+    }
     bike.rotation.y = S.heading;
     // pitch into the slope, so a climb reads as a climb
     const fwdX = Math.sin(S.heading), fwdZ = Math.cos(S.heading);
@@ -6342,7 +6455,25 @@ function loop(now) {
         // phase as the old skater's block below)
         const v = Math.min(1, S.speed / SKATE.vMax);
         const carve = Math.max(-1, Math.min(1, S.lean / SKATE.leanMax));
-        const crouch = Math.min(1, v * 0.5 + Math.abs(carve) * 0.5 + (S.drifting ? 0.3 : 0));
+        // ...AND A BUMP RIDES ON TOP OF IT. `deckShock` is the sudden part of
+        // the deck's vertical speed (see its note above): positive when the
+        // ground has just pushed the board UP, negative when it has dropped
+        // away. A body meeting a kerb folds at the knees and a body dropping
+        // off one reaches down for the ground, so it goes straight into the
+        // CROUCH -- which is the one knob on this figure that is already
+        // SOLVED to keep the feet on the deck across its whole range. Doing it
+        // by rotating the legs directly, the way the pump does, would need its
+        // own hand-balanced pair of angles and its own share of stancecheck's
+        // 30mm foot budget; the crouch costs neither.
+        //
+        // The ceiling is the price: `crouch` is clamped to [0,1] and at speed
+        // the base is already there, so at full tilt a bump can only extend
+        // her and not compress her further. Recorded rather than worked
+        // around -- extrapolating past the solved end of the lerp is how a
+        // pose leaves the basin it was solved in.
+        const joltAV = Math.max(-1, Math.min(1, deckShock * JOLT_GAIN));
+        const crouch = Math.max(0, Math.min(1,
+          v * 0.5 + Math.abs(carve) * 0.5 + (S.drifting ? 0.3 : 0) + joltAV * JOLT_CROUCH));
         // THE PUSH WINDOW, NARROWED 2026-08-27. It was 0.66 of vMax, and
         // SKATE.vMax is 16.667 m/s (the owner's 60 km/h), so she was still
         // kicking at the road at 39.6 km/h — most of the speed range this
@@ -6410,6 +6541,11 @@ function loop(now) {
           // the ankles, and a check that budgets ankle placement cannot tell a
           // pose defect from the pump's own swing without it.
           ride: +rideAV.toFixed(3),
+          // the bump, and the raw signal behind it. Both, because the gain
+          // between them was chosen off measured ground and a harness has to
+          // be able to re-measure it rather than trust the note.
+          jolt: +joltAV.toFixed(3), shock: +deckShock.toFixed(3),
+          grade: +deckVYSlow.toFixed(3),
           pushing: pushingAV, phase: +pushPhase.toFixed(3) };
       }
       const RG = skater.userData.rig;
@@ -6751,6 +6887,10 @@ window.__landAudit = (x, z) => {
 window.__teleport = (x, z, heading) => {
   S = newState(x, z, heading == null ? S.heading : heading);
   S.speed = 0;
+  // the seat height is a HISTORY, and arriving somewhere else ends it: carried
+  // across a teleport it would judge the new ground's reach against the old
+  // ground's height and refuse every surface at the destination.
+  rideY = null; deckPrevY = null; rideFallVY = 0;
   // TAKE THE PERSON, NOT JUST THE BOARD.
   //
   // The owner, 2026-08-20: "Once i tele to tanjong beach i cannot teleport
@@ -6984,6 +7124,12 @@ window.__rider = () => {
     // measuring the thing it was meant to judge. `course` is heading + slip
     // (ride.js keeps it), so in a drift the two differ by the slide angle.
     heading: +S.heading.toFixed(4), course: +(S.course != null ? S.course : S.heading).toFixed(4),
+    // FALLING, in m/s, and zero the instant the wheels are back on something.
+    // A check that budgets how far the seat may move in one frame cannot tell
+    // a teleport from gravity without it -- the driven sweep read 0.418m in a
+    // frame and it was simply her falling off the end of the Boardwalk at
+    // 25 m/s, which is not a defect and is not a step.
+    fall: +rideFallVY.toFixed(3),
     // WHICH FIGURE IS ON SCREEN. Without this a null pose field is ambiguous
     // between "not posed" and "this build has no such rig", and that ambiguity
     // is what let the woman be photographed for a day with every number blank.

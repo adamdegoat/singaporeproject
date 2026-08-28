@@ -1008,7 +1008,11 @@ export function addWalkSurface(x1, z1, x2, z2, half, y) {
 // above (a stair riser, a kerb) or a drop they could take. Without fromY the
 // old highest-wins behaviour stands, so every existing caller is unchanged.
 const STEP_UP = 1.35, STEP_DOWN = 3.2;
-export function walkSurfaceAt(x, z, fromY) {
+// `reach` is the same opt-in the deck clause takes: a caller that passes it
+// gets a tighter ceiling than STEP_UP. A walker takes a 1.35m stride up; a
+// board does not, and without this the stair clause was the one remaining way
+// for the ride's seat to be lifted further than it can roll.
+export function walkSurfaceAt(x, z, fromY, reach) {
   const l = WALKS.cells.get(Math.floor(x / BR_CELL) + ',' + Math.floor(z / BR_CELL));
   if (!l) return null;
   let best = null;
@@ -1023,7 +1027,7 @@ export function walkSurfaceAt(x, z, fromY) {
     const y = s[5];
     if (fromY != null) {
       // out of reach in either direction: not a surface this walker is on
-      if (y - fromY > STEP_UP || fromY - y > STEP_DOWN) continue;
+      if (y - fromY > (reach != null ? reach : STEP_UP) || fromY - y > STEP_DOWN) continue;
       // among those reachable, the nearest to where they already are
       if (best === null || Math.abs(y - fromY) < Math.abs(best - fromY)) best = y;
     } else if (best === null || y > best) best = y;
@@ -1170,8 +1174,14 @@ function _addSpan(REG, pts, width, deckOverride = null) {
       : ramp ? Math.min(ramp(s0), ramp(s1)) : deck;
     const seg = [ax, az, bx, bz, half, segDeck, wid];
     // an 18% landing ramp quantised to one height per 8m seg is a 1.5m stair
-    // (measured: +2.54 at -1078,12110) — the seat readers interpolate these
+    // (measured: +2.54 at -1078,12110) — the readers interpolate these.
+    // A FUNCTION-DRIVEN SPAN GETS THEM TOO, and until 2026-08-29 it did not:
+    // `fn` is how buildRoads carries a road bridge's approach ramps, and those
+    // are the spans a RIDER crosses at speed. Without the ends there was
+    // nothing to interpolate and _deckIn had to fall back on the segment's
+    // flat minimum, which is the 0.45m-per-8m staircase measured in its note.
     if (ramp) { seg[7] = ramp(s0); seg[8] = ramp(s1); }
+    else if (fn) { seg[7] = fn(ax, az); seg[8] = fn(bx, bz); }
     REG.segs.push(seg);
     const mnx = Math.min(ax, bx) - half;
     const mxx = Math.max(ax, bx) + half;
@@ -1489,19 +1499,52 @@ function _deckWideIn(REG, x, z, minHalf) {
   return best;
 }
 
+// ...AND IT RIDES UP THE RAMP, IT DOES NOT CLIMB THE STAIRS.
+//
+// This returned `s[5]`, which is ONE height for a whole segment. Segments on a
+// ramped span are 8m long, so a road bridge's approach came back as a
+// STAIRCASE: measured on the road at 318,13762 heading 0.288, surfaceAt held
+// 7.7215 for 12.5m, then jumped 0.4509 in one sample, then held 8m and jumped
+// again -- seven risers of 0.24 to 0.72m in the first 68m, on a stretch whose
+// drawn tarmac is a smooth crest (shots/street/steps.shot1.jpg). The rider is
+// seated on this function and so is the chase camera, so both were teleported
+// up to 0.72m in a single frame at 40+ km/h while the road under them did not
+// move. That is the owner's "glitching in mid air" with a number on it.
+//
+// The per-end heights needed to fix it were ALREADY BEING STORED -- but only
+// for footbridge landing ramps, whose own comment says "the seat readers
+// interpolate these". The seat reader does; this one, the one the RIDER goes
+// through, never did, and for a road bridge built from a height function the
+// ends were not stored at all. Both halves are fixed: _addSpan stores the ends
+// for a function-driven span too, and this interpolates whenever they are
+// there. `s[5]` is untouched -- it is the conservative per-segment minimum and
+// the dressing passes that place kerbs and lamps still read it.
 function _deckIn(REG, x, z) {
   const l = REG.cells.get(Math.floor(x / BR_CELL) + ',' + Math.floor(z / BR_CELL));
   if (!l) return null;
-  let best = null, bestHalf = -1;
+  // AND A SEGMENT YOU ARE PAST IS NOT THE SEGMENT YOU ARE ON. `t` is clamped
+  // into [0,1], so a point four metres BEYOND a segment's end still projects
+  // onto that end -- and a road bridge is 14m wide, so it is still inside the
+  // capsule too. With "widest wins" as the only tie-break, a point in the
+  // middle of segment B could be answered by segment A's clamped end height,
+  // which is flat. That is why interpolating alone only halved the staircase:
+  // measured after it, the treads went from 8m to 4.25m and the risers stayed
+  // (0.25-0.40m). The overhang is scored now and an interior hit outranks a
+  // clamped one at the same width.
+  let best = null, bestHalf = -1, bestPen = Infinity;
   for (const i of l) {
     const s = REG.segs[i];
     const vx = s[2] - s[0], vz = s[3] - s[1];
     const l2 = vx * vx + vz * vz || 1;
-    let t = ((x - s[0]) * vx + (z - s[1]) * vz) / l2;
-    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const traw = ((x - s[0]) * vx + (z - s[1]) * vz) / l2;
+    const t = traw < 0 ? 0 : traw > 1 ? 1 : traw;
     const dx = x - (s[0] + vx * t), dz = z - (s[1] + vz * t);
-    if (dx * dx + dz * dz <= (s[4] + 0.4) * (s[4] + 0.4) && s[4] > bestHalf) {
-      bestHalf = s[4]; best = s[5];
+    if (dx * dx + dz * dz > (s[4] + 0.4) * (s[4] + 0.4)) continue;
+    // metres past the end of this segment, 0 while the projection is interior
+    const pen = Math.abs(traw - t) * Math.sqrt(l2);
+    if (s[4] > bestHalf + 1e-6 || (s[4] > bestHalf - 1e-6 && pen < bestPen)) {
+      bestHalf = Math.max(bestHalf, s[4]); bestPen = pen;
+      best = s[7] != null ? s[7] + (s[8] - s[7]) * t : s[5];
     }
   }
   return best;
@@ -1584,7 +1627,8 @@ export function standable(x, z) {
   return bridgeDeckAt(x, z) !== null;
 }
 
-export function surfaceAt(x, z, fromY, seat) {
+// `reach` is OPT-IN and only the ride passes it. See the clause below.
+export function surfaceAt(x, z, fromY, seat, reach) {
   // SEATED: the walker is ON a named footbridge way, and stays on it until
   // they leave its corridor — the deck answers before every other clause, so
   // neither a viaduct overhead nor the shore shelf below can pull them off
@@ -1596,14 +1640,33 @@ export function surfaceAt(x, z, fromY, seat) {
     seat.id = null;
   }
   const deck = bridgeDeckAt(x, z);
-  if (deck !== null) return deck + SURFACE_ROAD;
+  // A DECK OVERHEAD IS NOT A DECK YOU ARE ON, and this clause had no reach
+  // test of any kind: it returned any deck whose footprint covered the point,
+  // however far above. The stair clause below already refuses what it cannot
+  // reach; this one lifted a rider onto every viaduct and flyover she drove
+  // beneath. Measured by walking every road centreline carrying the height the
+  // way the ride does (data/joltcheck.mjs): a 14.582m step at -1549,12432.
+  //
+  // OPT-IN, AND DELIBERATELY SO. The walker's seating through this function is
+  // the subject of four sessions of measured trade-offs (SESSION 17's shore
+  // landings, the promenade width rule, directional seating) and its N3 count
+  // is a deploy gate. Changing what a deck means for every caller to fix the
+  // ride is how those get re-litigated by accident. Only a caller that passes
+  // `reach` gets this, and today that is main.js's board.
+  //
+  // UPWARD ONLY. Refusing a deck ABOVE her is "you cannot be teleported onto
+  // something you could not have ridden onto"; refusing one below would be
+  // refusing to fall, which is a different question and not this one's.
+  if (deck !== null && !(reach != null && fromY != null && deck + SURFACE_ROAD - fromY > reach)) {
+    return deck + SURFACE_ROAD;
+  }
   // A STAIR TREAD IS GROUND WHEN YOU ARE ON IT. Checked after the deck so a
   // flight under a bridge does not lift a rider off the carriageway, and
   // before the terrain so a walker climbing Fort Canning rises with the steps
   // instead of walking through them. main.js seats the walker with exactly
   // this function (`walkerRig.group.position.set(walker.x, surfaceAt(...))`),
   // which is why the stairs were drawn but not climbable until now.
-  const step = walkSurfaceAt(x, z, fromY);
+  const step = walkSurfaceAt(x, z, fromY, reach);
   if (step !== null) return step;
   // ON THE SHORE SHELF, THE GROUND YOU STAND ON IS THE GROUND THAT IS DRAWN.
   //
@@ -1657,7 +1720,15 @@ export function surfaceAt(x, z, fromY, seat) {
   // dead-end scenery stub — the least harm on the table tonight. The clean
   // end is seating that knows WHICH way the walker follows; that is a
   // project, and this line documents the trade until it exists.
-  if (fb !== null && fb > g) {
+  // ...AND `reach` APPLIES HERE TOO. Same opt-in as the deck clause: this is
+  // the promenade rule, and the Boardwalk is 7m wide, so a rider on a road
+  // beside it was stood on it -- the last un-gated lift in this function.
+  // Measured before the gate (data/joltcheck.mjs, walking every road with the
+  // ride's own call): four lifts left on the whole island, all in the
+  // Boardwalk landings between -1034 and -1079, worst 4.723m at -1034,12090 --
+  // the very step SESSION 17's note names. The walker's behaviour is untouched
+  // because the walker passes no reach.
+  if (fb !== null && fb > g && !(reach != null && fromY != null && fb + 0.04 - fromY > reach)) {
     const grd = TERRAIN.grid && TERRAIN.grid();
     const seaLv = grd && typeof grd.sea === 'number' ? grd.sea : null;
     if (fb - g < 3.0 || (seaLv !== null && g < seaLv + 0.6)) return fb + 0.04;
@@ -1688,7 +1759,8 @@ export function surfaceAt(x, z, fromY, seat) {
     const seaLv2 = grd2 && typeof grd2.sea === 'number' ? grd2.sea : null;
     if (seaLv2 !== null && g < seaLv2 + 0.6) {
       const fbn = _deckWideIn(FOOTBRIDGES, x, z, 0);
-      if (fbn !== null && fbn > g) return fbn + 0.04;
+      if (fbn !== null && fbn > g
+          && !(reach != null && fromY != null && fbn + 0.04 - fromY > reach)) return fbn + 0.04;
     }
   }
   if (window.__onRoad && window.__onRoad(x, z, 0.4)) return g + SURFACE_ROAD;

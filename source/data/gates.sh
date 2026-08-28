@@ -155,6 +155,24 @@ echo "$_stance" | tail -24
 _stroke=$(node data/strokecheck.mjs 2>&1); [ $? -ne 0 ] && FAILED=1
 echo "$_stroke" | tail -16
 
+hr "the ground under the board"
+# ...AND EVERY CHECK ABOVE THIS ONE JUDGES HER POSE AGAINST A DECK, never the
+# deck against the ROAD. Both can be perfect while the road teleports: on
+# 2026-08-29 the ride surface was found stepping 0.45m per 8m up every bridge
+# approach (the deck registry stored one flat height per segment), and 12.3m
+# in a single frame beside the cable-car station (the stair clause answers with
+# the top tread when nobody hands it a height to judge reach against). The
+# rider gates were green through all of it because a pose does not know what
+# the ground is doing.
+#
+# joltcheck DRIVES six spots and reads the board's OWN y on the frame, so
+# nothing about the seat has to be reconstructed -- two earlier versions of it
+# walked road centrelines with an invented starting height and reported
+# metre-scale steps no rider can experience. It ends both ways: the bump term
+# must fire somewhere, and must be silent on a settled straight.
+_jolt=$(node data/joltcheck.mjs 2>&1); [ $? -ne 0 ] && FAILED=1
+echo "$_jolt" | tail -14
+
 hr "venue signs"
 SG_SCENE=sentosa node data/signcheck.mjs 2>&1 | tail -12; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
 
