@@ -239,9 +239,35 @@ for (const name of WANT) {
   const pushingNow = !!(r.pose && r.pose.pushing);
   if (st.planted === 'both' && !pushingNow) check('back(R)', r.soleR, r.ankleR);
   else if (pushingNow) {
-    // the pushing shoe belongs on the ROAD: same budget, other surface
+    // THE SHOE BELONGS ON THE ROAD DURING THE DRIVE, AND NOWHERE NEAR IT
+    // DURING THE RECOVERY (2026-08-28).
+    //
+    // This used to demand road contact at ANY phase of the push, and it
+    // passed — because the stroke it was written against was symmetric
+    // (avatar.js traced cruise -> PLANT -> DRIVE -> PLANT -> cruise), so the
+    // foot was near the road for almost all of it. When the stroke was made
+    // asymmetric — plant, a long drive, then a recovery that swings the foot
+    // home clear of the ground, which is what a push actually is — this check
+    // failed at 45mm, and it was the CHECK that was wrong: it had the defect
+    // written into it as the pass condition.
+    //
+    // The phase is recovered exactly the way avatar.js recovers it, from the
+    // same two derived numbers, so the two cannot drift apart silently.
+    const kk = r.pose.kick, rr = r.pose.reach;
+    const ph = Math.atan2(kk, 1 - 2 * rr) / (Math.PI * 2);
+    const p01 = ph - Math.floor(ph);
     const off = r.soleR - r.roadY;
-    if (off > 0.045) say.push(`back(R) pushing shoe floats ${(off * 1000).toFixed(0)}mm over the road`);
+    const driving = p01 >= 0.22 && p01 <= 0.62;      // matches avatar.js's legs
+    if (driving && off > 0.045) {
+      say.push(`back(R) pushing shoe floats ${(off * 1000).toFixed(0)}mm over the road`
+        + ` DURING THE DRIVE (phase ${p01.toFixed(2)})`);
+    }
+    // ...and a foot that has swung home should be up, not skimming: a
+    // recovery that never leaves the road is the old symmetric stroke again
+    if (!driving && off > 0.40) {
+      say.push(`back(R) recovering shoe is ${(off * 1000).toFixed(0)}mm up`
+        + ` (phase ${p01.toFixed(2)}) — that is a kick, not a recovery`);
+    }
     if (off < -0.020) say.push(`back(R) pushing shoe is ${(-off * 1000).toFixed(0)}mm INTO the road`);
   }
   // LEGS CROSSED. The front foot is the LEFT one (regular stance) and rides

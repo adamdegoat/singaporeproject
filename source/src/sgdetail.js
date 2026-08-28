@@ -1527,26 +1527,100 @@ export async function buildAttractions(world, data, Y = null) {
   };
 
   // FORT SILOSO'S GUNS. Fourteen cannon nodes, surveyed individually, on the
-  // island's one genuine historic site. A coastal gun is a barrel on a
-  // traversing mount, and that reads at a glance; no calibre or mark is
-  // claimed because none is tagged.
+  // island's one genuine historic site.
+  //
+  // REBUILT 2026-08-28, AND THE SHIELD IS THE WHOLE POINT. The first version
+  // was a granite disc, a box and a tapered cylinder, and photographed from the
+  // golden `fort-siloso` vantage that is what it looked like: a black wedge
+  // lying across a black box. A coastal gun does not read as a barrel; it reads
+  // as a SHIELD with a barrel through it.
+  //
+  // SOURCED, because this is a real place and the previous note ("no calibre or
+  // mark is claimed because none is tagged") was an argument for building
+  // nothing rather than for building the wrong thing. The guns standing at Fort
+  // Siloso today are **Mark 24 6-inch BL guns**, brought from Haifa after the
+  // war to replace the Mark VII, and they carry a **Mark 5 Mounting and
+  // Shield** — the emplacements had to be modified to take them. The Mark 5
+  // shield is recorded as LARGER than its predecessors, giving the gunners
+  // greater cover. The gun elevates to 45 degrees.
+  //   fortsiloso.com/singaporeguns/6inmk24/mk24.htm
+  //   fortsiloso.com/history/1946/1946.htm
+  //
+  // What is NOT claimed: no mark plate, no lettering, no crew, and no attempt
+  // at the breech mechanism. The shape is the shield, the pedestal, the
+  // trunnions, the two-stage barrel and the traverse racer, which is what a
+  // 6-inch coast gun is from ten metres away. Calibre sets the barrel: 6 inch
+  // is 0.152m, so the chase is drawn at 0.17m radius over the bore and the
+  // breech end thicker, rather than at a number chosen by eye.
   const cannon = (x, z) => {
     const gy = groundAt(x, z);
     const h = ((x * 3.1 + z * 1.7) % 1) * Math.PI * 2;   // deterministic bearing
-    const base = new THREE.CylinderGeometry(1.5, 1.7, 0.5, 12);
-    base.translate(x, gy + 0.25, z);
+    const ca = Math.cos(h), sa = Math.sin(h);
+    // forward is +sin/+cos in this file's convention; across is its normal
+    const fx = sa, fz = ca, rx = ca, rz = -sa;
+    const put = (geo, mat, ex, ey, ez, rot) => {
+      if (rot) geo.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(rot));
+      geo.translate(x + fx * ez + rx * ex, gy + ey, z + fz * ez + rz * ex);
+      merger.add(geo, mat, x, z);
+    };
+    // the emplacement: a concrete pad and the TRAVERSE RACER it turns on
+    const base = new THREE.CylinderGeometry(2.5, 2.7, 0.45, 16);
+    base.translate(x, gy + 0.22, z);
     merger.add(base, granite, x, z);
-    const mount = new THREE.BoxGeometry(1.5, 0.9, 2.4);
-    mount.applyMatrix4(new THREE.Matrix4().makeRotationY(h));
-    mount.translate(x, gy + 0.95, z);
-    merger.add(mount, carriage, x, z);
-    // the barrel, elevated a few degrees out to sea
-    const bl = 4.2;
-    const barrel = new THREE.CylinderGeometry(0.19, 0.26, bl, 10);
-    barrel.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(
-      new THREE.Euler(-Math.PI / 2 + 0.16, h, 0, 'YXZ')));
-    barrel.translate(x + Math.sin(h) * bl * 0.32, gy + 1.7, z + Math.cos(h) * bl * 0.32);
-    merger.add(barrel, gun, x, z);
+    // A RACER IS LET INTO THE CONCRETE, NOT LAID ON IT. Two tube radii were
+    // tried — 0.09 then 0.055 — and both photographed as a rubber hose lying
+    // round the emplacement, because the problem was never the thickness: a
+    // torus is round, and a rail is a flat band flush with the pad. Drawn as a
+    // ring lying in the surface it reads as the track it is.
+    const racer = new THREE.RingGeometry(1.98, 2.20, 24);
+    racer.rotateX(-Math.PI / 2);
+    racer.translate(x, gy + 0.455, z);
+    merger.add(racer, gun, x, z);
+    // the pedestal mounting
+    put(new THREE.CylinderGeometry(0.78, 0.95, 1.15, 12), carriage, 0, 1.02, 0);
+    // the trunnion block and its two trunnions, which is where the barrel sits
+    put(new THREE.BoxGeometry(1.35, 0.62, 0.9), carriage, 0, 1.85, 0.05,
+      new THREE.Euler(0, h, 0, 'YXZ'));
+    for (const side of [-1, 1]) {
+      put(new THREE.CylinderGeometry(0.16, 0.16, 0.3, 8), gun, side * 0.78, 1.85, 0.05,
+        new THREE.Euler(0, 0, Math.PI / 2, 'YXZ'));
+    }
+    // THE MARK 5 SHIELD: a tall front plate raked back, two side cheeks and a
+    // sloped roof. It stands on the mounting and the barrel comes through it.
+    put(new THREE.BoxGeometry(2.9, 1.75, 0.11), gun, 0, 2.05, 0.72,
+      new THREE.Euler(-0.18, h, 0, 'YXZ'));
+    for (const side of [-1, 1]) {
+      put(new THREE.BoxGeometry(0.10, 1.55, 1.25), gun, side * 1.42, 1.95, 0.18,
+        new THREE.Euler(0, h, 0, 'YXZ'));
+    }
+    put(new THREE.BoxGeometry(2.9, 0.10, 1.30), gun, 0, 2.80, 0.30,
+      new THREE.Euler(-0.13, h, 0, 'YXZ'));
+    // THE BARREL, in two stages: a thick breech length behind the shield and a
+    // long chase in front of it, elevated a few degrees out to sea.
+    const EL = 0.14;                       // a few degrees, not the full 45
+    const brEuler = new THREE.Euler(-Math.PI / 2 + EL, h, 0, 'YXZ');
+    const breech = new THREE.CylinderGeometry(0.30, 0.34, 1.7, 10);
+    breech.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(brEuler));
+    breech.translate(x - fx * 0.55, gy + 1.85 - 0.55 * EL, z - fz * 0.55);
+    merger.add(breech, gun, x, z);
+    const CH = 5.6;
+    const chase = new THREE.CylinderGeometry(0.17, 0.27, CH, 10);
+    chase.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(brEuler));
+    chase.translate(x + fx * (0.9 + CH * 0.45), gy + 1.85 + (0.9 + CH * 0.45) * EL,
+      z + fz * (0.9 + CH * 0.45));
+    merger.add(chase, gun, x, z);
+    // the muzzle swell — the one band on a plain chase, and it is what stops
+    // the barrel reading as a traffic cone
+    const muz = new THREE.CylinderGeometry(0.21, 0.21, 0.34, 10);
+    muz.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(brEuler));
+    muz.translate(x + fx * (0.9 + CH * 0.92), gy + 1.85 + (0.9 + CH * 0.92) * EL,
+      z + fz * (0.9 + CH * 0.92));
+    merger.add(muz, gun, x, z);
+    // the recoil cylinder slung under the chase
+    const rec = new THREE.CylinderGeometry(0.13, 0.13, 2.6, 8);
+    rec.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(brEuler));
+    rec.translate(x + fx * 1.9, gy + 1.52 + 1.9 * EL, z + fz * 1.9);
+    merger.add(rec, gun, x, z);
     out.cannons++;
   };
 

@@ -145,6 +145,16 @@ hr "the rider, on her board"
 _stance=$(node data/stancecheck.mjs 2>&1); [ $? -ne 0 ] && FAILED=1
 echo "$_stance" | tail -24
 
+# ...AND stancecheck CAN ONLY EVER SEE ONE INSTANT OF THE PUSH. The world is
+# deterministic and its settle time is fixed, so three runs land on the same
+# phase and report the same numbers — a stroke that is right there and frozen
+# either side of it passes. strokecheck walks the phase instead of waiting for
+# it: eleven samples, the foot down through the drive and lifting on the way
+# home. Added 2026-08-28, when the push was found playing forwards and then
+# backwards through two poses with stancecheck green throughout.
+_stroke=$(node data/strokecheck.mjs 2>&1); [ $? -ne 0 ] && FAILED=1
+echo "$_stroke" | tail -16
+
 hr "venue signs"
 SG_SCENE=sentosa node data/signcheck.mjs 2>&1 | tail -12; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
 

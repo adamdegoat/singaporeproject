@@ -586,7 +586,7 @@ export function buildAvatar(hat) {
     // all but on its centreline, hips slightly open, shoulders open more,
     // leading arm forward over the nose-side rail at chest height, trailing
     // arm back and low by the hip.
-    skatePose(lean = 0, crouch = 0, kick = 0, reach = 0) {
+    skatePose(lean = 0, crouch = 0, kick = 0, reach = 0, ride = 0) {
       resetPose();
       root.rotation.y = 0;
       const c = Math.max(0, Math.min(1, crouch));
@@ -688,7 +688,44 @@ export function buildAvatar(hat) {
         // real cycle: down to the PLANT, sweep back to the DRIVE, return.
         const ph = Math.atan2(kick, 1 - 2 * reach) / (Math.PI * 2);
         const p01 = ph - Math.floor(ph);
-        const t = Math.sin(Math.PI * p01);        // 0 on the deck, 1 committed
+        // A PUSH IS NOT SYMMETRIC, AND THIS ONE WAS (2026-08-28).
+        //
+        // `t = sin(PI * p01)` traces cruise -> PLANT -> DRIVE -> PLANT ->
+        // cruise: the stroke plays forwards and then backwards through the
+        // same two poses. Two things follow, and the handover has both of them
+        // as complaints. The DRIVE — the whole point of the stroke — is
+        // reached for one instant at p01 = 0.5 and left immediately, so
+        // shooting five frames of a push returns three that look the same. And
+        // the RECOVERY retraces the plant, which puts the foot back on the
+        // road on the way home; a real recovery lifts it and swings it forward
+        // clear of the ground.
+        //
+        // So the stroke is three named legs with their own durations, blending
+        // between three poses rather than sliding along one path:
+        //
+        //     0.00-0.22   cruise -> PLANT   the foot comes down beside the deck
+        //     0.22-0.62   PLANT  -> DRIVE   the stroke, and it is the long one
+        //     0.62-1.00   DRIVE  -> cruise  straight home, NOT back via PLANT
+        //
+        // Proportions are the ordinary ones for a stride: a short reach out, a
+        // long drive, and a recovery about as long as the drive because the
+        // leg has further to travel and no ground to push against. No source
+        // gives a skateboard push in percentages, so these are stated as
+        // authored rather than measured.
+        //
+        // `t` survives as the COMMITMENT — how far she is from her cruising
+        // stance, 0 on the deck and 1 fully extended — because the torso dip
+        // and the chest unwind below are both continuous in it and always
+        // were.
+        const PL_END = 0.22, DR_END = 0.62;
+        let legA, legB, legU;
+        if (p01 < PL_END) { legA = 0; legB = 1; legU = p01 / PL_END; }
+        else if (p01 < DR_END) { legA = 1; legB = 2; legU = (p01 - PL_END) / (DR_END - PL_END); }
+        else { legA = 2; legB = 0; legU = (p01 - DR_END) / (1 - DR_END); }
+        const ease = legU * legU * (3 - 2 * legU);
+        const t = legA === 0 ? ease * 0.5
+          : legA === 1 ? 0.5 + ease * 0.5
+          : 1 - ease;
         // the stance angles this pose already applied, to blend away from —
         // READ FROM THE TABLE, not re-typed. They used to be six local
         // variables the stance block happened to leave lying around, which is
@@ -704,11 +741,12 @@ export function buildAvatar(hat) {
                      kv('LowerLeg.L', [1, 0, 0]), kv('UpperLeg.R', [1, 0, 0]),
                      kv('UpperLeg.R', [0, 0, 1]), kv('LowerLeg.R', [1, 0, 0]),
                      SKATE_HIP[0] + c * (SKATE_HIP[1] - SKATE_HIP[0])];
-        // first half of the commitment lifts the shoe off the deck and puts
-        // it DOWN beside the board; the second half sweeps it back
-        const d = cur.map((cv, i) => (t < 0.5
-          ? (PUSH_PLANT[i] - cv) * (t * 2)
-          : (PUSH_PLANT[i] - cv) + (PUSH_DRIVE[i] - PUSH_PLANT[i]) * ((t - 0.5) * 2)));
+        // the three poses the legs above name, as deltas from the stance
+        const POSE = [cur, PUSH_PLANT, PUSH_DRIVE];
+        const d = cur.map((cv, i) => {
+          const from = POSE[legA][i] - cv, to = POSE[legB][i] - cv;
+          return from + (to - from) * ease;
+        });
         qrot('UpperLeg.L', 1, 0, 0, d[0]);
         qrot('UpperLeg.L', 0, 0, 1, d[1]);
         qrot('LowerLeg.L', 1, 0, 0, d[2]);
@@ -732,6 +770,41 @@ export function buildAvatar(hat) {
         // turning until she is looking at the pavement beside her.
         qrot('Torso', 0, 1, 0, t * PUSH_OPEN);
         qrot('Head', 0, 1, 0, -t * PUSH_OPEN);
+      }
+
+      // ---- SHE IS ALIVE WHILE SHE ROLLS ----------------------------------
+      //
+      // The handover's standing complaint about this figure: "cruising at
+      // 10 km/h and at 35 she is the identical frame. No pump, no weight
+      // shift, no rise and fall, nothing breathing." The push is fixed above;
+      // this is the other half, and it is the ride.
+      //
+      // `ride` is ONE signed number, already sine-shaped and already scaled by
+      // speed in main.js. Everything below is a small multiple of it, so at a
+      // standstill every term is EXACTLY ZERO and the resting figure is the
+      // one that has always been photographed. That is not a nicety: the
+      // handover records a resting change that "moved 27 of 40 goldens by
+      // 0.10-0.16% — the rider is in every frame, so any resting change is an
+      // island-wide diff for nothing".
+      //
+      // WHAT A SURFSKATER ACTUALLY DOES is PUMP: the board is driven by the
+      // rider rising and sinking through the turn, not by pushing. So the
+      // motion is a compression cycle — knees fold and extend, the pelvis
+      // rides up and down with them, the chest follows a beat behind, and the
+      // arms counterweight it. Amplitudes are deliberately small; this is
+      // meant to read as a body working, not as a bounce.
+      if (ride !== 0) {
+        mov('Body', 0, (ride * 0.011) / BODY_UNIT, 0);
+        qrot('LowerLeg.L', 1, 0, 0, -ride * 0.045);
+        qrot('LowerLeg.R', 1, 0, 0, -ride * 0.045);
+        qrot('UpperLeg.L', 1, 0, 0, ride * 0.026);
+        qrot('UpperLeg.R', 1, 0, 0, ride * 0.026);
+        // the chest lags the legs — a body absorbs from the ground up
+        qrot('Torso', 1, 0, 0, ride * 0.020);
+        qrot('Head', 1, 0, 0, -ride * 0.012);
+        // ...and the arms hang off it, so they swing a little against it
+        qrot('UpperArm.L', 1, 0, 0, -ride * 0.055);
+        qrot('UpperArm.R', 1, 0, 0, -ride * 0.055);
       }
 
       // the IK feet are root-parented siblings of the leg chain, so they

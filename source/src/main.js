@@ -1235,6 +1235,7 @@ const PUSH_MAX_V = 0.40;
 // the push stroke's phase — module scope because it must survive frames,
 // and it is advanced by DISTANCE rather than by a clock (see the push block)
 let pushPhase = 0;
+let ridePhase = 0;
 const skater = NEWAVATAR ? (() => {
   const av = buildAvatar('cap');
   av.group.position.y = 0.16;         // feet on the deck top
@@ -6354,7 +6355,23 @@ function loop(now) {
         pushPhase = pushingAV ? (pushPhase + (0.9 + S.speed) * dt * 0.62) % 1 : 0;
         const kickAV = pushingAV ? Math.sin(pushPhase * Math.PI * 2) : 0;
         const reachAV = pushingAV ? (0.5 - 0.5 * Math.cos(pushPhase * Math.PI * 2)) : 0;
-        AV.skatePose(carve * 0.35, crouch, kickAV, reachAV);
+        // THE RIDE BEAT, and it advances with DISTANCE, not with the clock.
+        //
+        // Same rule the walk clips follow at the top of avatar.js ("clips are
+        // sampled by a phase the GAME advances"): a phase driven by time keeps
+        // running while she stands still, and the resting figure is in every
+        // golden frame on this island. Driven by distance it is exactly frozen
+        // at a standstill, and it speeds up as she does, which is what a pump
+        // cycle does anyway.
+        //
+        // The amplitude is scaled by speed on top of that, so the difference
+        // between 10 km/h and 35 — the owner's actual complaint — is visible
+        // in how hard she is working, not only in how fast it repeats. Damped
+        // out again while pushing, because the stroke owns the legs then.
+        ridePhase = (ridePhase + S.speed * dt * 0.62) % (Math.PI * 2);
+        const rideAV = pushingAV ? 0
+          : Math.sin(ridePhase) * Math.min(1, S.speed / 6.5);
+        AV.skatePose(carve * 0.35, crouch, kickAV, reachAV, rideAV);
         // WHAT THE FIGURE WAS ACTUALLY TOLD TO DO, published for the vet.
         // window.__rider() read `skater.userData.rig` — the OLD box figure —
         // so on the woman every pose field it returned was null, and a sheet
