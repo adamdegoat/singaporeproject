@@ -41,6 +41,9 @@ const BUD = {
   // anything a slope can produce and far below every teleport this pass was
   // written to catch (0.45, 0.72, 4.7, 12.3).
   seat: 0.20,
+  // ...and how far the seat may sit above the ground at a point asked from
+  // that ground. RIDE_REACH is 0.45; a road's own surface offset is 0.061.
+  probeLift: 0.50,
 };
 
 const browser = await chromium.launch({ args: ['--use-gl=angle'] });
@@ -118,11 +121,27 @@ await browser.close();
 const SPOTS = (process.env.SG_SPOTS || [
   '-1037,11775,-0.0222',   // the 393m straight, the flattest road on the island
   '320,13760,0.288',       // the bridge crest whose deck was an 8m staircase
-  '-1757,12240,0',         // the cable-car station road, the 12.3m stair launch
   '-1050,12060,0',         // the Boardwalk landings, SESSION 17's shore steps
   '-1560,12400,0',         // under the viaduct at the west end
   '-1241.6,12973,-0.4363', // the spawn, Palawan Beach
+  '734,13300,0.123',       // a 143m straight on the east side
 ].join(';')).split(';');
+// THE CABLE-CAR STATION ROAD IS NOT DRIVEN, AND THAT IS NOT A CHOICE.
+// It was in the list above -- it is where the 12.3m stair launch was found --
+// and the distance-driven run reported it immediately: 9.7m covered in ten
+// seconds. A building stands across the carriageway at -1757, z 12246-12258
+// (`#f4efe4 MAP Standard`, found through `?solidtrace=1`), and past it she
+// manages 17m. She cannot reach the stairs at z 12269-12282 by riding, so a
+// driven run there measures a wall, not a surface.
+//
+// The regression is asserted at the point instead. A physical fromY is
+// available without guessing here -- the terrain IS the road -- so this needs
+// none of the seeding that made the centreline pass unsound: at each point the
+// board's seat, asked from the ground, must stay within a reach of it.
+const STAIR_PROBES = [
+  { at: [-1757, 12275], why: 'the cable-car station stairs (was 54.768 over a road at 42.5)' },
+  { at: [-1757, 12279], why: 'the same flight, four metres along' },
+];
 const surf = await (async () => {
   const b2 = await chromium.launch({ args: ['--use-gl=angle'] });
   const p2 = await b2.newPage({ viewport: { width: 800, height: 600 } });
@@ -149,12 +168,30 @@ const surf = await (async () => {
       };
       tick();
     });
-    await p2.evaluate(() => { window.__force = { throttle: 1, steer: 0, brake: 0 }; });
-    await p2.waitForTimeout(6000);
+    // DRIVEN BY DISTANCE, NOT BY THE CLOCK -- the same rule this project's
+    // animation phases follow, and for the same reason. A six-second hold
+    // covers whatever ground the frame rate allows, so under the load of a
+    // deploy she travels less far: the Boardwalk spot recorded 32 frames of
+    // falling and peak |jolt| 1.0 run alone, and 0 and 0 run inside deploy.sh,
+    // because she never reached the drop. A gate that guards a deploy and
+    // depends on how busy the machine is will refuse a good one sooner or
+    // later. She rides 130m or ten seconds, whichever comes first, so every
+    // run covers the same GROUND.
+    await p2.evaluate(() => {
+      window.__force = { throttle: 1, steer: 0, brake: 0 };
+      window.__runFrom = window.__ridePos();
+    });
+    await p2.waitForFunction(() => {
+      const [x, z] = window.__ridePos(), [x0, z0] = window.__runFrom;
+      return Math.hypot(x - x0, z - z0) >= 130;
+    }, null, { polling: 100, timeout: 10000 }).catch(() => {});
     const t = await p2.evaluate(() => {
       window.__seatStop = true; window.__force = null;
+      const [x, z] = window.__ridePos(), [x0, z0] = window.__runFrom;
+      window.__ranM = Math.hypot(x - x0, z - z0);
       return window.__seatTrace;
     });
+    const ranM = await p2.evaluate(() => +window.__ranM.toFixed(1));
     // the first ~10 frames are the teleport settling, not riding
     // FALLING FRAMES ARE NOT STEPS. Off the end of the Boardwalk she drops
     // several metres at g, and a frame of that legitimately moves the seat
@@ -166,12 +203,17 @@ const surf = await (async () => {
       const d = Math.abs(t[i][0] - t[i - 1][0]);
       if (d > worst) { worst = d; worstKmh = t[i][1]; }
     }
-    runs.push({ spot, frames: t.length, worst: +worst.toFixed(4), kmh: worstKmh, fell, maxFall: +maxFall.toFixed(1),
+    runs.push({ spot, frames: t.length, ranM, worst: +worst.toFixed(4), kmh: worstKmh, fell, maxFall: +maxFall.toFixed(1),
       jolt: +Math.max(0, ...t.map((r) => Math.abs(r[3]))).toFixed(3),
       topKmh: Math.max(0, ...t.map((r) => r[1])) });
   }
+  const probes = await p2.evaluate((list) => list.map((q) => {
+    const [x, z] = q.at;
+    const g = window.__terrainAt(x, z);
+    return { ...q, ground: +g.toFixed(3), seat: +window.__rideSurfaceAt(x, z, g).toFixed(3) };
+  }), STAIR_PROBES);
   await b2.close();
-  return { runs };
+  return { runs, probes };
 })();
 
 const pct = (a, p) => a.length ? a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * p))] : 0;
@@ -188,9 +230,15 @@ console.log(`    riding the island  shock p95 ${pct(rShock, 0.95).toFixed(3)} m/
 console.log(`                       |jolt| p50 ${pct(rJolt, 0.50).toFixed(3)}  p95 ${pct(rJolt, 0.95).toFixed(3)}  max ${Math.max(0, ...rJolt).toFixed(3)}`);
 console.log(`                       frames over 0.30: ${rJolt.filter((x) => x > 0.30).length}  (${(100 * rJolt.filter((x) => x > 0.30).length / Math.max(1, rJolt.length)).toFixed(1)}%)`);
 console.log(`    surfaces ridden    ${Object.entries(kinds).map(([k, n]) => `${k} ${n}`).join('  ')}`);
+console.log('    asked at a point, from the ground:');
+for (const q of surf.probes) {
+  const lift = +(q.seat - q.ground).toFixed(3);
+  console.log(`      ${JSON.stringify(q.at).padEnd(20)} ground ${String(q.ground).padStart(8)}  seat ${String(q.seat).padStart(8)}`
+    + `  lift ${String(lift).padStart(7)}${lift > BUD.probeLift ? ' <-- OVER' : ''}   ${q.why}`);
+}
 console.log('    the board\'s own seat, driven:');
 for (const r of surf.runs) {
-  console.log(`      ${r.spot.padEnd(24)} ${String(r.frames).padStart(4)} frames  top ${String(r.topKmh).padStart(5)} km/h`
+  console.log(`      ${r.spot.padEnd(24)} ${String(r.ranM).padStart(6)}m  top ${String(r.topKmh).padStart(5)} km/h`
     + `   seat step ${r.worst.toFixed(4)}m${r.worst > BUD.seat ? ' <-- OVER' : ''}`
     + `   falling ${String(r.fell).padStart(3)} frames (to ${r.maxFall} m/s)   peak |jolt| ${r.jolt}`);
 }
@@ -208,8 +256,14 @@ const rMax = Math.max(0, ...rJolt);
 const joltMax = Math.max(rMax, ...surf.runs.map((r) => r.jolt));
 if (joltMax < BUD.fireAt) say.push(`the bump term never fires: worst |jolt| anywhere in this run was ${joltMax.toFixed(3)} (needs ${BUD.fireAt})`);
 if (!surf.runs.length) say.push('the ride surface was not measured at all: no runs completed');
+for (const q of surf.probes) {
+  const lift = q.seat - q.ground;
+  if (lift > BUD.probeLift) say.push(`${JSON.stringify(q.at)}: the board's seat sits ${lift.toFixed(3)}m above the ground it was asked from -- ${q.why}`);
+}
 for (const r of surf.runs) {
+  // A run that covered no ground measured nothing, whatever it printed.
   if (r.frames < 60) say.push(`${r.spot}: only ${r.frames} frames recorded -- the run did not happen`);
+  else if (r.ranM < 40) say.push(`${r.spot}: covered only ${r.ranM}m in ten seconds -- she is stuck, and a stuck rider measures no ground`);
   else if (r.worst > BUD.seat) say.push(`${r.spot}: the board's seat moved ${r.worst.toFixed(3)}m in ONE frame at ${r.kmh} km/h (budget ${BUD.seat})`);
 }
 for (const s of say) console.log('      - ' + s);
