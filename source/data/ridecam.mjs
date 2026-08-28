@@ -104,7 +104,25 @@ await page.evaluate(() => window.__ui(false));
 
 // A LONG STRAIGHT WITH ROOM TO CARVE. Teleporting per state would re-stream
 // the world four times; one settle here and she rides from it.
-const START = (process.env.SG_START || '1180,7250,0').split(',').map(Number);
+// THE VANTAGE, AND IT WAS THE SEA. `1180,7250` was this file's default until
+// 2026-08-29 and it is a point in OPEN WATER: terrain.at returns 0.00 there,
+// which is this project's stored datum for open sea (see the datum note in the
+// handover), and __surfaceAt returns 0.024. Nothing failed -- the pose numbers
+// are all measured in the BOARD's frame and do not care what is under it, and
+// `deckToRoad` is the deck's own height so it reads the same over water. What
+// broke was the PICTURE: every ridecam frame for at least two days showed the
+// rider against an empty blue void with no road, no kerb and no island, and
+// the last session judged the stance from those frames by eye. A vantage with
+// nothing in it is the same class of blind instrument as a check that returns
+// NaN and passes.
+//
+// It is the 393m straight at the west end now -- the longest single road
+// segment on the island, found by measuring every segment in data.roads rather
+// than by picking somewhere that looked open. She reaches 49 km/h on it under
+// a 5s run-up (8 km/h at the spawn, which is a beach lane full of furniture),
+// so the fast states are actually fast, and there is road either side of her
+// in every frame.
+const START = (process.env.SG_START || '-1037,11775,-0.0222').split(',').map(Number);
 await page.evaluate(([x, z, h]) => window.__teleport(x, z, h), START);
 await page.waitForFunction(() => {
   const st = window.__streamState;

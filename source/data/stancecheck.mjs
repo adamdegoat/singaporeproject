@@ -36,6 +36,21 @@ const BUD = {
   offDeckX: 0.075,    // how far a planted ankle may sit outside the deck edge
   cross: 0.0,         // shins may not cross: signed x gap must keep its sign
   neck: 75,           // degrees of head yaw away from the chest
+  // DOES SHE LOOK WHERE SHE IS GOING. The board slides across its own
+  // direction of travel by design (SKATE.slipMax is 0.62 rad, ~36 deg), and
+  // until 2026-08-29 the figure's gaze stayed glued to the NOSE through all of
+  // it -- measured at 41 degrees away from the course at full lock, which is
+  // the handover's "she does not look where she is going through a turn". The
+  // budget allows a lead, not a stare: a rider looks a little ahead of the
+  // course, INTO the exit of the turn, so the right answer is a small non-zero
+  // number and not zero.
+  //
+  // 15, AND THE NUMBER WAS CHOSEN BY A/B, NOT BY TASTE. Run against the same
+  // build with the look forced off (`SG_XPARAMS=nolook`) the `drift` state
+  // measures -24.7 deg and with it 4.4; `carve` measures -11.1 and 8.2. A
+  // budget of 25 -- the first one written here -- passed the broken build by
+  // 0.3 of a degree, which is a gate that exists and does nothing.
+  gaze: 15,
   shoeMin: 45,        // a shoe must sit at least this far ACROSS the deck
   toeOver: 0.045,     // ...and its toes may hang this far past the rail
 };
@@ -46,17 +61,46 @@ const STATES = {
   // in the push only the FRONT foot is on the deck; the back one is meant to
   // be on the road, so it is exempt from the deck budgets and gets its own.
   push: { runup: [0, 0, 0.2], th: 1.0, st: 0, settle: 1.2, planted: 'front' },
+  // FULL LOCK, AND IT IS THE ONLY STATE THAT REALLY TESTS THE GAZE. `carve`
+  // holds 0.8 and settles at ~28 degrees of slide, where the carve stance's
+  // own head yaw happens to cover most of the error -- run with the look
+  // forced off (`SG_XPARAMS=nolook`) it still measured only 11 degrees, well
+  // inside budget. A gate whose worst case is not in its states is a gate that
+  // cannot fail. At full lock the same A/B is 27+ degrees against 7.
+  drift: { runup: [1.0, 0, 6.0], th: 1.0, st: 1.0, settle: 1.4, planted: 'both' },
 };
-const WANT = (process.env.SG_STATES || 'cruise,carve,fast,push').split(',');
+const WANT = (process.env.SG_STATES || 'cruise,carve,fast,push,drift').split(',');
 
 const browser = await chromium.launch({ args: ['--use-gl=angle'] });
 const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
 page.on('pageerror', (e) => console.log('  page error:', e.message));
 // `?scene=` is the live parameter; `?district=` is ignored (main.js:1913).
-await page.goto(`http://localhost:${PORT}/?scene=sentosa&reseed=1`, { waitUntil: 'load' });
+// SG_XPARAMS appends A/B flags (`nolook`, `noshade`, ...) so a gate can be run
+// against the same build with one change forced off -- the only way to say
+// whether a finding is new or was simply never visible from the old vantage.
+const XPARAMS = process.env.SG_XPARAMS ? '&' + process.env.SG_XPARAMS : '';
+await page.goto(`http://localhost:${PORT}/?scene=sentosa&reseed=1${XPARAMS}`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__teleport && window.__ready === true,
   null, { polling: 300, timeout: 300000 });
-const START = (process.env.SG_START || '1180,7250,0').split(',').map(Number);
+// THE VANTAGE, AND IT WAS THE SEA. `1180,7250` was this file's default until
+// 2026-08-29 and it is a point in OPEN WATER: terrain.at returns 0.00 there,
+// which is this project's stored datum for open sea (see the datum note in the
+// handover), and __surfaceAt returns 0.024. Nothing failed -- the pose numbers
+// are all measured in the BOARD's frame and do not care what is under it, and
+// `deckToRoad` is the deck's own height so it reads the same over water. What
+// broke was the PICTURE: every ridecam frame for at least two days showed the
+// rider against an empty blue void with no road, no kerb and no island, and
+// the last session judged the stance from those frames by eye. A vantage with
+// nothing in it is the same class of blind instrument as a check that returns
+// NaN and passes.
+//
+// It is the 393m straight at the west end now -- the longest single road
+// segment on the island, found by measuring every segment in data.roads rather
+// than by picking somewhere that looked open. She reaches 49 km/h on it under
+// a 5s run-up (8 km/h at the spawn, which is a beach lane full of furniture),
+// so the fast states are actually fast, and there is road either side of her
+// in every frame.
+const START = (process.env.SG_START || '-1037,11775,-0.0222').split(',').map(Number);
 await page.evaluate(([x, z, h]) => window.__teleport(x, z, h), START);
 await page.waitForTimeout(2500);
 
@@ -174,6 +218,21 @@ await page.evaluate(() => {
     const chestDeg = +(Math.atan2(cFwd.x, cFwd.z) * 180 / Math.PI).toFixed(1);
     let neck = headDeg - chestDeg;
     while (neck > 180) neck -= 360; while (neck < -180) neck += 360;
+    // ...AND THE SAME HEAD AGAINST THE DIRECTION OF TRAVEL. `headDeg` above is
+    // in the RIG's frame, so it says where she looks relative to the BOARD,
+    // and a board in a drift is not pointing where it is going. __rider()
+    // publishes both `heading` (the deck) and `course` (the momentum); the
+    // gaze error is the head's world yaw minus the course. Deriving the course
+    // from the deck's matrix here instead would be measuring the thing under
+    // test with the thing under test.
+    const R0 = window.__rider ? window.__rider() : null;
+    const hFwdW = new T.Vector3(0, 0, 1).applyQuaternion(hq);
+    const headWorld = Math.atan2(hFwdW.x, hFwdW.z) * 180 / Math.PI;
+    let gaze = null;
+    if (R0 && R0.course != null) {
+      gaze = headWorld - R0.course * 180 / Math.PI;
+      while (gaze > 180) gaze -= 360; while (gaze < -180) gaze += 360;
+    }
 
     // TRUCKS. vespa.js puts the axles at z +/-0.375 on this deck.
     const TRUCK = 0.375;
@@ -200,6 +259,8 @@ await page.evaluate(() => {
       kneeL: r3(dp('LowerLeg.L')), kneeR: r3(dp('LowerLeg.R')),
       hipL: r3(dp('UpperLeg.L')), hipR: r3(dp('UpperLeg.R')),
       shoulderDeg: shDeg, headDeg, chestDeg, neckDeg: +neck.toFixed(1),
+      gazeDeg: gaze == null ? null : +gaze.toFixed(1),
+      slipDeg: R0 && R0.slip != null ? +(R0.slip * 180 / Math.PI).toFixed(1) : null,
       shoeL, shoeR,
     };
   };
@@ -277,6 +338,11 @@ for (const name of WANT) {
   if (Math.sign(r.kneeL[0] - r.kneeR[0]) !== Math.sign(r.hipL[0] - r.hipR[0]))
     say.push(`knees crossed: knee gap ${(r.kneeL[0] - r.kneeR[0]).toFixed(3)} against hip gap ${(r.hipL[0] - r.hipR[0]).toFixed(3)}`);
   if (Math.abs(r.neckDeg) > BUD.neck) say.push(`neck twisted ${r.neckDeg} deg off the chest (budget ${BUD.neck})`);
+  // Only judged when there IS a slide to look through: in a straight line the
+  // course IS the nose and the test is vacuous, and asserting a vacuous test
+  // per state is how a gate ends up green for the wrong reason.
+  if (r.gazeDeg != null && Math.abs(r.slipDeg) > 8 && Math.abs(r.gazeDeg) > BUD.gaze)
+    say.push(`looking ${r.gazeDeg} deg off her direction of travel while sliding ${r.slipDeg} deg (budget ${BUD.gaze})`);
   // A SURFSKATE RIDES WITH THE FEET ACROSS THE DECK. Anything under 45 deg is
   // a shoe lying along the plank, which is what shipped and what the owner
   // saw. The pushing foot is exempt: it is off the board and on the road.
@@ -298,6 +364,7 @@ for (const name of WANT) {
   console.log(`       ankles  front [${r.ankleL}]  back [${r.ankleR}]`);
   console.log(`       shoes  front ${r.shoeL.deg} deg across (toe x ${r.shoeL.toeX})   back ${r.shoeR.deg} deg (toe x ${r.shoeR.toeX})   rail +/-0.1175`);
   console.log(`       shoulders ${r.shoulderDeg} deg off the deck   chest ${r.chestDeg}   head ${r.headDeg}   neck ${r.neckDeg}`);
+  console.log(`       sliding ${r.slipDeg} deg   gaze ${r.gazeDeg} deg off the course`);
   for (const f of say) { console.log(`         - ${f}`); bad++; }
 }
 

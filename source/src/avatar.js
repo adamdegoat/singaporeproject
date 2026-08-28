@@ -368,15 +368,43 @@ export function buildAvatar(hat) {
     byName['Foot.' + s].getWorldPosition(_w2);
     shinLen[s] = _w.distanceTo(_w2);
   }
+  // ...AND THE SHIN ENDS WHERE THE RIG SAYS IT ENDS, NOT ALONG +Y.
+  //
+  // This used to place the foot at `LowerLeg + Yhat * shinLen`, on the comment
+  // above ("bones extend along local +Y"). MEASURED on this rig, in the shin's
+  // own frame, live: the tip bone `LowerLeg.R_end` sits at (-0.0095, 0.4676,
+  // 0.0292) and the +Y assumption puts the ankle at (0, 0.4508, 0). That is
+  // 35mm apart in the shin's frame, and 3.6 degrees off its axis -- and the
+  // shin swings through most of a right angle between standing and a deep
+  // carve, so in the BOARD's frame the error rotates into a fore/aft slide
+  // along the deck.
+  //
+  // What it cost: data/rigsolve/stance.mjs aims the foot targets at
+  // `LowerLeg.X_end`, and the runtime planted the shoe somewhere else, so the
+  // solve could hit its target exactly and still stand her in the wrong place.
+  // Measured at the carve: the shin end 79-87mm off its truck (the solver's
+  // 90mm, near enough) while the SHOE was 133-152mm off it, against
+  // stancecheck's 140mm budget. The gate has been reporting a pose defect that
+  // is really this arithmetic.
+  //
+  // The tip bone is a real bone in the hierarchy, so it needs no measured
+  // constant and no assumption about which way a bone points: read its world
+  // position and put the ankle there. `shinLen` stays for rigs that have no
+  // tip bone.
+  const shinEnd = { L: byName['LowerLeg.L_end'] || null, R: byName['LowerLeg.R_end'] || null };
   const snapFeet = () => {
     root.updateMatrixWorld(true);
     for (const s of ['L', 'R']) {
       const low = byName['LowerLeg.' + s];
       const foot = byName['Foot.' + s];
-      low.getWorldPosition(_w);
-      low.getWorldQuaternion(_q);
-      _w2.set(0, 1, 0).applyQuaternion(_q).multiplyScalar(shinLen[s]);
-      _w.add(_w2);
+      if (shinEnd[s]) {
+        shinEnd[s].getWorldPosition(_w);
+      } else {
+        low.getWorldPosition(_w);
+        low.getWorldQuaternion(_q);
+        _w2.set(0, 1, 0).applyQuaternion(_q).multiplyScalar(shinLen[s]);
+        _w.add(_w2);
+      }
       foot.parent.worldToLocal(_w);
       foot.position.copy(_w);
     }
@@ -586,7 +614,7 @@ export function buildAvatar(hat) {
     // all but on its centreline, hips slightly open, shoulders open more,
     // leading arm forward over the nose-side rail at chest height, trailing
     // arm back and low by the hip.
-    skatePose(lean = 0, crouch = 0, kick = 0, reach = 0, ride = 0) {
+    skatePose(lean = 0, crouch = 0, kick = 0, reach = 0, ride = 0, slip = 0) {
       resetPose();
       root.rotation.y = 0;
       const c = Math.max(0, Math.min(1, crouch));
@@ -805,6 +833,57 @@ export function buildAvatar(hat) {
         // ...and the arms hang off it, so they swing a little against it
         qrot('UpperArm.L', 1, 0, 0, -ride * 0.055);
         qrot('UpperArm.R', 1, 0, 0, -ride * 0.055);
+      }
+
+      // ---- SHE LOOKS WHERE SHE IS GOING, NOT WHERE THE BOARD POINTS -----
+      //
+      // The handover's third standing complaint about this figure: "she does
+      // not look where she is going through a turn." MEASURED before writing
+      // anything (scratchpad/looksweep.mjs, holding full throttle at six steer
+      // values): the board slides up to 41 degrees across its own direction of
+      // travel, and her head stays within 9 degrees of the NOSE the whole way.
+      // So at full lock she is looking 41 degrees away from where she is
+      // actually going -- across the slide, not down the road.
+      //
+      //     st     slip   head-vs-nose   head-vs-course
+      //      0        0          -5.5            -5.5
+      //   0.25   -0.639          -2.8           -39.4
+      //      1   -0.706          -0.5           -40.9
+      //     -1   +0.623          -8.9           +26.8
+      //
+      // THE SLIDE IS THE WHOLE POINT OF THE PICTURE and she was not in it. A
+      // longboard or surfskate slide reads the way it does precisely because
+      // the deck goes sideways while the rider's head and shoulders stay
+      // pointed down the road -- it is the counter-rotation that says the
+      // slide is intended. The old box rig knew this (its head took
+      // `carve*0.42 + slip*0.34`); the rigged figure that replaced it was
+      // never given the slip at all, so the term did not get worse, it
+      // vanished.
+      //
+      // `course - heading` is exactly `-slip` (ride.js keeps both; verified
+      // against the sweep above, both signs). So the gaze is carried back
+      // toward the course by -slip, and it is SPLIT: the chest takes 0.42 of
+      // it and the neck the rest. Two reasons, and the second is a budget:
+      //   * a slide is a shoulder rotation, not a neck one. "Turn your head,
+      //     then your shoulders" is what every skate guide says the turn is;
+      //     shoulders pointing down the road is what the photographs show.
+      //   * data/stancecheck.mjs budgets the neck at 75 degrees and it already
+      //     reads 50 cruising -- the stance faces the toe side by design.
+      //     Putting the whole 41 into the neck would ask her to look over her
+      //     own shoulder past anything a neck can do.
+      // AND THE TWO SUM TO 0.86, NOT 1.0, ON PURPOSE. Head is a child of
+      // Torso, so the gaze moves by the sum. Landing exactly on the course
+      // would be looking at where she is this instant; the exit of the turn is
+      // a little further round than that, and in a drift "further round" is
+      // toward the nose -- the deck is already pointing where the course is
+      // heading next. Leaving 0.14 of the slip uncorrected is about 6 degrees
+      // of lead into the turn at full lock, which is the "look through the
+      // corner" every guide describes and no more.
+      // Zero at a standstill, and zero in a straight line, so no golden frame
+      // that is not a slide can move.
+      if (slip !== 0) {
+        qrot('Torso', 0, 1, 0, -slip * 0.42);
+        qrot('Head', 0, 1, 0, -slip * 0.44);
       }
 
       // the IK feet are root-parented siblings of the leg chain, so they

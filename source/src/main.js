@@ -6351,7 +6351,16 @@ function loop(now) {
         // are rolling ("as you start to gain speed, put your back foot back
         // onto the tail" — sidewalkmag's basics). 0.40 puts the ceiling at
         // 24 km/h: a believable pushing speed, and above it she rides.
-        const pushingAV = inp.throttle > 0.15 && S.speed < SKATE.vMax * PUSH_MAX_V && !S.drifting;
+        // ...AND NOT WHILE THE BOARD IS SLIDING. `!S.drifting` alone is not
+        // that test: the drift is a hysteresis STATE that clears the moment
+        // the tail hooks up, while the slip angle decays afterwards. Measured
+        // in the steer sweep: at steer 0.8 the deck was 30 degrees across its
+        // own direction of travel with `drifting` already false, so she was
+        // kicking at a road that was going past her sideways. A foot cannot
+        // push off a surface it is scrubbing across. 0.15 rad is ~9 degrees,
+        // the slop either side of straight.
+        const pushingAV = inp.throttle > 0.15 && S.speed < SKATE.vMax * PUSH_MAX_V
+          && !S.drifting && Math.abs(S.slip || 0) < 0.15;
         pushPhase = pushingAV ? (pushPhase + (0.9 + S.speed) * dt * 0.62) % 1 : 0;
         const kickAV = pushingAV ? Math.sin(pushPhase * Math.PI * 2) : 0;
         const reachAV = pushingAV ? (0.5 - 0.5 * Math.cos(pushPhase * Math.PI * 2)) : 0;
@@ -6371,7 +6380,23 @@ function loop(now) {
         ridePhase = (ridePhase + S.speed * dt * 0.62) % (Math.PI * 2);
         const rideAV = pushingAV ? 0
           : Math.sin(ridePhase) * Math.min(1, S.speed / 6.5);
-        AV.skatePose(carve * 0.35, crouch, kickAV, reachAV, rideAV);
+        // THE SLIDE ANGLE, HANDED TO THE FIGURE. `S.slip` is the angle
+        // between where the deck points and where it is going, and until now
+        // it reached the old box rig and not this one -- see the measured
+        // sweep in skatePose's slip block.
+        //
+        // NOT DAMPED WHILE PUSHING, and the first cut was. Zeroing it there
+        // was meant to stop the stroke's own chest yaw fighting the slide
+        // counter-rotation -- but it made the gaze SNAP the instant the push
+        // window opened, because the two states were reachable at the same
+        // slip angle. The push is gated on the slip instead (above), so by the
+        // time she is pushing the term is under 9 degrees anyway and there is
+        // nothing left to fight.
+        // `?nolook` turns it off, in the family of ?noshade / ?flatsea /
+        // ?nowet: the only way to prove a rider change did or did not move a
+        // gate is to run the gate with it forced off, in the same build.
+        const slipAV = P.has('nolook') ? 0 : (S.slip || 0);
+        AV.skatePose(carve * 0.35, crouch, kickAV, reachAV, rideAV, slipAV);
         // WHAT THE FIGURE WAS ACTUALLY TOLD TO DO, published for the vet.
         // window.__rider() read `skater.userData.rig` — the OLD box figure —
         // so on the woman every pose field it returned was null, and a sheet
@@ -6380,7 +6405,11 @@ function loop(now) {
         // reporting on a thing it could not see. These are the inputs the
         // pose actually received this frame, not a re-derivation.
         window.__avPose = { carve: +(carve * 0.35).toFixed(3), crouch: +crouch.toFixed(3),
-          kick: +kickAV.toFixed(3), reach: +reachAV.toFixed(3),
+          kick: +kickAV.toFixed(3), reach: +reachAV.toFixed(3), slip: +slipAV.toFixed(3),
+          // the pump beat, published for the same reason as the rest: it moves
+          // the ankles, and a check that budgets ankle placement cannot tell a
+          // pose defect from the pump's own swing without it.
+          ride: +rideAV.toFixed(3),
           pushing: pushingAV, phase: +pushPhase.toFixed(3) };
       }
       const RG = skater.userData.rig;
@@ -6948,6 +6977,13 @@ window.__rider = () => {
   return {
     kmh: +(S.speed * 3.6).toFixed(1), lean: +S.lean.toFixed(3),
     slip: +(S.slip || 0).toFixed(3), drifting: !!S.drifting,
+    // WHERE THE BOARD POINTS AND WHERE IT IS ACTUALLY GOING, both in world
+    // radians. "Does she look where she is going" cannot be asked without
+    // them: a bone's world yaw on its own says nothing, and re-deriving the
+    // course from the deck's matrix in a harness is how a check ends up
+    // measuring the thing it was meant to judge. `course` is heading + slip
+    // (ride.js keeps it), so in a drift the two differ by the slide angle.
+    heading: +S.heading.toFixed(4), course: +(S.course != null ? S.course : S.heading).toFixed(4),
     // WHICH FIGURE IS ON SCREEN. Without this a null pose field is ambiguous
     // between "not posed" and "this build has no such rig", and that ambiguity
     // is what let the woman be photographed for a day with every number blank.
