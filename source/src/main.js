@@ -3523,7 +3523,9 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     // ?nowet turns the damp band off for an A/B, the same way ?flatsea and
     // ?noshade do for the other two ground-level changes of this day
     sh.uniforms.uWet = { value: P.has('nowet') ? 0.0 : 1.0 };
-    sh.fragmentShader = 'varying vec3 vGPos;\nvarying float vPaved;\nuniform float uSeaY;\nuniform float uWet;\n'
+    // ?nowall does the same for the wall tint below.
+    sh.uniforms.uWall = { value: P.has('nowall') ? 0.0 : 1.0 };
+    sh.fragmentShader = 'varying vec3 vGPos;\nvarying float vPaved;\nuniform float uSeaY;\nuniform float uWet;\nuniform float uWall;\n'
       + 'float gHash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }\n'
       + 'float gNoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);\n'
       + '  return mix(mix(gHash(i),gHash(i+vec2(1,0)),f.x), mix(gHash(i+vec2(0,1)),gHash(i+vec2(1,1)),f.x), f.y); }\n'
@@ -3543,6 +3545,74 @@ window.__placeBlocked = (x, z) => blocked(x, z);
           float fine  = gHash(floor(gp * 2.2));        // underfoot grain
           // value: widened from 0.15 to a range that survives being looked at
           diffuseColor.rgb *= 0.82 + 0.22 * broad + 0.10 * mid + 0.05 * fine;
+          // A WALL IS NOT A LAWN, AND ONLY THE FRAGMENT KNOWS IT IS A WALL.
+          //
+          // (NO BACKTICKS IN THIS BLOCK. It lives inside a JS template
+          // literal, so a backtick closes the string and the page throws
+          // "missing ) after argument list" with no file and no line.
+          // gates.sh's first gate exists for this exact mistake and it was
+          // made again here, in the file the note is about.)
+          //
+          // terrain.js already tints steep ground toward rock -- "steep ground
+          // shows its bones" -- but it keys on slopeAlong, which reads the
+          // LOGICAL heightfield, while the mesh is built from the DRAWN skin.
+          // The two agree everywhere except at water, which is exactly where
+          // this island's biggest faces are: measured on the transect at
+          // 330,13795, at() runs 7.24 to 6.90 across the whole crossing and
+          // never descends, while the drawn skin drops to the bed in ONE
+          // interval. The slope that tint asks about is ZERO along a nine-metre
+          // wall, so the wall is painted lawn.
+          //
+          // Island-wide: 41 distinct places where the sea meets ground the
+          // heightfield still calls firm, up to 12.31m of face standing above
+          // the water. The worst is the Cove marina -- mooring piles, a boat,
+          // and a bank of sheer GRASS where a quay belongs.
+          //
+          // THE GEOMETRY IS RIGHT AND IS NOT TOUCHED. terrain.js returns
+          // min(y, bed) at a tidal edge deliberately: "the step from bank to
+          // bed lands in one mesh interval, which reads as the vertical quay
+          // wall the real Sentosa Cove has." Sentosa Cove really is walled.
+          // What was wrong is the colour of the wall.
+          //
+          // AND IT HAS TO BE DONE HERE, not on the vertices. Keying the tint on
+          // a vertex's own drop was tried first and it fired exactly where it
+          // should -- sink 0.06 on the bank, 11.37 one vertex on -- and changed
+          // nothing you can see, because the vertex carrying the drop is the
+          // one at the BED, 1.93m UNDER the water. The visible 9.4m of face
+          // interpolates away from the green vertex above it toward a stone
+          // vertex nobody can look at. A fragment knows its own normal, so it
+          // colours the whole face and costs one dot product.
+          //
+          // 0.62 is about 52 degrees off horizontal, well past any hillside on
+          // this island; the vertex-level rock tint keeps everything gentler
+          // than that, so the two do not fight. Paving is exempt -- a ramp is
+          // not a cliff however steep it gets.
+          // THE GEOMETRIC NORMAL, NOT vNormal, and the flat-red probe is what
+          // settled it. geo.computeVertexNormals() AVERAGES a vertex across
+          // every face touching it, so the vertex at the top of a quay wall
+          // carries the mean of the wall and the lawn behind it. Painted red at
+          // a threshold of 0.99 the whole bank lit up, lawn included: no
+          // fragment on this mesh ever sees a vertical vNormal. The cross
+          // product of the screen-space derivatives of the world position is
+          // the TRUE face normal, per fragment, and it picked the walls out
+          // cleanly at the same threshold that had done nothing.
+          float wallY = abs(normalize(cross(dFdx(vGPos), dFdy(vGPos))).y);
+          // 0.62 is about 52 degrees off horizontal, past any hillside here;
+          // the vertex-level rock tint in terrain.js keeps everything gentler
+          // than that, so the two do not fight. Paving is exempt -- a ramp is
+          // not a cliff however steep it gets. The broad noise rides along so
+          // the wall varies like the ground it is cut from.
+          // ...AND IT IS STRONGEST AT THE WATERLINE, which is what lets it be
+          // strong at all. A vertical face standing in the water is a QUAY and
+          // should read as built stone; the same steepness forty metres up
+          // Imbiah is a cut bank with soil on it. Fading the tint out over the
+          // first fourteen metres above the sea puts the full strength exactly
+          // where the 41 measured faces are and leaves the hills to the gentler
+          // vertex-level rock tint that already handles them.
+          float nearSea = 1.0 - smoothstep(2.0, 14.0, vGPos.y - uSeaY);
+          float wall = uWall * (1.0 - vPaved) * smoothstep(0.62, 0.30, wallY);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.56, 0.53, 0.48) *
+            (0.86 + 0.28 * broad), wall * (0.30 + 0.62 * nearSea));
           // hue: warm and dry where broad is high, cool and lush where it is
           // low. Applied as a tint on the existing vertex colour so beach, road
           // apron and canopy floor each shift around their OWN colour instead
