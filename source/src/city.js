@@ -6113,6 +6113,41 @@ export async function buildRoads(world, data, Y = null) {
         }
       }
     }
+    // A NARROW BRIDGE IS STILL A BRIDGE TO STAND ON (2026-08-30).
+    //
+    // The clause below registers a deck only at 5.5m and wider, because "a 2m
+    // footbridge deck is not something the ride belongs on". That is right
+    // about footbridges and wrong about a 3.8m SERVICE bridge, which is a road
+    // — and the ribbon at the bottom of this loop draws it on a deck either
+    // way. So it was drawn in the air and registered nowhere: sweep frame 093
+    // at -913,11888 is the rider on Brani Drive 7 with nothing but her helmet
+    // above the tarmac she is riding on, sitting at 0.06 under a deck at 1.26.
+    //
+    // This is the SAME defect as the causeway footpath a few lines up, whose
+    // note says it "left the walker draped at TERRAIN inside the neighbouring
+    // road deck, buried to the helmet" — one class over, and fixed the same
+    // way, with the walked-deck registry rather than the ride's own. It is a
+    // walk surface and not a BRIDGES entry on purpose: BRIDGES carries soffits,
+    // parapets and piers, and a 3.8m service crossing wants none of them.
+    //
+    // THE HEIGHT IS NOT RE-DERIVED. `ribbon` owns the rule (a number, a ramp
+    // function, or max terrain + 1.2) and a second copy of it is a second thing
+    // to drift — this reads BRDECK exactly as ribbon does, and adds the same
+    // `y` the ribbon is drawn at.
+    if (r.bridge && !isPath && (r.w || 0) < 5.5 && BRDECK.get(r) !== false) {
+      const f = BRDECK.get(r);
+      let deck = 0;
+      if (typeof f === 'number') deck = f;
+      else if (typeof f !== 'function') {
+        for (const q of r.p) deck = Math.max(deck, TERRAIN.at(q[0], q[1]));
+        deck += 1.2;
+      }
+      for (let i = 0; i < r.p.length - 1; i++) {
+        const [x1, z1] = r.p[i], [x2, z2] = r.p[i + 1];
+        const yd = typeof f === 'function' ? f((x1 + x2) / 2, (z1 + z2) / 2) : deck;
+        addWalkSurface(x1, z1, x2, z2, Math.max(1.2, (r.w || 3) / 2), yd + y);
+      }
+    }
     // BRDECK === false means the run was judged at grade above and is being
     // drawn on the ground. It must not register a deck OR grow soffits and
     // parapets: passing that `false` through as a height registered a standable
