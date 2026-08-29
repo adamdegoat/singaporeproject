@@ -391,7 +391,25 @@ const SPOTS = [
 ];
 
 mkdirSync(ACT, { recursive: true });
+// THIS SUITE RUNS ON THE SAME GPU AS THE GAME (2026-08-30). It did not, for
+// its whole life: no `--use-gl=angle` meant headless Chromium fell back to
+// SwiftShader, its SOFTWARE renderer, while every other harness in this repo
+// passes the flag. Same camera, same URL, one flag apart, 42% of pixels
+// differed — so **the suite was a check on GEOMETRY and PLACEMENT and not on
+// materials**, and several notes in HANDOFF.md leaned on it as proof of a
+// shader change when it could not have seen one.
+//
+// The reason it stayed unfixed for two sessions was the fear that a hardware
+// renderer would be nondeterministic and make the gate flaky. MEASURED, twice,
+// same build, ANGLE both times: **46 of 46 frames identical at 0.000%.** There
+// is no flakiness to trade for.
+//
+// GOLDEN_GL=swiftshader goes back, one env var, if a machine without a usable
+// GPU ever has to run this.
+const GL_ARGS = process.env.GOLDEN_GL === 'swiftshader'
+  ? [] : ['--use-gl=angle', '--use-angle=metal'];
 const browser = await chromium.launch({ headless: true, args: [
+  ...GL_ARGS,
   '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
 ] });
 const page = await browser.newPage({ viewport: { width: 1152, height: 648 }, deviceScaleFactor: 1 });
