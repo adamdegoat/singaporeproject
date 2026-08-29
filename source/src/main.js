@@ -1,6 +1,6 @@
 import * as THREE from '../lib/three.module.js';
 import { PAL, R, reseedPlacement, rand, pick, chance, resetSignAtlas, hashRand } from './tex.js';
-import { MAT, badGeoCount, buildContactShade, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, footbridgeIdOf, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSupertrees, buildTowers, buildCranes, buildPiers, buildPools, plantSurveyed, openGroundAt, openGroundPolys } from './city.js';
+import { MAT, badGeoCount, buildContactShade, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, footbridgeIdOf, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSurfLine, buildSupertrees, buildTowers, buildCranes, buildPiers, buildPools, plantSurveyed, openGroundAt, openGroundPolys } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, lambertise, flattenFlatColours, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
 import { buildRoadIndex, claim } from './roads.js';
@@ -3886,6 +3886,16 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   }
   world.add(terrain.build(groundMat));
   bmark('terrain');
+  // THE SURF LINE, AND IT IS BUILT HERE FOR ONE REASON: it traces the contour
+  // of `drawnGroundAt` at sea level, and `drawnGroundAt` only answers the
+  // question the player sees once setIsland has run and the mesh is built.
+  // Called from buildWater — 480 lines earlier — it read a provisional skin and
+  // drew the foam on whichever shore that happened to cross. Seven attempts
+  // were reverted before that was found. See buildSurf's note in city.js.
+  if (!P.has('nowater') && !P.has('nosurf')) {
+    window.__surf = buildSurfLine(world, data, window.__seaY || 0.18);
+    bmark('surf');
+  }
   // no apron: it overlapped the heightfield and doubled the shading cost across
   // the whole screen. The grid is padded 90m beyond the sampled roads already.
 

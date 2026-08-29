@@ -1511,6 +1511,24 @@ pv_ny:     [0.42, 0.42, 0.43],  // asphalt, §2
           // sand actually is.
           plaza: [0.80, 0.80, 0.79],
         };
+        // THE PAINT'S OWN ANSWER, PUBLISHED (2026-08-30). The surf line has to
+        // draw on the beach the terrain PAINTS, and seven attempts failed
+        // because they each guessed at what that beach was — the mapped sand
+        // rings, which sit 10-30m seaward of it. The beach is not a polygon: it
+        // is the `else` branch below, an ELEVATION BAND on ground no TINT class
+        // claimed, within 80m of open sea. Rather than have buildSurf restate
+        // that rule and drift from it, the rule answers for itself, out of the
+        // same TINT table and the same seaDistAt the vertex loop uses.
+        //
+        // Mapped `sand` counts too: it has a TINT, so the else branch never
+        // sees it, but it is beach by any reading and foam belongs on it.
+        this.paintsSandAt = (x, z) => {
+          const vy = this.vertexY(x, z);
+          if (vy <= 0.06 || vy >= 2.4) return false;
+          if ((this.seaDistAt ? this.seaDistAt(x, z) : Infinity) >= 80) return false;
+          const k = this.gGrid ? this.greenAt(x, z) : null;
+          return k === 'sand' || !TINT[k];
+        };
         // GROUND VARIATION, FROM A POSITION HASH — never from an RNG stream.
         //
         // Every tint above is a single flat colour for a whole class, so all of

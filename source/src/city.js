@@ -7821,137 +7821,289 @@ function buildAnchorage(world, seaY) {
   return kept.length;
 }
 
-// THE SURF LINE, and it is drawn from the COASTLINE, not from the shore field.
+// THE SURF LINE — the EIGHTH attempt, and the first that traces the beach the
+// player is actually standing on. (2026-08-30)
 //
-// Every beach on this island met the sea on a hard colour boundary — sand, then
-// water, nothing between. The cheap idea was to do it in the sea shader, which
-// already samples a shore-distance texture two lines from where the foam would
-// go: no geometry, no draw call. TRIED, RENDERED, REJECTED. That field is a BFS
-// over the HEIGHTFIELD at 35m to a cell, so the narrowest band it can express
-// is twenty-odd metres with straight polygonal edges — a milky shelf lying off
-// the beach, worse than the hard boundary it replaced. Tightening the threshold
-// from 0.045 to 0.010 shrank it and did not fix its shape. A 2m effect cannot
-// come out of a 35m field, and no amount of tuning changes that.
+// Seven attempts were reverted. All seven argued about the CURVE, and the curve
+// was never the fault; two separate discoveries closed it, both recorded in the
+// handover on 2026-08-29 and both used here:
 //
-// So it is drawn where the waterline actually is: `data.coast`, the surveyed
-// shoreline, 71 chains of it. Only the stretches whose LANDWARD side is a
-// mapped sand ring get foam — a quay, a seawall and a cliff do not break white,
-// and Sentosa has plenty of all three. Unlit white, so it reads as spray rather
-// than as a lit surface, and 4cm over the sea sheet so nothing z-fights.
-// THE SURF LINE, and it is drawn from the COASTLINE, not from the shore field.
+//   1. THE DRAWN BEACH IS NOT A POLYGON. terrain.js paints sand in the else
+//      branch of the vertex tint: ground within 80m of open sea whose drawn
+//      height is between 0.06 and 2.4m. There is no `data.green` k='sand' in
+//      it anywhere, which is why every attempt that gated on the mapped sand
+//      rings drew on a different shore from the one the eye sees — the rings
+//      sit 10-30m seaward of the painted beach.
 //
-// Every beach on this island met the sea on a hard colour boundary — sand, then
-// water, nothing between. The cheap idea was to do it in the sea shader, which
-// already samples a shore-distance texture two lines from where the foam would
-// go: no geometry, no draw call. TRIED, RENDERED, REJECTED. That field is a BFS
-// over the HEIGHTFIELD at 35m to a cell, so the narrowest band it can express
-// is twenty-odd metres with straight polygonal edges — a milky shelf lying off
-// the beach, worse than the hard boundary it replaced.
+//   2. buildSurf USED TO RUN BEFORE THE ISLAND MASK EXISTED. It was called
+//      from buildWater; `terrain.setIsland` ran 480 lines later, and
+//      `Terrain.islandW` opens `if (!this.isle) return 0`, so the shore shelf
+//      never applied and `drawnGroundAt` answered a DIFFERENT QUESTION during
+//      the build than it does once the world is up. On the cell holding the
+//      Siloso crossing: [0.788, 1.089, 0.504, 0.793] at build time (no sign
+//      change anywhere) against [0.090, 1.089, -1.515, 0.793] once booted.
+//      No curve could have survived that. **This is now called from main.js,
+//      AFTER terrain.build**, which is the cheap half of that fix: moving
+//      setIsland itself early also moves four other consumers off the surface
+//      their constants were tuned against, and that is a separate, measured,
+//      deliberately-deferred piece of work (see the handover).
 //
-// SIX ATTEMPTS TO MOVE IT ONTO THE DRAWN WATERLINE HAVE BEEN REVERTED
-// (2026-08-28). Read this before starting a seventh; the handover carries the
-// long version.
+// SO THE CURVE IS THE CONTOUR OF THE DRAWN SKIN AT SEA LEVEL, by marching
+// squares over `drawnGroundAt - seaY` — the same function, and the same
+// definition, that the paint uses. No `data.coast`, no `data.water`, no sand
+// rings.
 //
-// THE DEFECT: photographed from the sand at Siloso, the beach a player stands
-// on has NO foam on it, while 306 segments are built.
+//   * SEEDED ON `seaDistAt < 80`, which is the sand paint's own gate, so the
+//     band searched is exactly the band that can be beach.
+//   * COARSE TO FINE. Only ~2% of cells in that band hold a crossing, so
+//     locate at 12m and subdivide only those to 6m. Every sample is cached by
+//     quantised coordinate, because neighbouring cells share corners.
+//   * BEACH OR WALL IN TWO SAMPLES, and this is the discriminator six attempts
+//     were missing. It is not a tag and not a polygon, it is the WIDTH of the
+//     band: at Siloso the ground climbs through 0 to 2.4m over about twelve
+//     metres, so foam has somewhere to sit; at a Cove quay the drawn skin goes
+//     -1.75 to 9 in ONE mesh interval and the same contour exists with no beach
+//     behind it. Walk inland along the gradient and ask the height at 4m. The
+//     island's water edges are mostly the second kind — 313 crossings sampled,
+//     two thirds step over 1.5m — so this rejects most of what it finds, which
+//     is correct.
 //
-// THE INSTRUMENT IS INNOCENT, and the first write-up of this wrongly blamed it.
-// Settled by picking PIXELS out of the rendered frame and raycasting through
-// them — the only probe here that starts from the picture and so cannot argue
-// with it. At the golden `waterline` camera the last sand pixel is
-// (-2229.2, 0.6, 12454.5) and the first sea pixel is (-2232.0, 0.2, 12458.7);
-// `drawnGroundAt` reads 0.82 and -0.12 there. It is 0.2-0.3m high on a beach
-// and otherwise right. The claimed "30m disagreement" was a transect aimed by
-// eye from the camera heading, and it missed the shore. A probe pointed by
-// guesswork is not a measurement.
+// AND THEN IT IS CHAINED, WHICH IS WHAT THE SEVENTH GOT WRONG. Marching
+// squares emits UNORDERED chords; extruding a quad per chord splays consecutive
+// quads wherever the contour turns, and photographed from the sand that reads
+// as "angular pale slabs sitting on the water" — close to the milky shelf the
+// shader attempt was rejected for. So the chords are welded into ordered
+// polylines, resampled at an even 3m, smoothed, and each chain is extruded as
+// ONE continuous ribbon.
 //
-// WHAT IS ACTUALLY WRONG, measured (`window.__surfWhy` reports the live
-// numbers): of 3,553 chain segments, 2,973 fail "is the landward side sand"
-// and 306 pass. Marched to where the drawn ground crosses sea level, at +-14m
-// only 46 of those 306 find a crossing at all; at +-30m, 202 still find none
-// and 96 of the rest land outside the sand ring they came from. The surveyed
-// coast runs 10-30m seaward of the line the player sees.
+// The band follows the surface — `max(drawnGroundAt, seaY) + lift` — because
+// the contour lies at sea level and half of a flat band at sea level is buried
+// under the sand, by an amount that depends on the local slope.
 //
-// AND TRACING THE LINE PROPERLY IS NOT THE ANSWER EITHER, WHICH IS THE NEW
-// PART. Marching squares over `drawnGroundAt - seaY` on a 6m grid around each
-// sand ring works and is cheap — 46k samples, 300ms, 1,154 segments — and
-// rendered with the map swapped for flat red, the traced line appears on the
-// FAR shore and not on the near one, in the same frame. So the mapped sand
-// rings and the beach the terrain actually draws are not the same thing, and
-// that mismatch defeats the sand test whichever curve you hand it. **The next
-// attempt starts there: find out what paints the drawn beach, because it is
-// not `data.green` k='sand'.** Until then the surveyed chains stay: they are at
-// least on a real line, and the foam they carry is laid flat at sea level, so
-// where the line is wrong the band is under the sand rather than across it.
+// `window.__surfWhy` reports the live numbers. `?surfdbg` draws it flat red,
+// which is the only way this project has ever reliably answered "is it there".
 function buildSurf(world, data, seaY) {
-  const sand = (data.green || []).filter((g) => g.k === 'sand' && g.p && g.p.length > 3).map((g) => g.p);
-  if (!sand.length) return 0;
-  const inSand = (x, z) => {
-    for (const r of sand) {
-      let c = false;
-      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
-        const [xi, zi] = r[i], [xj, zj] = r[j];
-        if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
-      }
-      if (c) return true;
-    }
-    return false;
+  const grid = TERRAIN.grid ? TERRAIN.grid() : null;
+  const seaDistAt = TERRAIN.seaDistAt;
+  const why = { band: 0, coarse: 0, fine: 0, chord: 0, wall: 0, beach: 0,
+                chains: 0, dropped: 0, pts: 0, samples: 0, ms: 0 };
+  window.__surfWhy = why;
+  if (!grid || !seaDistAt) return 0;
+  const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+  // one cache for both passes: the coarse grid's corners ARE fine corners, and
+  // every fine cell shares two corners with its neighbour
+  const cache = new Map();
+  const F = (x, z) => {
+    const k = Math.round(x * 4) * 65536 + Math.round(z * 4);
+    let v = cache.get(k);
+    if (v === undefined) { v = drawnGroundAt(x, z) - seaY; cache.set(k, v); why.samples++; }
+    return v;
   };
-  const W = 4.6, Y = seaY + 0.04;
-  const pos = [], col = [];
-  let n = 0;
-  // BOTH SOURCES, AND THE SECOND ONE IS THE ONE A SWIMMER SEES. `data.coast` is
-  // the island's outer shoreline; Siloso and Palawan's swimming water is inside
-  // the groynes and is mapped as WATER RINGS, so a surf line drawn from the
-  // coast alone breaks white out on the strait and leaves the beach the player
-  // is standing on exactly as it was. Both lists are walked; the sand test does
-  // the filtering either way, so a reservoir or a hotel pool cannot pick it up.
-  // BOTH SOURCES, AND THE SECOND ONE IS THE ONE A SWIMMER SEES. `data.coast` is
-  // the island's outer shoreline; Siloso and Palawan's swimming water is inside
-  // the groynes and is mapped as WATER RINGS, so a surf line drawn from the
-  // coast alone breaks white out on the strait and leaves the beach the player
-  // is standing on exactly as it was. Both lists are walked; the sand test does
-  // the filtering either way, so a reservoir or a hotel pool cannot pick it up.
-  //
-  // BOTH SOURCES, AND THE SECOND ONE IS THE ONE A SWIMMER SEES. `data.coast` is
-  // the island's outer shoreline; Siloso and Palawan's swimming water is inside
-  // the groynes and is mapped as WATER RINGS. Both lists are walked; the sand
-  // test does the filtering either way, so a reservoir or a hotel pool cannot
-  // pick it up.
-  const why = { seg: 0, len: 0, noSand: 0, ok: 0 };
-  const chains = [...(data.coast || []).map((c) => c.p || []),
-                  ...(data.water || []).map((w) => (w.p || []).concat([w.p && w.p[0]].filter(Boolean)))];
-  for (const p of chains) {
-    for (let i = 0; i < p.length - 1; i++) {
-      const [x1, z1] = p[i], [x2, z2] = p[i + 1];
-      const dx = x2 - x1, dz = z2 - z1;
-      const L = Math.hypot(dx, dz);
-      why.seg++;
-      if (L < 0.5 || L > 60) { why.len++; continue; }
-      const nx = -dz / L, nz = dx / L;
-      const mx = (x1 + x2) / 2, mz = (z1 + z2) / 2;
-      // which side is land, and is that land a beach
-      const a = TERRAIN.at(mx + nx * 4, mz + nz * 4), b = TERRAIN.at(mx - nx * 4, mz - nz * 4);
-      const s = a > b ? 1 : -1;
-      if (!inSand(mx + nx * 4 * s, mz + nz * 4 * s)) { why.noSand++; continue; }
-      // a band straddling the line, pushed a little seaward of it
-      const c0x = x1 - nx * s * W * 0.15, c0z = z1 - nz * s * W * 0.15;
-      const c1x = x2 - nx * s * W * 0.15, c1z = z2 - nz * s * W * 0.15;
-      const ox = nx * s * W * 0.5, oz = nz * s * W * 0.5;
-      // A HARD WHITE STRIP IS PAINT, NOT FOAM — that is what the first cut of
-      // this looked like from the sand at Siloso. Foam is dense where the water
-      // meets the beach and gone a few metres out, so the band carries its own
-      // alpha: opaque on the LANDWARD edge, zero on the seaward one. RGBA
-      // vertex colours, which three.js takes as an itemSize-4 colour attribute.
-      const A = 0.9, B = 0.0;                    // landward, seaward
-      const push = (x, z, al) => { pos.push(x, Y, z); col.push(1, 1, 1, al); };
-      push(c0x + ox, c0z + oz, A); push(c0x - ox, c0z - oz, B); push(c1x + ox, c1z + oz, A);
-      push(c1x + ox, c1z + oz, A); push(c0x - ox, c0z - oz, B); push(c1x - ox, c1z - oz, B);
-      n++; why.ok++;
+
+  const COARSE = 12, FINE = 6;
+  const X0 = grid.x0, Z0 = grid.z0;
+  const SPAN_X = grid.cell * (grid.nx - 1), SPAN_Z = grid.cell * (grid.nz - 1);
+  const NX = Math.ceil(SPAN_X / COARSE), NZ = Math.ceil(SPAN_Z / COARSE);
+
+  // marching squares on one cell, emitting chords into `out`
+  const chords = [];
+  const cell = (x, z, s) => {
+    const f00 = F(x, z), f10 = F(x + s, z), f01 = F(x, z + s), f11 = F(x + s, z + s);
+    let m = 0;
+    if (f00 > 0) m |= 1;
+    if (f10 > 0) m |= 2;
+    if (f11 > 0) m |= 4;
+    if (f01 > 0) m |= 8;
+    if (m === 0 || m === 15) return false;
+    // edge crossings, linearly interpolated
+    const ip = (a, b) => a / (a - b);
+    const eB = [x + s * ip(f00, f10), z];                    // bottom  00-10
+    const eR = [x + s, z + s * ip(f10, f11)];                // right   10-11
+    const eT = [x + s * ip(f01, f11), z + s];                // top     01-11
+    const eL = [x, z + s * ip(f00, f01)];                    // left    00-01
+    // the gradient of the field over this cell, which is the INLAND direction
+    const gx = ((f10 + f11) - (f00 + f01)) / (2 * s);
+    const gz = ((f01 + f11) - (f00 + f10)) / (2 * s);
+    const gl = Math.hypot(gx, gz) || 1;
+    const nx = gx / gl, nz = gz / gl;
+    const add = (a, b) => { chords.push([a[0], a[1], b[0], b[1], nx, nz]); why.chord++; };
+    switch (m) {
+      case 1: case 14: add(eL, eB); break;
+      case 2: case 13: add(eB, eR); break;
+      case 3: case 12: add(eL, eR); break;
+      case 4: case 11: add(eR, eT); break;
+      case 6: case 9:  add(eB, eT); break;
+      case 7: case 8:  add(eL, eT); break;
+      // the two saddles: both diagonals, which is the ambiguous case and rare
+      case 5:  add(eL, eB); add(eR, eT); break;
+      case 10: add(eB, eR); add(eL, eT); break;
+    }
+    return true;
+  };
+
+  for (let j = 0; j < NZ; j++) {
+    for (let i = 0; i < NX; i++) {
+      const x = X0 + i * COARSE, z = Z0 + j * COARSE;
+      // THE BAND, and it is the sand paint's own gate. seaDistAt is a grid
+      // lookup over a cached BFS, so this is far cheaper than four vertexY
+      // calls and it removes ~95% of the island before any of them happen.
+      if (seaDistAt(x + COARSE / 2, z + COARSE / 2) > 80) continue;
+      why.band++;
+      const f00 = F(x, z), f10 = F(x + COARSE, z);
+      const f01 = F(x, z + COARSE), f11 = F(x + COARSE, z + COARSE);
+      const lo = Math.min(f00, f10, f01, f11), hi = Math.max(f00, f10, f01, f11);
+      if (lo > 0 || hi <= 0) continue;      // no crossing anywhere in this cell
+      why.coarse++;
+      for (let b = 0; b < 2; b++) {
+        for (let a = 0; a < 2; a++) {
+          if (cell(x + a * FINE, z + b * FINE, FINE)) why.fine++;
+        }
+      }
     }
   }
-  window.__surfWhy = why;
-  if (!n) return 0;
+  if (!chords.length) return 0;
+
+  // BEACH OR WALL — AND THE PAINT ANSWERS IT ITSELF. The first cut of this
+  // restated the rule ("has the ground reached 2.4m by 4m inland") and got the
+  // same class of answer for the wrong reason: measured over the built ribbon,
+  // 94% of the island's water edge never reaches 2.4m within TWENTY metres, so
+  // a height test alone rejects almost nothing and is not the discriminator it
+  // reads as. The real question is not how steep the land is, it is whether the
+  // terrain PAINTS THIS GROUND AS BEACH — and that is a rule terrain.js owns,
+  // now published as `paintsSandAt` so the two can never drift.
+  //
+  // Two samples inland along the cell gradient: 1.2m catches a hair-wide
+  // ledge, 4m is the width a foam band needs to sit on. Both must be beach.
+  const P = TERRAIN.paintsSandAt;
+  const kept = [];
+  for (const c of chords) {
+    const mx = (c[0] + c[2]) / 2, mz = (c[1] + c[3]) / 2;
+    if (P && !(P(mx + c[4] * 1.2, mz + c[5] * 1.2) && P(mx + c[4] * 4.0, mz + c[5] * 4.0))) {
+      why.wall++; continue;
+    }
+    why.beach++;
+    kept.push(c);
+  }
+  if (!kept.length) return 0;
+
+  // WELD THE CHORDS INTO ORDERED POLYLINES. Marching squares emits every chord
+  // with its endpoints ON cell edges, so two chords that meet do so at exactly
+  // the same coordinate — quantising to 5cm is a weld, not a search.
+  const key = (x, z) => Math.round(x * 20) + ',' + Math.round(z * 20);
+  const ends = new Map();
+  for (let i = 0; i < kept.length; i++) {
+    for (const [x, z] of [[kept[i][0], kept[i][1]], [kept[i][2], kept[i][3]]]) {
+      const k = key(x, z);
+      let a = ends.get(k);
+      if (!a) ends.set(k, a = []);
+      a.push(i);
+    }
+  }
+  const used = new Uint8Array(kept.length);
+  const chains = [];
+  const walk = (start, fromEnd) => {
+    // fromEnd 0 walks a->b, 1 walks b->a
+    const pts = [];
+    let idx = start, dir = fromEnd;
+    for (;;) {
+      used[idx] = 1;
+      const c = kept[idx];
+      const ax = dir ? c[2] : c[0], az = dir ? c[3] : c[1];
+      const bx = dir ? c[0] : c[2], bz = dir ? c[1] : c[3];
+      if (!pts.length) pts.push([ax, az, c[4], c[5]]);
+      pts.push([bx, bz, c[4], c[5]]);
+      const nbrs = ends.get(key(bx, bz)) || [];
+      let next = -1;
+      for (const n of nbrs) if (!used[n]) { next = n; break; }
+      if (next < 0) return pts;
+      const c2 = kept[next];
+      dir = (key(c2[0], c2[1]) === key(bx, bz)) ? 0 : 1;
+      idx = next;
+    }
+  };
+  for (let i = 0; i < kept.length; i++) {
+    if (used[i]) continue;
+    // start from a chord with a free end where there is one, so an open chain
+    // is walked from its tip and not from its middle
+    const headFree = ((ends.get(key(kept[i][0], kept[i][1])) || []).filter((n) => !used[n]).length <= 1);
+    const pts = walk(i, headFree ? 0 : 1);
+    if (pts.length >= 2) chains.push(pts);
+  }
+
+  // RESAMPLE AND SMOOTH. Even 3m spacing, then a 3-tap on the positions only —
+  // the whole point of chaining is that consecutive quads share an edge, and
+  // they only look like one ribbon if the spacing is even and the turns round.
+  const STEP = 3.0, MINLEN = 18;
+  const pos = [], col = [];
+  const W = 4.6, LIFT = 0.05, A = 0.85;
+  let ribbons = 0;
+  for (const ch of chains) {
+    let L = 0;
+    for (let i = 1; i < ch.length; i++) L += Math.hypot(ch[i][0] - ch[i - 1][0], ch[i][1] - ch[i - 1][1]);
+    if (L < MINLEN) { why.dropped++; continue; }
+    const n = Math.max(2, Math.round(L / STEP));
+    const rs = [];
+    let seg = 0, acc = 0;
+    for (let k = 0; k <= n; k++) {
+      const target = (L * k) / n;
+      while (seg < ch.length - 2) {
+        const d = Math.hypot(ch[seg + 1][0] - ch[seg][0], ch[seg + 1][1] - ch[seg][1]);
+        // a zero-length step must be STEPPED OVER, not broken on: breaking
+        // leaves seg parked on it for every remaining sample and the whole
+        // tail of the chain collapses onto one point.
+        if (d === 0) { seg++; continue; }
+        if (acc + d >= target) break;
+        acc += d; seg++;
+      }
+      const d = Math.hypot(ch[seg + 1][0] - ch[seg][0], ch[seg + 1][1] - ch[seg][1]) || 1;
+      const t = Math.max(0, Math.min(1, (target - acc) / d));
+      rs.push([ch[seg][0] + (ch[seg + 1][0] - ch[seg][0]) * t,
+               ch[seg][1] + (ch[seg + 1][1] - ch[seg][1]) * t,
+               ch[seg][2], ch[seg][3]]);
+    }
+    const sm = rs.map((p, i) => {
+      if (i === 0 || i === rs.length - 1) return p;
+      return [(rs[i - 1][0] + p[0] * 2 + rs[i + 1][0]) / 4,
+              (rs[i - 1][1] + p[1] * 2 + rs[i + 1][1]) / 4, p[2], p[3]];
+    });
+    // one ribbon, two rails
+    const land = [], sea = [];
+    for (let i = 0; i < sm.length; i++) {
+      const p = sm[i];
+      const a = sm[Math.max(0, i - 1)], b = sm[Math.min(sm.length - 1, i + 1)];
+      let tx = b[0] - a[0], tz = b[1] - a[1];
+      const tl = Math.hypot(tx, tz) || 1;
+      tx /= tl; tz /= tl;
+      // the rail normal, flipped to agree with the cell gradient so LAND is
+      // land the whole way along a chain that doubles back
+      let rx = -tz, rz = tx;
+      if (rx * p[2] + rz * p[3] < 0) { rx = -rx; rz = -rz; }
+      // pushed 15% seaward of the crossing, as the surveyed version was
+      const cx = p[0] - rx * W * 0.15, cz = p[1] - rz * W * 0.15;
+      const lx = cx + rx * W * 0.5, lz = cz + rz * W * 0.5;
+      const sx = cx - rx * W * 0.5, sz = cz - rz * W * 0.5;
+      const gy = (q, r) => Math.max(drawnGroundAt(q, r), seaY) + LIFT;
+      // FADE THE TIPS. A chain that stops does so because the discriminator
+      // rejected the next chord — a beach turning into a seawall — and a hard
+      // square end there reads as a painted stripe that someone cut off.
+      const fade = Math.min(1, Math.min(i, sm.length - 1 - i) / 3);
+      land.push([lx, gy(lx, lz), lz, A * fade]);
+      sea.push([sx, gy(sx, sz), sz, 0]);
+      why.pts++;
+    }
+    for (let i = 0; i < land.length - 1; i++) {
+      const l0 = land[i], s0 = sea[i], l1 = land[i + 1], s1 = sea[i + 1];
+      const push = (v) => { pos.push(v[0], v[1], v[2]); col.push(1, 1, 1, v[3]); };
+      push(l0); push(s0); push(l1);
+      push(l1); push(s0); push(s1);
+    }
+    ribbons++;
+  }
+  why.chains = ribbons;
+  why.ms = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
+  if (!pos.length) return 0;
+
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
@@ -7962,14 +8114,24 @@ function buildSurf(world, data, seaY) {
   }));
   m.name = 'surfLine';
   m.renderOrder = 1;
+  m.frustumCulled = false;
   world.add(m);
-  return n;
+  return ribbons;
+}
+
+// CALLED FROM main.js, AFTER terrain.build — see the note above. It is exported
+// for that reason alone; nothing else may call it.
+export function buildSurfLine(world, data, seaY) {
+  return buildSurf(world, data, seaY);
 }
 
 export function buildWater(world, data) {
   const polys = data.water || [];
   const sea = buildSea(world);
-  window.__surf = buildSurf(world, data, window.__seaY || 0.18);
+  // THE SURF LINE IS NOT BUILT HERE ANY MORE. It traces `drawnGroundAt`, and
+  // at this point in the boot the island mask does not exist, so that function
+  // answers a different question from the one the player sees. main.js calls
+  // buildSurfLine after terrain.build. See the note on buildSurf.
   window.__anchorage = sea ? buildAnchorage(world, SEA_LEVEL[0]) : 0;
   if (!polys.length) return { water: 0, waterArea: 0, sea };
   const geos = [];
