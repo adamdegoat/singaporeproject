@@ -29,6 +29,15 @@ const TILE = 3;                        // 3 x 35m cells ~ 105m, the merger's til
 // note in vertexY for the measurement that forced it, and Terrain.shoreY for
 // the three callers that must all read the same number.
 const SHELF_LO = 0.5, SHELF_HI = 1.2;
+// THE RING-EDGE FEATHER'S KERNEL, hoisted out of vertexY because it runs per
+// drawn vertex in the coastal fringe and allocating an array there is a hot
+// loop's worst habit. Four axial at 2.2m, four diagonal at 4.4m/sqrt2 per axis
+// so all eight sit on a circle-ish of the same order. See vertexY.
+// ?noedge turns the feather off, in the family of ?noflat / ?nowet / ?nosurf,
+// so the edge can be A/B'd from the same camera without editing the source.
+const EDGE_OFF = typeof location !== 'undefined' && /[?&]noedge/.test(location.search);
+const EDGE_OX = [2.2, -2.2, 0, 0, 3.1, 3.1, -3.1, -3.1];
+const EDGE_OZ = [0, 0, 2.2, -2.2, 3.1, -3.1, 3.1, -3.1];
 
 // THE KINDS IN THE GREEN LAYER THAT ARE NOT GREEN, in one place.
 //
@@ -520,7 +529,87 @@ export class Terrain {
   vertexY(x, z) {
     const y = this.at(x, z) - (this.inRoad(x, z) ? 0.51 : 0.06);
     const bed = this.waterFloor(x, z);
+    const tidal = this._wfTidal;
+    // THE RING EDGE IS FEATHERED, AND IT IS THE LAST HARD CUT ON THE BEACHES.
+    //
+    // Everything below decides what a point INSIDE a water ring is drawn at.
+    // Nothing ever decided what happens ACROSS the ring's edge, and the answer
+    // was a cliff: `waterFloor` is a point-in-polygon test, so one drawn vertex
+    // is land at its own height and its neighbour 1.5m away is the seabed.
+    // Measured on the worst of them, at -2145,12489 on Siloso:
+    //
+    //     s (m)      -3.0  -1.5   0.0   1.5   3.0   4.5
+    //     at()       0.68  0.65  0.63  0.60  0.57  0.55   <- a smooth ramp
+    //     DRAWN     -1.56 -1.63 -1.69 -1.73  0.51  0.49   <- 2.24m in 1.5m
+    //
+    // The heightfield is smooth through it. The step is the POLYGON, and it is
+    // 95 cliffs over a metre in the Siloso patch alone. This is the same fault
+    // the shelf was written for, one level up: the shelf smooths the drop from
+    // the LAND HEIGHT to the bed, and this smooths the drop from OUTSIDE the
+    // ring to inside it.
+    //
+    // The fix is to stop treating the edge as binary. Sample the ring test at
+    // 2.5m in four directions, take the fraction that are in water, and blend
+    // the sunk answer back toward the land height by the fraction that are
+    // not. Deep inside, all four agree and nothing changes; well outside, the
+    // block never runs. Only the two or three vertices that straddle the edge
+    // move, which is the only place there was a step.
+    //
+    // WHY THE COST IS SMALL. The gate is `0.06 < y < SHELF_HI`: a low coastal
+    // fringe. Open water is excluded (at() clamps to sea level there, so y is
+    // NEGATIVE), high land is excluded (the overreach guard already keeps it,
+    // and a Cove quay is SUPPOSED to be a wall), and inland ground misses the
+    // ring hash on the first lookup.
+    //
+    // AND IT IS SEA LEVEL ONLY, like every other rule here. An inland pond
+    // whose bed sits at its own local ground keeps its hard edge; feathering it
+    // would drain the pond into the lawn around it.
+    // THE LOW GATE IS at(), NOT y, AND THE DIFFERENCE IS THE WHOLE SEA. The
+    // first cut gated on `y > 0.06` and left a 1.25m step behind: on the water
+    // side of the edge the land ramps THROUGH sea level, so those vertices
+    // failed the gate, never feathered, and sat at the bed beside a neighbour
+    // that had. The pipeline clamps open sea to EXACTLY 0.00 in the
+    // heightfield (see seaDistAt's note), so `at() > 0` admits the whole shore
+    // ramp down to the waterline and excludes the sea plateau itself — where
+    // all nine samples are wet anyway and the block would fall through having
+    // paid for eight lookups.
+    const a0 = this.at(x, z);
+    if (!EDGE_OFF && a0 > 0.004 && y < SHELF_HI && !(bed !== null && bed >= 0.2)) {
+      // TWO RINGS, NOT ONE, and the second one is worth its four lookups. A
+      // single ring at 2.5m quantises the blend to FIFTHS, and a fifth of a
+      // 2.3m drop is 0.46m — the kernel was putting back a smaller version of
+      // the step it removed. Measured over the Siloso patch: one ring takes
+      // the cliffs over a metre from 95 to 60 and the worst from 2.39 to 1.75;
+      // two rings (2.2m axial, 4.4m diagonal — the diagonals reach the corners
+      // the axials miss) take it further, at four more hash lookups on a
+      // fringe that is a few per cent of the drawn vertices.
+      let wet = bed !== null ? 1 : 0, deepest = bed, tid = tidal;
+      for (let i = 0; i < 8; i++) {
+        const b = this.waterFloor(x + EDGE_OX[i], z + EDGE_OZ[i]);
+        if (b !== null && b < 0.2) {
+          wet++;
+          if (deepest === null || b < deepest) { deepest = b; tid = this._wfTidal; }
+        }
+      }
+      if (wet > 0 && wet < 9 && deepest !== null) {
+        const inner = this._sunkY(x, z, y, deepest, tid);
+        // SMOOTHSTEP, NOT THE RAW FRACTION. The count is a sampled area, so it
+        // is already roughly linear in distance across the edge; easing it at
+        // both ends is what makes the join to untouched ground C1 rather than
+        // a crease you can see along the whole coast.
+        const f = wet / 9;
+        const w = f * f * (3 - 2 * f);
+        return inner + (1 - w) * (y - inner);
+      }
+    }
     if (bed === null) return y;
+    return this._sunkY(x, z, y, bed, tidal);
+  }
+
+  // WHAT A POINT INSIDE A WATER RING IS DRAWN AT. Split out of vertexY on
+  // 2026-08-30 so the edge feather above can ask it for a point that is not
+  // itself inside a ring; every rule in it is unchanged and every note with it.
+  _sunkY(x, z, y, bed, tidal) {
     // A DEM-WITNESSED TIDAL CHANNEL SINKS, WHATEVER THE GUARDS BELOW THINK.
     // The Cove moats are mapped water over 5-7m of drawn grass: the 7m
     // sloppy-ring gate holds Sandy's moat as land and the overreach guard
@@ -541,7 +630,7 @@ export class Terrain {
     // trailcheck's blocked-over-20m runs from 0 to 5 (measured): a
     // non-bridge way carries its own berm through the water, the drawn
     // twin of the data passes' carries_built rule.
-    if (bed < 0.2 && this._wfTidal && !this.inRoad(x, z)) return Math.min(y, bed);
+    if (bed < 0.2 && tidal && !this.inRoad(x, z)) return Math.min(y, bed);
     // A RING EDGE THAT OVERREACHES ONTO FIRM LAND DOES NOT SINK A HILL.
     // The grid's own data-side passes already sank every genuine water cell,
     // so a drawn sink deeper than ~7m below the logical ground is the water

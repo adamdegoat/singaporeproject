@@ -21,7 +21,13 @@ const page = await browser.newPage({ viewport: { width: 900, height: 500 } });
 await page.goto(`http://localhost:${PORT}/index.html?dpr=1&scene=${SCENE}`, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.__ready === true, null, { timeout: 240000, polling: 250 });
 
-const out = await page.evaluate(() => {
+// THE EXAMPLE CAP IS AN ARGUMENT NOW (2026-08-30). It was 25, hard-coded
+// inside the page, on a check that reports 37-38 spikes: comparing two builds
+// meant diffing two lists that had each been truncated at a different place,
+// which is the "example caps between a failing check and its evidence" trap
+// WORKFLOW.md already names. SG_STEP_CAP=200 prints all of them.
+const STEP_CAP = +(process.env.SG_STEP_CAP || 25);
+const out = await page.evaluate((STEP_CAP) => {
   // NO RAYCASTS. The first version of this file cast a ray per sample against
   // every mesh in the scene and did not finish in ten minutes. Everything it
   // wanted is already answered by the two functions the WALKER ITSELF uses —
@@ -112,7 +118,7 @@ const out = await page.evaluate(() => {
           if (spike && k !== 'steps') {
             res.steps++;
             if (Math.abs(d) > 1.0) res.bigSteps++;
-            if (res.exStep.length < 25) {
+            if (res.exStep.length < STEP_CAP) {
               res.exStep.push({ n: r.n || k, x: x | 0, z: z | 0,
                                 d: +d.toFixed(2), trend: +typical.toFixed(2) });
             }
@@ -236,7 +242,7 @@ const out = await page.evaluate(() => {
   res.exFloat = [...res.floatBy.values()].sort((a, b) => b.n1 - a.n1);
   delete res.floatBy;
   return res;
-});
+}, STEP_CAP);
 console.log(`ways ${out.ways}  sample points ${out.pts}`);
 console.log(`  BLOCKED runs >20m: ${out.longBlocks}   3-20m: ${out.midBlocks}   under 3m (walk around): ${out.tinyBlocks}`);
 console.log(`  N3 surface spikes: ${out.steps}   of which >1.0m: ${out.bigSteps}`);

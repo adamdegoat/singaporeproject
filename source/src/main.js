@@ -3402,6 +3402,11 @@ window.__placeBlocked = (x, z) => blocked(x, z);
   // this. Water depends on nothing, so it goes first and every later guard is
   // live by the time it is consulted.
   bmark('sw:pre-water');
+  // SETISLAND IS NOT HOISTED HERE, AND IT HAS NOW BEEN TRIED TWICE.
+  // 2026-08-30 measured what the 2026-08-29 entry could not: the whole cost is
+  // ONE 48cm step, at one point, and every other number trailcheck reports is
+  // byte-identical. See the handover. Do not try it a third time without a new
+  // reason — the reason would have to be a consumer that visibly breaks.
   const water = P.has('nowater') ? { water: 0, waterArea: 0 } : buildWater(world, data);
   bmark('sw:buildWater');
   if (!P.has('nowater')) buildPiers(world, data);
@@ -3881,7 +3886,12 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     // jungle rather than as the lawn the landuse fallback assumes
     terrain.setCanopy(data.trees || []);
     // the coastline, so vertexY can tell a sloppy water-polygon edge on the
-    // island from genuine open sea — see the guard in terrain.js vertexY
+    // island from genuine open sea — see the guard in terrain.js vertexY.
+    // IT RUNS HERE, LATE, AND THAT IS A MEASURED CHOICE, NOT AN OVERSIGHT:
+    // four things read drawnGroundAt before it (buildWater's anchorage test,
+    // buildPiers, buildPools, _addSpan's landing ramps) and so read a
+    // provisional surface. Hoisting it before buildWater has been built and
+    // measured twice, 2026-08-29 and 2026-08-30, and reverted twice.
     terrain.setIsland(data.islandRing || null, data.roads, data.green, data.land, data.buildings);
   }
   world.add(terrain.build(groundMat));
