@@ -13,9 +13,22 @@
 // as a translucent ghost. Sound cues come through Sound.cue() and are never
 // load-bearing — the HUD line carries the same information.
 //
-// Everything here is placed through groundAt and casts no shadow; a whole
-// run's furniture is ~10 small meshes, far below any perf line worth
-// measuring.
+// Everything here is placed through groundAt and casts no shadow.
+//
+// "A WHOLE RUN'S FURNITURE IS ~10 SMALL MESHES, FAR BELOW ANY PERF LINE WORTH
+// MEASURING" — that is what this line said until 2026-08-30, and it was wrong
+// by five times. Counted in the frame `hotviews` and `mobilefps` both judge
+// (Tanjong Beach Walk): **56 draw calls under this group, for 1,000
+// triangles** — about eighteen triangles per draw, 8% of the whole frame's
+// draw calls for 0.06% of its geometry.
+//
+// The cause is call ORDER, not this file: `consolidate(world)` — the batcher —
+// runs at main.js:4332 and `buildTimeAttack` at 4699, and this module adds to
+// `scene` rather than `world`, so the layer is built after the only pass that
+// would have merged it and outside the tree it walks. Rather than move a game
+// layer's construction to satisfy a batcher, it bakes itself: see bakeStatic
+// below. Nothing here is animated (only the ghost rig is, and it is added
+// separately), so the furniture is static geometry the moment it is placed.
 
 import { sharedSignAtlas } from './tex.js';
 
@@ -100,6 +113,17 @@ export function buildTimeAttack({ THREE, scene, data, groundAt, sound, ghostRig 
 
   const noShadow = (m) => { m.castShadow = false; m.receiveShadow = false; return m; };
 
+  // WHERE EVERY POST STANDS, PUBLISHED, because a check must not have to guess
+  // from geometry. data/tacheck.mjs's A8 — "nothing this game builds may stand
+  // in a carriageway", written the morning 24 of 32 posts were found in the
+  // road — found the posts by `o.geometry.type === 'CylinderGeometry'`. The
+  // moment the furniture was baked into merged buffers (see bakeStatic) that
+  // test matched NOTHING and A8 passed 0/0: the project's oldest failure, a
+  // detector that can no longer see the thing it was written for, and it would
+  // have shipped green. The positions are the ground truth whatever the
+  // geometry ends up as, so they are published instead.
+  const posts = [];
+
   // an arch: two slim poles either side of the path plus a crossbar. The
   // finish crossbar is chequered (alternating boxes), the start bar is teal.
   // HOW FAR OUT A POST HAS TO STAND, MEASURED, NOT ASSUMED.
@@ -133,6 +157,7 @@ export function buildTimeAttack({ THREE, scene, data, groundAt, sound, ghostRig 
     const g = new THREE.Group();
     for (const side of [-1, 1]) {
       const x = p.x + -p.tz * half * side, z = p.z + p.tx * half * side;
+      posts.push([x, z]);
       const pole = noShadow(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.4, 6), poleM));
       pole.position.set(x, groundAt(x, z) + 1.7, z);
       g.add(pole);
@@ -185,6 +210,7 @@ export function buildTimeAttack({ THREE, scene, data, groundAt, sound, ghostRig 
     const g = new THREE.Group();
     const x = p.x + -p.tz * -half, z = p.z + p.tx * -half;
     const y = groundAt(x, z);
+    posts.push([x, z]);
     const pole = noShadow(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.8, 6), poleM));
     pole.position.set(x, y + 1.4, z);
     const pen = noShadow(new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.4, 0.04), flagM));
@@ -247,6 +273,66 @@ export function buildTimeAttack({ THREE, scene, data, groundAt, sound, ghostRig 
       (dropped ? ` (${dropped} spur fragment${dropped > 1 ? 's' : ''} dropped)` : ''));
   }
   if (skipped) console.log(`timeattack: ${skipped} run(s) skipped — way missing or short`);
+
+  // BAKE THE COURSE FURNITURE INTO ONE MESH PER MATERIAL.
+  //
+  // Every piece above is placed once and never moved, so its world transform
+  // can go into the vertices and the whole layer collapses to a handful of
+  // draws. The buckets are keyed by MATERIAL IDENTITY, not by colour: the four
+  // Lambert materials and the sign atlas are each shared across every run
+  // already, so this is four or five buckets whatever the island grows to.
+  //
+  // COPIED BY POSITION COUNT, NOT BY ARRAY LENGTH — the same rule city.js's
+  // Merger._bucket states and for the same reason: one geometry without a uv
+  // (or with a differently-sized one) makes `set()` write past the end of the
+  // destination, which throws mid-build. Anything missing is zero-filled.
+  function bakeStatic(root) {
+    root.updateMatrixWorld(true);
+    const buckets = new Map();
+    const drop = [];
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      const m = Array.isArray(o.material) ? o.material[0] : o.material;
+      if (!m) return;
+      const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+      g.applyMatrix4(o.matrixWorld);
+      if (!buckets.has(m)) buckets.set(m, []);
+      buckets.get(m).push(g);
+      drop.push(o);
+    });
+    for (const o of drop) if (o.parent) o.parent.remove(o);
+    let made = 0;
+    for (const [mat, list] of buckets) {
+      let n = 0;
+      for (const g of list) n += g.attributes.position.count;
+      const pos = new Float32Array(n * 3);
+      const nor = new Float32Array(n * 3);
+      const uv = new Float32Array(n * 2);
+      let o3 = 0, o2 = 0;
+      for (const g of list) {
+        const c = g.attributes.position.count;
+        pos.set(g.attributes.position.array.subarray(0, c * 3), o3);
+        if (g.attributes.normal) nor.set(g.attributes.normal.array.subarray(0, c * 3), o3);
+        if (g.attributes.uv) uv.set(g.attributes.uv.array.subarray(0, c * 2), o2);
+        o3 += c * 3; o2 += c * 2;
+        g.dispose();
+      }
+      const bg = new THREE.BufferGeometry();
+      bg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      bg.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+      bg.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      bg.computeBoundingSphere();
+      const mesh = new THREE.Mesh(bg, mat);
+      mesh.castShadow = false; mesh.receiveShadow = false;
+      mesh.name = 'taFurniture';
+      root.add(mesh);
+      made++;
+    }
+    console.log(`timeattack: ${drop.length} pieces baked into ${made} draw call(s)`);
+  }
+  bakeStatic(group);
+  if (typeof window !== 'undefined') window.__taPosts = posts;
+
   scene.add(group);
 
   // ---- the HUD line. One element, created here, hidden when no run is live.

@@ -76,21 +76,30 @@ console.log(`  ${runs.length} run(s): ` + runs.map((r) => `${r.id} ${r.length}m`
 // the oldest defect class on this project and the game layer walked straight
 // into it, so it gets a check that asks the road index rather than a comment
 // that asserts. Runs first — it needs nothing but the built world.
+// IT READS A PUBLISHED LIST, NOT THE GEOMETRY (2026-08-30). This used to find
+// the posts with `o.geometry.type === 'CylinderGeometry'` and walk the
+// timeattack group. The day that group was baked into merged buffers for the
+// draw-call win, the test matched NOTHING and this line printed `ok A8 posts
+// clear of the road 0/0 clear` — green, and checking nothing. That is this
+// project's oldest failure and it nearly shipped inside the very change that
+// caused it.
+//
+// `window.__taPosts` is written by buildTimeAttack at the moment each post is
+// placed, so it cannot drift with how the geometry is stored. AN EMPTY OR
+// MISSING LIST IS A FAILURE, not a pass: a check that finds nothing to check
+// must say so.
 const posts = await page.evaluate(() => {
+  const list = window.__taPosts;
+  if (!Array.isArray(list) || !list.length) {
+    return { n: 0, bad: ['window.__taPosts missing or empty — A8 checked nothing'] };
+  }
   const bad = [];
-  let n = 0;
-  const grp = window.__scene.getObjectByName('timeattack');
-  if (!grp) return { n: 0, bad: ['no timeattack group'] };
-  grp.traverse((o) => {
-    if (!o.isMesh || o.geometry.type !== 'CylinderGeometry') return;   // the posts
-    n++;
-    const p = new window.__THREE.Vector3();
-    o.getWorldPosition(p);
-    if (window.__onRoad && window.__onRoad(p.x, p.z, 0)) {
-      bad.push(`${window.__nearestStreet(p.x, p.z)} (${p.x.toFixed(0)},${p.z.toFixed(0)})`);
+  for (const [x, z] of list) {
+    if (window.__onRoad && window.__onRoad(x, z, 0)) {
+      bad.push(`${window.__nearestStreet(x, z)} (${x.toFixed(0)},${z.toFixed(0)})`);
     }
-  });
-  return { n, bad };
+  }
+  return { n: list.length, bad };
 });
 console.log(`  ${posts.bad.length ? 'FAIL' : 'ok  '} A8 posts clear of the road  ` +
   `${posts.n - posts.bad.length}/${posts.n} clear` +
