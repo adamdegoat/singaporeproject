@@ -222,7 +222,7 @@ hr "mobile frame rate"
 # between samples, and prints "worst 20 median 20 best 20" for a world that
 # actually runs at 60). This touches nothing while it counts. Fails under
 # 50fps or on any console error.
-SG_SCENE=sentosa node data/mobilefps.mjs 2>&1 | tail -6; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
+SG_SCENE=sentosa node data/mobilefps.mjs 2>&1 | tail -11; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
 
 hr "accuracy ledger"
 python3 data/accuracy.py sentosa 2>/dev/null | tail -2

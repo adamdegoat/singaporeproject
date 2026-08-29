@@ -5842,6 +5842,8 @@ window.__dtClamp = (v) => { DT_CLAMP = +v || 0.1; return DT_CLAMP; };
 let jankCount = 0, jankWindowEnd = 0;
 let FRAME_MS = 0;
 let capTick = 0, capHz = 0, capSkip = 1, capLast = 0;
+// set by the idle cooldown, read and cleared once a second by the HUD block
+let coolSecond = false;
 const capGaps = [];
 let lastCapT = 0, shadowFlip = true;
 // A/B THE FRAME CAP INSIDE ONE PAGE. Comparing two browser launches on a busy
@@ -5907,13 +5909,65 @@ function loop(now) {
   // always partitions identically. Internally a no-op until 40m of travel.
   qtreesTick(camera.position.x, camera.position.z);
 
+  // THE SCREEN'S REFRESH RATE IS MEASURED HERE, ABOVE EVERYTHING THAT SKIPS
+  // FRAMES, AND THAT PLACEMENT IS THE WHOLE FIX (2026-08-30).
+  //
+  // It used to be sampled inside the frame-cap block below — which sits BELOW
+  // the idle cooldown. So the gaps it measured were the gaps the cooldown had
+  // already stretched: parked and ungestured, the loop returns early unless
+  // 41ms have passed, which on a 60Hz screen means every third refresh, 50ms
+  // apart. The median of 24 of those says the screen is 20Hz, and then
+  // `round(capHz / FPS_CAP)` is `round(20 / 30)` is **1** — and capSkip 1 is
+  // no cap at all, for the rest of the session, because capHz is measured once.
+  //
+  // WHAT THAT COST, measured on the touch path with the rider driven from a
+  // script (data/mobilefps.mjs):
+  //
+  //     ride immediately after ready     31.8 rendered fps   HUD 30   capped
+  //     ride after 8s parked             45.4 rendered fps   HUD 44   NOT capped
+  //
+  // Eight seconds of standing still — which is what anyone does while a
+  // sixteen-second boot finishes and they look around — silently disabled the
+  // cap that exists to keep the phone cool, for the whole session. That is the
+  // owner's "after play short time heat up already", and every note in this
+  // file arguing about whether the cap is worth having was arguing about a cap
+  // that mostly was not running.
+  //
+  // Measuring before the cooldown means these gaps are raw animation-frame
+  // gaps and nothing else. AND A FLOOR: no phone or laptop panel refreshes
+  // below 45Hz, so a median that says it does is us throttling ourselves, not
+  // the screen — discard it and keep sampling rather than bake it in.
+  if (TOUCH && FPS_CAP && capHz === 0) {
+    // Median of 24 gaps, so one slow frame during warm-up cannot convince this
+    // that the screen is 40Hz.
+    if (capLast) capGaps.push(now - capLast);
+    capLast = now;
+    if (capGaps.length >= 24) {
+      const g = [...capGaps].sort((a, b) => a - b)[12];
+      const hz = g > 0 ? 1000 / g : 60;
+      if (hz >= 45) {
+        capHz = hz;
+        capSkip = Math.max(1, Math.round(capHz / FPS_CAP));
+        // the build pacer's notion of a healthy frame follows the cap:
+        // drawing every capSkip-th refresh makes ~capSkip vsyncs the budget
+        CAP_REF = Math.max(16.7, capSkip * (1000 / capHz));
+      } else {
+        // keep the most recent half and try again, so a device that is
+        // genuinely busy during boot settles rather than latching a bad number
+        capGaps.splice(0, 12);
+      }
+    }
+  }
+
   // IDLE COOLDOWN, phones only: parked and untouched for six seconds, the
   // render drops to ~24fps. A phone reading the street name was working
   // exactly as hard as one at full tilt, which is where the heat the user
   // felt came from. Any touch snaps it back to full rate instantly — the
   // gesture listener stamps lastGestureT before this check runs again.
+  let cooling = false;
   if (TOUCH && now - lastGestureT > 6000) {
     const parked = mode === 'ride' ? Math.abs(S.speed) < 0.15 : walker.speed < 0.05;
+    cooling = parked;
     // GIVE THE CLOCK BACK BEFORE BAILING OUT.
     //
     // `last = now` has already run by the time we get here, so returning
@@ -5927,7 +5981,14 @@ function loop(now) {
     //
     // Restoring `last` means the skipped interval is simply carried into the
     // next frame that does run, which is what a skipped frame must always do.
-    if (parked && now - lastCoolT < 41) { last = lastFrameT; requestAnimationFrame(loop); return; }
+    if (parked && now - lastCoolT < 41) {
+      // ...AND SAY SO, because a second that this line ran in is not a second
+      // the device's SPEED can be judged from. See coolSecond beside
+      // tierSample: the adaptive tier was reading the cooldown's own 20fps as
+      // the phone's best effort and demoting good hardware on it, permanently.
+      coolSecond = true;
+      last = lastFrameT; requestAnimationFrame(loop); return;
+    }
     lastCoolT = now;
   }
   // RIDING FRAME CAP, phones only: 30fps. The heat the user still felt was
@@ -5969,20 +6030,15 @@ function loop(now) {
   // no decision to get wrong. The refresh rate is measured rather than
   // assumed, because a 120Hz phone needs to skip three, not one.
   capTick++;
-  if (TOUCH && FPS_CAP) {
+  // THE TWO THROTTLES MUST NOT COMPOUND (2026-08-30). The cooldown above
+  // already governs a parked phone at its own 41ms cadence; letting the frame
+  // cap halve THAT drew a parked world at 10fps once capSkip started working —
+  // the cooldown's note says ~24 and means it. When the cooldown is governing,
+  // it governs alone; the cap is for a phone that is being ridden.
+  if (TOUCH && FPS_CAP && !cooling) {
     if (capHz === 0) {
-      // Median of the first 24 gaps, so one slow frame during warm-up cannot
-      // convince this that the screen is 40Hz.
-      if (capLast) capGaps.push(now - capLast);
-      capLast = now;
-      if (capGaps.length >= 24) {
-        const g = [...capGaps].sort((a, b) => a - b)[12];
-        capHz = g > 0 ? 1000 / g : 60;
-        capSkip = Math.max(1, Math.round(capHz / FPS_CAP));
-        // the build pacer's notion of a healthy frame follows the cap:
-        // drawing every capSkip-th refresh makes ~capSkip vsyncs the budget
-        CAP_REF = Math.max(16.7, capSkip * (1000 / capHz));
-      }
+      // the refresh rate is measured ABOVE, before the idle cooldown — see
+      // measureHz. Nothing is sampled here.
     } else if (capSkip > 1 && (capTick % capSkip) !== 0) {
       last = lastFrameT;                 // see the note above: never eat time
       requestAnimationFrame(loop); return;
@@ -6787,7 +6843,22 @@ function reportHud(now) {
       fps, tris: renderer.info.render.triangles, calls: renderer.info.render.calls,
       px, dpr, kmh: +(S.speed * 3.6).toFixed(1), mode, ...stats,
     };
-    if (ready) tierSample(fps);
+    // THE TIER MUST NOT JUDGE A SECOND THE COOLDOWN THROTTLED (2026-08-30).
+    //
+    // `tierSample` takes the first eight one-second readings after ready and
+    // demotes the device — dpr 1.0, and it REMEMBERS in localStorage — if the
+    // median is under 20. The idle cooldown produces exactly 20.0 by design,
+    // and it is already running by the time the world is ready: lastGestureT
+    // is stamped at module init, sixteen seconds before ready, so a player who
+    // has not touched the screen yet is being cooled through every one of
+    // those eight samples. A phone that renders 60 while moving was being
+    // filed as a phone that cannot hold 20, for good.
+    //
+    // A throttled second carries no information about the hardware, so it is
+    // skipped rather than counted. The tier now judges the eight fastest
+    // seconds the device was actually allowed to render.
+    if (ready && !coolSecond) tierSample(fps);
+    coolSecond = false;
     if (P.has('audiodebug')) hud.textContent += ' · ' + sound.debugLine();
   }
 }
