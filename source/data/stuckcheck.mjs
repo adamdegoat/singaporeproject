@@ -79,7 +79,8 @@ await page.goto(`http://localhost:${PORT}/?district=sentosa&nostream&reseed=1&cb
 await page.waitForFunction(() => window.__ready === true, null, { timeout: 300000, polling: 300 });
 await page.evaluate(() => { window.__noArrive = true; });
 
-// start points spread along the carriageways, heading ALONG the way
+// start points spread along the carriageways, heading ALONG the way — AND THE
+// WAY ITSELF, from the start point onward, because the drive now follows it.
 const starts = await page.evaluate((want) => {
   const out = [];
   for (const r of (window.__data.roads || [])) {
@@ -89,7 +90,7 @@ const starts = await page.evaluate((want) => {
     const a = r.p[i - 1], b = r.p[i];
     const h = Math.atan2(b[0] - a[0], b[1] - a[1]);
     if (window.__blocked && window.__blocked(a[0], a[1])) continue;
-    out.push([a[0], a[1], h, r.n || '(unnamed)']);
+    out.push({ x: a[0], z: a[1], h, name: r.n || '(unnamed)', line: r.p.slice(i - 1) });
   }
   const step = Math.max(1, Math.floor(out.length / want));
   return out.filter((_, i) => i % step === 0).slice(0, want);
@@ -98,8 +99,8 @@ const starts = await page.evaluate((want) => {
 console.log(`  driving ${starts.length} stretches, ${SECS}s each at full throttle`);
 const stalls = [];
 const swims = [];
-for (const [x, z, h, name] of starts) {
-  const r = await page.evaluate(async ({ x, z, h, SECS, THR }) => {
+for (const { x, z, h, name, line } of starts) {
+  const r = await page.evaluate(async ({ x, z, h, line, SECS, THR }) => {
     window.__teleport(x, z, h);
     await new Promise((s) => setTimeout(s, 400));
     // BACK IN THE SADDLE, EVERY TIME. See the note at the top: without this
@@ -109,14 +110,53 @@ for (const [x, z, h, name] of starts) {
     await new Promise((s) => setTimeout(s, 120));
     const mode0 = window.__walkState().mode;
     const samples = [];
+    // IT FOLLOWS THE ROAD NOW (2026-08-30), and that is what makes a stall
+    // mean something. Every scripted drive in this repo passed steer 0, so a
+    // road that bends was ridden straight off — which is exactly why this
+    // file's exemption in data/wiring.mjs said it "cannot tell 'I drove into
+    // a building' from 'I cannot get out'". Steering along the way it is
+    // testing removes the first case, and then a stall is a carriageway a
+    // player cannot ride.
+    //
+    // AIMED AT A POINT ~18m AHEAD ON THE WAY, not at the nearest one. Aiming
+    // at the nearest vertex makes the board hunt: it arrives, the target
+    // becomes the vertex behind it, and the steer flips sign every frame.
+    // 18m is about a second of travel at the speeds this check reaches.
+    const AIM = 18;
+    const aimAt = (px, pz) => {
+      let best = null, bestD = Infinity, bi = 0;
+      for (let i = 0; i < line.length; i++) {
+        const d = Math.hypot(line[i][0] - px, line[i][1] - pz);
+        if (d < bestD) { bestD = d; bi = i; }
+      }
+      // walk forward along the line until AIM metres of it are behind us
+      let acc = 0;
+      for (let i = bi; i < line.length - 1; i++) {
+        acc += Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
+        if (acc >= AIM) { best = line[i + 1]; break; }
+      }
+      return best || line[line.length - 1];
+    };
     for (let t = 0; t < SECS; t++) {
-      await window.__drive(THR, 0, 1);          // full throttle, straight, 1s
+      const p0 = window.__ridePos();
+      const hd = window.__rideHeading ? window.__rideHeading() : null;
+      let steer = 0;
+      if (hd) {
+        const tgt = aimAt(p0[0], p0[1]);
+        const want = Math.atan2(tgt[0] - p0[0], tgt[1] - p0[1]);
+        let d = want - hd.heading;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        // the steer input is -1..1; a radian of error is already full lock
+        steer = Math.max(-1, Math.min(1, d));
+      }
+      await window.__drive(THR, steer, 1);
       const p = window.__ridePos();
       const ws = window.__walkState();
       samples.push({ kmh: window.__kmh(), x: p[0], z: p[1], mode: ws.mode, swim: !!ws.swim });
     }
     return { mode0, samples };
-  }, { x, z, h, SECS, THR });
+  }, { x, z, h, line, SECS, THR });
   if (r.mode0 !== 'ride') {
     // PRECONDITION FAILED: stop, do not report stalls we cannot stand behind.
     console.log(`  ABORT  could not put the player back on the vehicle at ${name}`

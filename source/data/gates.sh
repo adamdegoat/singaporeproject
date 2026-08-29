@@ -199,6 +199,7 @@ done
 
 hr "venue signs"
 SG_SCENE=sentosa node data/edgecheck.mjs 2>&1 | tail -10; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
+SG_SCENE=sentosa node data/stuckcheck.mjs 2>&1 | tail -8; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
 SG_SCENE=sentosa node data/signcheck.mjs 2>&1 | tail -12; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
 
 hr "blocked site data"

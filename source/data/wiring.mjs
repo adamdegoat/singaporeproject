@@ -49,14 +49,17 @@ const TOOLS = new Set([
 
 // DELIBERATELY UNWIRED, each with the reason and the condition for wiring it.
 // An entry here is a decision on the record, not a way to silence the check.
+//
+// `stuckcheck.mjs` WAS HERE AND IS NOT ANY MORE (2026-08-30). Its exemption
+// read: "drives full throttle in a straight line and cannot tell 'I drove into
+// a building' from 'I cannot get out'... wire it when it can tell the two
+// apart". It can now: `__drive` always took a steer argument and every caller
+// in this repo passed 0, so it now steers along the way it is testing and a
+// stall means the CARRIAGEWAY is blocked. 0 of 60 stretches stall, and
+// STUCK_THROTTLE=0 still fails 20 of 20, so it is measuring something. An
+// exemption that has been earned out gets deleted, not left as a comment
+// somewhere else.
 const EXEMPT = {
-  'stuckcheck.mjs':
-    'drives full throttle in a straight line and cannot tell "I drove into a '
-    + 'building" from "I cannot get out". It currently stalls at (905,13082) '
-    + 'where a building footprint covers the carriageway. opencheck CAN tell '
-    + 'those apart and is already a deploy blocker at zero sealed pockets, so '
-    + 'nothing here traps a player. Wire it when it can tell the two apart, or '
-    + 'when the building-in-carriageway count reaches zero.',
   'sweep.mjs':
     'the coverage sweep -- it visits every street, measures at each stop and '
     + 'writes a contact sheet. It is a REPORT you read, run deliberately, and '

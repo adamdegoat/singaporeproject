@@ -6886,6 +6886,16 @@ window.__drive = (throttle, steer, seconds) => {
 // it -- D33 was measuring 2,200 walkers across three districts against a
 // behaviour that runs within 120m by design.
 window.__ridePos = () => [S.x, S.z];
+// ...AND WHICH WAY IT IS POINTING. `__drive(throttle, steer, secs)` has always
+// existed and every caller passed steer 0, so every scripted drive in this repo
+// went in a STRAIGHT LINE down a road that bends — which is why stuckcheck's
+// own exemption in data/wiring.mjs says it "cannot tell 'I drove into a
+// building' from 'I cannot get out'". A check that can read the heading can
+// steer along the way it is testing, and then a stall means the road is
+// blocked. `course` too, because the board slides across its own heading by
+// design (SKATE.slipMax) and a steering correction wants the direction of
+// TRAVEL, not the direction the deck points.
+window.__rideHeading = () => ({ heading: S.heading, course: S.course, slip: S.slip });
 // Speed in km/h, for the ?diag panel: "slowmo" is a speed complaint, not a
 // frame-rate one, and only this number can tell them apart.
 window.__kmh = () => Math.abs(S.speed * 3.6);
