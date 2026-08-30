@@ -200,6 +200,11 @@ done
 hr "venue signs"
 SG_SCENE=sentosa node data/edgecheck.mjs 2>&1 | tail -10; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
 
+hr "soakcheck (the heap does not climb while you ride)"
+# Three minutes of riding. See its header for why a soak test is the easiest
+# gate in the world to write so that it measures a parked board.
+SG_SOAK_MIN=3 node data/soakcheck.mjs 2>&1 | tail -4; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
+
 hr "spincheck (turning does not leave a hole in the canopy)"
 # The bearing cull in qtrees.js: the only gate that turns. See its header.
 node data/spincheck.mjs 2>&1 | tail -6; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
