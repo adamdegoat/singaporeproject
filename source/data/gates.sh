@@ -200,6 +200,9 @@ done
 hr "venue signs"
 SG_SCENE=sentosa node data/edgecheck.mjs 2>&1 | tail -10; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
 
+hr "skycheck (the dome follows the camera in every mode)"
+node data/skycheck.mjs 2>&1 | tail -4; [ ${PIPESTATUS[0]} -ne 0 ] && FAILED=1
+
 hr "soakcheck (the heap does not climb while you ride)"
 # Three minutes of riding. See its header for why a soak test is the easiest
 # gate in the world to write so that it measures a parked board.

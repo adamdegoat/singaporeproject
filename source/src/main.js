@@ -224,6 +224,29 @@ const sky = new THREE.Mesh(
       }`,
   }));
 sky.frustumCulled = false;
+// THE DOME FOLLOWS THE CAMERA FROM HERE, NOT FROM THE FRAME LOOP.
+//
+// It used to be `sky.position.copy(...)` written by hand in each render path,
+// and the frame loop has THREE — `walk` and `onride` each end in their own
+// render and `return`. The ride-vehicle branch got its line on 2026-08-17,
+// after all fifteen rides came back with a #000000 sky ("a carrier rode
+// straight out of it"). **The WALK branch never got one at all**, and walking
+// is what the owner calls the point of this world. Measured 2026-08-31: riding,
+// the dome sits exactly on the camera; walking, it stays where you got off the
+// board — 1,233m behind at the luge station, 1,755m at Siloso — and the dome is
+// 480m, so most of the sky is simply gone. It is all over the footpath sweep.
+//
+// `onBeforeRender` cannot be forgotten by a branch: three.js calls it for every
+// render of this object, from any path, with the camera that render is using —
+// including the top-down map camera. `frustumCulled` is already false above,
+// which matters: a dome 1,755m away would otherwise be culled and never get
+// the callback that would have brought it back.
+sky.onBeforeRender = (r, sc, cam) => { sky.position.copy(cam.position); };
+// PUBLISHED, so a check never has to go looking for it. data/skycheck.mjs found
+// the dome by "the biggest bounding sphere in the scene" and picked up a
+// 1,000km one instead, which is this repo's oldest trap wearing a new hat: a
+// check that identifies its subject by a property rather than by being told.
+window.__sky = sky;
 // LAST among opaques (transparent glass still draws after and blends over
 // the sky correctly) — see the far-plane note in the vertex shader
 sky.renderOrder = 1;
@@ -4534,8 +4557,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
     // parked at 97% rather than left looking like a hang at an anonymous bar.
     await bstep(0.97, 'first light');
     driveCamera(0.016);
-    sky.position.copy(camera.position);
-    renderer.render(scene, camera);
+    renderer.render(scene, camera);   // sky.onBeforeRender keeps the dome on the camera
     bmark('gpu-warmup');
     // THE 360 SPIN. One warm view left every OTHER direction cold, and the
     // first look around uploaded+compiled tiles on the spot — the start
@@ -6259,7 +6281,6 @@ function loop(now) {
       //   * NET.update, so other players' avatars FROZE for everyone on a ride;
       //   * the open-map render skip, so the world kept drawing 1.4M triangles
       //     behind an opaque full-screen map while you sat in a gondola.
-      sky.position.copy(camera.position);
       if (NET) NET.update();
       cullDistricts();
       partitionTrees(camera);      // this branch renders and returns; see the note
@@ -6887,7 +6908,7 @@ function loop(now) {
   // the cull off for that mode and leaves the old distance-only partition.
   partitionTrees(activeCam);
 
-  sky.position.copy(activeCam.position);      // keeps the dome inside the far plane
+  // (the dome follows via sky.onBeforeRender — see its note at the declaration)
   // CULL DISTRICTS IN RIDE MODE TOO. This call sat only in the walk branch —
   // the one mode the rider does not use — while the measurement that
   // justified it ("1.6 of 9 seconds of riding on a phone-speed CPU inside
