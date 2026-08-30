@@ -1706,6 +1706,13 @@ const LOD_FAR = PHONE ? 280 : 500;
 // so without this every leaf in the world is vertex-shaded every frame, in
 // the main pass AND the shadow pass, no matter where the camera looks.
 const LODI = [];
+// WHAT THE COMPACTOR ACTUALLY COSTS, published rather than guessed. Its loop
+// is O(sum of L.n) — every instance in every registered set, whether or not it
+// is drawn — and that number decides whether the pass can be run on rotation
+// as well as on movement. A note that says "about 2ms" is the kind of premise
+// this project keeps finding to be false; this one can be read.
+window.__lodStats = () => ({ sets: LODI.length, instances: LODI.reduce((a, L) => a + L.n, 0),
+  tiles: LODT.length, lastMs: window.__lodMs || 0, grew: lodGrew });
 let lodLast = 0, lodX = 0, lodZ = 0;
 // How many times a capped instance buffer has had to grow. Zero is expected.
 let lodGrew = 0;
@@ -2006,6 +2013,16 @@ const SCENE = (P.get('scene') || 'sentosa').replace(/[^a-z0-9_-]/gi, '');
 // BOOT PHASE TIMING. `?boot=1` prints where the seconds go, because the first
 // three attempts at cutting a 29s mobile boot each optimised the wrong thing.
 const BOOTT = [];
+// COUNTS DO NOT GO IN BOOTT, and this is not tidiness. Every entry in BOOTT is
+// milliseconds, so a probe that prints the list sorted by value reads whatever
+// else is in there as time: `freeze-static-count` put 1,332 there and bootprobe
+// reported it as 1.3 SECONDS of boot on 2026-08-19. The comment at that push
+// then WARNED about the misreading and left the value in the list — and the
+// warning did not work, because a generic probe does not read comments (it
+// happened again on 2026-08-31, same mark, same 1.2s of imaginary boot, in a
+// fresh profiler). Counts live here instead, where nothing can add them up.
+const BOOTC = {};
+window.__bootCounts = BOOTC;
 // exposed so sgdetail can push its own sub-marks; see the sgmark note there
 window.__bootMarks = BOOTT;
 let _bt = performance.now();
@@ -4465,10 +4482,9 @@ window.__placeBlocked = (x, z) => blocked(x, z);
       o.matrixAutoUpdate = false;
       frozen++;
     });
-    // the COUNT, not milliseconds — labelled so no probe reads 1,332 frozen
-    // meshes as 1.3s of boot (bootprobe did exactly that on 2026-08-19; the
-    // freeze itself is microseconds)
-    BOOTT.push(['freeze-static-count', frozen]);
+    // the COUNT, not milliseconds, so it goes where counts go — see BOOTC.
+    // The freeze itself is microseconds.
+    BOOTC.frozenMeshes = frozen;
   }
 
   // GPU WARM-UP, and it must come AFTER consolidate. The first rendered frame
@@ -4543,6 +4559,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
       }
       driveCamera(0.016);
     }
+    bmark('warmup-spin6');
     // RIDE-OUT CHECKPOINTS (real GPUs only): the spin warms the spawn circle, but the first
     // 10-20 seconds of riding show geometry nobody warmed (user-measured:
     // "after 10 to 20 seconds after driving off then ok"). Render from
@@ -4572,7 +4589,7 @@ window.__placeBlocked = (x, z) => blocked(x, z);
       }
       driveCamera(0.016);
     }
-    bmark('warmup-spin');
+    bmark('warmup-rideout');
     // RELEASE THE CANVAS BACKING STORES.
     //
     // Every texture in this world is drawn on a 2D canvas — facades, paving,
@@ -6091,6 +6108,7 @@ function loop(now) {
   if ((LODT.length || LODI.length) && now - lodLast > 250
       && Math.hypot(camera.position.x - lodX, camera.position.z - lodZ) > (lodLast ? 8 : -1)) {
     lodLast = now;
+    const _lodT0 = performance.now();
     const cx = lodX = camera.position.x, cz = lodZ = camera.position.z;
     for (const o of LODT) {
       const s2 = o.geometry.boundingSphere;
@@ -6138,6 +6156,7 @@ function loop(now) {
       L.o.instanceMatrix.needsUpdate = true;
       if (c) L.o.instanceColor.needsUpdate = true;
     }
+    window.__lodMs = +(performance.now() - _lodT0).toFixed(2);
   }
 
   // The first ready frame was an 8.7s task while renderer.render was 1s of it:
