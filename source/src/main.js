@@ -5907,7 +5907,7 @@ function loop(now) {
   // far-tree imposter partition (qtrees.js): pure function of the camera
   // position, so it runs in EVERY mode including goldens — a fixed pose
   // always partitions identically. Internally a no-op until 40m of travel.
-  qtreesTick(camera.position.x, camera.position.z);
+  qtreesTick(camera.position.x, camera.position.z, camera.position.y);
 
   // THE SCREEN'S REFRESH RATE IS MEASURED HERE, ABOVE EVERYTHING THAT SKIPS
   // FRAMES, AND THAT PLACEMENT IS THE WHOLE FIX (2026-08-30).

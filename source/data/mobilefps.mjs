@@ -99,7 +99,11 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 200)); });
 
-await page.goto(`http://localhost:${PORT}/?touch&scene=${SCENE}`, { waitUntil: 'load' });
+// SG_XPARAMS appends URL flags, so a change can be A/B'd from the same six
+// spots without editing the source — the ?rich / ?noflat idiom every other
+// harness here uses.
+const XP = process.env.SG_XPARAMS ? `&${process.env.SG_XPARAMS}` : '';
+await page.goto(`http://localhost:${PORT}/?touch&scene=${SCENE}${XP}`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__ready === true, null, { timeout: 240000 });
 // let the first-frame and warm-up spikes drain before counting
 await page.waitForTimeout(5000);
