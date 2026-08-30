@@ -7,6 +7,9 @@ import { TOUCH } from './input.js';
 // it in roads.js, and the two stray trees it cost.
 import { ROAD_END_EXT } from './roads.js';
 import { buildQTrees } from './qtrees.js';
+// samplesUV only — consolidate.js imports three and input.js and nothing else,
+// so this cannot close a cycle
+import { samplesUV } from './consolidate.js';
 import { scatterVerges, scatterFoundations } from './qground.js';
 import { PAL, R, rand, pick, chance, hex, texAsphalt, texPaving, texConcrete, texCurtain, texShopfront, texGranite, texGranitePanel, texTactile, texWater, texTowerGlass, texPunched, texBalcony, texShophouse, texRender, texRenderShow, texAshlar, texSalvage, texBoard, texPoleFrame, texGlyphBand, texLeaves, texAO, texCentrepointPanel, texRedBrick, texPeranakan, texPaverBlock, texCentreDash, texChevron, texSotaRibbons, rng, scopeDraws, texBoomBand} from './tex.js';
 import { recipeFor, hasShopfront, shophouse, autoUV, flattenRoofUV,
@@ -1920,7 +1923,9 @@ export class Merger {
       for (const g of list) n += g.attributes.position.count;
       const pos = new Float32Array(n * 3);
       const nor = new Float32Array(n * 3);
-      const uv = new Float32Array(n * 2);
+      // TWO FLOATS A VERTEX THAT NOTHING READS — see samplesUV in
+      // consolidate.js for the measurement that found 36.5MB of them.
+      const uv = samplesUV(mat) ? new Float32Array(n * 2) : null;
       let o3 = 0, o2 = 0;
       for (const g of list) {
         // COPY BY THE POSITION COUNT, NOT BY THE SOURCE ARRAY'S LENGTH.
@@ -1940,7 +1945,7 @@ export class Merger {
         pos.set(g.attributes.position.array.subarray(0, pc * 3), o3);
         const gn = g.attributes.normal, gu = g.attributes.uv;
         if (gn && gn.array.length >= pc * 3) nor.set(gn.array.subarray(0, pc * 3), o3);
-        if (gu && gu.array.length >= pc * 2) uv.set(gu.array.subarray(0, pc * 2), o2);
+        if (uv && gu && gu.array.length >= pc * 2) uv.set(gu.array.subarray(0, pc * 2), o2);
         o3 += pc * 3;
         o2 += pc * 2;
         g.dispose();
@@ -1963,7 +1968,7 @@ export class Merger {
         _n8[i] = Math.max(-127, Math.min(127, Math.round(v * 127)));
       }
       merged.setAttribute('normal', new THREE.Int8BufferAttribute(_n8, 3, true));
-      merged.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      if (uv) merged.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
       merged.computeBoundingSphere();
       // A NaN anywhere in `pos` makes this NaN, and a NaN bounding sphere is
       // frustum-culled every frame -- the same invisible-but-present failure,

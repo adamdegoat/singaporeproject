@@ -57,7 +57,22 @@ const SPOTS = [
 const MODES = ['ride', 'walk'];
 const STEP = 0.26;          // radians per frame — ~15 degrees, faster than the game turns
 const STEPS = 14;           // a bit more than half a turn, shot at every step
-const BUDGET = +(process.env.SG_SPIN_BUDGET || 0.05);   // % of pixels
+// THE BUDGET IS ON THE BIGGEST CONNECTED BLOB, NOT ON THE PIXEL TOTAL, and the
+// difference is the whole usefulness of this gate.
+//
+// What it exists to catch is a WEDGE OF MISSING CANOPY: when the cull was
+// genuinely wrong, one clump of trees was absent and the difference was
+// **16,238 pixels in a single connected region**. What a total-pixel budget
+// ALSO catches is 500 pixels scattered along the edges of two signs' lettering
+// — a coplanar-text artefact that shifts when draw order shifts, which has
+// nothing to do with trees and which the 46 fixed-pose goldens pass at 0.000%.
+// It refused a deploy on 2026-08-31 for exactly that.
+//
+// A blob budget separates them by shape rather than by a threshold picked to
+// let the annoyance through: a hole in the world is contiguous and enormous, an
+// aliasing artefact is a scatter of specks. Both numbers are printed either way.
+const BUDGET_BLOB = +(process.env.SG_SPIN_BLOB || 400);   // pixels, largest connected region
+const BUDGET = +(process.env.SG_SPIN_BUDGET || 2.0);      // % of pixels, a loud backstop only
 
 async function shoot(xparams) {
   const browser = await chromium.launch({ headless: true, args: [
@@ -84,6 +99,17 @@ async function shoot(xparams) {
   // the two runs' own scoreboards and calls the difference a defect. Same trap
   // the golden suite avoids by shooting the #c canvas only.
   await page.evaluate(() => window.__ui && window.__ui(false));
+  // AND HIDE THE RIDER. She is the one thing in this frame that ANIMATES, and
+  // the two runs are two browser launches whose animation clocks do not line
+  // up. With her in shot the gate read 0.000% at 55 of 56 steps and 0.072% at
+  // the one where a hand or the board edge caught the frame — noise, sitting
+  // just over a budget that exists to catch a wedge of missing canopy. She is
+  // not what this gate is about; the world behind her is.
+  await page.evaluate(() => {
+    const hide = (o) => { if (o) o.visible = false; };
+    hide(window.__scene.getObjectByName('playerRig'));
+    if (window.__walkRig && window.__walkRig.group) hide(window.__walkRig.group);
+  });
   const shots = [];
   for (const modeWanted of MODES) {
   const got = await page.evaluate((want) => {
@@ -121,23 +147,50 @@ async function shoot(xparams) {
 }
 
 // The cull first, then the control: the same motion, one flag apart.
-const withCull = await shoot('');
-const noCull = await shoot('&nofcull');
+//
+// SG_SPIN_A / SG_SPIN_B override the two runs' URL params, and the reason they
+// exist is the NULL TEST: set both to `&nofcull` and the gate compares a run
+// against itself, which is the only way to know whether a number this small is
+// the cull or is the harness. Any budget set without running that is a number
+// picked to pass.
+const withCull = await shoot(process.env.SG_SPIN_A !== undefined ? process.env.SG_SPIN_A : '');
+const noCull = await shoot(process.env.SG_SPIN_B !== undefined ? process.env.SG_SPIN_B : '&nofcull');
 
 const dir = mkdtempSync(join(tmpdir(), 'spincheck-'));
 const a = join(dir, 'a.png'), b = join(dir, 'b.png');
 let worst = 0, worstAt = '';
+let worstBlob = 0, worstBlobAt = '';
 for (let i = 0; i < withCull.length; i++) {
   writeFileSync(a, withCull[i][1]); writeFileSync(b, noCull[i][1]);
-  const pct = +execFileSync('python3', ['-c', `
+  const outLine = execFileSync('python3', ['-c', `
 import sys
 from PIL import Image
 import numpy as np
 a=np.asarray(Image.open(sys.argv[1]).convert('RGB')).astype(int)
 b=np.asarray(Image.open(sys.argv[2]).convert('RGB')).astype(int)
-print(round(float((np.abs(a-b).max(axis=2)>25).mean()*100), 3))
-`, a, b], { encoding: 'utf8' }).trim();
-  console.log(`   ${withCull[i][0].padEnd(28)} ${pct.toFixed(3)}%`);
+m=(np.abs(a-b).max(axis=2)>25)
+pct=float(m.mean()*100)
+# largest 4-connected region, iterative flood fill (the frame is 844x390, so a
+# plain stack is faster than pulling in a dependency this repo does not have)
+H,W=m.shape
+seen=np.zeros_like(m)
+best=0
+ys,xs=np.nonzero(m)
+for y0,x0 in zip(ys,xs):
+    if seen[y0,x0]: continue
+    n=0; st=[(y0,x0)]; seen[y0,x0]=True
+    while st:
+        y,x=st.pop(); n+=1
+        for dy,dx in ((1,0),(-1,0),(0,1),(0,-1)):
+            yy,xx=y+dy,x+dx
+            if 0<=yy<H and 0<=xx<W and m[yy,xx] and not seen[yy,xx]:
+                seen[yy,xx]=True; st.append((yy,xx))
+    if n>best: best=n
+print(round(pct,3), best)
+`, a, b], { encoding: 'utf8' }).trim().split(/\s+/);
+  const pct = +outLine[0], blob = +outLine[1];
+  console.log(`   ${withCull[i][0].padEnd(28)} ${pct.toFixed(3)}%  biggest blob ${blob} px`);
+  if (blob > worstBlob) { worstBlob = blob; worstBlobAt = withCull[i][0]; }
   if (pct > worst) {
     worst = pct; worstAt = withCull[i][0];
     writeFileSync(join(dir, 'worst-cull.png'), withCull[i][1]);
@@ -145,11 +198,12 @@ print(round(float((np.abs(a-b).max(axis=2)>25).mean()*100), 3))
   }
 }
 console.log(`   (worst pair written to ${dir})`);
-console.log(`   SPIN {"worstPct":${worst}}`);
-if (worst > BUDGET) {
-  console.log(`   FAIL  the bearing cull changes a spinning frame: ${worst.toFixed(3)}% of pixels `
-    + `at ${worstAt} (budget ${BUDGET}%) — see HALF_COS / REPART_MS in src/qtrees.js`);
+console.log(`   SPIN {"worstPct":${worst},"worstBlob":${worstBlob}}`);
+if (worstBlob > BUDGET_BLOB || worst > BUDGET) {
+  console.log(`   FAIL  the bearing cull leaves a hole in a spinning frame: `
+    + `${worstBlob} px in one region at ${worstBlobAt} (budget ${BUDGET_BLOB}), `
+    + `worst frame ${worst.toFixed(3)}% at ${worstAt} — see HALF_COS in src/qtrees.js`);
   process.exit(1);
 }
-console.log(`   PASS  ${withCull.length} spun frames identical with the cull on and off `
-  + `(worst ${worst.toFixed(3)}%)`);
+console.log(`   PASS  ${withCull.length} spun frames carry no hole with the cull on `
+  + `(biggest connected difference ${worstBlob} px, worst frame ${worst.toFixed(3)}%)`);

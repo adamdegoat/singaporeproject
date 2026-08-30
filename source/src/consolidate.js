@@ -93,6 +93,34 @@ const TILE = +new URLSearchParams(location.search).get('tile') || (TOUCH ? 240 :
 const VCAP = +new URLSearchParams(location.search).get('vcap') || 3000;
 const CSMALL = +new URLSearchParams(location.search).get('csmall') || 20;
 
+// DOES ANYTHING ACTUALLY READ THE TEXTURE COORDINATES?
+//
+// Measured on the live island 2026-08-31, after a settled forced GC: the heap
+// is 257MB, geometry attributes are 147MB of it, and **`uv` is 43MB — more
+// than the 67MB of positions costs per useful byte, and 36.5MB of it sits on
+// 831 geometries and 4.78 MILLION vertices whose material has no map of any
+// kind.** Every merge in this project has written two floats per vertex
+// whether or not a sampler exists to read them.
+//
+// The test has to be conservative in one direction only: a material that
+// SAMPLES a uv and does not get one renders garbage, while a material that
+// gets a uv it never reads only wastes memory. So anything with any map, any
+// custom shader hook, or a raw/shader material keeps its coordinates. That
+// covers the ground's paving shader and the sign atlases, which are the two
+// places on this island where a uv is read without a `map` being set on the
+// material in the obvious way.
+const _UV_MAPS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'alphaMap',
+  'emissiveMap', 'aoMap', 'lightMap', 'specularMap', 'displacementMap', 'bumpMap',
+  'clearcoatMap', 'sheenColorMap', 'transmissionMap', 'iridescenceMap'];
+export function samplesUV(m) {
+  if (!m) return true;                                  // unknown: keep them
+  if (m.isShaderMaterial || m.isRawShaderMaterial) return true;
+  if (m.onBeforeCompile && m.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile) return true;
+  if (m.defines && Object.keys(m.defines).length) return true;
+  for (const k of _UV_MAPS) if (m[k]) return true;
+  return false;
+}
+
 // Everything that changes how a material renders. Two materials with the same
 // signature are interchangeable, so one can stand in for all of them.
 function sig(m) {
@@ -433,7 +461,9 @@ export async function consolidate(root, Y = null) {
     const anyPav = parts.some((g) => g.attributes.aPaved);
     const pos = new Float32Array(total * 3);
     const nor = new Float32Array(total * 3);
-    const uv = new Float32Array(total * 2);
+    // see samplesUV: two floats a vertex that nothing reads was 36.5MB
+    const wantUV = samplesUV(list[0].material);
+    const uv = wantUV ? new Float32Array(total * 2) : null;
     const col = anyCol ? new Float32Array(total * 3) : null;
     const pav = anyPav ? new Uint8Array(total) : null;
     let o3 = 0, o2 = 0;
@@ -441,7 +471,7 @@ export async function consolidate(root, Y = null) {
       const n = g.attributes.position.count;
       pos.set(g.attributes.position.array, o3);
       if (g.attributes.normal) nor.set(g.attributes.normal.array, o3);
-      if (g.attributes.uv) uv.set(g.attributes.uv.array.subarray(0, n * 2), o2);
+      if (uv && g.attributes.uv) uv.set(g.attributes.uv.array.subarray(0, n * 2), o2);
       if (col) {
         if (g.attributes.color) col.set(g.attributes.color.array.subarray(0, n * 3), o3);
         else col.fill(1, o3, o3 + n * 3);
@@ -471,7 +501,7 @@ export async function consolidate(root, Y = null) {
       _n8[i] = Math.max(-127, Math.min(127, Math.round(v * 127)));
     }
     geo.setAttribute('normal', new THREE.Int8BufferAttribute(_n8, 3, true));
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    if (uv) geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     // COLOUR PACKED TO UINT16, for the same reason normals are packed to
     // Int8 above. flattenFlatColours() moves the island's wall greys out of
     // 292 materials and into a per-vertex attribute, and that attribute is
