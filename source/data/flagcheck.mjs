@@ -12,10 +12,18 @@ await page.goto(`http://localhost:${PORT}/index.html?dpr=1&scene=sentosa`, { wai
 await page.waitForFunction(() => window.__ready === true, null, { timeout: 240000, polling: 250 });
 
 const out = await page.evaluate(() => {
-  let seaY = null;
-  window.__scene.traverse((o) => {
-    if (o.name === 'seaSurface' && o.geometry) seaY = +o.geometry.attributes.position.getY(0).toFixed(2);
-  });
+  // THE PUBLISHED NUMBER FIRST, the mesh only as a fallback. Finding the sea
+  // by `o.name === 'seaSurface'` is the same shape as tacheck's A8 finding gate
+  // posts by CylinderGeometry: one batching pass from matching nothing, and
+  // this file then measured every flag's depth against `null` — which coerces
+  // to 0 — and reported a plausible sheet. `window.__seaY` is what the game
+  // itself reads (city.js publishes it), so it cannot drift from the water.
+  let seaY = typeof window.__seaY === 'number' ? +window.__seaY.toFixed(2) : null;
+  if (seaY === null) {
+    window.__scene.traverse((o) => {
+      if (o.name === 'seaSurface' && o.geometry) seaY = +o.geometry.attributes.position.getY(0).toFixed(2);
+    });
+  }
   const d = window.__flagDbg || [];
   const placed = d.filter((r) => r.found);
   const depth = placed.map((r) => +(r.endH - seaY).toFixed(2)).sort((a, b) => a - b);

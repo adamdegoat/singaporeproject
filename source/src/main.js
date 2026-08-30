@@ -1538,8 +1538,38 @@ const trafficNearest = (x, z) => {
 const dressedStreets = new Set();
 // merged tiles of sub-4m detail, hidden beyond LOD_FAR (see the LOD pass)
 const LODT = [];
-// scratch for the tree partition's bearing — see the qtreesTick call
+// THE TREE PARTITION, AND IT HAS TO BE CALLED FROM EVERY RENDER PATH.
+//
+// It is a pure function of the camera POSE — position and, since 2026-08-31,
+// the bearing it faces — so a fixed pose always partitions identically and it
+// is safe in goldens. Internally a no-op until 40m of travel or ~6 degrees of
+// turn.
+//
+// IT MUST RUN BELOW THE CAMERA UPDATE AND ABOVE THE RENDER, and that is why
+// this is a function rather than one line in the frame loop. Called at the top
+// of the frame it partitioned against the PREVIOUS frame's heading — nothing
+// at 6 degrees of drift, a hole in the world when the view CUTS, which
+// data/spincheck.mjs photographed at 4.9% of the frame. And the loop has
+// THREE render paths, not one: `walk` and `onride` each end in their own
+// render and `return`, so a single call in the shared ride tail left the
+// canopy frozen on foot and in a gondola — the exact class of bug the ride
+// branch's own note lists three times over ("NET.update, so other players'
+// avatars FROZE for everyone on a ride").
+//
+// THE TOP-DOWN MAP CAMERA GETS NO BEARING: it looks straight down over a
+// square kilometre, so a bearing taken from the rider's camera would delete
+// most of what it can see. `cam !== camera` passes nulls and leaves the old
+// distance-only partition.
 const _qfwd = new THREE.Vector3();
+function partitionTrees(cam) {
+  if (cam !== camera) {
+    qtreesTick(cam.position.x, cam.position.z, cam.position.y);
+    return;
+  }
+  cam.getWorldDirection(_qfwd);
+  const fl = Math.hypot(_qfwd.x, _qfwd.z) || 1;
+  qtreesTick(cam.position.x, cam.position.z, cam.position.y, _qfwd.x / fl, _qfwd.z / fl);
+}
 
 // THE PHONE TIER. Every distance and every agent count in this world was chosen
 // on a desktop and then shipped unchanged to a phone: 2,200 pedestrians, 120
@@ -6193,6 +6223,7 @@ function loop(now) {
       sky.position.copy(camera.position);
       if (NET) NET.update();
       cullDistricts();
+      partitionTrees(camera);      // this branch renders and returns; see the note
       if (!document.body.classList.contains('mapopen')) renderer.render(scene, camera);
       frames++;
       if (now - t0 > 1000) reportHud(now);
@@ -6357,6 +6388,7 @@ function loop(now) {
       if (SPEC) driveCamera(dt); else walkCamera(dt);
       if (PLACES) PLACES.update(camera);
       cullDistricts();
+      partitionTrees(camera);      // this branch renders and returns; see the note
       renderer.render(scene, camera);
       frames++;
       if (now - t0 > 1000) reportHud(now);
@@ -6814,14 +6846,7 @@ function loop(now) {
   // looks straight down over a square kilometre, so a bearing taken from the
   // rider's camera would delete most of what it can see. Passing nulls turns
   // the cull off for that mode and leaves the old distance-only partition.
-  if (activeCam === camera) {
-    activeCam.getWorldDirection(_qfwd);
-    const _fl = Math.hypot(_qfwd.x, _qfwd.z) || 1;
-    qtreesTick(activeCam.position.x, activeCam.position.z, activeCam.position.y,
-      _qfwd.x / _fl, _qfwd.z / _fl);
-  } else {
-    qtreesTick(activeCam.position.x, activeCam.position.z, activeCam.position.y);
-  }
+  partitionTrees(activeCam);
 
   sky.position.copy(activeCam.position);      // keeps the dome inside the far plane
   // CULL DISTRICTS IN RIDE MODE TOO. This call sat only in the walk branch —

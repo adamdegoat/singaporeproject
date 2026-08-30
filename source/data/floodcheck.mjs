@@ -13,10 +13,15 @@ await page.goto(`http://localhost:${PORT}/index.html?dpr=1&scene=${SCENE}`, { wa
 await page.waitForFunction(() => window.__ready === true, null, { timeout: 240000, polling: 250 });
 
 const out = await page.evaluate(() => {
-  let seaY = null;
-  window.__scene.traverse((o) => {
-    if (o.name === 'seaSurface' && o.geometry) seaY = o.geometry.attributes.position.getY(0);
-  });
+  // THE PUBLISHED NUMBER FIRST — see the same note in flagcheck.mjs. Without
+  // it this returned "0 drowned roads, 0 drowned buildings" the moment the sea
+  // mesh lost its name, which reads exactly like a clean world.
+  let seaY = typeof window.__seaY === 'number' ? window.__seaY : null;
+  if (seaY === null) {
+    window.__scene.traverse((o) => {
+      if (o.name === 'seaSurface' && o.geometry) seaY = o.geometry.attributes.position.getY(0);
+    });
+  }
   const g = (x, z) => window.__terrain.at(x, z);
   const res = { seaY, drownedRoadPts: 0, roadPts: 0, drownedBuildings: [], buildings: 0 };
   if (seaY === null) return res;

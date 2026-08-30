@@ -45,10 +45,16 @@ import { execFileSync } from 'child_process';
 const PORT = process.env.SG_PORT || 8933;
 // Two viewpoints with open canopy all the way round — a spin here sweeps
 // through trees the whole way, which is the case the margin exists for.
+// ON FOOT AS WELL AS ON THE BOARD, and that is not thoroughness — it is the
+// bug this gate missed once. The frame loop has THREE render paths: `walk` and
+// `onride` each end in their own render and `return`, and the first version of
+// the bearing cull was called only from the shared ride tail, so the canopy
+// partition froze the moment you got off. Every spot runs in both modes.
 const SPOTS = [
   ['Tanjong Beach Walk', -885, 13290],
   ['Imbiah slope', -1560, 12500],
 ];
+const MODES = ['ride', 'walk'];
 const STEP = 0.26;          // radians per frame — ~15 degrees, faster than the game turns
 const STEPS = 14;           // a bit more than half a turn, shot at every step
 const BUDGET = +(process.env.SG_SPIN_BUDGET || 0.05);   // % of pixels
@@ -79,7 +85,15 @@ async function shoot(xparams) {
   // the golden suite avoids by shooting the #c canvas only.
   await page.evaluate(() => window.__ui && window.__ui(false));
   const shots = [];
-  for (const [name, x, z] of SPOTS) {
+  for (const modeWanted of MODES) {
+  const got = await page.evaluate((want) => {
+    let m = window.__mode();
+    if (m !== want) m = window.__toggleMode();
+    return m;
+  }, modeWanted);
+  if (got !== modeWanted) throw new Error(`could not reach ${modeWanted} mode (got ${got})`);
+  for (const [name0, x, z] of SPOTS) {
+    const name = `${name0} [${modeWanted}]`;
     // stand there first, so the ground under the free camera is the ground a
     // rider would be standing on
     await page.evaluate(async ({ x, z }) => {
@@ -100,6 +114,7 @@ async function shoot(xparams) {
       shots.push([`${name} step ${k}`, await page.screenshot({ timeout: 120000 })]);
     }
     await page.evaluate(() => window.__cam(null));
+  }
   }
   await browser.close();
   return shots;
