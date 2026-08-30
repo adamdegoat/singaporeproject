@@ -1538,6 +1538,8 @@ const trafficNearest = (x, z) => {
 const dressedStreets = new Set();
 // merged tiles of sub-4m detail, hidden beyond LOD_FAR (see the LOD pass)
 const LODT = [];
+// scratch for the tree partition's bearing — see the qtreesTick call
+const _qfwd = new THREE.Vector3();
 
 // THE PHONE TIER. Every distance and every agent count in this world was chosen
 // on a desktop and then shipped unchanged to a phone: 2,200 pedestrians, 120
@@ -1705,8 +1707,18 @@ function setLodCap(L, capN) {
 // (hidden beyond LOD_FAR) and static instanced sets (per-instance culling —
 // they span the region in one bounding sphere, so without this every leaf is
 // vertex-shaded every frame in the main AND shadow passes, whatever the
-// view). The fog is near-opaque at the cull ranges (FogExp2 0.0038: ~17%
-// visible at 350m, ~3% at 500m), so nothing is seen leaving. Excluded by
+// view).
+//
+// THIS NOTE USED TO END "the fog is near-opaque at the cull ranges (FogExp2
+// 0.0038: ~17% visible at 350m, ~3% at 500m), so nothing is seen leaving."
+// **The scene's density is `1.92 / FAR` = 0.0012**, not 0.0038, and at that
+// density 350m is 84% visible and 500m is 69%. It is the same stale sentence,
+// with the same wrong number, that made `qtrees.js` delete half the island's
+// canopy in plain sight (2026-08-30). Nothing here was changed on the back of
+// it: LOD_FAR's 280 on phones is the OWNER's 2026-08-03 "make all smooth"
+// trade, not a fog argument, so it stands as his call. But nothing may argue
+// from opacity out here again — small dressing IS seen leaving, and the reason
+// it goes is that it costs more than it reads at that distance. Excluded by
 // mechanism: crowd (userData.crowdPart), traffic (frustumCulled=false),
 // lodExclude (index-addressed sets). Safe to call again after a streamed
 // chunk: userData.lodRegistered keeps entries unique.
@@ -5904,11 +5916,6 @@ function loop(now) {
   // site before the mode branches, so no branch tail can forget it. Frozen
   // under ?district= boots to keep the golden/perf gates pixel-stable.
   if (!P.has('district')) qlifeTick(now);
-  // far-tree imposter partition (qtrees.js): pure function of the camera
-  // position, so it runs in EVERY mode including goldens — a fixed pose
-  // always partitions identically. Internally a no-op until 40m of travel.
-  qtreesTick(camera.position.x, camera.position.z, camera.position.y);
-
   // THE SCREEN'S REFRESH RATE IS MEASURED HERE, ABOVE EVERYTHING THAT SKIPS
   // FRAMES, AND THAT PLACEMENT IS THE WHOLE FIX (2026-08-30).
   //
@@ -6785,6 +6792,37 @@ function loop(now) {
   if (NET) NET.update();
 
   const activeCam = CAM === 'top' ? topCam : camera;
+
+  // FAR-TREE IMPOSTER PARTITION (qtrees.js), AND IT SITS HERE, BELOW EVERY
+  // CAMERA UPDATE AND ABOVE THE RENDER, ON PURPOSE.
+  //
+  // It is a pure function of the camera POSE — position and, since 2026-08-31,
+  // the bearing it faces — so it runs in EVERY mode including goldens: a fixed
+  // pose always partitions identically. Internally a no-op until 40m of travel
+  // or ~6 degrees of turn.
+  //
+  // IT USED TO RUN AT THE TOP OF THE FRAME, which was harmless while it only
+  // read a position and became a defect the moment it read a bearing: the
+  // camera for THIS frame is not decided until a few lines above here, so up
+  // there it always partitioned against the PREVIOUS frame's heading. One
+  // frame of lag is nothing at 6 degrees and is a hole in the world when the
+  // view CUTS — an arrival, boarding a ride, closing the map. data/spincheck's
+  // first step caught exactly that: 4.9% of the frame, a clump of trees on the
+  // left simply absent, for one frame after the camera jumped.
+  //
+  // THE TOP-DOWN MAP CAMERA GETS NO BEARING, and that is not a detail: it
+  // looks straight down over a square kilometre, so a bearing taken from the
+  // rider's camera would delete most of what it can see. Passing nulls turns
+  // the cull off for that mode and leaves the old distance-only partition.
+  if (activeCam === camera) {
+    activeCam.getWorldDirection(_qfwd);
+    const _fl = Math.hypot(_qfwd.x, _qfwd.z) || 1;
+    qtreesTick(activeCam.position.x, activeCam.position.z, activeCam.position.y,
+      _qfwd.x / _fl, _qfwd.z / _fl);
+  } else {
+    qtreesTick(activeCam.position.x, activeCam.position.z, activeCam.position.y);
+  }
+
   sky.position.copy(activeCam.position);      // keeps the dome inside the far plane
   // CULL DISTRICTS IN RIDE MODE TOO. This call sat only in the walk branch —
   // the one mode the rider does not use — while the measurement that

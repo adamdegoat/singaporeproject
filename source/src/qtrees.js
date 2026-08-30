@@ -211,10 +211,58 @@ function typeAt(x, z, low, h) {
   return t;
 }
 
+// THE TREES BEHIND YOU ARE 60% OF THE TREE BILL.
+//
+// Measured 2026-08-31 at Tanjong Beach Walk, the view the hot budget is judged
+// on: 1,143 trees inside IMPOSTER_NEAR draw as full meshes and cost **398k of
+// the frame's 1,716k triangles — 23% of everything**, against 3,154 far cards
+// costing 50k between them. The near tier, not the far island, is the biggest
+// single line in the frame.
+//
+// The sets are `frustumCulled = false` (they have to be: one set spans the
+// island, so its bounding sphere is useless), so every one of those 1,143 is
+// vertex-shaded whichever way the camera faces — and at a 100-degree horizontal
+// field of view, roughly two thirds of a ring of trees around the rider is
+// behind her.
+//
+// So the partition drops them. It is a BEARING test, not a real frustum: the
+// tree positions are already 2D here, the camera looks within a few degrees of
+// horizontal in every mode a player is in, and one dot product per instance
+// fits inside the loop that was already running. Everything within KEEP_R is
+// kept whatever the bearing, so a fast turn cannot pop a tree standing next to
+// the rider into existence.
+//
+// IT COSTS NO PIXELS BY CONSTRUCTION — what it removes is outside the frame —
+// and it stays a pure function of the camera POSE, so a golden's fixed pose
+// still partitions identically. `?nofcull` restores the old behaviour for an
+// A/B, and the top-down map camera is exempt (it sees a different frustum
+// entirely; see the guard at the call).
+const NOFCULL = _P.has && _P.has('nofcull');
+// THE MARGIN IS SIZED BY HOW FAST SOMEBODY CAN TURN, and there is no rate limit
+// on the rebuild, because a phone flick has no speed limit either.
+//
+// `camYaw -= inp.lookDX * 0.0045` (main.js): a 74-pixel drag in ONE frame turns
+// the view 19 degrees, and a hard swipe does more than that. So any rebuild
+// paced by a clock loses a wedge of canopy off the leading edge of a flick —
+// measured, in the first version of this, by data/spincheck.mjs at 0.46% of the
+// frame all the way round a spin with a 50ms limit and 25 degrees of margin.
+//
+// What holds instead: rebuild the moment the bearing has drifted YAW_STEP, on
+// whatever frame that happens, and carry enough margin that one frame of the
+// fastest realistic flick still lands inside it. 40 degrees past the 50-degree
+// half-field means the cull only ever drops what is squarely BEHIND the
+// camera, and a single-frame gap needs a 34-degree flick — about 7,500 px/s,
+// which is not a gesture a hand makes. The rebuild is ~2ms for 30k trees and
+// only runs while the view is actually turning.
+const HALF_COS = Math.cos((50 + 40) * Math.PI / 180);   // 100-degree hfov + 40 of margin
+const KEEP_R2 = 60 * 60;                                // always keep, whatever the bearing
+const YAW_STEP = 0.10;                                  // ~6 degrees of drift rebuilds
+
 // the partitioned sets, one entry per tree type per build:
 // { mats: Float32Array (16/instance), xs, zs, nearMesh, farMesh, hazeMesh }
 const SETS = [];
 let _camX = Infinity, _camZ = Infinity, _camY = Infinity;
+let _fx = 0, _fz = 0;
 
 export function buildQTrees(world, items, terrainAt) {
   const byType = new Map();
@@ -286,13 +334,26 @@ export function buildQTrees(world, items, terrainAt) {
 // re-partition when the camera has moved; pure function of (camX, camZ),
 // so a golden's fixed pose always produces the same split. ~2ms for 30k
 // trees, every 40m of travel — not per frame.
-export function qtreesTick(camX, camZ, camY = 0) {
+export function qtreesTick(camX, camZ, camY = 0, fwdX = null, fwdZ = null) {
   const dx = camX - _camX, dz = camZ - _camZ, dy = camY - _camY;
+  // TURNING COUNTS AS MOVEMENT TOO, now that the bearing decides what is drawn.
+  // A rider can spin on the spot and change the whole set without covering a
+  // metre, so a partition keyed only on position would leave two thirds of the
+  // canopy missing until she walked 40m. Rate-limited: a fast spin re-partitions
+  // ten times a second at most, and the pass is ~2ms for 30k trees.
+  const cull = !NOFCULL && fwdX !== null;
+  let turned = false;
+  if (cull) {
+    const dot = fwdX * _fx + fwdZ * _fz;
+    turned = dot < 1 - YAW_STEP * YAW_STEP * 0.5;
+  }
   // HEIGHT COUNTS AS MOVEMENT, and it has to: the haze tier's reach is a
   // function of it, and the cable car climbs 60m without covering 40m of
   // ground. 6m of climb re-partitions, which is ~540m of extra reach.
-  if (dx * dx + dz * dz < 1600 && dy * dy < 36) return;
+  if (!turned && dx * dx + dz * dz < 1600 && dy * dy < 36) return;
   _camX = camX; _camZ = camZ; _camY = camY;
+  if (cull) { _fx = fwdX; _fz = fwdZ; }
+  else { _fx = 0; _fz = 0; }
   const HAZE2 = haze2For(camY);
   for (const S of SETS) {
     const { mats, xs, zs, nearMesh, farMesh, hazeMesh, n } = S;
@@ -303,6 +364,9 @@ export function qtreesTick(camX, camZ, camY = 0) {
     for (let i = 0; i < n; i++) {
       const ddx = xs[i] - camX, ddz = zs[i] - camZ;
       const d2 = ddx * ddx + ddz * ddz;
+      // behind you, and far enough away that turning cannot reveal it before
+      // the next partition — see the bearing note at the top of this file
+      if (cull && d2 > KEEP_R2 && (ddx * _fx + ddz * _fz) < HALF_COS * Math.sqrt(d2)) continue;
       if (d2 < NEAR2) {
         nearA.set(mats.subarray(i * 16, i * 16 + 16), ni * 16); ni++;
       } else if (d2 < MAX2) {

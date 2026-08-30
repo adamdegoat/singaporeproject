@@ -322,7 +322,7 @@ export async function buildShopfronts(world, data, axes, wallAt, neighbours, Y =
   if (!data.buildings || !data.buildings.length) return stats;
 
   const atlas = sharedSignAtlas(THREE);
-  const merger = new Merger();
+  const merger = new Merger('shopfront');
   // `?shopreach=` A/Bs the shop grid alone; `?reach=` moves dressing AND shops
   // together, which is the shipped relationship.
   //

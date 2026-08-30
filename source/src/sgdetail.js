@@ -377,7 +377,7 @@ function mrtEntrance(world, px, pz, ang, label) {
 /* ---------------- main placement pass ---------------- */
 export async function buildSgDetail(world, axis, data, isBlocked, Y = null) {
   const atlas = sharedSignAtlas(THREE);
-  const signs = new Merger();
+  const signs = new Merger('sign');
   // time-gated yield shared by every outer pass below — this whole builder
   // was one synchronous gulp (the 'sg' step's 460ms block, 2026-08-03)
   let _yt = performance.now();
@@ -1196,7 +1196,7 @@ export async function buildBeachWalk(world, data, Y = null) {
   // on the per-item FOOTPRINT road guard below.
   const walks = (data.roads || []).filter((r) => /beach walk/i.test(r.n || '') && r.p && r.p.length >= 2);
   if (!walks.length) return out;
-  const merger = new Merger();
+  const merger = new Merger('beachwalk');
 
   // THE CHUNK'S OWN ROADS, BECAUSE __onRoad CANNOT SEE THEM.
   //
@@ -1465,7 +1465,7 @@ export async function buildAttractions(world, data, Y = null) {
   const out = { attractions: 0, globes: 0, cannons: 0, attrSkipped: 0 };
   const list = data.attractions || [];
   if (!list.length) return out;
-  const merger = new Merger();
+  const merger = new Merger('attraction');
 
   // THE UNIVERSAL STUDIOS GLOBE. The most photographed object on the island
   // and, until the attractions layer existed, not in this world at all.
@@ -2488,7 +2488,7 @@ export async function buildTrails(world, data, Y = null) {
   const _tr = []; let _trT = performance.now();
   const trmark = (k) => { const n = performance.now(); _tr.push([k, n - _trT]); _trT = n; };
   window.__trailMarks = _tr;
-  const merger = new Merger();
+  const merger = new Merger('trail');
   // boardwalk handrails, gathered while the deck is drawn and emitted as two
   // instanced meshes at the end — see the note at the collection site
   const railPosts = [], railBars = [];
@@ -3218,7 +3218,7 @@ export async function buildWalkable(world, data, Y = null) {
   let _wt = performance.now();
   const YW = async () => { if (Y && performance.now() - _wt > 8) { await Y(); _wt = performance.now(); } };
   const out = { stairFlights: 0, stairTreads: 0, barrierRuns: 0, offRoad: 0, parkFurn: 0 };
-  const merger = new Merger();
+  const merger = new Merger('walkable');
 
   // NOTHING HERE MAY STAND IN A CARRIAGEWAY, and the first build of this
   // function forgot it. 42.7km of surveyed wall and fence went in with no road
@@ -3949,8 +3949,8 @@ export async function buildTransit(world, data, Y = null) {
   const cableMat = overhead(new THREE.MeshLambertMaterial({ color: 0x3a3d40 }));
   const cabinMat = overhead(new THREE.MeshLambertMaterial({ color: 0x2f5f6b })); // teal cabin
 
-  const merger = new Merger();
-  const cables = new Merger();
+  const merger = new Merger('transit');
+  const cables = new Merger('cable');
   const MAT_DECK = new THREE.MeshLambertMaterial({ color: 0x8a8578 });
   const benchMat = new THREE.MeshLambertMaterial({ color: 0x7a5f43 });
   // bake pitch-then-yaw ('YXZ': Ry * Rx) plus position into the geometry
@@ -4457,7 +4457,7 @@ export async function buildTransit(world, data, Y = null) {
   // scope that uses them.
   tmark('cable lines');
   const gateAtlas = sharedSignAtlas(THREE);
-  const gateSigns = new Merger();
+  const gateSigns = new Merger('sign');
 
   // -- SENSORYSCAPE: three woven diagrid vessels ---------------------------
   //
@@ -7812,7 +7812,7 @@ export async function buildAnchorage(world, data, Y = null) {
   if (!t || typeof t.sea !== 'number') return out;
   const seaY = t.sea;
   const zEdge = t.z0 + t.cell * t.nz;          // the grid's southern edge
-  const merger = new Merger();
+  const merger = new Merger('ship');
   const hullM2 = new THREE.MeshLambertMaterial({ color: 0x3c4249 });
   const hullR2 = new THREE.MeshLambertMaterial({ color: 0x5c352c });
   const supM2 = new THREE.MeshLambertMaterial({ color: 0xe8e6df });
@@ -7882,7 +7882,7 @@ export async function buildAnchorage(world, data, Y = null) {
 export async function buildBeachLife(world, data, Y = null) {
   const YY = Y || (async () => {});
   const out = { beachPalms: 0, swimFlags: 0, patrolTowers: 0 };
-  const merger = new Merger();
+  const merger = new Merger('beachlife');
   const trunkM = new THREE.MeshLambertMaterial({ color: 0x7a5c3d });
   const leafM = MAT.leaf;
   const poleM = new THREE.MeshLambertMaterial({ color: 0xd8d2c6 });
@@ -8915,7 +8915,7 @@ export async function buildRwsWorksite(world, data, Y = null) {
   }
   if (!chain) return out;
 
-  const merger = new Merger();
+  const merger = new Merger('worksite');
   const M = {
     mint: new THREE.MeshLambertMaterial({ color: 0x9fc9bd }),
     cap: new THREE.MeshLambertMaterial({ color: 0xd8d8d4 }),
@@ -9156,7 +9156,7 @@ export function buildUssVocab(world, data, blocked) {
     return bd < 240 * 240 ? bn : null;
   };
 
-  const merger = new Merger();
+  const merger = new Merger('uss');
   const M = {
     gold: new THREE.MeshLambertMaterial({ color: 0xb98d3f }),
     blue: new THREE.MeshLambertMaterial({ color: 0x3a6fb3 }),

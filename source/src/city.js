@@ -1785,7 +1785,21 @@ export let MISSING_MAT = 0;
 let MISSING_MAT_SAID = 0;
 export function missingMatCount() { return MISSING_MAT; }
 export class Merger {
-  constructor() { this.groups = new Map(); this.mats = new Map(); }
+  // PROVENANCE, AND IT IS THE ONLY IDENTITY A MERGED MESH CAN KEEP.
+  //
+  // `consolidate()` merges by material and tile and keeps no record of what
+  // went in, so after it runs there is no way to ask "is this batch buildings?"
+  // without sniffing a material, a colour or a mesh name -- which is exactly
+  // the trap `tacheck`'s A8 fell into (it found gate posts by
+  // `geometry.type === 'CylinderGeometry'`, the furniture was merged, and it
+  // printed "0/0 clear" while checking nothing). Any far-building LOD needs to
+  // know which batches are buildings, so the label is carried from the builder
+  // that KNOWS, at the one point where it still does.
+  //
+  // A label, never a guess: a Merger built without one emits meshes with no
+  // `userData.kind`, and everything downstream treats an unlabelled batch as
+  // "not known to be anything" rather than as "other".
+  constructor(kind = null) { this.groups = new Map(); this.mats = new Map(); this.kind = kind || null; }
   add(geo, mat, x = 0, z = 0) {
     // A MESH WITH NO MATERIAL IS UNLIT WHITE, AND UNLIT WHITE LOOKS BUILT.
     //
@@ -1961,6 +1975,7 @@ export class Merger {
       }
       const mesh = new THREE.Mesh(merged, mat);
       mesh.castShadow = cast; mesh.receiveShadow = true;
+      if (this.kind) mesh.userData.kind = this.kind;   // see the constructor note
       world.add(mesh);
       return 1;
   }
@@ -3367,7 +3382,7 @@ export async function buildBuildings(world, data, Y = null) {
   };
   // the era prior for THIS district, from its own dated buildings
   setEraMix(data.buildings);
-  const merger = new Merger();
+  const merger = new Merger('building');
   const clearance = new Clearance(data.roads, data.axis);
   const api = {
     clearance,
@@ -7722,7 +7737,7 @@ function buildAnchorage(world, seaY) {
   const cx = g.x0 + g.cell * g.nx * 0.5, cz = g.z0 + g.cell * g.nz * 0.5;
   const R = rng(0x73686970);                       // "ship"
   const rnd = (a, b) => a + R() * (b - a);
-  const merger = new Merger();
+  const merger = new Merger('ship');
   const M = {
     hullA: new THREE.MeshLambertMaterial({ color: 0x2b3035 }),   // black hull
     hullB: new THREE.MeshLambertMaterial({ color: 0x6f3229 }),   // oxide red

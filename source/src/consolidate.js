@@ -395,12 +395,18 @@ export async function consolidate(root, Y = null) {
 
     const parts = [];
     let total = 0;
+    // vertices per provenance label, tallied while the sources are still here
+    // to be asked — see the kindVerts note at the mesh below
+    const kinds = {};
     for (const o of list) {
       let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
       g.applyMatrix4(o.matrixWorld);
       if (!g.attributes.normal) g.computeVertexNormals();
       parts.push(g);
-      total += g.attributes.position.count;
+      const n = g.attributes.position.count;
+      total += n;
+      const k = o.userData.kind || '-';
+      kinds[k] = (kinds[k] || 0) + n;
     }
 
     // VERTEX COLOUR SURVIVES THE MERGE.
@@ -488,6 +494,29 @@ export async function consolidate(root, Y = null) {
     const first = list[0];
     const mesh = new THREE.Mesh(geo, first.material);
     mesh.userData.tileBatch = true;   // the LOD pass culls far tiles of small detail
+    // PROVENANCE, CARRIED WITHOUT CHANGING WHAT MERGES WITH WHAT.
+    //
+    // A merged mesh has no name, no primitive type and a material it shares
+    // with whatever else wears it, so after this pass nothing can ask "is this
+    // batch buildings?" without sniffing — the trap `tacheck`'s A8 fell into.
+    // The builders that KNOW now label what they emit (`userData.kind`, see
+    // Merger's constructor note) and the label is carried through here.
+    //
+    // IT IS NOT PART OF THE GROUP KEY, and that was tried first: keying on it
+    // splits batches that used to merge, and it cost 613 -> 638 draws and
+    // 1716k -> 1732k triangles at the five hot views (measured 2026-08-31)
+    // against a 1750k budget already 98% used. It also moved golden
+    // `rws-roofs` by 1.05% — same geometry, same material, same face normals
+    // at the moved pixels, only the batch around them different — a mechanism
+    // that was never explained, and an unexplained pixel change is not worth
+    // paying draws for.
+    //
+    // So a batch records what went INTO it instead: `kindVerts` counts
+    // vertices per label, and a consumer asks whether a batch is ALL one thing
+    // rather than being told it is. Costs nothing and cannot lie: a mixed
+    // batch reports itself mixed instead of taking its first part's word.
+    // an all-unlabelled batch says nothing, so it carries nothing
+    if (!(Object.keys(kinds).length === 1 && kinds['-'])) mesh.userData.kindVerts = kinds;
     mesh.castShadow = first.castShadow;
     mesh.receiveShadow = first.receiveShadow;
     mesh.renderOrder = first.renderOrder;
