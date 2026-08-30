@@ -1,5 +1,5 @@
 import * as THREE from '../lib/three.module.js';
-import { PAL, R, reseedPlacement, rand, pick, chance, resetSignAtlas, hashRand } from './tex.js';
+import { PAL, R, reseedPlacement, rand, pick, chance, resetSignAtlas, hashRand, sharedSignAtlas } from './tex.js';
 import { MAT, badGeoCount, buildContactShade, buildBuildings, buildRoads, TreeField, aoPatch, setTerrain, groundAt, surfaceAt, footbridgeIdOf, bridgeDeckAt, anyDeckAt, bridgeDecksAt, buildSurround, buildWater, buildSurfLine, buildSupertrees, buildTowers, buildCranes, buildPiers, buildPools, plantSurveyed, openGroundAt, openGroundPolys } from './city.js';
 import { Terrain } from './terrain.js';
 import { dedupeMaterials, lambertise, flattenFlatColours, consolidate, trimShadowCasters, pruneCarriageway } from './consolidate.js';
@@ -5914,7 +5914,27 @@ window.__fpsCap = (n) => { FPS_CAP = +n || 0; lastCapT = 0;
   CAP_REF = capHz ? Math.max(16.7, capSkip * (1000 / capHz)) : 16.7;
   return FPS_CAP; };
 
+let _atlasSealed = false, _sealFrames = 0;
 function loop(now) {
+  // SEAL THE SIGN ATLAS, once, a few frames after the world is up.
+  //
+  // The 32MB that the boot-time canvas release deliberately skips (SignAtlas's
+  // keepCanvas note) is only unsafe while a builder can still write a label,
+  // and all five that do — sgdetail, its gate signs, shopfronts, places and the
+  // time attack — finish before the loop starts. Held four frames so the pages
+  // have provably drawn, then force-uploaded and freed; a label after this
+  // starts a fresh page rather than blanking a live one.
+  //
+  // AT THE TOP OF THE LOOP, NOT IN THE TAIL. `walk` and `onride` each end in
+  // their own render and `return`, so anything in the shared ride tail never
+  // runs for a player on foot — which is exactly how the tree partition froze
+  // on foot the same night (see partitionTrees). One counter here, every mode.
+  if (ready && !_atlasSealed && ++_sealFrames > 3) {
+    _atlasSealed = true;
+    const mb = sharedSignAtlas(THREE).seal(renderer) / 1048576;
+    window.__atlasFreedMB = +mb.toFixed(1);
+    if (P.has('boot')) console.log(`sign atlas sealed: ${mb.toFixed(1)} MB`);
+  }
   const rawDt = (now - last) / 1000;
   if (ready) {
     if (!jankWindowEnd) jankWindowEnd = now + 10000;

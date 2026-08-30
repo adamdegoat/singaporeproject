@@ -874,10 +874,47 @@ export class SignAtlas {
     return page;
   }
 
+  // GIVE THE PAGES BACK ONCE NOBODY IS WRITING TO THEM.
+  //
+  // main.js frees every other texture's 2D backing store after the warm spin
+  // and skips these (userData.keepCanvas), for a measured reason: an atlas page
+  // is written by add() at any point in the build and re-uploaded, and a page
+  // freed mid-build came back 1x1 blank — "DRAGON'S TEETH GATE VIEWPOINT"
+  // vanished from the headland golden on 2026-08-05.
+  //
+  // That reason expires when the build does. Measured 2026-08-31: the release
+  // pass frees 95 canvases and 23.3MB, and **the two 2048x2048 atlas pages it
+  // skips are 32MB — 14% of the whole heap**, second only to vertex positions,
+  // held for a window that is over by the time the player can move.
+  //
+  // Sealing is not "hope nobody writes": every page is force-uploaded first
+  // (the same `initTexture` argument as the main release), and add() below
+  // starts a FRESH page if a label ever arrives afterwards. A late label then
+  // costs one new page; it cannot blank a live one.
+  seal(renderer) {
+    let freed = 0;
+    for (const pg of this.pages) {
+      if (!pg.c || pg.c.width <= 1) continue;
+      if (renderer) { try { renderer.initTexture(pg.t); } catch (e) { continue; } }
+      freed += pg.c.width * pg.c.height * 4;
+      pg.c.width = 1; pg.c.height = 1;
+      // AND CLEAR ANY PENDING UPLOAD. A page left with needsUpdate true would
+      // be re-uploaded from the canvas we just shrank — the 1x1 blank that made
+      // a sign vanish in 2026-08-05 — on the very next frame. initTexture above
+      // has already put the real pixels on the GPU.
+      pg.t.needsUpdate = false;
+      if (pg.t.source) pg.t.source.needsUpdate = false;
+    }
+    this.sealed = true;
+    return freed;
+  }
+
   // returns { mat, u0, v0, u1, v1 } for a label, drawing it if new
   add(label, bg, fg) {
     const key = label + '|' + bg + '|' + fg;
     if (this.map.has(key)) return this.map.get(key);
+    // a label after seal() gets a page of its own — see the note there
+    if (this.sealed) { this.sealed = false; this._newPage(); }
     if (this.slot >= COLS * ROWS) this._newPage();
     const page = this.pages[this.pages.length - 1];
     const i = this.slot++;
