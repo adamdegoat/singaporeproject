@@ -237,7 +237,21 @@ try {
             const a = reads[n - 1], b = reads[n - 2];
             agree = Math.abs(a - b) <= Math.max(a, b) * 0.01 ? agree + 1 : 0;
           }
-          stable = agree >= 6 && n >= 10;
+          // THE FLOOR IS 30 READS, WHICH IS WHAT THE NOTE ABOVE ALREADY SAID.
+          //
+          // It said "`stable` cannot be true before 30 of them" and the line
+          // underneath it read `n >= 10`. Five seconds, not fifteen — and this
+          // heap plateaus on the way down: measured 2026-08-31 on ONE build,
+          // three consecutive passes of this very function read **347, 326 and
+          // 228**, all three flagged `(settled)`. 326 held flat for long enough
+          // to satisfy six agreements, so the loop stopped there and never saw
+          // the floor it was still falling towards. That refused a deploy whose
+          // only change was a new tool FILE.
+          //
+          // The comment was right and the code was not. 30 reads is 15s of
+          // collecting before any answer counts, 60 is still the ceiling, and
+          // the answer is still the MINIMUM across all of them.
+          stable = agree >= 6 && n >= 30;
         }
         mem = Math.round(Math.min(...reads) / 1048576);
         settled = stable;
