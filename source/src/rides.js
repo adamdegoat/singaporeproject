@@ -10,7 +10,13 @@
 //   gondola     Singapore-Sentosa Cable Car, Sentosa Line — an enclosed cabin
 //               hanging under the wire
 //   chair_lift  the two SkyRide lines back up to the luge start — an open chair
-//   luge        the eight Skyline Luge runs — a cart on the track surface
+//   luge        the four NAMED Skyline Luge trails — a cart on the track
+//               surface. Four, not eight: the map carries 'Luge Dragon',
+//               'Luge Jungle', 'Luge Expedition' and 'Luge Kupu Kupu' plus
+//               three generic names ('Luge Trail', 'Skyline Luge', 'Skyline
+//               Luge Sentosa') that LUGE_GENERIC filters out as lead-ins and
+//               run-outs. This line said eight until 2026-08-31 and the
+//               builder has never made eight.
 //   zip         MegaZip — authored, see ZIPLINE below
 //
 // THE PATH IS NEVER RE-DERIVED. A cable ride reads `window.__cableways`, which

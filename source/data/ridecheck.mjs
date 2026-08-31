@@ -3,7 +3,7 @@
 // The owner, 2026-08-17: "those things can ride or interact make sure are all
 // polish or imporve or test see if can make them really fun."
 //
-// WHY THIS EXISTS. On 2026-08-17 all fifteen rides were ridden at wall clock
+// WHY THIS EXISTS. On 2026-08-17 every ride was ridden at wall clock
 // for the first time, and five faults came back — every one of them past every
 // gate in the repo:
 //

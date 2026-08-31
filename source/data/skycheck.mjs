@@ -7,7 +7,7 @@
 // the sky is #000000. This has now been the same bug twice, in two of the frame
 // loop's THREE render paths:
 //
-//   2026-08-17  every one of the fifteen RIDES had a black sky, because the
+//   2026-08-17  every one of the RIDES had a black sky, because the
 //               `onride` branch renders and returns and never moved the dome.
 //               Fixed there, in that branch, by hand.
 //   2026-08-31  the WALK branch never had the line at all — and walking is what

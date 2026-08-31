@@ -229,7 +229,7 @@ sky.frustumCulled = false;
 // It used to be `sky.position.copy(...)` written by hand in each render path,
 // and the frame loop has THREE — `walk` and `onride` each end in their own
 // render and `return`. The ride-vehicle branch got its line on 2026-08-17,
-// after all fifteen rides came back with a #000000 sky ("a carrier rode
+// after every ride came back with a #000000 sky ("a carrier rode
 // straight out of it"). **The WALK branch never got one at all**, and walking
 // is what the owner calls the point of this world. Measured 2026-08-31: riding,
 // the dome sits exactly on the camera; walking, it stays where you got off the
@@ -6250,10 +6250,21 @@ function loop(now) {
       for (const c of extraCrowds) if (simNear(c)) c.update(clock, dt, walker.x, walker.z, signals);
       if (wayfinder) wayfinder.update(walker, dt);
       sound.update(0, 'walk', 0, 0, trafficNearest(walker.x, walker.z));
+      // AND PUT THE ENTRANCE PANEL AWAY. It is the one per-frame job the three
+      // render paths still disagreed about after the 2026-08-31 audit, and the
+      // ride sweep photographed the result: riding the FlowBarrel with
+      // "SURF COVE BY WAVE HOUSE SENTOSA — ...Press Ride on the deck" still on
+      // screen. The panel exists to say "you are standing next to this and here
+      // is how to get on it"; on the ride, both halves are wrong.
+      //
+      // Called with a position no entrance can be within 15m of, so it takes
+      // the same "nothing here" path a walker gets in open ground rather than
+      // needing a second way to hide the same element.
+      updateGuide(1e9, 1e9, now);
       if (PLACES) PLACES.update(camera);
       // THE SKY STOPPED FOLLOWING YOU THE MOMENT YOU SAT DOWN.
       //
-      // Found 2026-08-17 by riding all fifteen rides and LOOKING at the
+      // Found 2026-08-17 by riding every ride and LOOKING at the
       // frames: the sky was pure `#000000` above the horizon on the FlowRider,
       // the cable car and the luge. It is not a shader fault and not the
       // surround massing — both were ruled out by A/B — and the free camera

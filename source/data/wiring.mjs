@@ -67,7 +67,7 @@ const EXEMPT = {
     + 'the world (data/mobilefps.mjs is the honest one and is wired). Wire it '
     + 'if its verdict is ever made to mean something a deploy should refuse.',
   'ridecheck.mjs':
-    'rides all fifteen rides at WALL CLOCK, which is the point of it -- the '
+    'rides EVERY ride at WALL CLOCK, which is the point of it -- the '
     + 'cable car alone is 145 seconds. MEASURED 2026-08-29: 826s, and green, '
     + 'every ride. That is fourteen minutes on a twenty-five-minute suite, so '
     + 'it stays a deliberate run until either the rides change or somebody '
