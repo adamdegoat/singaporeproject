@@ -227,6 +227,36 @@ await page.waitForTimeout(300);
 check(await page.evaluate(() => !document.getElementById('mapcard').classList.contains('on')),
   'tapping empty water selects nothing');
 
+// AND THE WORLD MUST STOP DRAWING BEHIND IT, IN EVERY MODE.
+//
+// The map is an opaque full-screen canvas. The ride paths skip the world
+// render while it is up — it is not only waste, it starved the place card's
+// slide-in (50ms of CSS over 700ms of wall clock) and it cooks a phone while
+// somebody reads the map. **The WALK branch did not**, and nothing noticed
+// until the three render paths were audited on 2026-08-31: over 30 animation
+// frames with the map open, riding rendered 0 and walking rendered 10.
+//
+// COUNT RENDERS, NOT DRAW CALLS. `info.render.calls` keeps whatever the last
+// render left in it, so a frame that draws nothing reports the same number as
+// one that draws everything — the first version of this measurement could not
+// tell the two apart. `info.render.frame` increments once per render.
+for (const mode of ['ride', 'walk']) {
+  const r = await page.evaluate(async (m) => {
+    if (window.__walkState().mode !== m) window.__toggleMode();
+    await new Promise((s) => setTimeout(s, 700));
+    document.body.classList.add('mapopen');
+    await new Promise((s) => setTimeout(s, 500));
+    const f0 = window.__renderer.info.render.frame;
+    for (let k = 0; k < 30; k++) await new Promise((res) => requestAnimationFrame(res));
+    const drawn = window.__renderer.info.render.frame - f0;
+    document.body.classList.remove('mapopen');
+    return { drawn, mode: window.__walkState().mode };
+  }, mode);
+  check(r.mode === mode && r.drawn === 0,
+    `the world stops drawing behind an open map in ${mode} mode `
+    + `(${r.drawn} renders over 30 frames)`);
+}
+
 await browser.close();
 if (bad) { console.log(`  mapcheck FAIL (${bad})`); process.exit(1); }
 console.log('  mapcheck ok');

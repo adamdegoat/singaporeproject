@@ -6464,7 +6464,17 @@ function loop(now) {
       if (NET) NET.update();
       cullDistricts();
       partitionTrees(camera);      // this branch renders and returns; see the note
-      renderer.render(scene, camera);
+      // THE MAP IS AN OPAQUE FULL-SCREEN CANVAS, AND ON FOOT THE WORLD KEPT
+      // DRAWING UNDERNEATH IT. Measured 2026-08-31 over 30 animation frames
+      // with the map open: **riding renders 0, walking rendered 10** — the
+      // whole island, at full rate, behind something nobody can see through.
+      //
+      // The ride tail's own note says why it matters and it applies here word
+      // for word: it is not only waste, it is what starved the place card's
+      // slide-in (50ms of CSS taking 700ms of wall clock), and it is what
+      // cooks a phone while somebody reads the map. Fifth sighting of work
+      // living in one of this loop's three render paths.
+      if (!document.body.classList.contains('mapopen')) renderer.render(scene, camera);
       frames++;
       if (now - t0 > 1000) reportHud(now);
       requestAnimationFrame(loop);
