@@ -6447,6 +6447,21 @@ function loop(now) {
       sound.update(0, 'walk', walker.speed, walker.phase, trafficNearest(walker.x, walker.z));
       if (SPEC) driveCamera(dt); else walkCamera(dt);
       if (PLACES) PLACES.update(camera);
+      // OTHER PLAYERS MOVE WHILE YOU WALK, AND UNTIL 2026-08-31 THEY DID NOT.
+      //
+      // `NET.update()` is the only thing that advances a remote between the
+      // 10Hz snapshots — `RemotePlayer.update` is its sole caller and the only
+      // place a remote's `group.position` is ever set. It was called in the
+      // ride tail and in the `onride` branch and NOT here, so **on foot,
+      // everyone else on the island froze in place.**
+      //
+      // The onride branch's own note lists this exact failure ("NET.update, so
+      // other players' avatars FROZE for everyone on a ride"), found and fixed
+      // there on 2026-08-17. Nothing checked the walk branch because every
+      // assertion in test/journey.test.mjs was "A sees B" with **A on the
+      // board**. Measured with A on foot before this line existed: B rode 12m
+      // and A saw 0.0m. That test walks now.
+      if (NET) NET.update();
       cullDistricts();
       partitionTrees(camera);      // this branch renders and returns; see the note
       renderer.render(scene, camera);

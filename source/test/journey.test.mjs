@@ -128,6 +128,35 @@ const rode = pw && pr ? Math.hypot(pr.x - pw.x, pr.z - pw.z) : 0;
 ok(pr && pr.walker === false && rode > 1.5,
    `A sees B remount and ride away (${rode.toFixed(1)}m, walker=${pr && pr.walker})`);
 
+// 5b. ...AND NOW A WALKS. Every assertion above is "A sees B", and in every one
+// of them **A is on the board** — so nothing in this repo has ever checked what
+// a player ON FOOT sees of anybody else.
+//
+// It matters because the frame loop has three render paths and `walk` ends in
+// its own render and `return`: `NET.update()` was called in the ride tail and
+// in the onride branch and NOT in the walk branch, and `NET.update()` is the
+// only thing that advances a remote player between 10Hz snapshots
+// (RemotePlayer.update is its sole caller, and it is the only place a remote's
+// group.position is ever set). So on foot, everyone else on the island froze.
+//
+// The ride branch's own note in main.js lists this exact failure — "NET.update,
+// so other players' avatars FROZE for everyone on a ride" — fixed there in
+// August and never checked here.
+await A.evaluate(() => { if (window.__walkState().mode !== 'walk') window.__toggleMode(); });
+await A.waitForTimeout(1200);
+const aMode = await A.evaluate(() => window.__walkState().mode);
+const w0 = await bPosOnA();
+for (let i = 0; i < 3; i++) {
+  await B.evaluate(() => window.__drive && window.__drive(1.0, 0.1, 2.4));
+  await B.waitForTimeout(300);
+}
+const w1 = await bPosOnA();
+const seenWalking = w0 && w1 ? Math.hypot(w1.x - w0.x, w1.z - w0.z) : 0;
+ok(aMode === 'walk' && seenWalking > 1.5,
+   `a WALKING A still sees B move (${seenWalking.toFixed(1)}m, A in ${aMode})`);
+await A.evaluate(() => { if (window.__walkState().mode !== 'ride') window.__toggleMode(); });
+await A.waitForTimeout(900);
+
 // 6. B goes silent (backgrounded phone) — A must HIDE the body, never freeze it
 await B.evaluate(() => clearInterval(window.__net._sendTimer));
 await A.waitForTimeout(6500);
